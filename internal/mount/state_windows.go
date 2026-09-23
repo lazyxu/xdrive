@@ -219,4 +219,3 @@ func sameWindowsPath(a, b string) bool {
 	}
 	return strings.EqualFold(filepath.Clean(ap), filepath.Clean(bp))
 }
-
