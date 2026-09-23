@@ -239,7 +239,6 @@ func collapseWindowsChanges(changes []winLocalChange) winChangeSet {
 	}
 	for _, rename := range out.Renames {
 		delete(pathSet, rename.OldPath)
-		delete(pathSet, rename.NewPath)
 	}
 	out.Paths = make([]string, 0, len(pathSet))
 	for path := range pathSet {
