@@ -24,6 +24,7 @@ var (
 	procDehydratePlaceholder = cldapi.NewProc("CfDehydratePlaceholder")
 	procConvertToPlaceholder = cldapi.NewProc("CfConvertToPlaceholder")
 	procSetInSyncState       = cldapi.NewProc("CfSetInSyncState")
+	procGetPlaceholderState  = cldapi.NewProc("CfGetPlaceholderStateFromAttributeTag")
 )
 
 const (
@@ -40,6 +41,10 @@ const (
 	cfConvertMarkInSync                       = 0x00000001
 	cfInSyncStateInSync                       = 1
 	fileAttributeNormal                       = 0x00000080
+	cfPlaceholderStatePlaceholder             = 0x00000001
+	cfPlaceholderStateSyncRoot                = 0x00000002
+	cfPlaceholderStateInSync                  = 0x00000008
+	cfPlaceholderStatePartiallyOnDisk         = 0x00000020
 )
 
 type cfHydrationPolicy struct{ Primary, Modifier uint16 }
