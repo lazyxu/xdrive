@@ -16,3 +16,11 @@ func openFolderPlatform(path string) error {
 		return fmt.Errorf("open folder is not supported on %s", runtime.GOOS)
 	}
 }
+
+func openFilePlatform(path string) error {
+	return openFolderPlatform(path)
+}
+
+func selectFilePlatform(path string) error {
+	return openFolderPlatform(path)
+}
