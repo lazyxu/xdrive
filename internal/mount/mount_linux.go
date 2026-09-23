@@ -139,7 +139,7 @@ func (n *linuxNode) Unlink(ctx context.Context, name string) syscall.Errno {
 	if child.Type == "dir" {
 		return syscall.EISDIR
 	}
-	return errno0(n.cli.Delete(ctx, child.ID))
+	return errno0(n.cli.Delete(ctx, child.ID, child.Revision))
 }
 
 func (n *linuxNode) Rmdir(ctx context.Context, name string) syscall.Errno {
@@ -150,7 +150,7 @@ func (n *linuxNode) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if child.Type != "dir" {
 		return syscall.ENOTDIR
 	}
-	return errno0(n.cli.Delete(ctx, child.ID))
+	return errno0(n.cli.Delete(ctx, child.ID, child.Revision))
 }
 
 func (n *linuxNode) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
@@ -165,7 +165,7 @@ func (n *linuxNode) Rename(ctx context.Context, name string, newParent fs.InodeE
 	if !ok {
 		return syscall.EXDEV
 	}
-	if _, err := n.cli.RenameMove(ctx, child.ID, &newName, &target.node.ID); err != nil {
+	if _, err := n.cli.RenameMove(ctx, child.ID, child.Revision, &newName, &target.node.ID); err != nil {
 		return errno(err)
 	}
 	return 0
@@ -327,9 +327,21 @@ func (h *linuxHandle) sync(ctx context.Context) error {
 	if _, err := h.file.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	updated, err := h.cli.Overwrite(ctx, h.node.ID, h.file)
+	updated, err := h.cli.Overwrite(ctx, h.node.ID, h.node.Revision, h.file)
 	if err != nil {
-		return err
+		if !client.IsRevisionConflict(err) || h.node.ParentID == nil {
+			return err
+		}
+		if _, seekErr := h.file.Seek(0, io.SeekStart); seekErr != nil {
+			return seekErr
+		}
+		conflict, uploadErr := h.cli.Upload(ctx, *h.node.ParentID, conflictName(h.node.Name), h.file)
+		if uploadErr != nil {
+			return uploadErr
+		}
+		h.node = conflict
+		h.dirty = false
+		return nil
 	}
 	h.node = updated
 	h.dirty = false
@@ -360,7 +372,9 @@ func errno(err error) syscall.Errno {
 		case 404:
 			return syscall.ENOENT
 		case 409:
-			return syscall.EEXIST
+			return syscall.EBUSY
+		case 428:
+			return syscall.EINVAL
 		case 413:
 			return syscall.EFBIG
 		}

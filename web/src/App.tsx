@@ -237,7 +237,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
   const rename = async ({ name }: { name: string }) => {
     if (!renameNode || !current) return
     try {
-      await api.rename(renameNode.id, name)
+      await api.rename(renameNode.id, renameNode.revision, name)
       setRenameNode(null)
       renameForm.resetFields()
       await loadDirectory(current.id)
@@ -252,7 +252,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       okButtonProps: { danger: true },
       async onOk() {
         try {
-          await api.remove(node.id)
+          await api.remove(node.id, node.revision)
           if (current) await loadDirectory(current.id)
         } catch (err) { handleError(err) }
       },

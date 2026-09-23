@@ -39,6 +39,7 @@ type Node struct {
 	Name      string  `gorm:"size:255;not null"`
 	Type      string  `gorm:"size:8;not null;index"`
 	OwnerID   uint64  `gorm:"not null;index"`
+	Revision  uint64  `gorm:"not null;default:1"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	File      *File `gorm:"foreignKey:NodeID;references:ID"`

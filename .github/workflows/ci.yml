@@ -71,6 +71,12 @@ jobs:
       - run: go mod tidy
       - run: git diff --exit-code -- go.mod go.sum
       - run: go test ./internal/...
+      - name: Windows CfAPI E2E
+        run: go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
+      - name: Validate real-machine E2E script
+        shell: pwsh
+        run: |
+          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
       - run: go build -o xd.exe ./cmd/xd
       - run: go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
       - name: Install Inno Setup

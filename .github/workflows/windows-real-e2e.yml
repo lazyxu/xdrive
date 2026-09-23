@@ -1,0 +1,66 @@
+name: Windows Real-Machine E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: Dedicated xDrive E2E server URL (registration enabled unless repository secrets provide an account)
+        required: true
+        type: string
+      token_refresh_wait_seconds:
+        description: Optional wait to validate a short access-token TTL on the test server
+        required: false
+        default: "0"
+        type: string
+      keep_artifacts:
+        description: Keep the temporary sync root on the runner after the test
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  real-windows-e2e:
+    runs-on: [self-hosted, windows, x64, xdrive-e2e]
+    timeout-minutes: 45
+    env:
+      XD_E2E_SERVER_URL: ${{ inputs.server_url }}
+      XD_E2E_USERNAME: ${{ secrets.XD_E2E_USERNAME }}
+      XD_E2E_PASSWORD: ${{ secrets.XD_E2E_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      - name: Ensure Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-e2e -OutputDir dist
+
+      - name: Run installed-client E2E
+        shell: pwsh
+        run: |
+          $params = @{
+            Server = $env:XD_E2E_SERVER_URL
+            InstallerPath = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
+            TokenRefreshWaitSeconds = [int]'${{ inputs.token_refresh_wait_seconds }}'
+          }
+          if ($env:XD_E2E_USERNAME) {
+            $params.Username = $env:XD_E2E_USERNAME
+            $params.Password = $env:XD_E2E_PASSWORD
+          }
+          if ('${{ inputs.keep_artifacts }}' -eq 'true') {
+            $params.KeepArtifacts = $true
+          }
+          ./scripts/windows-e2e.ps1 @params

@@ -37,6 +37,7 @@ type Node struct {
 	Name      string    `json:"name"`
 	Type      string    `json:"type"`
 	Size      int64     `json:"size"`
+	Revision  uint64    `json:"revision"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -57,6 +58,11 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string { return fmt.Sprintf("xdrive API: %s (%d)", e.Msg, e.Status) }
+
+func IsRevisionConflict(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusConflict && apiErr.Msg == "revision_conflict"
+}
 
 func New(baseURL, token string) *Client {
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 0}}
@@ -107,7 +113,7 @@ func (c *Client) CreateDir(ctx context.Context, parentID uint64, name string) (N
 	return out, err
 }
 
-func (c *Client) RenameMove(ctx context.Context, id uint64, name *string, parentID *uint64) (Node, error) {
+func (c *Client) RenameMove(ctx context.Context, id, revision uint64, name *string, parentID *uint64) (Node, error) {
 	var out Node
 	body := map[string]any{}
 	if name != nil {
@@ -116,15 +122,16 @@ func (c *Client) RenameMove(ctx context.Context, id uint64, name *string, parent
 	if parentID != nil {
 		body["parent_id"] = *parentID
 	}
-	err := c.json(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", id), body, &out)
+	err := c.jsonRevision(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", id), revision, body, &out)
 	return out, err
 }
 
-func (c *Client) Delete(ctx context.Context, id uint64) error {
+func (c *Client) Delete(ctx context.Context, id, revision uint64) error {
 	req, err := c.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", id), nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("If-Match", fmt.Sprintf("\"%d\"", revision))
 	resp, err := c.do(req)
 	if err != nil {
 		return err
@@ -175,13 +182,14 @@ func (c *Client) Upload(ctx context.Context, parentID uint64, name string, r io.
 	return out, nil
 }
 
-func (c *Client) Overwrite(ctx context.Context, id uint64, r io.Reader) (Node, error) {
+func (c *Client) Overwrite(ctx context.Context, id, revision uint64, r io.Reader) (Node, error) {
 	var out Node
 	req, err := c.request(ctx, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", id), r)
 	if err != nil {
 		return out, err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("If-Match", fmt.Sprintf("\"%d\"", revision))
 	resp, err := c.do(req)
 	if err != nil {
 		return out, err
@@ -260,6 +268,31 @@ func (c *Client) Walk(ctx context.Context) (map[string]Node, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func (c *Client) jsonRevision(ctx context.Context, method, path string, revision uint64, in any, out any) error {
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := c.request(ctx, method, path, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("If-Match", fmt.Sprintf("\"%d\"", revision))
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return decodeResponse(resp, out)
 }
 
 func (c *Client) json(ctx context.Context, method, path string, in any, out any) error {

@@ -64,7 +64,7 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 
 	// Another user cannot read or mutate Alice's node IDs.
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenB, nil, http.StatusNotFound)
-	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", dir.ID), tokenB, nil, http.StatusNotFound)
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", dir.ID), tokenB, nil, http.StatusNotFound, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", dir.Revision)})
 
 	res := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenA, nil, http.StatusOK)
 	if got := res.Body.String(); got != "hello world" {
@@ -76,17 +76,17 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 		t.Fatalf("range=%q", got)
 	}
 
-	updated := requestNode(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenA, strings.NewReader("updated"), http.StatusOK)
+	updated := requestNodeWithHeaders(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenA, strings.NewReader("updated"), http.StatusOK, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)})
 	if updated.Size != 7 {
 		t.Fatalf("updated size=%d", updated.Size)
 	}
 
-	renamed := requestNode(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID), tokenA, strings.NewReader(`{"name":"renamed.txt"}`), http.StatusOK)
+	renamed := requestNodeWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID), tokenA, strings.NewReader(`{"name":"renamed.txt"}`), http.StatusOK, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", updated.Revision)})
 	if renamed.Name != "renamed.txt" {
 		t.Fatalf("renamed=%q", renamed.Name)
 	}
 
-	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", dir.ID), tokenA, nil, http.StatusNoContent)
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", dir.ID), tokenA, nil, http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", dir.Revision)})
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenA, nil, http.StatusNotFound)
 }
 
@@ -132,6 +132,16 @@ func uploadTestFile(t *testing.T, h http.Handler, token string, parentID uint64,
 func requestNode(t *testing.T, h http.Handler, method, path, token string, body io.Reader, status int) nodeDTO {
 	t.Helper()
 	res := request(t, h, method, path, token, body, status)
+	var out nodeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func requestNodeWithHeaders(t *testing.T, h http.Handler, method, path, token string, body io.Reader, status int, headers map[string]string) nodeDTO {
+	t.Helper()
+	res := requestWithHeaders(t, h, method, path, token, body, status, headers)
 	var out nodeDTO
 	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
@@ -212,4 +222,108 @@ func TestRefreshTokenRotationAndLogout(t *testing.T) {
 	request(t, router, http.MethodGet, "/api/v1/nodes/root", second.AccessToken, nil, http.StatusOK)
 	request(t, router, http.MethodPost, "/api/v1/auth/logout", "", strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, second.RefreshToken)), http.StatusNoContent)
 	request(t, router, http.MethodPost, "/api/v1/auth/refresh", "", strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, second.RefreshToken)), http.StatusUnauthorized)
+}
+
+func TestRevisionConflictPreservesServerContent(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 30 * 24 * time.Hour,
+		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+
+	token := registerTestUser(t, router, "conflict-user", "password-conflict")
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
+	file := uploadTestFile(t, router, token, root.ID, "shared.txt", "base")
+	if file.Revision != 1 {
+		t.Fatalf("initial revision=%d want=1", file.Revision)
+	}
+
+	first := requestNodeWithHeaders(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token,
+		strings.NewReader("writer-a"), http.StatusOK,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)})
+	if first.Revision != 2 {
+		t.Fatalf("first revision=%d want=2", first.Revision)
+	}
+
+	conflict := requestWithHeaders(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token,
+		strings.NewReader("writer-b"), http.StatusConflict,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)})
+	var conflictBody struct {
+		Error    string `json:"error"`
+		Expected uint64 `json:"expected_revision"`
+		Current  uint64 `json:"current_revision"`
+	}
+	if err := json.Unmarshal(conflict.Body.Bytes(), &conflictBody); err != nil {
+		t.Fatal(err)
+	}
+	if conflictBody.Error != "revision_conflict" || conflictBody.Expected != 1 || conflictBody.Current != 2 {
+		t.Fatalf("unexpected conflict response: %+v", conflictBody)
+	}
+
+	res := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token, nil, http.StatusOK)
+	if got := res.Body.String(); got != "writer-a" {
+		t.Fatalf("content after conflict=%q want writer-a", got)
+	}
+
+	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token,
+		strings.NewReader(`{"name":"stale.txt"}`), http.StatusConflict,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)})
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, nil,
+		http.StatusConflict, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)})
+
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, nil,
+		http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", first.Revision)})
+}
+
+func TestMutationRequiresIfMatch(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 24 * time.Hour,
+		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+	token := registerTestUser(t, router, "precondition-user", "password-123")
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
+	file := uploadTestFile(t, router, token, root.ID, "a.txt", "a")
+	request(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token, strings.NewReader("b"), http.StatusPreconditionRequired)
+	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, strings.NewReader(`{"name":"b.txt"}`), http.StatusPreconditionRequired)
+	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, nil, http.StatusPreconditionRequired)
 }

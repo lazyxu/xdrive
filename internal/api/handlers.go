@@ -19,7 +19,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var errInvalidRefreshToken = errors.New("invalid refresh token")
+var (
+	errInvalidRefreshToken = errors.New("invalid refresh token")
+	errRevisionConflict    = errors.New("revision conflict")
+	errRootMutation        = errors.New("root mutation")
+)
 
 type authRequest struct {
 	Username string `json:"username"`
@@ -46,12 +50,13 @@ type nodeDTO struct {
 	Name      string    `json:"name"`
 	Type      string    `json:"type"`
 	Size      int64     `json:"size"`
+	Revision  uint64    `json:"revision"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func toNodeDTO(n meta.Node) nodeDTO {
-	d := nodeDTO{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Type: n.Type, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt}
+	d := nodeDTO{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Type: n.Type, Revision: n.Revision, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt}
 	if n.File != nil {
 		d.Size = n.File.Size
 	}
@@ -376,6 +381,7 @@ func (s *Server) downloadFile(c *gin.Context) {
 	defer f.Close()
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(n.Name))
+	c.Header("ETag", fmt.Sprintf("\"%d\"", n.Revision))
 	http.ServeContent(c.Writer, c.Request, n.Name, n.File.UpdatedAt, f)
 }
 
@@ -385,26 +391,81 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid file id")
 		return
 	}
+	expected, ok := expectedRevision(c)
+	if !ok {
+		return
+	}
 	n, err := s.ownedNode(userID(c), id, true)
 	if err != nil || n.Type != meta.NodeTypeFile || n.File == nil {
 		fail(c, http.StatusNotFound, "file not found")
 		return
 	}
+	if n.Revision != expected {
+		revisionConflict(c, expected, n.Revision)
+		return
+	}
+
+	logical, err := s.logicalPath(n)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "cannot resolve path")
+		return
+	}
+	newKey := storageKey(userID(c), logical, uuid.NewString())
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.MaxUploadBytes)
-	size, err := s.Store.Put(c.Request.Context(), n.File.StorageKey, c.Request.Body)
+	size, err := s.Store.Put(c.Request.Context(), newKey, c.Request.Body)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "storage write failed")
 		return
 	}
-	if err := s.DB.Model(&meta.File{}).Where("node_id = ?", id).Updates(map[string]any{"size": size, "updated_at": time.Now()}).Error; err != nil {
+
+	var oldKey string
+	var currentRevision uint64
+	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		var current meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", id, userID(c)).First(&current).Error; err != nil {
+			return err
+		}
+		currentRevision = current.Revision
+		if current.Revision != expected {
+			return errRevisionConflict
+		}
+		var file meta.File
+		if err := tx.Where("node_id = ?", id).First(&file).Error; err != nil {
+			return err
+		}
+		oldKey = file.StorageKey
+		now := time.Now()
+		if err := tx.Model(&meta.File{}).Where("node_id = ?", id).Updates(map[string]any{
+			"size": size, "storage_key": newKey, "updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&meta.Node{}).Where("id = ? AND owner_id = ? AND revision = ?", id, userID(c), expected).
+			Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
+	})
+	if err != nil {
+		_ = s.Store.Delete(c.Request.Context(), newKey)
+		if errors.Is(err, errRevisionConflict) {
+			revisionConflict(c, expected, currentRevision)
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "file not found")
+			return
+		}
 		fail(c, http.StatusInternalServerError, "metadata update failed")
 		return
 	}
-	if err := s.DB.Model(&meta.Node{}).Where("id = ?", id).Update("updated_at", time.Now()).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "metadata update failed")
+	if oldKey != "" && oldKey != newKey {
+		_ = s.Store.Delete(c.Request.Context(), oldKey)
+	}
+	n, err = s.ownedNode(userID(c), id, true)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "metadata reload failed")
 		return
 	}
-	n.File.Size = size
+	c.Header("ETag", fmt.Sprintf("\"%d\"", n.Revision))
 	c.JSON(http.StatusOK, toNodeDTO(n))
 }
 
@@ -414,6 +475,10 @@ func (s *Server) updateNode(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid node id")
 		return
 	}
+	expected, ok := expectedRevision(c)
+	if !ok {
+		return
+	}
 	n, err := s.ownedNode(userID(c), id, true)
 	if err != nil {
 		fail(c, http.StatusNotFound, "node not found")
@@ -421,6 +486,10 @@ func (s *Server) updateNode(c *gin.Context) {
 	}
 	if n.ParentID == nil {
 		fail(c, http.StatusBadRequest, "root cannot be renamed or moved")
+		return
+	}
+	if n.Revision != expected {
+		revisionConflict(c, expected, n.Revision)
 		return
 	}
 	var req struct {
@@ -459,6 +528,7 @@ func (s *Server) updateNode(c *gin.Context) {
 		updates["parent_id"] = newParent
 	}
 	if len(updates) == 0 {
+		c.Header("ETag", fmt.Sprintf("\"%d\"", n.Revision))
 		c.JSON(http.StatusOK, toNodeDTO(n))
 		return
 	}
@@ -467,15 +537,28 @@ func (s *Server) updateNode(c *gin.Context) {
 		return
 	}
 	updates["updated_at"] = time.Now()
-	if err := s.DB.Model(&meta.Node{}).Where("id = ? AND owner_id = ?", id, userID(c)).Updates(updates).Error; err != nil {
-		if isDuplicate(err) {
+	updates["revision"] = gorm.Expr("revision + 1")
+	result := s.DB.Model(&meta.Node{}).
+		Where("id = ? AND owner_id = ? AND revision = ?", id, userID(c), expected).
+		Updates(updates)
+	if result.Error != nil {
+		if isDuplicate(result.Error) {
 			fail(c, http.StatusConflict, "name already exists")
 		} else {
 			fail(c, http.StatusInternalServerError, "update failed")
 		}
 		return
 	}
+	if result.RowsAffected == 0 {
+		if current, lookupErr := s.ownedNode(userID(c), id, false); lookupErr == nil {
+			revisionConflict(c, expected, current.Revision)
+		} else {
+			fail(c, http.StatusNotFound, "node not found")
+		}
+		return
+	}
 	n, _ = s.ownedNode(userID(c), id, true)
+	c.Header("ETag", fmt.Sprintf("\"%d\"", n.Revision))
 	c.JSON(http.StatusOK, toNodeDTO(n))
 }
 
@@ -485,32 +568,49 @@ func (s *Server) deleteNode(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid node id")
 		return
 	}
-	n, err := s.ownedNode(userID(c), id, false)
-	if err != nil {
-		fail(c, http.StatusNotFound, "node not found")
+	expected, ok := expectedRevision(c)
+	if !ok {
 		return
 	}
-	if n.ParentID == nil {
-		fail(c, http.StatusBadRequest, "root cannot be deleted")
-		return
-	}
-	ids, err := s.subtreeIDs(userID(c), id)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, "delete failed")
-		return
-	}
+
 	var files []meta.File
-	if err := s.DB.Where("node_id IN ?", ids).Find(&files).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "delete failed")
-		return
-	}
-	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+	var currentRevision uint64
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var n meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", id, userID(c)).First(&n).Error; err != nil {
+			return err
+		}
+		if n.ParentID == nil {
+			return errRootMutation
+		}
+		currentRevision = n.Revision
+		if n.Revision != expected {
+			return errRevisionConflict
+		}
+		ids, err := subtreeIDsDB(tx, userID(c), id)
+		if err != nil {
+			return err
+		}
+		if err := tx.Where("node_id IN ?", ids).Find(&files).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("node_id IN ?", ids).Delete(&meta.File{}).Error; err != nil {
 			return err
 		}
 		return tx.Where("id IN ? AND owner_id = ?", ids, userID(c)).Delete(&meta.Node{}).Error
-	}); err != nil {
-		fail(c, http.StatusInternalServerError, "delete failed")
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errRevisionConflict):
+			revisionConflict(c, expected, currentRevision)
+		case errors.Is(err, errRootMutation):
+			fail(c, http.StatusBadRequest, "root cannot be deleted")
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "node not found")
+		default:
+			fail(c, http.StatusInternalServerError, "delete failed")
+		}
 		return
 	}
 	for _, f := range files {
@@ -590,9 +690,13 @@ func (s *Server) isDescendant(uid, candidateParent, ancestor uint64) bool {
 }
 
 func (s *Server) subtreeIDs(uid, root uint64) ([]uint64, error) {
+	return subtreeIDsDB(s.DB, uid, root)
+}
+
+func subtreeIDsDB(db *gorm.DB, uid, root uint64) ([]uint64, error) {
 	type row struct{ ID uint64 }
 	var rows []row
-	err := s.DB.Raw(`WITH RECURSIVE tree AS (
+	err := db.Raw(`WITH RECURSIVE tree AS (
 SELECT id FROM xd_nodes WHERE id = ? AND owner_id = ?
 UNION ALL SELECT n.id FROM xd_nodes n JOIN tree t ON n.parent_id = t.id WHERE n.owner_id = ?
 ) SELECT id FROM tree`, root, uid, uid).Scan(&rows).Error
@@ -607,6 +711,33 @@ UNION ALL SELECT n.id FROM xd_nodes n JOIN tree t ON n.parent_id = t.id WHERE n.
 		return nil, gorm.ErrRecordNotFound
 	}
 	return ids, nil
+}
+
+func expectedRevision(c *gin.Context) (uint64, bool) {
+	raw := strings.TrimSpace(c.GetHeader("If-Match"))
+	if raw == "" {
+		c.AbortWithStatusJSON(http.StatusPreconditionRequired, gin.H{
+			"error":   "revision_required",
+			"message": "If-Match revision is required",
+		})
+		return 0, false
+	}
+	raw = strings.TrimSpace(strings.TrimPrefix(raw, "W/"))
+	raw = strings.Trim(raw, "\"")
+	revision, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || revision == 0 {
+		fail(c, http.StatusBadRequest, "invalid If-Match revision")
+		return 0, false
+	}
+	return revision, true
+}
+
+func revisionConflict(c *gin.Context, expected, current uint64) {
+	c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+		"error":             "revision_conflict",
+		"expected_revision": expected,
+		"current_revision":  current,
+	})
 }
 
 func parseID(s string) (uint64, bool) {

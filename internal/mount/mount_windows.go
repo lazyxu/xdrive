@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -237,10 +238,43 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		n, upErr := p.cli.Overwrite(ctx, base.node.ID, f)
+		n, upErr := p.cli.Overwrite(ctx, base.node.ID, base.node.Revision, f)
 		_ = f.Close()
 		if upErr != nil {
-			return upErr
+			if !client.IsRevisionConflict(upErr) || base.node.ParentID == nil {
+				return upErr
+			}
+			abs := filepath.Join(p.root, filepath.FromSlash(rel))
+			conflictRel := joinSlash(slashDir(rel), conflictName(slashBase(rel)))
+			conflictAbs := filepath.Join(p.root, filepath.FromSlash(conflictRel))
+			if err := copyLocalFile(abs, conflictAbs); err != nil {
+				return err
+			}
+			conflictNode, err := p.cli.UploadFile(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel))
+			if err != nil {
+				return err
+			}
+			if st, err := os.Stat(conflictAbs); err == nil {
+				local[conflictRel] = localEntry{isDir: false, size: st.Size(), modTime: st.ModTime()}
+				baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
+			}
+			remoteNow, err := p.cli.Walk(ctx)
+			if err != nil {
+				return err
+			}
+			current, ok := findNodeByID(remoteNow, base.node.ID)
+			if !ok {
+				return fmt.Errorf("conflict source node %d disappeared", base.node.ID)
+			}
+			_ = os.Remove(abs)
+			if err := cfCreatePlaceholder(filepath.Dir(abs), filepath.Base(abs), current.ID, current.Size, current.UpdatedAt.UnixNano(), false); err != nil {
+				return err
+			}
+			if st, err := os.Stat(abs); err == nil {
+				local[rel] = localEntry{isDir: false, size: st.Size(), modTime: st.ModTime()}
+				baseline[rel] = winState{node: current, localModTime: st.ModTime(), localSize: st.Size()}
+			}
+			continue
 		}
 		baseline[rel] = stateFromLocal(n, entry)
 	}
@@ -262,8 +296,11 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		if underAny(rel, deletedPrefix) {
 			continue
 		}
-		if err := p.cli.Delete(ctx, baseline[rel].node.ID); err != nil {
+		if err := p.cli.Delete(ctx, baseline[rel].node.ID, baseline[rel].node.Revision); err != nil {
 			var apiErr *client.APIError
+			if errors.As(err, &apiErr) && apiErr.Status == 409 {
+				continue
+			}
 			if !errors.As(err, &apiErr) || apiErr.Status != 404 {
 				return err
 			}
@@ -286,6 +323,26 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		rn := remote[rel]
 		base, exists := baseline[rel]
 		abs := filepath.Join(p.root, filepath.FromSlash(rel))
+		if exists {
+			if _, statErr := os.Lstat(abs); errors.Is(statErr, os.ErrNotExist) {
+				if rn.Type == "dir" {
+					if err := os.MkdirAll(abs, 0o755); err != nil {
+						return err
+					}
+				} else {
+					if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+						return err
+					}
+					if err := cfCreatePlaceholder(filepath.Dir(abs), filepath.Base(abs), rn.ID, rn.Size, rn.UpdatedAt.UnixNano(), false); err != nil {
+						return err
+					}
+				}
+				if st, err := os.Stat(abs); err == nil {
+					baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				}
+				continue
+			}
+		}
 		if !exists {
 			if rn.Type == "dir" {
 				if err := os.MkdirAll(abs, 0o755); err != nil {
@@ -304,7 +361,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			}
 			continue
 		}
-		if rn.Type == "file" && rn.UpdatedAt.After(base.node.UpdatedAt.Add(time.Millisecond)) {
+		if rn.Type == "file" && rn.Revision != base.node.Revision {
 			_ = os.Remove(abs)
 			if err := cfCreatePlaceholder(filepath.Dir(abs), filepath.Base(abs), rn.ID, rn.Size, rn.UpdatedAt.UnixNano(), false); err != nil {
 				return err
@@ -367,6 +424,43 @@ func scanLocal(root string) (map[string]localEntry, error) {
 		return nil
 	})
 	return out, err
+}
+
+func copyLocalFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func joinSlash(dir, base string) string {
+	if dir == "" {
+		return base
+	}
+	return dir + "/" + base
+}
+
+func findNodeByID(nodes map[string]client.Node, id uint64) (client.Node, bool) {
+	for _, n := range nodes {
+		if n.ID == id {
+			return n, true
+		}
+	}
+	return client.Node{}, false
 }
 
 func stateFromLocal(n client.Node, e localEntry) winState {

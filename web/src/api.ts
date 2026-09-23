@@ -6,6 +6,7 @@ export interface Node {
   name: string
   type: NodeType
   size: number
+  revision: number
   created_at: string
   updated_at: string
 }
@@ -194,14 +195,19 @@ export class XDriveApi {
     })
   }
 
-  rename(nodeID: number, name: string) {
+  rename(nodeID: number, revision: number, name: string) {
     return this.request<Node>(`/api/v1/nodes/${nodeID}`, {
-      method: 'PATCH', body: JSON.stringify({ name }),
+      method: 'PATCH',
+      headers: { 'If-Match': `"${revision}"` },
+      body: JSON.stringify({ name }),
     })
   }
 
-  remove(nodeID: number) {
-    return this.request<void>(`/api/v1/nodes/${nodeID}`, { method: 'DELETE' })
+  remove(nodeID: number, revision: number) {
+    return this.request<void>(`/api/v1/nodes/${nodeID}`, {
+      method: 'DELETE',
+      headers: { 'If-Match': `"${revision}"` },
+    })
   }
 
   downloadURL(nodeID: number) {

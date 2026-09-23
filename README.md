@@ -306,7 +306,59 @@ GET    /api/v1/files/:id/content
 PUT    /api/v1/files/:id/content
 ```
 
+Existing-node mutations use revision preconditions via `If-Match`; node JSON includes `revision`, and file downloads expose the same revision as an `ETag`.
+
 Downloads support HTTP Range requests, which are also used by the Windows hydration path.
+
+## Conflict protection
+
+xDrive uses optimistic concurrency control for mutations of existing nodes. Every node has a monotonically increasing `revision` value.
+
+Content overwrite, rename/move and delete requests send the revision they were based on:
+
+```http
+If-Match: "17"
+```
+
+The server requires this precondition for `PUT /files/:id/content`, `PATCH /nodes/:id`, and `DELETE /nodes/:id`:
+
+- a matching revision applies the mutation and increments the node revision;
+- a missing precondition returns `428 Precondition Required`;
+- a stale revision returns `409 Conflict` with `error: revision_conflict`, `expected_revision`, and `current_revision`.
+
+File content replacement is crash/conflict safe: xDrive writes a new blob first, switches metadata with a revision check inside a database transaction, and deletes the old blob only after the transaction commits. A stale writer therefore cannot overwrite the winning blob before the conflict is detected.
+
+For desktop files, xDrive preserves the stale local version rather than silently discarding it. Windows and Linux create a sibling such as:
+
+```text
+report (conflict WORKSTATION 20260923-163700.123).docx
+```
+
+The server winner remains at the original name.
+
+## Windows end-to-end testing
+
+Normal CI runs a Windows CfAPI E2E test on GitHub's `windows-latest` runner. It exercises sync-root registration, remote placeholder creation, hydration, local upload/overwrite, revision conflicts, conflict-copy preservation, provider shutdown, and the Windows installer lifecycle.
+
+For a real Windows 10/11 desktop against an actual xDrive server, use:
+
+```powershell
+.\scripts\windows-e2e.ps1 `
+  -Server https://drive-e2e.example.com `
+  -InstallerPath .\dist\xDriveSetup-amd64.exe
+```
+
+If `-Username` and `-Password` are omitted, the script registers a unique temporary account, so the dedicated E2E server must allow registration. Supplying credentials makes it use an existing test account instead.
+
+The real-machine script validates installer deployment, CfAPI mounting, placeholder/hydration, local-to-server create/update/rename/delete, server-to-local create/delete, and a stale-write conflict where both versions must survive. `-TokenRefreshWaitSeconds` can additionally validate a test server configured with a deliberately short access-token TTL.
+
+A manual GitHub workflow, **Windows Real-Machine E2E**, targets a self-hosted runner labeled:
+
+```text
+self-hosted, windows, x64, xdrive-e2e
+```
+
+Optional repository secrets `XD_E2E_USERNAME` and `XD_E2E_PASSWORD` select an existing test account; otherwise the workflow registers a temporary account.
 
 ## CI, snapshots, and releases
 
