@@ -88,8 +88,28 @@ set_env() {
 }
 
 env_value() {
-  local key="$1"
-  grep "^${key}=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- || true
+  local key="$1" value
+  value="$(grep "^${key}=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  value="${value%$'\r'}"
+  if [[ "$value" == \"*\" && "$value" == *\" && ${#value} -ge 2 ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s\n' "$value"
+}
+
+validate_domain() {
+  local value="$1"
+  if [[ -z "$value" ]]; then
+    return 0
+  fi
+  if [[ "$value" == *"://"* || "$value" == *"/"* || "$value" == *":"* || "$value" == *" "* || "$value" == *".."* ]]; then
+    echo "xDrive server installer: XD_DOMAIN must be a hostname only, for example drive.example.com." >&2
+    return 1
+  fi
+  if [[ ! "$value" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+    echo "xDrive server installer: invalid XD_DOMAIN: $value" >&2
+    return 1
+  fi
 }
 
 touch "$ENV_PATH"
@@ -103,7 +123,6 @@ ensure_env XD_WEB_PORT "${XD_WEB_PORT:-3000}"
 ensure_env XD_ALLOWED_ORIGIN "${XD_ALLOWED_ORIGIN:-http://localhost:3000}"
 ensure_env XD_MAX_UPLOAD_BYTES "${XD_MAX_UPLOAD_BYTES:-21474836480}"
 ensure_env XD_DOMAIN "${XD_DOMAIN:-}"
-ensure_env XD_ACME_EMAIL "${XD_ACME_EMAIL:-}"
 ensure_env XD_HTTP_BIND "${XD_HTTP_BIND:-0.0.0.0}"
 ensure_env XD_HTTPS_BIND "${XD_HTTPS_BIND:-0.0.0.0}"
 ensure_env XD_POSTGRES_MEMORY_LIMIT "${XD_POSTGRES_MEMORY_LIMIT:-1g}"
@@ -130,13 +149,14 @@ if [[ -z "$domain" && -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" !=
   read -r -p "Public domain for automatic HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
   domain="${input_domain:-}"
   if [[ -n "$domain" ]]; then
+    domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')"
+    validate_domain "$domain"
     set_env XD_DOMAIN "$domain"
-    read -r -p "ACME email (optional): " input_email </dev/tty || true
-    [[ -n "${input_email:-}" ]] && set_env XD_ACME_EMAIL "$input_email"
   fi
 fi
 
 if [[ -n "$domain" ]]; then
+  validate_domain "$domain"
   set_env XD_ALLOWED_ORIGIN "https://$domain"
   set_env XD_WEB_BIND "127.0.0.1"
 else
@@ -215,6 +235,41 @@ if [[ "$healthy" != "1" ]]; then
   echo "xDrive server did not become healthy. Recent logs:" >&2
   compose logs --tail=100 postgres server web >&2 || true
   exit 1
+fi
+
+wait_https() {
+  local domain="$1" attempt
+  local bind probe_ip
+  bind="$(env_value XD_HTTPS_BIND)"
+  probe_ip="127.0.0.1"
+  if [[ -n "$bind" && "$bind" != "0.0.0.0" && "$bind" != "::" ]]; then
+    probe_ip="$bind"
+  fi
+
+  echo "Waiting for automatic HTTPS certificate and reverse proxy readiness..."
+  for attempt in $(seq 1 90); do
+    if command -v curl >/dev/null 2>&1; then
+      if curl -fsS --max-time 8 --resolve "$domain:443:$probe_ip" "https://$domain/api/v1/healthz" >/dev/null 2>&1; then
+        echo "HTTPS ready: https://$domain"
+        return 0
+      fi
+    elif command -v wget >/dev/null 2>&1; then
+      if wget -q --timeout=8 --spider "https://$domain/api/v1/healthz" >/dev/null 2>&1; then
+        echo "HTTPS ready: https://$domain"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+
+  echo "xDrive HTTPS did not become ready." >&2
+  echo "Confirm the domain resolves to this server and inbound TCP 80/443 reaches it." >&2
+  compose logs --tail=120 caddy web server >&2 || true
+  return 1
+}
+
+if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+  wait_https "$(env_value XD_DOMAIN)"
 fi
 
 compose ps
