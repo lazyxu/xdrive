@@ -123,7 +123,7 @@ jobs:
               throw "missing Authenticode signature for $target"
             }
             if ($signature.SignerCertificate.Subject -ne "CN=xDrive CI Test") {
-              throw "unexpected signer for $target: $($signature.SignerCertificate.Subject)"
+              throw "unexpected signer for ${target}: $($signature.SignerCertificate.Subject)"
             }
           }
       - name: Verify Windows installer
