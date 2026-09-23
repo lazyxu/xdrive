@@ -81,46 +81,64 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 	defer auditTicker.Stop()
 
 	var (
-		pending       []winLocalChange
-		debounceTimer *time.Timer
-		debounceC     <-chan time.Time
-		maxBatchTimer *time.Timer
-		maxBatchC     <-chan time.Time
+		pending         []winLocalChange
+		debounceTimer   *time.Timer
+		debounceC       <-chan time.Time
+		maxBatchTimer   *time.Timer
+		maxBatchC       <-chan time.Time
+		watchRetryTimer *time.Timer
+		watchRetryC     <-chan time.Time
 	)
 
-	stopBatchTimers := func() {
-		if debounceTimer != nil {
-			if !debounceTimer.Stop() {
-				select {
-				case <-debounceTimer.C:
-				default:
-				}
-			}
-			debounceTimer = nil
-			debounceC = nil
+	stopTimer := func(timer **time.Timer, channel *<-chan time.Time) {
+		if *timer == nil {
+			return
 		}
-		if maxBatchTimer != nil {
-			if !maxBatchTimer.Stop() {
-				select {
-				case <-maxBatchTimer.C:
-				default:
-				}
+		if !(*timer).Stop() {
+			select {
+			case <-(*timer).C:
+			default:
 			}
-			maxBatchTimer = nil
-			maxBatchC = nil
 		}
+		*timer = nil
+		*channel = nil
 	}
-	flushLocal := func() {
+	stopBatchTimers := func() {
+		stopTimer(&debounceTimer, &debounceC)
+		stopTimer(&maxBatchTimer, &maxBatchC)
+	}
+	stopWatchRetry := func() {
+		stopTimer(&watchRetryTimer, &watchRetryC)
+	}
+	scheduleWatchRetry := func() {
+		if watchRetryTimer != nil || ctx.Err() != nil {
+			return
+		}
+		watchRetryTimer = time.NewTimer(winWatchRetry)
+		watchRetryC = watchRetryTimer.C
+	}
+	scheduleLocalRetry := func() {
+		stopBatchTimers()
+		debounceTimer = time.NewTimer(winWatchRetry)
+		debounceC = debounceTimer.C
+		maxBatchTimer = time.NewTimer(winLocalMaxBatchWait + winWatchRetry)
+		maxBatchC = maxBatchTimer.C
+	}
+	flushLocal := func() bool {
 		if len(pending) == 0 {
 			stopBatchTimers()
-			return
+			return true
 		}
 		batch := append([]winLocalChange(nil), pending...)
 		pending = pending[:0]
 		stopBatchTimers()
 		if err := p.reconcileLocalChanges(ctx, batch); err != nil {
 			fmt.Fprintln(os.Stderr, "xd: Windows local sync:", err)
+			pending = append(batch, pending...)
+			scheduleLocalRetry()
+			return false
 		}
+		return true
 	}
 	queueLocal := func(change winLocalChange) {
 		pending = append(pending, change)
@@ -146,10 +164,14 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		select {
 		case <-ctx.Done():
 			stopBatchTimers()
+			stopWatchRetry()
 			return nil
 		case change, ok := <-changes:
 			if !ok {
 				changes = nil
+				if ctx.Err() == nil {
+					scheduleWatchRetry()
+				}
 				continue
 			}
 			queueLocal(change)
@@ -157,19 +179,29 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 			if ok && err != nil && !errors.Is(err, context.Canceled) {
 				fmt.Fprintln(os.Stderr, "xd: Windows directory watcher:", err)
 				queueLocal(winLocalChange{Action: 0})
+				scheduleWatchRetry()
 			}
 			watchErrs = nil
+		case <-watchRetryC:
+			stopWatchRetry()
+			if ctx.Err() == nil {
+				changes, watchErrs = watchWindowsChanges(ctx, root)
+			}
 		case <-debounceC:
 			flushLocal()
 		case <-maxBatchC:
 			flushLocal()
 		case <-remoteTicker.C:
-			flushLocal()
+			if !flushLocal() {
+				continue
+			}
 			if err := p.reconcileRemote(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows remote sync:", err)
 			}
 		case <-auditTicker.C:
-			flushLocal()
+			if !flushLocal() {
+				continue
+			}
 			if err := p.reconcile(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
 			}
