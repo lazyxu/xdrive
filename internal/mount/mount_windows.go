@@ -26,10 +26,10 @@ type winState struct {
 }
 
 type winProvider struct {
-	cli        *client.Client
-	root       string
-	connKey    int64
-	mu         sync.Mutex
+	cli      *client.Client
+	root     string
+	connKey  int64
+	mu       sync.Mutex
 	baseline map[string]winState
 	hydrated map[uint64]time.Time
 }
@@ -47,8 +47,8 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		return err
 	}
 	p := &winProvider{
-		cli:        cli,
-		root:       root,
+		cli:      cli,
+		root:     root,
 		baseline: map[string]winState{},
 		hydrated: map[uint64]time.Time{},
 	}
