@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 umask 077
 
 CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
@@ -12,6 +12,27 @@ BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
 BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 STAGING_DIR="$CONFIG_DIR/.install-staging"
+
+STAGE_TOTAL=9
+STAGE_NO=0
+CURRENT_STAGE="startup"
+LAST_ERROR_COMMAND=""
+
+stage() {
+  STAGE_NO="$1"
+  CURRENT_STAGE="$2"
+  printf '\n[xDrive] [%s/%s] %s\n' "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE"
+}
+
+trap 'LAST_ERROR_COMMAND="${BASH_COMMAND:-unknown}"' ERR
+on_exit() {
+  local status=$?
+  if [[ "$status" -ne 0 ]]; then
+    printf '\n[xDrive] FAILED at stage %s/%s: %s (exit %s)\n' \
+      "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$status" >&2
+  fi
+}
+trap on_exit EXIT
 
 usage() {
   cat <<'USAGE'
@@ -129,7 +150,10 @@ resolve_commit() {
     echo "xDrive server installer: commit must be 7-40 hexadecimal characters." >&2
     return 1
   }
-  json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/commits/$ref")"
+  if ! json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/commits/$ref")"; then
+    echo "xDrive server installer: could not query commit $ref." >&2
+    return 1
+  fi
   full="$(printf '%s\n' "$json" | sed -nE 's/^[[:space:]]*"sha":[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n1 | tr '[:upper:]' '[:lower:]')"
   [[ ${#full} -eq 40 ]] || {
     echo "xDrive server installer: could not resolve commit $ref." >&2
@@ -138,84 +162,108 @@ resolve_commit() {
   printf '%s\n' "$full"
 }
 
-verify_download() {
-  local file="$1" sums="$2" name="$3" expected actual
-  expected="$(awk -v n="$name" '$2==n || $2=="*"n {print $1; exit}' "$sums")"
-  [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || {
-    echo "xDrive server installer: checksum for $name is missing." >&2
-    return 1
-  }
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$file" | awk '{print $1}')"
-  elif command -v shasum >/dev/null 2>&1; then
-    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
-  else
-    echo "xDrive server installer: sha256sum or shasum is required." >&2
+resolve_published_master() {
+  local json full immutable_tag
+  if ! json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/git/ref/tags/snapshot")"; then
+    echo "xDrive server installer: could not resolve the rolling master snapshot." >&2
     return 1
   fi
-  [[ "${actual,,}" == "${expected,,}" ]] || {
-    echo "xDrive server installer: checksum mismatch for $name." >&2
+  full="$(printf '%s\n' "$json" | sed -nE 's/^[[:space:]]*"sha":[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n1 | tr '[:upper:]' '[:lower:]')"
+  [[ ${#full} -eq 40 ]] || {
+    echo "xDrive server installer: rolling snapshot did not resolve to a commit." >&2
     return 1
   }
+  immutable_tag="snapshot-${full:0:12}"
+  if ! fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/tags/$immutable_tag" >/dev/null; then
+    echo "xDrive server installer: $immutable_tag is not fully published yet; retry after the master build completes." >&2
+    return 1
+  fi
+  printf '%s\n' "$full"
 }
 
-bootstrap_release() {
-  local channel="$1" commit="$2" base tag tmp installer sums full=""
+resolve_latest_stable_tag() {
+  local json tag
+  if ! json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/latest")"; then
+    echo "xDrive server installer: no stable release is available." >&2
+    return 1
+  fi
+  tag="$(printf '%s\n' "$json" | sed -nE 's/^[[:space:]]*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' | head -n1)"
+  [[ -n "$tag" ]] || {
+    echo "xDrive server installer: latest stable release has no tag." >&2
+    return 1
+  }
+  printf '%s\n' "$tag"
+}
+
+verify_published_commit() {
+  local full="$1" tag="snapshot-${1:0:12}"
+  if ! fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/tags/$tag" >/dev/null; then
+    echo "xDrive server installer: commit $full has no successful published snapshot ($tag)." >&2
+    return 1
+  fi
+}
+
+resolve_install_source() {
+  local channel="$1" commit="$2" full tag
   case "$channel" in
-    stable)
-      base="https://github.com/$REPOSITORY/releases/latest/download"
-      ;;
     master)
-      tag="snapshot"
-      base="https://github.com/$REPOSITORY/releases/download/$tag"
+      full="$(resolve_published_master)"
+      SOURCE_REF="$full"
+      IMAGE_TAG="sha-${full:0:12}"
+      BUILT_CHANNEL="master"
+      BUILT_COMMIT="$full"
+      echo "Resolved master snapshot: ${full:0:12}"
+      ;;
+    stable)
+      tag="$(resolve_latest_stable_tag)"
+      SOURCE_REF="$tag"
+      IMAGE_TAG="$tag"
+      BUILT_CHANNEL="stable"
+      BUILT_COMMIT=""
+      echo "Resolved stable release: $tag"
       ;;
     commit)
+      [[ -n "$commit" ]] || {
+        echo "xDrive server installer: --channel commit requires --commit SHA." >&2
+        return 1
+      }
       full="$(resolve_commit "$commit")"
-      tag="snapshot-${full:0:12}"
-      base="https://github.com/$REPOSITORY/releases/download/$tag"
+      verify_published_commit "$full"
+      SOURCE_REF="$full"
+      IMAGE_TAG="sha-${full:0:12}"
+      BUILT_CHANNEL="commit"
+      BUILT_COMMIT="$full"
+      requested_commit="$full"
+      echo "Resolved published commit: ${full:0:12}"
       ;;
   esac
-
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
-  installer="$tmp/xdrive-server-install.sh"
-  sums="$tmp/SHA256SUMS.txt"
-  echo "Resolving xDrive server channel: $channel${full:+ ($full)}"
-  if ! fetch "$base/xdrive-server-install.sh" "$installer" ||
-     ! fetch "$base/SHA256SUMS.txt" "$sums"; then
-    echo "xDrive server installer: no successful published build is available for $channel${full:+ commit $full}." >&2
-    exit 1
-  fi
-  verify_download "$installer" "$sums" "xdrive-server-install.sh"
-  chmod 700 "$installer"
-  set +e
-  XD_INSTALL_RESOLVED=1 \
-  XD_INSTALL_CHANNEL="$channel" \
-  XD_INSTALL_COMMIT="${full:-$commit}" \
-  XD_CONFIG_DIR="$CONFIG_DIR" \
-    bash "$installer"
-  status=$?
-  set -e
-  rm -rf "$tmp"
-  trap - EXIT
-  exit "$status"
 }
 
 artifact_is_template=false
 if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then
   artifact_is_template=true
 fi
-if [[ "${XD_INSTALL_RESOLVED:-0}" != "1" ]]; then
-  if [[ "$artifact_is_template" == "true" || "$requested_channel" != "$BUILT_CHANNEL" ]]; then
-    bootstrap_release "$requested_channel" "$requested_commit"
-  fi
+
+stage 1 "resolve release channel"
+needs_source_resolution=false
+if [[ "$artifact_is_template" == "true" || "$requested_channel" != "$BUILT_CHANNEL" ]]; then
+  needs_source_resolution=true
+elif [[ "$requested_channel" == "commit" && -n "$requested_commit" && "$requested_commit" != "$BUILT_COMMIT" ]]; then
+  needs_source_resolution=true
+fi
+
+if [[ "$needs_source_resolution" == "true" ]]; then
+  resolve_install_source "$requested_channel" "$requested_commit"
+else
+  echo "Using packaged release source: $SOURCE_REF"
 fi
 
 if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then
-  echo "xDrive server installer: unresolved deployment template." >&2
+  echo "xDrive server installer: release source resolution left template placeholders unresolved." >&2
   exit 1
 fi
-
+echo "Release source: $SOURCE_REF"
+echo "Container image tag: $IMAGE_TAG"
 need() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "xDrive server installer: missing required command: $1" >&2
@@ -223,6 +271,7 @@ need() {
   }
 }
 
+stage 2 "validate host prerequisites"
 case "$(uname -m)" in
   x86_64|amd64) ;;
   *) echo "xDrive server installer: current published images support Linux amd64 only." >&2; exit 1 ;;
@@ -234,6 +283,7 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+stage 3 "download deployment assets"
 mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
 
@@ -301,6 +351,7 @@ validate_domain() {
   fi
 }
 
+stage 4 "prepare server configuration"
 touch "$ENV_PATH"
 chmod 600 "$ENV_PATH"
 ensure_env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-$(random_hex 24)}"
@@ -360,6 +411,7 @@ else
   fi
 fi
 
+stage 5 "create pre-upgrade backup"
 # Upgrade safety: take a backup with the currently installed deployment before
 # replacing compose/scripts or switching image tags. If an older installation
 # predates the maintenance scripts, use the freshly staged backup tool against
@@ -375,6 +427,7 @@ if [[ -f "$COMPOSE_PATH" ]]; then
   fi
 fi
 
+stage 6 "install deployment files"
 # Only point at the new release images after the old deployment has been
 # backed up successfully. This keeps pre-upgrade verification on the exact
 # server/Web version that owns the current database and blob layout.
@@ -418,10 +471,12 @@ echo "xDrive compose: $COMPOSE_PATH"
 echo "xDrive env:     $ENV_PATH"
 
 if [[ "${XD_INSTALL_NO_START:-0}" == "1" ]]; then
+  stage 9 "complete"
   echo "Files installed without starting containers."
   exit 0
 fi
 
+stage 7 "pull images and start services"
 if ! compose pull; then
   cat >&2 <<'MSG'
 xDrive server installer: container pull failed.
@@ -432,6 +487,7 @@ MSG
 fi
 compose up -d --remove-orphans
 
+stage 8 "verify service health"
 healthy=0
 for _ in $(seq 1 60); do
   if compose exec -T server xdrive-server healthcheck >/dev/null 2>&1; then healthy=1; break; fi
@@ -478,6 +534,7 @@ if [[ -n "$(env_value XD_DOMAIN)" ]]; then
   wait_https "$(env_value XD_DOMAIN)"
 fi
 
+stage 9 "finalize installation"
 compose ps
 install_backup_schedule
 
