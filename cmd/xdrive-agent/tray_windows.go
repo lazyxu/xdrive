@@ -301,7 +301,11 @@ func runDesktopUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentCon
 				nidMu.Lock()
 				snapshot := nid
 				nidMu.Unlock()
-				showTrayNotification(&snapshot, n.Title, n.Body, n.Kind)
+				go func(notification agentNotification, fallback trayNotifyIconData) {
+					if err := showWindowsToast(notification.Title, notification.Body); err != nil {
+						showTrayNotification(&fallback, notification.Title, notification.Body, notification.Kind)
+					}
+				}(n, snapshot)
 			case <-ticker.C:
 				s := ctrl.Snapshot()
 				key, fallback, tip := trayVisualState(s)
