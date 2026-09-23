@@ -27,6 +27,7 @@ type agentSnapshot struct {
 	Paused             bool
 	MustChangePassword bool
 	LastError          string
+	HasConflict        bool
 	Version            string
 }
 
@@ -96,6 +97,7 @@ func (c *agentController) Run() {
 	updateReady := startAutoUpdate(c.ctx)
 	mount.SetEventSink(func(event mount.Event) {
 		if event.Kind == mount.EventConflict {
+			c.setSnapshot(func(s *agentSnapshot) { s.HasConflict = true; s.SyncStatus = "存在冲突副本" })
 			body := "已保留冲突副本"
 			if event.Path != "" {
 				body += "：" + event.Path
