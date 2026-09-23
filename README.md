@@ -489,11 +489,11 @@ X-Chunk-SHA256: <64 hex chars>
 
 The server validates the expected chunk length and SHA-256 before recording the part. Chunk PUTs are idempotent, so a lost response can be retried safely.
 
-Windows and Linux calculate the full local-file SHA-256 before starting a session and use it as the resume key. If an agent or process restarts with the same content, the server returns the existing upload session and only missing chunks are transferred. The Web UI uses file name, size, and last-modified metadata as its resume key, but recomputes every local chunk SHA-256 before trusting a previously uploaded chunk.
+Windows and Linux calculate the full local-file SHA-256 plus the SHA-256 of every fixed-size chunk before starting a session. The full hash is the resume key. If an agent or process restarts with the same content, the server returns the existing upload session and only missing or mismatched chunks are transferred. The Web UI also sends a per-chunk hash manifest and recomputes a chunk before transmitting it.
 
 Finalize is also idempotent. A client that loses a successful finalize response can reconnect for up to 24 hours and recover the already-created result rather than create a duplicate. Expired upload-session metadata and temporary chunk blobs are cleaned by the upload janitor.
 
-For overwrites, finalize still performs the existing node-revision compare-and-swap. If another writer changes the file while chunks are uploading, finalize returns `409 revision_conflict` and does not replace the newer server content. On a successful overwrite, the previous current blob is moved into **file version history** before the assembled blob becomes current, so resumable upload does not bypass recovery/history semantics.
+For overwrites, the server compares the client's chunk-hash manifest with the current revision using the same fixed chunk size. Matching chunks are recorded as **server-reused ranges** that point at the old blob and consume no upload bandwidth; only changed chunks are sent by the client. Finalize streams reused ranges directly from the old blob together with newly uploaded chunks, verifies the whole-file SHA-256, and then performs the existing node-revision compare-and-swap. If another writer changes the file while chunks are uploading, finalize returns `409 revision_conflict` and does not replace the newer server content. On success, the previous current blob is moved into **file version history** before the assembled blob becomes current.
 
 File metadata can expose a server-verified content hash:
 
@@ -506,7 +506,7 @@ File metadata can expose a server-verified content hash:
 
 Downloads expose the same value as `X-Content-SHA256`. Storage verification checks recorded SHA-256 values for both current files and historical versions. In-progress chunks live below `.xdrive-uploads/` and are intentionally excluded from orphan-blob reporting until their sessions expire, finalize, or are aborted.
 
-This first phase is **fixed-block resumable transfer**, not content-defined chunking or cross-file deduplication. A modified large file can resume interrupted transfer at chunk granularity; deduplicating unchanged blocks across different file revisions remains a later optimization.
+This phase is **fixed-block resumable transfer with same-file revision reuse**. For example, if a 10 GiB file keeps the same block alignment and only one 8 MiB block changes, the desktop client can upload roughly that changed block instead of retransmitting the other unchanged blocks. It is still not content-defined chunking or global/cross-file deduplication: insertions near the beginning can shift later fixed blocks, and identical blocks belonging to unrelated files are not shared.
 
 ## Conflict protection
 
@@ -648,7 +648,7 @@ deploy/
 
 ## Roadmap
 
-1. instant upload/deduplication and block reuse across revisions;
+1. instant upload/global deduplication and optional content-defined chunking;
 2. code-signed Windows installer and richer tray notifications;
 3. richer CfAPI pin/dehydrate/offline controls;
 4. small-file packing;

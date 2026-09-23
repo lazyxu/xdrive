@@ -52,12 +52,15 @@ func TestUploadFileResumableSkipsCompletedChunkAndRetries(t *testing.T) {
 			if init.Size != int64(len(data)) || init.SHA256 != fullHash || init.ResumeKey != fullHash {
 				t.Fatalf("unexpected init: %+v", init)
 			}
+			if len(init.ChunkSHA256) != 2 || init.ChunkSHA256[0] != firstHash || init.ChunkSHA256[1] != secondHash {
+				t.Fatalf("unexpected chunk manifest: %+v", init.ChunkSHA256)
+			}
 			_ = json.NewEncoder(w).Encode(UploadSession{
 				ID: "upload-1", ParentID: init.ParentID, Name: init.Name,
 				Size: init.Size, ChunkSize: DefaultUploadChunkSize, ChunkCount: 2,
 				SHA256: init.SHA256, ResumeKey: init.ResumeKey, Status: "active",
 				ExpiresAt: time.Now().Add(time.Hour),
-				Received:  []UploadPart{{Index: 0, Size: DefaultUploadChunkSize, SHA256: firstHash}},
+				Received:  []UploadPart{{Index: 0, Size: DefaultUploadChunkSize, SHA256: firstHash, Reused: true}},
 			})
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/uploads/upload-1/chunks/"):
 			indexText := strings.TrimPrefix(r.URL.Path, "/api/v1/uploads/upload-1/chunks/")

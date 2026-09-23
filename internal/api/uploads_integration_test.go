@@ -164,12 +164,79 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 		t.Fatalf("idempotent finalize=%+v", idempotent)
 	}
 
-	// Chunked overwrite publishes a new revision but preserves the old blob in version history.
+	// Same-file overwrite can reuse unchanged fixed blocks from the current
+	// revision. Only the changed middle chunk is uploaded over the network.
+	deltaData := append([]byte(nil), data...)
+	deltaData[chunkSize+17] ^= 0x7f
+	deltaHash := sha256Hex(deltaData)
+	deltaChunkHashes := []string{
+		sha256Hex(deltaData[:chunkSize]),
+		sha256Hex(deltaData[chunkSize : 2*chunkSize]),
+		sha256Hex(deltaData[2*chunkSize:]),
+	}
+	deltaInitJSON, err := json.Marshal(map[string]any{
+		"node_id":           node.ID,
+		"size":              len(deltaData),
+		"chunk_size":        chunkSize,
+		"sha256":            deltaHash,
+		"chunk_sha256":      deltaChunkHashes,
+		"resume_key":        deltaHash,
+		"expected_revision": node.Revision,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deltaInit := request(t, router, http.MethodPost, "/api/v1/uploads", token, bytes.NewReader(deltaInitJSON), http.StatusCreated)
+	var deltaSession uploadSessionDTO
+	if err := json.Unmarshal(deltaInit.Body.Bytes(), &deltaSession); err != nil {
+		t.Fatal(err)
+	}
+	if len(deltaSession.Received) != 2 {
+		t.Fatalf("expected 2 server-reused chunks, got %+v", deltaSession.Received)
+	}
+	reused := map[int]uploadPartDTO{}
+	for _, part := range deltaSession.Received {
+		reused[part.Index] = part
+		if !part.Reused {
+			t.Fatalf("chunk %d was prefilled but not marked reused: %+v", part.Index, part)
+		}
+	}
+	if reused[0].SHA256 != deltaChunkHashes[0] || reused[2].SHA256 != deltaChunkHashes[2] {
+		t.Fatalf("unexpected reused chunks: %+v", deltaSession.Received)
+	}
+	if _, ok := reused[1]; ok {
+		t.Fatalf("changed middle chunk was incorrectly reused: %+v", deltaSession.Received)
+	}
+
+	putPart(deltaSession.ID, 1, deltaData[chunkSize:2*chunkSize], deltaChunkHashes[1], http.StatusCreated)
+	deltaFinal := request(t, router, http.MethodPost, "/api/v1/uploads/"+deltaSession.ID+"/finalize", token, strings.NewReader(`{}`), http.StatusOK)
+	var deltaDone uploadSessionDTO
+	if err := json.Unmarshal(deltaFinal.Body.Bytes(), &deltaDone); err != nil {
+		t.Fatal(err)
+	}
+	if deltaDone.Result == nil || deltaDone.Result.Revision != 2 || deltaDone.Result.SHA256 != deltaHash {
+		t.Fatalf("delta overwrite=%+v", deltaDone.Result)
+	}
+	deltaDownload := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", node.ID), token, nil, http.StatusOK)
+	if !bytes.Equal(deltaDownload.Body.Bytes(), deltaData) {
+		t.Fatal("delta overwrite content differs from source")
+	}
+
+	var reusedRows int64
+	if err := db.Model(&meta.UploadPart{}).Where("session_id = ?", deltaSession.ID).Count(&reusedRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reusedRows != 0 {
+		t.Fatalf("finalized upload parts were not cleaned: %d", reusedRows)
+	}
+
+	// A subsequent chunked overwrite publishes another revision and preserves
+	// the delta revision in version history.
 	overwriteData := []byte("chunked-overwrite-version-two")
 	overwriteHash := sha256Hex(overwriteData)
 	overwriteBody := fmt.Sprintf(
 		`{"node_id":%d,"size":%d,"chunk_size":%d,"sha256":%q,"resume_key":%q,"expected_revision":%d}`,
-		node.ID, len(overwriteData), chunkSize, overwriteHash, overwriteHash, node.Revision,
+		node.ID, len(overwriteData), chunkSize, overwriteHash, overwriteHash, 2,
 	)
 	overwriteInit := request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(overwriteBody), http.StatusCreated)
 	var overwriteSession uploadSessionDTO
@@ -182,7 +249,7 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	if err := json.Unmarshal(overwriteFinal.Body.Bytes(), &overwritten); err != nil {
 		t.Fatal(err)
 	}
-	if overwritten.Result == nil || overwritten.Result.Revision != 2 || overwritten.Result.SHA256 != overwriteHash {
+	if overwritten.Result == nil || overwritten.Result.Revision != 3 || overwritten.Result.SHA256 != overwriteHash {
 		t.Fatalf("chunk overwrite=%+v", overwritten.Result)
 	}
 
@@ -190,7 +257,9 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	if err := db.Where("node_id = ?", node.ID).Order("revision ASC").Find(&history).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 1 || history[0].Revision != 1 || history[0].SHA256 != fullHash || history[0].Size != int64(len(data)) {
+	if len(history) != 2 ||
+		history[0].Revision != 1 || history[0].SHA256 != fullHash || history[0].Size != int64(len(data)) ||
+		history[1].Revision != 2 || history[1].SHA256 != deltaHash || history[1].Size != int64(len(deltaData)) {
 		t.Fatalf("history after chunk overwrite=%+v", history)
 	}
 	oldBlob, err := store.Open(context.Background(), history[0].StorageKey)
@@ -208,7 +277,7 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	staleData := []byte("stale-chunk-writer")
 	staleHash := sha256Hex(staleData)
 	staleBody := fmt.Sprintf(
-		`{"node_id":%d,"size":%d,"chunk_size":%d,"sha256":%q,"resume_key":"stale-%s","expected_revision":2}`,
+		`{"node_id":%d,"size":%d,"chunk_size":%d,"sha256":%q,"resume_key":"stale-%s","expected_revision":3}`,
 		node.ID, len(staleData), chunkSize, staleHash, staleHash,
 	)
 	staleInit := request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(staleBody), http.StatusCreated)
@@ -221,9 +290,9 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	winner := requestNodeWithHeaders(
 		t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", node.ID),
 		token, strings.NewReader("server-winner"), http.StatusOK,
-		map[string]string{"If-Match": `"2"`},
+		map[string]string{"If-Match": `"3"`},
 	)
-	if winner.Revision != 3 {
+	if winner.Revision != 4 {
 		t.Fatalf("winner revision=%d", winner.Revision)
 	}
 	request(t, router, http.MethodPost, "/api/v1/uploads/"+staleSession.ID+"/finalize", token, strings.NewReader(`{}`), http.StatusConflict)

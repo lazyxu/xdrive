@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -18,20 +19,22 @@ const DefaultUploadChunkSize int64 = 8 << 20
 type UploadProgress func(done, total int64)
 
 type UploadInit struct {
-	ParentID         *uint64 `json:"parent_id,omitempty"`
-	NodeID           *uint64 `json:"node_id,omitempty"`
-	Name             string  `json:"name,omitempty"`
-	Size             int64   `json:"size"`
-	ChunkSize        int64   `json:"chunk_size,omitempty"`
-	SHA256           string  `json:"sha256,omitempty"`
-	ResumeKey        string  `json:"resume_key,omitempty"`
-	ExpectedRevision uint64  `json:"expected_revision,omitempty"`
+	ParentID         *uint64  `json:"parent_id,omitempty"`
+	NodeID           *uint64  `json:"node_id,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Size             int64    `json:"size"`
+	ChunkSize        int64    `json:"chunk_size,omitempty"`
+	SHA256           string   `json:"sha256,omitempty"`
+	ChunkSHA256      []string `json:"chunk_sha256,omitempty"`
+	ResumeKey        string   `json:"resume_key,omitempty"`
+	ExpectedRevision uint64   `json:"expected_revision,omitempty"`
 }
 
 type UploadPart struct {
 	Index  int    `json:"index"`
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
+	Reused bool   `json:"reused,omitempty"`
 }
 
 type UploadSession struct {
@@ -133,17 +136,23 @@ func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, p
 	}
 	init.Size = stat.Size()
 
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	fullHash, chunkHashes, err := hashUploadFile(f, stat.Size(), init.ChunkSize)
+	if err != nil {
 		_ = f.Close()
 		return Node{}, fmt.Errorf("hash upload source: %w", err)
 	}
-	init.SHA256 = hex.EncodeToString(h.Sum(nil))
-	init.ResumeKey = init.SHA256
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
+	afterHash, err := f.Stat()
+	if err != nil {
 		_ = f.Close()
 		return Node{}, err
 	}
+	if afterHash.Size() != stat.Size() || !afterHash.ModTime().Equal(stat.ModTime()) {
+		_ = f.Close()
+		return Node{}, fmt.Errorf("upload source changed while hashing")
+	}
+	init.SHA256 = fullHash
+	init.ChunkSHA256 = chunkHashes
+	init.ResumeKey = init.SHA256
 	defer f.Close()
 
 	session, err := c.StartUpload(ctx, init)
@@ -160,6 +169,13 @@ func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, p
 	received := make(map[int]UploadPart, len(session.Received))
 	var done int64
 	for _, part := range session.Received {
+		if part.Index < 0 || part.Index >= len(chunkHashes) {
+			continue
+		}
+		expectedSize := uploadChunkSize(init.Size, session.ChunkSize, part.Index)
+		if part.Size != expectedSize || !strings.EqualFold(part.SHA256, chunkHashes[part.Index]) {
+			continue
+		}
 		received[part.Index] = part
 		done += part.Size
 	}
@@ -172,10 +188,7 @@ func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, p
 			continue
 		}
 		offset := int64(index) * session.ChunkSize
-		partSize := session.ChunkSize
-		if remain := session.Size - offset; remain < partSize {
-			partSize = remain
-		}
+		partSize := uploadChunkSize(session.Size, session.ChunkSize, index)
 		buf := make([]byte, int(partSize))
 		n, readErr := f.ReadAt(buf, offset)
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
@@ -186,6 +199,9 @@ func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, p
 		}
 		sum := sha256.Sum256(buf)
 		partHash := hex.EncodeToString(sum[:])
+		if !strings.EqualFold(partHash, chunkHashes[index]) {
+			return Node{}, fmt.Errorf("upload source changed after hashing at chunk %d", index)
+		}
 		part, err := c.putChunkRetry(ctx, session.ID, index, partHash, buf)
 		if err != nil {
 			return Node{}, err
@@ -210,6 +226,43 @@ func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, p
 		progress(init.Size, init.Size)
 	}
 	return *final.Result, nil
+}
+
+func hashUploadFile(f *os.File, size, chunkSize int64) (string, []string, error) {
+	if chunkSize <= 0 {
+		chunkSize = DefaultUploadChunkSize
+	}
+	count := 0
+	if size > 0 {
+		count = int((size + chunkSize - 1) / chunkSize)
+	}
+	hashes := make([]string, count)
+	full := sha256.New()
+	for index := 0; index < count; index++ {
+		partSize := uploadChunkSize(size, chunkSize, index)
+		buf := make([]byte, int(partSize))
+		n, err := f.ReadAt(buf, int64(index)*chunkSize)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", nil, err
+		}
+		if int64(n) != partSize {
+			return "", nil, fmt.Errorf("short read while hashing chunk %d: got %d want %d", index, n, partSize)
+		}
+		if _, err := full.Write(buf); err != nil {
+			return "", nil, err
+		}
+		sum := sha256.Sum256(buf)
+		hashes[index] = hex.EncodeToString(sum[:])
+	}
+	return hex.EncodeToString(full.Sum(nil)), hashes, nil
+}
+
+func uploadChunkSize(total, chunkSize int64, index int) int64 {
+	offset := int64(index) * chunkSize
+	if remain := total - offset; remain < chunkSize {
+		return remain
+	}
+	return chunkSize
 }
 
 func (c *Client) putChunkRetry(ctx context.Context, sessionID string, index int, hash string, data []byte) (UploadPart, error) {

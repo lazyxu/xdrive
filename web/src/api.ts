@@ -62,6 +62,7 @@ export interface UploadChunkState {
   index: number
   size: number
   sha256: string
+  reused?: boolean
 }
 
 export interface UploadSessionState {
@@ -265,6 +266,14 @@ export class XDriveApi {
 
   async upload(parentID: number, file: File, onProgress?: (percent: number) => void): Promise<Node> {
     const chunkSize = 8 * 1024 * 1024
+    const chunkCount = file.size === 0 ? 0 : Math.ceil(file.size / chunkSize)
+    const chunkHashes: string[] = []
+    for (let index = 0; index < chunkCount; index += 1) {
+      const start = index * chunkSize
+      const end = Math.min(file.size, start + chunkSize)
+      chunkHashes.push(await sha256Buffer(await file.slice(start, end).arrayBuffer()))
+    }
+
     const resumeKey = await sha256Buffer(
       new TextEncoder().encode(`${file.name}\n${file.size}\n${file.lastModified}`).buffer,
     )
@@ -275,6 +284,7 @@ export class XDriveApi {
         name: file.name,
         size: file.size,
         chunk_size: chunkSize,
+        chunk_sha256: chunkHashes,
         resume_key: resumeKey,
       }),
     })
@@ -289,15 +299,18 @@ export class XDriveApi {
     for (let index = 0; index < session.chunk_count; index += 1) {
       const start = index * session.chunk_size
       const end = Math.min(file.size, start + session.chunk_size)
-      const data = await file.slice(start, end).arrayBuffer()
-      const hash = await sha256Buffer(data)
+      const expectedSize = end - start
+      const hash = chunkHashes[index]
       const existing = received.get(index)
-      if (existing && existing.size === data.byteLength && existing.sha256 === hash) {
-        completed += data.byteLength
+      if (existing && existing.size === expectedSize && existing.sha256 === hash) {
+        completed += expectedSize
         onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
         continue
       }
 
+      const data = await file.slice(start, end).arrayBuffer()
+      const actualHash = await sha256Buffer(data)
+      if (actualHash !== hash) throw new Error(`File changed while uploading chunk ${index}`)
       await this.putUploadChunk(session.id, index, hash, data)
       completed += data.byteLength
       onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))

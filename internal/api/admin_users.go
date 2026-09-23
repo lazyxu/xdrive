@@ -363,7 +363,9 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 		_ = s.Store.Delete(c.Request.Context(), version.StorageKey)
 	}
 	for _, part := range uploadParts {
-		_ = s.Store.Delete(c.Request.Context(), part.StorageKey)
+		if !part.Reused {
+			_ = s.Store.Delete(c.Request.Context(), part.StorageKey)
+		}
 	}
 	c.Status(http.StatusNoContent)
 }

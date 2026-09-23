@@ -108,13 +108,16 @@ type UploadSession struct {
 func (UploadSession) TableName() string { return "xd_upload_sessions" }
 
 type UploadPart struct {
-	SessionID  string `gorm:"size:36;primaryKey"`
-	PartIndex  int    `gorm:"primaryKey"`
-	Size       int64  `gorm:"not null"`
-	SHA256     string `gorm:"size:64;not null"`
-	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	SessionID        string `gorm:"size:36;primaryKey"`
+	PartIndex        int    `gorm:"primaryKey"`
+	Size             int64  `gorm:"not null"`
+	SHA256           string `gorm:"size:64;not null"`
+	StorageKey       string `gorm:"size:1024;not null;uniqueIndex"`
+	Reused           bool   `gorm:"not null;default:false;index"`
+	SourceStorageKey string `gorm:"size:1024"`
+	SourceOffset     int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func (UploadPart) TableName() string { return "xd_upload_parts" }

@@ -34,20 +34,22 @@ var (
 )
 
 type uploadInitRequest struct {
-	ParentID         *uint64 `json:"parent_id,omitempty"`
-	NodeID           *uint64 `json:"node_id,omitempty"`
-	Name             string  `json:"name,omitempty"`
-	Size             int64   `json:"size"`
-	ChunkSize        int64   `json:"chunk_size,omitempty"`
-	SHA256           string  `json:"sha256,omitempty"`
-	ResumeKey        string  `json:"resume_key,omitempty"`
-	ExpectedRevision uint64  `json:"expected_revision,omitempty"`
+	ParentID         *uint64  `json:"parent_id,omitempty"`
+	NodeID           *uint64  `json:"node_id,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Size             int64    `json:"size"`
+	ChunkSize        int64    `json:"chunk_size,omitempty"`
+	SHA256           string   `json:"sha256,omitempty"`
+	ChunkSHA256      []string `json:"chunk_sha256,omitempty"`
+	ResumeKey        string   `json:"resume_key,omitempty"`
+	ExpectedRevision uint64   `json:"expected_revision,omitempty"`
 }
 
 type uploadPartDTO struct {
 	Index  int    `json:"index"`
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
+	Reused bool   `json:"reused,omitempty"`
 }
 
 type uploadSessionDTO struct {
@@ -99,6 +101,24 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		return
 	}
 
+	chunkCount := 0
+	if req.Size > 0 {
+		chunkCount = int((req.Size + req.ChunkSize - 1) / req.ChunkSize)
+	}
+	if len(req.ChunkSHA256) != 0 {
+		if len(req.ChunkSHA256) != chunkCount {
+			fail(c, http.StatusBadRequest, "chunk_sha256 count does not match file size")
+			return
+		}
+		for index, hash := range req.ChunkSHA256 {
+			req.ChunkSHA256[index] = strings.ToLower(strings.TrimSpace(hash))
+			if !validSHA256(req.ChunkSHA256[index]) {
+				fail(c, http.StatusBadRequest, "invalid chunk_sha256")
+				return
+			}
+		}
+	}
+
 	uid := userID(c)
 	_ = s.cleanupExpiredUploads(c.Request.Context(), uid)
 
@@ -129,6 +149,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 	}
 
+	var reuseSource *meta.File
 	if req.NodeID != nil {
 		n, err := s.ownedNode(uid, *req.NodeID, true)
 		if err != nil || n.Type != meta.NodeTypeFile || n.File == nil {
@@ -143,6 +164,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			revisionConflict(c, req.ExpectedRevision, n.Revision)
 			return
 		}
+		source := *n.File
+		reuseSource = &source
 		req.Name = n.Name
 	} else {
 		if _, err := s.ownedDirectory(uid, *req.ParentID); err != nil {
@@ -159,10 +182,6 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 	}
 
-	chunkCount := 0
-	if req.Size > 0 {
-		chunkCount = int((req.Size + req.ChunkSize - 1) / req.ChunkSize)
-	}
 	session := meta.UploadSession{
 		ID:               uuid.NewString(),
 		OwnerID:          uid,
@@ -178,7 +197,24 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		Status:           meta.UploadStatusActive,
 		ExpiresAt:        time.Now().Add(uploadSessionTTL),
 	}
-	if err := s.DB.Create(&session).Error; err != nil {
+	var reusable []meta.UploadPart
+	if reuseSource != nil && len(req.ChunkSHA256) != 0 {
+		var err error
+		reusable, err = s.reusableUploadParts(c.Request.Context(), session, *reuseSource, req.ChunkSHA256)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "prepare reusable chunks failed")
+			return
+		}
+	}
+	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&session).Error; err != nil {
+			return err
+		}
+		if len(reusable) != 0 {
+			return tx.Create(&reusable).Error
+		}
+		return nil
+	}); err != nil {
 		fail(c, http.StatusInternalServerError, "create upload session failed")
 		return
 	}
@@ -230,7 +266,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 	var existing meta.UploadPart
 	if err := s.DB.Where("session_id = ? AND part_index = ?", session.ID, index).First(&existing).Error; err == nil {
 		if existing.Size == expectedSize && strings.EqualFold(existing.SHA256, expectedHash) {
-			c.JSON(http.StatusOK, uploadPartDTO{Index: index, Size: existing.Size, SHA256: existing.SHA256})
+			c.JSON(http.StatusOK, uploadPartDTO{Index: index, Size: existing.Size, SHA256: existing.SHA256, Reused: existing.Reused})
 			return
 		}
 	}
@@ -259,6 +295,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 	}
 
 	oldKey := ""
+	oldReused := false
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		var current meta.UploadSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", session.ID, session.OwnerID).First(&current).Error; err != nil {
@@ -274,8 +311,11 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		findErr := tx.Where("session_id = ? AND part_index = ?", session.ID, index).First(&old).Error
 		if findErr == nil {
 			oldKey = old.StorageKey
+			oldReused = old.Reused
 			return tx.Model(&old).Updates(map[string]any{
-				"size": size, "sha256": actualHash, "storage_key": key, "updated_at": time.Now(),
+				"size": size, "sha256": actualHash, "storage_key": key,
+				"reused": false, "source_storage_key": "", "source_offset": 0,
+				"updated_at": time.Now(),
 			}).Error
 		}
 		if !errors.Is(findErr, gorm.ErrRecordNotFound) {
@@ -297,7 +337,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		}
 		return
 	}
-	if oldKey != "" && oldKey != key {
+	if oldKey != "" && oldKey != key && !oldReused {
 		_ = s.Store.Delete(c.Request.Context(), oldKey)
 	}
 	c.JSON(http.StatusCreated, uploadPartDTO{Index: index, Size: size, SHA256: actualHash})
@@ -490,7 +530,9 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 	for _, part := range parts {
-		_ = s.Store.Delete(c.Request.Context(), part.StorageKey)
+		if !part.Reused {
+			_ = s.Store.Delete(c.Request.Context(), part.StorageKey)
+		}
 	}
 	fresh, err := s.ownedUploadSession(session.OwnerID, session.ID)
 	if err != nil {
@@ -528,7 +570,7 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 		Received: make([]uploadPartDTO, 0, len(parts)),
 	}
 	for _, part := range parts {
-		out.Received = append(out.Received, uploadPartDTO{Index: part.PartIndex, Size: part.Size, SHA256: part.SHA256})
+		out.Received = append(out.Received, uploadPartDTO{Index: part.PartIndex, Size: part.Size, SHA256: part.SHA256, Reused: part.Reused})
 	}
 	if session.ResultNodeID != nil {
 		if n, err := s.ownedNode(session.OwnerID, *session.ResultNodeID, true); err == nil {
@@ -548,6 +590,53 @@ func (s *Server) ownedUploadSession(uid uint64, id string) (meta.UploadSession, 
 		return session, err
 	}
 	return session, nil
+}
+
+func (s *Server) reusableUploadParts(ctx context.Context, session meta.UploadSession, source meta.File, localHashes []string) ([]meta.UploadPart, error) {
+	if session.ChunkCount == 0 || source.Size <= 0 || len(localHashes) == 0 {
+		return nil, nil
+	}
+	f, err := s.Store.Open(ctx, source.StorageKey)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	sourceCount := int((source.Size + session.ChunkSize - 1) / session.ChunkSize)
+	limit := session.ChunkCount
+	if sourceCount < limit {
+		limit = sourceCount
+	}
+	parts := make([]meta.UploadPart, 0, limit)
+	for index := 0; index < limit; index++ {
+		sourceSize := session.ChunkSize
+		sourceOffset := int64(index) * session.ChunkSize
+		if remain := source.Size - sourceOffset; remain < sourceSize {
+			sourceSize = remain
+		}
+		targetSize := expectedPartSize(session, index)
+		if sourceSize != targetSize || targetSize <= 0 {
+			continue
+		}
+		h := sha256.New()
+		n, err := io.Copy(h, io.NewSectionReader(f, sourceOffset, sourceSize))
+		if err != nil {
+			return nil, err
+		}
+		if n != sourceSize {
+			return nil, fmt.Errorf("short read while hashing reusable chunk %d: got %d want %d", index, n, sourceSize)
+		}
+		actual := hex.EncodeToString(h.Sum(nil))
+		if !strings.EqualFold(actual, localHashes[index]) {
+			continue
+		}
+		parts = append(parts, meta.UploadPart{
+			SessionID: session.ID, PartIndex: index, Size: targetSize, SHA256: actual,
+			StorageKey: fmt.Sprintf(".xdrive-reuse/%d/%s/%06d", session.OwnerID, session.ID, index),
+			Reused:     true, SourceStorageKey: source.StorageKey, SourceOffset: sourceOffset,
+		})
+	}
+	return parts, nil
 }
 
 func expectedPartSize(session meta.UploadSession, index int) int64 {
@@ -610,7 +699,9 @@ func (s *Server) abortUploadSessionData(ctx context.Context, session meta.Upload
 		return err
 	}
 	for _, part := range parts {
-		_ = s.Store.Delete(ctx, part.StorageKey)
+		if !part.Reused {
+			_ = s.Store.Delete(ctx, part.StorageKey)
+		}
 	}
 	return nil
 }
@@ -629,7 +720,8 @@ type uploadPartSequence struct {
 	store   storage.Store
 	parts   []meta.UploadPart
 	index   int
-	current io.ReadCloser
+	current io.Reader
+	closer  io.Closer
 }
 
 func (r *uploadPartSequence) Read(p []byte) (int, error) {
@@ -638,17 +730,27 @@ func (r *uploadPartSequence) Read(p []byte) (int, error) {
 			if r.index >= len(r.parts) {
 				return 0, io.EOF
 			}
-			f, err := r.store.Open(r.ctx, r.parts[r.index].StorageKey)
-			if err != nil {
-				return 0, err
-			}
-			r.current = f
+			part := r.parts[r.index]
 			r.index++
+			if part.Reused {
+				f, err := r.store.Open(r.ctx, part.SourceStorageKey)
+				if err != nil {
+					return 0, err
+				}
+				r.current = io.NewSectionReader(f, part.SourceOffset, part.Size)
+				r.closer = f
+			} else {
+				f, err := r.store.Open(r.ctx, part.StorageKey)
+				if err != nil {
+					return 0, err
+				}
+				r.current = f
+				r.closer = f
+			}
 		}
 		n, err := r.current.Read(p)
 		if errors.Is(err, io.EOF) {
-			closeErr := r.current.Close()
-			r.current = nil
+			closeErr := r.closeCurrent()
 			if n > 0 {
 				return n, nil
 			}
@@ -661,11 +763,16 @@ func (r *uploadPartSequence) Read(p []byte) (int, error) {
 	}
 }
 
-func (r *uploadPartSequence) Close() error {
-	if r.current != nil {
-		err := r.current.Close()
-		r.current = nil
-		return err
+func (r *uploadPartSequence) closeCurrent() error {
+	var err error
+	if r.closer != nil {
+		err = r.closer.Close()
 	}
-	return nil
+	r.current = nil
+	r.closer = nil
+	return err
+}
+
+func (r *uploadPartSequence) Close() error {
+	return r.closeCurrent()
 }
