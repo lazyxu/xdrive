@@ -13,6 +13,8 @@ import (
 
 type Record struct {
 	ID             string    `json:"id"`
+	Server         string    `json:"server,omitempty"`
+	Username       string    `json:"username,omitempty"`
 	OriginalPath   string    `json:"original_path"`
 	ConflictPath   string    `json:"conflict_path"`
 	OriginalNodeID uint64    `json:"original_node_id,omitempty"`
