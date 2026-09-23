@@ -37,7 +37,7 @@ jobs:
         run: |
           cat .bootstrap/part-* | base64 -d > /tmp/xdrive-src.tar.gz
           tar -xzf /tmp/xdrive-src.tar.gz -C .
-          sed -i '/"path\\/filepath"/d' internal/mount/mount_linux.go
+          grep -vF '"path/filepath"' internal/mount/mount_linux.go > /tmp/mount_linux.go && mv /tmp/mount_linux.go internal/mount/mount_linux.go
           rm -rf .bootstrap
           rm -f BOOTSTRAP_TEST_FAILURE.log
           rm -f .github/workflows/bootstrap.yml
