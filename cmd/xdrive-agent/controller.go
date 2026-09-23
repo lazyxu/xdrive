@@ -262,6 +262,7 @@ func (c *agentController) Run() {
 						s.SyncStatus = "需要重新登录"
 						s.LastError = err.Error()
 					})
+					c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
 					return
 				}
 			}
@@ -293,6 +294,7 @@ func (c *agentController) Run() {
 					s.SyncStatus = "需要重新登录"
 					s.LastError = err.Error()
 				})
+				c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
 				return
 			}
 			c.setSnapshot(func(s *agentSnapshot) {
