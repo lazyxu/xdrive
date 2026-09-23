@@ -85,7 +85,7 @@ compose() {
 wait_postgres() {
   local i
   for i in $(seq 1 60); do
-    if compose exec -T postgres pg_isready -U xdrive -d xdrive >/dev/null 2>&1; then
+    if compose exec -T postgres pg_isready -h 127.0.0.1 -U xdrive -d xdrive >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
