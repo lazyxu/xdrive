@@ -69,7 +69,7 @@ run_case() {
   XDRIVE_TEST_FIXTURE="$FIXTURE" \
   XDRIVE_TEST_OUT="$out" \
   XD_CONFIG_DIR="$cfg" \
-    bash "$INSTALLER" "$@"
+    bash "$INSTALLER" "$@" >&2
   cat "$out"
 }
 
@@ -99,7 +99,7 @@ persisted="$(
   XDRIVE_TEST_FIXTURE="$FIXTURE" \
   XDRIVE_TEST_OUT="$TMP/persisted.out" \
   XD_CONFIG_DIR="$TMP/persisted" \
-    bash "$INSTALLER"
+    bash "$INSTALLER" >&2
   cat "$TMP/persisted.out"
 )"
 [[ "$persisted" == "master||$TMP/persisted" ]] || {
@@ -115,7 +115,7 @@ legacy="$(
   XDRIVE_TEST_FIXTURE="$FIXTURE" \
   XDRIVE_TEST_OUT="$TMP/legacy.out" \
   XD_CONFIG_DIR="$TMP/legacy" \
-    bash "$INSTALLER"
+    bash "$INSTALLER" >&2
   cat "$TMP/legacy.out"
 )"
 [[ "$legacy" == "master||$TMP/legacy" ]] || {
