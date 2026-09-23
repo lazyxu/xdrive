@@ -30,9 +30,8 @@ type winProvider struct {
 	root       string
 	connKey    int64
 	mu         sync.Mutex
-	baseline   map[string]winState
-	hydrated   map[uint64]time.Time
-	suppressed map[string]time.Time
+	baseline map[string]winState
+	hydrated map[uint64]time.Time
 }
 
 var activeWinProvider struct {
@@ -50,9 +49,8 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 	p := &winProvider{
 		cli:        cli,
 		root:       root,
-		baseline:   map[string]winState{},
-		hydrated:   map[uint64]time.Time{},
-		suppressed: map[string]time.Time{},
+		baseline: map[string]winState{},
+		hydrated: map[uint64]time.Time{},
 	}
 	activeWinProvider.Lock()
 	activeWinProvider.p = p
