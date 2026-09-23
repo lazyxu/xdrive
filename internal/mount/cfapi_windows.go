@@ -12,34 +12,34 @@ import (
 )
 
 var (
-	cldapi                 = windows.NewLazySystemDLL("cldapi.dll")
-	procRegisterSyncRoot   = cldapi.NewProc("CfRegisterSyncRoot")
-	procUnregisterSyncRoot = cldapi.NewProc("CfUnregisterSyncRoot")
-	procConnectSyncRoot    = cldapi.NewProc("CfConnectSyncRoot")
-	procDisconnectSyncRoot = cldapi.NewProc("CfDisconnectSyncRoot")
-	procCreatePlaceholders      = cldapi.NewProc("CfCreatePlaceholders")
-	procExecute                 = cldapi.NewProc("CfExecute")
-	procSetPinState             = cldapi.NewProc("CfSetPinState")
-	procHydratePlaceholder      = cldapi.NewProc("CfHydratePlaceholder")
-	procDehydratePlaceholder    = cldapi.NewProc("CfDehydratePlaceholder")
-	procConvertToPlaceholder    = cldapi.NewProc("CfConvertToPlaceholder")
-	procSetInSyncState          = cldapi.NewProc("CfSetInSyncState")
+	cldapi                   = windows.NewLazySystemDLL("cldapi.dll")
+	procRegisterSyncRoot     = cldapi.NewProc("CfRegisterSyncRoot")
+	procUnregisterSyncRoot   = cldapi.NewProc("CfUnregisterSyncRoot")
+	procConnectSyncRoot      = cldapi.NewProc("CfConnectSyncRoot")
+	procDisconnectSyncRoot   = cldapi.NewProc("CfDisconnectSyncRoot")
+	procCreatePlaceholders   = cldapi.NewProc("CfCreatePlaceholders")
+	procExecute              = cldapi.NewProc("CfExecute")
+	procSetPinState          = cldapi.NewProc("CfSetPinState")
+	procHydratePlaceholder   = cldapi.NewProc("CfHydratePlaceholder")
+	procDehydratePlaceholder = cldapi.NewProc("CfDehydratePlaceholder")
+	procConvertToPlaceholder = cldapi.NewProc("CfConvertToPlaceholder")
+	procSetInSyncState       = cldapi.NewProc("CfSetInSyncState")
 )
 
 const (
-	cfHydrationPolicyFull                    = 2
+	cfHydrationPolicyFull                     = 2
 	cfHydrationModifierAutoDehydrationAllowed = 0x0004
-	cfPopulationPolicyAlwaysFull             = 3
-	cfRegisterFlagUpdate         = 0x00000001
-	cfConnectFlagFullPath        = 0x00000004
-	cfPlaceholderMarkInSync      = 0x00000002
-	cfPlaceholderSupersede       = 0x00000004
-	cfCallbackFetchData          = 0
-	cfCallbackNone               = 0xffffffff
-	cfOperationTypeTransferData  = 0
-	cfConvertMarkInSync          = 0x00000001
-	cfInSyncStateInSync          = 1
-	fileAttributeNormal          = 0x00000080
+	cfPopulationPolicyAlwaysFull              = 3
+	cfRegisterFlagUpdate                      = 0x00000001
+	cfConnectFlagFullPath                     = 0x00000004
+	cfPlaceholderMarkInSync                   = 0x00000002
+	cfPlaceholderSupersede                    = 0x00000004
+	cfCallbackFetchData                       = 0
+	cfCallbackNone                            = 0xffffffff
+	cfOperationTypeTransferData               = 0
+	cfConvertMarkInSync                       = 0x00000001
+	cfInSyncStateInSync                       = 1
+	fileAttributeNormal                       = 0x00000080
 )
 
 type cfHydrationPolicy struct{ Primary, Modifier uint16 }
