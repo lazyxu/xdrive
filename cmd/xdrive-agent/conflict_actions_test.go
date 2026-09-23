@@ -11,10 +11,10 @@ import (
 )
 
 type fakeConflictClient struct {
-	remote       map[string]client.Node
-	deleted      []uint64
-	overwritten  uint64
-	overwriteRev uint64
+	remote        map[string]client.Node
+	deleted       []uint64
+	overwritten   uint64
+	overwriteRev  uint64
 	overwritePath string
 }
 
