@@ -4,6 +4,7 @@ import "context"
 
 type controlUI interface {
 	Open() error
+	OpenConflicts() error
 }
 
 func startAgentUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentController) error {
