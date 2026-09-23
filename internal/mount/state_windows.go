@@ -5,6 +5,7 @@ package mount
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -172,7 +173,7 @@ func openCloudPath(path string) (windows.Handle, bool, error) {
 }
 
 func walkCloudFiles(path string, fn func(string) error) error {
-	info, err := filepath.Stat(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
