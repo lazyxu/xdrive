@@ -118,7 +118,7 @@ run_case master --channel master
 [[ "$(env_value "$TMP/master" XD_RELEASE_CHANNEL)" == "master" ]]
 [[ "$(env_value "$TMP/master" XD_SERVER_IMAGE)" == "ghcr.io/lazyxu/xdrive-server:sha-$SHORT_SHA" ]]
 [[ "$(env_value "$TMP/master" XD_WEB_IMAGE)" == "ghcr.io/lazyxu/xdrive-web:sha-$SHORT_SHA" ]]
-grep -q "Resolved master snapshot: $SHORT_SHA" "$TMP/master.out"
+grep -q "Resolved latest fully published master snapshot: $SHORT_SHA" "$TMP/master.out"
 
 run_case commit --commit abcdef0
 [[ "$(env_value "$TMP/commit" XD_RELEASE_CHANNEL)" == "commit" ]]

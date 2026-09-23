@@ -92,7 +92,7 @@ XD_INSTALL_NO_START=1 \
 bash "$INSTALLER" >"$TMP/ok.out" 2>"$TMP/ok.err"
 
 grep -q '\[xDrive\] \[1/9\] resolve release channel' "$TMP/ok.out"
-grep -q 'Resolved master snapshot: 0123456789ab' "$TMP/ok.out"
+grep -q 'Resolved latest fully published master snapshot: 0123456789ab' "$TMP/ok.out"
 grep -q '\[xDrive\] \[9/9\] complete' "$TMP/ok.out"
 grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
 grep -q "XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
@@ -130,8 +130,9 @@ if grep -q 'unresolved deployment template' "$TMP/fail.err"; then
   exit 1
 fi
 
-# Existing deployments may have a stale .env password while the managed
-# PostgreSQL container and data volume still use the original credential.
+# Existing deployments may have a stale .env password while PostgreSQL is
+# healthy. Reproduce the production failure: the managed container still exists
+# under its conventional Compose name, but Docker-network password auth fails.
 mkdir -p "$TMP/bin-upgrade" "$TMP/config-upgrade"
 cp "$TMP/bin-ok/curl" "$TMP/bin-upgrade/curl"
 
@@ -139,42 +140,60 @@ cat > "$TMP/bin-upgrade/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 args="$*"
+printf '%s\n' "$args" >> "$TEST_STATE/docker-calls"
 
 if [[ "$#" -ge 2 && "$1" == "compose" && "$2" == "version" ]]; then
   echo "Docker Compose version v2.test"
   exit 0
 fi
-if [[ "$1" == "ps" && "$args" == *"com.docker.compose.service=postgres"* ]]; then
-  echo "pg123"
+
+# Conventional Compose container names must be detected even when label lookup
+# is unavailable.
+if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" != *"--format"* ]]; then
   exit 0
 fi
-if [[ "$1" == "ps" && "$args" == *"com.docker.compose.service=server"* ]]; then
-  echo "srv123"
+if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" != *"--format"* ]]; then
   exit 0
 fi
-if [[ "$1" == "inspect" && "$2" == "pg123" && "$args" == *".State.Running"* ]]; then
+if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".State.Running"* ]]; then
   echo "true"
   exit 0
 fi
-if [[ "$1" == "inspect" && "$2" == "pg123" && "$args" == *".Config.Env"* ]]; then
-  echo "POSTGRES_PASSWORD=legacy-db-password"
+if [[ "$1" == "inspect" && "$2" == "xdrive-postgres-1" && "$args" == *".Config.Env"* ]]; then
+  echo "POSTGRES_PASSWORD=stale-db-password"
   exit 0
 fi
-if [[ "$1" == "inspect" && "$2" == "srv123" && "$args" == *".Config.Env"* ]]; then
+if [[ "$1" == "inspect" && "$2" == "xdrive-server-1" && "$args" == *".Config.Env"* ]]; then
   echo "XD_JWT_SECRET=legacy-jwt-secret"
   exit 0
 fi
+
 if [[ "$1" == "exec" && "$args" == *"pg_isready"* ]]; then
   exit 0
 fi
-if [[ "$1" == "exec" && "$args" == *"PGPASSWORD=stale-db-password"* && "$args" == *"psql -h 127.0.0.1"* ]]; then
+
+# Bridge-address authentication fails with the stale password until the local
+# socket repair has changed the database role.
+if [[ "$1" == "exec" && "$args" == *"PGPASSWORD=stale-db-password"* && "$args" == *"hostname -i"* ]]; then
+  if [[ -f "$TEST_STATE/password-repaired" ]]; then
+    exit 0
+  fi
   exit 1
 fi
-if [[ "$1" == "exec" && "$args" == *"PGPASSWORD=legacy-db-password"* && "$args" == *"psql -h 127.0.0.1"* ]]; then
+
+# Local Unix-socket access remains available to the managed PostgreSQL
+# superuser, allowing a safe ALTER ROLE without touching the data volume.
+if [[ "$1" == "exec" && "$args" == *"psql -U xdrive -d xdrive -Atqc SELECT 1"* ]]; then
   exit 0
 fi
+if [[ "$1" == "exec" && "$2" == "-i" && "$args" == *"psql -U xdrive -d xdrive -v ON_ERROR_STOP=1"* ]]; then
+  cat >/dev/null
+  touch "$TEST_STATE/password-repaired"
+  exit 0
+fi
+
 if [[ "$1" == "compose" && "$args" == *" ps -q server"* ]]; then
-  echo "srv123"
+  echo "xdrive-server-1"
   exit 0
 fi
 
@@ -198,6 +217,7 @@ echo "mock pre-upgrade backup"
 SH
 chmod +x "$TMP/config-upgrade/server-backup.sh"
 
+rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
 if ! TEST_STATE="$TMP/state" \
 PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config-upgrade" \
@@ -207,12 +227,15 @@ bash "$INSTALLER" >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"; then
   echo "upgrade recovery scenario failed" >&2
   cat "$TMP/upgrade.out" >&2 || true
   cat "$TMP/upgrade.err" >&2 || true
+  echo "docker calls:" >&2
+  cat "$TMP/state/docker-calls" >&2 || true
   exit 1
 fi
 
-grep -q '^POSTGRES_PASSWORD=legacy-db-password$' "$TMP/config-upgrade/.env"
+test -f "$TMP/state/password-repaired"
+grep -q '^POSTGRES_PASSWORD=stale-db-password$' "$TMP/config-upgrade/.env"
 grep -q '^XD_JWT_SECRET=legacy-jwt-secret$' "$TMP/config-upgrade/.env"
-grep -q 'Recovered PostgreSQL password from the existing xDrive container.' "$TMP/upgrade.out"
+grep -q 'Repaired the managed PostgreSQL role password to match xDrive configuration and verified Docker-network authentication.' "$TMP/upgrade.out"
 grep -q 'Recovered JWT secret from the existing xDrive server container.' "$TMP/upgrade.out"
 grep -q 'Existing xDrive deployment detected; creating pre-upgrade backup...' "$TMP/upgrade.out"
 
