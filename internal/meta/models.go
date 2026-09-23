@@ -62,6 +62,7 @@ type File struct {
 	NodeID     uint64 `gorm:"primaryKey"`
 	Size       int64  `gorm:"not null"`
 	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
+	SHA256     string `gorm:"size:64;index"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
@@ -74,10 +75,49 @@ type FileVersion struct {
 	Revision   uint64 `gorm:"not null;uniqueIndex:idx_xd_file_versions_node_revision"`
 	Size       int64  `gorm:"not null"`
 	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
+	SHA256     string `gorm:"size:64;index"`
 	CreatedAt  time.Time
 }
 
 func (FileVersion) TableName() string { return "xd_file_versions" }
+
+const (
+	UploadStatusActive    = "active"
+	UploadStatusFinalized = "finalized"
+)
+
+type UploadSession struct {
+	ID               string  `gorm:"size:36;primaryKey"`
+	OwnerID          uint64  `gorm:"not null;index"`
+	ParentID         *uint64 `gorm:"index"`
+	NodeID           *uint64 `gorm:"index"`
+	Name             string  `gorm:"size:255"`
+	ExpectedRevision uint64
+	TotalSize        int64  `gorm:"not null"`
+	ChunkSize        int64  `gorm:"not null"`
+	ChunkCount       int    `gorm:"not null"`
+	SHA256           string `gorm:"size:64;index"`
+	ResumeKey        string `gorm:"size:128;index"`
+	Status           string `gorm:"size:16;not null;index"`
+	ResultNodeID     *uint64
+	ExpiresAt        time.Time `gorm:"not null;index"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func (UploadSession) TableName() string { return "xd_upload_sessions" }
+
+type UploadPart struct {
+	SessionID  string `gorm:"size:36;primaryKey"`
+	PartIndex  int    `gorm:"primaryKey"`
+	Size       int64  `gorm:"not null"`
+	SHA256     string `gorm:"size:64;not null"`
+	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (UploadPart) TableName() string { return "xd_upload_parts" }
 
 var reservedWindowsNames = map[string]struct{}{
 	"CON": {}, "PRN": {}, "AUX": {}, "NUL": {},

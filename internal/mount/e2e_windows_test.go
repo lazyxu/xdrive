@@ -5,10 +5,11 @@ package mount
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,16 +28,27 @@ type e2eEntry struct {
 	content []byte
 }
 
+type e2eUpload struct {
+	session client.UploadSession
+	init    client.UploadInit
+	chunks  map[int][]byte
+	hashes  map[int]string
+}
+
 type e2eAPI struct {
-	mu      sync.Mutex
-	nextID  uint64
-	entries map[uint64]*e2eEntry
+	mu         sync.Mutex
+	nextID     uint64
+	nextUpload int
+	entries    map[uint64]*e2eEntry
+	uploads    map[string]*e2eUpload
 }
 
 func newE2EAPI() *e2eAPI {
 	now := time.Now()
 	return &e2eAPI{
-		nextID: 3,
+		nextID:     3,
+		nextUpload: 1,
+		uploads:    map[string]*e2eUpload{},
 		entries: map[uint64]*e2eEntry{
 			1: {node: client.Node{ID: 1, Name: "", Type: "dir", Revision: 1, CreatedAt: now, UpdatedAt: now}},
 			2: {node: client.Node{ID: 2, ParentID: uint64ptr(1), Name: "remote.txt", Type: "file", Size: 9, Revision: 1, CreatedAt: now, UpdatedAt: now}, content: []byte("remote-v1")},
@@ -45,6 +57,13 @@ func newE2EAPI() *e2eAPI {
 }
 
 func uint64ptr(v uint64) *uint64 { return &v }
+
+func sameUint64Ptr(a, b *uint64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
 
 func (a *e2eAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -67,6 +86,179 @@ func (a *e2eAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		a.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(out)
+	case r.Method == http.MethodPost && path == "/uploads":
+		var init client.UploadInit
+		if err := json.NewDecoder(r.Body).Decode(&init); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		a.mu.Lock()
+		for _, upload := range a.uploads {
+			if upload.init.ResumeKey == init.ResumeKey &&
+				upload.init.Size == init.Size &&
+				upload.init.ExpectedRevision == init.ExpectedRevision &&
+				sameUint64Ptr(upload.init.ParentID, init.ParentID) &&
+				sameUint64Ptr(upload.init.NodeID, init.NodeID) &&
+				upload.init.Name == init.Name {
+				out := upload.session
+				out.Received = make([]client.UploadPart, 0, len(upload.hashes))
+				for index, hash := range upload.hashes {
+					out.Received = append(out.Received, client.UploadPart{Index: index, Size: int64(len(upload.chunks[index])), SHA256: hash})
+				}
+				a.mu.Unlock()
+				_ = json.NewEncoder(w).Encode(out)
+				return
+			}
+		}
+		id := fmt.Sprintf("upload-%d", a.nextUpload)
+		a.nextUpload++
+		chunkSize := init.ChunkSize
+		if chunkSize == 0 {
+			chunkSize = client.DefaultUploadChunkSize
+		}
+		count := 0
+		if init.Size > 0 {
+			count = int((init.Size + chunkSize - 1) / chunkSize)
+		}
+		session := client.UploadSession{
+			ID: id, ParentID: init.ParentID, NodeID: init.NodeID, Name: init.Name,
+			Size: init.Size, ChunkSize: chunkSize, ChunkCount: count, SHA256: init.SHA256,
+			ResumeKey: init.ResumeKey, ExpectedRevision: init.ExpectedRevision,
+			Status: "active", ExpiresAt: time.Now().Add(time.Hour),
+		}
+		a.uploads[id] = &e2eUpload{session: session, init: init, chunks: map[int][]byte{}, hashes: map[int]string{}}
+		a.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(session)
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/uploads/"):
+		id := strings.TrimPrefix(path, "/uploads/")
+		a.mu.Lock()
+		upload := a.uploads[id]
+		if upload == nil {
+			a.mu.Unlock()
+			http.NotFound(w, r)
+			return
+		}
+		out := upload.session
+		out.Received = make([]client.UploadPart, 0, len(upload.hashes))
+		for index, hash := range upload.hashes {
+			out.Received = append(out.Received, client.UploadPart{Index: index, Size: int64(len(upload.chunks[index])), SHA256: hash})
+		}
+		a.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(out)
+	case r.Method == http.MethodPut && strings.HasPrefix(path, "/uploads/") && strings.Contains(path, "/chunks/"):
+		rest := strings.TrimPrefix(path, "/uploads/")
+		parts := strings.Split(rest, "/chunks/")
+		if len(parts) != 2 {
+			http.Error(w, "bad chunk path", http.StatusBadRequest)
+			return
+		}
+		index, err := strconv.Atoi(parts[1])
+		if err != nil {
+			http.Error(w, "bad chunk index", http.StatusBadRequest)
+			return
+		}
+		data, _ := io.ReadAll(r.Body)
+		sum := sha256.Sum256(data)
+		actual := hex.EncodeToString(sum[:])
+		if actual != r.Header.Get("X-Chunk-SHA256") {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "chunk_hash_mismatch"})
+			return
+		}
+		a.mu.Lock()
+		upload := a.uploads[parts[0]]
+		if upload == nil || index < 0 || index >= upload.session.ChunkCount {
+			a.mu.Unlock()
+			http.NotFound(w, r)
+			return
+		}
+		upload.chunks[index] = append([]byte(nil), data...)
+		upload.hashes[index] = actual
+		a.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(client.UploadPart{Index: index, Size: int64(len(data)), SHA256: actual})
+	case r.Method == http.MethodPost && strings.HasPrefix(path, "/uploads/") && strings.HasSuffix(path, "/finalize"):
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "/uploads/"), "/finalize")
+		a.mu.Lock()
+		upload := a.uploads[id]
+		if upload == nil {
+			a.mu.Unlock()
+			http.NotFound(w, r)
+			return
+		}
+		if upload.session.Status == "finalized" {
+			out := upload.session
+			a.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(out)
+			return
+		}
+		var assembled []byte
+		for index := 0; index < upload.session.ChunkCount; index++ {
+			chunk, ok := upload.chunks[index]
+			if !ok {
+				a.mu.Unlock()
+				w.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "upload_incomplete"})
+				return
+			}
+			assembled = append(assembled, chunk...)
+		}
+		full := sha256.Sum256(assembled)
+		fullHash := hex.EncodeToString(full[:])
+		if upload.init.SHA256 != "" && fullHash != upload.init.SHA256 {
+			a.mu.Unlock()
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "file_hash_mismatch"})
+			return
+		}
+		now := time.Now()
+		if upload.init.NodeID != nil {
+			entry := a.entries[*upload.init.NodeID]
+			if entry == nil {
+				a.mu.Unlock()
+				http.NotFound(w, r)
+				return
+			}
+			if entry.node.Revision != upload.init.ExpectedRevision {
+				current := entry.node.Revision
+				expected := upload.init.ExpectedRevision
+				a.mu.Unlock()
+				w.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": "revision_conflict", "expected_revision": expected, "current_revision": current})
+				return
+			}
+			entry.content = assembled
+			entry.node.Size = int64(len(assembled))
+			entry.node.SHA256 = fullHash
+			entry.node.Revision++
+			entry.node.UpdatedAt = now
+			result := entry.node
+			upload.session.Status = "finalized"
+			upload.session.SHA256 = fullHash
+			upload.session.Result = &result
+		} else {
+			nodeID := a.nextID
+			a.nextID++
+			result := client.Node{
+				ID: nodeID, ParentID: upload.init.ParentID, Name: upload.init.Name,
+				Type: "file", Size: int64(len(assembled)), Revision: 1, SHA256: fullHash,
+				CreatedAt: now, UpdatedAt: now,
+			}
+			a.entries[nodeID] = &e2eEntry{node: result, content: assembled}
+			upload.session.Status = "finalized"
+			upload.session.SHA256 = fullHash
+			upload.session.Result = &result
+		}
+		out := upload.session
+		a.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(out)
+	case r.Method == http.MethodDelete && strings.HasPrefix(path, "/uploads/"):
+		id := strings.TrimPrefix(path, "/uploads/")
+		a.mu.Lock()
+		delete(a.uploads, id)
+		a.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodPost && strings.HasPrefix(path, "/nodes/") && strings.HasSuffix(path, "/files"):
 		id, ok := parseE2EID(strings.TrimSuffix(strings.TrimPrefix(path, "/nodes/"), "/files"))
 		if !ok {
@@ -317,7 +509,3 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		t.Fatal("provider did not stop")
 	}
 }
-
-// Keep multipart imported in this platform-tagged E2E file so future upload
-// extensions can share the same fake server without changing its build shape.
-var _ = multipart.ErrMessageTooLarge

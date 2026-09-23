@@ -288,6 +288,7 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 
 	var files []meta.File
 	var versions []meta.FileVersion
+	var uploadParts []meta.UploadPart
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var target meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, id).Error; err != nil {
@@ -324,6 +325,21 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 				return err
 			}
 		}
+		var uploadSessionIDs []string
+		if err := tx.Model(&meta.UploadSession{}).Where("owner_id = ?", id).Pluck("id", &uploadSessionIDs).Error; err != nil {
+			return err
+		}
+		if len(uploadSessionIDs) != 0 {
+			if err := tx.Where("session_id IN ?", uploadSessionIDs).Find(&uploadParts).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("session_id IN ?", uploadSessionIDs).Delete(&meta.UploadPart{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", uploadSessionIDs).Delete(&meta.UploadSession{}).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Where("user_id = ?", id).Delete(&meta.RefreshToken{}).Error; err != nil {
 			return err
 		}
@@ -345,6 +361,9 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 	}
 	for _, version := range versions {
 		_ = s.Store.Delete(c.Request.Context(), version.StorageKey)
+	}
+	for _, part := range uploadParts {
+		_ = s.Store.Delete(c.Request.Context(), part.StorageKey)
 	}
 	c.Status(http.StatusNoContent)
 }

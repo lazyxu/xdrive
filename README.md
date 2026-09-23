@@ -155,6 +155,7 @@ It checks current `xd_files.storage_key` **and historical `xd_file_versions.stor
 
 - database references whose blob is missing;
 - blob size mismatches;
+- SHA-256 mismatches for current or historical blobs that have a recorded content hash;
 - duplicate metadata references to the same blob key;
 - orphan blobs that exist on disk but have no current or historical database reference.
 
@@ -270,7 +271,7 @@ Windows uses a **hybrid online-on-demand + bidirectional metadata/content sync**
 - opening a placeholder hydrates the byte ranges Windows requests from the server;
 - once hydrated, the content currently remains cached locally; xDrive does not yet automatically dehydrate old files;
 - local new files/directories are created on the server;
-- local file modifications are uploaded as complete files;
+- local file modifications use resumable 8 MiB chunks with per-chunk SHA-256 and server-side whole-file SHA-256;
 - local deletions are propagated to the server;
 - Web/API-side creates, changes and deletes are reconciled back into the sync root roughly every 3 seconds;
 - concurrent stale writes are rejected by server revisions; the desktop preserves the stale local version as a conflict copy instead of silently overwriting the server winner.
@@ -314,7 +315,7 @@ Change the background mount path with:
 xd config --mount /path/to/xDrive
 ```
 
-Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folder**. It presents the remote tree as a mounted filesystem. Opening an existing file downloads it into a temporary local cache; reads/writes operate there, and dirty content is uploaded as one complete file on flush/release. It does not proactively download the entire drive.
+Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folder**. It presents the remote tree as a mounted filesystem. Opening an existing file downloads it into a temporary local cache; reads/writes operate there, and dirty content is uploaded through the same resumable 8 MiB chunk protocol on flush/release. It does not proactively download the entire drive.
 
 ## Client version checks and automatic updates
 
@@ -435,6 +436,13 @@ POST   /api/v1/trash/:id/restore
 DELETE /api/v1/trash/:id
 GET    /api/v1/files/:id/content
 PUT    /api/v1/files/:id/content
+
+POST   /api/v1/uploads
+GET    /api/v1/uploads/:id
+PUT    /api/v1/uploads/:id/chunks/:index
+POST   /api/v1/uploads/:id/finalize
+DELETE /api/v1/uploads/:id
+
 GET    /api/v1/files/:id/versions
 GET    /api/v1/files/:id/versions/:versionID/content
 POST   /api/v1/files/:id/versions/:versionID/restore
@@ -450,6 +458,55 @@ POST   /api/v1/admin/users/:id/revoke-sessions
 Existing-node mutations use revision preconditions via `If-Match`; node JSON includes `revision`, and file downloads expose the same revision as an `ETag`.
 
 Downloads support HTTP Range requests, which are also used by the Windows hydration path.
+
+## Resumable chunked uploads
+
+Desktop and Web file uploads use fixed-size resumable upload sessions instead of one giant HTTP request.
+
+The default chunk size is **8 MiB**; the server accepts chunk sizes from 4 MiB through 16 MiB:
+
+```text
+create/resume session
+        ↓
+query received chunks + hashes
+        ↓
+PUT only missing/mismatched chunks
+        ↓
+finalize
+        ↓
+stream chunks into the final blob
+        ↓
+verify whole-file SHA-256
+        ↓
+atomically publish metadata
+```
+
+Each chunk is sent with:
+
+```http
+X-Chunk-SHA256: <64 hex chars>
+```
+
+The server validates the expected chunk length and SHA-256 before recording the part. Chunk PUTs are idempotent, so a lost response can be retried safely.
+
+Windows and Linux calculate the full local-file SHA-256 before starting a session and use it as the resume key. If an agent or process restarts with the same content, the server returns the existing upload session and only missing chunks are transferred. The Web UI uses file name, size, and last-modified metadata as its resume key, but recomputes every local chunk SHA-256 before trusting a previously uploaded chunk.
+
+Finalize is also idempotent. A client that loses a successful finalize response can reconnect for up to 24 hours and recover the already-created result rather than create a duplicate. Expired upload-session metadata and temporary chunk blobs are cleaned by the upload janitor.
+
+For overwrites, finalize still performs the existing node-revision compare-and-swap. If another writer changes the file while chunks are uploading, finalize returns `409 revision_conflict` and does not replace the newer server content. On a successful overwrite, the previous current blob is moved into **file version history** before the assembled blob becomes current, so resumable upload does not bypass recovery/history semantics.
+
+File metadata can expose a server-verified content hash:
+
+```json
+{
+  "size": 10737418240,
+  "sha256": "..."
+}
+```
+
+Downloads expose the same value as `X-Content-SHA256`. Storage verification checks recorded SHA-256 values for both current files and historical versions. In-progress chunks live below `.xdrive-uploads/` and are intentionally excluded from orphan-blob reporting until their sessions expire, finalize, or are aborted.
+
+This first phase is **fixed-block resumable transfer**, not content-defined chunking or cross-file deduplication. A modified large file can resume interrupted transfer at chunk granularity; deduplicating unchanged blocks across different file revisions remains a later optimization.
 
 ## Conflict protection
 
@@ -591,14 +648,13 @@ deploy/
 
 ## Roadmap
 
-1. resumable/chunked upload and content hashing;
-2. instant upload/deduplication;
-3. code-signed Windows installer and richer tray notifications;
-4. richer CfAPI pin/dehydrate/offline controls;
-5. small-file packing;
-6. macOS File Provider integration;
-7. thumbnails/EXIF/media processing;
-8. sharing and richer retention/version policies.
+1. instant upload/deduplication and block reuse across revisions;
+2. code-signed Windows installer and richer tray notifications;
+3. richer CfAPI pin/dehydrate/offline controls;
+4. small-file packing;
+5. macOS File Provider integration;
+6. thumbnails/EXIF/media processing;
+7. sharing and richer retention/version policies.
 
 ## License
 

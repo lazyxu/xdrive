@@ -1,8 +1,11 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -54,6 +57,7 @@ type nodeDTO struct {
 	Type      string     `json:"type"`
 	Size      int64      `json:"size"`
 	Revision  uint64     `json:"revision"`
+	SHA256    string     `json:"sha256,omitempty"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
@@ -63,6 +67,7 @@ func toNodeDTO(n meta.Node) nodeDTO {
 	d := nodeDTO{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Type: n.Type, Revision: n.Revision, DeletedAt: n.DeletedAt, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt}
 	if n.File != nil {
 		d.Size = n.File.Size
+		d.SHA256 = n.File.SHA256
 	}
 	return d
 }
@@ -323,18 +328,20 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 		return
 	}
 	key := storageKey(userID(c), logical, uuid.NewString())
-	size, err := s.Store.Put(c.Request.Context(), key, r)
+	h := sha256.New()
+	size, err := s.Store.Put(c.Request.Context(), key, io.TeeReader(r, h))
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "storage write failed")
 		return
 	}
+	contentHash := hex.EncodeToString(h.Sum(nil))
 	var n meta.Node
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		n = meta.Node{ParentID: &parent.ID, Name: fh.Filename, Type: meta.NodeTypeFile, OwnerID: userID(c)}
 		if err := tx.Create(&n).Error; err != nil {
 			return err
 		}
-		return tx.Create(&meta.File{NodeID: n.ID, Size: size, StorageKey: key}).Error
+		return tx.Create(&meta.File{NodeID: n.ID, Size: size, StorageKey: key, SHA256: contentHash}).Error
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
@@ -369,6 +376,9 @@ func (s *Server) downloadFile(c *gin.Context) {
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(n.Name))
 	c.Header("ETag", fmt.Sprintf("\"%d\"", n.Revision))
+	if n.File.SHA256 != "" {
+		c.Header("X-Content-SHA256", n.File.SHA256)
+	}
 	http.ServeContent(c.Writer, c.Request, n.Name, n.File.UpdatedAt, f)
 }
 
@@ -399,12 +409,14 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	}
 	newKey := storageKey(userID(c), logical, uuid.NewString())
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.MaxUploadBytes)
-	size, err := s.Store.Put(c.Request.Context(), newKey, c.Request.Body)
+	h := sha256.New()
+	size, err := s.Store.Put(c.Request.Context(), newKey, io.TeeReader(c.Request.Body, h))
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "storage write failed")
 		return
 	}
 
+	contentHash := hex.EncodeToString(h.Sum(nil))
 	var currentRevision uint64
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		var current meta.Node
@@ -422,12 +434,12 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		}
 		now := time.Now()
 		if err := tx.Create(&meta.FileVersion{
-			NodeID: id, Revision: current.Revision, Size: file.Size, StorageKey: file.StorageKey, CreatedAt: now,
+			NodeID: id, Revision: current.Revision, Size: file.Size, StorageKey: file.StorageKey, SHA256: file.SHA256, CreatedAt: now,
 		}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&meta.File{}).Where("node_id = ?", id).Updates(map[string]any{
-			"size": size, "storage_key": newKey, "updated_at": now,
+			"size": size, "storage_key": newKey, "sha256": contentHash, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
