@@ -258,16 +258,27 @@ The client config is stored under the operating system's user config directory. 
 
 ## Authentication
 
-xDrive currently uses first-party username/password authentication:
+xDrive uses first-party username/password authentication with **rotating Access Token + Refresh Token sessions**:
 
-1. registration sends the username/password to `POST /api/v1/auth/register`; the server stores only a bcrypt password hash;
-2. login sends the username/password to `POST /api/v1/auth/login`;
-3. a successful login returns an HS256 JWT containing the user's ID and expiry;
-4. authenticated API calls send that JWT as `Authorization: Bearer <token>`.
+1. registration/login sends the username/password over HTTPS to `/api/v1/auth/register` or `/api/v1/auth/login`; the server stores only a bcrypt password hash;
+2. a successful login returns a short-lived HS256 access JWT plus a long-lived opaque refresh token;
+3. authenticated file/API calls send the access token as `Authorization: Bearer <access-token>`;
+4. before the access token expires, Windows, Linux and the Web UI call `POST /api/v1/auth/refresh` automatically;
+5. every successful refresh rotates the refresh token: the old token is revoked and a new access/refresh pair is returned;
+6. logout calls `POST /api/v1/auth/logout` to revoke the current refresh session before local credentials are removed.
 
-The default JWT lifetime is 24 hours (`XD_JWT_TTL`). The desktop client stores the server URL, username, JWT and mount settings in the current user's xDrive config; it **does not store the password**. When the token expires, the Windows tray reports **登录已过期** and the user can re-authenticate from **账户 / 设置...**.
+Defaults:
 
-This MVP does not yet implement refresh tokens, OAuth/OIDC, SSO, MFA, or server-side session revocation. Use HTTPS for any non-local deployment.
+```text
+XD_ACCESS_TOKEN_TTL=15m
+XD_REFRESH_TOKEN_TTL=720h   # 30 days
+```
+
+The refresh token is random and opaque. The server stores only its SHA-256 hash in PostgreSQL, never the raw refresh token. Desktop clients persist the current access/refresh pair and token expiry in the current user's xDrive config; the **password is never stored**. The Linux and Windows clients share the same refresh logic, so mounted sessions renew without interrupting FUSE/CfAPI under normal operation.
+
+For migration, pre-refresh JWTs are still accepted until they expire, and the login response retains the legacy `token` field as an alias of `access_token`.
+
+This MVP does not yet implement OAuth/OIDC, SSO or MFA. Use HTTPS for any non-local deployment.
 
 ## HTTP API
 
@@ -282,6 +293,8 @@ Main routes:
 ```text
 POST   /api/v1/auth/register
 POST   /api/v1/auth/login
+POST   /api/v1/auth/refresh
+POST   /api/v1/auth/logout
 GET    /api/v1/me
 GET    /api/v1/nodes/root
 GET    /api/v1/nodes/:id/children

@@ -22,6 +22,8 @@ services:
       XD_LISTEN_ADDR: :8080
       XD_DATABASE_URL: postgres://xdrive:${POSTGRES_PASSWORD}@postgres:5432/xdrive?sslmode=disable
       XD_JWT_SECRET: ${XD_JWT_SECRET:?set XD_JWT_SECRET in ~/.xd/.env}
+      XD_ACCESS_TOKEN_TTL: ${XD_ACCESS_TOKEN_TTL:-15m}
+      XD_REFRESH_TOKEN_TTL: ${XD_REFRESH_TOKEN_TTL:-720h}
       XD_STORAGE_ROOT: /data
       XD_ALLOWED_ORIGIN: ${XD_ALLOWED_ORIGIN:-http://localhost:3000}
       XD_MAX_UPLOAD_BYTES: ${XD_MAX_UPLOAD_BYTES:-21474836480}
