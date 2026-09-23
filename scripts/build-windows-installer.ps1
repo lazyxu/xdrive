@@ -62,7 +62,12 @@ function Sign-Artifact([string]$Path) {
         return
     }
 
-    & $SignTool sign /fd SHA256 /td SHA256 /tr $TimestampUrl /f $SigningPfxPath /p $SigningPassword $Path
+    $SignArgs = @("sign", "/fd", "SHA256", "/f", $SigningPfxPath, "/p", $SigningPassword)
+    if (-not [string]::IsNullOrWhiteSpace($TimestampUrl)) {
+        $SignArgs += @("/td", "SHA256", "/tr", $TimestampUrl)
+    }
+    $SignArgs += $Path
+    & $SignTool @SignArgs
     if ($LASTEXITCODE -ne 0) {
         throw "signing failed: $Path"
     }
@@ -92,6 +97,21 @@ try {
 
     Sign-Artifact (Join-Path $Source "xd.exe")
     Sign-Artifact (Join-Path $Source "xdrive-agent.exe")
+
+    $IconSource = Join-Path $Root "packaging\windows\icons"
+    $IconTarget = Join-Path $Source "icons"
+    if (-not (Test-Path $IconSource)) {
+        throw "Windows tray icon assets are missing: $IconSource"
+    }
+    New-Item -ItemType Directory -Force $IconTarget | Out-Null
+    Copy-Item (Join-Path $IconSource "*.ico") $IconTarget
+    $ExpectedIcons = @("normal", "syncing", "paused", "offline", "conflict")
+    foreach ($state in $ExpectedIcons) {
+        $icon = Join-Path $IconTarget "tray-$state.ico"
+        if (-not (Test-Path $icon)) {
+            throw "Windows tray icon asset missing: $icon"
+        }
+    }
 
     Copy-Item README.md, LICENSE $Source
 } finally {
