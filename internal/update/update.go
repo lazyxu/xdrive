@@ -271,6 +271,19 @@ func (c Checker) release(ctx context.Context, path, current string) (releaseResp
 	return rel, nil
 }
 
+func validCommitRef(ref string) bool {
+	ref = strings.TrimSpace(ref)
+	if len(ref) < 7 || len(ref) > 40 {
+		return false
+	}
+	for _, r := range ref {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 func snapshotVersion(sha string) string {
 	sha = strings.ToLower(strings.TrimSpace(sha))
 	if len(sha) > 12 {
@@ -281,8 +294,8 @@ func snapshotVersion(sha string) string {
 
 func (c Checker) resolveCommit(ctx context.Context, commit, current string) (string, error) {
 	commit = strings.TrimSpace(commit)
-	if commit == "" {
-		return "", fmt.Errorf("commit update channel requires a commit SHA")
+	if !validCommitRef(commit) {
+		return "", fmt.Errorf("commit must be 7-40 hexadecimal characters")
 	}
 	url := fmt.Sprintf("%s/repos/%s/commits/%s", c.APIBase, c.Repository, commit)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
