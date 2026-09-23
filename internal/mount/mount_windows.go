@@ -143,7 +143,7 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 			scheduleLocalRetry()
 			return false
 		}
-		emitEvent(Event{Kind: EventSyncCompleted})
+		emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
 		return true
 	}
 	queueLocal := func(change winLocalChange) {
