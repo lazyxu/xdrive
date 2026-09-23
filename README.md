@@ -95,7 +95,7 @@ The default development credentials in Compose are only for the bundled PostgreS
 
 Requirements:
 
-- Go 1.23+
+- Go 1.25+
 - PostgreSQL
 
 Create a database, then:
