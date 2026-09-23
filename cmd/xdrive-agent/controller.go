@@ -112,7 +112,7 @@ func (c *agentController) Run() {
 					s.LastError = ""
 				}
 			})
-			if notifyComplete {
+			if notifyComplete && event.Notify {
 				c.notify(agentNotification{Title: "xDrive", Body: "同步完成", Kind: "info"})
 			}
 		case mount.EventSyncFailed:
