@@ -23,12 +23,12 @@ type Client struct {
 	Token   string
 	HTTP    *http.Client
 
-	sessionMu       sync.RWMutex
-	refreshMu       sync.Mutex
-	refreshToken    string
-	accessExpiresAt time.Time
+	sessionMu        sync.RWMutex
+	refreshMu        sync.Mutex
+	refreshToken     string
+	accessExpiresAt  time.Time
 	refreshExpiresAt time.Time
-	onTokens        func(SessionTokens) error
+	onTokens         func(SessionTokens) error
 }
 
 type Node struct {

@@ -30,9 +30,9 @@ func main() {
 	}
 	srv := &api.Server{
 		DB: db, Store: store,
-		Auth: auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
-		RefreshTTL: cfg.RefreshTokenTTL,
-		AllowedOrigin: cfg.AllowedOrigin,
+		Auth:           auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
+		RefreshTTL:     cfg.RefreshTokenTTL,
+		AllowedOrigin:  cfg.AllowedOrigin,
 		MaxUploadBytes: cfg.MaxUploadBytes,
 	}
 	log.Printf("xDrive server listening on %s", cfg.ListenAddr)

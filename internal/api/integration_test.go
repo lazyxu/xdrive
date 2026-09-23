@@ -164,7 +164,6 @@ func requestWithHeaders(t *testing.T, h http.Handler, method, path, token string
 	return res
 }
 
-
 func TestRefreshTokenRotationAndLogout(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {

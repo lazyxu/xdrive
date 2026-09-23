@@ -57,7 +57,6 @@ func TestAPIErrorAndIdentity(t *testing.T) {
 	}
 }
 
-
 func TestSessionRefreshBeforeRequest(t *testing.T) {
 	var refreshed bool
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

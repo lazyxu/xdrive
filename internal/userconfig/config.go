@@ -147,7 +147,6 @@ func EffectiveMountPath(cfg Config) (string, error) {
 	return filepath.Join(home, "xDrive"), nil
 }
 
-
 func (cfg *Config) ApplyAuth(resp client.AuthResponse, newSession bool) {
 	tokens := resp.Session(time.Now())
 	cfg.Token = tokens.AccessToken
@@ -167,9 +166,9 @@ func NewClient(cfg Config) *client.Client {
 		access = cfg.Token
 	}
 	tokens := client.SessionTokens{
-		AccessToken: access,
-		RefreshToken: cfg.RefreshToken,
-		AccessExpiresAt: cfg.AccessExpiresAt,
+		AccessToken:      access,
+		RefreshToken:     cfg.RefreshToken,
+		AccessExpiresAt:  cfg.AccessExpiresAt,
 		RefreshExpiresAt: cfg.RefreshExpiresAt,
 	}
 	return client.NewSession(cfg.Server, tokens, func(next client.SessionTokens) error {

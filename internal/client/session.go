@@ -34,13 +34,13 @@ func (a AuthResponse) Session(now time.Time) SessionTokens {
 
 func NewSession(baseURL string, tokens SessionTokens, onTokens func(SessionTokens) error) *Client {
 	return &Client{
-		BaseURL:           strings.TrimRight(baseURL, "/"),
-		Token:             tokens.AccessToken,
-		HTTP:              &http.Client{Timeout: 0},
-		refreshToken:      tokens.RefreshToken,
-		accessExpiresAt:   tokens.AccessExpiresAt,
-		refreshExpiresAt:  tokens.RefreshExpiresAt,
-		onTokens:          onTokens,
+		BaseURL:          strings.TrimRight(baseURL, "/"),
+		Token:            tokens.AccessToken,
+		HTTP:             &http.Client{Timeout: 0},
+		refreshToken:     tokens.RefreshToken,
+		accessExpiresAt:  tokens.AccessExpiresAt,
+		refreshExpiresAt: tokens.RefreshExpiresAt,
+		onTokens:         onTokens,
 	}
 }
 
