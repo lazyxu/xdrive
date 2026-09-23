@@ -26,12 +26,12 @@ type winState struct {
 }
 
 type winProvider struct {
-	cli      *client.Client
-	root     string
-	connKey  int64
-	mu       sync.Mutex
-	baseline map[string]winState
-	hydrated  map[uint64]time.Time
+	cli        *client.Client
+	root       string
+	connKey    int64
+	mu         sync.Mutex
+	baseline   map[string]winState
+	hydrated   map[uint64]time.Time
 	suppressed map[string]time.Time
 }
 
