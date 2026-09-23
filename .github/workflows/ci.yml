@@ -67,6 +67,12 @@ jobs:
           bash -n scripts/test-server-backup-restore.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
           XD_DOMAIN=drive.example.test docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
+
+          backup_line="$(grep -n 'creating pre-upgrade backup' deploy/install-server.sh | head -n1 | cut -d: -f1)"
+          image_line="$(grep -n '^set_env XD_SERVER_IMAGE ' deploy/install-server.sh | head -n1 | cut -d: -f1)"
+          test -n "$backup_line" -a -n "$image_line"
+          test "$backup_line" -lt "$image_line"
+          grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
       - name: Validate server image
         run: docker build -t xdrive/server:test .
       - name: Backup, corruption detection, and restore drill
