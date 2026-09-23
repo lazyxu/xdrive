@@ -16,7 +16,12 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 )
 
-const winSuppressDuration = 5 * time.Second
+const (
+	winSuppressDuration = 5 * time.Second
+	winHydrationGrace   = 1 * time.Second
+)
+
+var errWindowsHydrationSettling = errors.New("Windows placeholder hydration is still settling")
 
 func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalChange) error {
 	changes := collapseWindowsChanges(raw)
@@ -276,11 +281,11 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 	if base.node.Type != "file" {
 		return nil
 	}
-	if t, ok := hydrated[base.node.ID]; ok && time.Since(t) < 5*time.Second {
-		return nil
-	}
 	if entry.size == base.localSize && entry.modTime.Equal(base.localModTime) {
 		return nil
+	}
+	if t, ok := hydrated[base.node.ID]; ok && time.Since(t) < winHydrationGrace {
+		return errWindowsHydrationSettling
 	}
 
 	node, err := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, nil)
@@ -362,7 +367,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		}
 
 		if exists && localExists && !info.IsDir() && base.node.Type == "file" {
-			if t, ok := hydrated[base.node.ID]; !ok || time.Since(t) >= 5*time.Second {
+			if t, ok := hydrated[base.node.ID]; !ok || time.Since(t) >= winHydrationGrace {
 				if info.Size() != base.localSize || !info.ModTime().Equal(base.localModTime) {
 					if err := p.syncLocalFile(ctx, rel, info, baseline, hydrated); err != nil {
 						return err
