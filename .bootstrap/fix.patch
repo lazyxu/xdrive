@@ -1,0 +1,31 @@
+--- a/internal/api/handlers.go
++++ b/internal/api/handlers.go
+@@ -302,7 +302,7 @@
+ 			return err
+ 		}
+ 		return tx.Model(&meta.Node{}).Where("id = ?", n.ID).Update("updated_at", now).Error
+-	}).Error; err != nil {
++	}); err != nil {
+ 		fail(c, http.StatusInternalServerError, "could not update metadata")
+ 		return
+ 	}
+--- a/internal/mount/mount_linux.go
++++ b/internal/mount/mount_linux.go
+@@ -156,7 +156,7 @@
+ 	return errnoFrom(n.cli.Delete(ctx, child.ID))
+ }
+ 
+-func (n *linuxNode) Rename(ctx context.Context, name string, newParent *fs.Inode, newName string, flags uint32) syscall.Errno {
++func (n *linuxNode) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
+ 	if flags != 0 {
+ 		return syscall.ENOTSUP
+ 	}
+@@ -164,7 +164,7 @@
+ 	if errno != 0 {
+ 		return errno
+ 	}
+-	parentOps, ok := newParent.Operations().(*linuxNode)
++	parentOps, ok := newParent.(*linuxNode)
+ 	if !ok {
+ 		return syscall.EXDEV
+ 	}
