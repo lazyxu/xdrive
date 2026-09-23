@@ -96,6 +96,8 @@ grep -q 'Resolved master snapshot: 0123456789ab' "$TMP/ok.out"
 grep -q '\[xDrive\] \[9/9\] complete' "$TMP/ok.out"
 grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
 grep -q "XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
+grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
+grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/.env"
 grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
 
 if grep -q '/releases/download/snapshot/xdrive-server-install.sh$' "$TMP/state/urls"; then

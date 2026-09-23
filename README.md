@@ -57,10 +57,10 @@ Before running the one-line installer, the server needs:
 - `curl` or `wget`;
 - outbound HTTPS access to GitHub/GHCR and Docker Hub;
 - enough disk space for PostgreSQL plus uploaded file blobs;
-- for public HTTPS, a domain whose DNS resolves to the server and inbound TCP 80/443 reachable from the Internet;
+- for public HTTPS, a domain managed by AliDNS, API credentials allowed to edit its DNS records, and inbound TCP 8443 (or your configured `XD_HTTPS_PORT`) reachable from clients;
 - enough host resources for the configured container limits.
 
-No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose runs PostgreSQL and the optional Caddy HTTPS reverse proxy for xDrive.
+No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose runs PostgreSQL and the optional xDrive Caddy image with the AliDNS DNS-01 module. DNS-01 certificate issuance does not require inbound ports 80 or 443.
 
 ### One-line install from `master` / edge images
 
@@ -84,14 +84,18 @@ curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/d
   bash -s -- --channel commit --commit 0123456789ab
 ```
 
-The bootstrap downloads the selected published `xdrive-server-install.sh` plus `SHA256SUMS.txt`, verifies the script checksum, and only then runs it. The `master` channel uses the rolling successful `snapshot` release and exact `sha-<commit>` container images rather than the mutable `edge` tag. The `commit` channel requires the immutable `snapshot-<sha12>` release, so commits without a complete successful published build are rejected.
+The raw bootstrap resolves the selected successfully published release/commit in-process and downloads deployment assets from that exact source. The `master` channel uses the rolling successful `snapshot` release and exact `sha-<commit>` container images rather than the mutable `edge` tag. The `commit` channel requires the immutable `snapshot-<sha12>` release, so commits without a complete successful published build are rejected.
 
-On an interactive terminal the resolved installer asks for the public domain. If DNS is already configured, the fully non-interactive HTTPS form is still one command:
+On an interactive terminal the installer asks for the public domain plus the AliDNS AccessKey ID/Secret. For a fully non-interactive DNS-01 + 8443 deployment:
 
 ```bash
 curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
-  XD_DOMAIN=drive.example.com bash -s -- --channel stable
+  XD_DOMAIN=drive.example.com XD_HTTPS_PORT=8443 \
+  ALIYUN_ACCESS_KEY_ID=your-key-id ALIYUN_ACCESS_KEY_SECRET=your-key-secret \
+  bash -s -- --channel stable
 ```
+
+Use a RAM user/key scoped to DNS record management rather than a broad account key.
 
 Leave the domain blank for HTTP/private-network mode. Other overrides use the same pipe-to-`bash` form, for example:
 
@@ -109,16 +113,16 @@ The installer:
 3. stages the new Compose/Caddy/maintenance files;
 4. on upgrades, creates a verified **pre-upgrade backup before replacing deployment files**;
 5. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
-6. pulls the xDrive server/Web images and, when a domain is configured, Caddy;
+6. pulls the xDrive server/Web images and, when a domain is configured, the `xdrive-caddy` image containing the AliDNS plugin;
 7. starts PostgreSQL, waits for database/API/Web health checks, and applies log rotation plus CPU/memory/PID limits;
-8. for a public domain, obtains/renews the TLS certificate automatically and waits until the real HTTPS health endpoint succeeds;
+8. for a public domain, obtains/renews the TLS certificate through AliDNS DNS-01 and waits until the real HTTPS health endpoint succeeds on `XD_HTTPS_PORT`;
 9. installs a scheduled backup job when `crontab` is available, with retention and overlap protection;
 10. if no administrator exists, securely prompts on the terminal to create the first administrator.
 
-With a configured domain the endpoint is simply:
+With a configured domain and the default external HTTPS port the endpoint is:
 
 ```text
-https://drive.example.com
+https://drive.example.com:8443
 ```
 
 Without a domain, xDrive runs in HTTP/private mode on `XD_WEB_PORT` (default 3000).
@@ -162,7 +166,7 @@ Data is persisted in Docker volumes:
 - `xdrive_file-data`: uploaded file blobs;
 - `xdrive_caddy-data` / `xdrive_caddy-config`: Caddy certificate/account state when HTTPS is enabled.
 
-For production, set `XD_DOMAIN`, point DNS at the server, and allow inbound TCP 80/443. The bundled Caddy service handles reverse proxying and certificate renewal; no hand-written reverse-proxy configuration is required.
+For production, set `XD_DOMAIN`, provide `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`, point the domain at the server, and allow inbound TCP `XD_HTTPS_PORT` (default 8443). The bundled Caddy service uses AliDNS DNS-01 for certificate issuance/renewal, so inbound 80/443 are not required for ACME. No hand-written reverse-proxy configuration is required.
 
 ### Backup, restore, and storage consistency
 
@@ -694,6 +698,8 @@ scripts/
   server-verify.sh
   test-server-backup-restore.sh
 deploy/
+  Caddy.Dockerfile          Caddy + AliDNS DNS-01 module
+  Caddyfile
   docker-compose.yml
   install-server.sh
 .github/workflows/

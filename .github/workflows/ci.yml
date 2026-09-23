@@ -80,6 +80,7 @@ jobs:
           XD_JWT_SECRET: ci-jwt-secret-that-is-long-enough
           XD_SERVER_IMAGE: ghcr.io/lazyxu/xdrive-server:edge
           XD_WEB_IMAGE: ghcr.io/lazyxu/xdrive-web:edge
+          XD_CADDY_IMAGE: ghcr.io/lazyxu/xdrive-caddy:edge
         run: |
           bash -n deploy/install-server.sh
           bash -n scripts/server-backup.sh
@@ -95,7 +96,7 @@ jobs:
           bash -n scripts/test-update-channels.sh
           bash scripts/test-update-channels.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
-          XD_DOMAIN=drive.example.test docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
+          XD_DOMAIN=drive.example.test XD_HTTPS_PORT=8443 ALIYUN_ACCESS_KEY_ID=ci-key ALIYUN_ACCESS_KEY_SECRET=ci-secret docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
 
           generated="$(mktemp)"
           sed \
@@ -112,6 +113,9 @@ jobs:
           grep -q 'tags="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
           grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
           grep -q 'target_tag="edge"' .github/workflows/release.yml
+          grep -q 'xdrive-caddy' .github/workflows/release.yml
+          grep -q '8443}:443/tcp' deploy/docker-compose.yml
+          grep -q 'dns alidns' deploy/Caddyfile
           if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
             echo "server image jobs must not publish edge before the full bundle succeeds" >&2
             exit 1
@@ -124,6 +128,10 @@ jobs:
           grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
       - name: Validate server image
         run: docker build -t xdrive/server:test .
+      - name: Validate Caddy AliDNS image
+        run: |
+          docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
+          docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
       - name: Backup, corruption detection, and restore drill
         run: bash scripts/test-server-backup-restore.sh
 
