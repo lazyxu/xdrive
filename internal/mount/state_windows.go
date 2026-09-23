@@ -63,26 +63,29 @@ func makeOnlineOnly(path string) error {
 
 func availabilityPlatform(path string) (FileAvailability, error) {
 	path = filepath.Clean(path)
-	p, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return FileAvailability{}, err
-	}
-	attrs, err := windows.GetFileAttributes(p)
+	state, attrs, err := placeholderState(path)
 	if err != nil {
 		return FileAvailability{}, err
 	}
 	pinned := attrs&fileAttrPinned != 0
 	unpinned := attrs&fileAttrUnpinned != 0
+	placeholder := state&(cfPlaceholderStatePlaceholder|cfPlaceholderStateSyncRoot) != 0
+	inSync := !placeholder || state&cfPlaceholderStateInSync != 0
+	partiallyOnDisk := state&cfPlaceholderStatePartiallyOnDisk != 0
 	recall := attrs&(fileAttrOffline|fileAttrRecallOnOpen|fileAttrRecallOnDataAccess) != 0
-	placeholder := pinned || unpinned || recall
-	onlineOnly := unpinned && recall
+	availableOffline := !placeholder || (!partiallyOnDisk && !recall)
+	onlineOnly := placeholder && unpinned
+	syncing := placeholder && !inSync
+
 	mode := "local"
 	switch {
+	case syncing:
+		mode = "syncing"
 	case pinned:
 		mode = "always-local"
 	case onlineOnly:
 		mode = "online-only"
-	case recall:
+	case placeholder && !availableOffline:
 		mode = "cloud"
 	case placeholder:
 		mode = "local"
@@ -93,8 +96,27 @@ func availabilityPlatform(path string) (FileAvailability, error) {
 		Placeholder:      placeholder,
 		Pinned:           pinned,
 		OnlineOnly:       onlineOnly,
-		AvailableOffline: !recall,
+		AvailableOffline: availableOffline,
+		InSync:           inSync,
+		Syncing:          syncing,
 	}, nil
+}
+
+func placeholderState(path string) (uintptr, uint32, error) {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	var data windows.Win32finddata
+	h, err := windows.FindFirstFile(p, &data)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := windows.FindClose(h); err != nil {
+		return 0, 0, err
+	}
+	state, _, _ := procGetPlaceholderState.Call(uintptr(data.FileAttributes), uintptr(data.Reserved0))
+	return state, data.FileAttributes, nil
 }
 
 func setPinPath(path string, state uint32, recurse bool) error {
