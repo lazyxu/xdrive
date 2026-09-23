@@ -57,6 +57,7 @@ jobs:
         run: |
           bash -n deploy/install-server.sh
           bash -n scripts/server-backup.sh
+          bash -n scripts/server-backup-scheduled.sh
           bash -n scripts/server-restore.sh
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-backup-restore.sh
@@ -79,10 +80,11 @@ jobs:
       - run: go test ./internal/...
       - name: Windows CfAPI E2E
         run: go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
-      - name: Validate real-machine E2E script
+      - name: Validate Windows PowerShell scripts
         shell: pwsh
         run: |
           $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
+          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
       - run: go build -o xd.exe ./cmd/xd
       - run: go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
       - name: Install Inno Setup
