@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -447,19 +446,18 @@ func appendTrayItem(menu, flags, id uintptr, text string) {
 }
 
 func trayVisualState(s agentSnapshot) (string, uintptr, string) {
-	switch {
-	case s.HasConflict:
-		return "conflict", trayIDIWarning, "xDrive · 存在冲突"
-	case s.Paused:
-		return "paused", trayIDIWarning, "xDrive · 已暂停"
-	case !s.Configured || s.AuthStatus == "未登录":
-		return "offline", trayIDIError, "xDrive · 未登录"
-	case s.AuthStatus != "已登录" || strings.Contains(s.SyncStatus, "失败") || strings.Contains(s.SyncStatus, "不可用") || strings.Contains(s.SyncStatus, "错误"):
-		return "offline", trayIDIError, "xDrive · 离线"
-	case s.SyncStatus == "正在同步" || strings.Contains(s.SyncStatus, "启动") || strings.Contains(s.SyncStatus, "恢复"):
-		return "syncing", trayIDIApplication, "xDrive · 同步中"
+	visual := classifyTrayState(s)
+	switch visual.Key {
+	case "conflict":
+		return visual.Key, trayIDIWarning, visual.Tip
+	case "paused":
+		return visual.Key, trayIDIWarning, visual.Tip
+	case "offline":
+		return visual.Key, trayIDIError, visual.Tip
+	case "syncing":
+		return visual.Key, trayIDIApplication, visual.Tip
 	default:
-		return "normal", trayIDIInfo, "xDrive · 正常"
+		return "normal", trayIDIInfo, visual.Tip
 	}
 }
 
