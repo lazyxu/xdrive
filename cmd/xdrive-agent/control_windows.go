@@ -10,9 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 )
 
@@ -163,7 +161,9 @@ func (h *controlHandler) redirect(w http.ResponseWriter, r *http.Request, messag
 }
 
 func (h *controlHandler) login(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.Authenticate(r.FormValue("server"), r.FormValue("username"), r.FormValue("password"), r.FormValue("mount")); err != nil {
 		h.redirect(w, r, "登录失败："+err.Error())
 		return
@@ -172,7 +172,9 @@ func (h *controlHandler) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controlHandler) password(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.ChangePassword(r.FormValue("current_password"), r.FormValue("new_password")); err != nil {
 		h.redirect(w, r, "修改密码失败："+err.Error())
 		return
@@ -181,7 +183,9 @@ func (h *controlHandler) password(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controlHandler) mount(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.SaveMountPath(r.FormValue("mount")); err != nil {
 		h.redirect(w, r, "修改同步目录失败："+err.Error())
 		return
@@ -190,7 +194,9 @@ func (h *controlHandler) mount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controlHandler) pause(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.TogglePause(); err != nil {
 		h.redirect(w, r, "操作失败："+err.Error())
 		return
@@ -199,7 +205,9 @@ func (h *controlHandler) pause(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controlHandler) sync(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.SyncNow(); err != nil {
 		h.redirect(w, r, "立即同步失败："+err.Error())
 		return
@@ -208,24 +216,30 @@ func (h *controlHandler) sync(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controlHandler) fileAction(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	action := r.FormValue("action")
 	if err := h.ctrl.SetFileAvailability(r.FormValue("path"), action); err != nil {
 		h.redirect(w, r, "文件状态操作失败："+err.Error())
 		return
 	}
 	message := map[string]string{
-		"keep": "已设为始终保留在此设备。",
+		"keep":    "已设为始终保留在此设备。",
 		"release": "已释放本地空间，文件保留在云端。",
-		"online": "已设为仅在线。",
-		"sync": "已开始立即同步。",
+		"online":  "已设为仅在线。",
+		"sync":    "已开始立即同步。",
 	}[action]
-	if message == "" { message = "文件状态已更新。" }
+	if message == "" {
+		message = "文件状态已更新。"
+	}
 	h.redirect(w, r, message)
 }
 
 func (h *controlHandler) conflictOpen(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.OpenConflict(r.FormValue("id"), r.FormValue("mode") == "both"); err != nil {
 		h.redirect(w, r, "打开冲突失败："+err.Error())
 		return
@@ -234,7 +248,9 @@ func (h *controlHandler) conflictOpen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controlHandler) conflictResolve(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	choice := r.FormValue("choice")
 	if err := h.ctrl.ResolveConflict(r.FormValue("id"), choice); err != nil {
 		h.redirect(w, r, "解决冲突失败："+err.Error())
@@ -248,7 +264,9 @@ func (h *controlHandler) conflictResolve(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *controlHandler) logout(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.Logout(); err != nil {
 		h.redirect(w, r, "注销失败："+err.Error())
 		return
@@ -257,7 +275,9 @@ func (h *controlHandler) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *controlHandler) open(w http.ResponseWriter, r *http.Request) {
-	if !h.parse(w, r) { return }
+	if !h.parse(w, r) {
+		return
+	}
 	if err := h.ctrl.OpenFolder(); err != nil {
 		h.redirect(w, r, "打开 xDrive 失败："+err.Error())
 		return
@@ -379,8 +399,3 @@ form.inline{display:inline}.footer{font-size:12px;color:#98a2b3;margin-top:18px}
 <div class="footer">此页面仅监听 127.0.0.1，并使用当前 agent 会话随机令牌保护。密码不会保存到本地配置。</div>
 </div></body></html>`
 
-func controlEndpointPath() string {
-	base, err := os.UserConfigDir()
-	if err != nil { return "" }
-	return filepath.Join(base, "xdrive", "agent-control.json")
-}
