@@ -40,6 +40,9 @@ jobs:
 
   client-windows-amd64:
     runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -52,18 +55,14 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress -y
       - name: Prepare Windows code-signing certificate
-        if: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 != '' }}
+        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
         shell: pwsh
-        env:
-          XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
         run: |
           $path = Join-Path $env:RUNNER_TEMP "xdrive-codesign.pfx"
           [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
           "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build Windows client installer
         shell: pwsh
-        env:
-          XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
         run: |
           if ($env:GITHUB_REF_TYPE -eq "tag") {
             $version = $env:GITHUB_REF_NAME
@@ -75,7 +74,7 @@ jobs:
           }
           ./scripts/build-windows-installer.ps1 -Version $version -OutputDir release
       - name: Verify Windows Authenticode signatures
-        if: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 != '' }}
+        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
         shell: pwsh
         run: |
           $targets = @(
