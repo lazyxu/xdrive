@@ -148,21 +148,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download Linux client installer
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: client-linux-amd64
           path: release
-      - name: Download Windows client installer
-        uses: actions/download-artifact@v4
-        with:
-          name: client-windows-amd64
-          path: release
-      - name: Download server deployment assets
-        uses: actions/download-artifact@v4
-        with:
-          name: server-deploy
-          path: release
+          merge-multiple: true
       - name: Generate checksums
         shell: bash
         run: |
