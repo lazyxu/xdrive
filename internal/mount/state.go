@@ -7,6 +7,8 @@ type FileAvailability struct {
 	Pinned           bool
 	OnlineOnly       bool
 	AvailableOffline bool
+	InSync           bool
+	Syncing          bool
 }
 
 func KeepLocal(path string) error { return keepLocalPlatform(path) }
