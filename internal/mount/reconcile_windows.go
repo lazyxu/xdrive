@@ -286,7 +286,13 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 	if err != nil {
 		return err
 	}
-	emitEvent(Event{Kind: EventConflict, Path: conflictRel})
+	emitEvent(Event{
+			Kind:           EventConflict,
+			Path:           conflictRel,
+			OriginalPath:   rel,
+			OriginalNodeID: base.node.ID,
+			ConflictNodeID: conflictNode.ID,
+		})
 	if st, statErr := os.Stat(conflictAbs); statErr == nil {
 		baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
 	}
