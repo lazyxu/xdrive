@@ -75,13 +75,14 @@ services:
     pids_limit: ${XD_WEB_PIDS_LIMIT:-128}
 
   caddy:
-    image: caddy:2.10-alpine
+    image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
     profiles: ["https"]
     environment:
       XD_DOMAIN: ${XD_DOMAIN:-localhost}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
     ports:
-      - "${XD_HTTP_BIND:-0.0.0.0}:80:80"
-      - "${XD_HTTPS_BIND:-0.0.0.0}:443:443"
+      - "${XD_HTTPS_BIND:-0.0.0.0}:${XD_HTTPS_PORT:-8443}:443/tcp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

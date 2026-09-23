@@ -351,6 +351,23 @@ validate_domain() {
   fi
 }
 
+validate_port() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[0-9]+$ ]] || (( value < 1 || value > 65535 )); then
+    echo "xDrive server installer: XD_HTTPS_PORT must be an integer from 1 to 65535." >&2
+    return 1
+  fi
+}
+
+https_url() {
+  local domain="$1" port="$2"
+  if [[ "$port" == "443" ]]; then
+    printf 'https://%s\n' "$domain"
+  else
+    printf 'https://%s:%s\n' "$domain" "$port"
+  fi
+}
+
 stage 4 "prepare server configuration"
 touch "$ENV_PATH"
 chmod 600 "$ENV_PATH"
@@ -363,8 +380,10 @@ ensure_env XD_WEB_PORT "${XD_WEB_PORT:-3000}"
 ensure_env XD_ALLOWED_ORIGIN "${XD_ALLOWED_ORIGIN:-http://localhost:3000}"
 ensure_env XD_MAX_UPLOAD_BYTES "${XD_MAX_UPLOAD_BYTES:-21474836480}"
 ensure_env XD_DOMAIN "${XD_DOMAIN:-}"
-ensure_env XD_HTTP_BIND "${XD_HTTP_BIND:-0.0.0.0}"
 ensure_env XD_HTTPS_BIND "${XD_HTTPS_BIND:-0.0.0.0}"
+ensure_env XD_HTTPS_PORT "${XD_HTTPS_PORT:-8443}"
+ensure_env ALIYUN_ACCESS_KEY_ID "${ALIYUN_ACCESS_KEY_ID:-}"
+ensure_env ALIYUN_ACCESS_KEY_SECRET "${ALIYUN_ACCESS_KEY_SECRET:-}"
 ensure_env XD_POSTGRES_MEMORY_LIMIT "${XD_POSTGRES_MEMORY_LIMIT:-1g}"
 ensure_env XD_POSTGRES_CPU_LIMIT "${XD_POSTGRES_CPU_LIMIT:-1.0}"
 ensure_env XD_POSTGRES_PIDS_LIMIT "${XD_POSTGRES_PIDS_LIMIT:-256}"
@@ -390,8 +409,10 @@ else
   set_env XD_RELEASE_COMMIT ""
 fi
 domain="$(env_value XD_DOMAIN)"
+https_port="$(env_value XD_HTTPS_PORT)"
+validate_port "$https_port"
 if [[ -z "$domain" && -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" != "1" ]]; then
-  read -r -p "Public domain for automatic HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
+  read -r -p "Public domain for DNS-01 HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
   domain="${input_domain:-}"
   if [[ -n "$domain" ]]; then
     domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')"
@@ -402,7 +423,28 @@ fi
 
 if [[ -n "$domain" ]]; then
   validate_domain "$domain"
-  set_env XD_ALLOWED_ORIGIN "https://$domain"
+  alidns_key_id="$(env_value ALIYUN_ACCESS_KEY_ID)"
+  alidns_key_secret="$(env_value ALIYUN_ACCESS_KEY_SECRET)"
+  if [[ -z "$alidns_key_id" || -z "$alidns_key_secret" ]]; then
+    if [[ -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" != "1" ]]; then
+      if [[ -z "$alidns_key_id" ]]; then
+        read -r -p "AliDNS AccessKey ID: " alidns_key_id </dev/tty
+        [[ -n "$alidns_key_id" ]] || { echo "AliDNS AccessKey ID cannot be empty." >&2; exit 1; }
+        set_env ALIYUN_ACCESS_KEY_ID "$alidns_key_id"
+      fi
+      if [[ -z "$alidns_key_secret" ]]; then
+        read -r -s -p "AliDNS AccessKey Secret: " alidns_key_secret </dev/tty
+        printf '\n' >/dev/tty
+        [[ -n "$alidns_key_secret" ]] || { echo "AliDNS AccessKey Secret cannot be empty." >&2; exit 1; }
+        set_env ALIYUN_ACCESS_KEY_SECRET "$alidns_key_secret"
+      fi
+    else
+      echo "xDrive server installer: XD_DOMAIN requires ALIYUN_ACCESS_KEY_ID and ALIYUN_ACCESS_KEY_SECRET for DNS-01 HTTPS." >&2
+      exit 1
+    fi
+  fi
+  public_url="$(https_url "$domain" "$https_port")"
+  set_env XD_ALLOWED_ORIGIN "$public_url"
   set_env XD_WEB_BIND "127.0.0.1"
 else
   # HTTP/private mode remains directly reachable on XD_WEB_PORT.
@@ -433,6 +475,7 @@ stage 6 "install deployment files"
 # server/Web version that owns the current database and blob layout.
 set_env XD_SERVER_IMAGE "ghcr.io/lazyxu/xdrive-server:$IMAGE_TAG"
 set_env XD_WEB_IMAGE "ghcr.io/lazyxu/xdrive-web:$IMAGE_TAG"
+set_env XD_CADDY_IMAGE "ghcr.io/lazyxu/xdrive-caddy:$IMAGE_TAG"
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
 install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
@@ -480,7 +523,7 @@ stage 7 "pull images and start services"
 if ! compose pull; then
   cat >&2 <<'MSG'
 xDrive server installer: container pull failed.
-Make the xdrive-server and xdrive-web packages Public in GitHub package settings,
+Make the xdrive-server, xdrive-web, and xdrive-caddy packages Public in GitHub package settings,
 or authenticate first with: docker login ghcr.io
 MSG
   exit 1
@@ -500,24 +543,25 @@ if [[ "$healthy" != "1" ]]; then
 fi
 
 wait_https() {
-  local domain="$1" attempt
-  local bind probe_ip
+  local domain="$1" port="$2" attempt
+  local bind probe_ip url
   bind="$(env_value XD_HTTPS_BIND)"
   probe_ip="127.0.0.1"
   if [[ -n "$bind" && "$bind" != "0.0.0.0" && "$bind" != "::" ]]; then
     probe_ip="$bind"
   fi
+  url="$(https_url "$domain" "$port")"
 
-  echo "Waiting for automatic HTTPS certificate and reverse proxy readiness..."
+  echo "Waiting for AliDNS DNS-01 certificate and HTTPS readiness on port $port..."
   for attempt in $(seq 1 90); do
     if command -v curl >/dev/null 2>&1; then
-      if curl -fsS --max-time 8 --resolve "$domain:443:$probe_ip" "https://$domain/api/v1/healthz" >/dev/null 2>&1; then
-        echo "HTTPS ready: https://$domain"
+      if curl -fsS --max-time 8 --resolve "$domain:$port:$probe_ip" "$url/api/v1/healthz" >/dev/null 2>&1; then
+        echo "HTTPS ready: $url"
         return 0
       fi
     elif command -v wget >/dev/null 2>&1; then
-      if wget -q --timeout=8 --spider "https://$domain/api/v1/healthz" >/dev/null 2>&1; then
-        echo "HTTPS ready: https://$domain"
+      if wget -q --timeout=8 --spider "$url/api/v1/healthz" >/dev/null 2>&1; then
+        echo "HTTPS ready: $url"
         return 0
       fi
     fi
@@ -525,13 +569,14 @@ wait_https() {
   done
 
   echo "xDrive HTTPS did not become ready." >&2
-  echo "Confirm the domain resolves to this server and inbound TCP 80/443 reaches it." >&2
+  echo "Confirm AliDNS credentials can edit TXT records, the domain resolves to this server, and inbound TCP $port reaches it." >&2
+  echo "DNS-01 certificate issuance does not require inbound TCP 80 or 443." >&2
   compose logs --tail=120 caddy web server >&2 || true
   return 1
 }
 
 if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-  wait_https "$(env_value XD_DOMAIN)"
+  wait_https "$(env_value XD_DOMAIN)" "$(env_value XD_HTTPS_PORT)"
 fi
 
 stage 9 "finalize installation"
@@ -561,8 +606,9 @@ fi
 
 echo
 if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-  echo "xDrive is running at: https://$(env_value XD_DOMAIN)"
-  echo "DNS must resolve that domain to this server and TCP 80/443 must reach it."
+  public_url="$(https_url "$(env_value XD_DOMAIN)" "$(env_value XD_HTTPS_PORT)")"
+  echo "xDrive is running at: $public_url"
+  echo "TLS mode: AliDNS DNS-01; inbound TCP $(env_value XD_HTTPS_PORT) must reach this server. Ports 80/443 are not required for ACME."
 else
   echo "xDrive is running in HTTP/private mode on port $(env_value XD_WEB_PORT)."
 fi

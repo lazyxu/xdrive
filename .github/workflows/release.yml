@@ -152,6 +152,9 @@ jobs:
           - image: xdrive-web
             context: ./web
             dockerfile: ./web/Dockerfile
+          - image: xdrive-caddy
+            context: .
+            dockerfile: ./deploy/Caddy.Dockerfile
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -285,7 +288,7 @@ jobs:
             source_tag="sha-${GITHUB_SHA::12}"
             target_tag="edge"
           fi
-          for image in xdrive-server xdrive-web; do
+          for image in xdrive-server xdrive-web xdrive-caddy; do
             docker buildx imagetools create \
               --tag "ghcr.io/$owner/$image:$target_tag" \
               "ghcr.io/$owner/$image:$source_tag"
