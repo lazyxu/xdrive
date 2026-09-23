@@ -41,7 +41,7 @@ Recommends: libsecret-tools
 Homepage: https://github.com/lazyxu/xdrive
 Description: xDrive Linux client
  Mount an xDrive server as a local filesystem using FUSE.
- Includes xd, the optional user mount agent, and the automatic release updater.
+ Includes xd, the optional user mount agent, and the channel-aware automatic updater.
 CONTROL
 
 cat > "$PKG_ROOT/DEBIAN/postinst" <<'POSTINST'
@@ -54,7 +54,8 @@ fi
 printf '%s\n' 'xDrive client installed.'
 printf '%s\n' 'Login with: xd login --server URL --username USER --password PASS'
 printf '%s\n' 'Optional background mount: systemctl --user enable --now xdrive-agent'
-printf '%s\n' 'Stable release updates are checked automatically by xdrive-update.timer.'
+printf '%s\n' 'Updates are checked automatically: stable builds follow stable; snapshot builds follow master.'
+printf '%s\n' 'Pin a commit with XD_UPDATE_CHANNEL=commit and XD_UPDATE_COMMIT=<sha>.'
 exit 0
 POSTINST
 chmod 0755 "$PKG_ROOT/DEBIAN/postinst"
