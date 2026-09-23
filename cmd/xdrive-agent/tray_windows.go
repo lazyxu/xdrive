@@ -45,12 +45,15 @@ var (
 )
 
 const (
-	trayWMDestroy    = 0x0002
-	trayWMClose      = 0x0010
-	trayWMLButtonUp  = 0x0202
-	trayWMLButtonDbl = 0x0203
-	trayWMRButtonUp  = 0x0205
-	trayWMCallback   = 0x0400 + 1
+	trayWMDestroy     = 0x0002
+	trayWMClose       = 0x0010
+	trayWMContextMenu = 0x007B
+	trayWMLButtonUp   = 0x0202
+	trayWMLButtonDbl  = 0x0203
+	trayWMRButtonUp   = 0x0205
+	trayNINSelect     = 0x0400
+	trayNINKeySelect  = 0x0400 + 1
+	trayWMCallback    = 0x0400 + 1
 
 	trayNIMAdd        = 0x0000
 	trayNIMModify     = 0x0001
@@ -229,10 +232,10 @@ func runDesktopUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentCon
 	wndProc := windows.NewCallback(func(h windows.Handle, message uint32, wparam, lparam uintptr) uintptr {
 		switch message {
 		case trayWMCallback:
-			switch uint32(lparam) {
+			switch trayCallbackEvent(lparam) {
 			case trayWMLButtonDbl:
 				go trayOpen(ctrl, control)
-			case trayWMLButtonUp, trayWMRButtonUp:
+			case trayWMLButtonUp, trayWMRButtonUp, trayWMContextMenu, trayNINSelect, trayNINKeySelect:
 				showXDriveMenu(h, ctrl, control, cancel)
 			}
 			return 0
@@ -339,6 +342,13 @@ func runDesktopUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentCon
 		trayTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 		trayDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
 	}
+}
+
+// trayCallbackEvent decodes the event code delivered through NOTIFYICONDATA.uCallbackMessage.
+// With NOTIFYICON_VERSION_4, LOWORD(lParam) is the event and HIWORD(lParam) is the icon ID.
+// Masking to the low word is also compatible with the legacy callback format.
+func trayCallbackEvent(lparam uintptr) uint32 {
+	return uint32(lparam & 0xffff)
 }
 
 func showXDriveMenu(hwnd windows.Handle, ctrl *agentController, control controlUI, cancel context.CancelFunc) {
