@@ -336,6 +336,102 @@ env_value() {
   printf '%s\n' "$value"
 }
 
+managed_container_id() {
+  local service="$1"
+  docker ps -aq \
+    --filter "label=com.docker.compose.project=xdrive" \
+    --filter "label=com.docker.compose.service=$service" 2>/dev/null | head -n1
+}
+
+container_env_value() {
+  local container_id="$1" key="$2"
+  [[ -n "$container_id" ]] || return 0
+  docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | sed -n "s/^${key}=//p" | tail -n1
+}
+
+wait_existing_postgres() {
+  local container_id="$1" i
+  if [[ "$(docker inspect "$container_id" --format '{{.State.Running}}' 2>/dev/null || true)" != "true" ]]; then
+    docker start "$container_id" >/dev/null
+  fi
+  for i in $(seq 1 30); do
+    if docker exec "$container_id" pg_isready -h 127.0.0.1 -U xdrive -d xdrive >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "xDrive server installer: existing PostgreSQL container did not become ready." >&2
+  return 1
+}
+
+postgres_password_works() {
+  local container_id="$1" password="$2"
+  [[ -n "$password" ]] || return 1
+  docker exec -e "PGPASSWORD=$password" "$container_id" \
+    psql -h 127.0.0.1 -U xdrive -d xdrive -Atqc 'SELECT 1' >/dev/null 2>&1
+}
+
+repair_postgres_password_via_local_socket() {
+  local container_id="$1" password="$2"
+  [[ -n "$password" ]] || return 1
+  docker exec "$container_id" psql -U xdrive -d xdrive -Atqc 'SELECT 1' >/dev/null 2>&1 || return 1
+  docker exec -i "$container_id" \
+    psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -v "password_value=$password" >/dev/null <<'SQL'
+ALTER ROLE xdrive WITH PASSWORD :'password_value';
+SQL
+}
+
+recover_existing_runtime_secrets() {
+  [[ -f "$COMPOSE_PATH" ]] || return 0
+
+  local postgres_id server_id configured_pg runtime_pg candidate configured_jwt runtime_jwt
+  postgres_id="$(managed_container_id postgres)"
+  server_id="$(managed_container_id server)"
+
+  if [[ -n "$postgres_id" ]]; then
+    wait_existing_postgres "$postgres_id"
+    configured_pg="$(env_value POSTGRES_PASSWORD)"
+    runtime_pg="$(container_env_value "$postgres_id" POSTGRES_PASSWORD)"
+
+    if postgres_password_works "$postgres_id" "$configured_pg"; then
+      :
+    elif postgres_password_works "$postgres_id" "$runtime_pg"; then
+      set_env POSTGRES_PASSWORD "$runtime_pg"
+      echo "Recovered PostgreSQL password from the existing xDrive container."
+    else
+      candidate="$configured_pg"
+      [[ -n "$candidate" ]] || candidate="$runtime_pg"
+      if [[ -z "$candidate" ]]; then
+        candidate="$(random_hex 24)"
+      fi
+
+      if repair_postgres_password_via_local_socket "$postgres_id" "$candidate" \
+          && postgres_password_works "$postgres_id" "$candidate"; then
+        set_env POSTGRES_PASSWORD "$candidate"
+        echo "Repaired the managed PostgreSQL role password to match xDrive configuration."
+      else
+        cat >&2 <<'MSG'
+xDrive server installer: existing PostgreSQL credentials cannot be reconciled safely.
+The database volume was left untouched. Repair the xdrive role password or restore the
+previous POSTGRES_PASSWORD in ~/.xd/.env, then rerun the installer.
+MSG
+        return 1
+      fi
+    fi
+  fi
+
+  configured_jwt="$(env_value XD_JWT_SECRET)"
+  if [[ -z "$configured_jwt" && -n "$server_id" ]]; then
+    runtime_jwt="$(container_env_value "$server_id" XD_JWT_SECRET)"
+    if [[ -n "$runtime_jwt" ]]; then
+      set_env XD_JWT_SECRET "$runtime_jwt"
+      echo "Recovered JWT secret from the existing xDrive server container."
+    fi
+  fi
+}
+
+
 validate_domain() {
   local value="$1"
   if [[ -z "$value" ]]; then
@@ -371,6 +467,7 @@ https_url() {
 stage 4 "prepare server configuration"
 touch "$ENV_PATH"
 chmod 600 "$ENV_PATH"
+recover_existing_runtime_secrets
 ensure_env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-$(random_hex 24)}"
 ensure_env XD_JWT_SECRET "${XD_JWT_SECRET:-$(random_hex 48)}"
 ensure_env XD_ACCESS_TOKEN_TTL "${XD_ACCESS_TOKEN_TTL:-15m}"
