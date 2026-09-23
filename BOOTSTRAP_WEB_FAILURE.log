@@ -2,5 +2,4 @@
 > xdrive-web@0.1.0 lint
 > tsc -b --pretty false
 
-src/api.ts(27,31): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
-tsconfig.node.json(7,35): error TS5096: Option 'allowImportingTsExtensions' can only be used when either 'noEmit' or 'emitDeclarationOnly' is set.
+vite.config.ts(10,17): error TS2580: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node`.
