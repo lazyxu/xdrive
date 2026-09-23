@@ -15,11 +15,18 @@ import (
 
 func startAutoUpdate(ctx context.Context) <-chan struct{} {
 	ch := make(chan struct{}, 1)
-	if strings.TrimSpace(os.Getenv("XD_DISABLE_AUTO_UPDATE")) == "1" || !xupdate.IsReleaseVersion(version.String()) {
+	if strings.TrimSpace(os.Getenv("XD_DISABLE_AUTO_UPDATE")) == "1" {
+		return ch
+	}
+	channel, err := xupdate.AutomaticChannel(version.String())
+	if err != nil {
+		log.Printf("auto-update channel: %v", err)
+		return ch
+	}
+	if channel == "" {
 		return ch
 	}
 	go func() {
-		// Avoid competing with mount initialization during login.
 		timer := time.NewTimer(90 * time.Second)
 		defer timer.Stop()
 		ticker := time.NewTicker(6 * time.Hour)
@@ -31,13 +38,13 @@ func startAutoUpdate(ctx context.Context) <-chan struct{} {
 			case <-timer.C:
 			case <-ticker.C:
 			}
-			started, result, err := xupdate.InstallLatest(ctx, version.String())
+			started, result, err := xupdate.InstallChannel(ctx, version.String(), channel)
 			if err != nil {
-				log.Printf("auto-update check failed: %v", err)
+				log.Printf("auto-update check (%s) failed: %v", channel, err)
 				continue
 			}
 			if started {
-				log.Printf("update %s verified; installer started", result.Latest)
+				log.Printf("update %s from %s channel verified; installer started", result.Latest, channel)
 				ch <- struct{}{}
 				return
 			}
