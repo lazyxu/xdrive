@@ -72,9 +72,9 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	}
 	router := (&Server{
 		DB: db, Store: store,
-		Auth: auth.New("chunk-upload-integration-secret", time.Hour),
-		RefreshTTL: 24 * time.Hour,
-		AllowedOrigin: "http://localhost",
+		Auth:           auth.New("chunk-upload-integration-secret", time.Hour),
+		RefreshTTL:     24 * time.Hour,
+		AllowedOrigin:  "http://localhost",
 		MaxUploadBytes: 32 << 20,
 	}).Router()
 
