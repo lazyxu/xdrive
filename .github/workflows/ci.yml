@@ -39,7 +39,11 @@ jobs:
         shell: bash
         run: |
           files="$(gofmt -l $(find cmd internal -name '*.go' -type f))"
-          test -z "$files" || (echo "$files" && exit 1)
+          if [[ -n "$files" ]]; then
+            echo "$files"
+            gofmt -d $files
+            exit 1
+          fi
       - run: go test -race ./...
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
