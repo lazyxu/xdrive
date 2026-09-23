@@ -130,4 +130,90 @@ if grep -q 'unresolved deployment template' "$TMP/fail.err"; then
   exit 1
 fi
 
+# Existing deployments may have a stale .env password while the managed
+# PostgreSQL container and data volume still use the original credential.
+mkdir -p "$TMP/bin-upgrade" "$TMP/config-upgrade"
+cp "$TMP/bin-ok/curl" "$TMP/bin-upgrade/curl"
+
+cat > "$TMP/bin-upgrade/docker" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+args="$*"
+
+if [[ "$#" -ge 2 && "$1" == "compose" && "$2" == "version" ]]; then
+  echo "Docker Compose version v2.test"
+  exit 0
+fi
+if [[ "$1" == "ps" && "$args" == *"com.docker.compose.service=postgres"* ]]; then
+  echo "pg123"
+  exit 0
+fi
+if [[ "$1" == "ps" && "$args" == *"com.docker.compose.service=server"* ]]; then
+  echo "srv123"
+  exit 0
+fi
+if [[ "$1" == "inspect" && "$2" == "pg123" && "$args" == *".State.Running"* ]]; then
+  echo "true"
+  exit 0
+fi
+if [[ "$1" == "inspect" && "$2" == "pg123" && "$args" == *".Config.Env"* ]]; then
+  echo "POSTGRES_PASSWORD=legacy-db-password"
+  exit 0
+fi
+if [[ "$1" == "inspect" && "$2" == "srv123" && "$args" == *".Config.Env"* ]]; then
+  echo "XD_JWT_SECRET=legacy-jwt-secret"
+  exit 0
+fi
+if [[ "$1" == "exec" && "$args" == *"pg_isready"* ]]; then
+  exit 0
+fi
+if [[ "$1" == "exec" && "$args" == *"PGPASSWORD=stale-db-password"* && "$args" == *"psql -h 127.0.0.1"* ]]; then
+  exit 1
+fi
+if [[ "$1" == "exec" && "$args" == *"PGPASSWORD=legacy-db-password"* && "$args" == *"psql -h 127.0.0.1"* ]]; then
+  exit 0
+fi
+if [[ "$1" == "compose" && "$args" == *" ps -q server"* ]]; then
+  echo "srv123"
+  exit 0
+fi
+
+echo "unexpected docker invocation: $*" >&2
+exit 9
+SH
+chmod +x "$TMP/bin-upgrade/docker"
+
+cat > "$TMP/config-upgrade/.env" <<'EOF'
+POSTGRES_PASSWORD=stale-db-password
+XD_RELEASE_CHANNEL=master
+EOF
+cat > "$TMP/config-upgrade/docker-compose.yml" <<'EOF'
+name: xdrive
+services: {}
+EOF
+cat > "$TMP/config-upgrade/server-backup.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "mock pre-upgrade backup"
+SH
+chmod +x "$TMP/config-upgrade/server-backup.sh"
+
+if ! TEST_STATE="$TMP/state" \
+PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config-upgrade" \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+bash "$INSTALLER" >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"; then
+  echo "upgrade recovery scenario failed" >&2
+  cat "$TMP/upgrade.out" >&2 || true
+  cat "$TMP/upgrade.err" >&2 || true
+  exit 1
+fi
+
+grep -q '^POSTGRES_PASSWORD=legacy-db-password$' "$TMP/config-upgrade/.env"
+grep -q '^XD_JWT_SECRET=legacy-jwt-secret$' "$TMP/config-upgrade/.env"
+grep -q 'Recovered PostgreSQL password from the existing xDrive container.' "$TMP/upgrade.out"
+grep -q 'Recovered JWT secret from the existing xDrive server container.' "$TMP/upgrade.out"
+grep -q 'Existing xDrive deployment detected; creating pre-upgrade backup...' "$TMP/upgrade.out"
+
 echo "server installer bootstrap and stage-reporting tests passed"
