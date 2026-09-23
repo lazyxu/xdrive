@@ -126,8 +126,9 @@ func (c *agentController) Run() {
 			})
 		case mount.EventConflict:
 			snapshot := c.Snapshot()
+			stored := false
 			if dir, err := userconfig.Dir(); err == nil {
-				_ = conflictstate.Upsert(dir, conflictstate.Record{
+				if err := conflictstate.Upsert(dir, conflictstate.Record{
 					ID:             event.Path,
 					Server:         snapshot.Server,
 					Username:       snapshot.Username,
@@ -136,9 +137,20 @@ func (c *agentController) Run() {
 					OriginalNodeID: event.OriginalNodeID,
 					ConflictNodeID: event.ConflictNodeID,
 					CreatedAt:      time.Now().UTC(),
+				}); err == nil {
+					stored = true
+				}
+			}
+			if stored {
+				c.refreshConflictSnapshot()
+			} else {
+				c.setSnapshot(func(s *agentSnapshot) {
+					s.HasConflict = true
+					if s.ConflictCount == 0 {
+						s.ConflictCount = 1
+					}
 				})
 			}
-			c.refreshConflictSnapshot()
 			c.setSnapshot(func(s *agentSnapshot) {
 				s.SyncStatus = "存在冲突副本"
 			})
