@@ -5,8 +5,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -34,6 +37,8 @@ var (
 	trayGetCursorPos      = trayUser32.NewProc("GetCursorPos")
 	traySetForegroundWin  = trayUser32.NewProc("SetForegroundWindow")
 	trayLoadIcon          = trayUser32.NewProc("LoadIconW")
+	trayLoadImage         = trayUser32.NewProc("LoadImageW")
+	trayDestroyIcon       = trayUser32.NewProc("DestroyIcon")
 	trayMessageBox        = trayUser32.NewProc("MessageBoxW")
 	trayRegisterWindowMsg = trayUser32.NewProc("RegisterWindowMessageW")
 	trayShellNotifyIcon   = trayShell32.NewProc("Shell_NotifyIconW")
@@ -48,9 +53,10 @@ const (
 	trayWMRButtonUp  = 0x0205
 	trayWMCallback   = 0x0400 + 1
 
-	trayNIMAdd     = 0x0000
-	trayNIMModify  = 0x0001
-	trayNIMDelete  = 0x0002
+	trayNIMAdd        = 0x0000
+	trayNIMModify     = 0x0001
+	trayNIMDelete     = 0x0002
+	trayNIMSetVersion = 0x0004
 	trayNIFMessage = 0x0001
 	trayNIFIcon    = 0x0002
 	trayNIFTip     = 0x0004
@@ -72,7 +78,11 @@ const (
 	trayIDIError       = 32513
 	trayIDIWarning     = 32515
 	trayIDIInfo        = 32516
-	trayIDIShield      = 32518
+
+	trayImageIcon      = 1
+	trayLRLoadFromFile = 0x0010
+	trayLRDefaultSize  = 0x0040
+	trayIconVersion4   = 4
 
 	trayMenuOpen    = 1
 	trayMenuAccount = 2
@@ -81,6 +91,72 @@ const (
 	trayMenuLogout  = 5
 	trayMenuExit    = 6
 )
+
+type trayIconSet struct {
+	handles map[string]windows.Handle
+}
+
+func loadTrayIconSet() trayIconSet {
+	set := trayIconSet{handles: map[string]windows.Handle{}}
+	for _, key := range []string{"normal", "syncing", "paused", "offline", "conflict"} {
+		name := "tray-" + key + ".ico"
+		for _, candidate := range trayIconCandidates(name) {
+			h, err := loadTrayIconFile(candidate)
+			if err == nil && h != 0 {
+				set.handles[key] = h
+				break
+			}
+		}
+	}
+	return set
+}
+
+func trayIconCandidates(name string) []string {
+	out := make([]string, 0, 2)
+	if exe, err := os.Executable(); err == nil {
+		out = append(out, filepath.Join(filepath.Dir(exe), "icons", name))
+	}
+	out = append(out, filepath.Join("packaging", "windows", "icons", name))
+	return out
+}
+
+func loadTrayIconFile(path string) (windows.Handle, error) {
+	if _, err := os.Stat(path); err != nil {
+		return 0, err
+	}
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, err
+	}
+	h, _, callErr := trayLoadImage.Call(
+		0,
+		uintptr(unsafe.Pointer(p)),
+		trayImageIcon,
+		0,
+		0,
+		trayLRLoadFromFile|trayLRDefaultSize,
+	)
+	if h == 0 {
+		return 0, fmt.Errorf("load tray icon %s: %w", path, callErr)
+	}
+	return windows.Handle(h), nil
+}
+
+func (s trayIconSet) get(key string, fallback uintptr) windows.Handle {
+	if h := s.handles[key]; h != 0 {
+		return h
+	}
+	h, _, _ := trayLoadIcon.Call(0, fallback)
+	return windows.Handle(h)
+}
+
+func (s trayIconSet) close() {
+	for _, h := range s.handles {
+		if h != 0 {
+			trayDestroyIcon.Call(uintptr(h))
+		}
+	}
+}
 
 type trayPoint struct{ X, Y int32 }
 
@@ -143,8 +219,12 @@ func runDesktopUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentCon
 	taskbarName, _ := windows.UTF16PtrFromString("TaskbarCreated")
 	taskbarCreated, _, _ := trayRegisterWindowMsg.Call(uintptr(unsafe.Pointer(taskbarName)))
 
+	icons := loadTrayIconSet()
+	defer icons.close()
+
 	var hwnd windows.Handle
 	var nid trayNotifyIconData
+	var nidMu sync.Mutex
 	wndProc := windows.NewCallback(func(h windows.Handle, message uint32, wparam, lparam uintptr) uintptr {
 		switch message {
 		case trayWMCallback:
@@ -162,7 +242,12 @@ func runDesktopUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentCon
 			trayPostQuitMessage.Call(0)
 			return 0
 		case uint32(taskbarCreated):
+			nidMu.Lock()
+			nid.UFlags = trayNIFMessage | trayNIFIcon | trayNIFTip
 			trayShellNotifyIcon.Call(trayNIMAdd, uintptr(unsafe.Pointer(&nid)))
+			nid.UVersion = trayIconVersion4
+			trayShellNotifyIcon.Call(trayNIMSetVersion, uintptr(unsafe.Pointer(&nid)))
+			nidMu.Unlock()
 			return 0
 		}
 		ret, _, _ := trayDefWindowProc.Call(uintptr(h), uintptr(message), wparam, lparam)
@@ -188,41 +273,49 @@ func runDesktopUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentCon
 	}
 	hwnd = windows.Handle(h)
 
-	icon, _, _ := trayLoadIcon.Call(0, trayIDIApplication)
+	initialKey, initialFallback, initialTip := trayVisualState(ctrl.Snapshot())
 	nid = trayNotifyIconData{
 		HWnd:             hwnd,
 		UID:              1,
 		UFlags:           trayNIFMessage | trayNIFIcon | trayNIFTip,
 		UCallbackMessage: trayWMCallback,
-		HIcon:            windows.Handle(icon),
+		HIcon:            icons.get(initialKey, initialFallback),
 	}
 	nid.CbSize = uint32(unsafe.Sizeof(nid))
-	copyTrayUTF16(nid.SzTip[:], "xDrive")
-	trayShellNotifyIcon.Call(trayNIMAdd, uintptr(unsafe.Pointer(&nid)))
+	copyTrayUTF16(nid.SzTip[:], initialTip)
+	if ok, _, callErr := trayShellNotifyIcon.Call(trayNIMAdd, uintptr(unsafe.Pointer(&nid))); ok == 0 {
+		return fmt.Errorf("add xDrive tray icon: %w", callErr)
+	}
+	nid.UVersion = trayIconVersion4
+	trayShellNotifyIcon.Call(trayNIMSetVersion, uintptr(unsafe.Pointer(&nid)))
 	defer trayShellNotifyIcon.Call(trayNIMDelete, uintptr(unsafe.Pointer(&nid)))
 
 	go func() {
-		lastKey := ""
-		ticker := time.NewTicker(2 * time.Second)
+		lastKey := initialKey
+		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case n := <-ctrl.Notifications():
-				showTrayNotification(&nid, n.Title, n.Body, n.Kind)
+				nidMu.Lock()
+				snapshot := nid
+				nidMu.Unlock()
+				showTrayNotification(&snapshot, n.Title, n.Body, n.Kind)
 			case <-ticker.C:
 				s := ctrl.Snapshot()
-				key, iconID, tip := trayVisualState(s)
+				key, fallback, tip := trayVisualState(s)
 				if key == lastKey {
 					continue
 				}
 				lastKey = key
-				hicon, _, _ := trayLoadIcon.Call(0, iconID)
-				nid.HIcon = windows.Handle(hicon)
+				nidMu.Lock()
+				nid.HIcon = icons.get(key, fallback)
 				copyTrayUTF16(nid.SzTip[:], tip)
 				nid.UFlags = trayNIFIcon | trayNIFTip
 				trayShellNotifyIcon.Call(trayNIMModify, uintptr(unsafe.Pointer(&nid)))
+				nidMu.Unlock()
 			}
 		}
 	}()
@@ -363,7 +456,7 @@ func trayVisualState(s agentSnapshot) (string, uintptr, string) {
 		return "offline", trayIDIError, "xDrive · 未登录"
 	case s.AuthStatus != "已登录" || strings.Contains(s.SyncStatus, "失败") || strings.Contains(s.SyncStatus, "不可用") || strings.Contains(s.SyncStatus, "错误"):
 		return "offline", trayIDIError, "xDrive · 离线"
-	case strings.Contains(s.SyncStatus, "启动") || strings.Contains(s.SyncStatus, "恢复"):
+	case s.SyncStatus == "正在同步" || strings.Contains(s.SyncStatus, "启动") || strings.Contains(s.SyncStatus, "恢复"):
 		return "syncing", trayIDIApplication, "xDrive · 同步中"
 	default:
 		return "normal", trayIDIInfo, "xDrive · 正常"
@@ -395,6 +488,9 @@ func showTrayMessage(title, body string) {
 }
 
 func copyTrayUTF16(dst []uint16, s string) {
+	for i := range dst {
+		dst[i] = 0
+	}
 	encoded := windows.StringToUTF16(s)
 	if len(encoded) > len(dst) {
 		encoded = encoded[:len(dst)]
