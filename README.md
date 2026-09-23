@@ -65,22 +65,22 @@ No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose run
 ### One-line install from `master` / edge images
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
+curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
 ```
 
 The bootstrap installer supports three release channels. A fresh install defaults to **stable**; the selected channel is persisted in `~/.xd/.env` and reused by later runs.
 
 ```bash
 # Latest stable vMAJOR.MINOR.PATCH release
-curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   bash -s -- --channel stable
 
 # Latest fully successful master snapshot
-curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   bash -s -- --channel master
 
 # A specific successfully published master commit (short or full SHA)
-curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   bash -s -- --channel commit --commit 0123456789ab
 ```
 
@@ -89,14 +89,14 @@ The bootstrap downloads the selected published `xdrive-server-install.sh` plus `
 On an interactive terminal the resolved installer asks for the public domain. If DNS is already configured, the fully non-interactive HTTPS form is still one command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   XD_DOMAIN=drive.example.com bash -s -- --channel stable
 ```
 
 Leave the domain blank for HTTP/private-network mode. Other overrides use the same pipe-to-`bash` form, for example:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   XD_WEB_PORT=8088 XD_WEB_BIND=0.0.0.0 bash
 ```
 
