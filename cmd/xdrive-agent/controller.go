@@ -137,10 +137,10 @@ func (c *agentController) Run() {
 	defer mount.SetEventSink(nil)
 
 	var (
-		running       bool
-		currentKey    string
-		mountCancel   context.CancelFunc
-		mountDone     chan error
+		running        bool
+		currentKey     string
+		mountCancel    context.CancelFunc
+		mountDone      chan error
 		lastAuthCheck  time.Time
 		lastAuthNotice string
 	)
