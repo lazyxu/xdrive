@@ -3,7 +3,8 @@ param(
     [string]$OutputDir = "dist",
     [string]$SigningPfxPath = $env:XD_WINDOWS_SIGN_PFX_PATH,
     [string]$SigningPassword = $env:XD_WINDOWS_SIGN_PFX_PASSWORD,
-    [string]$TimestampUrl = "http://timestamp.digicert.com"
+    [string]$TimestampUrl = "http://timestamp.digicert.com",
+    [switch]$SkipSignatureTrustCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,9 +73,16 @@ function Sign-Artifact([string]$Path) {
         throw "signing failed: $Path"
     }
 
-    & $SignTool verify /pa /all $Path
-    if ($LASTEXITCODE -ne 0) {
-        throw "signature verification failed: $Path"
+    if ($SkipSignatureTrustCheck) {
+        $signature = Get-AuthenticodeSignature $Path
+        if ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
+            throw "Authenticode signature was not embedded: $Path"
+        }
+    } else {
+        & $SignTool verify /pa /all $Path
+        if ($LASTEXITCODE -ne 0) {
+            throw "signature verification failed: $Path"
+        }
     }
 }
 
