@@ -56,7 +56,7 @@ jobs:
           exit 1
 
   client-linux-amd64:
-    needs: verify-master-ci:
+    needs: verify-master-ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
