@@ -79,6 +79,31 @@ jobs:
       - name: Verify Windows installer
         shell: pwsh
         run: if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
+      - name: Smoke install and uninstall Windows client
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
+          $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-")
+          $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+
+          $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
+          if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
+          if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
+
+          $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
+          if ($runValue -notlike "*xdrive-agent.exe*") { throw "xDriveAgent autorun registration missing" }
+
+          $uninstaller = Join-Path $app "unins000.exe"
+          if (-not (Test-Path $uninstaller)) { throw "uninstaller missing" }
+          $u = Start-Process -FilePath $uninstaller -ArgumentList $args -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "uninstaller exit code $($u.ExitCode)" }
+
+          if (Test-Path (Join-Path $app "xd.exe")) { throw "xd.exe remains after uninstall" }
+          $left = Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
+          if ($null -ne $left) { throw "xDriveAgent autorun remains after uninstall" }
 
   web:
     runs-on: ubuntu-latest

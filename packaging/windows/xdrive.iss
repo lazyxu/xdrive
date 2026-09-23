@@ -48,7 +48,7 @@ Name: "{group}\xDrive README"; Filename: "{app}\README.md"
 Name: "{group}\Uninstall xDrive"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\xdrive-agent.exe"; Description: "Start xDrive background agent"; Flags: nowait postinstall
+Filename: "{app}\xdrive-agent.exe"; Description: "Start xDrive background agent"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-agent.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveAgent"
