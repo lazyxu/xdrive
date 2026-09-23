@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["master", "feat/**", "p1-*"]
+    branches: ["master", "feat/**", "fix/**", "p1-*"]
   pull_request:
 
 permissions:
@@ -13,6 +13,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  single-commit:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exactly one commit before merge
+        env:
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+        run: |
+          set -euo pipefail
+          if [[ "$PR_COMMITS" != "1" ]]; then
+            echo "PR must contain exactly one commit before merge; found $PR_COMMITS." >&2
+            echo "Fetch/rebase origin/master, squash the work branch to one commit, push it, and rerun CI." >&2
+            exit 1
+          fi
+
   go-linux:
     runs-on: ubuntu-latest
     services:
