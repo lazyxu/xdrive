@@ -72,8 +72,30 @@ jobs:
           bash -n scripts/server-restore.sh
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-backup-restore.sh
+          bash -n scripts/test-update-channels.sh
+          bash scripts/test-update-channels.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
           XD_DOMAIN=drive.example.test docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
+
+          generated="$(mktemp)"
+          sed \
+            -e 's|@SOURCE_REF@|0123456789abcdef0123456789abcdef01234567|g' \
+            -e 's|@IMAGE_TAG@|sha-0123456789ab|g' \
+            -e 's|@RELEASE_CHANNEL@|master|g' \
+            -e 's|@RELEASE_COMMIT@|0123456789abcdef0123456789abcdef01234567|g' \
+            deploy/install-server.sh > "$generated"
+          bash -n "$generated"
+          grep -q 'sha-0123456789ab' "$generated"
+          grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
+          rm -f "$generated"
+
+          grep -q 'tags="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+          grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
+          grep -q 'target_tag="edge"' .github/workflows/release.yml
+          if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
+            echo "server image jobs must not publish edge before the full bundle succeeds" >&2
+            exit 1
+          fi
 
           backup_line="$(grep -n 'creating pre-upgrade backup' deploy/install-server.sh | head -n1 | cut -d: -f1)"
           image_line="$(grep -n '^set_env XD_SERVER_IMAGE ' deploy/install-server.sh | head -n1 | cut -d: -f1)"
