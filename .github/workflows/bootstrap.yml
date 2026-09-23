@@ -40,6 +40,7 @@ jobs:
           grep -vF '"path/filepath"' internal/mount/mount_linux.go > /tmp/mount_linux.go && mv /tmp/mount_linux.go internal/mount/mount_linux.go
           printf '%s\n' '/// <reference types="vite/client" />' > web/src/vite-env.d.ts
           grep -vF '"allowImportingTsExtensions"' web/tsconfig.node.json > /tmp/tsconfig.node.json && mv /tmp/tsconfig.node.json web/tsconfig.node.json
+          sed -i "s#process.env.VITE_DEV_API || 'http://localhost:8080'#'http://localhost:8080'#" web/vite.config.ts
           rm -rf .bootstrap
           rm -f BOOTSTRAP_TEST_FAILURE.log BOOTSTRAP_WEB_FAILURE.log
           rm -f .github/workflows/bootstrap.yml
