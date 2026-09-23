@@ -26,11 +26,11 @@ type winState struct {
 }
 
 type winProvider struct {
-	cli      *client.Client
-	root     string
-	connKey  int64
-	mu       sync.Mutex
-	baseline map[string]winState
+	cli        *client.Client
+	root       string
+	connKey    int64
+	mu         sync.Mutex
+	baseline   map[string]winState
 	hydrated   map[uint64]time.Time
 	manualSync chan struct{}
 }
@@ -48,9 +48,9 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		return err
 	}
 	p := &winProvider{
-		cli:      cli,
-		root:     root,
-		baseline: map[string]winState{},
+		cli:        cli,
+		root:       root,
+		baseline:   map[string]winState{},
 		hydrated:   map[uint64]time.Time{},
 		manualSync: make(chan struct{}, 1),
 	}
@@ -411,12 +411,12 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				return err
 			}
 			emitEvent(Event{
-			Kind:           EventConflict,
-			Path:           conflictRel,
-			OriginalPath:   rel,
-			OriginalNodeID: base.node.ID,
-			ConflictNodeID: conflictNode.ID,
-		})
+				Kind:           EventConflict,
+				Path:           conflictRel,
+				OriginalPath:   rel,
+				OriginalNodeID: base.node.ID,
+				ConflictNodeID: conflictNode.ID,
+			})
 			if st, err := os.Stat(conflictAbs); err == nil {
 				local[conflictRel] = localEntry{isDir: false, size: st.Size(), modTime: st.ModTime()}
 				baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
