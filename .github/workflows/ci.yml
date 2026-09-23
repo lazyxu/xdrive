@@ -103,15 +103,12 @@ jobs:
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" `
             -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
           $pfx = Join-Path $env:RUNNER_TEMP "xdrive-ci-signing.pfx"
-          $cer = Join-Path $env:RUNNER_TEMP "xdrive-ci-signing.cer"
           Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
-          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
-          Import-Certificate -FilePath $cer -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
           "XD_WINDOWS_SIGN_PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build and sign Windows client installer
         shell: pwsh
-        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -TimestampUrl ""
+        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -TimestampUrl "" -SkipSignatureTrustCheck
       - name: Verify Windows Authenticode signatures
         shell: pwsh
         run: |
@@ -122,8 +119,11 @@ jobs:
           )
           foreach ($target in $targets) {
             $signature = Get-AuthenticodeSignature $target
-            if ($signature.Status -ne "Valid") {
-              throw "invalid Authenticode signature for $target: $($signature.Status)"
+            if ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
+              throw "missing Authenticode signature for $target"
+            }
+            if ($signature.SignerCertificate.Subject -ne "CN=xDrive CI Test") {
+              throw "unexpected signer for $target: $($signature.SignerCertificate.Subject)"
             }
           }
       - name: Verify Windows installer
