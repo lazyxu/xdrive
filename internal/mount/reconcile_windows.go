@@ -156,6 +156,9 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 	rootState := baseline[rename.NewPath]
 	rootState.node = updated
 	baseline[rename.NewPath] = rootState
+	if err := cfMarkPathInSync(filepath.Join(p.root, filepath.FromSlash(rename.NewPath))); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -203,11 +206,17 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 			if err != nil {
 				return err
 			}
+			if err := cfConvertPathToPlaceholder(path, node.ID); err != nil {
+				return err
+			}
 			baseline[childRel] = stateFromLocal(node, localEntry{isDir: true, modTime: info.ModTime()})
 			return nil
 		}
 		node, err := p.cli.UploadFileResumable(ctx, parent.node.ID, path, slashBase(childRel), nil)
 		if err != nil {
+			return err
+		}
+		if err := cfConvertPathToPlaceholder(path, node.ID); err != nil {
 			return err
 		}
 		baseline[childRel] = stateFromLocal(node, localEntry{size: info.Size(), modTime: info.ModTime()})
@@ -255,6 +264,9 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		if err != nil {
 			return err
 		}
+		if err := cfConvertPathToPlaceholder(absPath, node.ID); err != nil {
+			return err
+		}
 		baseline[rel] = stateFromLocal(node, entry)
 		return nil
 	}
@@ -270,6 +282,9 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 
 	node, err := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, nil)
 	if err == nil {
+		if syncErr := cfMarkPathInSync(absPath); syncErr != nil {
+			return syncErr
+		}
 		baseline[rel] = stateFromLocal(node, entry)
 		return nil
 	}
@@ -284,6 +299,9 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 	}
 	conflictNode, err := p.cli.UploadFileResumable(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel), nil)
 	if err != nil {
+		return err
+	}
+	if err := cfConvertPathToPlaceholder(conflictAbs, conflictNode.ID); err != nil {
 		return err
 	}
 	emitEvent(Event{
