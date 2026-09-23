@@ -1,5 +1,11 @@
 name: xdrive
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${XD_LOG_MAX_SIZE:-10m}"
+    max-file: "${XD_LOG_MAX_FILES:-5}"
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -14,7 +20,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 10s
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_POSTGRES_MEMORY_LIMIT:-1g}
+    cpus: ${XD_POSTGRES_CPU_LIMIT:-1.0}
+    pids_limit: ${XD_POSTGRES_PIDS_LIMIT:-256}
 
   server:
     image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
@@ -32,16 +43,65 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/xdrive-server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_SERVER_MEMORY_LIMIT:-1g}
+    cpus: ${XD_SERVER_CPU_LIMIT:-1.0}
+    pids_limit: ${XD_SERVER_PIDS_LIMIT:-256}
 
   web:
     image: ${XD_WEB_IMAGE:-ghcr.io/lazyxu/xdrive-web:latest}
     ports:
-      - "${XD_WEB_BIND:-0.0.0.0}:${XD_WEB_PORT:-3000}:80"
+      - "${XD_WEB_BIND:-127.0.0.1}:${XD_WEB_PORT:-3000}:80"
     depends_on:
-      - server
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_WEB_MEMORY_LIMIT:-256m}
+    cpus: ${XD_WEB_CPU_LIMIT:-0.50}
+    pids_limit: ${XD_WEB_PIDS_LIMIT:-128}
+
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: ["https"]
+    environment:
+      XD_DOMAIN: ${XD_DOMAIN:?set XD_DOMAIN when the https profile is enabled}
+    ports:
+      - "${XD_HTTP_BIND:-0.0.0.0}:80:80"
+      - "${XD_HTTPS_BIND:-0.0.0.0}:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_CADDY_MEMORY_LIMIT:-256m}
+    cpus: ${XD_CADDY_CPU_LIMIT:-0.50}
+    pids_limit: ${XD_CADDY_PIDS_LIMIT:-128}
 
 volumes:
   postgres-data:
   file-data:
+  caddy-data:
+  caddy-config:
