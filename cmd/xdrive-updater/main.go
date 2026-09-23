@@ -11,14 +11,20 @@ import (
 )
 
 func main() {
-	channelFlag := flag.String("channel", "", "update channel: stable or master")
+	channelFlag := flag.String("channel", "", "update channel: stable, master, or commit")
+	commitFlag := flag.String("commit", "", "commit SHA for the commit channel")
 	flag.Parse()
 
 	current := version.String()
 	channel := strings.TrimSpace(*channelFlag)
+	commit := strings.TrimSpace(*commitFlag)
+	if channel == "" && commit != "" {
+		channel = xupdate.ChannelCommit
+	}
+
 	var err error
 	if channel == "" {
-		channel, err = xupdate.AutomaticChannel(current)
+		channel, commit, err = xupdate.AutomaticTarget(current)
 		if err != nil {
 			log.Printf("xDrive updater: %v", err)
 			return
@@ -33,8 +39,12 @@ func main() {
 		log.Printf("xDrive updater: %v", err)
 		return
 	}
+	if channel == xupdate.ChannelCommit && commit == "" {
+		log.Printf("xDrive updater: commit channel requires --commit SHA or XD_UPDATE_COMMIT")
+		return
+	}
 
-	started, result, err := xupdate.InstallChannel(context.Background(), current, channel)
+	started, result, err := xupdate.InstallTarget(context.Background(), current, channel, commit)
 	if err != nil {
 		log.Printf("xDrive updater: %v", err)
 		return
