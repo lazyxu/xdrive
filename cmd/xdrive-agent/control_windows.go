@@ -126,6 +126,8 @@ func (h *controlHandler) index(w http.ResponseWriter, r *http.Request) {
 
 func availabilityLabel(mode string) string {
 	switch mode {
+	case "syncing":
+		return "同步中"
 	case "always-local":
 		return "始终保留在此设备"
 	case "online-only":
