@@ -68,11 +68,29 @@ No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose run
 curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
 ```
 
-On an interactive terminal the installer asks for the public domain. If DNS is already configured, the fully non-interactive HTTPS form is still one command:
+The bootstrap installer supports three release channels. A fresh install defaults to **stable**; the selected channel is persisted in `~/.xd/.env` and reused by later runs.
+
+```bash
+# Latest stable vMAJOR.MINOR.PATCH release
+curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+  bash -s -- --channel stable
+
+# Latest fully successful master snapshot
+curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+  bash -s -- --channel master
+
+# A specific successfully published master commit (short or full SHA)
+curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+  bash -s -- --channel commit --commit 0123456789ab
+```
+
+The bootstrap downloads the selected published `xdrive-server-install.sh` plus `SHA256SUMS.txt`, verifies the script checksum, and only then runs it. The `master` channel uses the rolling successful `snapshot` release and exact `sha-<commit>` container images rather than the mutable `edge` tag. The `commit` channel requires the immutable `snapshot-<sha12>` release, so commits without a complete successful published build are rejected.
+
+On an interactive terminal the resolved installer asks for the public domain. If DNS is already configured, the fully non-interactive HTTPS form is still one command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
-  XD_DOMAIN=drive.example.com bash
+  XD_DOMAIN=drive.example.com bash -s -- --channel stable
 ```
 
 Leave the domain blank for HTTP/private-network mode. Other overrides use the same pipe-to-`bash` form, for example:
@@ -354,13 +372,17 @@ Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folde
 
 ## Client version checks and automatic updates
 
-Automatic updates only follow stable GitHub Releases tagged `vMAJOR.MINOR.PATCH`. Snapshot builds from `master` deliberately do not auto-update.
+Windows and Linux clients use the same three release channels as the server:
 
-Before an update is installed, the client downloads the Release `SHA256SUMS.txt` and verifies the installer/package checksum.
+- **stable** — latest stable GitHub Release tagged `vMAJOR.MINOR.PATCH`;
+- **master** — latest fully successful master build from the rolling `snapshot` prerelease;
+- **commit** — an immutable successfully published master build identified by commit SHA and released as `snapshot-<sha12>`.
 
-**Windows:** the background agent checks after startup and then about every 6 hours. When a newer stable release exists it downloads `xDriveSetup-amd64.exe`, verifies it, launches the installer silently, exits, and the updated installer starts the agent again.
+Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before any installation, the client downloads `SHA256SUMS.txt` from the same release and verifies the installer/package checksum.
 
-**Linux:** the `.deb` installs `xdrive-update.timer` as a root-level systemd timer. It checks about every 6 hours and installs a newer verified `xdrive-client-linux-amd64.deb` through `apt-get`. The optional user-level mount agent is separate from this updater.
+**Windows:** the background agent checks after startup and then about every 6 hours. Stable builds follow stable; snapshot builds follow master. When an update exists it verifies `xDriveSetup-amd64.exe`, launches it silently, exits, and the updated installer starts the agent again.
+
+**Linux:** the `.deb` installs `xdrive-update.timer` as a root-level systemd timer. It uses the same default channel logic and installs a verified `xdrive-client-linux-amd64.deb` through `apt-get`. The optional user-level mount agent is separate from this updater.
 
 Useful commands:
 
@@ -368,9 +390,12 @@ Useful commands:
 xd version
 xd update
 xd update --install
+xd update --channel stable
+xd update --channel master --install
+xd update --channel commit --commit 0123456789ab --install
 ```
 
-`xd update` only checks. On Windows, `--install` launches the verified installer. On Linux, normal automatic installation is handled by the root timer; a manual root update can be run with `sudo xdrive-updater`.
+For a persistent pinned commit target, set both `XD_UPDATE_CHANNEL=commit` and `XD_UPDATE_COMMIT=<sha>` in the updater environment. `XD_UPDATE_CHANNEL=stable|master` can also override the build's default channel. On Linux a manual root update can use `sudo xdrive-updater --channel ...`.
 
 Set `XD_DISABLE_AUTO_UPDATE=1` to disable the Windows agent's automatic update checks.
 
@@ -383,7 +408,7 @@ xd status
 xd config --mount PATH
 xd mount [PATH]
 xd version
-xd update [--install]
+xd update [--channel stable|master|commit] [--commit SHA] [--install]
 xd logout
 ```
 
@@ -609,7 +634,9 @@ Every push runs cross-platform CI. The test matrix covers:
 - server/Web Docker builds;
 - Docker Compose validation.
 
-Every push to `master` publishes `edge` server images to GHCR and updates a rolling **snapshot prerelease**. The snapshot release exposes `.exe`, `.deb`, and shell/config assets directly; single-file deliverables are not wrapped in an extra ZIP/TAR archive. GitHub Actions may still use internal artifact containers to transfer files between jobs, but those are CI plumbing rather than distribution packages.
+Every push to `master` first runs CI. **Build Packages waits for that exact master SHA to pass CI** before publishing anything. It builds immutable `sha-<sha12>` server images and `snapshot-<sha12>` client/deployment assets; only after the complete bundle succeeds are those server images promoted to `edge` and the rolling **snapshot prerelease** advanced. This makes `master` mean the most recent fully successful published master build, not merely the newest commit that started building.
+
+Each successful master build also keeps an immutable prerelease named `snapshot-<sha12>`. The `commit` channel resolves a requested SHA to that prerelease; if no such successful build exists, installation is refused. Snapshot releases expose `.exe`, `.deb`, and shell/config assets directly; single-file deliverables are not wrapped in an extra ZIP/TAR archive. GitHub Actions artifacts are CI plumbing and are not used as the update distribution source.
 
 A `v*` tag creates a GitHub Release and publishes versioned server images plus `latest`:
 

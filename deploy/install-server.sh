@@ -8,11 +8,203 @@ CADDY_PATH="$CONFIG_DIR/Caddyfile"
 ENV_PATH="$CONFIG_DIR/.env"
 SOURCE_REF="${XD_SOURCE_REF:-@SOURCE_REF@}"
 IMAGE_TAG="${XD_IMAGE_TAG:-@IMAGE_TAG@}"
+BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
+BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 STAGING_DIR="$CONFIG_DIR/.install-staging"
 
-if [[ "$SOURCE_REF" == "@SOURCE_REF@" ]]; then SOURCE_REF="master"; fi
-if [[ "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then IMAGE_TAG="edge"; fi
+usage() {
+  cat <<'USAGE'
+xDrive server installer
+
+Usage:
+  install-server.sh [--channel stable|master|commit] [--commit SHA]
+
+Channels:
+  stable  Latest successful vMAJOR.MINOR.PATCH release.
+  master  Latest fully successful master snapshot.
+  commit  Pin to a specified successfully published master commit.
+
+The selected channel is persisted in ~/.xd/.env and reused on later updates.
+USAGE
+}
+
+requested_channel="${XD_INSTALL_CHANNEL:-}"
+requested_commit="${XD_INSTALL_COMMIT:-}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --channel)
+      [[ $# -ge 2 ]] || { echo "--channel requires a value" >&2; exit 2; }
+      requested_channel="$2"; shift 2 ;;
+    --commit)
+      [[ $# -ge 2 ]] || { echo "--commit requires a SHA" >&2; exit 2; }
+      requested_commit="$2"; shift 2 ;;
+    -h|--help)
+      usage; exit 0 ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2 ;;
+  esac
+done
+
+existing_env_value() {
+  local key="$1"
+  [[ -f "$ENV_PATH" ]] || return 0
+  grep "^$key=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- || true
+}
+
+if [[ -z "$requested_channel" && -n "$requested_commit" ]]; then
+  requested_channel="commit"
+fi
+if [[ -z "$requested_channel" ]]; then
+  requested_channel="$(existing_env_value XD_RELEASE_CHANNEL)"
+fi
+if [[ -z "$requested_channel" ]]; then
+  legacy_image="$(existing_env_value XD_SERVER_IMAGE)"
+  case "$legacy_image" in
+    *:edge|*:sha-*) requested_channel="master" ;;
+    *:v[0-9]*|*:latest) requested_channel="stable" ;;
+  esac
+fi
+if [[ -z "$requested_channel" ]]; then
+  if [[ "$BUILT_CHANNEL" != "@RELEASE_CHANNEL@" && -n "$BUILT_CHANNEL" ]]; then
+    requested_channel="$BUILT_CHANNEL"
+  else
+    requested_channel="stable"
+  fi
+fi
+requested_channel="$(printf '%s' "$requested_channel" | tr '[:upper:]' '[:lower:]')"
+case "$requested_channel" in
+  stable|master|commit) ;;
+  snapshot) requested_channel="master" ;;
+  *) echo "invalid channel: $requested_channel (expected stable, master, or commit)" >&2; exit 2 ;;
+esac
+
+if [[ "$requested_channel" == "commit" && -z "$requested_commit" ]]; then
+  requested_commit="$(existing_env_value XD_RELEASE_COMMIT)"
+  if [[ -z "$requested_commit" && "$BUILT_COMMIT" != "@RELEASE_COMMIT@" ]]; then
+    requested_commit="$BUILT_COMMIT"
+  fi
+fi
+
+fetch() {
+  local url="$1" destination="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$destination.tmp"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$destination.tmp" "$url"
+  else
+    echo "xDrive server installer: curl or wget is required." >&2
+    exit 1
+  fi
+  mv "$destination.tmp" "$destination"
+}
+
+fetch_stdout() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url"
+  else
+    echo "xDrive server installer: curl or wget is required." >&2
+    exit 1
+  fi
+}
+
+resolve_commit() {
+  local ref="$1" json full
+  [[ "$ref" =~ ^[0-9A-Fa-f]{7,40}$ ]] || {
+    echo "xDrive server installer: commit must be 7-40 hexadecimal characters." >&2
+    return 1
+  }
+  json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/commits/$ref")"
+  full="$(printf '%s\n' "$json" | sed -nE 's/^[[:space:]]*"sha":[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n1 | tr '[:upper:]' '[:lower:]')"
+  [[ ${#full} -eq 40 ]] || {
+    echo "xDrive server installer: could not resolve commit $ref." >&2
+    return 1
+  }
+  printf '%s\n' "$full"
+}
+
+verify_download() {
+  local file="$1" sums="$2" name="$3" expected actual
+  expected="$(awk -v n="$name" '$2==n || $2=="*"n {print $1; exit}' "$sums")"
+  [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || {
+    echo "xDrive server installer: checksum for $name is missing." >&2
+    return 1
+  }
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  else
+    echo "xDrive server installer: sha256sum or shasum is required." >&2
+    return 1
+  fi
+  [[ "${actual,,}" == "${expected,,}" ]] || {
+    echo "xDrive server installer: checksum mismatch for $name." >&2
+    return 1
+  }
+}
+
+bootstrap_release() {
+  local channel="$1" commit="$2" base tag tmp installer sums full=""
+  case "$channel" in
+    stable)
+      base="https://github.com/$REPOSITORY/releases/latest/download"
+      ;;
+    master)
+      tag="snapshot"
+      base="https://github.com/$REPOSITORY/releases/download/$tag"
+      ;;
+    commit)
+      full="$(resolve_commit "$commit")"
+      tag="snapshot-${full:0:12}"
+      base="https://github.com/$REPOSITORY/releases/download/$tag"
+      ;;
+  esac
+
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  installer="$tmp/xdrive-server-install.sh"
+  sums="$tmp/SHA256SUMS.txt"
+  echo "Resolving xDrive server channel: $channel${full:+ ($full)}"
+  if ! fetch "$base/xdrive-server-install.sh" "$installer" ||
+     ! fetch "$base/SHA256SUMS.txt" "$sums"; then
+    echo "xDrive server installer: no successful published build is available for $channel${full:+ commit $full}." >&2
+    exit 1
+  fi
+  verify_download "$installer" "$sums" "xdrive-server-install.sh"
+  chmod 700 "$installer"
+  set +e
+  XD_INSTALL_RESOLVED=1 \
+  XD_INSTALL_CHANNEL="$channel" \
+  XD_INSTALL_COMMIT="${full:-$commit}" \
+  XD_CONFIG_DIR="$CONFIG_DIR" \
+    bash "$installer"
+  status=$?
+  set -e
+  rm -rf "$tmp"
+  trap - EXIT
+  exit "$status"
+}
+
+artifact_is_template=false
+if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then
+  artifact_is_template=true
+fi
+if [[ "${XD_INSTALL_RESOLVED:-0}" != "1" ]]; then
+  if [[ "$artifact_is_template" == "true" || "$requested_channel" != "$BUILT_CHANNEL" ]]; then
+    bootstrap_release "$requested_channel" "$requested_commit"
+  fi
+fi
+
+if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then
+  echo "xDrive server installer: unresolved deployment template." >&2
+  exit 1
+fi
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -34,19 +226,6 @@ fi
 
 mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
-
-fetch() {
-  local url="$1" destination="$2"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$destination.tmp"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$destination.tmp" "$url"
-  else
-    echo "xDrive server installer: curl or wget is required." >&2
-    exit 1
-  fi
-  mv "$destination.tmp" "$destination"
-}
 
 raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
 fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml"
@@ -141,6 +320,14 @@ ensure_env XD_LOG_MAX_SIZE "${XD_LOG_MAX_SIZE:-10m}"
 ensure_env XD_LOG_MAX_FILES "${XD_LOG_MAX_FILES:-5}"
 ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
+ensure_env XD_RELEASE_CHANNEL "$requested_channel"
+ensure_env XD_RELEASE_COMMIT "${requested_commit:-}"
+set_env XD_RELEASE_CHANNEL "$requested_channel"
+if [[ "$requested_channel" == "commit" ]]; then
+  set_env XD_RELEASE_COMMIT "$requested_commit"
+else
+  set_env XD_RELEASE_COMMIT ""
+fi
 domain="$(env_value XD_DOMAIN)"
 if [[ -z "$domain" && -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" != "1" ]]; then
   read -r -p "Public domain for automatic HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
@@ -315,4 +502,5 @@ fi
 echo "Backup now:      $CONFIG_DIR/server-backup.sh"
 echo "Restore:         $CONFIG_DIR/server-restore.sh"
 echo "Verify storage:  $CONFIG_DIR/server-verify.sh"
+echo "Release channel: $(env_value XD_RELEASE_CHANNEL)${requested_commit:+ ($requested_commit)}"
 echo "Manage: docker compose --env-file '$ENV_PATH' -f '$COMPOSE_PATH' <command>"

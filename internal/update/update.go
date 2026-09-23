@@ -21,6 +21,10 @@ const (
 	defaultRepository = "lazyxu/xdrive"
 	defaultAPIBase    = "https://api.github.com"
 	maxMetadataBytes  = 2 << 20
+
+	ChannelStable = "stable"
+	ChannelMaster = "master"
+	ChannelCommit = "commit"
 )
 
 type Asset struct {
@@ -31,6 +35,8 @@ type Asset struct {
 type Result struct {
 	Current         string
 	Latest          string
+	Channel         string
+	Commit          string
 	UpdateAvailable bool
 	Asset           Asset
 	Checksums       Asset
@@ -48,6 +54,17 @@ type releaseResponse struct {
 		Name               string `json:"name"`
 		BrowserDownloadURL string `json:"browser_download_url"`
 	} `json:"assets"`
+}
+
+type refResponse struct {
+	Object struct {
+		SHA  string `json:"sha"`
+		Type string `json:"type"`
+	} `json:"object"`
+}
+
+type commitResponse struct {
+	SHA string `json:"sha"`
 }
 
 func DefaultChecker() Checker {
@@ -71,45 +88,132 @@ func IsReleaseVersion(v string) bool {
 	return ok && strings.HasPrefix(strings.TrimSpace(v), "v")
 }
 
+func IsSnapshotVersion(v string) bool {
+	v = strings.TrimSpace(v)
+	if !strings.HasPrefix(v, "snapshot-") {
+		return false
+	}
+	sha := strings.TrimPrefix(v, "snapshot-")
+	if len(sha) < 7 || len(sha) > 40 {
+		return false
+	}
+	for _, r := range sha {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func DefaultChannel(current string) string {
+	switch {
+	case IsReleaseVersion(current):
+		return ChannelStable
+	case IsSnapshotVersion(current):
+		return ChannelMaster
+	default:
+		return ""
+	}
+}
+
+func NormalizeChannel(channel string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(channel)) {
+	case ChannelStable:
+		return ChannelStable, nil
+	case ChannelMaster, "snapshot":
+		return ChannelMaster, nil
+	case ChannelCommit:
+		return ChannelCommit, nil
+	default:
+		return "", fmt.Errorf("invalid update channel %q; expected stable, master, or commit", channel)
+	}
+}
+
+func AutomaticTarget(current string) (string, string, error) {
+	channel := ""
+	if requested := strings.TrimSpace(os.Getenv("XD_UPDATE_CHANNEL")); requested != "" {
+		normalized, err := NormalizeChannel(requested)
+		if err != nil {
+			return "", "", err
+		}
+		channel = normalized
+	} else {
+		channel = DefaultChannel(current)
+	}
+	commit := strings.TrimSpace(os.Getenv("XD_UPDATE_COMMIT"))
+	if channel == ChannelCommit && commit == "" {
+		return "", "", fmt.Errorf("commit update channel requires XD_UPDATE_COMMIT")
+	}
+	return channel, commit, nil
+}
+
+func AutomaticChannel(current string) (string, error) {
+	channel, _, err := AutomaticTarget(current)
+	return channel, err
+}
+
 func (c Checker) Check(ctx context.Context, current, assetName string) (Result, error) {
-	result := Result{Current: current}
-	if !IsReleaseVersion(current) {
-		return result, nil
+	return c.CheckChannel(ctx, current, assetName, ChannelStable)
+}
+
+func (c Checker) CheckChannel(ctx context.Context, current, assetName, channel string) (Result, error) {
+	return c.CheckTarget(ctx, current, assetName, channel, "")
+}
+
+func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel, commit string) (Result, error) {
+	channel, err := NormalizeChannel(channel)
+	if err != nil {
+		return Result{Current: current}, err
 	}
-	if c.HTTP == nil {
-		c.HTTP = http.DefaultClient
+	result := Result{Current: current, Channel: channel}
+	c = c.withDefaults()
+
+	var releasePath string
+	switch channel {
+	case ChannelStable:
+		releasePath = "/releases/latest"
+	case ChannelMaster:
+		releasePath = "/releases/tags/snapshot"
+	case ChannelCommit:
+		full, err := c.resolveCommit(ctx, commit, current)
+		if err != nil {
+			return result, err
+		}
+		result.Commit = full
+		releasePath = "/releases/tags/snapshot-" + full[:12]
 	}
-	if strings.TrimSpace(c.Repository) == "" {
-		c.Repository = defaultRepository
-	}
-	if strings.TrimSpace(c.APIBase) == "" {
-		c.APIBase = defaultAPIBase
-	}
-	url := fmt.Sprintf("%s/repos/%s/releases/latest", strings.TrimRight(c.APIBase, "/"), c.Repository)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	rel, err := c.release(ctx, releasePath, current)
 	if err != nil {
 		return result, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "xdrive-updater/"+current)
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return result, err
+
+	switch channel {
+	case ChannelStable:
+		result.Latest = strings.TrimSpace(rel.TagName)
+		if !IsReleaseVersion(result.Latest) {
+			return result, fmt.Errorf("latest release has invalid tag %q", result.Latest)
+		}
+		if IsReleaseVersion(current) {
+			result.UpdateAvailable = Compare(result.Latest, current) > 0
+		} else {
+			result.UpdateAvailable = result.Latest != strings.TrimSpace(current)
+		}
+	case ChannelMaster:
+		sha, err := c.snapshotCommit(ctx, current)
+		if err != nil {
+			return result, err
+		}
+		result.Commit = sha
+		result.Latest = snapshotVersion(sha)
+		result.UpdateAvailable = !sameSnapshot(current, sha)
+	case ChannelCommit:
+		if err := c.verifySnapshotTag(ctx, result.Commit, current); err != nil {
+			return result, err
+		}
+		result.Latest = snapshotVersion(result.Commit)
+		result.UpdateAvailable = !sameSnapshot(current, result.Commit)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return result, fmt.Errorf("update check failed: %s", resp.Status)
-	}
-	var rel releaseResponse
-	dec := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes))
-	if err := dec.Decode(&rel); err != nil {
-		return result, fmt.Errorf("decode release metadata: %w", err)
-	}
-	result.Latest = strings.TrimSpace(rel.TagName)
-	if !IsReleaseVersion(result.Latest) {
-		return result, fmt.Errorf("latest release has invalid tag %q", result.Latest)
-	}
-	result.UpdateAvailable = Compare(result.Latest, current) > 0
+
 	for _, a := range rel.Assets {
 		switch a.Name {
 		case assetName:
@@ -120,13 +224,184 @@ func (c Checker) Check(ctx context.Context, current, assetName string) (Result, 
 	}
 	if result.UpdateAvailable {
 		if result.Asset.URL == "" {
-			return result, fmt.Errorf("release %s does not contain %s", result.Latest, assetName)
+			return result, fmt.Errorf("%s channel %s does not contain %s", channel, result.Latest, assetName)
 		}
 		if result.Checksums.URL == "" {
-			return result, fmt.Errorf("release %s does not contain SHA256SUMS.txt", result.Latest)
+			return result, fmt.Errorf("%s channel %s does not contain SHA256SUMS.txt", channel, result.Latest)
 		}
 	}
 	return result, nil
+}
+
+func (c Checker) withDefaults() Checker {
+	if c.HTTP == nil {
+		c.HTTP = http.DefaultClient
+	}
+	if strings.TrimSpace(c.Repository) == "" {
+		c.Repository = defaultRepository
+	}
+	if strings.TrimSpace(c.APIBase) == "" {
+		c.APIBase = defaultAPIBase
+	}
+	c.APIBase = strings.TrimRight(c.APIBase, "/")
+	return c
+}
+
+func (c Checker) release(ctx context.Context, path, current string) (releaseResponse, error) {
+	var rel releaseResponse
+	url := fmt.Sprintf("%s/repos/%s%s", c.APIBase, c.Repository, path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return rel, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "xdrive-updater/"+current)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return rel, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return rel, fmt.Errorf("update check failed: %s", resp.Status)
+	}
+	dec := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes))
+	if err := dec.Decode(&rel); err != nil {
+		return rel, fmt.Errorf("decode release metadata: %w", err)
+	}
+	return rel, nil
+}
+
+func validCommitRef(ref string) bool {
+	ref = strings.TrimSpace(ref)
+	if len(ref) < 7 || len(ref) > 40 {
+		return false
+	}
+	for _, r := range ref {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func snapshotVersion(sha string) string {
+	sha = strings.ToLower(strings.TrimSpace(sha))
+	if len(sha) > 12 {
+		sha = sha[:12]
+	}
+	return "snapshot-" + sha
+}
+
+func (c Checker) resolveCommit(ctx context.Context, commit, current string) (string, error) {
+	commit = strings.TrimSpace(commit)
+	if !validCommitRef(commit) {
+		return "", fmt.Errorf("commit must be 7-40 hexadecimal characters")
+	}
+	url := fmt.Sprintf("%s/repos/%s/commits/%s", c.APIBase, c.Repository, commit)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "xdrive-updater/"+current)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("commit %s is not available: %s", commit, resp.Status)
+	}
+	var out commitResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode commit metadata: %w", err)
+	}
+	sha := strings.ToLower(strings.TrimSpace(out.SHA))
+	if len(sha) != 40 {
+		return "", fmt.Errorf("commit API returned invalid SHA")
+	}
+	return sha, nil
+}
+
+func (c Checker) verifySnapshotTag(ctx context.Context, sha, current string) error {
+	tag := "snapshot-" + sha[:12]
+	got, err := c.tagCommit(ctx, tag, current)
+	if err != nil {
+		return fmt.Errorf("commit %s does not have a successful published client build: %w", sha[:12], err)
+	}
+	if got != sha {
+		return fmt.Errorf("snapshot tag %s points to %s instead of %s", tag, got, sha)
+	}
+	return nil
+}
+
+func (c Checker) tagCommit(ctx context.Context, tag, current string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/git/ref/tags/%s", c.APIBase, c.Repository, tag)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "xdrive-updater/"+current)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("tag %s lookup failed: %s", tag, resp.Status)
+	}
+	var ref refResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&ref); err != nil {
+		return "", fmt.Errorf("decode tag ref: %w", err)
+	}
+	sha := strings.ToLower(strings.TrimSpace(ref.Object.SHA))
+	if len(sha) != 40 || ref.Object.Type != "commit" {
+		return "", fmt.Errorf("tag %s does not point at a commit", tag)
+	}
+	return sha, nil
+}
+
+func (c Checker) snapshotCommit(ctx context.Context, current string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/git/ref/tags/snapshot", c.APIBase, c.Repository)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "xdrive-updater/"+current)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("snapshot ref check failed: %s", resp.Status)
+	}
+	var ref refResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&ref); err != nil {
+		return "", fmt.Errorf("decode snapshot ref: %w", err)
+	}
+	sha := strings.ToLower(strings.TrimSpace(ref.Object.SHA))
+	if len(sha) != 40 || ref.Object.Type != "commit" {
+		return "", fmt.Errorf("snapshot ref does not point at a commit")
+	}
+	for _, r := range sha {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return "", fmt.Errorf("snapshot ref contains invalid commit SHA")
+		}
+	}
+	return sha, nil
+}
+
+func sameSnapshot(current, sha string) bool {
+	current = strings.TrimSpace(current)
+	if !IsSnapshotVersion(current) {
+		return false
+	}
+	currentSHA := strings.ToLower(strings.TrimPrefix(current, "snapshot-"))
+	sha = strings.ToLower(strings.TrimSpace(sha))
+	return strings.HasPrefix(sha, currentSHA) || strings.HasPrefix(currentSHA, sha)
 }
 
 // Compare compares release versions of the form vMAJOR.MINOR.PATCH.
@@ -282,14 +557,43 @@ func downloadFile(ctx context.Context, h *http.Client, url, path, current string
 }
 
 func CheckLatest(ctx context.Context, current string) (Result, error) {
-	return DefaultChecker().Check(ctx, current, platformAssetName())
+	channel, commit, err := AutomaticTarget(current)
+	if err != nil {
+		return Result{Current: current}, err
+	}
+	if channel == "" {
+		return Result{Current: current}, nil
+	}
+	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel, commit)
 }
 
-// InstallLatest checks the latest stable release, verifies SHA256SUMS.txt and
-// starts/executes the platform installer. The bool is true only when an
-// installer was actually started.
+func CheckChannel(ctx context.Context, current, channel string) (Result, error) {
+	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel, "")
+}
+
+func CheckTarget(ctx context.Context, current, channel, commit string) (Result, error) {
+	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel, commit)
+}
+
+// InstallLatest checks the default channel for the current build, verifies
+// SHA256SUMS.txt and starts/executes the platform installer.
 func InstallLatest(ctx context.Context, current string) (bool, Result, error) {
-	result, err := CheckLatest(ctx, current)
+	channel, commit, err := AutomaticTarget(current)
+	if err != nil {
+		return false, Result{Current: current}, err
+	}
+	if channel == "" {
+		return false, Result{Current: current}, nil
+	}
+	return InstallTarget(ctx, current, channel, commit)
+}
+
+func InstallChannel(ctx context.Context, current, channel string) (bool, Result, error) {
+	return InstallTarget(ctx, current, channel, "")
+}
+
+func InstallTarget(ctx context.Context, current, channel, commit string) (bool, Result, error) {
+	result, err := CheckTarget(ctx, current, channel, commit)
 	if err != nil || !result.UpdateAvailable {
 		return false, result, err
 	}

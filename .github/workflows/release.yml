@@ -8,12 +8,55 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   DOCKER_BUILD_RECORD_UPLOAD: "false"
 
+concurrency:
+  group: build-packages-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/master' }}
+
 jobs:
+  verify-master-ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Wait for successful CI on master commit
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          for attempt in $(seq 1 180); do
+            payload="$(gh api "repos/$repo/actions/workflows/ci.yml/runs?branch=master&event=push&per_page=100")"
+            status="$(jq -r --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.run_number) | last | .status // empty' <<<"$payload")"
+            conclusion="$(jq -r --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.run_number) | last | .conclusion // empty' <<<"$payload")"
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "CI succeeded for $GITHUB_SHA."
+                exit 0
+              fi
+              echo "CI for $GITHUB_SHA completed with $conclusion; refusing to publish." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for CI on $GITHUB_SHA." >&2
+          exit 1
+      - name: Validate publishing ref
+        if: github.ref != 'refs/heads/master' && github.ref_type != 'tag'
+        shell: bash
+        run: |
+          echo "Build Packages may publish only master snapshots or version tags." >&2
+          exit 1
+
   client-linux-amd64:
+    needs: verify-master-ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +71,7 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="$GITHUB_REF_NAME"
           else
-            version="snapshot-${GITHUB_SHA::7}"
+            version="snapshot-${GITHUB_SHA::12}"
           fi
           bash scripts/build-linux-deb.sh "$version" release
       - uses: actions/upload-artifact@v4
@@ -39,6 +82,7 @@ jobs:
           retention-days: 14
 
   client-windows-amd64:
+    needs: verify-master-ci
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -67,7 +111,7 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq "tag") {
             $version = $env:GITHUB_REF_NAME
           } else {
-            $version = "snapshot-" + $env:GITHUB_SHA.Substring(0, 7)
+            $version = "snapshot-" + $env:GITHUB_SHA.Substring(0, 12)
           }
           if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PATH)) {
             throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
@@ -94,6 +138,7 @@ jobs:
           retention-days: 14
 
   server-images:
+    needs: verify-master-ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -124,10 +169,10 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ matrix.image }}"
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="$GITHUB_REF_NAME"
-            tags="$image:$GITHUB_REF_NAME"$'\n'"$image:latest"
+            tags="$image:$GITHUB_REF_NAME"
           else
-            version="snapshot-${GITHUB_SHA::7}"
-            tags="$image:edge"$'\n'"$image:sha-${GITHUB_SHA::7}"
+            version="snapshot-${GITHUB_SHA::12}"
+            tags="$image:sha-${GITHUB_SHA::12}"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
@@ -144,6 +189,7 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
 
   server-deploy:
+    needs: verify-master-ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -155,11 +201,19 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             source_ref="$GITHUB_REF_NAME"
             image_tag="$GITHUB_REF_NAME"
+            release_channel="stable"
+            release_commit=""
           else
             source_ref="$GITHUB_SHA"
-            image_tag="edge"
+            image_tag="sha-${GITHUB_SHA::12}"
+            release_channel="master"
+            release_commit="$GITHUB_SHA"
           fi
-          sed -e "s|@SOURCE_REF@|$source_ref|g" -e "s|@IMAGE_TAG@|$image_tag|g" \
+          sed \
+            -e "s|@SOURCE_REF@|$source_ref|g" \
+            -e "s|@IMAGE_TAG@|$image_tag|g" \
+            -e "s|@RELEASE_CHANNEL@|$release_channel|g" \
+            -e "s|@RELEASE_COMMIT@|$release_commit|g" \
             deploy/install-server.sh > release/xdrive-server-install.sh
           chmod +x release/xdrive-server-install.sh
           cp deploy/docker-compose.yml release/docker-compose.yml
@@ -175,10 +229,11 @@ jobs:
           retention-days: 14
 
   bundle:
-    needs: [client-linux-amd64, client-windows-amd64, server-images, server-deploy]
+    needs: [verify-master-ci, client-linux-amd64, client-windows-amd64, server-images, server-deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     steps:
       - name: Download Linux client installer
         uses: actions/download-artifact@v4
@@ -211,6 +266,64 @@ jobs:
             docker-compose.yml \
             Caddyfile \
             xdrive.env.example > SHA256SUMS.txt
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR for channel promotion
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote successful server images
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="$GITHUB_REPOSITORY_OWNER"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            source_tag="$GITHUB_REF_NAME"
+            target_tag="latest"
+          else
+            source_tag="sha-${GITHUB_SHA::12}"
+            target_tag="edge"
+          fi
+          for image in xdrive-server xdrive-web; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/$owner/$image:$target_tag" \
+              "ghcr.io/$owner/$image:$source_tag"
+          done
+
+      - name: Publish immutable master snapshot
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          tag="snapshot-${GITHUB_SHA::12}"
+          if gh api "repos/$repo/git/ref/tags/$tag" >/dev/null 2>&1; then
+            existing="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.sha')"
+            [[ "$existing" == "$GITHUB_SHA" ]] || {
+              echo "$tag already points to $existing, refusing to overwrite immutable snapshot." >&2
+              exit 1
+            }
+          else
+            gh api --method POST "repos/$repo/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            while IFS= read -r asset; do
+              [[ -n "$asset" ]] && gh release delete-asset "$tag" "$asset" --repo "$repo" -y
+            done < <(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name')
+            gh release upload "$tag" release/* --repo "$repo"
+            gh release edit "$tag" --repo "$repo" --prerelease \
+              --title "xDrive snapshot ${GITHUB_SHA::12}" \
+              --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
+          else
+            gh release create "$tag" release/* --repo "$repo" --prerelease \
+              --title "xDrive snapshot ${GITHUB_SHA::12}" \
+              --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
+          fi
+
       - name: Publish rolling snapshot prerelease as direct files
         if: github.ref == 'refs/heads/master'
         env:
@@ -230,11 +343,11 @@ jobs:
               [[ -n "$asset" ]] && gh release delete-asset snapshot "$asset" --repo "$repo" -y
             done < <(gh release view snapshot --repo "$repo" --json assets --jq '.assets[].name')
             gh release upload snapshot release/* --repo "$repo"
-            gh release edit snapshot --repo "$repo" --prerelease --title "xDrive snapshot ${GITHUB_SHA::7}" \
+            gh release edit snapshot --repo "$repo" --prerelease --title "xDrive snapshot ${GITHUB_SHA::12}" \
               --notes "Rolling development snapshot from master at $GITHUB_SHA. Assets are published directly; no extra zip/tar wrapper is used."
           else
             gh release create snapshot release/* --repo "$repo" --prerelease \
-              --title "xDrive snapshot ${GITHUB_SHA::7}" \
+              --title "xDrive snapshot ${GITHUB_SHA::12}" \
               --notes "Rolling development snapshot from master at `$GITHUB_SHA`. Assets are published directly; no extra zip/tar wrapper is used."
           fi
       - name: Assert distribution assets are not archive-wrapped
