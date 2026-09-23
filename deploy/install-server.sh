@@ -71,7 +71,10 @@ if [[ -z "$requested_channel" ]]; then
   if [[ "$BUILT_CHANNEL" != "@RELEASE_CHANNEL@" && -n "$BUILT_CHANNEL" ]]; then
     requested_channel="$BUILT_CHANNEL"
   else
-    requested_channel="stable"
+    # The raw master bootstrap is a template, not a stable release artifact.
+    # Follow the latest fully successful published master snapshot so the
+    # canonical one-line install works before the first vMAJOR.MINOR.PATCH.
+    requested_channel="master"
   fi
 fi
 requested_channel="$(printf '%s' "$requested_channel" | tr '[:upper:]' '[:lower:]')"
@@ -89,16 +92,23 @@ if [[ "$requested_channel" == "commit" && -z "$requested_commit" ]]; then
 fi
 
 fetch() {
-  local url="$1" destination="$2"
+  local url="$1" destination="$2" tmp="$2.tmp"
+  rm -f "$tmp"
   if command -v curl >/dev/null 2>&1; then
-    curl -fL --progress-bar "$url" -o "$destination.tmp"
+    if ! curl -fL --progress-bar "$url" -o "$tmp"; then
+      rm -f "$tmp"
+      return 1
+    fi
   elif command -v wget >/dev/null 2>&1; then
-    wget --progress=bar:force:noscroll -O "$destination.tmp" "$url"
+    if ! wget --progress=bar:force:noscroll -O "$tmp" "$url"; then
+      rm -f "$tmp"
+      return 1
+    fi
   else
     echo "xDrive server installer: curl or wget is required." >&2
-    exit 1
+    return 1
   fi
-  mv "$destination.tmp" "$destination"
+  mv "$tmp" "$destination"
 }
 
 fetch_stdout() {
