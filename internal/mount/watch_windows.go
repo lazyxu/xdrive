@@ -145,7 +145,7 @@ func (w *windowsDirectoryWatcher) run(ctx context.Context, out chan<- winLocalCh
 				_ = windows.CancelIoEx(w.handle, &overlapped)
 				return fmt.Errorf("wait for directory changes: %w", waitErr)
 			}
-			if status == windows.WAIT_TIMEOUT {
+			if status == uint32(windows.WAIT_TIMEOUT) {
 				continue
 			}
 			if status != windows.WAIT_OBJECT_0 {
