@@ -137,7 +137,7 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 	if !ok {
 		return false, nil
 	}
-	info, err := os.Lstat(filepath.Join(p.root, filepath.FromSlash(rename.NewPath)))
+	_, err := os.Lstat(filepath.Join(p.root, filepath.FromSlash(rename.NewPath)))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
@@ -164,8 +164,6 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 	moveBaselinePrefix(baseline, rename.OldPath, rename.NewPath)
 	rootState := baseline[rename.NewPath]
 	rootState.node = updated
-	rootState.localModTime = info.ModTime()
-	rootState.localSize = info.Size()
 	baseline[rename.NewPath] = rootState
 	return true, nil
 }
