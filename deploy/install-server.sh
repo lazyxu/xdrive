@@ -61,6 +61,13 @@ if [[ -z "$requested_channel" ]]; then
   requested_channel="$(existing_env_value XD_RELEASE_CHANNEL)"
 fi
 if [[ -z "$requested_channel" ]]; then
+  legacy_image="$(existing_env_value XD_SERVER_IMAGE)"
+  case "$legacy_image" in
+    *:edge|*:sha-*) requested_channel="master" ;;
+    *:v[0-9]*|*:latest) requested_channel="stable" ;;
+  esac
+fi
+if [[ -z "$requested_channel" ]]; then
   if [[ "$BUILT_CHANNEL" != "@RELEASE_CHANNEL@" && -n "$BUILT_CHANNEL" ]]; then
     requested_channel="$BUILT_CHANNEL"
   else
