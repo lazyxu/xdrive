@@ -83,8 +83,9 @@ The installer:
 3. writes `~/.xd/docker-compose.yml`;
 4. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
 5. pulls the xDrive server/Web container images;
-6. starts PostgreSQL, the xDrive API server, and the Web UI;
-7. if no administrator exists, securely prompts on the terminal to create the first administrator.
+6. installs `server-backup.sh`, `server-restore.sh`, and `server-verify.sh` into `~/.xd`;
+7. starts PostgreSQL, the xDrive API server, and the Web UI;
+8. if no administrator exists, securely prompts on the terminal to create the first administrator.
 
 The default Web endpoint is:
 
@@ -131,6 +132,79 @@ Data is persisted in Docker volumes:
 - `xdrive_file-data`: uploaded file blobs.
 
 For production, put the Web container behind an HTTPS reverse proxy and back up both volumes.
+
+### Backup, restore, and storage consistency
+
+The Docker deployment installs three maintenance tools in `~/.xd`:
+
+```text
+~/.xd/server-backup.sh
+~/.xd/server-restore.sh
+~/.xd/server-verify.sh
+```
+
+#### Consistency verification
+
+A normal verification briefly stops the API so the database and blob tree cannot change during the scan:
+
+```bash
+~/.xd/server-verify.sh
+```
+
+It checks all `xd_files.storage_key` references against `file-data` and reports:
+
+- database references whose blob is missing;
+- blob size mismatches;
+- orphan blobs that exist on disk but have no database reference.
+
+The underlying server command is also available inside the container:
+
+```bash
+docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
+  exec -T server xdrive-server storage verify --json
+```
+
+#### Backup
+
+```bash
+~/.xd/server-backup.sh
+```
+
+The default destination is `~/.xd/backups/xdrive-backup-<UTC timestamp>/`. A backup is a directory rather than a recompressed mega-archive:
+
+```text
+database.dump
+blobs.tar
+verify.json
+manifest.json
+SHA256SUMS.txt
+```
+
+`database.dump` is PostgreSQL custom format. `blobs.tar` is intentionally **uncompressed** because uploaded content is frequently already compressed and avoiding another compression layer makes large backups faster and more predictable. The script stops the API for a short maintenance window, runs consistency verification, creates both snapshots, writes the manifest, computes SHA-256 checksums, and restarts the API only after the backup directory is complete.
+
+Choose another destination, preferably a different disk or remote-mounted backup target:
+
+```bash
+~/.xd/server-backup.sh --output-dir /mnt/backup/xdrive
+```
+
+By default an inconsistent source is rejected. `--allow-inconsistent` exists for emergency capture only and records `consistency_verified: false` in the manifest.
+
+#### Restore
+
+```bash
+~/.xd/server-restore.sh /mnt/backup/xdrive/xdrive-backup-20260923T120000Z
+```
+
+Restore verifies `SHA256SUMS.txt` before changing anything. By default it then creates a **pre-restore safety backup** of the current installation, stops the API, recreates the xDrive PostgreSQL database, replaces `file-data`, and runs an offline consistency check. The API is reopened only if that check succeeds. In non-interactive automation, pass `--yes`.
+
+For a recovery drill where a safety copy is unnecessary:
+
+```bash
+~/.xd/server-restore.sh BACKUP_DIR --yes --no-safety-backup
+```
+
+Backup directories contain user metadata and all file contents and must be protected like the live server. The generated `~/.xd/.env` is deliberately **not copied into data backups**; store deployment secrets separately.
 
 ### GHCR visibility
 
@@ -426,7 +500,7 @@ Every push runs cross-platform CI. The test matrix covers:
 - server/Web Docker builds;
 - Docker Compose validation.
 
-Every push to `master` also produces a snapshot bundle and publishes `edge` server images to GHCR.
+Every push to `master` publishes `edge` server images to GHCR and updates a rolling **snapshot prerelease**. The snapshot release exposes `.exe`, `.deb`, and shell/config assets directly; single-file deliverables are not wrapped in an extra ZIP/TAR archive. GitHub Actions may still use internal artifact containers to transfer files between jobs, but those are CI plumbing rather than distribution packages.
 
 A `v*` tag creates a GitHub Release and publishes versioned server images plus `latest`:
 
@@ -441,6 +515,9 @@ Release assets are client/deployment deliverables rather than raw application ar
 xDriveSetup-amd64.exe
 xdrive-client-linux-amd64.deb
 xdrive-server-install.sh
+server-backup.sh
+server-restore.sh
+server-verify.sh
 docker-compose.yml
 xdrive.env.example
 SHA256SUMS.txt
@@ -473,6 +550,10 @@ packaging/
 scripts/
   build-linux-deb.sh
   build-windows-installer.ps1
+  server-backup.sh
+  server-restore.sh
+  server-verify.sh
+  test-server-backup-restore.sh
 deploy/
   docker-compose.yml
   install-server.sh

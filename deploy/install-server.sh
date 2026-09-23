@@ -40,17 +40,27 @@ fi
 mkdir -p "$CONFIG_DIR"
 chmod 700 "$CONFIG_DIR"
 
-raw_url="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF/deploy/docker-compose.yml"
-if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$raw_url" -o "$COMPOSE_PATH.tmp"
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO "$COMPOSE_PATH.tmp" "$raw_url"
-else
-  echo "xDrive server installer: curl or wget is required." >&2
-  exit 1
-fi
-mv "$COMPOSE_PATH.tmp" "$COMPOSE_PATH"
+fetch() {
+  local url="$1" destination="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$destination.tmp"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$destination.tmp" "$url"
+  else
+    echo "xDrive server installer: curl or wget is required." >&2
+    exit 1
+  fi
+  mv "$destination.tmp" "$destination"
+}
+
+raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
+fetch "$raw_base/deploy/docker-compose.yml" "$COMPOSE_PATH"
 chmod 600 "$COMPOSE_PATH"
+
+for maintenance_script in server-backup.sh server-restore.sh server-verify.sh; do
+  fetch "$raw_base/scripts/$maintenance_script" "$CONFIG_DIR/$maintenance_script"
+  chmod 700 "$CONFIG_DIR/$maintenance_script"
+done
 
 random_hex() {
   local bytes="${1:-32}"
@@ -103,6 +113,9 @@ compose() {
 
 echo "xDrive compose: $COMPOSE_PATH"
 echo "xDrive env:     $ENV_PATH"
+echo "Backup tool:    $CONFIG_DIR/server-backup.sh"
+echo "Restore tool:   $CONFIG_DIR/server-restore.sh"
+echo "Verify tool:    $CONFIG_DIR/server-verify.sh"
 
 if [[ "${XD_INSTALL_NO_START:-0}" == "1" ]]; then
   echo "Files installed. Start later with:"

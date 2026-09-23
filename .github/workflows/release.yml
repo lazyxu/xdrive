@@ -138,6 +138,8 @@ jobs:
           chmod +x release/xdrive-server-install.sh
           cp deploy/docker-compose.yml release/docker-compose.yml
           cp deploy/.env.example release/xdrive.env.example
+          cp scripts/server-backup.sh scripts/server-restore.sh scripts/server-verify.sh release/
+          chmod +x release/server-backup.sh release/server-restore.sh release/server-verify.sh
       - uses: actions/upload-artifact@v4
         with:
           name: server-deploy
@@ -175,15 +177,45 @@ jobs:
             xdrive-client-linux-amd64.deb \
             xDriveSetup-amd64.exe \
             xdrive-server-install.sh \
+            server-backup.sh \
+            server-restore.sh \
+            server-verify.sh \
             docker-compose.yml \
             xdrive.env.example > SHA256SUMS.txt
-      - name: Upload combined snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: xdrive-${{ github.ref_type == 'tag' && github.ref_name || format('snapshot-{0}', github.sha) }}
-          path: release/*
-          if-no-files-found: error
-          retention-days: 30
+      - name: Publish rolling snapshot prerelease as direct files
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          if gh api "repos/$repo/git/ref/tags/snapshot" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$repo/git/refs/tags/snapshot" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$repo/git/refs" -f ref='refs/tags/snapshot' -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
+          if gh release view snapshot --repo "$repo" >/dev/null 2>&1; then
+            while IFS= read -r asset; do
+              [[ -n "$asset" ]] && gh release delete-asset snapshot "$asset" --repo "$repo" -y
+            done < <(gh release view snapshot --repo "$repo" --json assets --jq '.assets[].name')
+            gh release upload snapshot release/* --repo "$repo"
+            gh release edit snapshot --repo "$repo" --prerelease --title "xDrive snapshot ${GITHUB_SHA::7}" \
+              --notes "Rolling development snapshot from master at $GITHUB_SHA. Assets are published directly; no extra zip/tar wrapper is used."
+          else
+            gh release create snapshot release/* --repo "$repo" --prerelease \
+              --title "xDrive snapshot ${GITHUB_SHA::7}" \
+              --notes "Rolling development snapshot from master at `$GITHUB_SHA`. Assets are published directly; no extra zip/tar wrapper is used."
+          fi
+      - name: Assert distribution assets are not archive-wrapped
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find release -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.tgz' \) | grep -q .; then
+            echo "single-file installers/scripts must be published directly, not archive-wrapped" >&2
+            exit 1
+          fi
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:

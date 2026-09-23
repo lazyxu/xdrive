@@ -56,9 +56,15 @@ jobs:
           XD_WEB_IMAGE: ghcr.io/lazyxu/xdrive-web:edge
         run: |
           bash -n deploy/install-server.sh
+          bash -n scripts/server-backup.sh
+          bash -n scripts/server-restore.sh
+          bash -n scripts/server-verify.sh
+          bash -n scripts/test-server-backup-restore.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
       - name: Validate server image
         run: docker build -t xdrive/server:test .
+      - name: Backup, corruption detection, and restore drill
+        run: bash scripts/test-server-backup-restore.sh
 
   go-windows:
     runs-on: windows-latest
