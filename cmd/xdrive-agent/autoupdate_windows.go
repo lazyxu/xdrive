@@ -18,7 +18,7 @@ func startAutoUpdate(ctx context.Context) <-chan struct{} {
 	if strings.TrimSpace(os.Getenv("XD_DISABLE_AUTO_UPDATE")) == "1" {
 		return ch
 	}
-	channel, err := xupdate.AutomaticChannel(version.String())
+	channel, commit, err := xupdate.AutomaticTarget(version.String())
 	if err != nil {
 		log.Printf("auto-update channel: %v", err)
 		return ch
@@ -38,7 +38,7 @@ func startAutoUpdate(ctx context.Context) <-chan struct{} {
 			case <-timer.C:
 			case <-ticker.C:
 			}
-			started, result, err := xupdate.InstallChannel(ctx, version.String(), channel)
+			started, result, err := xupdate.InstallTarget(ctx, version.String(), channel, commit)
 			if err != nil {
 				log.Printf("auto-update check (%s) failed: %v", channel, err)
 				continue
