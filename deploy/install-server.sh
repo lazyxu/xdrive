@@ -141,9 +141,6 @@ ensure_env XD_LOG_MAX_SIZE "${XD_LOG_MAX_SIZE:-10m}"
 ensure_env XD_LOG_MAX_FILES "${XD_LOG_MAX_FILES:-5}"
 ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
-set_env XD_SERVER_IMAGE "ghcr.io/lazyxu/xdrive-server:$IMAGE_TAG"
-set_env XD_WEB_IMAGE "ghcr.io/lazyxu/xdrive-web:$IMAGE_TAG"
-
 domain="$(env_value XD_DOMAIN)"
 if [[ -z "$domain" && -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" != "1" ]]; then
   read -r -p "Public domain for automatic HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
@@ -174,6 +171,12 @@ if [[ -f "$COMPOSE_PATH" && -x "$CONFIG_DIR/server-backup.sh" ]]; then
     "$CONFIG_DIR/server-backup.sh" --config-dir "$CONFIG_DIR" --output-dir "$CONFIG_DIR/pre-upgrade-backups"
   fi
 fi
+
+# Only point at the new release images after the old deployment has been
+# backed up successfully. This keeps pre-upgrade verification on the exact
+# server/Web version that owns the current database and blob layout.
+set_env XD_SERVER_IMAGE "ghcr.io/lazyxu/xdrive-server:$IMAGE_TAG"
+set_env XD_WEB_IMAGE "ghcr.io/lazyxu/xdrive-web:$IMAGE_TAG"
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
 install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
