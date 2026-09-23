@@ -15,6 +15,7 @@ type Event struct {
 	Kind    EventKind
 	Path    string
 	Message string
+	Notify  bool
 }
 
 var mountEventSink struct {
