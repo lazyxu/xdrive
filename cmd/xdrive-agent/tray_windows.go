@@ -56,10 +56,10 @@ const (
 	trayNIMModify     = 0x0001
 	trayNIMDelete     = 0x0002
 	trayNIMSetVersion = 0x0004
-	trayNIFMessage = 0x0001
-	trayNIFIcon    = 0x0002
-	trayNIFTip     = 0x0004
-	trayNIFInfo    = 0x0010
+	trayNIFMessage    = 0x0001
+	trayNIFIcon       = 0x0002
+	trayNIFTip        = 0x0004
+	trayNIFInfo       = 0x0010
 
 	trayNIIFInfo    = 0x0001
 	trayNIIFWarning = 0x0002
