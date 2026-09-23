@@ -1,0 +1,22 @@
+name: Cleanup merged branches
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Delete safely redundant branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/cleanup-merged-branches.sh
