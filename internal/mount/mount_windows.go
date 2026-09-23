@@ -26,12 +26,13 @@ type winState struct {
 }
 
 type winProvider struct {
-	cli      *client.Client
-	root     string
-	connKey  int64
-	mu       sync.Mutex
-	baseline map[string]winState
-	hydrated map[uint64]time.Time
+	cli        *client.Client
+	root       string
+	connKey    int64
+	mu         sync.Mutex
+	baseline   map[string]winState
+	hydrated   map[uint64]time.Time
+	manualSync chan struct{}
 }
 
 var activeWinProvider struct {
@@ -47,10 +48,11 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		return err
 	}
 	p := &winProvider{
-		cli:      cli,
-		root:     root,
-		baseline: map[string]winState{},
-		hydrated: map[uint64]time.Time{},
+		cli:        cli,
+		root:       root,
+		baseline:   map[string]winState{},
+		hydrated:   map[uint64]time.Time{},
+		manualSync: make(chan struct{}, 1),
 	}
 	activeWinProvider.Lock()
 	activeWinProvider.p = p
@@ -213,6 +215,17 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
 				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
+		case <-p.manualSync:
+			if !flushLocal() {
+				continue
+			}
+			emitEvent(Event{Kind: EventSyncStarted})
+			if err := p.reconcile(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "xd: Windows manual sync:", err)
+				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+				continue
+			}
+			emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
 		}
 	}
 }
@@ -343,15 +356,22 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		if !ok {
 			continue
 		}
+		absPath := filepath.Join(p.root, filepath.FromSlash(rel))
 		if entry.isDir {
 			n, err := p.cli.CreateDir(ctx, parent.node.ID, slashBase(rel))
 			if err != nil {
 				return err
 			}
+			if err := cfConvertPathToPlaceholder(absPath, n.ID); err != nil {
+				return err
+			}
 			baseline[rel] = stateFromLocal(n, entry)
 		} else {
-			n, err := p.cli.UploadFile(ctx, parent.node.ID, filepath.Join(p.root, filepath.FromSlash(rel)), slashBase(rel))
+			n, err := p.cli.UploadFile(ctx, parent.node.ID, absPath, slashBase(rel))
 			if err != nil {
+				return err
+			}
+			if err := cfConvertPathToPlaceholder(absPath, n.ID); err != nil {
 				return err
 			}
 			baseline[rel] = stateFromLocal(n, entry)
@@ -387,7 +407,16 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			emitEvent(Event{Kind: EventConflict, Path: conflictRel})
+			if err := cfConvertPathToPlaceholder(conflictAbs, conflictNode.ID); err != nil {
+				return err
+			}
+			emitEvent(Event{
+				Kind:           EventConflict,
+				Path:           conflictRel,
+				OriginalPath:   rel,
+				OriginalNodeID: base.node.ID,
+				ConflictNodeID: conflictNode.ID,
+			})
 			if st, err := os.Stat(conflictAbs); err == nil {
 				local[conflictRel] = localEntry{isDir: false, size: st.Size(), modTime: st.ModTime()}
 				baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
@@ -409,6 +438,9 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				baseline[rel] = winState{node: current, localModTime: st.ModTime(), localSize: st.Size()}
 			}
 			continue
+		}
+		if err := cfMarkPathInSync(absPath); err != nil {
+			return err
 		}
 		baseline[rel] = stateFromLocal(n, entry)
 	}

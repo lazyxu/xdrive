@@ -487,6 +487,16 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "xDrive")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	conflictEvents := make(chan Event, 4)
+	SetEventSink(func(event Event) {
+		if event.Kind == EventConflict {
+			select {
+			case conflictEvents <- event:
+			default:
+			}
+		}
+	})
+	defer SetEventSink(nil)
 	done := make(chan error, 1)
 	go func() {
 		done <- runPlatform(ctx, client.New(server.URL, "e2e-token"), root)
@@ -497,12 +507,46 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		st, err := os.Stat(remotePath)
 		return err == nil && st.Size() == 9
 	})
+	beforeHydrate, err := Availability(remotePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !beforeHydrate.Placeholder {
+		t.Fatalf("initial remote file is not a CfAPI placeholder: %+v", beforeHydrate)
+	}
 	content, err := os.ReadFile(remotePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(content) != "remote-v1" {
 		t.Fatalf("hydrated content=%q", content)
+	}
+	if err := KeepLocal(remotePath); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := Availability(remotePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !kept.Pinned || !kept.AvailableOffline {
+		t.Fatalf("keep-local state=%+v", kept)
+	}
+	if err := MakeOnlineOnly(remotePath); err != nil {
+		t.Fatal(err)
+	}
+	online, err := Availability(remotePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !online.OnlineOnly || !online.Placeholder {
+		t.Fatalf("online-only state=%+v", online)
+	}
+	content, err = os.ReadFile(remotePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "remote-v1" {
+		t.Fatalf("rehydrated content=%q", content)
 	}
 
 	localPath := filepath.Join(root, "local.txt")
@@ -513,6 +557,16 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		_, data, ok := api.byName("local.txt")
 		return ok && string(data) == "local-v1"
 	})
+	localState, err := Availability(localPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !localState.Placeholder {
+		t.Fatalf("uploaded local file was not converted to placeholder: %+v", localState)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted by active provider")
+	}
 
 	uploaded, _, ok := api.byName("local.txt")
 	if !ok {
@@ -589,6 +643,16 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		}
 		return false
 	})
+	var conflictEvent Event
+	select {
+	case conflictEvent = <-conflictEvents:
+	case <-time.After(5 * time.Second):
+		t.Fatal("conflict event was not emitted")
+	}
+	if conflictEvent.OriginalPath != "remote.txt" || conflictEvent.OriginalNodeID != n.ID ||
+		conflictEvent.ConflictNodeID == 0 || conflictEvent.Path == "" {
+		t.Fatalf("conflict event missing resolution metadata: %+v", conflictEvent)
+	}
 	_, final, ok := api.byName("remote.txt")
 	if !ok || string(final) != "server-wins" {
 		t.Fatalf("server winner lost: ok=%v content=%q", ok, final)

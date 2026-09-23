@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/mount"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -28,6 +29,7 @@ type agentSnapshot struct {
 	MustChangePassword bool
 	LastError          string
 	HasConflict        bool
+	ConflictCount      int
 	Version            string
 }
 
@@ -123,8 +125,33 @@ func (c *agentController) Run() {
 				s.LastError = event.Message
 			})
 		case mount.EventConflict:
+			snapshot := c.Snapshot()
+			stored := false
+			if dir, err := userconfig.Dir(); err == nil {
+				if err := conflictstate.Upsert(dir, conflictstate.Record{
+					ID:             event.Path,
+					Server:         snapshot.Server,
+					Username:       snapshot.Username,
+					OriginalPath:   event.OriginalPath,
+					ConflictPath:   event.Path,
+					OriginalNodeID: event.OriginalNodeID,
+					ConflictNodeID: event.ConflictNodeID,
+					CreatedAt:      time.Now().UTC(),
+				}); err == nil {
+					stored = true
+				}
+			}
+			if stored {
+				c.refreshConflictSnapshot()
+			} else {
+				c.setSnapshot(func(s *agentSnapshot) {
+					s.HasConflict = true
+					if s.ConflictCount == 0 {
+						s.ConflictCount = 1
+					}
+				})
+			}
 			c.setSnapshot(func(s *agentSnapshot) {
-				s.HasConflict = true
 				s.SyncStatus = "存在冲突副本"
 			})
 			body := "已保留冲突副本"
@@ -143,6 +170,7 @@ func (c *agentController) Run() {
 		mountDone      chan error
 		lastAuthCheck  time.Time
 		lastAuthNotice string
+		conflictKey    string
 	)
 
 	stopMount := func() {
@@ -191,6 +219,11 @@ func (c *agentController) Run() {
 				}
 			})
 			lastAuthNotice = ""
+			conflictKey = ""
+			c.setSnapshot(func(s *agentSnapshot) {
+				s.HasConflict = false
+				s.ConflictCount = 0
+			})
 			return
 		}
 
@@ -205,6 +238,12 @@ func (c *agentController) Run() {
 				s.AuthStatus = "已登录"
 			}
 		})
+
+		nextConflictKey := d.cfg.Server + "\x00" + d.cfg.Username
+		if nextConflictKey != conflictKey {
+			conflictKey = nextConflictKey
+			c.refreshConflictSnapshot()
+		}
 
 		if d.cfg.MustChangePassword {
 			if running {
@@ -447,9 +486,9 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 			s.SyncStatus = "正在启动同步"
 		}
 		s.Paused = false
-		s.HasConflict = false
 		s.LastError = ""
 	})
+	c.refreshConflictSnapshot()
 	c.wakeNow()
 	return nil
 }
@@ -581,6 +620,211 @@ func (c *agentController) CheckUpdate() (string, bool) {
 		return fmt.Sprintf("当前已是最新版本 %s。", current), false
 	}
 	return fmt.Sprintf("已验证 %s，正在启动更新安装。", result.Latest), true
+}
+
+func (c *agentController) SyncNow() error {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	root, err := userconfig.EffectiveMountPath(cfg)
+	if err != nil {
+		return err
+	}
+	if !mount.RequestSync(root) {
+		return fmt.Errorf("同步引擎当前未运行，请先登录并恢复同步")
+	}
+	c.setSnapshot(func(s *agentSnapshot) {
+		if !s.HasConflict {
+			s.SyncStatus = "正在同步"
+		}
+	})
+	return nil
+}
+
+func (c *agentController) FileAvailability(path string) (mount.FileAvailability, error) {
+	_, _, abs, err := managedPath(path)
+	if err != nil {
+		return mount.FileAvailability{}, err
+	}
+	return mount.Availability(abs)
+}
+
+func (c *agentController) SetFileAvailability(path, action string) error {
+	_, root, abs, err := managedPath(path)
+	if err != nil {
+		return err
+	}
+	switch strings.TrimSpace(action) {
+	case "keep":
+		err = mount.KeepLocal(abs)
+	case "release":
+		err = mount.ReleaseSpace(abs)
+	case "online":
+		err = mount.MakeOnlineOnly(abs)
+	case "sync":
+		return c.SyncNow()
+	default:
+		return fmt.Errorf("未知的文件状态操作")
+	}
+	if err != nil {
+		return err
+	}
+	_ = mount.RequestSync(root)
+	return nil
+}
+
+func managedPath(path string) (userconfig.Config, string, string, error) {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return userconfig.Config{}, "", "", err
+	}
+	root, err := userconfig.EffectiveMountPath(cfg)
+	if err != nil {
+		return cfg, "", "", err
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return cfg, "", "", err
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = root
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return cfg, root, "", err
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return cfg, root, "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return cfg, root, "", fmt.Errorf("路径必须位于 xDrive 同步目录内")
+	}
+	return cfg, filepath.Clean(root), filepath.Clean(abs), nil
+}
+
+func (c *agentController) Conflicts() []conflictstate.Record {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return nil
+	}
+	dir, err := userconfig.Dir()
+	if err != nil {
+		return nil
+	}
+	items, err := conflictstate.List(dir)
+	if err != nil {
+		return nil
+	}
+	out := make([]conflictstate.Record, 0, len(items))
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimRight(item.Server, "/"), strings.TrimRight(cfg.Server, "/")) &&
+			item.Username == cfg.Username {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func (c *agentController) refreshConflictSnapshot() {
+	items := c.Conflicts()
+	c.setSnapshot(func(s *agentSnapshot) {
+		s.ConflictCount = len(items)
+		s.HasConflict = len(items) > 0
+		if len(items) == 0 && s.SyncStatus == "存在冲突副本" {
+			s.SyncStatus = "同步正常"
+		}
+	})
+}
+
+func (c *agentController) OpenConflict(id string, both bool) error {
+	record, root, err := c.conflictByID(id)
+	if err != nil {
+		return err
+	}
+	original := filepath.Join(root, filepath.FromSlash(record.OriginalPath))
+	conflict := filepath.Join(root, filepath.FromSlash(record.ConflictPath))
+	if both {
+		if err := openFilePlatform(original); err != nil {
+			return err
+		}
+		return openFilePlatform(conflict)
+	}
+	return selectFilePlatform(conflict)
+}
+
+func (c *agentController) ResolveConflict(id, choice string) error {
+	record, root, err := c.conflictByID(id)
+	if err != nil {
+		return err
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	cli, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Minute)
+	defer cancel()
+	if err := applyConflictChoice(ctx, cli, root, record, choice); err != nil {
+		return err
+	}
+
+	conflictAbs := filepath.Join(root, filepath.FromSlash(record.ConflictPath))
+	_ = os.Remove(conflictAbs)
+	if dir, dirErr := userconfig.Dir(); dirErr == nil {
+		if err := conflictstate.Remove(dir, record.ID); err != nil {
+			return err
+		}
+	}
+	c.refreshConflictSnapshot()
+	_ = mount.RequestSync(root)
+	return nil
+}
+
+func (c *agentController) conflictByID(id string) (conflictstate.Record, string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return conflictstate.Record{}, "", fmt.Errorf("冲突记录不能为空")
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return conflictstate.Record{}, "", err
+	}
+	root, err := userconfig.EffectiveMountPath(cfg)
+	if err != nil {
+		return conflictstate.Record{}, "", err
+	}
+	for _, item := range c.Conflicts() {
+		if item.ID == id {
+			return item, root, nil
+		}
+	}
+	return conflictstate.Record{}, root, fmt.Errorf("冲突记录不存在或已解决")
+}
+
+func findConflictNode(remote map[string]client.Node, path string, id uint64) (client.Node, bool) {
+	key := filepath.ToSlash(filepath.Clean(path))
+	if n, ok := remote[key]; ok && (id == 0 || n.ID == id) {
+		return n, true
+	}
+	if id != 0 {
+		for _, n := range remote {
+			if n.ID == id {
+				return n, true
+			}
+		}
+	}
+	return client.Node{}, false
+}
+
+func isNotFound(err error) bool {
+	var apiErr *client.APIError
+	return errors.As(err, &apiErr) && apiErr.Status == 404
 }
 
 func (c *agentController) Quit() { c.cancel() }

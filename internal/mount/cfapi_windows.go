@@ -12,26 +12,39 @@ import (
 )
 
 var (
-	cldapi                 = windows.NewLazySystemDLL("cldapi.dll")
-	procRegisterSyncRoot   = cldapi.NewProc("CfRegisterSyncRoot")
-	procUnregisterSyncRoot = cldapi.NewProc("CfUnregisterSyncRoot")
-	procConnectSyncRoot    = cldapi.NewProc("CfConnectSyncRoot")
-	procDisconnectSyncRoot = cldapi.NewProc("CfDisconnectSyncRoot")
-	procCreatePlaceholders = cldapi.NewProc("CfCreatePlaceholders")
-	procExecute            = cldapi.NewProc("CfExecute")
+	cldapi                   = windows.NewLazySystemDLL("cldapi.dll")
+	procRegisterSyncRoot     = cldapi.NewProc("CfRegisterSyncRoot")
+	procUnregisterSyncRoot   = cldapi.NewProc("CfUnregisterSyncRoot")
+	procConnectSyncRoot      = cldapi.NewProc("CfConnectSyncRoot")
+	procDisconnectSyncRoot   = cldapi.NewProc("CfDisconnectSyncRoot")
+	procCreatePlaceholders   = cldapi.NewProc("CfCreatePlaceholders")
+	procExecute              = cldapi.NewProc("CfExecute")
+	procSetPinState          = cldapi.NewProc("CfSetPinState")
+	procHydratePlaceholder   = cldapi.NewProc("CfHydratePlaceholder")
+	procDehydratePlaceholder = cldapi.NewProc("CfDehydratePlaceholder")
+	procConvertToPlaceholder = cldapi.NewProc("CfConvertToPlaceholder")
+	procSetInSyncState       = cldapi.NewProc("CfSetInSyncState")
+	procGetPlaceholderState  = cldapi.NewProc("CfGetPlaceholderStateFromAttributeTag")
 )
 
 const (
-	cfHydrationPolicyFull        = 2
-	cfPopulationPolicyAlwaysFull = 3
-	cfRegisterFlagUpdate         = 0x00000001
-	cfConnectFlagFullPath        = 0x00000004
-	cfPlaceholderMarkInSync      = 0x00000002
-	cfPlaceholderSupersede       = 0x00000004
-	cfCallbackFetchData          = 0
-	cfCallbackNone               = 0xffffffff
-	cfOperationTypeTransferData  = 0
-	fileAttributeNormal          = 0x00000080
+	cfHydrationPolicyFull                     = 2
+	cfHydrationModifierAutoDehydrationAllowed = 0x0004
+	cfPopulationPolicyAlwaysFull              = 3
+	cfRegisterFlagUpdate                      = 0x00000001
+	cfConnectFlagFullPath                     = 0x00000004
+	cfPlaceholderMarkInSync                   = 0x00000002
+	cfPlaceholderSupersede                    = 0x00000004
+	cfCallbackFetchData                       = 0
+	cfCallbackNone                            = 0xffffffff
+	cfOperationTypeTransferData               = 0
+	cfConvertMarkInSync                       = 0x00000001
+	cfInSyncStateInSync                       = 1
+	fileAttributeNormal                       = 0x00000080
+	cfPlaceholderStatePlaceholder             = 0x00000001
+	cfPlaceholderStateSyncRoot                = 0x00000002
+	cfPlaceholderStateInSync                  = 0x00000008
+	cfPlaceholderStatePartiallyOnDisk         = 0x00000020
 )
 
 type cfHydrationPolicy struct{ Primary, Modifier uint16 }
@@ -171,7 +184,10 @@ func cfRegister(root string) error {
 	}
 	reg.StructSize = uint32(unsafe.Sizeof(reg))
 	pol := cfSyncPolicies{
-		Hydration:  cfHydrationPolicy{Primary: cfHydrationPolicyFull},
+		Hydration: cfHydrationPolicy{
+			Primary:  cfHydrationPolicyFull,
+			Modifier: cfHydrationModifierAutoDehydrationAllowed,
+		},
 		Population: cfPopulationPolicy{Primary: cfPopulationPolicyAlwaysFull},
 	}
 	pol.StructSize = uint32(unsafe.Sizeof(pol))
@@ -300,3 +316,72 @@ func utf16PtrString(p *uint16) string {
 }
 
 func newCallback(fn any) uintptr { return syscall.NewCallback(fn) }
+
+func cfConvertPathToPlaceholder(path string, nodeID uint64) error {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	attrs, err := windows.GetFileAttributes(p)
+	if err != nil {
+		return err
+	}
+	flags := uint32(0)
+	if attrs&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+		flags |= windows.FILE_FLAG_BACKUP_SEMANTICS
+	}
+	h, err := windows.CreateFile(
+		p,
+		windows.GENERIC_WRITE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		flags,
+		0,
+	)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(h)
+	identity := []byte(fmt.Sprintf("%d", nodeID))
+	hr, _, _ := procConvertToPlaceholder.Call(
+		uintptr(h),
+		uintptr(unsafe.Pointer(&identity[0])),
+		uintptr(len(identity)),
+		cfConvertMarkInSync,
+		0,
+		0,
+	)
+	runtime.KeepAlive(identity)
+	return hresult("CfConvertToPlaceholder", hr)
+}
+
+func cfMarkPathInSync(path string) error {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	attrs, err := windows.GetFileAttributes(p)
+	if err != nil {
+		return err
+	}
+	flags := uint32(0)
+	if attrs&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+		flags |= windows.FILE_FLAG_BACKUP_SEMANTICS
+	}
+	h, err := windows.CreateFile(
+		p,
+		windows.GENERIC_WRITE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		flags,
+		0,
+	)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(h)
+	hr, _, _ := procSetInSyncState.Call(uintptr(h), cfInSyncStateInSync, 0, 0)
+	return hresult("CfSetInSyncState", hr)
+}

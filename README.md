@@ -260,12 +260,21 @@ For normal use, **no PowerShell or `xd` command is required**. After installatio
 - **登录...** opens xDrive's local account page in the default browser;
 - **打开 xDrive** opens the current sync root in Explorer;
 - **暂停同步 / 恢复同步** disconnects/reconnects the provider while preserving the configured state across restarts;
-- **账户 / 设置...** lets the user re-login, change password, or change the local xDrive directory;
+- **立即同步** immediately flushes pending local changes and performs a full remote reconciliation;
+- **冲突（N）...** opens the local conflict center when unresolved conflict copies exist;
+- **账户 / 设置...** opens the local control center for login/password, mount path, file availability, and conflict handling;
 - **检查更新** immediately runs the stable-release update check;
 - **注销** removes the local JWT credentials and stops the active mount;
 - **退出 xDrive** closes the tray agent. The Start menu contains an **xDrive** shortcut to start it again.
 
-The local account/settings page listens only on `127.0.0.1`, uses a random per-agent-session URL token, sends credentials directly to the configured xDrive server, and does not save the password. There is no registration button; accounts are provisioned by an administrator. If the administrator issued a temporary password with `must_change_password`, the agent blocks synchronization until the user changes it. The default sync root is:
+The local control center listens only on `127.0.0.1`, uses a random per-agent-session URL token, sends credentials directly to the configured xDrive server, and does not save the password. It shows the current sync state and unresolved-conflict count, and it can inspect/control a file or directory inside the xDrive root:
+
+- **始终保留在此设备 / Always keep on this device** pins the placeholder and hydrates its content;
+- **释放空间 / Free up space** and **仅在线 / Online only** unpin and dehydrate in-sync placeholders;
+- **立即同步 / Sync now** requests an immediate provider reconciliation;
+- a file that is not yet safely represented in the cloud is never dehydrated: xDrive asks the user to finish synchronization first.
+
+There is no registration button; accounts are provisioned by an administrator. If the administrator issued a temporary password with `must_change_password`, the agent blocks synchronization until the user changes it. The default sync root is:
 
 ```text
 %USERPROFILE%\xDrive
@@ -284,13 +293,23 @@ xd mount "D:\xDrive"
 Windows uses a **hybrid online-on-demand + bidirectional metadata/content sync** model:
 
 - remote files first appear as CfAPI online placeholders, so their full contents are not downloaded up front;
+- Explorer uses Windows' native cloud-file state icons and hydration verbs for xDrive placeholders;
 - opening a placeholder hydrates the byte ranges Windows requests from the server;
-- once hydrated, the content currently remains cached locally; xDrive does not yet automatically dehydrate old files;
-- local new files/directories are created on the server;
+- pinned placeholders are kept locally; in-sync unpinned placeholders can be explicitly dehydrated and xDrive opts into Windows' automatic-dehydration support;
+- local new files/directories are uploaded and then converted into in-sync CfAPI placeholders, so they participate in the same Explorer availability controls;
 - local file modifications use resumable 8 MiB chunks with per-chunk SHA-256 and server-side whole-file SHA-256;
 - local deletions are propagated to the server;
-- Web/API-side creates, changes and deletes are reconciled back into the sync root roughly every 3 seconds;
+- Web/API-side creates, changes and deletes are reconciled back into the sync root, with **立即同步** available for an explicit reconciliation;
 - concurrent stale writes are rejected by server revisions; the desktop preserves the stale local version as a conflict copy instead of silently overwriting the server winner.
+
+Conflict records are persisted locally per server/account so they survive an agent restart. The conflict center offers four actions:
+
+- **查看冲突** reveals the conflict copy in Explorer;
+- **打开两个版本** opens both the current server winner and the preserved local conflict copy;
+- **保留本地版本** overwrites the current server node using its latest revision, preserves normal server version history, then removes the conflict copy;
+- **保留服务器版本** keeps the server winner and removes the conflict copy.
+
+A resolution failure leaves the conflict record intact so the user can retry instead of silently losing either version.
 
 Stable tagged Windows releases are Authenticode-signed: `xd.exe` and `xdrive-agent.exe` are signed before packaging, then `xDriveSetup-amd64.exe` is signed after Inno Setup builds it. The release workflow refuses to publish a stable Windows installer when the signing certificate secrets are absent. Development/snapshot artifacts can remain unsigned unless signing secrets are configured.
 
@@ -667,7 +686,7 @@ deploy/
 ## Roadmap
 
 1. instant upload/global deduplication and optional content-defined chunking;
-2. richer CfAPI pin/dehydrate/offline controls and conflict-resolution UI;
+2. selective-sync rules, configurable cache/dehydration policy, and richer version-history UI;
 3. small-file packing;
 4. macOS File Provider integration;
 5. thumbnails/EXIF/media processing;
