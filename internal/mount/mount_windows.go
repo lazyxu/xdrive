@@ -31,7 +31,8 @@ type winProvider struct {
 	connKey  int64
 	mu       sync.Mutex
 	baseline map[string]winState
-	hydrated map[uint64]time.Time
+	hydrated  map[uint64]time.Time
+	suppressed map[string]time.Time
 }
 
 var activeWinProvider struct {
@@ -46,7 +47,13 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 	if err := cfRegister(root); err != nil {
 		return err
 	}
-	p := &winProvider{cli: cli, root: root, baseline: map[string]winState{}, hydrated: map[uint64]time.Time{}}
+	p := &winProvider{
+		cli:        cli,
+		root:       root,
+		baseline:   map[string]winState{},
+		hydrated:   map[uint64]time.Time{},
+		suppressed: map[string]time.Time{},
+	}
 	activeWinProvider.Lock()
 	activeWinProvider.p = p
 	activeWinProvider.Unlock()
@@ -66,15 +73,105 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 	if err := p.initialSync(ctx); err != nil {
 		return err
 	}
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
+
+	changes, watchErrs := watchWindowsChanges(ctx, root)
+	remoteTicker := time.NewTicker(winRemotePoll)
+	defer remoteTicker.Stop()
+	auditTicker := time.NewTicker(winFullAudit)
+	defer auditTicker.Stop()
+
+	var (
+		pending       []winLocalChange
+		debounceTimer *time.Timer
+		debounceC     <-chan time.Time
+		maxBatchTimer *time.Timer
+		maxBatchC     <-chan time.Time
+	)
+
+	stopBatchTimers := func() {
+		if debounceTimer != nil {
+			if !debounceTimer.Stop() {
+				select {
+				case <-debounceTimer.C:
+				default:
+				}
+			}
+			debounceTimer = nil
+			debounceC = nil
+		}
+		if maxBatchTimer != nil {
+			if !maxBatchTimer.Stop() {
+				select {
+				case <-maxBatchTimer.C:
+				default:
+				}
+			}
+			maxBatchTimer = nil
+			maxBatchC = nil
+		}
+	}
+	flushLocal := func() {
+		if len(pending) == 0 {
+			stopBatchTimers()
+			return
+		}
+		batch := append([]winLocalChange(nil), pending...)
+		pending = pending[:0]
+		stopBatchTimers()
+		if err := p.reconcileLocalChanges(ctx, batch); err != nil {
+			fmt.Fprintln(os.Stderr, "xd: Windows local sync:", err)
+		}
+	}
+	queueLocal := func(change winLocalChange) {
+		pending = append(pending, change)
+		if debounceTimer == nil {
+			debounceTimer = time.NewTimer(winLocalDebounce)
+			debounceC = debounceTimer.C
+		} else {
+			if !debounceTimer.Stop() {
+				select {
+				case <-debounceTimer.C:
+				default:
+				}
+			}
+			debounceTimer.Reset(winLocalDebounce)
+		}
+		if maxBatchTimer == nil {
+			maxBatchTimer = time.NewTimer(winLocalMaxBatchWait)
+			maxBatchC = maxBatchTimer.C
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
+			stopBatchTimers()
 			return nil
-		case <-ticker.C:
+		case change, ok := <-changes:
+			if !ok {
+				changes = nil
+				continue
+			}
+			queueLocal(change)
+		case err, ok := <-watchErrs:
+			if ok && err != nil && !errors.Is(err, context.Canceled) {
+				fmt.Fprintln(os.Stderr, "xd: Windows directory watcher:", err)
+				queueLocal(winLocalChange{Action: 0})
+			}
+			watchErrs = nil
+		case <-debounceC:
+			flushLocal()
+		case <-maxBatchC:
+			flushLocal()
+		case <-remoteTicker.C:
+			flushLocal()
+			if err := p.reconcileRemote(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "xd: Windows remote sync:", err)
+			}
+		case <-auditTicker.C:
+			flushLocal()
 			if err := p.reconcile(ctx); err != nil {
-				fmt.Fprintln(os.Stderr, "xd: Windows sync:", err)
+				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
 			}
 		}
 	}
