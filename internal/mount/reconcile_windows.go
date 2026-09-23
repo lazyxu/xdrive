@@ -358,7 +358,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 
 		base, exists = baseline[rel]
 		if !exists {
-					if rn.Type == "dir" {
+			if rn.Type == "dir" {
 				if err := os.MkdirAll(abs, 0o755); err != nil {
 					return err
 				}
@@ -377,7 +377,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		}
 
 		if !localExists {
-					if rn.Type == "dir" {
+			if rn.Type == "dir" {
 				if err := os.MkdirAll(abs, 0o755); err != nil {
 					return err
 				}
@@ -396,7 +396,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		}
 
 		if rn.Type == "file" && rn.Revision != base.node.Revision {
-					_ = os.Remove(abs)
+			_ = os.Remove(abs)
 			if err := cfCreatePlaceholder(filepath.Dir(abs), filepath.Base(abs), rn.ID, rn.Size, rn.UpdatedAt.UnixNano(), false); err != nil {
 				return err
 			}
@@ -416,7 +416,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		if _, ok := remote[rel]; ok {
 			continue
 		}
-			_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
+		_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
 		deletePrefix(baseline, rel)
 	}
 	p.pruneTransientState()
