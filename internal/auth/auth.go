@@ -1,6 +1,10 @@
 package auth
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -10,18 +14,21 @@ import (
 )
 
 type Manager struct {
-	secret []byte
-	ttl    time.Duration
+	secret    []byte
+	accessTTL time.Duration
 }
 
 type Claims struct {
-	UserID uint64 `json:"uid"`
+	UserID    uint64 `json:"uid"`
+	TokenType string `json:"typ,omitempty"`
 	jwt.RegisteredClaims
 }
 
-func New(secret string, ttl time.Duration) Manager {
-	return Manager{secret: []byte(secret), ttl: ttl}
+func New(secret string, accessTTL time.Duration) Manager {
+	return Manager{secret: []byte(secret), accessTTL: accessTTL}
 }
+
+func (m Manager) TTL() time.Duration { return m.accessTTL }
 
 func HashPassword(password string) (string, error) {
 	if len(password) < 8 {
@@ -38,10 +45,11 @@ func CheckPassword(hash, password string) error {
 func (m Manager) Issue(userID uint64) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID: userID,
+		UserID:    userID,
+		TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(m.ttl)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTL)),
 			Subject:   fmt.Sprintf("%d", userID),
 		},
 	}
@@ -56,8 +64,23 @@ func (m Manager) Parse(tokenString string) (uint64, error) {
 		}
 		return m.secret, nil
 	})
-	if err != nil || !token.Valid || claims.UserID == 0 {
+	// TokenType is optional only for migration from pre-refresh xDrive JWTs.
+	if err != nil || !token.Valid || claims.UserID == 0 || (claims.TokenType != "" && claims.TokenType != "access") {
 		return 0, errors.New("invalid token")
 	}
 	return claims.UserID, nil
+}
+
+func NewRefreshToken() (raw string, hash string, err error) {
+	var b [32]byte
+	if _, err = rand.Read(b[:]); err != nil {
+		return "", "", err
+	}
+	raw = base64.RawURLEncoding.EncodeToString(b[:])
+	return raw, HashRefreshToken(raw), nil
+}
+
+func HashRefreshToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }

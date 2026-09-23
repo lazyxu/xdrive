@@ -21,6 +21,18 @@ type User struct {
 
 func (User) TableName() string { return "xd_users" }
 
+type RefreshToken struct {
+	ID           uint64 `gorm:"primaryKey"`
+	UserID       uint64 `gorm:"not null;index"`
+	TokenHash    string `gorm:"size:64;not null;uniqueIndex"`
+	CreatedAt    time.Time
+	ExpiresAt    time.Time `gorm:"not null;index"`
+	RevokedAt    *time.Time `gorm:"index"`
+	ReplacedByID *uint64
+}
+
+func (RefreshToken) TableName() string { return "xd_refresh_tokens" }
+
 type Node struct {
 	ID        uint64  `gorm:"primaryKey"`
 	ParentID  *uint64 `gorm:"index"`

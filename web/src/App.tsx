@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -28,10 +28,13 @@ import {
   message,
 } from 'antd'
 import type { UploadProps } from 'antd'
-import { ApiError, Node, XDriveApi } from './api'
+import { ApiError, AuthResult, AuthSession, Node, XDriveApi, sessionFromAuth } from './api'
 
 const { Header, Content } = Layout
-const TOKEN_KEY = 'xdrive.token'
+const ACCESS_KEY = 'xdrive.access_token'
+const REFRESH_KEY = 'xdrive.refresh_token'
+const EXPIRES_KEY = 'xdrive.access_expires_at'
+const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 
 type Crumb = { id: number; name: string }
@@ -44,31 +47,59 @@ function formatSize(bytes: number) {
   return `${value >= 10 || i === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[i]}`
 }
 
+function initialSession(): AuthSession {
+  const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
+  return {
+    accessToken: localStorage.getItem(ACCESS_KEY) ?? legacy,
+    refreshToken: localStorage.getItem(REFRESH_KEY) ?? '',
+    accessExpiresAt: Number(localStorage.getItem(EXPIRES_KEY) ?? '0') || 0,
+  }
+}
+
 function App() {
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? '')
+  const [session, setSession] = useState<AuthSession>(initialSession)
   const [username, setUsername] = useState(() => localStorage.getItem(USER_KEY) ?? '')
-  const api = useMemo(() => new XDriveApi(token), [token])
+
+  const persistSession = useCallback((next: AuthSession) => {
+    localStorage.setItem(ACCESS_KEY, next.accessToken)
+    localStorage.setItem(LEGACY_TOKEN_KEY, next.accessToken)
+    localStorage.setItem(REFRESH_KEY, next.refreshToken)
+    localStorage.setItem(EXPIRES_KEY, String(next.accessExpiresAt))
+    setSession(next)
+  }, [])
+
+  const clearSession = useCallback(() => {
+    localStorage.removeItem(ACCESS_KEY)
+    localStorage.removeItem(LEGACY_TOKEN_KEY)
+    localStorage.removeItem(REFRESH_KEY)
+    localStorage.removeItem(EXPIRES_KEY)
+    localStorage.removeItem(USER_KEY)
+    setSession({ accessToken: '', refreshToken: '', accessExpiresAt: 0 })
+    setUsername('')
+  }, [])
+
+  const api = useMemo(
+    () => new XDriveApi(session, persistSession),
+    [session.accessToken, session.refreshToken, session.accessExpiresAt, persistSession],
+  )
 
   const signOut = () => {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
-    setToken('')
-    setUsername('')
+    void api.logout().finally(clearSession)
   }
 
-  if (!token) {
+  if (!session.accessToken) {
     return <AuthView api={api} onAuthenticated={(result) => {
-      localStorage.setItem(TOKEN_KEY, result.token)
+      const next = sessionFromAuth(result)
+      persistSession(next)
       localStorage.setItem(USER_KEY, result.username)
-      setToken(result.token)
       setUsername(result.username)
     }} />
   }
 
-  return <FileManager api={api} username={username} onAuthExpired={signOut} onLogout={signOut} />
+  return <FileManager api={api} username={username} onAuthExpired={clearSession} onLogout={signOut} />
 }
 
-function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (result: { token: string; username: string }) => void }) {
+function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (result: AuthResult) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')

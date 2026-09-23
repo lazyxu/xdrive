@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/mount"
@@ -103,10 +104,9 @@ func login(register bool, args []string) error {
 	}
 	cfg := userconfig.Config{
 		Server:    strings.TrimRight(*server, "/"),
-		Token:     resp.Token,
-		Username:  resp.Username,
 		MountPath: mountPath,
 	}
+	cfg.ApplyAuth(resp, true)
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
@@ -119,6 +119,12 @@ func login(register bool, args []string) error {
 }
 
 func logout() error {
+	cfg, err := userconfig.Load()
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = userconfig.NewClient(cfg).LogoutSession(ctx)
+		cancel()
+	}
 	if err := userconfig.Remove(); err != nil {
 		return err
 	}
@@ -131,7 +137,7 @@ func status() error {
 	if err != nil {
 		return err
 	}
-	cli := client.New(cfg.Server, cfg.Token)
+	cli := userconfig.NewClient(cfg)
 	root, err := cli.Root(context.Background())
 	if err != nil {
 		return err
@@ -201,7 +207,7 @@ func mountCmd(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	fmt.Printf("xDrive mounted at %s; press Ctrl+C to stop\n", path)
-	return mount.Run(ctx, client.New(cfg.Server, cfg.Token), path)
+	return mount.Run(ctx, userconfig.NewClient(cfg), path)
 }
 
 func cleanupCmd() error {

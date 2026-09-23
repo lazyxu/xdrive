@@ -104,7 +104,7 @@ func (c *agentController) Run() {
 			s.LastError = ""
 		})
 		go func() {
-			done <- mount.Run(mctx, client.New(d.cfg.Server, d.cfg.Token), d.root)
+			done <- mount.Run(mctx, userconfig.NewClient(d.cfg), d.root)
 		}()
 	}
 
@@ -158,7 +158,7 @@ func (c *agentController) Run() {
 			}
 			lastAuthCheck = time.Now()
 			checkCtx, cancel := context.WithTimeout(c.ctx, 8*time.Second)
-			_, err := client.New(d.cfg.Server, d.cfg.Token).Root(checkCtx)
+			_, err := userconfig.NewClient(d.cfg).Root(checkCtx)
 			cancel()
 			if err == nil {
 				c.setSnapshot(func(s *agentSnapshot) {
@@ -186,7 +186,7 @@ func (c *agentController) Run() {
 		}
 
 		checkCtx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-		_, err := client.New(d.cfg.Server, d.cfg.Token).Root(checkCtx)
+		_, err := userconfig.NewClient(d.cfg).Root(checkCtx)
 		cancel()
 		if err != nil {
 			var apiErr *client.APIError
@@ -289,11 +289,10 @@ func (c *agentController) Authenticate(register bool, server, username, password
 	}
 	cfg := userconfig.Config{
 		Server:    server,
-		Token:     resp.Token,
-		Username:  resp.Username,
 		MountPath: mountPath,
 		Paused:    false,
 	}
+	cfg.ApplyAuth(resp, true)
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
@@ -353,6 +352,11 @@ func (c *agentController) TogglePause() error {
 }
 
 func (c *agentController) Logout() error {
+	if cfg, err := userconfig.Load(); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = userconfig.NewClient(cfg).LogoutSession(ctx)
+		cancel()
+	}
 	if err := userconfig.Remove(); err != nil {
 		return err
 	}
@@ -417,6 +421,6 @@ func loadDesired() (desiredMount, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return desiredMount{}, err
 	}
-	key := cfg.Server + "\x00" + cfg.Token + "\x00" + root
+	key := cfg.Server + "\x00" + cfg.SessionID + "\x00" + root
 	return desiredMount{key: key, root: root, cfg: cfg}, nil
 }

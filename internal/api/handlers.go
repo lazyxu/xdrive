@@ -16,16 +16,28 @@ import (
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var errInvalidRefreshToken = errors.New("invalid refresh token")
 
 type authRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
 type authResponse struct {
-	Token    string `json:"token"`
-	Username string `json:"username"`
+	Token            string `json:"token"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token"`
+	TokenType        string `json:"token_type"`
+	ExpiresIn        int64  `json:"expires_in"`
+	RefreshExpiresIn int64  `json:"refresh_expires_in"`
+	Username         string `json:"username"`
 }
 
 type nodeDTO struct {
@@ -80,12 +92,12 @@ func (s *Server) register(c *gin.Context) {
 		}
 		return
 	}
-	token, err := s.Auth.Issue(user.ID)
+	session, err := s.issueSession(s.DB, user)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "token creation failed")
+		fail(c, http.StatusInternalServerError, "session creation failed")
 		return
 	}
-	c.JSON(http.StatusCreated, authResponse{Token: token, Username: user.Username})
+	c.JSON(http.StatusCreated, session)
 }
 
 func (s *Server) login(c *gin.Context) {
@@ -99,12 +111,106 @@ func (s *Server) login(c *gin.Context) {
 		fail(c, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
-	token, err := s.Auth.Issue(user.ID)
+	session, err := s.issueSession(s.DB, user)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "token creation failed")
+		fail(c, http.StatusInternalServerError, "session creation failed")
 		return
 	}
-	c.JSON(http.StatusOK, authResponse{Token: token, Username: user.Username})
+	c.JSON(http.StatusOK, session)
+}
+
+func (s *Server) refresh(c *gin.Context) {
+	var req refreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.RefreshToken) == "" {
+		fail(c, http.StatusBadRequest, "refresh_token is required")
+		return
+	}
+	hash := auth.HashRefreshToken(req.RefreshToken)
+	var out authResponse
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var current meta.RefreshToken
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("token_hash = ?", hash).First(&current).Error; err != nil {
+			return errInvalidRefreshToken
+		}
+		now := time.Now()
+		if current.RevokedAt != nil || !now.Before(current.ExpiresAt) {
+			if current.RevokedAt == nil {
+				_ = tx.Model(&current).Update("revoked_at", now).Error
+			}
+			return errInvalidRefreshToken
+		}
+		var user meta.User
+		if err := tx.First(&user, current.UserID).Error; err != nil {
+			return errInvalidRefreshToken
+		}
+		next, err := s.issueSession(tx, user)
+		if err != nil {
+			return err
+		}
+		var replacement meta.RefreshToken
+		if err := tx.Where("token_hash = ?", auth.HashRefreshToken(next.RefreshToken)).First(&replacement).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&current).Updates(map[string]any{
+			"revoked_at":     now,
+			"replaced_by_id": replacement.ID,
+		}).Error; err != nil {
+			return err
+		}
+		out = next
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errInvalidRefreshToken) {
+			fail(c, http.StatusUnauthorized, "invalid or expired refresh token")
+		} else {
+			fail(c, http.StatusInternalServerError, "refresh failed")
+		}
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (s *Server) logout(c *gin.Context) {
+	var req refreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.RefreshToken) == "" {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	now := time.Now()
+	_ = s.DB.Model(&meta.RefreshToken{}).
+		Where("token_hash = ? AND revoked_at IS NULL", auth.HashRefreshToken(req.RefreshToken)).
+		Update("revoked_at", now).Error
+	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) issueSession(db *gorm.DB, user meta.User) (authResponse, error) {
+	accessToken, err := s.Auth.Issue(user.ID)
+	if err != nil {
+		return authResponse{}, err
+	}
+	refreshToken, refreshHash, err := auth.NewRefreshToken()
+	if err != nil {
+		return authResponse{}, err
+	}
+	now := time.Now()
+	record := meta.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: refreshHash,
+		ExpiresAt: now.Add(s.RefreshTTL),
+	}
+	if err := db.Create(&record).Error; err != nil {
+		return authResponse{}, err
+	}
+	return authResponse{
+		Token:            accessToken,
+		AccessToken:      accessToken,
+		RefreshToken:     refreshToken,
+		TokenType:        "Bearer",
+		ExpiresIn:        int64(s.Auth.TTL().Seconds()),
+		RefreshExpiresIn: int64(s.RefreshTTL.Seconds()),
+		Username:         user.Username,
+	}, nil
 }
 
 func (s *Server) me(c *gin.Context) {

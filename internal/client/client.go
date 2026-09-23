@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,6 +22,13 @@ type Client struct {
 	BaseURL string
 	Token   string
 	HTTP    *http.Client
+
+	sessionMu       sync.RWMutex
+	refreshMu       sync.Mutex
+	refreshToken    string
+	accessExpiresAt time.Time
+	refreshExpiresAt time.Time
+	onTokens        func(SessionTokens) error
 }
 
 type Node struct {
@@ -34,8 +42,13 @@ type Node struct {
 }
 
 type AuthResponse struct {
-	Token    string `json:"token"`
-	Username string `json:"username"`
+	Token            string `json:"token"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token"`
+	TokenType        string `json:"token_type"`
+	ExpiresIn        int64  `json:"expires_in"`
+	RefreshExpiresIn int64  `json:"refresh_expires_in"`
+	Username         string `json:"username"`
 }
 
 type APIError struct {
@@ -277,12 +290,15 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	if _, err := url.ParseRequestURI(c.BaseURL); err != nil {
 		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
+	if err := c.ensureFresh(ctx); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
+	if token := c.accessToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("User-Agent", "xdrive-xd/0.1")
 	return req, nil

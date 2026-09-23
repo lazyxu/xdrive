@@ -28,7 +28,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("open local storage: %v", err)
 	}
-	srv := &api.Server{DB: db, Store: store, Auth: auth.New(cfg.JWTSecret, cfg.JWTTTL), AllowedOrigin: cfg.AllowedOrigin, MaxUploadBytes: cfg.MaxUploadBytes}
+	srv := &api.Server{
+		DB: db, Store: store,
+		Auth: auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
+		RefreshTTL: cfg.RefreshTokenTTL,
+		AllowedOrigin: cfg.AllowedOrigin,
+		MaxUploadBytes: cfg.MaxUploadBytes,
+	}
 	log.Printf("xDrive server listening on %s", cfg.ListenAddr)
 	if err := srv.Router().Run(cfg.ListenAddr); err != nil {
 		log.Fatal(err)
@@ -36,7 +42,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL`).Error; err != nil {

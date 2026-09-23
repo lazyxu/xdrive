@@ -31,10 +31,10 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL`).Error; err != nil {
@@ -48,7 +48,7 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := (&Server{
-		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour),
+		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 30 * 24 * time.Hour,
 		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
 	}).Router()
 
@@ -162,4 +162,55 @@ func requestWithHeaders(t *testing.T, h http.Handler, method, path, token string
 		t.Fatalf("%s %s code=%d want=%d body=%s", method, path, res.Code, status, res.Body.String())
 	}
 	return res
+}
+
+
+func TestRefreshTokenRotationAndLogout(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("integration-test-secret", 5*time.Minute),
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+
+	register := request(t, router, http.MethodPost, "/api/v1/auth/register", "", strings.NewReader(`{"username":"refresh-user","password":"password-123"}`), http.StatusCreated)
+	var first authResponse
+	if err := json.Unmarshal(register.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.AccessToken == "" || first.RefreshToken == "" || first.Token != first.AccessToken {
+		t.Fatalf("invalid initial session: %#v", first)
+	}
+
+	refreshBody := strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, first.RefreshToken))
+	refreshed := request(t, router, http.MethodPost, "/api/v1/auth/refresh", "", refreshBody, http.StatusOK)
+	var second authResponse
+	if err := json.Unmarshal(refreshed.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.AccessToken == "" || second.RefreshToken == "" || second.RefreshToken == first.RefreshToken {
+		t.Fatalf("refresh did not rotate session: %#v", second)
+	}
+
+	request(t, router, http.MethodPost, "/api/v1/auth/refresh", "", strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, first.RefreshToken)), http.StatusUnauthorized)
+	request(t, router, http.MethodGet, "/api/v1/nodes/root", second.AccessToken, nil, http.StatusOK)
+	request(t, router, http.MethodPost, "/api/v1/auth/logout", "", strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, second.RefreshToken)), http.StatusNoContent)
+	request(t, router, http.MethodPost, "/api/v1/auth/refresh", "", strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, second.RefreshToken)), http.StatusUnauthorized)
 }

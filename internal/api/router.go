@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
@@ -14,6 +15,7 @@ type Server struct {
 	DB             *gorm.DB
 	Store          storage.Store
 	Auth           auth.Manager
+	RefreshTTL     time.Duration
 	AllowedOrigin  string
 	MaxUploadBytes int64
 }
@@ -27,6 +29,8 @@ func (s *Server) Router() *gin.Engine {
 	v1.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	v1.POST("/auth/register", s.register)
 	v1.POST("/auth/login", s.login)
+	v1.POST("/auth/refresh", s.refresh)
+	v1.POST("/auth/logout", s.logout)
 
 	authed := v1.Group("")
 	authed.Use(s.requireAuth())
