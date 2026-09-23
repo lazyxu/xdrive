@@ -12,10 +12,13 @@ const (
 )
 
 type Event struct {
-	Kind    EventKind
-	Path    string
-	Message string
-	Notify  bool
+	Kind           EventKind
+	Path           string
+	OriginalPath   string
+	OriginalNodeID uint64
+	ConflictNodeID uint64
+	Message        string
+	Notify         bool
 }
 
 var mountEventSink struct {
