@@ -95,18 +95,32 @@ func watchWindowsChanges(ctx context.Context, root string) (<-chan winLocalChang
 		close(errs)
 		return changes, errs
 	}
+	ready := make(chan error, 1)
 	go func() {
 		defer close(changes)
 		defer close(errs)
 		defer watcher.close()
-		if err := watcher.run(ctx, changes); err != nil && !errors.Is(err, context.Canceled) {
+		if err := watcher.run(ctx, changes, ready); err != nil && !errors.Is(err, context.Canceled) {
 			errs <- err
 		}
 	}()
+	select {
+	case <-ctx.Done():
+	case <-ready:
+	}
 	return changes, errs
 }
 
-func (w *windowsDirectoryWatcher) run(ctx context.Context, out chan<- winLocalChange) error {
+func (w *windowsDirectoryWatcher) run(ctx context.Context, out chan<- winLocalChange, ready chan<- error) error {
+	armed := false
+	signalReady := func(err error) {
+		if armed {
+			return
+		}
+		armed = true
+		ready <- err
+		close(ready)
+	}
 	mask := uint32(
 		windows.FILE_NOTIFY_CHANGE_FILE_NAME |
 			windows.FILE_NOTIFY_CHANGE_DIR_NAME |
@@ -132,8 +146,11 @@ func (w *windowsDirectoryWatcher) run(ctx context.Context, out chan<- winLocalCh
 			0,
 		)
 		if err != nil && !errors.Is(err, windows.ERROR_IO_PENDING) {
-			return fmt.Errorf("ReadDirectoryChangesW: %w", err)
+			wrapped := fmt.Errorf("ReadDirectoryChangesW: %w", err)
+			signalReady(wrapped)
+			return wrapped
 		}
+		signalReady(nil)
 
 		for {
 			if err := ctx.Err(); err != nil {
