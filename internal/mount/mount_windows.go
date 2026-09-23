@@ -133,7 +133,9 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		pending = pending[:0]
 		stopBatchTimers()
 		if err := p.reconcileLocalChanges(ctx, batch); err != nil {
-			fmt.Fprintln(os.Stderr, "xd: Windows local sync:", err)
+			if !errors.Is(err, errWindowsHydrationSettling) {
+				fmt.Fprintln(os.Stderr, "xd: Windows local sync:", err)
+			}
 			pending = append(batch, pending...)
 			scheduleLocalRetry()
 			return false
@@ -357,7 +359,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		if !ok || entry.isDir || base.node.Type != "file" {
 			continue
 		}
-		if t, ok := hydrated[base.node.ID]; ok && time.Since(t) < 5*time.Second {
+		if t, ok := hydrated[base.node.ID]; ok && time.Since(t) < winHydrationGrace {
 			continue
 		}
 		if entry.size == base.localSize && entry.modTime.Equal(base.localModTime) {
