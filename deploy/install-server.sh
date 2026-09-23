@@ -212,7 +212,7 @@ resolve_install_source() {
       IMAGE_TAG="sha-${full:0:12}"
       BUILT_CHANNEL="master"
       BUILT_COMMIT="$full"
-      echo "Resolved master snapshot: ${full:0:12}"
+      echo "Resolved latest fully published master snapshot: ${full:0:12}"
       ;;
     stable)
       tag="$(resolve_latest_stable_tag)"
@@ -337,7 +337,26 @@ env_value() {
 }
 
 managed_container_id() {
-  local service="$1"
+  local service="$1" conventional id
+  conventional="xdrive-${service}-1"
+
+  # The compose project is explicitly named xdrive, so prefer the stable
+  # container name. This also works for older deployments whose compose labels
+  # may be missing or differ from the current project metadata.
+  if docker inspect "$conventional" >/dev/null 2>&1; then
+    printf '%s\n' "$conventional"
+    return 0
+  fi
+
+  # Fall back to Compose discovery when the conventional name is unavailable.
+  if [[ -f "$COMPOSE_PATH" ]]; then
+    id="$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq "$service" 2>/dev/null | head -n1 || true)"
+    if [[ -n "$id" ]]; then
+      printf '%s\n' "$id"
+      return 0
+    fi
+  fi
+
   docker ps -aq \
     --filter "label=com.docker.compose.project=xdrive" \
     --filter "label=com.docker.compose.service=$service" 2>/dev/null | head -n1
@@ -368,8 +387,16 @@ wait_existing_postgres() {
 postgres_password_works() {
   local container_id="$1" password="$2"
   [[ -n "$password" ]] || return 1
-  docker exec -e "PGPASSWORD=$password" "$container_id" \
-    psql -h 127.0.0.1 -U xdrive -d xdrive -Atqc 'SELECT 1' >/dev/null 2>&1
+
+  # Do not probe 127.0.0.1 here: an old pg_hba.conf can trust loopback while
+  # still requiring SCRAM on the Docker bridge, which would make a bad password
+  # look valid. Connect to the container's bridge address instead, matching the
+  # authentication path used by the xDrive server container.
+  docker exec -e "PGPASSWORD=$password" "$container_id" sh -ec '
+    set -- $(hostname -i)
+    [ "$#" -gt 0 ]
+    exec psql -h "$1" -U xdrive -d xdrive -Atqc "SELECT 1"
+  ' >/dev/null 2>&1
 }
 
 repair_postgres_password_via_local_socket() {
@@ -398,7 +425,7 @@ recover_existing_runtime_secrets() {
       :
     elif postgres_password_works "$postgres_id" "$runtime_pg"; then
       set_env POSTGRES_PASSWORD "$runtime_pg"
-      echo "Recovered PostgreSQL password from the existing xDrive container."
+      echo "Recovered PostgreSQL password from the existing xDrive container and verified Docker-network authentication."
     else
       candidate="$configured_pg"
       [[ -n "$candidate" ]] || candidate="$runtime_pg"
@@ -409,7 +436,7 @@ recover_existing_runtime_secrets() {
       if repair_postgres_password_via_local_socket "$postgres_id" "$candidate" \
           && postgres_password_works "$postgres_id" "$candidate"; then
         set_env POSTGRES_PASSWORD "$candidate"
-        echo "Repaired the managed PostgreSQL role password to match xDrive configuration."
+        echo "Repaired the managed PostgreSQL role password to match xDrive configuration and verified Docker-network authentication."
       else
         cat >&2 <<'MSG'
 xDrive server installer: existing PostgreSQL credentials cannot be reconciled safely.
