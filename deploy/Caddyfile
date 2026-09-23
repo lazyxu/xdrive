@@ -1,7 +1,3 @@
-{
-	email {$XD_ACME_EMAIL}
-}
-
 {$XD_DOMAIN} {
 	encode zstd gzip
 	reverse_proxy web:80
