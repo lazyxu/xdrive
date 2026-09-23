@@ -13,7 +13,7 @@ func TestSaveLoadAndMountPath(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, "home"))
 	t.Setenv("USERPROFILE", filepath.Join(root, "home"))
 
-	cfg := Config{Server: "https://example.test/", Token: "token", Username: "alice"}
+	cfg := Config{Server: "https://example.test/", Token: "token", Username: "alice", Paused: true}
 	if err := Save(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func TestSaveLoadAndMountPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Server != "https://example.test" || got.Token != "token" || got.Username != "alice" {
+	if got.Server != "https://example.test" || got.Token != "token" || got.Username != "alice" || !got.Paused {
 		t.Fatalf("unexpected config: %#v", got)
 	}
 	mountPath, err := EffectiveMountPath(got)
@@ -38,6 +38,7 @@ func TestSaveLoadAndMountPath(t *testing.T) {
 	}
 
 	got.MountPath = filepath.Join(t.TempDir(), "custom")
+	got.Paused = false
 	if err := Save(got); err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +46,8 @@ func TestSaveLoadAndMountPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloaded.MountPath != got.MountPath {
-		t.Fatalf("custom mount=%q want=%q", reloaded.MountPath, got.MountPath)
+	if reloaded.MountPath != got.MountPath || reloaded.Paused {
+		t.Fatalf("reloaded config=%#v", reloaded)
 	}
 
 	if err := Remove(); err != nil {

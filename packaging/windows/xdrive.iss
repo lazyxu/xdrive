@@ -44,6 +44,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
 
 [Icons]
+Name: "{userprograms}\\xDrive"; Filename: "{app}\\xdrive-agent.exe"; WorkingDir: "{app}"
 Name: "{group}\xDrive README"; Filename: "{app}\README.md"
 Name: "{group}\Uninstall xDrive"; Filename: "{uninstallexe}"
 

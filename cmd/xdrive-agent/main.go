@@ -8,19 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"time"
 
-	"github.com/lazyxu/xdrive/internal/client"
-	"github.com/lazyxu/xdrive/internal/mount"
-	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
 )
-
-type desiredMount struct {
-	key  string
-	root string
-	cfg  userconfig.Config
-}
 
 func main() {
 	closeInstance, err := acquireSingleInstance()
@@ -42,114 +32,19 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	updateReady := startAutoUpdate(ctx)
 
-	var (
-		running       bool
-		currentKey    string
-		mountCancel   context.CancelFunc
-		mountDone     chan error
-		lastLoadError string
-	)
+	ctrl := newAgentController(ctx, cancel)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ctrl.Run()
+	}()
 
-	start := func(d desiredMount) {
-		mctx, mcancel := context.WithCancel(ctx)
-		done := make(chan error, 1)
-		running = true
-		currentKey = d.key
-		mountCancel = mcancel
-		mountDone = done
-		log.Printf("mounting %s for %s", d.root, d.cfg.Username)
-		go func() {
-			done <- mount.Run(mctx, client.New(d.cfg.Server, d.cfg.Token), d.root)
-		}()
+	if err := startAgentUI(ctx, cancel, ctrl); err != nil && ctx.Err() == nil {
+		log.Printf("desktop UI stopped: %v", err)
 	}
-
-	stop := func() {
-		if mountCancel != nil {
-			mountCancel()
-		}
-	}
-
-	waitStopped := func() {
-		if !running || mountDone == nil {
-			return
-		}
-		select {
-		case <-mountDone:
-		case <-time.After(5 * time.Second):
-		}
-	}
-
-	reconcile := func() {
-		d, loadErr := loadDesired()
-		if loadErr != nil {
-			msg := loadErr.Error()
-			if msg != lastLoadError {
-				log.Printf("waiting for login/config: %v", loadErr)
-				lastLoadError = msg
-			}
-			if running {
-				stop()
-			}
-			return
-		}
-		lastLoadError = ""
-		if running {
-			if d.key != currentKey {
-				log.Printf("configuration changed; restarting mount")
-				stop()
-			}
-			return
-		}
-		start(d)
-	}
-
-	reconcile()
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			stop()
-			waitStopped()
-			return
-		case <-updateReady:
-			log.Printf("verified update installer started; stopping agent for upgrade")
-			stop()
-			waitStopped()
-			return
-		case err := <-mountDone:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Printf("mount stopped: %v", err)
-			} else {
-				log.Printf("mount stopped")
-			}
-			running = false
-			currentKey = ""
-			mountCancel = nil
-			mountDone = nil
-		case <-ticker.C:
-			reconcile()
-		}
-	}
-}
-
-func loadDesired() (desiredMount, error) {
-	cfg, err := userconfig.Load()
-	if err != nil {
-		return desiredMount{}, err
-	}
-	root, err := userconfig.EffectiveMountPath(cfg)
-	if err != nil {
-		return desiredMount{}, err
-	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return desiredMount{}, err
-	}
-	key := cfg.Server + "\x00" + cfg.Token + "\x00" + root
-	return desiredMount{key: key, root: root, cfg: cfg}, nil
+	cancel()
+	<-done
 }
 
 func configureLogging() (*os.File, error) {

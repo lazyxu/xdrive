@@ -138,31 +138,30 @@ xdrive-agent.exe
 
 under `%LOCALAPPDATA%\Programs\xDrive`, adds the install directory to the user PATH, and starts `xdrive-agent.exe` automatically at login.
 
-The agent is a hidden user-session process. It waits until a valid xDrive login exists, then keeps the configured CfAPI sync root mounted. This is intentionally a user-session background agent rather than a Windows service because the sync root belongs to the interactive user/Explorer session.
+The agent is a hidden user-session process with a native Windows notification-area (system tray) UI. It is intentionally a user-session process rather than a Windows service because the CfAPI sync root belongs to the interactive user/Explorer session.
 
-Open a **new** PowerShell/Terminal after installation and log in:
+For normal use, **no PowerShell or `xd` command is required**. After installation, use the xDrive tray icon:
 
-```powershell
-xd login --server https://drive.example.com --username alice --password "your-password"
-```
+- the first two disabled lines show the current account/login state and sync state;
+- **登录 / 注册...** opens xDrive's local account page in the default browser;
+- **打开 xDrive** opens the current sync root in Explorer;
+- **暂停同步 / 恢复同步** disconnects/reconnects the provider while preserving the configured state across restarts;
+- **账户 / 设置...** lets the user re-login, register, or change the local xDrive directory;
+- **检查更新** immediately runs the stable-release update check;
+- **注销** removes the local JWT credentials and stops the active mount;
+- **退出 xDrive** closes the tray agent. The Start menu contains an **xDrive** shortcut to start it again.
 
-The default sync root is:
+The local account/settings page listens only on `127.0.0.1`, uses a random per-agent-session URL token, sends credentials directly to the configured xDrive server, and does not save the password. The default sync root is:
 
 ```text
 %USERPROFILE%\xDrive
 ```
 
-Change it with:
+The `xd` CLI remains available for advanced use and troubleshooting:
 
 ```powershell
+xd status
 xd config --mount "D:\xDrive"
-```
-
-The background agent notices login/config changes automatically. `xd logout` removes the local credentials and causes the active background mount to stop.
-
-You can still run an explicit foreground mount for troubleshooting:
-
-```powershell
 xd mount "D:\xDrive"
 ```
 
@@ -256,6 +255,19 @@ xd logout
 `XD_PASSWORD` can be used instead of `--password`.
 
 The client config is stored under the operating system's user config directory. The access token is user-local configuration; use HTTPS when connecting over an untrusted network.
+
+## Authentication
+
+xDrive currently uses first-party username/password authentication:
+
+1. registration sends the username/password to `POST /api/v1/auth/register`; the server stores only a bcrypt password hash;
+2. login sends the username/password to `POST /api/v1/auth/login`;
+3. a successful login returns an HS256 JWT containing the user's ID and expiry;
+4. authenticated API calls send that JWT as `Authorization: Bearer <token>`.
+
+The default JWT lifetime is 24 hours (`XD_JWT_TTL`). The desktop client stores the server URL, username, JWT and mount settings in the current user's xDrive config; it **does not store the password**. When the token expires, the Windows tray reports **登录已过期** and the user can re-authenticate from **账户 / 设置...**.
+
+This MVP does not yet implement refresh tokens, OAuth/OIDC, SSO, MFA, or server-side session revocation. Use HTTPS for any non-local deployment.
 
 ## HTTP API
 
@@ -364,7 +376,7 @@ deploy/
 
 1. resumable/chunked upload and content hashing;
 2. instant upload/deduplication;
-3. Windows tray UI and code-signed installer;
+3. code-signed Windows installer and richer tray notifications;
 4. richer CfAPI pin/dehydrate/offline controls;
 5. small-file packing;
 6. macOS File Provider integration;

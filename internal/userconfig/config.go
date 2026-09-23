@@ -14,6 +14,7 @@ type Config struct {
 	Token     string `json:"token"`
 	Username  string `json:"username"`
 	MountPath string `json:"mount_path,omitempty"`
+	Paused    bool   `json:"paused,omitempty"`
 }
 
 func Dir() (string, error) {
@@ -41,7 +42,7 @@ func Load() (Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return cfg, fmt.Errorf("not logged in; run xd login: %w", err)
+			return cfg, fmt.Errorf("not logged in: %w", err)
 		}
 		return cfg, err
 	}
@@ -49,7 +50,7 @@ func Load() (Config, error) {
 		return cfg, fmt.Errorf("read xDrive config: %w", err)
 	}
 	if strings.TrimSpace(cfg.Server) == "" || strings.TrimSpace(cfg.Token) == "" {
-		return cfg, fmt.Errorf("invalid local config; run xd login again")
+		return cfg, fmt.Errorf("invalid local config; please log in again")
 	}
 	return cfg, nil
 }
