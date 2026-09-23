@@ -31,7 +31,8 @@ type winProvider struct {
 	connKey  int64
 	mu       sync.Mutex
 	baseline map[string]winState
-	hydrated map[uint64]time.Time
+	hydrated   map[uint64]time.Time
+	manualSync chan struct{}
 }
 
 var activeWinProvider struct {
@@ -50,7 +51,8 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		cli:      cli,
 		root:     root,
 		baseline: map[string]winState{},
-		hydrated: map[uint64]time.Time{},
+		hydrated:   map[uint64]time.Time{},
+		manualSync: make(chan struct{}, 1),
 	}
 	activeWinProvider.Lock()
 	activeWinProvider.p = p
@@ -213,6 +215,17 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
 				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
+		case <-p.manualSync:
+			if !flushLocal() {
+				continue
+			}
+			emitEvent(Event{Kind: EventSyncStarted})
+			if err := p.reconcile(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "xd: Windows manual sync:", err)
+				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+				continue
+			}
+			emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
 		}
 	}
 }
