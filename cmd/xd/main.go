@@ -62,7 +62,7 @@ Usage:
   xd config --mount PATH
   xd mount [PATH]
   xd version
-  xd update [--install]
+  xd update [--channel stable|master] [--install]
   xd logout
 
 Accounts are created by an xDrive administrator; self-registration is not supported.
@@ -281,34 +281,49 @@ func cleanupCmd() error {
 func updateCmd(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	install := fs.Bool("install", false, "install the available update now")
+	channelFlag := fs.String("channel", "", "update channel: stable or master")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+
 	current := version.String()
-	if !xupdate.IsReleaseVersion(current) {
+	channel := strings.TrimSpace(*channelFlag)
+	if channel == "" {
+		var err error
+		channel, err = xupdate.AutomaticChannel(current)
+		if err != nil {
+			return err
+		}
+	}
+	if channel == "" {
 		fmt.Printf("client version: %s\n", current)
-		fmt.Println("automatic update is disabled for development/snapshot builds; install a tagged release first")
+		fmt.Println("this development build has no automatic channel; use: xd update --channel master")
 		return nil
 	}
-	result, err := xupdate.CheckLatest(context.Background(), current)
+	normalized, err := xupdate.NormalizeChannel(channel)
+	if err != nil {
+		return err
+	}
+
+	result, err := xupdate.CheckChannel(context.Background(), current, normalized)
 	if err != nil {
 		return err
 	}
 	if !result.UpdateAvailable {
-		fmt.Printf("xDrive %s is up to date\n", current)
+		fmt.Printf("xDrive %s is current on %s channel\n", current, normalized)
 		return nil
 	}
-	fmt.Printf("update available: %s -> %s\n", current, result.Latest)
+	fmt.Printf("update available on %s: %s -> %s\n", normalized, current, result.Latest)
 	if !*install {
-		fmt.Println("automatic background update will install it, or run: xd update --install")
+		fmt.Printf("run: xd update --channel %s --install\n", normalized)
 		return nil
 	}
-	started, installed, err := xupdate.InstallLatest(context.Background(), current)
+	started, installed, err := xupdate.InstallChannel(context.Background(), current, normalized)
 	if err != nil {
 		return err
 	}
 	if started {
-		fmt.Printf("verified %s; installer started\n", installed.Latest)
+		fmt.Printf("verified %s from %s channel; installer started\n", installed.Latest, normalized)
 	}
 	return nil
 }
