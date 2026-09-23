@@ -48,7 +48,21 @@ jobs:
           gofmt -w ./cmd ./internal
           go mod tidy
       - name: Go tests
-        run: go test -race ./...
+        shell: bash
+        run: |
+          set +e
+          go test -race ./... > /tmp/go-test.log 2>&1
+          rc=$?
+          cat /tmp/go-test.log
+          if [ "$rc" -ne 0 ]; then
+            cp /tmp/go-test.log BOOTSTRAP_TEST_FAILURE.log
+            git config user.name "xDrive CI"
+            git config user.email "actions@users.noreply.github.com"
+            git add BOOTSTRAP_TEST_FAILURE.log
+            git commit -m "chore: capture bootstrap Go test failure"
+            git push origin HEAD:feat/mvp-cfapi
+            exit "$rc"
+          fi
       - name: Go vet
         run: go vet ./...
       - name: Go build
