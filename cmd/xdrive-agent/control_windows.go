@@ -400,4 +400,3 @@ form.inline{display:inline}.footer{font-size:12px;color:#98a2b3;margin-top:18px}
 {{end}}
 <div class="footer">此页面仅监听 127.0.0.1，并使用当前 agent 会话随机令牌保护。密码不会保存到本地配置。</div>
 </div></body></html>`
-
