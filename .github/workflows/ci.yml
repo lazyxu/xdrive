@@ -62,6 +62,7 @@ jobs:
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-backup-restore.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
+          XD_DOMAIN=drive.example.test docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
       - name: Validate server image
         run: docker build -t xdrive/server:test .
       - name: Backup, corruption detection, and restore drill
@@ -77,7 +78,7 @@ jobs:
           cache: true
       - run: go mod tidy
       - run: git diff --exit-code -- go.mod go.sum
-      - run: go test ./internal/...
+      - run: go test ./internal/... ./cmd/xdrive-agent
       - name: Windows CfAPI E2E
         run: go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
       - name: Validate Windows PowerShell scripts
@@ -90,9 +91,37 @@ jobs:
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
-      - name: Build Windows client installer
+      - name: Prepare CI Authenticode certificate
         shell: pwsh
-        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist
+        run: |
+          $password = "xdrive-ci-signing"
+          $secure = ConvertTo-SecureString $password -AsPlainText -Force
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" `
+            -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
+          $pfx = Join-Path $env:RUNNER_TEMP "xdrive-ci-signing.pfx"
+          $cer = Join-Path $env:RUNNER_TEMP "xdrive-ci-signing.cer"
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
+          "XD_WINDOWS_SIGN_PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build and sign Windows client installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -TimestampUrl ""
+      - name: Verify Windows Authenticode signatures
+        shell: pwsh
+        run: |
+          $targets = @(
+            "./dist/windows-build/xd.exe",
+            "./dist/windows-build/xdrive-agent.exe",
+            "./dist/xDriveSetup-amd64.exe"
+          )
+          foreach ($target in $targets) {
+            $signature = Get-AuthenticodeSignature $target
+            if ($signature.Status -ne "Valid") {
+              throw "invalid Authenticode signature for $target: $($signature.Status)"
+            }
+          }
       - name: Verify Windows installer
         shell: pwsh
         run: if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
@@ -108,6 +137,11 @@ jobs:
           $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
           if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
           if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
+          foreach ($state in @("normal", "syncing", "paused", "offline", "conflict")) {
+            if (-not (Test-Path (Join-Path $app "icons\tray-$state.ico"))) {
+              throw "installed tray icon missing: $state"
+            }
+          }
           $shortcutRoots = @(
             (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
             (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
