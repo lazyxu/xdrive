@@ -62,7 +62,7 @@ Usage:
   xd config --mount PATH
   xd mount [PATH]
   xd version
-  xd update [--channel stable|master] [--install]
+  xd update [--channel stable|master|commit] [--commit SHA] [--install]
   xd logout
 
 Accounts are created by an xDrive administrator; self-registration is not supported.
@@ -281,16 +281,21 @@ func cleanupCmd() error {
 func updateCmd(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	install := fs.Bool("install", false, "install the available update now")
-	channelFlag := fs.String("channel", "", "update channel: stable or master")
+	channelFlag := fs.String("channel", "", "update channel: stable, master, or commit")
+	commitFlag := fs.String("commit", "", "commit SHA for the commit channel")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	current := version.String()
 	channel := strings.TrimSpace(*channelFlag)
+	commit := strings.TrimSpace(*commitFlag)
+	if channel == "" && commit != "" {
+		channel = xupdate.ChannelCommit
+	}
 	if channel == "" {
 		var err error
-		channel, err = xupdate.AutomaticChannel(current)
+		channel, commit, err = xupdate.AutomaticTarget(current)
 		if err != nil {
 			return err
 		}
@@ -304,8 +309,11 @@ func updateCmd(args []string) error {
 	if err != nil {
 		return err
 	}
+	if normalized == xupdate.ChannelCommit && commit == "" {
+		return fmt.Errorf("--commit SHA is required for commit channel")
+	}
 
-	result, err := xupdate.CheckChannel(context.Background(), current, normalized)
+	result, err := xupdate.CheckTarget(context.Background(), current, normalized, commit)
 	if err != nil {
 		return err
 	}
@@ -315,10 +323,14 @@ func updateCmd(args []string) error {
 	}
 	fmt.Printf("update available on %s: %s -> %s\n", normalized, current, result.Latest)
 	if !*install {
-		fmt.Printf("run: xd update --channel %s --install\n", normalized)
+		if normalized == xupdate.ChannelCommit {
+			fmt.Printf("run: xd update --channel commit --commit %s --install\n", result.Commit)
+		} else {
+			fmt.Printf("run: xd update --channel %s --install\n", normalized)
+		}
 		return nil
 	}
-	started, installed, err := xupdate.InstallChannel(context.Background(), current, normalized)
+	started, installed, err := xupdate.InstallTarget(context.Background(), current, normalized, commit)
 	if err != nil {
 		return err
 	}
