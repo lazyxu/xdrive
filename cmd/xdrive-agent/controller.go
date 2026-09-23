@@ -609,17 +609,21 @@ func (c *agentController) OpenFolder() error {
 
 func (c *agentController) CheckUpdate() (string, bool) {
 	current := version.String()
-	if !xupdate.IsReleaseVersion(current) {
-		return "当前是开发/快照版本，不参与稳定版自动更新。", false
+	channel, err := xupdate.AutomaticChannel(current)
+	if err != nil {
+		return "检查更新失败：" + err.Error(), false
 	}
-	started, result, err := xupdate.InstallLatest(context.Background(), current)
+	if channel == "" {
+		return "当前开发构建未绑定自动更新通道；可使用 xd update --channel master 手动切换。", false
+	}
+	started, result, err := xupdate.InstallChannel(context.Background(), current, channel)
 	if err != nil {
 		return "检查更新失败：" + err.Error(), false
 	}
 	if !started {
-		return fmt.Sprintf("当前已是最新版本 %s。", current), false
+		return fmt.Sprintf("当前已是 %s 通道最新版本 %s。", channel, current), false
 	}
-	return fmt.Sprintf("已验证 %s，正在启动更新安装。", result.Latest), true
+	return fmt.Sprintf("已验证 %s 通道的 %s，正在启动更新安装。", channel, result.Latest), true
 }
 
 func (c *agentController) SyncNow() error {
