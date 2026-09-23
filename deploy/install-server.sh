@@ -164,11 +164,17 @@ else
 fi
 
 # Upgrade safety: take a backup with the currently installed deployment before
-# replacing compose/scripts. A failed backup aborts the upgrade.
-if [[ -f "$COMPOSE_PATH" && -x "$CONFIG_DIR/server-backup.sh" ]]; then
+# replacing compose/scripts or switching image tags. If an older installation
+# predates the maintenance scripts, use the freshly staged backup tool against
+# the old compose/env files. A failed backup aborts the upgrade.
+if [[ -f "$COMPOSE_PATH" ]]; then
   if docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -q server 2>/dev/null | grep -q .; then
+    backup_tool="$CONFIG_DIR/server-backup.sh"
+    if [[ ! -x "$backup_tool" ]]; then
+      backup_tool="$STAGING_DIR/server-backup.sh"
+    fi
     echo "Existing xDrive deployment detected; creating pre-upgrade backup..."
-    "$CONFIG_DIR/server-backup.sh" --config-dir "$CONFIG_DIR" --output-dir "$CONFIG_DIR/pre-upgrade-backups"
+    "$backup_tool" --config-dir "$CONFIG_DIR" --output-dir "$CONFIG_DIR/pre-upgrade-backups"
   fi
 fi
 
