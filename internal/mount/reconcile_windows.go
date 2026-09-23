@@ -468,7 +468,7 @@ func (p *winProvider) pathSuppressed(rel string) bool {
 			delete(p.suppressed, path)
 			continue
 		}
-		if rel == path || strings.HasPrefix(rel, path+"/") {
+		if rel == path {
 			return true
 		}
 	}
