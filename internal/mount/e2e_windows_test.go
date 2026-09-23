@@ -259,6 +259,28 @@ func (a *e2eAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		delete(a.uploads, id)
 		a.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodPost && strings.HasPrefix(path, "/nodes/") && strings.HasSuffix(path, "/directories"):
+		id, ok := parseE2EID(strings.TrimSuffix(strings.TrimPrefix(path, "/nodes/"), "/directories"))
+		if !ok {
+			http.Error(w, "bad id", http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+			http.Error(w, "bad directory", http.StatusBadRequest)
+			return
+		}
+		a.mu.Lock()
+		nodeID := a.nextID
+		a.nextID++
+		now := time.Now()
+		e := &e2eEntry{node: client.Node{ID: nodeID, ParentID: uint64ptr(id), Name: body.Name, Type: "dir", Revision: 1, CreatedAt: now, UpdatedAt: now}}
+		a.entries[nodeID] = e
+		a.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(e.node)
 	case r.Method == http.MethodPost && strings.HasPrefix(path, "/nodes/") && strings.HasSuffix(path, "/files"):
 		id, ok := parseE2EID(strings.TrimSuffix(strings.TrimPrefix(path, "/nodes/"), "/files"))
 		if !ok {
@@ -506,6 +528,36 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 	})
 	if _, _, ok := api.byName("local.txt"); ok {
 		t.Fatal("local rename created a second remote node instead of moving the existing node")
+	}
+
+	bulkRoot := filepath.Join(root, "bulk")
+	bulkNested := filepath.Join(bulkRoot, "nested")
+	if err := os.MkdirAll(bulkNested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bulkNested, "tree.txt"), []byte("tree-v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 15*time.Second, "incremental directory tree upload", func() bool {
+		_, _, bulkOK := api.byName("bulk")
+		_, _, nestedOK := api.byName("nested")
+		_, data, fileOK := api.byName("tree.txt")
+		return bulkOK && nestedOK && fileOK && string(data) == "tree-v1"
+	})
+	bulkNode, _, ok := api.byName("bulk")
+	if !ok {
+		t.Fatal("bulk directory was not created remotely")
+	}
+	bulkRenamed := filepath.Join(root, "bulk-renamed")
+	if err := os.Rename(bulkRoot, bulkRenamed); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "event-driven directory rename", func() bool {
+		n, _, ok := api.byName("bulk-renamed")
+		return ok && n.ID == bulkNode.ID
+	})
+	if _, _, ok := api.byName("bulk"); ok {
+		t.Fatal("directory rename recreated the remote directory instead of moving it")
 	}
 
 	if err := os.WriteFile(remotePath, []byte("local-v2"), 0o644); err != nil {
