@@ -13,6 +13,10 @@ permissions:
 env:
   DOCKER_BUILD_RECORD_UPLOAD: "false"
 
+concurrency:
+  group: build-packages-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/master' }}
+
 jobs:
   verify-master-ci:
     runs-on: ubuntu-latest
