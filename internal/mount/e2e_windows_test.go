@@ -332,6 +332,46 @@ func (a *e2eAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n := e.node
 		a.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(n)
+	case r.Method == http.MethodPatch && strings.HasPrefix(path, "/nodes/"):
+		id, ok := parseE2EID(strings.TrimPrefix(path, "/nodes/"))
+		if !ok {
+			http.Error(w, "bad id", http.StatusBadRequest)
+			return
+		}
+		expected := parseIfMatchE2E(r.Header.Get("If-Match"))
+		var body struct {
+			Name     *string `json:"name"`
+			ParentID *uint64 `json:"parent_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		a.mu.Lock()
+		e := a.entries[id]
+		if e == nil {
+			a.mu.Unlock()
+			http.NotFound(w, r)
+			return
+		}
+		if expected != e.node.Revision {
+			current := e.node.Revision
+			a.mu.Unlock()
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "revision_conflict", "expected_revision": expected, "current_revision": current})
+			return
+		}
+		if body.Name != nil {
+			e.node.Name = *body.Name
+		}
+		if body.ParentID != nil {
+			e.node.ParentID = uint64ptr(*body.ParentID)
+		}
+		e.node.Revision++
+		e.node.UpdatedAt = time.Now()
+		n := e.node
+		a.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(n)
 	case r.Method == http.MethodDelete && strings.HasPrefix(path, "/nodes/"):
 		id, ok := parseE2EID(strings.TrimPrefix(path, "/nodes/"))
 		if !ok {
@@ -452,6 +492,22 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		return ok && string(data) == "local-v1"
 	})
 
+	uploaded, _, ok := api.byName("local.txt")
+	if !ok {
+		t.Fatal("local.txt was not uploaded")
+	}
+	renamedPath := filepath.Join(root, "renamed.txt")
+	if err := os.Rename(localPath, renamedPath); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "event-driven local rename", func() bool {
+		n, data, ok := api.byName("renamed.txt")
+		return ok && n.ID == uploaded.ID && string(data) == "local-v1"
+	})
+	if _, _, ok := api.byName("local.txt"); ok {
+		t.Fatal("local rename created a second remote node instead of moving the existing node")
+	}
+
 	if err := os.WriteFile(remotePath, []byte("local-v2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -460,17 +516,8 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		return ok && n.Revision >= 2 && string(data) == "local-v2"
 	})
 
-	// Synchronize with a reconcile tick, then create a deterministic stale-write
-	// window before the next 3-second scan.
-	tickPath := filepath.Join(root, "tick.txt")
-	if err := os.WriteFile(tickPath, []byte("tick"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	waitE2E(t, 15*time.Second, "tick upload", func() bool {
-		_, _, ok := api.byName("tick.txt")
-		return ok
-	})
-
+	// Create a deterministic stale-write window: the local watcher enqueues
+	// the write while the server revision advances before the debounced batch.
 	n, _, ok := api.byName("remote.txt")
 	if !ok {
 		t.Fatal("remote.txt disappeared")
