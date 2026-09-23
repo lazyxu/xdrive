@@ -72,6 +72,8 @@ jobs:
           bash -n scripts/server-restore.sh
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-backup-restore.sh
+          bash -n scripts/test-server-installer-bootstrap.sh
+          bash scripts/test-server-installer-bootstrap.sh
           bash -n scripts/test-update-channels.sh
           bash scripts/test-update-channels.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null

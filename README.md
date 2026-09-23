@@ -68,7 +68,7 @@ No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose run
 curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
 ```
 
-The bootstrap installer supports three release channels. A fresh install defaults to **stable**; the selected channel is persisted in `~/.xd/.env` and reused by later runs.
+The bootstrap installer supports three release channels. The canonical raw-`master` one-line install defaults to the latest fully successful **master** snapshot; a packaged stable release defaults to **stable**. The selected channel is persisted in `~/.xd/.env` and reused by later runs.
 
 ```bash
 # Latest stable vMAJOR.MINOR.PATCH release
