@@ -18,15 +18,15 @@ func TestPasswordAndJWT(t *testing.T) {
 	}
 
 	manager := New("test-secret-that-is-long-enough", time.Hour)
-	token, err := manager.Issue(42)
+	token, err := manager.Issue(42, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	uid, err := manager.Parse(token)
-	if err != nil || uid != 42 {
-		t.Fatalf("parse token uid=%d err=%v", uid, err)
+	uid, version, err := manager.Parse(token)
+	if err != nil || uid != 42 || version != 7 {
+		t.Fatalf("parse token uid=%d version=%d err=%v", uid, version, err)
 	}
-	if _, err := New("different-secret", time.Hour).Parse(token); err == nil {
+	if _, _, err := New("different-secret", time.Hour).Parse(token); err == nil {
 		t.Fatal("token signed by another secret was accepted")
 	}
 }

@@ -18,15 +18,16 @@ import (
 )
 
 type agentSnapshot struct {
-	Configured bool
-	Username   string
-	Server     string
-	MountPath  string
-	AuthStatus string
-	SyncStatus string
-	Paused     bool
-	LastError  string
-	Version    string
+	Configured         bool
+	Username           string
+	Server             string
+	MountPath          string
+	AuthStatus         string
+	SyncStatus         string
+	Paused             bool
+	MustChangePassword bool
+	LastError          string
+	Version            string
 }
 
 type agentController struct {
@@ -130,10 +131,24 @@ func (c *agentController) Run() {
 			s.Server = d.cfg.Server
 			s.MountPath = d.root
 			s.Paused = d.cfg.Paused
+			s.MustChangePassword = d.cfg.MustChangePassword
 			if s.AuthStatus == "未登录" {
 				s.AuthStatus = "已登录"
 			}
 		})
+
+		if d.cfg.MustChangePassword {
+			if running {
+				stopMount()
+			}
+			c.setSnapshot(func(s *agentSnapshot) {
+				s.AuthStatus = "需要修改密码"
+				s.SyncStatus = "等待修改密码"
+				s.MustChangePassword = true
+				s.LastError = ""
+			})
+			return
+		}
 
 		if d.cfg.Paused {
 			if running {
@@ -169,14 +184,35 @@ func (c *agentController) Run() {
 				return
 			}
 			var apiErr *client.APIError
-			if errors.As(err, &apiErr) && (apiErr.Status == 401 || apiErr.Status == 403) {
-				stopMount()
-				c.setSnapshot(func(s *agentSnapshot) {
-					s.AuthStatus = "登录已过期"
-					s.SyncStatus = "需要重新登录"
-					s.LastError = err.Error()
-				})
-				return
+			if errors.As(err, &apiErr) {
+				switch apiErr.Msg {
+				case "password_change_required":
+					stopMount()
+					c.setSnapshot(func(s *agentSnapshot) {
+						s.AuthStatus = "需要修改密码"
+						s.SyncStatus = "等待修改密码"
+						s.MustChangePassword = true
+						s.LastError = ""
+					})
+					return
+				case "account_disabled":
+					stopMount()
+					c.setSnapshot(func(s *agentSnapshot) {
+						s.AuthStatus = "账户已禁用"
+						s.SyncStatus = "同步已停止"
+						s.LastError = ""
+					})
+					return
+				}
+				if apiErr.Status == 401 || apiErr.Status == 403 {
+					stopMount()
+					c.setSnapshot(func(s *agentSnapshot) {
+						s.AuthStatus = "登录已过期"
+						s.SyncStatus = "需要重新登录"
+						s.LastError = err.Error()
+					})
+					return
+				}
 			}
 			c.setSnapshot(func(s *agentSnapshot) {
 				s.SyncStatus = "网络暂不可用"
@@ -258,7 +294,7 @@ func waitMountDone(ch <-chan error) {
 	}
 }
 
-func (c *agentController) Authenticate(register bool, server, username, password, mountPath string) error {
+func (c *agentController) Authenticate(server, username, password, mountPath string) error {
 	server = strings.TrimRight(strings.TrimSpace(server), "/")
 	username = strings.TrimSpace(username)
 	mountPath = strings.TrimSpace(mountPath)
@@ -268,16 +304,7 @@ func (c *agentController) Authenticate(register bool, server, username, password
 
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
-	cli := client.New(server, "")
-	var (
-		resp client.AuthResponse
-		err  error
-	)
-	if register {
-		resp, err = cli.Register(ctx, username, password)
-	} else {
-		resp, err = cli.Login(ctx, username, password)
-	}
+	resp, err := client.New(server, "").Login(ctx, username, password)
 	if err != nil {
 		return err
 	}
@@ -300,9 +327,44 @@ func (c *agentController) Authenticate(register bool, server, username, password
 		s.Configured = true
 		s.Username = resp.Username
 		s.Server = server
+		s.MustChangePassword = resp.MustChangePassword
+		if resp.MustChangePassword {
+			s.AuthStatus = "需要修改密码"
+			s.SyncStatus = "等待修改密码"
+		} else {
+			s.AuthStatus = "已登录"
+			s.SyncStatus = "正在启动同步"
+		}
+		s.Paused = false
+		s.LastError = ""
+	})
+	c.wakeNow()
+	return nil
+}
+
+func (c *agentController) ChangePassword(currentPassword, newPassword string) error {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+	defer cancel()
+	resp, err := userconfig.NewClient(cfg).ChangePassword(ctx, currentPassword, newPassword)
+	if err != nil {
+		return err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		latest = cfg
+	}
+	latest.ApplyAuth(resp, false)
+	if err := userconfig.Save(latest); err != nil {
+		return err
+	}
+	c.setSnapshot(func(s *agentSnapshot) {
+		s.MustChangePassword = false
 		s.AuthStatus = "已登录"
 		s.SyncStatus = "正在启动同步"
-		s.Paused = false
 		s.LastError = ""
 	})
 	c.wakeNow()

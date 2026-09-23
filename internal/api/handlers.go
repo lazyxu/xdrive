@@ -21,6 +21,7 @@ import (
 
 var (
 	errInvalidRefreshToken = errors.New("invalid refresh token")
+	errAccountDisabled     = errors.New("account disabled")
 	errRevisionConflict    = errors.New("revision conflict")
 	errRootMutation        = errors.New("root mutation")
 )
@@ -35,13 +36,15 @@ type refreshRequest struct {
 }
 
 type authResponse struct {
-	Token            string `json:"token"`
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token"`
-	TokenType        string `json:"token_type"`
-	ExpiresIn        int64  `json:"expires_in"`
-	RefreshExpiresIn int64  `json:"refresh_expires_in"`
-	Username         string `json:"username"`
+	Token              string `json:"token"`
+	AccessToken        string `json:"access_token"`
+	RefreshToken       string `json:"refresh_token"`
+	TokenType          string `json:"token_type"`
+	ExpiresIn          int64  `json:"expires_in"`
+	RefreshExpiresIn   int64  `json:"refresh_expires_in"`
+	Username           string `json:"username"`
+	Role               string `json:"role"`
+	MustChangePassword bool   `json:"must_change_password"`
 }
 
 type nodeDTO struct {
@@ -63,48 +66,6 @@ func toNodeDTO(n meta.Node) nodeDTO {
 	return d
 }
 
-func (s *Server) register(c *gin.Context) {
-	var req authRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, "invalid request")
-		return
-	}
-	req.Username = strings.TrimSpace(req.Username)
-	if len(req.Username) < 3 || len(req.Username) > 64 {
-		fail(c, http.StatusBadRequest, "username must be 3-64 characters")
-		return
-	}
-	hash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		fail(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	var user meta.User
-	err = s.DB.Transaction(func(tx *gorm.DB) error {
-		user = meta.User{Username: req.Username, PasswordHash: hash}
-		if err := tx.Create(&user).Error; err != nil {
-			return err
-		}
-		root := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID}
-		return tx.Create(&root).Error
-	})
-	if err != nil {
-		if isDuplicate(err) {
-			fail(c, http.StatusConflict, "username already exists")
-		} else {
-			fail(c, http.StatusInternalServerError, "registration failed")
-		}
-		return
-	}
-	session, err := s.issueSession(s.DB, user)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, "session creation failed")
-		return
-	}
-	c.JSON(http.StatusCreated, session)
-}
-
 func (s *Server) login(c *gin.Context) {
 	var req authRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -112,10 +73,21 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 	var user meta.User
-	if err := s.DB.Where("username = ?", strings.TrimSpace(req.Username)).First(&user).Error; err != nil || auth.CheckPassword(user.PasswordHash, req.Password) != nil {
+	if err := s.DB.Where("username = ?", strings.TrimSpace(req.Username)).First(&user).Error; err != nil ||
+		auth.CheckPassword(user.PasswordHash, req.Password) != nil {
 		fail(c, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
+	if user.DisabledAt != nil {
+		fail(c, http.StatusForbidden, "account_disabled")
+		return
+	}
+	now := time.Now()
+	if err := s.DB.Model(&meta.User{}).Where("id = ?", user.ID).Update("last_login_at", &now).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "login failed")
+		return
+	}
+	user.LastLoginAt = &now
 	session, err := s.issueSession(s.DB, user)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "session creation failed")
@@ -148,6 +120,10 @@ func (s *Server) refresh(c *gin.Context) {
 		if err := tx.First(&user, current.UserID).Error; err != nil {
 			return errInvalidRefreshToken
 		}
+		if user.DisabledAt != nil {
+			_ = tx.Model(&current).Update("revoked_at", now).Error
+			return errAccountDisabled
+		}
 		next, err := s.issueSession(tx, user)
 		if err != nil {
 			return err
@@ -166,9 +142,12 @@ func (s *Server) refresh(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, errInvalidRefreshToken) {
+		switch {
+		case errors.Is(err, errInvalidRefreshToken):
 			fail(c, http.StatusUnauthorized, "invalid or expired refresh token")
-		} else {
+		case errors.Is(err, errAccountDisabled):
+			fail(c, http.StatusForbidden, "account_disabled")
+		default:
 			fail(c, http.StatusInternalServerError, "refresh failed")
 		}
 		return
@@ -190,7 +169,7 @@ func (s *Server) logout(c *gin.Context) {
 }
 
 func (s *Server) issueSession(db *gorm.DB, user meta.User) (authResponse, error) {
-	accessToken, err := s.Auth.Issue(user.ID)
+	accessToken, err := s.Auth.Issue(user.ID, user.SessionVersion)
 	if err != nil {
 		return authResponse{}, err
 	}
@@ -208,23 +187,30 @@ func (s *Server) issueSession(db *gorm.DB, user meta.User) (authResponse, error)
 		return authResponse{}, err
 	}
 	return authResponse{
-		Token:            accessToken,
-		AccessToken:      accessToken,
-		RefreshToken:     refreshToken,
-		TokenType:        "Bearer",
-		ExpiresIn:        int64(s.Auth.TTL().Seconds()),
-		RefreshExpiresIn: int64(s.RefreshTTL.Seconds()),
-		Username:         user.Username,
+		Token:              accessToken,
+		AccessToken:        accessToken,
+		RefreshToken:       refreshToken,
+		TokenType:          "Bearer",
+		ExpiresIn:          int64(s.Auth.TTL().Seconds()),
+		RefreshExpiresIn:   int64(s.RefreshTTL.Seconds()),
+		Username:           user.Username,
+		Role:               user.Role,
+		MustChangePassword: user.MustChangePassword,
 	}, nil
 }
 
 func (s *Server) me(c *gin.Context) {
-	var user meta.User
-	if err := s.DB.First(&user, userID(c)).Error; err != nil {
+	user, ok := currentUser(c)
+	if !ok {
 		fail(c, http.StatusUnauthorized, "user not found")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": user.ID, "username": user.Username})
+	c.JSON(http.StatusOK, gin.H{
+		"id":                   user.ID,
+		"username":             user.Username,
+		"role":                 user.Role,
+		"must_change_password": user.MustChangePassword,
+	})
 }
 
 func (s *Server) root(c *gin.Context) {

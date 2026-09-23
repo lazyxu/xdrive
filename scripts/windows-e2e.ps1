@@ -2,8 +2,10 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Server,
     [string]$InstallerPath = "",
-    [string]$Username = "",
-    [string]$Password = "",
+    [Parameter(Mandatory = $true)]
+    [string]$Username,
+    [Parameter(Mandatory = $true)]
+    [string]$Password,
     [int]$TimeoutSeconds = 60,
     [int]$TokenRefreshWaitSeconds = 0,
     [switch]$KeepArtifacts
@@ -117,18 +119,12 @@ try {
 
     Get-Process xdrive-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-    if (-not $Username) {
-        $Username = "e2e-$runId"
-        if (-not $Password) { $Password = "Xdrive-E2E-$runId!" }
-        Write-Host "Registering temporary account $Username"
-        & $xd register --server $Server --username $Username --password $Password
-        if ($LASTEXITCODE -ne 0) { Fail "xd register failed" }
-    } else {
-        if (-not $Password) { Fail "-Password is required when -Username is provided" }
-        Write-Host "Logging in as $Username"
-        & $xd login --server $Server --username $Username --password $Password
-        if ($LASTEXITCODE -ne 0) { Fail "xd login failed" }
+    if (-not $Username -or -not $Password) {
+        Fail "-Username and -Password are required. The test account must be created by an xDrive administrator."
     }
+    Write-Host "Logging in as administrator-provisioned E2E account $Username"
+    & $xd login --server $Server --username $Username --password $Password
+    if ($LASTEXITCODE -ne 0) { Fail "xd login failed" }
 
     & $xd config --mount $root
     if ($LASTEXITCODE -ne 0) { Fail "xd config failed" }

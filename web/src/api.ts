@@ -19,6 +19,26 @@ export interface AuthResult {
   expires_in: number
   refresh_expires_in: number
   username: string
+  role: 'user' | 'admin'
+  must_change_password: boolean
+}
+
+export interface MeResult {
+  id: number
+  username: string
+  role: 'user' | 'admin'
+  must_change_password: boolean
+}
+
+export interface AdminUser {
+  id: number
+  username: string
+  role: 'user' | 'admin'
+  disabled: boolean
+  must_change_password: boolean
+  last_login_at?: string
+  created_at: string
+  updated_at: string
 }
 
 export interface AuthSession {
@@ -140,12 +160,6 @@ export class XDriveApi {
     }, false)
   }
 
-  register(username: string, password: string) {
-    return this.request<AuthResult>('/api/v1/auth/register', {
-      method: 'POST', body: JSON.stringify({ username, password }),
-    }, false)
-  }
-
   async logout() {
     if (!this.session.refreshToken) return
     await fetch(`${API_BASE}/api/v1/auth/logout`, {
@@ -156,7 +170,49 @@ export class XDriveApi {
   }
 
   me() {
-    return this.request<{ id: number; username: string }>('/api/v1/me')
+    return this.request<MeResult>('/api/v1/me')
+  }
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    const result = await this.request<AuthResult>('/api/v1/me/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    })
+    this.setSession(sessionFromAuth(result))
+    return result
+  }
+
+  adminUsers() {
+    return this.request<AdminUser[]>('/api/v1/admin/users')
+  }
+
+  adminCreateUser(input: { username: string; password: string; role: 'user' | 'admin'; must_change_password: boolean }) {
+    return this.request<AdminUser>('/api/v1/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  adminUpdateUser(id: number, input: { role?: 'user' | 'admin'; disabled?: boolean }) {
+    return this.request<AdminUser>(`/api/v1/admin/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    })
+  }
+
+  adminResetPassword(id: number, password: string, mustChangePassword = true) {
+    return this.request<void>(`/api/v1/admin/users/${id}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ password, must_change_password: mustChangePassword }),
+    })
+  }
+
+  adminRevokeSessions(id: number) {
+    return this.request<void>(`/api/v1/admin/users/${id}/revoke-sessions`, { method: 'POST' })
+  }
+
+  adminDeleteUser(id: number) {
+    return this.request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' })
   }
 
   root() {

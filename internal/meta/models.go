@@ -10,13 +10,22 @@ import (
 const (
 	NodeTypeDir  = "dir"
 	NodeTypeFile = "file"
+
+	UserRoleUser  = "user"
+	UserRoleAdmin = "admin"
 )
 
 type User struct {
-	ID           uint64 `gorm:"primaryKey"`
-	Username     string `gorm:"size:64;uniqueIndex;not null"`
-	PasswordHash string `gorm:"size:255;not null"`
-	CreatedAt    time.Time
+	ID                 uint64     `gorm:"primaryKey"`
+	Username           string     `gorm:"size:64;uniqueIndex;not null"`
+	PasswordHash       string     `gorm:"size:255;not null"`
+	Role               string     `gorm:"size:16;not null;default:user;index"`
+	MustChangePassword bool       `gorm:"not null;default:false"`
+	SessionVersion     uint64     `gorm:"not null;default:1"`
+	DisabledAt         *time.Time `gorm:"index"`
+	LastLoginAt        *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 func (User) TableName() string { return "xd_users" }
@@ -63,6 +72,10 @@ var reservedWindowsNames = map[string]struct{}{
 	"LPT1": {}, "LPT2": {}, "LPT3": {}, "LPT4": {}, "LPT5": {}, "LPT6": {}, "LPT7": {}, "LPT8": {}, "LPT9": {},
 }
 
+func ValidUserRole(role string) bool {
+	return role == UserRoleUser || role == UserRoleAdmin
+}
+
 // ValidateName intentionally uses the Windows-compatible subset because the
 // same namespace must be representable through CfAPI and Linux FUSE.
 func ValidateName(name string) error {
@@ -75,7 +88,7 @@ func ValidateName(name string) error {
 	if strings.HasSuffix(name, " ") || strings.HasSuffix(name, ".") {
 		return errors.New("name cannot end with space or dot")
 	}
-	if strings.ContainsAny(name, `<>:"/\\|?*`) {
+	if strings.ContainsAny(name, `<>:"/\|?*`) {
 		return errors.New("name contains a reserved character")
 	}
 	for _, r := range name {

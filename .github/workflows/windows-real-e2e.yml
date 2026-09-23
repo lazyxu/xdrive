@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       server_url:
-        description: Dedicated xDrive E2E server URL (registration enabled unless repository secrets provide an account)
+        description: Dedicated xDrive E2E server URL; XD_E2E_USERNAME/XD_E2E_PASSWORD must identify an admin-provisioned test account
         required: true
         type: string
       token_refresh_wait_seconds:
@@ -51,14 +51,15 @@ jobs:
       - name: Run installed-client E2E
         shell: pwsh
         run: |
+          if (-not $env:XD_E2E_USERNAME -or -not $env:XD_E2E_PASSWORD) {
+            throw "Repository secrets XD_E2E_USERNAME and XD_E2E_PASSWORD are required"
+          }
           $params = @{
             Server = $env:XD_E2E_SERVER_URL
             InstallerPath = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
+            Username = $env:XD_E2E_USERNAME
+            Password = $env:XD_E2E_PASSWORD
             TokenRefreshWaitSeconds = [int]'${{ inputs.token_refresh_wait_seconds }}'
-          }
-          if ($env:XD_E2E_USERNAME) {
-            $params.Username = $env:XD_E2E_USERNAME
-            $params.Password = $env:XD_E2E_PASSWORD
           }
           if ('${{ inputs.keep_artifacts }}' -eq 'true') {
             $params.KeepArtifacts = $true

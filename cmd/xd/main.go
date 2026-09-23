@@ -25,9 +25,9 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "login":
-		err = login(false, os.Args[2:])
-	case "register":
-		err = login(true, os.Args[2:])
+		err = login(os.Args[2:])
+	case "password":
+		err = passwordCmd(os.Args[2:])
 	case "logout":
 		err = logout()
 	case "status":
@@ -56,8 +56,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `xDrive CLI
 
 Usage:
-  xd register --server https://drive.example.com --username USER --password PASS
-  xd login    --server https://drive.example.com --username USER --password PASS
+  xd login --server https://drive.example.com --username USER --password PASS
+  xd password --current CURRENT --new NEW
   xd status
   xd config --mount PATH
   xd mount [PATH]
@@ -65,11 +65,12 @@ Usage:
   xd update [--install]
   xd logout
 
+Accounts are created by an xDrive administrator; self-registration is not supported.
 When PATH is omitted, xd uses the configured mount path or ~/xDrive.
 On Linux, the path is a FUSE mountpoint. On Windows, it is a CfAPI sync root.`)
 }
 
-func login(register bool, args []string) error {
+func login(args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	server := fs.String("server", "http://localhost:8080", "xDrive server URL")
 	username := fs.String("username", "", "username")
@@ -87,14 +88,7 @@ func login(register bool, args []string) error {
 		return fmt.Errorf("--password or XD_PASSWORD is required")
 	}
 	cli := client.New(strings.TrimRight(*server, "/"), "")
-	ctx := context.Background()
-	var resp client.AuthResponse
-	var err error
-	if register {
-		resp, err = cli.Register(ctx, *username, *password)
-	} else {
-		resp, err = cli.Login(ctx, *username, *password)
-	}
+	resp, err := cli.Login(context.Background(), *username, *password)
 	if err != nil {
 		return err
 	}
@@ -115,6 +109,45 @@ func login(register bool, args []string) error {
 		return err
 	}
 	fmt.Printf("logged in as %s\nmount path: %s\n", resp.Username, root)
+	if resp.MustChangePassword {
+		fmt.Println("administrator requires a password change before sync can start; run: xd password --current CURRENT --new NEW")
+	}
+	return nil
+}
+
+func passwordCmd(args []string) error {
+	fs := flag.NewFlagSet("password", flag.ContinueOnError)
+	current := fs.String("current", "", "current password (or XD_PASSWORD)")
+	next := fs.String("new", "", "new password (or XD_NEW_PASSWORD)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *current == "" {
+		*current = os.Getenv("XD_PASSWORD")
+	}
+	if *next == "" {
+		*next = os.Getenv("XD_NEW_PASSWORD")
+	}
+	if *current == "" || *next == "" {
+		return fmt.Errorf("--current/--new or XD_PASSWORD/XD_NEW_PASSWORD are required")
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	resp, err := userconfig.NewClient(cfg).ChangePassword(context.Background(), *current, *next)
+	if err != nil {
+		return err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		latest = cfg
+	}
+	latest.ApplyAuth(resp, false)
+	if err := userconfig.Save(latest); err != nil {
+		return err
+	}
+	fmt.Println("password changed; existing sessions were revoked and this client received a new session")
 	return nil
 }
 
@@ -191,6 +224,9 @@ func mountCmd(args []string) error {
 	cfg, err := userconfig.Load()
 	if err != nil {
 		return err
+	}
+	if cfg.MustChangePassword {
+		return fmt.Errorf("password change required; run xd password first")
 	}
 	var path string
 	if fs.NArg() == 1 {

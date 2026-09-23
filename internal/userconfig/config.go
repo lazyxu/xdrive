@@ -14,16 +14,18 @@ import (
 )
 
 type Config struct {
-	Server           string    `json:"server"`
-	Token            string    `json:"token,omitempty"`
-	AccessToken      string    `json:"access_token,omitempty"`
-	RefreshToken     string    `json:"refresh_token,omitempty"`
-	AccessExpiresAt  time.Time `json:"access_expires_at,omitempty"`
-	RefreshExpiresAt time.Time `json:"refresh_expires_at,omitempty"`
-	SessionID        string    `json:"session_id,omitempty"`
-	Username         string    `json:"username"`
-	MountPath        string    `json:"mount_path,omitempty"`
-	Paused           bool      `json:"paused,omitempty"`
+	Server             string    `json:"server"`
+	Token              string    `json:"token,omitempty"`
+	AccessToken        string    `json:"access_token,omitempty"`
+	RefreshToken       string    `json:"refresh_token,omitempty"`
+	AccessExpiresAt    time.Time `json:"access_expires_at,omitempty"`
+	RefreshExpiresAt   time.Time `json:"refresh_expires_at,omitempty"`
+	SessionID          string    `json:"session_id,omitempty"`
+	Username           string    `json:"username"`
+	Role               string    `json:"role,omitempty"`
+	MustChangePassword bool      `json:"must_change_password,omitempty"`
+	MountPath          string    `json:"mount_path,omitempty"`
+	Paused             bool      `json:"paused,omitempty"`
 }
 
 func Dir() (string, error) {
@@ -155,6 +157,8 @@ func (cfg *Config) ApplyAuth(resp client.AuthResponse, newSession bool) {
 	cfg.AccessExpiresAt = tokens.AccessExpiresAt
 	cfg.RefreshExpiresAt = tokens.RefreshExpiresAt
 	cfg.Username = resp.Username
+	cfg.Role = resp.Role
+	cfg.MustChangePassword = resp.MustChangePassword
 	if newSession || cfg.SessionID == "" {
 		cfg.SessionID = uuid.NewString()
 	}

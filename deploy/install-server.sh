@@ -123,6 +123,37 @@ fi
 compose up -d --remove-orphans
 compose ps
 
+if ! compose exec -T server xdrive-server admin exists >/dev/null 2>&1; then
+  echo
+  echo "xDrive requires an administrator account before users can sign in."
+  if [[ -r /dev/tty && -w /dev/tty ]]; then
+    admin_username="admin"
+    read -r -p "Administrator username [admin]: " input_username </dev/tty || true
+    if [[ -n "${input_username:-}" ]]; then
+      admin_username="$input_username"
+    fi
+    while true; do
+      read -r -s -p "Administrator password: " admin_password </dev/tty || true
+      printf '\n' >/dev/tty
+      read -r -s -p "Confirm administrator password: " admin_password_confirm </dev/tty || true
+      printf '\n' >/dev/tty
+      if [[ "$admin_password" == "$admin_password_confirm" && -n "$admin_password" ]]; then
+        break
+      fi
+      echo "Passwords did not match; try again." >/dev/tty
+    done
+    if printf '%s\n' "$admin_password" | compose exec -T server xdrive-server admin create --username "$admin_username" --password-stdin; then
+      echo "Administrator '$admin_username' created."
+    else
+      echo "Administrator creation failed. Run the manual bootstrap command below." >&2
+    fi
+    unset admin_password admin_password_confirm
+  else
+    echo "No interactive terminal is available. Create the first administrator with:"
+    echo "  read -s -p 'Admin password: ' P; echo; printf '%s\\n' \"\$P\" | docker compose --env-file '$ENV_PATH' -f '$COMPOSE_PATH' exec -T server xdrive-server admin create --username admin --password-stdin; unset P"
+  fi
+fi
+
 echo
 echo "xDrive is running. Default Web URL: http://localhost:$(grep '^XD_WEB_PORT=' "$ENV_PATH" | cut -d= -f2-)"
 echo "Manage it with: docker compose --env-file '$ENV_PATH' -f '$COMPOSE_PATH' <command>"

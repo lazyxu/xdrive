@@ -43,13 +43,15 @@ type Node struct {
 }
 
 type AuthResponse struct {
-	Token            string `json:"token"`
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token"`
-	TokenType        string `json:"token_type"`
-	ExpiresIn        int64  `json:"expires_in"`
-	RefreshExpiresIn int64  `json:"refresh_expires_in"`
-	Username         string `json:"username"`
+	Token              string `json:"token"`
+	AccessToken        string `json:"access_token"`
+	RefreshToken       string `json:"refresh_token"`
+	TokenType          string `json:"token_type"`
+	ExpiresIn          int64  `json:"expires_in"`
+	RefreshExpiresIn   int64  `json:"refresh_expires_in"`
+	Username           string `json:"username"`
+	Role               string `json:"role"`
+	MustChangePassword bool   `json:"must_change_password"`
 }
 
 type APIError struct {
@@ -70,10 +72,6 @@ func New(baseURL, token string) *Client {
 
 func (c *Client) Login(ctx context.Context, username, password string) (AuthResponse, error) {
 	return c.authenticate(ctx, "/api/v1/auth/login", username, password)
-}
-
-func (c *Client) Register(ctx context.Context, username, password string) (AuthResponse, error) {
-	return c.authenticate(ctx, "/api/v1/auth/register", username, password)
 }
 
 func (c *Client) authenticate(ctx context.Context, path, username, password string) (AuthResponse, error) {

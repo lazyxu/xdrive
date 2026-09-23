@@ -9,6 +9,7 @@ import {
   LogoutOutlined,
   ReloadOutlined,
   UploadOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import {
   Alert,
@@ -28,7 +29,8 @@ import {
   message,
 } from 'antd'
 import type { UploadProps } from 'antd'
-import { ApiError, AuthResult, AuthSession, Node, XDriveApi, sessionFromAuth } from './api'
+import { ApiError, AuthResult, AuthSession, MeResult, Node, XDriveApi, sessionFromAuth } from './api'
+import AdminUsersPanel from './AdminUsers'
 
 const { Header, Content } = Layout
 const ACCESS_KEY = 'xdrive.access_token'
@@ -89,8 +91,7 @@ function App() {
 
   if (!session.accessToken) {
     return <AuthView api={api} onAuthenticated={(result) => {
-      const next = sessionFromAuth(result)
-      persistSession(next)
+      persistSession(sessionFromAuth(result))
       localStorage.setItem(USER_KEY, result.username)
       setUsername(result.username)
     }} />
@@ -100,7 +101,6 @@ function App() {
 }
 
 function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (result: AuthResult) => void }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -108,8 +108,7 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
     setBusy(true)
     setError('')
     try {
-      const result = mode === 'login' ? await api.login(values.username, values.password) : await api.register(values.username, values.password)
-      onAuthenticated(result)
+      onAuthenticated(await api.login(values.username, values.password))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed')
     } finally {
@@ -133,15 +132,13 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
             <Input autoFocus autoComplete="username" />
           </Form.Item>
           <Form.Item label="Password" name="password" rules={[{ required: true }, { min: 8, max: 128 }]}>
-            <Input.Password autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+            <Input.Password autoComplete="current-password" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" loading={busy} block>
-            {mode === 'login' ? 'Sign in' : 'Create account'}
-          </Button>
+          <Button type="primary" htmlType="submit" loading={busy} block>Sign in</Button>
         </Form>
-        <Button type="link" block onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
-          {mode === 'login' ? 'Need an account? Register' : 'Already have an account? Sign in'}
-        </Button>
+        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0, textAlign: 'center' }}>
+          Accounts are created by your xDrive administrator.
+        </Typography.Paragraph>
       </Card>
     </div>
   )
@@ -149,22 +146,32 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
 
 function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveApi; username: string; onAuthExpired: () => void; onLogout: () => void }) {
   const [modal, modalContext] = Modal.useModal()
+  const [profile, setProfile] = useState<MeResult | null>(null)
   const [items, setItems] = useState<Node[]>([])
   const [crumbs, setCrumbs] = useState<Crumb[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<Node | null>(null)
+  const [adminOpen, setAdminOpen] = useState(false)
   const [folderForm] = Form.useForm<{ name: string }>()
   const [renameForm] = Form.useForm<{ name: string }>()
+  const [passwordForm] = Form.useForm<{ current: string; next: string; confirm: string }>()
 
   const current = crumbs.at(-1)
 
   const handleError = (err: unknown) => {
-    if (err instanceof ApiError && err.status === 401) {
-      message.error('Session expired. Sign in again.')
-      onAuthExpired()
-      return
+    if (err instanceof ApiError) {
+      if (err.status === 401 || err.message.includes('account_disabled')) {
+        message.error('Session is no longer valid. Sign in again.')
+        onAuthExpired()
+        return
+      }
+      if (err.message.includes('password_change_required')) {
+        setProfile((currentProfile) => currentProfile ? { ...currentProfile, must_change_password: true } : currentProfile)
+        message.warning('Change your password before using files.')
+        return
+      }
     }
     message.error(err instanceof Error ? err.message : 'Request failed')
   }
@@ -182,26 +189,89 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
     }
   }
 
+  const loadInitial = async () => {
+    setLoading(true)
+    try {
+      const me = await api.me()
+      setProfile(me)
+      if (me.must_change_password) return
+      const root = await api.root()
+      const list = await api.list(root.id)
+      setCrumbs([{ id: root.id, name: 'My files' }])
+      setItems(list)
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     let active = true
     ;(async () => {
-      try {
-        await api.me()
-        const root = await api.root()
-        const list = await api.list(root.id)
-        if (!active) return
-        setCrumbs([{ id: root.id, name: 'My files' }])
-        setItems(list)
-      } catch (err) {
-        if (active) handleError(err)
-      } finally {
-        if (active) setLoading(false)
-      }
+      if (!active) return
+      await loadInitial()
     })()
     return () => { active = false }
-    // api changes only when the auth token changes.
+    // api changes when auth tokens rotate; reload identity and data then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
+
+  if (profile?.must_change_password) {
+    return (
+      <Layout className="app-shell">
+        <Header className="topbar">
+          <div className="brand-lockup compact">
+            <div className="brand-mark small">x</div>
+            <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
+          </div>
+          <Space>
+            <Typography.Text className="username">{username}</Typography.Text>
+            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">Sign out</Button>
+          </Space>
+        </Header>
+        <Content className="content-wrap">
+          <Card className="auth-card" title="Change your temporary password">
+            <Alert
+              type="warning"
+              showIcon
+              message="Your administrator requires a password change before file access is enabled."
+              style={{ marginBottom: 18 }}
+            />
+            <Form
+              form={passwordForm}
+              layout="vertical"
+              onFinish={async (values) => {
+                if (values.next !== values.confirm) {
+                  message.error('New passwords do not match')
+                  return
+                }
+                try {
+                  await api.changePassword(values.current, values.next)
+                  passwordForm.resetFields()
+                  message.success('Password changed')
+                  setProfile({ ...profile, must_change_password: false })
+                } catch (err) {
+                  handleError(err)
+                }
+              }}
+            >
+              <Form.Item name="current" label="Current password" rules={[{ required: true }]}>
+                <Input.Password autoComplete="current-password" />
+              </Form.Item>
+              <Form.Item name="next" label="New password" rules={[{ required: true }, { min: 8 }]}>
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <Form.Item name="confirm" label="Confirm new password" rules={[{ required: true }, { min: 8 }]}>
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <Button type="primary" htmlType="submit">Change password</Button>
+            </Form>
+          </Card>
+        </Content>
+      </Layout>
+    )
+  }
 
   const enterDirectory = (node: Node) => loadDirectory(node.id, [...crumbs, { id: node.id, name: node.name }])
 
@@ -263,80 +333,94 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
     <>
       {modalContext}
       <Layout className="app-shell">
-      <Header className="topbar">
-        <div className="brand-lockup compact">
-          <div className="brand-mark small">x</div>
-          <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
-        </div>
-        <Space>
-          <Typography.Text className="username">{username}</Typography.Text>
-          <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">Sign out</Button>
-        </Space>
-      </Header>
-      <Content className="content-wrap">
-        <Card className="file-card">
-          <div className="file-toolbar">
-            <Breadcrumb items={crumbs.map((crumb, index) => ({
-              title: index === crumbs.length - 1 ? crumb.name : <a onClick={() => loadDirectory(crumb.id, crumbs.slice(0, index + 1))}>{crumb.name}</a>,
-            }))} />
-            <Space wrap>
-              <Button icon={<ReloadOutlined />} onClick={() => current && loadDirectory(current.id)}>Refresh</Button>
-              <Button icon={<FolderAddOutlined />} onClick={() => setFolderOpen(true)}>New folder</Button>
-              <Upload {...uploadProps}><Button type="primary" icon={<UploadOutlined />}>Upload</Button></Upload>
-            </Space>
+        <Header className="topbar">
+          <div className="brand-lockup compact">
+            <div className="brand-mark small">x</div>
+            <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
           </div>
-          {uploadProgress !== null && <div className="upload-progress"><Progress percent={uploadProgress} size="small" /></div>}
-          <Table<Node>
-            rowKey="id"
-            loading={loading}
-            dataSource={items}
-            pagination={false}
-            locale={{ emptyText: 'This folder is empty' }}
-            columns={[
-              {
-                title: 'Name', dataIndex: 'name', key: 'name',
-                render: (_, node) => (
-                  <Space>
-                    {node.type === 'dir' ? <FolderOpenOutlined className="folder-icon" /> : <FileOutlined />}
-                    {node.type === 'dir' ? <a onDoubleClick={() => enterDirectory(node)} onClick={() => enterDirectory(node)}>{node.name}</a> : <span>{node.name}</span>}
-                    {node.type === 'dir' && <Tag>Folder</Tag>}
-                  </Space>
-                ),
-              },
-              { title: 'Size', dataIndex: 'size', width: 120, render: (value: number, node: Node) => node.type === 'dir' ? '—' : formatSize(value) },
-              { title: 'Modified', dataIndex: 'updated_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
-              {
-                title: '', key: 'actions', width: 150, align: 'right',
-                render: (_, node) => (
-                  <Space size="small">
-                    {node.type === 'file' && <Button type="text" aria-label={`Download ${node.name}`} icon={<DownloadOutlined />} onClick={() => api.download(node).catch(handleError)} />}
-                    <Button type="text" aria-label={`Rename ${node.name}`} icon={<EditOutlined />} onClick={() => { setRenameNode(node); renameForm.setFieldsValue({ name: node.name }) }} />
-                    <Button danger type="text" aria-label={`Delete ${node.name}`} icon={<DeleteOutlined />} onClick={() => remove(node)} />
-                  </Space>
-                ),
-              },
-            ]}
+          <Space>
+            {profile?.role === 'admin' && (
+              <Button type="text" icon={<UserOutlined />} onClick={() => setAdminOpen(true)} className="logout-button">
+                Users
+              </Button>
+            )}
+            <Typography.Text className="username">{username}</Typography.Text>
+            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">Sign out</Button>
+          </Space>
+        </Header>
+        <Content className="content-wrap">
+          <Card className="file-card">
+            <div className="file-toolbar">
+              <Breadcrumb items={crumbs.map((crumb, index) => ({
+                title: index === crumbs.length - 1 ? crumb.name : <a onClick={() => loadDirectory(crumb.id, crumbs.slice(0, index + 1))}>{crumb.name}</a>,
+              }))} />
+              <Space wrap>
+                <Button icon={<ReloadOutlined />} onClick={() => current && loadDirectory(current.id)}>Refresh</Button>
+                <Button icon={<FolderAddOutlined />} onClick={() => setFolderOpen(true)}>New folder</Button>
+                <Upload {...uploadProps}><Button type="primary" icon={<UploadOutlined />}>Upload</Button></Upload>
+              </Space>
+            </div>
+            {uploadProgress !== null && <div className="upload-progress"><Progress percent={uploadProgress} size="small" /></div>}
+            <Table<Node>
+              rowKey="id"
+              loading={loading}
+              dataSource={items}
+              pagination={false}
+              locale={{ emptyText: 'This folder is empty' }}
+              columns={[
+                {
+                  title: 'Name', dataIndex: 'name', key: 'name',
+                  render: (_, node) => (
+                    <Space>
+                      {node.type === 'dir' ? <FolderOpenOutlined className="folder-icon" /> : <FileOutlined />}
+                      {node.type === 'dir' ? <a onDoubleClick={() => enterDirectory(node)} onClick={() => enterDirectory(node)}>{node.name}</a> : <span>{node.name}</span>}
+                      {node.type === 'dir' && <Tag>Folder</Tag>}
+                    </Space>
+                  ),
+                },
+                { title: 'Size', dataIndex: 'size', width: 120, render: (value: number, node: Node) => node.type === 'dir' ? '—' : formatSize(value) },
+                { title: 'Modified', dataIndex: 'updated_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
+                {
+                  title: '', key: 'actions', width: 150, align: 'right',
+                  render: (_, node) => (
+                    <Space size="small">
+                      {node.type === 'file' && <Button type="text" aria-label={`Download ${node.name}`} icon={<DownloadOutlined />} onClick={() => api.download(node).catch(handleError)} />}
+                      <Button type="text" aria-label={`Rename ${node.name}`} icon={<EditOutlined />} onClick={() => { setRenameNode(node); renameForm.setFieldsValue({ name: node.name }) }} />
+                      <Button danger type="text" aria-label={`Delete ${node.name}`} icon={<DeleteOutlined />} onClick={() => remove(node)} />
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </Card>
+        </Content>
+
+        <Modal title="New folder" open={folderOpen} onCancel={() => setFolderOpen(false)} footer={null} destroyOnClose>
+          <Form form={folderForm} layout="vertical" onFinish={createFolder}>
+            <Form.Item name="name" label="Folder name" rules={[{ required: true, whitespace: true, max: 255 }]}>
+              <Input autoFocus />
+            </Form.Item>
+            <Button type="primary" htmlType="submit">Create</Button>
+          </Form>
+        </Modal>
+
+        <Modal title="Rename" open={!!renameNode} onCancel={() => setRenameNode(null)} footer={null} destroyOnClose>
+          <Form form={renameForm} layout="vertical" onFinish={rename}>
+            <Form.Item name="name" label="Name" rules={[{ required: true, whitespace: true, max: 255 }]}>
+              <Input autoFocus />
+            </Form.Item>
+            <Button type="primary" htmlType="submit">Save</Button>
+          </Form>
+        </Modal>
+
+        {profile?.role === 'admin' && (
+          <AdminUsersPanel
+            api={api}
+            open={adminOpen}
+            currentUserID={profile.id}
+            onClose={() => setAdminOpen(false)}
           />
-        </Card>
-      </Content>
-
-      <Modal title="New folder" open={folderOpen} onCancel={() => setFolderOpen(false)} footer={null} destroyOnClose>
-        <Form form={folderForm} layout="vertical" onFinish={createFolder}>
-          <Form.Item name="name" label="Folder name" rules={[{ required: true, whitespace: true, max: 255 }]}>
-            <Input autoFocus />
-          </Form.Item>
-          <Button type="primary" htmlType="submit">Create</Button>
-        </Form>
-      </Modal>
-
-      <Modal title="Rename" open={!!renameNode} onCancel={() => setRenameNode(null)} footer={null} destroyOnClose>
-        <Form form={renameForm} layout="vertical" onFinish={rename}>
-          <Form.Item name="name" label="Name" rules={[{ required: true, whitespace: true, max: 255 }]}>
-            <Input autoFocus />
-          </Form.Item>
-          <Button type="primary" htmlType="submit">Save</Button>
-        </Form>
-      </Modal>
+        )}
       </Layout>
     </>
   )

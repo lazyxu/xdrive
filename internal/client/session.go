@@ -127,6 +127,35 @@ func (c *Client) RefreshSession(ctx context.Context) (SessionTokens, error) {
 	return next, nil
 }
 
+func (c *Client) ChangePassword(ctx context.Context, currentPassword, newPassword string) (AuthResponse, error) {
+	var out AuthResponse
+	body, _ := json.Marshal(map[string]string{
+		"current_password": currentPassword,
+		"new_password":     newPassword,
+	})
+	req, err := c.request(ctx, http.MethodPost, "/api/v1/me/change-password", bytes.NewReader(body))
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.do(req)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	if err := decodeResponse(resp, &out); err != nil {
+		return out, err
+	}
+	next := out.Session(time.Now())
+	if next.AccessToken == "" || next.RefreshToken == "" {
+		return out, fmt.Errorf("password change response did not contain both tokens")
+	}
+	if err := c.setSessionTokens(next); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 func (c *Client) LogoutSession(ctx context.Context) error {
 	tokens := c.sessionTokens()
 	if strings.TrimSpace(tokens.RefreshToken) == "" {

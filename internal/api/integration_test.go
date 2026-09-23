@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	adminpkg "github.com/lazyxu/xdrive/internal/admin"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
@@ -52,8 +55,8 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
 	}).Router()
 
-	tokenA := registerTestUser(t, router, "alice", "password-a")
-	tokenB := registerTestUser(t, router, "bob-user", "password-b")
+	tokenA := createTestUser(t, db, router, "alice", "password-a")
+	tokenB := createTestUser(t, db, router, "bob-user", "password-b")
 	rootA := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
 
 	dir := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", rootA.ID), tokenA, strings.NewReader(`{"name":"docs"}`), http.StatusCreated)
@@ -90,16 +93,45 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenA, nil, http.StatusNotFound)
 }
 
-func registerTestUser(t *testing.T, h http.Handler, username, password string) string {
+func createTestUser(t *testing.T, db *gorm.DB, h http.Handler, username, password string) string {
 	t.Helper()
-	res := request(t, h, http.MethodPost, "/api/v1/auth/register", "", strings.NewReader(fmt.Sprintf(`{"username":%q,"password":%q}`, username, password)), http.StatusCreated)
-	var out struct {
-		Token string `json:"token"`
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil || out.Token == "" {
-		t.Fatalf("register response %s err=%v", res.Body.String(), err)
+	var user meta.User
+	err = db.Transaction(func(tx *gorm.DB) error {
+		user = meta.User{
+			Username:       username,
+			PasswordHash:   hash,
+			Role:           meta.UserRoleUser,
+			SessionVersion: 1,
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return tx.Create(&meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}).Error
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	return out.Token
+	out := loginTestUser(t, h, username, password, http.StatusOK)
+	return out.AccessToken
+}
+
+func loginTestUser(t *testing.T, h http.Handler, username, password string, status int) authResponse {
+	t.Helper()
+	res := request(t, h, http.MethodPost, "/api/v1/auth/login", "", strings.NewReader(fmt.Sprintf(`{"username":%q,"password":%q}`, username, password)), status)
+	var out authResponse
+	if status/100 == 2 {
+		if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		if out.AccessToken == "" || out.RefreshToken == "" {
+			t.Fatalf("login response missing tokens: %s", res.Body.String())
+		}
+	}
+	return out
 }
 
 func uploadTestFile(t *testing.T, h http.Handler, token string, parentID uint64, name, content string) nodeDTO {
@@ -199,11 +231,8 @@ func TestRefreshTokenRotationAndLogout(t *testing.T) {
 		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
 	}).Router()
 
-	register := request(t, router, http.MethodPost, "/api/v1/auth/register", "", strings.NewReader(`{"username":"refresh-user","password":"password-123"}`), http.StatusCreated)
-	var first authResponse
-	if err := json.Unmarshal(register.Body.Bytes(), &first); err != nil {
-		t.Fatal(err)
-	}
+	createTestUser(t, db, router, "refresh-user", "password-123")
+	first := loginTestUser(t, router, "refresh-user", "password-123", http.StatusOK)
 	if first.AccessToken == "" || first.RefreshToken == "" || first.Token != first.AccessToken {
 		t.Fatalf("invalid initial session: %#v", first)
 	}
@@ -252,7 +281,7 @@ func TestRevisionConflictPreservesServerContent(t *testing.T) {
 		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
 	}).Router()
 
-	token := registerTestUser(t, router, "conflict-user", "password-conflict")
+	token := createTestUser(t, db, router, "conflict-user", "password-conflict")
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 	file := uploadTestFile(t, router, token, root.ID, "shared.txt", "base")
 	if file.Revision != 1 {
@@ -320,10 +349,149 @@ func TestMutationRequiresIfMatch(t *testing.T) {
 		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 24 * time.Hour,
 		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
 	}).Router()
-	token := registerTestUser(t, router, "precondition-user", "password-123")
+	token := createTestUser(t, db, router, "precondition-user", "password-123")
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 	file := uploadTestFile(t, router, token, root.ID, "a.txt", "a")
 	request(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token, strings.NewReader("b"), http.StatusPreconditionRequired)
 	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, strings.NewReader(`{"name":"b.txt"}`), http.StatusPreconditionRequired)
 	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, nil, http.StatusPreconditionRequired)
+}
+
+func TestAdminUserLifecycle(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{
+		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 30 * 24 * time.Hour,
+		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}
+	router := server.Router()
+
+	// Public account creation is intentionally absent.
+	request(t, router, http.MethodPost, "/api/v1/auth/register", "", strings.NewReader(`{"username":"nope","password":"password-123"}`), http.StatusNotFound)
+
+	adminUser, err := adminpkg.Bootstrap(db, "root-admin", "admin-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminSession := loginTestUser(t, router, "root-admin", "admin-password", http.StatusOK)
+	if adminSession.Role != meta.UserRoleAdmin || adminSession.MustChangePassword {
+		t.Fatalf("unexpected admin session: %#v", adminSession)
+	}
+
+	createdRes := request(t, router, http.MethodPost, "/api/v1/admin/users", adminSession.AccessToken,
+		strings.NewReader(`{"username":"alice-managed","password":"temporary-123","role":"user","must_change_password":true}`), http.StatusCreated)
+	var managed userDTO
+	if err := json.Unmarshal(createdRes.Body.Bytes(), &managed); err != nil {
+		t.Fatal(err)
+	}
+	if managed.Role != meta.UserRoleUser || !managed.MustChangePassword || managed.Disabled {
+		t.Fatalf("unexpected managed user: %#v", managed)
+	}
+
+	aliceInitial := loginTestUser(t, router, "alice-managed", "temporary-123", http.StatusOK)
+	if !aliceInitial.MustChangePassword {
+		t.Fatal("temporary-password user was not marked must_change_password")
+	}
+	request(t, router, http.MethodGet, "/api/v1/nodes/root", aliceInitial.AccessToken, nil, http.StatusForbidden)
+
+	changeRes := request(t, router, http.MethodPost, "/api/v1/me/change-password", aliceInitial.AccessToken,
+		strings.NewReader(`{"current_password":"temporary-123","new_password":"alice-new-password"}`), http.StatusOK)
+	var aliceSession authResponse
+	if err := json.Unmarshal(changeRes.Body.Bytes(), &aliceSession); err != nil {
+		t.Fatal(err)
+	}
+	if aliceSession.MustChangePassword || aliceSession.AccessToken == "" || aliceSession.RefreshToken == "" {
+		t.Fatalf("password change did not create usable session: %#v", aliceSession)
+	}
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", aliceSession.AccessToken, nil, http.StatusOK)
+
+	// A normal user cannot access administrator APIs.
+	request(t, router, http.MethodGet, "/api/v1/admin/users", aliceSession.AccessToken, nil, http.StatusForbidden)
+
+	file := uploadTestFile(t, router, aliceSession.AccessToken, root.ID, "owned.txt", "owned-data")
+	var stored meta.File
+	if err := db.First(&stored, "node_id = ?", file.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Disable is immediate for both access and refresh credentials.
+	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), adminSession.AccessToken,
+		strings.NewReader(`{"disabled":true}`), http.StatusOK)
+	request(t, router, http.MethodGet, "/api/v1/nodes/root", aliceSession.AccessToken, nil, http.StatusForbidden)
+	request(t, router, http.MethodPost, "/api/v1/auth/refresh", "",
+		strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, aliceSession.RefreshToken)), http.StatusUnauthorized)
+
+	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), adminSession.AccessToken,
+		strings.NewReader(`{"disabled":false}`), http.StatusOK)
+	aliceEnabled := loginTestUser(t, router, "alice-managed", "alice-new-password", http.StatusOK)
+
+	// Password reset revokes current access + refresh immediately and replaces the password.
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/admin/users/%d/reset-password", managed.ID), adminSession.AccessToken,
+		strings.NewReader(`{"password":"reset-password-123","must_change_password":true}`), http.StatusNoContent)
+	request(t, router, http.MethodGet, "/api/v1/nodes/root", aliceEnabled.AccessToken, nil, http.StatusUnauthorized)
+	request(t, router, http.MethodPost, "/api/v1/auth/refresh", "",
+		strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, aliceEnabled.RefreshToken)), http.StatusUnauthorized)
+	loginTestUser(t, router, "alice-managed", "alice-new-password", http.StatusUnauthorized)
+
+	aliceReset := loginTestUser(t, router, "alice-managed", "reset-password-123", http.StatusOK)
+	if !aliceReset.MustChangePassword {
+		t.Fatal("reset password did not require password change")
+	}
+	changeRes = request(t, router, http.MethodPost, "/api/v1/me/change-password", aliceReset.AccessToken,
+		strings.NewReader(`{"current_password":"reset-password-123","new_password":"alice-final-password"}`), http.StatusOK)
+	if err := json.Unmarshal(changeRes.Body.Bytes(), &aliceSession); err != nil {
+		t.Fatal(err)
+	}
+
+	// Explicit session revocation invalidates an existing access token immediately.
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/admin/users/%d/revoke-sessions", managed.ID), adminSession.AccessToken,
+		nil, http.StatusNoContent)
+	request(t, router, http.MethodGet, "/api/v1/nodes/root", aliceSession.AccessToken, nil, http.StatusUnauthorized)
+
+	aliceFinal := loginTestUser(t, router, "alice-managed", "alice-final-password", http.StatusOK)
+	// Role changes take effect immediately because requireAdmin reads the current DB row.
+	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), adminSession.AccessToken,
+		strings.NewReader(`{"role":"admin"}`), http.StatusOK)
+	request(t, router, http.MethodGet, "/api/v1/admin/users", aliceFinal.AccessToken, nil, http.StatusOK)
+	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), aliceFinal.AccessToken,
+		strings.NewReader(`{"role":"user"}`), http.StatusBadRequest)
+
+	// Administrators cannot disable or delete their own account.
+	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", adminUser.ID), adminSession.AccessToken,
+		strings.NewReader(`{"disabled":true}`), http.StatusBadRequest)
+	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/admin/users/%d", adminUser.ID), adminSession.AccessToken,
+		nil, http.StatusBadRequest)
+
+	// The original administrator can permanently delete the second administrator/user and its blobs.
+	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), adminSession.AccessToken,
+		nil, http.StatusNoContent)
+	if err := db.First(&meta.User{}, managed.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted user still exists: %v", err)
+	}
+	if _, err := store.Open(context.Background(), stored.StorageKey); err == nil {
+		t.Fatal("deleted user's blob still exists")
+	}
 }

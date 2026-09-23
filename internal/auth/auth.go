@@ -19,8 +19,9 @@ type Manager struct {
 }
 
 type Claims struct {
-	UserID    uint64 `json:"uid"`
-	TokenType string `json:"typ,omitempty"`
+	UserID         uint64 `json:"uid"`
+	TokenType      string `json:"typ,omitempty"`
+	SessionVersion uint64 `json:"ver,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -42,11 +43,12 @@ func CheckPassword(hash, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
-func (m Manager) Issue(userID uint64) (string, error) {
+func (m Manager) Issue(userID, sessionVersion uint64) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:    userID,
-		TokenType: "access",
+		UserID:         userID,
+		TokenType:      "access",
+		SessionVersion: sessionVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessTTL)),
@@ -56,7 +58,7 @@ func (m Manager) Issue(userID uint64) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)
 }
 
-func (m Manager) Parse(tokenString string) (uint64, error) {
+func (m Manager) Parse(tokenString string) (userID, sessionVersion uint64, err error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
 		if token.Method != jwt.SigningMethodHS256 {
@@ -64,11 +66,10 @@ func (m Manager) Parse(tokenString string) (uint64, error) {
 		}
 		return m.secret, nil
 	})
-	// TokenType is optional only for migration from pre-refresh xDrive JWTs.
 	if err != nil || !token.Valid || claims.UserID == 0 || (claims.TokenType != "" && claims.TokenType != "access") {
-		return 0, errors.New("invalid token")
+		return 0, 0, errors.New("invalid token")
 	}
-	return claims.UserID, nil
+	return claims.UserID, claims.SessionVersion, nil
 }
 
 func NewRefreshToken() (raw string, hash string, err error) {

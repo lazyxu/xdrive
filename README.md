@@ -14,9 +14,9 @@ xDrive is an Apache-2.0 open-source file service with a Docker-deployed server, 
 | Linux | FUSE client (`go-fuse/v2`) |
 | Windows | Cloud Files API (CfAPI), Files On-Demand style placeholders |
 | Client delivery | Windows `.exe` installer; Linux `.deb` installer |
-| Multi-user | Per-user metadata and storage isolation |
+| Multi-user | Administrator-provisioned accounts, roles, per-user isolation |
 
-Not in the MVP: chunking, instant upload/deduplication, small-file packs, CDC, thumbnails/transcoding, public sharing, conflict resolution, MinIO, macOS, or mobile clients.
+Not in the MVP: chunking, instant upload/deduplication, small-file packs, CDC, thumbnails/transcoding, public sharing, MinIO, macOS, or mobile clients.
 
 ## Architecture
 
@@ -83,13 +83,35 @@ The installer:
 3. writes `~/.xd/docker-compose.yml`;
 4. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
 5. pulls the xDrive server/Web container images;
-6. starts PostgreSQL, the xDrive API server, and the Web UI.
+6. starts PostgreSQL, the xDrive API server, and the Web UI;
+7. if no administrator exists, securely prompts on the terminal to create the first administrator.
 
 The default Web endpoint is:
 
 ```text
 http://SERVER_IP:3000
 ```
+
+### Administrator bootstrap
+
+xDrive does **not** expose public or self-service registration. All accounts are created by an administrator.
+
+On an interactive first install, `install-server.sh` asks for the initial administrator username and password after the containers start. The password is piped to the server process through stdin; it is not written to `~/.xd/.env` or passed as a command-line argument.
+
+For non-interactive installs, or for an existing deployment that has users but no administrator yet, create the first administrator locally on the server:
+
+```bash
+XD_DIR="$HOME/.xd"
+read -s -p 'Admin password: ' P; echo
+printf '%s\n' "$P" | docker compose \
+  --env-file "$XD_DIR/.env" \
+  -f "$XD_DIR/docker-compose.yml" \
+  exec -T server \
+  xdrive-server admin create --username admin --password-stdin
+unset P
+```
+
+The bootstrap command works only while **no administrator account exists**. Existing ordinary users do not block first-admin bootstrap. Once an administrator exists, all additional users and administrators must be created through the authenticated administrator interface.
 
 Common operations:
 
@@ -143,15 +165,15 @@ The agent is a hidden user-session process with a native Windows notification-ar
 For normal use, **no PowerShell or `xd` command is required**. After installation, use the xDrive tray icon:
 
 - the first two disabled lines show the current account/login state and sync state;
-- **登录 / 注册...** opens xDrive's local account page in the default browser;
+- **登录...** opens xDrive's local account page in the default browser;
 - **打开 xDrive** opens the current sync root in Explorer;
 - **暂停同步 / 恢复同步** disconnects/reconnects the provider while preserving the configured state across restarts;
-- **账户 / 设置...** lets the user re-login, register, or change the local xDrive directory;
+- **账户 / 设置...** lets the user re-login, change password, or change the local xDrive directory;
 - **检查更新** immediately runs the stable-release update check;
 - **注销** removes the local JWT credentials and stops the active mount;
 - **退出 xDrive** closes the tray agent. The Start menu contains an **xDrive** shortcut to start it again.
 
-The local account/settings page listens only on `127.0.0.1`, uses a random per-agent-session URL token, sends credentials directly to the configured xDrive server, and does not save the password. The default sync root is:
+The local account/settings page listens only on `127.0.0.1`, uses a random per-agent-session URL token, sends credentials directly to the configured xDrive server, and does not save the password. There is no registration button; accounts are provisioned by an administrator. If the administrator issued a temporary password with `must_change_password`, the agent blocks synchronization until the user changes it. The default sync root is:
 
 ```text
 %USERPROFILE%\xDrive
@@ -176,7 +198,7 @@ Windows uses a **hybrid online-on-demand + bidirectional metadata/content sync**
 - local file modifications are uploaded as complete files;
 - local deletions are propagated to the server;
 - Web/API-side creates, changes and deletes are reconciled back into the sync root roughly every 3 seconds;
-- conflict detection/merging is not implemented yet, so concurrent edits use MVP last-writer-style behavior.
+- concurrent stale writes are rejected by server revisions; the desktop preserves the stale local version as a conflict copy instead of silently overwriting the server winner.
 
 The current Windows installer is not code-signed, so Windows SmartScreen may warn on downloaded builds until release signing is added.
 
@@ -200,6 +222,8 @@ Login and mount:
 
 ```bash
 xd login --server https://drive.example.com --username alice --password 'your-password'
+# If the administrator issued a temporary password:
+xd password --current 'temporary-password' --new 'new-password'
 xd mount ~/xDrive
 ```
 
@@ -242,8 +266,8 @@ Set `XD_DISABLE_AUTO_UPDATE=1` to disable the Windows agent's automatic update c
 ## CLI
 
 ```text
-xd register --server URL --username USER --password PASS
-xd login    --server URL --username USER --password PASS
+xd login --server URL --username USER --password PASS
+xd password --current CURRENT --new NEW
 xd status
 xd config --mount PATH
 xd mount [PATH]
@@ -260,12 +284,15 @@ The client config is stored under the operating system's user config directory. 
 
 xDrive uses first-party username/password authentication with **rotating Access Token + Refresh Token sessions**:
 
-1. registration/login sends the username/password over HTTPS to `/api/v1/auth/register` or `/api/v1/auth/login`; the server stores only a bcrypt password hash;
-2. a successful login returns a short-lived HS256 access JWT plus a long-lived opaque refresh token;
-3. authenticated file/API calls send the access token as `Authorization: Bearer <access-token>`;
-4. before the access token expires, Windows, Linux and the Web UI call `POST /api/v1/auth/refresh` automatically;
-5. every successful refresh rotates the refresh token: the old token is revoked and a new access/refresh pair is returned;
-6. logout calls `POST /api/v1/auth/logout` to revoke the current refresh session before local credentials are removed.
+1. there is no public registration endpoint; administrators create every user account;
+2. login sends the username/password over HTTPS to `/api/v1/auth/login`; the server stores only a bcrypt password hash;
+3. a successful login returns a short-lived HS256 access JWT plus a long-lived opaque refresh token;
+4. authenticated file/API calls send the access token as `Authorization: Bearer <access-token>`;
+5. before the access token expires, Windows, Linux and the Web UI call `POST /api/v1/auth/refresh` automatically;
+6. every successful refresh rotates the refresh token: the old token is revoked and a new access/refresh pair is returned;
+7. logout calls `POST /api/v1/auth/logout` to revoke the current refresh session before local credentials are removed.
+
+Each user also has a server-side `session_version`. Disabling an account, resetting its password, or revoking sessions increments that version and revokes refresh tokens, so already-issued access JWTs stop working immediately on the next API request.
 
 Defaults:
 
@@ -280,6 +307,22 @@ For migration, pre-refresh JWTs are still accepted until they expire, and the lo
 
 This MVP does not yet implement OAuth/OIDC, SSO or MFA. Use HTTPS for any non-local deployment.
 
+## Administrator-managed accounts
+
+Roles are intentionally simple: `admin` and `user`.
+
+Administrators can use the Web **Users** panel to:
+
+- create users or additional administrators;
+- issue a temporary password and require the user to change it at first login;
+- enable or disable an account;
+- promote/demote roles while protecting the last active administrator;
+- reset a password, which immediately revokes existing sessions;
+- revoke all sessions without changing the password;
+- permanently delete a user and that user's stored files.
+
+Ordinary users can change only their own password. A user marked `must_change_password` can access only identity/password-change endpoints until the password is changed.
+
 ## HTTP API
 
 Authenticated endpoints use:
@@ -291,11 +334,11 @@ Authorization: Bearer <jwt>
 Main routes:
 
 ```text
-POST   /api/v1/auth/register
 POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
 GET    /api/v1/me
+POST   /api/v1/me/change-password
 GET    /api/v1/nodes/root
 GET    /api/v1/nodes/:id/children
 POST   /api/v1/nodes/:id/directories
@@ -304,6 +347,13 @@ PATCH  /api/v1/nodes/:id
 DELETE /api/v1/nodes/:id
 GET    /api/v1/files/:id/content
 PUT    /api/v1/files/:id/content
+
+GET    /api/v1/admin/users
+POST   /api/v1/admin/users
+PATCH  /api/v1/admin/users/:id
+DELETE /api/v1/admin/users/:id
+POST   /api/v1/admin/users/:id/reset-password
+POST   /api/v1/admin/users/:id/revoke-sessions
 ```
 
 Existing-node mutations use revision preconditions via `If-Match`; node JSON includes `revision`, and file downloads expose the same revision as an `ETag`.
@@ -345,10 +395,12 @@ For a real Windows 10/11 desktop against an actual xDrive server, use:
 ```powershell
 .\scripts\windows-e2e.ps1 `
   -Server https://drive-e2e.example.com `
-  -InstallerPath .\dist\xDriveSetup-amd64.exe
+  -InstallerPath .\dist\xDriveSetup-amd64.exe `
+  -Username e2e-user `
+  -Password 'e2e-password'
 ```
 
-If `-Username` and `-Password` are omitted, the script registers a unique temporary account, so the dedicated E2E server must allow registration. Supplying credentials makes it use an existing test account instead.
+The E2E account must be created in advance by an xDrive administrator and should not require a first-login password change. The script never creates accounts.
 
 The real-machine script validates installer deployment, CfAPI mounting, placeholder/hydration, local-to-server create/update/rename/delete, server-to-local create/delete, and a stale-write conflict where both versions must survive. `-TokenRefreshWaitSeconds` can additionally validate a test server configured with a deliberately short access-token TTL.
 
@@ -358,7 +410,7 @@ A manual GitHub workflow, **Windows Real-Machine E2E**, targets a self-hosted ru
 self-hosted, windows, x64, xdrive-e2e
 ```
 
-Optional repository secrets `XD_E2E_USERNAME` and `XD_E2E_PASSWORD` select an existing test account; otherwise the workflow registers a temporary account.
+Repository secrets `XD_E2E_USERNAME` and `XD_E2E_PASSWORD` are required and must identify an administrator-provisioned test account.
 
 ## CI, snapshots, and releases
 
@@ -403,6 +455,7 @@ cmd/
   xdrive-agent/           background client agent
   xdrive-updater/         stable-release updater
 internal/
+  admin/                  first-administrator bootstrap
   api/                    Gin routes + handlers
   auth/                   password hashing + JWT
   client/                 REST client
@@ -435,7 +488,7 @@ deploy/
 - The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.
 - File operations are owner-scoped at the metadata layer.
-- There is no quota, antivirus scanning, version history, sharing, audit log, or edit-conflict handling yet.
+- There is no quota, antivirus scanning, version history, sharing, or audit log yet.
 
 ## Roadmap
 
