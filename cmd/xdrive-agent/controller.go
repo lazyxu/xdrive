@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/mount"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -28,6 +29,7 @@ type agentSnapshot struct {
 	MustChangePassword bool
 	LastError          string
 	HasConflict        bool
+	ConflictCount      int
 	Version            string
 }
 
@@ -123,8 +125,21 @@ func (c *agentController) Run() {
 				s.LastError = event.Message
 			})
 		case mount.EventConflict:
+			snapshot := c.Snapshot()
+			if dir, err := userconfig.Dir(); err == nil {
+				_ = conflictstate.Upsert(dir, conflictstate.Record{
+					ID:             event.Path,
+					Server:         snapshot.Server,
+					Username:       snapshot.Username,
+					OriginalPath:   event.OriginalPath,
+					ConflictPath:   event.Path,
+					OriginalNodeID: event.OriginalNodeID,
+					ConflictNodeID: event.ConflictNodeID,
+					CreatedAt:      time.Now().UTC(),
+				})
+			}
+			c.refreshConflictSnapshot()
 			c.setSnapshot(func(s *agentSnapshot) {
-				s.HasConflict = true
 				s.SyncStatus = "存在冲突副本"
 			})
 			body := "已保留冲突副本"
@@ -143,6 +158,7 @@ func (c *agentController) Run() {
 		mountDone      chan error
 		lastAuthCheck  time.Time
 		lastAuthNotice string
+		conflictKey    string
 	)
 
 	stopMount := func() {
@@ -191,6 +207,11 @@ func (c *agentController) Run() {
 				}
 			})
 			lastAuthNotice = ""
+			conflictKey = ""
+			c.setSnapshot(func(s *agentSnapshot) {
+				s.HasConflict = false
+				s.ConflictCount = 0
+			})
 			return
 		}
 
@@ -205,6 +226,12 @@ func (c *agentController) Run() {
 				s.AuthStatus = "已登录"
 			}
 		})
+
+		nextConflictKey := d.cfg.Server + "\x00" + d.cfg.Username
+		if nextConflictKey != conflictKey {
+			conflictKey = nextConflictKey
+			c.refreshConflictSnapshot()
+		}
 
 		if d.cfg.MustChangePassword {
 			if running {
@@ -447,9 +474,9 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 			s.SyncStatus = "正在启动同步"
 		}
 		s.Paused = false
-		s.HasConflict = false
 		s.LastError = ""
 	})
+	c.refreshConflictSnapshot()
 	c.wakeNow()
 	return nil
 }
