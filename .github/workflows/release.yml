@@ -1,0 +1,147 @@
+name: Build Packages
+
+on:
+  push:
+    branches: ["master"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Build Linux package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="$GITHUB_REF_NAME"
+          else
+            version="snapshot-${GITHUB_SHA::7}"
+          fi
+          mkdir -p package/xdrive-linux-amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o package/xdrive-linux-amd64/xd ./cmd/xd
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o package/xdrive-linux-amd64/xdrive-server ./cmd/server
+          cp README.md LICENSE package/xdrive-linux-amd64/
+          printf '%s\n' "$version" > package/xdrive-linux-amd64/VERSION
+          tar -C package -czf xdrive-linux-amd64.tar.gz xdrive-linux-amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-amd64
+          path: xdrive-linux-amd64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-amd64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Test Windows CfAPI packages
+        run: go test ./internal/mount ./internal/client ./internal/meta ./internal/storage ./internal/auth
+      - name: Build Windows package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $version = $env:GITHUB_REF_NAME
+          } else {
+            $version = "snapshot-" + $env:GITHUB_SHA.Substring(0, 7)
+          }
+          New-Item -ItemType Directory -Force "package/xdrive-windows-amd64" | Out-Null
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go build -trimpath -ldflags="-s -w" -o package/xdrive-windows-amd64/xd.exe ./cmd/xd
+          Copy-Item README.md, LICENSE package/xdrive-windows-amd64/
+          Set-Content -NoNewline package/xdrive-windows-amd64/VERSION $version
+          Compress-Archive -Path package/xdrive-windows-amd64 -DestinationPath xdrive-windows-amd64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64
+          path: xdrive-windows-amd64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+      - name: Build Web package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="$GITHUB_REF_NAME"
+          else
+            version="snapshot-${GITHUB_SHA::7}"
+          fi
+          mkdir -p package/xdrive-web
+          cp -R dist package/xdrive-web/dist
+          cp nginx.conf package/xdrive-web/
+          cp ../README.md ../LICENSE package/xdrive-web/
+          printf '%s\n' "$version" > package/xdrive-web/VERSION
+          tar -C package -czf ../xdrive-web.tar.gz xdrive-web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: xdrive-web.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  bundle:
+    needs: [linux-amd64, windows-amd64, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum xdrive-linux-amd64.tar.gz xdrive-windows-amd64.zip xdrive-web.tar.gz > SHA256SUMS.txt
+      - name: Upload combined snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-${{ github.ref_type == 'tag' && github.ref_name || format('snapshot-{0}', github.sha) }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "xDrive $GITHUB_REF_NAME"

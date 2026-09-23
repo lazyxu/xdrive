@@ -246,6 +246,30 @@ CI additionally:
 
 The Windows CI validates API bindings, struct layouts and compilation. A real Explorer hydration/write-back smoke test still requires an interactive Windows machine and is therefore a release/manual test rather than a hosted-CI claim.
 
+## Build artifacts and releases
+
+GitHub Actions builds release packages automatically:
+
+- every push to `master` produces a downloadable snapshot artifact;
+- pushing a version tag such as `v0.1.0` builds the same packages and creates a GitHub Release automatically;
+- the release contains Linux amd64 server/CLI, Windows amd64 CfAPI CLI, the built Web frontend, and `SHA256SUMS.txt`.
+
+Create a formal release with:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The generated assets are:
+
+```text
+xdrive-linux-amd64.tar.gz
+xdrive-windows-amd64.zip
+xdrive-web.tar.gz
+SHA256SUMS.txt
+```
+
 ## Security and MVP limitations
 
 - Use HTTPS in production. JWTs are bearer credentials.
