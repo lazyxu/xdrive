@@ -171,11 +171,17 @@ bootstrap_release() {
   fi
   verify_download "$installer" "$sums" "xdrive-server-install.sh"
   chmod 700 "$installer"
+  set +e
   XD_INSTALL_RESOLVED=1 \
   XD_INSTALL_CHANNEL="$channel" \
   XD_INSTALL_COMMIT="${full:-$commit}" \
   XD_CONFIG_DIR="$CONFIG_DIR" \
-    exec bash "$installer"
+    bash "$installer"
+  status=$?
+  set -e
+  rm -rf "$tmp"
+  trap - EXIT
+  exit "$status"
 }
 
 artifact_is_template=false
