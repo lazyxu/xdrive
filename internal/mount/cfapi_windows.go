@@ -17,13 +17,17 @@ var (
 	procUnregisterSyncRoot = cldapi.NewProc("CfUnregisterSyncRoot")
 	procConnectSyncRoot    = cldapi.NewProc("CfConnectSyncRoot")
 	procDisconnectSyncRoot = cldapi.NewProc("CfDisconnectSyncRoot")
-	procCreatePlaceholders = cldapi.NewProc("CfCreatePlaceholders")
-	procExecute            = cldapi.NewProc("CfExecute")
+	procCreatePlaceholders      = cldapi.NewProc("CfCreatePlaceholders")
+	procExecute                 = cldapi.NewProc("CfExecute")
+	procSetPinState             = cldapi.NewProc("CfSetPinState")
+	procHydratePlaceholder      = cldapi.NewProc("CfHydratePlaceholder")
+	procDehydratePlaceholder    = cldapi.NewProc("CfDehydratePlaceholder")
 )
 
 const (
-	cfHydrationPolicyFull        = 2
-	cfPopulationPolicyAlwaysFull = 3
+	cfHydrationPolicyFull                    = 2
+	cfHydrationModifierAutoDehydrationAllowed = 0x0004
+	cfPopulationPolicyAlwaysFull             = 3
 	cfRegisterFlagUpdate         = 0x00000001
 	cfConnectFlagFullPath        = 0x00000004
 	cfPlaceholderMarkInSync      = 0x00000002
@@ -171,7 +175,10 @@ func cfRegister(root string) error {
 	}
 	reg.StructSize = uint32(unsafe.Sizeof(reg))
 	pol := cfSyncPolicies{
-		Hydration:  cfHydrationPolicy{Primary: cfHydrationPolicyFull},
+		Hydration: cfHydrationPolicy{
+			Primary:  cfHydrationPolicyFull,
+			Modifier: cfHydrationModifierAutoDehydrationAllowed,
+		},
 		Population: cfPopulationPolicy{Primary: cfPopulationPolicyAlwaysFull},
 	}
 	pol.StructSize = uint32(unsafe.Sizeof(pol))
