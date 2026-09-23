@@ -43,7 +43,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
 		t.Fatal(err)
 	}
 	user := meta.User{Username: "verify-user", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
@@ -73,10 +73,17 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	okID := makeFile("ok.txt", okKey, 2)
 	mismatchID := makeFile("mismatch.txt", mismatchKey, 10)
 	missingID := makeFile("missing.txt", missingKey, 7)
+	versionKey := "1/docs/version-old"
+	if err := db.Create(&meta.FileVersion{
+		NodeID: okID, Revision: 1, Size: 3, StorageKey: versionKey,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	for key, content := range map[string]string{
 		okKey:        "ok",
 		mismatchKey:  "bad",
+		versionKey:   "old",
 		"orphan.bin": "orphan",
 	} {
 		path := filepath.Join(root, filepath.FromSlash(key))
@@ -98,7 +105,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if report.OK() {
 		t.Fatal("inconsistent storage reported OK")
 	}
-	if report.ReferencedFiles != 3 || report.BlobFiles != 3 || report.IgnoredTemps != 1 {
+	if report.ReferencedFiles != 3 || report.ReferencedVersions != 1 || report.BlobFiles != 4 || report.IgnoredTemps != 1 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {

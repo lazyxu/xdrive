@@ -6,8 +6,10 @@ import {
   FileOutlined,
   FolderAddOutlined,
   FolderOpenOutlined,
+  HistoryOutlined,
   LogoutOutlined,
   ReloadOutlined,
+  RestOutlined,
   UploadOutlined,
   UserOutlined,
 } from '@ant-design/icons'
@@ -29,7 +31,7 @@ import {
   message,
 } from 'antd'
 import type { UploadProps } from 'antd'
-import { ApiError, AuthResult, AuthSession, MeResult, Node, XDriveApi, sessionFromAuth } from './api'
+import { ApiError, AuthResult, AuthSession, FileVersion, MeResult, Node, XDriveApi, sessionFromAuth } from './api'
 import AdminUsersPanel from './AdminUsers'
 
 const { Header, Content } = Layout
@@ -154,6 +156,12 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
   const [folderOpen, setFolderOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<Node | null>(null)
   const [adminOpen, setAdminOpen] = useState(false)
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [trashItems, setTrashItems] = useState<Node[]>([])
+  const [trashLoading, setTrashLoading] = useState(false)
+  const [historyNode, setHistoryNode] = useState<Node | null>(null)
+  const [versions, setVersions] = useState<FileVersion[]>([])
+  const [versionsLoading, setVersionsLoading] = useState(false)
   const [folderForm] = Form.useForm<{ name: string }>()
   const [renameForm] = Form.useForm<{ name: string }>()
   const [passwordForm] = Form.useForm<{ current: string; next: string; confirm: string }>()
@@ -316,17 +324,49 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
 
   const remove = (node: Node) => {
     modal.confirm({
-      title: `Delete ${node.name}?`,
-      content: node.type === 'dir' ? 'The directory and everything inside it will be deleted.' : 'This file will be deleted permanently.',
-      okText: 'Delete',
+      title: `Move ${node.name} to the recycle bin?`,
+      content: node.type === 'dir'
+        ? 'The directory and everything inside it will disappear from synced folders, but can be restored later.'
+        : 'The file will disappear from synced folders, but can be restored later.',
+      okText: 'Move to recycle bin',
       okButtonProps: { danger: true },
       async onOk() {
         try {
           await api.remove(node.id, node.revision)
+          message.success('Moved to recycle bin')
           if (current) await loadDirectory(current.id)
         } catch (err) { handleError(err) }
       },
     })
+  }
+
+  const loadTrash = async () => {
+    setTrashLoading(true)
+    try {
+      setTrashItems(await api.trash())
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setTrashLoading(false)
+    }
+  }
+
+  const openTrash = () => {
+    setTrashOpen(true)
+    void loadTrash()
+  }
+
+  const openHistory = async (node: Node) => {
+    setHistoryNode(node)
+    setVersionsLoading(true)
+    try {
+      setVersions(await api.versions(node.id))
+    } catch (err) {
+      handleError(err)
+      setVersions([])
+    } finally {
+      setVersionsLoading(false)
+    }
   }
 
   return (
@@ -356,6 +396,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
               }))} />
               <Space wrap>
                 <Button icon={<ReloadOutlined />} onClick={() => current && loadDirectory(current.id)}>Refresh</Button>
+                <Button icon={<RestOutlined />} onClick={openTrash}>Recycle bin</Button>
                 <Button icon={<FolderAddOutlined />} onClick={() => setFolderOpen(true)}>New folder</Button>
                 <Upload {...uploadProps}><Button type="primary" icon={<UploadOutlined />}>Upload</Button></Upload>
               </Space>
@@ -385,6 +426,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                   render: (_, node) => (
                     <Space size="small">
                       {node.type === 'file' && <Button type="text" aria-label={`Download ${node.name}`} icon={<DownloadOutlined />} onClick={() => api.download(node).catch(handleError)} />}
+                      {node.type === 'file' && <Button type="text" aria-label={`History ${node.name}`} icon={<HistoryOutlined />} onClick={() => void openHistory(node)} />}
                       <Button type="text" aria-label={`Rename ${node.name}`} icon={<EditOutlined />} onClick={() => { setRenameNode(node); renameForm.setFieldsValue({ name: node.name }) }} />
                       <Button danger type="text" aria-label={`Delete ${node.name}`} icon={<DeleteOutlined />} onClick={() => remove(node)} />
                     </Space>
@@ -411,6 +453,131 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             </Form.Item>
             <Button type="primary" htmlType="submit">Save</Button>
           </Form>
+        </Modal>
+
+        <Modal
+          title="Recycle bin"
+          open={trashOpen}
+          onCancel={() => setTrashOpen(false)}
+          footer={null}
+          width={900}
+        >
+          <Table<Node>
+            rowKey="id"
+            loading={trashLoading}
+            dataSource={trashItems}
+            pagination={false}
+            locale={{ emptyText: 'Recycle bin is empty' }}
+            columns={[
+              {
+                title: 'Name',
+                dataIndex: 'name',
+                render: (_, node) => (
+                  <Space>
+                    {node.type === 'dir' ? <FolderOpenOutlined /> : <FileOutlined />}
+                    <span>{node.name}</span>
+                  </Space>
+                ),
+              },
+              {
+                title: 'Deleted',
+                dataIndex: 'deleted_at',
+                width: 190,
+                render: (value?: string) => value ? new Date(value).toLocaleString() : '—',
+              },
+              {
+                title: 'Actions',
+                width: 220,
+                render: (_, node) => (
+                  <Space>
+                    <Button
+                      size="small"
+                      onClick={async () => {
+                        try {
+                          await api.restoreTrash(node.id, node.revision)
+                          message.success('Restored')
+                          await loadTrash()
+                          if (current) await loadDirectory(current.id)
+                        } catch (err) { handleError(err) }
+                      }}
+                    >
+                      Restore
+                    </Button>
+                    <Button
+                      danger
+                      size="small"
+                      onClick={() => modal.confirm({
+                        title: `Permanently delete ${node.name}?`,
+                        content: 'The item, current content and all stored file versions will be permanently removed.',
+                        okText: 'Delete permanently',
+                        okButtonProps: { danger: true },
+                        async onOk() {
+                          try {
+                            await api.permanentlyDeleteTrash(node.id, node.revision)
+                            message.success('Permanently deleted')
+                            await loadTrash()
+                          } catch (err) { handleError(err) }
+                        },
+                      })}
+                    >
+                      Delete permanently
+                    </Button>
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Modal>
+
+        <Modal
+          title={historyNode ? `Version history — ${historyNode.name}` : 'Version history'}
+          open={!!historyNode}
+          onCancel={() => { setHistoryNode(null); setVersions([]) }}
+          footer={null}
+          width={760}
+        >
+          <Table<FileVersion>
+            rowKey="id"
+            loading={versionsLoading}
+            dataSource={versions}
+            pagination={false}
+            locale={{ emptyText: 'No previous versions yet' }}
+            columns={[
+              { title: 'Revision', dataIndex: 'revision', width: 110, render: (value: number) => `r${value}` },
+              { title: 'Size', dataIndex: 'size', width: 120, render: (value: number) => formatSize(value) },
+              { title: 'Saved', dataIndex: 'created_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
+              {
+                title: 'Actions',
+                render: (_, version) => historyNode && (
+                  <Space>
+                    <Button size="small" onClick={() => api.downloadVersion(historyNode, version).catch(handleError)}>
+                      Download
+                    </Button>
+                    <Button
+                      size="small"
+                      type="primary"
+                      onClick={() => modal.confirm({
+                        title: `Restore revision ${version.revision}?`,
+                        content: 'The current content will first be preserved as another historical version.',
+                        okText: 'Restore version',
+                        async onOk() {
+                          try {
+                            const restored = await api.restoreVersion(historyNode.id, historyNode.revision, version.id)
+                            message.success('Version restored')
+                            setHistoryNode(restored)
+                            setVersions(await api.versions(restored.id))
+                            if (current) await loadDirectory(current.id)
+                          } catch (err) { handleError(err) }
+                        },
+                      })}
+                    >
+                      Restore
+                    </Button>
+                  </Space>
+                ),
+              },
+            ]}
+          />
         </Modal>
 
         {profile?.role === 'admin' && (

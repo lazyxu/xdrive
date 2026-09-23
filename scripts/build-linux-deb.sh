@@ -37,6 +37,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: xDrive Project <noreply@github.com>
 Depends: fuse3, ca-certificates
+Recommends: libsecret-tools
 Homepage: https://github.com/lazyxu/xdrive
 Description: xDrive Linux client
  Mount an xDrive server as a local filesystem using FUSE.

@@ -34,13 +34,13 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL`).Error; err != nil {
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
@@ -216,10 +216,10 @@ func TestRefreshTokenRotationAndLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
 		t.Fatal(err)
 	}
 	store, err := storage.NewLocal(t.TempDir())
@@ -263,13 +263,13 @@ func TestRevisionConflictPreservesServerContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL`).Error; err != nil {
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
 		t.Fatal(err)
 	}
 	store, err := storage.NewLocal(t.TempDir())
@@ -335,10 +335,10 @@ func TestMutationRequiresIfMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
 		t.Fatal(err)
 	}
 	store, err := storage.NewLocal(t.TempDir())
@@ -367,13 +367,13 @@ func TestAdminUserLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL`).Error; err != nil {
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
@@ -494,4 +494,193 @@ func TestAdminUserLifecycle(t *testing.T) {
 	if _, err := store.Open(context.Background(), stored.StorageKey); err == nil {
 		t.Fatal("deleted user's blob still exists")
 	}
+}
+
+func TestTrashAndVersionHistory(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 24 * time.Hour,
+		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+	token := createTestUser(t, db, router, "history-user", "history-password")
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
+
+	file := uploadTestFile(t, router, token, root.ID, "history.txt", "version-one")
+	versionTwo := requestNodeWithHeaders(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token,
+		strings.NewReader("version-two"), http.StatusOK,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)})
+	if versionTwo.Revision != 2 {
+		t.Fatalf("revision=%d want=2", versionTwo.Revision)
+	}
+
+	versionsRes := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/versions", file.ID), token, nil, http.StatusOK)
+	var versions []fileVersionDTO
+	if err := json.Unmarshal(versionsRes.Body.Bytes(), &versions); err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 1 || versions[0].Revision != 1 || versions[0].Size != int64(len("version-one")) {
+		t.Fatalf("unexpected versions: %+v", versions)
+	}
+	oldVersion := versions[0]
+	oldContent := request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/files/%d/versions/%d/content", file.ID, oldVersion.ID),
+		token, nil, http.StatusOK)
+	if got := oldContent.Body.String(); got != "version-one" {
+		t.Fatalf("historical content=%q", got)
+	}
+
+	restored := requestNodeWithHeaders(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/files/%d/versions/%d/restore", file.ID, oldVersion.ID),
+		token, nil, http.StatusOK,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", versionTwo.Revision)})
+	if restored.Revision != 3 {
+		t.Fatalf("restored revision=%d want=3", restored.Revision)
+	}
+	current := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token, nil, http.StatusOK)
+	if got := current.Body.String(); got != "version-one" {
+		t.Fatalf("restored current content=%q", got)
+	}
+
+	versionsRes = request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/versions", file.ID), token, nil, http.StatusOK)
+	versions = nil
+	if err := json.Unmarshal(versionsRes.Body.Bytes(), &versions); err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 1 || versions[0].Revision != 2 {
+		t.Fatalf("restore should preserve former current as history: %+v", versions)
+	}
+	formerCurrent := request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/files/%d/versions/%d/content", file.ID, versions[0].ID),
+		token, nil, http.StatusOK)
+	if got := formerCurrent.Body.String(); got != "version-two" {
+		t.Fatalf("former current history content=%q", got)
+	}
+
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, nil,
+		http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", restored.Revision)})
+	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token, nil, http.StatusNotFound)
+
+	trashRes := request(t, router, http.MethodGet, "/api/v1/trash", token, nil, http.StatusOK)
+	var trash []nodeDTO
+	if err := json.Unmarshal(trashRes.Body.Bytes(), &trash); err != nil {
+		t.Fatal(err)
+	}
+	if len(trash) != 1 || trash[0].ID != file.ID || trash[0].DeletedAt == nil {
+		t.Fatalf("unexpected trash: %+v", trash)
+	}
+
+	restoredFromTrash := requestNodeWithHeaders(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/trash/%d/restore", file.ID), token, nil, http.StatusOK,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", trash[0].Revision)})
+	if restoredFromTrash.DeletedAt != nil {
+		t.Fatalf("restored item still marked deleted: %+v", restoredFromTrash)
+	}
+	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), token, nil, http.StatusOK)
+
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, nil,
+		http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", restoredFromTrash.Revision)})
+	trashRes = request(t, router, http.MethodGet, "/api/v1/trash", token, nil, http.StatusOK)
+	trash = nil
+	if err := json.Unmarshal(trashRes.Body.Bytes(), &trash); err != nil {
+		t.Fatal(err)
+	}
+	if len(trash) != 1 {
+		t.Fatalf("trash after second delete=%+v", trash)
+	}
+
+	var currentFile meta.File
+	if err := db.Where("node_id = ?", file.ID).First(&currentFile).Error; err != nil {
+		t.Fatal(err)
+	}
+	var history []meta.FileVersion
+	if err := db.Where("node_id = ?", file.ID).Find(&history).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("history before permanent delete=%+v", history)
+	}
+
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/trash/%d", file.ID), token, nil,
+		http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", trash[0].Revision)})
+
+	if err := db.First(&meta.Node{}, file.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("permanently deleted node still exists: %v", err)
+	}
+	if _, err := store.Open(context.Background(), currentFile.StorageKey); err == nil {
+		t.Fatal("current blob survived permanent delete")
+	}
+	for _, version := range history {
+		if _, err := store.Open(context.Background(), version.StorageKey); err == nil {
+			t.Fatalf("historical blob survived permanent delete: %s", version.StorageKey)
+		}
+	}
+}
+
+func TestTrashRestoreRejectsNameCollision(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 24 * time.Hour,
+		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+	token := createTestUser(t, db, router, "trash-collision", "trash-password")
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
+	first := uploadTestFile(t, router, token, root.ID, "same.txt", "first")
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", first.ID), token, nil,
+		http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", first.Revision)})
+	_ = uploadTestFile(t, router, token, root.ID, "same.txt", "second")
+	trashRes := request(t, router, http.MethodGet, "/api/v1/trash", token, nil, http.StatusOK)
+	var trash []nodeDTO
+	if err := json.Unmarshal(trashRes.Body.Bytes(), &trash); err != nil {
+		t.Fatal(err)
+	}
+	if len(trash) != 1 {
+		t.Fatalf("trash=%+v", trash)
+	}
+	requestWithHeaders(t, router, http.MethodPost, fmt.Sprintf("/api/v1/trash/%d/restore", first.ID), token, nil,
+		http.StatusConflict, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", trash[0].Revision)})
 }

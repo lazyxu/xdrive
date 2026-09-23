@@ -29,6 +29,7 @@ type Client struct {
 	accessExpiresAt  time.Time
 	refreshExpiresAt time.Time
 	onTokens         func(SessionTokens) error
+	loadTokens       func() (SessionTokens, error)
 }
 
 type Node struct {

@@ -151,11 +151,12 @@ A normal verification briefly stops the API so the database and blob tree cannot
 ~/.xd/server-verify.sh
 ```
 
-It checks all `xd_files.storage_key` references against `file-data` and reports:
+It checks current `xd_files.storage_key` **and historical `xd_file_versions.storage_key`** references against `file-data` and reports:
 
 - database references whose blob is missing;
 - blob size mismatches;
-- orphan blobs that exist on disk but have no database reference.
+- duplicate metadata references to the same blob key;
+- orphan blobs that exist on disk but have no current or historical database reference.
 
 The underlying server command is also available inside the container:
 
@@ -352,7 +353,7 @@ xd logout
 
 `XD_PASSWORD` can be used instead of `--password`.
 
-The client config is stored under the operating system's user config directory. The access token is user-local configuration; use HTTPS when connecting over an untrusted network.
+The desktop client config is stored under the operating system's user config directory, but **authentication tokens are not stored in `config.json`**. Windows keeps the long-lived refresh credential encrypted with current-user DPAPI. Linux prefers Secret Service through `secret-tool`; when no Secret Service is available (for example on a headless server), xDrive falls back to a credential file inside a `0700` directory with `0600` permissions. `libsecret-tools` is a recommended, not mandatory, Linux package. Access tokens are kept in process memory and are reacquired from the protected refresh credential after a client restart.
 
 ## Authentication
 
@@ -375,7 +376,7 @@ XD_ACCESS_TOKEN_TTL=15m
 XD_REFRESH_TOKEN_TTL=720h   # 30 days
 ```
 
-The refresh token is random and opaque. The server stores only its SHA-256 hash in PostgreSQL, never the raw refresh token. Desktop clients persist the current access/refresh pair and token expiry in the current user's xDrive config; the **password is never stored**. The Linux and Windows clients share the same refresh logic, so mounted sessions renew without interrupting FUSE/CfAPI under normal operation.
+The refresh token is random and opaque. The server stores only its SHA-256 hash in PostgreSQL, never the raw refresh token. Desktop clients persist only the refresh credential in the platform-protected store described above; the access JWT remains memory-only and the **password is never stored**. Older xDrive desktop configs containing plaintext access/refresh tokens are migrated automatically on first load and immediately rewritten without those fields. The Linux and Windows clients share the same refresh logic, including protection against two local processes racing refresh-token rotation.
 
 For migration, pre-refresh JWTs are still accepted until they expire, and the login response retains the legacy `token` field as an alias of `access_token`.
 
@@ -396,6 +397,16 @@ Administrators can use the Web **Users** panel to:
 - permanently delete a user and that user's stored files.
 
 Ordinary users can change only their own password. A user marked `must_change_password` can access only identity/password-change endpoints until the password is changed.
+
+## Recycle bin and file version history
+
+Deleting a file or directory from Web, Windows CfAPI, or Linux FUSE is now a **soft delete**. The item disappears from normal directory listings and desktop synchronization, but its metadata and blobs remain recoverable in the user's recycle bin.
+
+The Web UI provides **Recycle bin** actions to restore an item to its original parent or permanently delete it. Restore is rejected if the original parent is unavailable or another active sibling now uses the same name. Permanent deletion removes the node subtree, current blobs, and every retained file-version blob.
+
+Every successful content overwrite preserves the previous blob in `xd_file_versions` together with its file revision, size, and timestamp. The Web **History** action can download a historical version or restore it. Restoring a historical version first preserves the then-current content as another history entry, so a restore can itself be reversed.
+
+Recycle-bin and version-restore mutations retain the same `If-Match` revision preconditions used by normal conflict protection.
 
 ## HTTP API
 
@@ -419,8 +430,14 @@ POST   /api/v1/nodes/:id/directories
 POST   /api/v1/nodes/:id/files
 PATCH  /api/v1/nodes/:id
 DELETE /api/v1/nodes/:id
+GET    /api/v1/trash
+POST   /api/v1/trash/:id/restore
+DELETE /api/v1/trash/:id
 GET    /api/v1/files/:id/content
 PUT    /api/v1/files/:id/content
+GET    /api/v1/files/:id/versions
+GET    /api/v1/files/:id/versions/:versionID/content
+POST   /api/v1/files/:id/versions/:versionID/restore
 
 GET    /api/v1/admin/users
 POST   /api/v1/admin/users
@@ -539,8 +556,9 @@ internal/
   config/                 server environment config
   meta/                   GORM models + filename validation
   mount/                  Linux FUSE + Windows CfAPI
+  secretstore/            DPAPI / Secret Service credential storage
   storage/                Local storage backend
-  userconfig/             per-user client configuration
+  userconfig/             per-user non-secret client configuration
   update/                 release check/download/checksum/update logic
   version/                build-time client version
 web/                       React Web UI
@@ -569,7 +587,7 @@ deploy/
 - The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.
 - File operations are owner-scoped at the metadata layer.
-- There is no quota, antivirus scanning, version history, sharing, or audit log yet.
+- There is no quota, antivirus scanning, public sharing, or audit log yet.
 
 ## Roadmap
 
@@ -580,7 +598,7 @@ deploy/
 5. small-file packing;
 6. macOS File Provider integration;
 7. thumbnails/EXIF/media processing;
-8. sharing and version/conflict semantics.
+8. sharing and richer retention/version policies.
 
 ## License
 

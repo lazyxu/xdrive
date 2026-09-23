@@ -11,21 +11,24 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/secretstore"
 )
 
 type Config struct {
-	Server             string    `json:"server"`
-	Token              string    `json:"token,omitempty"`
-	AccessToken        string    `json:"access_token,omitempty"`
-	RefreshToken       string    `json:"refresh_token,omitempty"`
-	AccessExpiresAt    time.Time `json:"access_expires_at,omitempty"`
-	RefreshExpiresAt   time.Time `json:"refresh_expires_at,omitempty"`
-	SessionID          string    `json:"session_id,omitempty"`
-	Username           string    `json:"username"`
-	Role               string    `json:"role,omitempty"`
-	MustChangePassword bool      `json:"must_change_password,omitempty"`
-	MountPath          string    `json:"mount_path,omitempty"`
-	Paused             bool      `json:"paused,omitempty"`
+	Server             string `json:"server"`
+	SessionID          string `json:"session_id,omitempty"`
+	Username           string `json:"username"`
+	Role               string `json:"role,omitempty"`
+	MustChangePassword bool   `json:"must_change_password,omitempty"`
+	MountPath          string `json:"mount_path,omitempty"`
+	Paused             bool   `json:"paused,omitempty"`
+
+	// Legacy plaintext fields are retained only for one-time migration.
+	Token            string    `json:"token,omitempty"`
+	AccessToken      string    `json:"access_token,omitempty"`
+	RefreshToken     string    `json:"refresh_token,omitempty"`
+	AccessExpiresAt  time.Time `json:"access_expires_at,omitempty"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at,omitempty"`
 }
 
 func Dir() (string, error) {
@@ -45,29 +48,40 @@ func Path() (string, error) {
 }
 
 func Load() (Config, error) {
-	var cfg Config
-	path, err := Path()
+	cfg, err := loadRaw()
 	if err != nil {
-		return cfg, err
+		return Config{}, err
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return cfg, fmt.Errorf("not logged in: %w", err)
-		}
-		return cfg, err
-	}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return cfg, fmt.Errorf("read xDrive config: %w", err)
-	}
+	cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
+	cfg.Username = strings.TrimSpace(cfg.Username)
 	if cfg.AccessToken == "" {
 		cfg.AccessToken = cfg.Token
 	}
-	if cfg.Token == "" {
-		cfg.Token = cfg.AccessToken
+
+	if cfg.SessionID == "" && (cfg.AccessToken != "" || cfg.RefreshToken != "") {
+		cfg.SessionID = uuid.NewString()
 	}
-	if strings.TrimSpace(cfg.Server) == "" || strings.TrimSpace(cfg.AccessToken) == "" {
-		return cfg, fmt.Errorf("invalid local config; please log in again")
+	if cfg.AccessToken != "" || cfg.RefreshToken != "" {
+		dir, err := Dir()
+		if err != nil {
+			return Config{}, err
+		}
+		creds := secretstore.Credentials{
+			RefreshToken:     cfg.RefreshToken,
+			RefreshExpiresAt: cfg.RefreshExpiresAt,
+			AccessToken:      cfg.AccessToken,
+			AccessExpiresAt:  cfg.AccessExpiresAt,
+		}
+		if err := secretstore.Save(dir, cfg.SessionID, credentialLabel(cfg), creds); err != nil {
+			return Config{}, fmt.Errorf("migrate xDrive credentials: %w", err)
+		}
+		clearLegacySecrets(&cfg)
+		if err := writeConfig(cfg); err != nil {
+			return Config{}, err
+		}
+	}
+	if cfg.Server == "" || cfg.SessionID == "" {
+		return Config{}, fmt.Errorf("invalid local config; please log in again")
 	}
 	return cfg, nil
 }
@@ -75,14 +89,8 @@ func Load() (Config, error) {
 func Save(cfg Config) error {
 	cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
 	cfg.Username = strings.TrimSpace(cfg.Username)
-	if cfg.AccessToken == "" {
-		cfg.AccessToken = cfg.Token
-	}
-	if cfg.Token == "" {
-		cfg.Token = cfg.AccessToken
-	}
-	if cfg.Server == "" || strings.TrimSpace(cfg.AccessToken) == "" {
-		return fmt.Errorf("server and access token are required")
+	if cfg.Server == "" || cfg.SessionID == "" {
+		return fmt.Errorf("server and session id are required")
 	}
 	if cfg.MountPath != "" {
 		abs, err := filepath.Abs(cfg.MountPath)
@@ -91,6 +99,11 @@ func Save(cfg Config) error {
 		}
 		cfg.MountPath = filepath.Clean(abs)
 	}
+	clearLegacySecrets(&cfg)
+	return writeConfig(cfg)
+}
+
+func writeConfig(cfg Config) error {
 	dir, err := Dir()
 	if err != nil {
 		return err
@@ -98,6 +111,7 @@ func Save(cfg Config) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	_ = os.Chmod(dir, 0o700)
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -124,10 +138,38 @@ func Save(cfg Config) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	_ = os.Chmod(path, 0o600)
+	return nil
+}
+
+func loadRaw() (Config, error) {
+	var cfg Config
+	path, err := Path()
+	if err != nil {
+		return cfg, err
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return cfg, fmt.Errorf("not logged in: %w", err)
+		}
+		return cfg, err
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return cfg, fmt.Errorf("read xDrive config: %w", err)
+	}
+	return cfg, nil
 }
 
 func Remove() error {
+	cfg, rawErr := loadRaw()
+	dir, dirErr := Dir()
+	if rawErr == nil && dirErr == nil && cfg.SessionID != "" {
+		_ = secretstore.Delete(dir, cfg.SessionID)
+	}
 	path, err := Path()
 	if err != nil {
 		return err
@@ -149,42 +191,83 @@ func EffectiveMountPath(cfg Config) (string, error) {
 	return filepath.Join(home, "xDrive"), nil
 }
 
-func (cfg *Config) ApplyAuth(resp client.AuthResponse, newSession bool) {
+func (cfg *Config) ApplyAuth(resp client.AuthResponse, _ bool) error {
 	tokens := resp.Session(time.Now())
-	cfg.Token = tokens.AccessToken
-	cfg.AccessToken = tokens.AccessToken
-	cfg.RefreshToken = tokens.RefreshToken
-	cfg.AccessExpiresAt = tokens.AccessExpiresAt
-	cfg.RefreshExpiresAt = tokens.RefreshExpiresAt
+	if cfg.SessionID == "" {
+		cfg.SessionID = uuid.NewString()
+	}
 	cfg.Username = resp.Username
 	cfg.Role = resp.Role
 	cfg.MustChangePassword = resp.MustChangePassword
-	if newSession || cfg.SessionID == "" {
-		cfg.SessionID = uuid.NewString()
+	dir, err := Dir()
+	if err != nil {
+		return err
 	}
+	if err := secretstore.Save(dir, cfg.SessionID, credentialLabel(*cfg), secretstore.Credentials{
+		RefreshToken:     tokens.RefreshToken,
+		RefreshExpiresAt: tokens.RefreshExpiresAt,
+	}); err != nil {
+		return fmt.Errorf("save xDrive credential: %w", err)
+	}
+	clearLegacySecrets(cfg)
+	return nil
 }
 
-func NewClient(cfg Config) *client.Client {
-	access := cfg.AccessToken
-	if access == "" {
-		access = cfg.Token
+func NewClient(cfg Config) (*client.Client, error) {
+	dir, err := Dir()
+	if err != nil {
+		return nil, err
+	}
+	creds, err := secretstore.Load(dir, cfg.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("load xDrive credential: %w; please log in again", err)
 	}
 	tokens := client.SessionTokens{
-		AccessToken:      access,
-		RefreshToken:     cfg.RefreshToken,
-		AccessExpiresAt:  cfg.AccessExpiresAt,
-		RefreshExpiresAt: cfg.RefreshExpiresAt,
+		AccessToken:      creds.AccessToken,
+		RefreshToken:     creds.RefreshToken,
+		AccessExpiresAt:  creds.AccessExpiresAt,
+		RefreshExpiresAt: creds.RefreshExpiresAt,
 	}
-	return client.NewSession(cfg.Server, tokens, func(next client.SessionTokens) error {
-		latest, err := Load()
+	saveTokens := func(next client.SessionTokens) error {
+		return secretstore.Save(dir, cfg.SessionID, credentialLabel(cfg), secretstore.Credentials{
+			RefreshToken:     next.RefreshToken,
+			RefreshExpiresAt: next.RefreshExpiresAt,
+		})
+	}
+	loadTokens := func() (client.SessionTokens, error) {
+		latest, err := secretstore.Load(dir, cfg.SessionID)
 		if err != nil {
-			latest = cfg
+			return client.SessionTokens{}, err
 		}
-		latest.Token = next.AccessToken
-		latest.AccessToken = next.AccessToken
-		latest.RefreshToken = next.RefreshToken
-		latest.AccessExpiresAt = next.AccessExpiresAt
-		latest.RefreshExpiresAt = next.RefreshExpiresAt
-		return Save(latest)
-	})
+		return client.SessionTokens{
+			AccessToken:      latest.AccessToken,
+			RefreshToken:     latest.RefreshToken,
+			AccessExpiresAt:  latest.AccessExpiresAt,
+			RefreshExpiresAt: latest.RefreshExpiresAt,
+		}, nil
+	}
+	return client.NewManagedSession(cfg.Server, tokens, saveTokens, loadTokens), nil
+}
+
+func CredentialBackend(cfg Config) string {
+	dir, err := Dir()
+	if err != nil || cfg.SessionID == "" {
+		return "unavailable"
+	}
+	return secretstore.Backend(dir, cfg.SessionID)
+}
+
+func credentialLabel(cfg Config) string {
+	if cfg.Username == "" {
+		return "xDrive"
+	}
+	return "xDrive " + cfg.Username + " @ " + cfg.Server
+}
+
+func clearLegacySecrets(cfg *Config) {
+	cfg.Token = ""
+	cfg.AccessToken = ""
+	cfg.RefreshToken = ""
+	cfg.AccessExpiresAt = time.Time{}
+	cfg.RefreshExpiresAt = time.Time{}
 }

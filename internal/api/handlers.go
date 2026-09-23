@@ -48,18 +48,19 @@ type authResponse struct {
 }
 
 type nodeDTO struct {
-	ID        uint64    `json:"id"`
-	ParentID  *uint64   `json:"parent_id,omitempty"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	Size      int64     `json:"size"`
-	Revision  uint64    `json:"revision"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        uint64     `json:"id"`
+	ParentID  *uint64    `json:"parent_id,omitempty"`
+	Name      string     `json:"name"`
+	Type      string     `json:"type"`
+	Size      int64      `json:"size"`
+	Revision  uint64     `json:"revision"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 func toNodeDTO(n meta.Node) nodeDTO {
-	d := nodeDTO{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Type: n.Type, Revision: n.Revision, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt}
+	d := nodeDTO{ID: n.ID, ParentID: n.ParentID, Name: n.Name, Type: n.Type, Revision: n.Revision, DeletedAt: n.DeletedAt, CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt}
 	if n.File != nil {
 		d.Size = n.File.Size
 	}
@@ -233,7 +234,7 @@ func (s *Server) children(c *gin.Context) {
 		return
 	}
 	var nodes []meta.Node
-	if err := s.DB.Preload("File").Where("owner_id = ? AND parent_id = ?", userID(c), parentID).Order("type ASC, name ASC").Find(&nodes).Error; err != nil {
+	if err := s.DB.Preload("File").Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", userID(c), parentID).Order("type ASC, name ASC").Find(&nodes).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list failed")
 		return
 	}
@@ -404,12 +405,11 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		return
 	}
 
-	var oldKey string
 	var currentRevision uint64
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		var current meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND owner_id = ?", id, userID(c)).First(&current).Error; err != nil {
+			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, userID(c)).First(&current).Error; err != nil {
 			return err
 		}
 		currentRevision = current.Revision
@@ -420,14 +420,19 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		if err := tx.Where("node_id = ?", id).First(&file).Error; err != nil {
 			return err
 		}
-		oldKey = file.StorageKey
 		now := time.Now()
+		if err := tx.Create(&meta.FileVersion{
+			NodeID: id, Revision: current.Revision, Size: file.Size, StorageKey: file.StorageKey, CreatedAt: now,
+		}).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&meta.File{}).Where("node_id = ?", id).Updates(map[string]any{
 			"size": size, "storage_key": newKey, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&meta.Node{}).Where("id = ? AND owner_id = ? AND revision = ?", id, userID(c), expected).
+		return tx.Model(&meta.Node{}).
+			Where("id = ? AND owner_id = ? AND revision = ? AND deleted_at IS NULL", id, userID(c), expected).
 			Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
 	})
 	if err != nil {
@@ -442,9 +447,6 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		}
 		fail(c, http.StatusInternalServerError, "metadata update failed")
 		return
-	}
-	if oldKey != "" && oldKey != newKey {
-		_ = s.Store.Delete(c.Request.Context(), oldKey)
 	}
 	n, err = s.ownedNode(userID(c), id, true)
 	if err != nil {
@@ -559,12 +561,11 @@ func (s *Server) deleteNode(c *gin.Context) {
 		return
 	}
 
-	var files []meta.File
 	var currentRevision uint64
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var n meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND owner_id = ?", id, userID(c)).First(&n).Error; err != nil {
+			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, userID(c)).First(&n).Error; err != nil {
 			return err
 		}
 		if n.ParentID == nil {
@@ -574,17 +575,19 @@ func (s *Server) deleteNode(c *gin.Context) {
 		if n.Revision != expected {
 			return errRevisionConflict
 		}
-		ids, err := subtreeIDsDB(tx, userID(c), id)
+		ids, err := activeSubtreeIDsDB(tx, userID(c), id)
 		if err != nil {
 			return err
 		}
-		if err := tx.Where("node_id IN ?", ids).Find(&files).Error; err != nil {
+		now := time.Now()
+		if err := tx.Model(&meta.Node{}).
+			Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", ids, userID(c)).
+			Updates(map[string]any{"deleted_at": &now, "trash_root_id": id}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("node_id IN ?", ids).Delete(&meta.File{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id IN ? AND owner_id = ?", ids, userID(c)).Delete(&meta.Node{}).Error
+		return tx.Model(&meta.Node{}).
+			Where("id = ? AND owner_id = ? AND revision = ?", id, userID(c), expected).
+			Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
 	})
 	if err != nil {
 		switch {
@@ -598,9 +601,6 @@ func (s *Server) deleteNode(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, "delete failed")
 		}
 		return
-	}
-	for _, f := range files {
-		_ = s.Store.Delete(c.Request.Context(), f.StorageKey)
 	}
 	c.Status(http.StatusNoContent)
 }
@@ -618,7 +618,7 @@ func (s *Server) ownedDirectory(uid, id uint64) (meta.Node, error) {
 
 func (s *Server) ownedNode(uid, id uint64, preload bool) (meta.Node, error) {
 	var n meta.Node
-	q := s.DB.Where("id = ? AND owner_id = ?", id, uid)
+	q := s.DB.Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, uid)
 	if preload {
 		q = q.Preload("File")
 	}
@@ -652,7 +652,7 @@ func storageKey(uid uint64, logicalPath, objectID string) string {
 
 func (s *Server) nameExists(uid, parent uint64, name string, except uint64) bool {
 	var count int64
-	q := s.DB.Model(&meta.Node{}).Where("owner_id = ? AND parent_id = ? AND lower(name) = lower(?)", uid, parent, name)
+	q := s.DB.Model(&meta.Node{}).Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL AND lower(name) = lower(?)", uid, parent, name)
 	if except != 0 {
 		q = q.Where("id <> ?", except)
 	}

@@ -43,15 +43,17 @@ type RefreshToken struct {
 func (RefreshToken) TableName() string { return "xd_refresh_tokens" }
 
 type Node struct {
-	ID        uint64  `gorm:"primaryKey"`
-	ParentID  *uint64 `gorm:"index"`
-	Name      string  `gorm:"size:255;not null"`
-	Type      string  `gorm:"size:8;not null;index"`
-	OwnerID   uint64  `gorm:"not null;index"`
-	Revision  uint64  `gorm:"not null;default:1"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	File      *File `gorm:"foreignKey:NodeID;references:ID"`
+	ID          uint64     `gorm:"primaryKey"`
+	ParentID    *uint64    `gorm:"index"`
+	Name        string     `gorm:"size:255;not null"`
+	Type        string     `gorm:"size:8;not null;index"`
+	OwnerID     uint64     `gorm:"not null;index"`
+	Revision    uint64     `gorm:"not null;default:1"`
+	DeletedAt   *time.Time `gorm:"index"`
+	TrashRootID *uint64    `gorm:"index"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	File        *File `gorm:"foreignKey:NodeID;references:ID"`
 }
 
 func (Node) TableName() string { return "xd_nodes" }
@@ -65,6 +67,17 @@ type File struct {
 }
 
 func (File) TableName() string { return "xd_files" }
+
+type FileVersion struct {
+	ID         uint64 `gorm:"primaryKey"`
+	NodeID     uint64 `gorm:"not null;index;uniqueIndex:idx_xd_file_versions_node_revision"`
+	Revision   uint64 `gorm:"not null;uniqueIndex:idx_xd_file_versions_node_revision"`
+	Size       int64  `gorm:"not null"`
+	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
+	CreatedAt  time.Time
+}
+
+func (FileVersion) TableName() string { return "xd_file_versions" }
 
 var reservedWindowsNames = map[string]struct{}{
 	"CON": {}, "PRN": {}, "AUX": {}, "NUL": {},

@@ -93,6 +93,15 @@ func (c *agentController) Run() {
 	}
 
 	startMount := func(d desiredMount) {
+		cli, err := userconfig.NewClient(d.cfg)
+		if err != nil {
+			c.setSnapshot(func(s *agentSnapshot) {
+				s.AuthStatus = "需要重新登录"
+				s.SyncStatus = "凭证不可用"
+				s.LastError = err.Error()
+			})
+			return
+		}
 		mctx, mcancel := context.WithCancel(c.ctx)
 		done := make(chan error, 1)
 		running = true
@@ -105,7 +114,7 @@ func (c *agentController) Run() {
 			s.LastError = ""
 		})
 		go func() {
-			done <- mount.Run(mctx, userconfig.NewClient(d.cfg), d.root)
+			done <- mount.Run(mctx, cli, d.root)
 		}()
 	}
 
@@ -173,7 +182,18 @@ func (c *agentController) Run() {
 			}
 			lastAuthCheck = time.Now()
 			checkCtx, cancel := context.WithTimeout(c.ctx, 8*time.Second)
-			_, err := userconfig.NewClient(d.cfg).Root(checkCtx)
+			cli, clientErr := userconfig.NewClient(d.cfg)
+			if clientErr != nil {
+				cancel()
+				stopMount()
+				c.setSnapshot(func(s *agentSnapshot) {
+					s.AuthStatus = "需要重新登录"
+					s.SyncStatus = "凭证不可用"
+					s.LastError = clientErr.Error()
+				})
+				return
+			}
+			_, err := cli.Root(checkCtx)
 			cancel()
 			if err == nil {
 				c.setSnapshot(func(s *agentSnapshot) {
@@ -222,7 +242,17 @@ func (c *agentController) Run() {
 		}
 
 		checkCtx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-		_, err := userconfig.NewClient(d.cfg).Root(checkCtx)
+		cli, clientErr := userconfig.NewClient(d.cfg)
+		if clientErr != nil {
+			cancel()
+			c.setSnapshot(func(s *agentSnapshot) {
+				s.AuthStatus = "需要重新登录"
+				s.SyncStatus = "凭证不可用"
+				s.LastError = clientErr.Error()
+			})
+			return
+		}
+		_, err := cli.Root(checkCtx)
 		cancel()
 		if err != nil {
 			var apiErr *client.APIError
@@ -309,17 +339,22 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 		return err
 	}
 
-	if mountPath == "" {
-		if old, loadErr := userconfig.Load(); loadErr == nil {
+	sessionID := ""
+	if old, loadErr := userconfig.Load(); loadErr == nil {
+		if mountPath == "" {
 			mountPath = old.MountPath
 		}
+		sessionID = old.SessionID
 	}
 	cfg := userconfig.Config{
 		Server:    server,
 		MountPath: mountPath,
+		SessionID: sessionID,
 		Paused:    false,
 	}
-	cfg.ApplyAuth(resp, true)
+	if err := cfg.ApplyAuth(resp, true); err != nil {
+		return err
+	}
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
@@ -349,7 +384,11 @@ func (c *agentController) ChangePassword(currentPassword, newPassword string) er
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
-	resp, err := userconfig.NewClient(cfg).ChangePassword(ctx, currentPassword, newPassword)
+	cli, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+	resp, err := cli.ChangePassword(ctx, currentPassword, newPassword)
 	if err != nil {
 		return err
 	}
@@ -357,7 +396,9 @@ func (c *agentController) ChangePassword(currentPassword, newPassword string) er
 	if err != nil {
 		latest = cfg
 	}
-	latest.ApplyAuth(resp, false)
+	if err := latest.ApplyAuth(resp, false); err != nil {
+		return err
+	}
 	if err := userconfig.Save(latest); err != nil {
 		return err
 	}
@@ -415,9 +456,11 @@ func (c *agentController) TogglePause() error {
 
 func (c *agentController) Logout() error {
 	if cfg, err := userconfig.Load(); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = userconfig.NewClient(cfg).LogoutSession(ctx)
-		cancel()
+		if cli, clientErr := userconfig.NewClient(cfg); clientErr == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = cli.LogoutSession(ctx)
+			cancel()
+		}
 	}
 	if err := userconfig.Remove(); err != nil {
 		return err

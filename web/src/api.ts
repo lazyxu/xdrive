@@ -7,8 +7,17 @@ export interface Node {
   type: NodeType
   size: number
   revision: number
+  deleted_at?: string
   created_at: string
   updated_at: string
+}
+
+export interface FileVersion {
+  id: number
+  node_id: number
+  revision: number
+  size: number
+  created_at: string
 }
 
 export interface AuthResult {
@@ -266,18 +275,58 @@ export class XDriveApi {
     })
   }
 
+  trash() {
+    return this.request<Node[]>('/api/v1/trash')
+  }
+
+  restoreTrash(nodeID: number, revision: number) {
+    return this.request<Node>(`/api/v1/trash/${nodeID}/restore`, {
+      method: 'POST',
+      headers: { 'If-Match': `"${revision}"` },
+    })
+  }
+
+  permanentlyDeleteTrash(nodeID: number, revision: number) {
+    return this.request<void>(`/api/v1/trash/${nodeID}`, {
+      method: 'DELETE',
+      headers: { 'If-Match': `"${revision}"` },
+    })
+  }
+
+  versions(nodeID: number) {
+    return this.request<FileVersion[]>(`/api/v1/files/${nodeID}/versions`)
+  }
+
+  restoreVersion(nodeID: number, currentRevision: number, versionID: number) {
+    return this.request<Node>(`/api/v1/files/${nodeID}/versions/${versionID}/restore`, {
+      method: 'POST',
+      headers: { 'If-Match': `"${currentRevision}"` },
+    })
+  }
+
   downloadURL(nodeID: number) {
     return `${API_BASE}/api/v1/files/${nodeID}/content`
   }
 
+  async downloadVersion(node: Node, version: FileVersion) {
+    await this.downloadAuthenticated(
+      `/api/v1/files/${node.id}/versions/${version.id}/content`,
+      node.name,
+    )
+  }
+
   async download(node: Node) {
+    await this.downloadAuthenticated(`/api/v1/files/${node.id}/content`, node.name)
+  }
+
+  private async downloadAuthenticated(path: string, filename: string) {
     await this.ensureFresh()
-    let response = await fetch(this.downloadURL(node.id), {
+    let response = await fetch(`${API_BASE}${path}`, {
       headers: this.session.accessToken ? { Authorization: `Bearer ${this.session.accessToken}` } : undefined,
     })
     if (response.status === 401 && this.session.refreshToken) {
       await this.refresh(true)
-      response = await fetch(this.downloadURL(node.id), {
+      response = await fetch(`${API_BASE}${path}`, {
         headers: { Authorization: `Bearer ${this.session.accessToken}` },
       })
     }
@@ -287,7 +336,7 @@ export class XDriveApi {
     try {
       const a = document.createElement('a')
       a.href = url
-      a.download = node.name
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       a.remove()

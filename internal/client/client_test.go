@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -103,5 +104,114 @@ func TestSessionRefreshBeforeRequest(t *testing.T) {
 	}
 	if persisted.AccessToken != "access-2" || persisted.RefreshToken != "refresh-2" {
 		t.Fatalf("persisted=%+v", persisted)
+	}
+}
+
+func TestManagedSessionRefreshesWhenAccessTokenIsMemoryOnly(t *testing.T) {
+	var refreshCalls int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/auth/refresh":
+			refreshCalls++
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["refresh_token"] != "persisted-refresh" {
+				t.Fatalf("refresh token=%q", body["refresh_token"])
+			}
+			_ = json.NewEncoder(w).Encode(AuthResponse{
+				AccessToken: "memory-access", RefreshToken: "rotated-refresh",
+				ExpiresIn: 900, RefreshExpiresIn: 3600,
+			})
+		case "/api/v1/nodes/root":
+			if got := r.Header.Get("Authorization"); got != "Bearer memory-access" {
+				t.Fatalf("Authorization=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode(Node{ID: 1, Type: "dir", Revision: 1})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	var persisted SessionTokens
+	c := NewManagedSession(ts.URL, SessionTokens{
+		RefreshToken: "persisted-refresh", RefreshExpiresAt: time.Now().Add(time.Hour),
+	}, func(tokens SessionTokens) error {
+		persisted = tokens
+		return nil
+	}, nil)
+
+	if _, err := c.Root(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("refreshCalls=%d want=1", refreshCalls)
+	}
+	if persisted.AccessToken != "memory-access" || persisted.RefreshToken != "rotated-refresh" {
+		t.Fatalf("persisted callback=%+v", persisted)
+	}
+}
+
+func TestManagedSessionRecoversCrossProcessRefreshRotation(t *testing.T) {
+	var mu sync.Mutex
+	activeRefresh := "refresh-new"
+	refreshCalls := []string{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/auth/refresh":
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			refreshCalls = append(refreshCalls, body["refresh_token"])
+			current := activeRefresh
+			if body["refresh_token"] == current {
+				activeRefresh = "refresh-final"
+			}
+			mu.Unlock()
+			if body["refresh_token"] != current {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = io.WriteString(w, `{"error":"invalid or expired refresh token"}`)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(AuthResponse{
+				AccessToken: "access-final", RefreshToken: "refresh-final",
+				ExpiresIn: 900, RefreshExpiresIn: 3600,
+			})
+		case "/api/v1/nodes/root":
+			if got := r.Header.Get("Authorization"); got != "Bearer access-final" {
+				t.Fatalf("Authorization=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode(Node{ID: 1, Type: "dir", Revision: 1})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	loadCount := 0
+	c := NewManagedSession(ts.URL, SessionTokens{
+		RefreshToken: "refresh-old", RefreshExpiresAt: time.Now().Add(time.Hour),
+	}, nil, func() (SessionTokens, error) {
+		loadCount++
+		// First load simulates stale local state. The second load happens after
+		// the server rejects the stale token and sees another process's rotation.
+		if loadCount == 1 {
+			return SessionTokens{RefreshToken: "refresh-old", RefreshExpiresAt: time.Now().Add(time.Hour)}, nil
+		}
+		return SessionTokens{RefreshToken: "refresh-new", RefreshExpiresAt: time.Now().Add(time.Hour)}, nil
+	})
+
+	if _, err := c.Root(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	gotCalls := append([]string(nil), refreshCalls...)
+	mu.Unlock()
+	if len(gotCalls) != 2 || gotCalls[0] != "refresh-old" || gotCalls[1] != "refresh-new" {
+		t.Fatalf("refresh calls=%v", gotCalls)
 	}
 }

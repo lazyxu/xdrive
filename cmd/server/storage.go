@@ -40,11 +40,13 @@ func runStorageCommand(args []string) error {
 			return err
 		}
 	} else {
-		fmt.Printf("referenced files: %d\n", report.ReferencedFiles)
-		fmt.Printf("blob files:       %d\n", report.BlobFiles)
+		fmt.Printf("referenced files:    %d\n", report.ReferencedFiles)
+		fmt.Printf("referenced versions: %d\n", report.ReferencedVersions)
+		fmt.Printf("blob files:          %d\n", report.BlobFiles)
 		fmt.Printf("blob bytes:       %d\n", report.BlobBytes)
 		fmt.Printf("missing blobs:    %d\n", len(report.Missing))
 		fmt.Printf("size mismatches:  %d\n", len(report.SizeMismatches))
+		fmt.Printf("duplicate refs:   %d\n", len(report.DuplicateRefs))
 		fmt.Printf("orphan blobs:     %d\n", len(report.Orphans))
 		fmt.Printf("ignored temp:     %d\n", report.IgnoredTemps)
 		for _, issue := range report.Missing {
@@ -52,6 +54,9 @@ func runStorageCommand(args []string) error {
 		}
 		for _, issue := range report.SizeMismatches {
 			fmt.Printf("SIZE_MISMATCH node=%d key=%q expected=%d actual=%d\n", issue.NodeID, issue.StorageKey, issue.Expected, issue.Actual)
+		}
+		for _, issue := range report.DuplicateRefs {
+			fmt.Printf("DUPLICATE_REFERENCE key=%q references=%d\n", issue.StorageKey, issue.References)
 		}
 		for _, issue := range report.Orphans {
 			fmt.Printf("ORPHAN key=%q size=%d\n", issue.StorageKey, issue.Size)

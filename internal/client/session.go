@@ -33,6 +33,15 @@ func (a AuthResponse) Session(now time.Time) SessionTokens {
 }
 
 func NewSession(baseURL string, tokens SessionTokens, onTokens func(SessionTokens) error) *Client {
+	return NewManagedSession(baseURL, tokens, onTokens, nil)
+}
+
+func NewManagedSession(
+	baseURL string,
+	tokens SessionTokens,
+	onTokens func(SessionTokens) error,
+	loadTokens func() (SessionTokens, error),
+) *Client {
 	return &Client{
 		BaseURL:          strings.TrimRight(baseURL, "/"),
 		Token:            tokens.AccessToken,
@@ -41,6 +50,7 @@ func NewSession(baseURL string, tokens SessionTokens, onTokens func(SessionToken
 		accessExpiresAt:  tokens.AccessExpiresAt,
 		refreshExpiresAt: tokens.RefreshExpiresAt,
 		onTokens:         onTokens,
+		loadTokens:       loadTokens,
 	}
 }
 
@@ -61,13 +71,17 @@ func (c *Client) sessionTokens() SessionTokens {
 	}
 }
 
-func (c *Client) setSessionTokens(tokens SessionTokens) error {
+func (c *Client) setSessionTokensMemory(tokens SessionTokens) {
 	c.sessionMu.Lock()
 	c.Token = tokens.AccessToken
 	c.refreshToken = tokens.RefreshToken
 	c.accessExpiresAt = tokens.AccessExpiresAt
 	c.refreshExpiresAt = tokens.RefreshExpiresAt
 	c.sessionMu.Unlock()
+}
+
+func (c *Client) setSessionTokens(tokens SessionTokens) error {
+	c.setSessionTokensMemory(tokens)
 	if c.onTokens != nil {
 		return c.onTokens(tokens)
 	}
@@ -82,6 +96,10 @@ func (c *Client) ensureFresh(ctx context.Context) error {
 	if !tokens.RefreshExpiresAt.IsZero() && !time.Now().Before(tokens.RefreshExpiresAt) {
 		return &APIError{Status: http.StatusUnauthorized, Msg: "refresh token expired"}
 	}
+	if strings.TrimSpace(tokens.AccessToken) == "" {
+		_, err := c.RefreshSession(ctx)
+		return err
+	}
 	if tokens.AccessExpiresAt.IsZero() || time.Until(tokens.AccessExpiresAt) > 2*time.Minute {
 		return nil
 	}
@@ -94,37 +112,65 @@ func (c *Client) RefreshSession(ctx context.Context) (SessionTokens, error) {
 	defer c.refreshMu.Unlock()
 
 	current := c.sessionTokens()
-	if strings.TrimSpace(current.RefreshToken) == "" {
-		return SessionTokens{}, &APIError{Status: http.StatusUnauthorized, Msg: "refresh token is missing"}
-	}
-	if !current.AccessExpiresAt.IsZero() && time.Until(current.AccessExpiresAt) > 2*time.Minute {
-		return current, nil
+	if c.loadTokens != nil {
+		if latest, err := c.loadTokens(); err == nil && strings.TrimSpace(latest.RefreshToken) != "" &&
+			latest.RefreshToken != current.RefreshToken {
+			c.setSessionTokensMemory(latest)
+			current = latest
+		}
 	}
 
-	body, _ := json.Marshal(map[string]string{"refresh_token": current.RefreshToken})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/v1/auth/refresh", bytes.NewReader(body))
-	if err != nil {
-		return SessionTokens{}, err
+	for attempt := 0; attempt < 2; attempt++ {
+		if strings.TrimSpace(current.RefreshToken) == "" {
+			return SessionTokens{}, &APIError{Status: http.StatusUnauthorized, Msg: "refresh token is missing"}
+		}
+		if !current.RefreshExpiresAt.IsZero() && !time.Now().Before(current.RefreshExpiresAt) {
+			return SessionTokens{}, &APIError{Status: http.StatusUnauthorized, Msg: "refresh token expired"}
+		}
+		if strings.TrimSpace(current.AccessToken) != "" && !current.AccessExpiresAt.IsZero() &&
+			time.Until(current.AccessExpiresAt) > 2*time.Minute {
+			return current, nil
+		}
+
+		body, _ := json.Marshal(map[string]string{"refresh_token": current.RefreshToken})
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/api/v1/auth/refresh", bytes.NewReader(body))
+		if err != nil {
+			return SessionTokens{}, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "xdrive-xd/0.1")
+		resp, err := c.do(req)
+		if err != nil {
+			return SessionTokens{}, err
+		}
+		var out AuthResponse
+		decodeErr := decodeResponse(resp, &out)
+		_ = resp.Body.Close()
+		if decodeErr == nil {
+			next := out.Session(time.Now())
+			if next.AccessToken == "" || next.RefreshToken == "" {
+				return SessionTokens{}, fmt.Errorf("refresh response did not contain both tokens")
+			}
+			if err := c.setSessionTokens(next); err != nil {
+				return SessionTokens{}, err
+			}
+			return next, nil
+		}
+
+		// Another local process may have won refresh-token rotation after this
+		// process loaded the credential but before its refresh request arrived.
+		if attempt == 0 && c.loadTokens != nil {
+			latest, loadErr := c.loadTokens()
+			if loadErr == nil && strings.TrimSpace(latest.RefreshToken) != "" &&
+				latest.RefreshToken != current.RefreshToken {
+				c.setSessionTokensMemory(latest)
+				current = latest
+				continue
+			}
+		}
+		return SessionTokens{}, decodeErr
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "xdrive-xd/0.1")
-	resp, err := c.do(req)
-	if err != nil {
-		return SessionTokens{}, err
-	}
-	defer resp.Body.Close()
-	var out AuthResponse
-	if err := decodeResponse(resp, &out); err != nil {
-		return SessionTokens{}, err
-	}
-	next := out.Session(time.Now())
-	if next.AccessToken == "" || next.RefreshToken == "" {
-		return SessionTokens{}, fmt.Errorf("refresh response did not contain both tokens")
-	}
-	if err := c.setSessionTokens(next); err != nil {
-		return SessionTokens{}, err
-	}
-	return next, nil
+	return SessionTokens{}, &APIError{Status: http.StatusUnauthorized, Msg: "refresh token rotation failed"}
 }
 
 func (c *Client) ChangePassword(ctx context.Context, currentPassword, newPassword string) (AuthResponse, error) {

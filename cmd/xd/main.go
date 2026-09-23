@@ -93,14 +93,19 @@ func login(args []string) error {
 		return err
 	}
 	mountPath := ""
+	sessionID := ""
 	if existing, loadErr := userconfig.Load(); loadErr == nil {
 		mountPath = existing.MountPath
+		sessionID = existing.SessionID
 	}
 	cfg := userconfig.Config{
 		Server:    strings.TrimRight(*server, "/"),
 		MountPath: mountPath,
+		SessionID: sessionID,
 	}
-	cfg.ApplyAuth(resp, true)
+	if err := cfg.ApplyAuth(resp, true); err != nil {
+		return err
+	}
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
@@ -135,7 +140,11 @@ func passwordCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := userconfig.NewClient(cfg).ChangePassword(context.Background(), *current, *next)
+	cli, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+	resp, err := cli.ChangePassword(context.Background(), *current, *next)
 	if err != nil {
 		return err
 	}
@@ -143,7 +152,9 @@ func passwordCmd(args []string) error {
 	if err != nil {
 		latest = cfg
 	}
-	latest.ApplyAuth(resp, false)
+	if err := latest.ApplyAuth(resp, false); err != nil {
+		return err
+	}
 	if err := userconfig.Save(latest); err != nil {
 		return err
 	}
@@ -154,9 +165,11 @@ func passwordCmd(args []string) error {
 func logout() error {
 	cfg, err := userconfig.Load()
 	if err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = userconfig.NewClient(cfg).LogoutSession(ctx)
-		cancel()
+		if cli, clientErr := userconfig.NewClient(cfg); clientErr == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = cli.LogoutSession(ctx)
+			cancel()
+		}
 	}
 	if err := userconfig.Remove(); err != nil {
 		return err
@@ -170,7 +183,10 @@ func status() error {
 	if err != nil {
 		return err
 	}
-	cli := userconfig.NewClient(cfg)
+	cli, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return err
+	}
 	root, err := cli.Root(context.Background())
 	if err != nil {
 		return err
@@ -183,7 +199,7 @@ func status() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("server: %s\nuser: %s\nmount: %s\nroot items: %d\nclient version: %s\n", cfg.Server, cfg.Username, mountPath, len(children), version.String())
+	fmt.Printf("server: %s\nuser: %s\nmount: %s\ncredential store: %s\nroot items: %d\nclient version: %s\n", cfg.Server, cfg.Username, mountPath, userconfig.CredentialBackend(cfg), len(children), version.String())
 	return nil
 }
 
@@ -242,8 +258,12 @@ func mountCmd(args []string) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	cli, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("xDrive mounted at %s; press Ctrl+C to stop\n", path)
-	return mount.Run(ctx, userconfig.NewClient(cfg), path)
+	return mount.Run(ctx, cli, path)
 }
 
 func cleanupCmd() error {

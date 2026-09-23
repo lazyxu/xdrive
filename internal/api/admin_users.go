@@ -287,6 +287,7 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 	}
 
 	var files []meta.File
+	var versions []meta.FileVersion
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var target meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, id).Error; err != nil {
@@ -307,7 +308,13 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 			return err
 		}
 		if len(nodeIDs) != 0 {
+			if err := tx.Where("node_id IN ?", nodeIDs).Find(&versions).Error; err != nil {
+				return err
+			}
 			if err := tx.Where("node_id IN ?", nodeIDs).Find(&files).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("node_id IN ?", nodeIDs).Delete(&meta.FileVersion{}).Error; err != nil {
 				return err
 			}
 			if err := tx.Where("node_id IN ?", nodeIDs).Delete(&meta.File{}).Error; err != nil {
@@ -335,6 +342,9 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 	}
 	for _, file := range files {
 		_ = s.Store.Delete(c.Request.Context(), file.StorageKey)
+	}
+	for _, version := range versions {
+		_ = s.Store.Delete(c.Request.Context(), version.StorageKey)
 	}
 	c.Status(http.StatusNoContent)
 }
