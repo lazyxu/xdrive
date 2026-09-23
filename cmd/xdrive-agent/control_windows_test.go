@@ -12,9 +12,9 @@ func TestAvailabilityLabel(t *testing.T) {
 	tests := map[string]string{
 		"syncing":      "同步中",
 		"always-local": "始终保留在此设备",
-		"online-only": "仅在线",
-		"cloud": "云端文件（使用时下载）",
-		"local": "本地可用",
+		"online-only":  "仅在线",
+		"cloud":        "云端文件（使用时下载）",
+		"local":        "本地可用",
 	}
 	for in, want := range tests {
 		if got := availabilityLabel(in); got != want {
