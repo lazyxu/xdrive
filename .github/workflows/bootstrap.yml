@@ -38,6 +38,8 @@ jobs:
           cat .bootstrap/part-* | base64 -d > /tmp/xdrive-src.tar.gz
           tar -xzf /tmp/xdrive-src.tar.gz -C .
           grep -vF '"path/filepath"' internal/mount/mount_linux.go > /tmp/mount_linux.go && mv /tmp/mount_linux.go internal/mount/mount_linux.go
+          printf '%s\n' '/// <reference types="vite/client" />' > web/src/vite-env.d.ts
+          grep -vF '"allowImportingTsExtensions"' web/tsconfig.node.json > /tmp/tsconfig.node.json && mv /tmp/tsconfig.node.json web/tsconfig.node.json
           rm -rf .bootstrap
           rm -f BOOTSTRAP_TEST_FAILURE.log BOOTSTRAP_WEB_FAILURE.log
           rm -f .github/workflows/bootstrap.yml
