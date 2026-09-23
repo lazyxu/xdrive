@@ -107,4 +107,20 @@ persisted="$(
   exit 1
 }
 
+mkdir -p "$TMP/legacy"
+printf 'XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:edge\n' > "$TMP/legacy/.env"
+legacy="$(
+  PATH="$TMP/bin:$PATH" \
+  XDRIVE_TEST_FULL_SHA="$FULL_SHA" \
+  XDRIVE_TEST_FIXTURE="$FIXTURE" \
+  XDRIVE_TEST_OUT="$TMP/legacy.out" \
+  XD_CONFIG_DIR="$TMP/legacy" \
+    bash "$INSTALLER"
+  cat "$TMP/legacy.out"
+)"
+[[ "$legacy" == "master||$TMP/legacy" ]] || {
+  echo "legacy edge channel inference mismatch: $legacy" >&2
+  exit 1
+}
+
 echo "server update channel bootstrap tests passed"
