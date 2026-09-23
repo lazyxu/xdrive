@@ -8,7 +8,7 @@ import (
 
 func TestFindConflictNodePrefersPathThenID(t *testing.T) {
 	remote := map[string]client.Node{
-		"docs/a.txt": {ID: 10, Name: "a.txt"},
+		"docs/a.txt":    {ID: 10, Name: "a.txt"},
 		"docs/copy.txt": {ID: 20, Name: "copy.txt"},
 	}
 	if got, ok := findConflictNode(remote, "docs/a.txt", 10); !ok || got.ID != 10 {
