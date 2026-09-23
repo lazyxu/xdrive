@@ -153,6 +153,19 @@ func TestCheckMasterSnapshot(t *testing.T) {
 	}
 }
 
+func TestValidCommitRef(t *testing.T) {
+	for _, ref := range []string{"abcdef0", "0123456789ab", "0123456789abcdef0123456789abcdef01234567"} {
+		if !validCommitRef(ref) {
+			t.Fatalf("%q should be a valid commit ref", ref)
+		}
+	}
+	for _, ref := range []string{"", "abc", "master", "../abcdef0", "01234g7", "0123456789abcdef0123456789abcdef012345678"} {
+		if validCommitRef(ref) {
+			t.Fatalf("%q should be rejected as a commit ref", ref)
+		}
+	}
+}
+
 func TestCheckCommitSnapshot(t *testing.T) {
 	const assetName = "xDriveSetup-amd64.exe"
 	const sha = "89abcdef0123456789abcdef0123456789abcdef"
