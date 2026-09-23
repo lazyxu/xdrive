@@ -78,7 +78,7 @@ services:
     image: caddy:2.10-alpine
     profiles: ["https"]
     environment:
-      XD_DOMAIN: ${XD_DOMAIN:?set XD_DOMAIN when the https profile is enabled}
+      XD_DOMAIN: ${XD_DOMAIN:-localhost}
     ports:
       - "${XD_HTTP_BIND:-0.0.0.0}:80:80"
       - "${XD_HTTPS_BIND:-0.0.0.0}:443:443"
