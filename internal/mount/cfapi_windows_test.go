@@ -21,7 +21,7 @@ func TestCfapiStructLayouts64Bit(t *testing.T) {
 		{"cfPlaceholderCreateInfo", unsafe.Sizeof(cfPlaceholderCreateInfo{}), 88},
 		{"cfCallbackInfo", unsafe.Sizeof(cfCallbackInfo{}), 152},
 		{"cfOperationInfo", unsafe.Sizeof(cfOperationInfo{}), 48},
-		{"cfOperationTransferData", unsafe.Sizeof(cfOperationTransferData{}), 40},
+		{"cfOperationParametersTransferData", unsafe.Sizeof(cfOperationParametersTransferData{}), 40},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

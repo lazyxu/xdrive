@@ -30,7 +30,7 @@ const (
 	cfPlaceholderSupersede       = 0x00000004
 	cfCallbackFetchData          = 0
 	cfCallbackNone               = 0xffffffff
-	cfOperationTransferData      = 0
+	cfOperationTypeTransferData  = 0
 	fileAttributeNormal          = 0x00000080
 )
 
@@ -141,7 +141,7 @@ type cfOperationInfo struct {
 	RequestKey        int64
 }
 
-type cfOperationTransferData struct {
+type cfOperationParametersTransferData struct {
 	ParamSize        uint32
 	_                uint32
 	Flags            uint32
@@ -251,8 +251,8 @@ func cfCreatePlaceholder(parent, name string, nodeID uint64, size int64, modUnix
 }
 
 func cfTransfer(info *cfCallbackInfo, data []byte, offset int64) error {
-	op := cfOperationInfo{StructSize: uint32(unsafe.Sizeof(cfOperationInfo{})), Type: cfOperationTransferData, ConnectionKey: info.ConnectionKey, TransferKey: info.TransferKey, RequestKey: info.RequestKey}
-	params := cfOperationTransferData{ParamSize: uint32(unsafe.Sizeof(cfOperationTransferData{})), CompletionStatus: 0, Offset: offset, Length: int64(len(data))}
+	op := cfOperationInfo{StructSize: uint32(unsafe.Sizeof(cfOperationInfo{})), Type: cfOperationTypeTransferData, ConnectionKey: info.ConnectionKey, TransferKey: info.TransferKey, RequestKey: info.RequestKey}
+	params := cfOperationParametersTransferData{ParamSize: uint32(unsafe.Sizeof(cfOperationParametersTransferData{})), CompletionStatus: 0, Offset: offset, Length: int64(len(data))}
 	if len(data) > 0 {
 		params.Buffer = uintptr(unsafe.Pointer(&data[0]))
 	}
@@ -264,8 +264,8 @@ func cfTransfer(info *cfCallbackInfo, data []byte, offset int64) error {
 }
 
 func cfTransferFailure(info *cfCallbackInfo, offset, length int64) {
-	op := cfOperationInfo{StructSize: uint32(unsafe.Sizeof(cfOperationInfo{})), Type: cfOperationTransferData, ConnectionKey: info.ConnectionKey, TransferKey: info.TransferKey, RequestKey: info.RequestKey}
-	params := cfOperationTransferData{ParamSize: uint32(unsafe.Sizeof(cfOperationTransferData{})), CompletionStatus: int32(-1073741823), Offset: offset, Length: length}
+	op := cfOperationInfo{StructSize: uint32(unsafe.Sizeof(cfOperationInfo{})), Type: cfOperationTypeTransferData, ConnectionKey: info.ConnectionKey, TransferKey: info.TransferKey, RequestKey: info.RequestKey}
+	params := cfOperationParametersTransferData{ParamSize: uint32(unsafe.Sizeof(cfOperationParametersTransferData{})), CompletionStatus: int32(-1073741823), Offset: offset, Length: length}
 	_, _, _ = procExecute.Call(uintptr(unsafe.Pointer(&op)), uintptr(unsafe.Pointer(&params)))
 }
 
