@@ -3,12 +3,10 @@
 package mount
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -189,11 +187,7 @@ func walkCloudFiles(path string, fn func(string) error) error {
 			return nil
 		}
 		if err := fn(current); err != nil {
-			var errno windows.Errno
-			if errors.As(err, &errno) {
-				return fmt.Errorf("%s: %w", current, err)
-			}
-			return err
+			return fmt.Errorf("%s: %w", current, err)
 		}
 		return nil
 	})
@@ -225,4 +219,3 @@ func sameWindowsPath(a, b string) bool {
 	return strings.EqualFold(filepath.Clean(ap), filepath.Clean(bp))
 }
 
-var _ = unsafe.Pointer(nil)
