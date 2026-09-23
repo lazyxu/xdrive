@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$url" == *"/commits/"* ]]; then
-  printf '{"sha":"%s"}\n' "$XDRIVE_TEST_FULL_SHA"
+  printf '{\n  "sha": "%s"\n}\n' "$XDRIVE_TEST_FULL_SHA"
   exit 0
 fi
 
