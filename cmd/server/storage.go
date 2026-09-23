@@ -48,6 +48,7 @@ func runStorageCommand(args []string) error {
 		fmt.Printf("size mismatches:  %d\n", len(report.SizeMismatches))
 		fmt.Printf("duplicate refs:   %d\n", len(report.DuplicateRefs))
 		fmt.Printf("orphan blobs:     %d\n", len(report.Orphans))
+		fmt.Printf("hash mismatches:  %d\n", len(report.HashMismatches))
 		fmt.Printf("ignored temp:     %d\n", report.IgnoredTemps)
 		for _, issue := range report.Missing {
 			fmt.Printf("MISSING node=%d key=%q expected=%d reason=%s\n", issue.NodeID, issue.StorageKey, issue.Expected, issue.Reason)
@@ -60,6 +61,10 @@ func runStorageCommand(args []string) error {
 		}
 		for _, issue := range report.Orphans {
 			fmt.Printf("ORPHAN key=%q size=%d\n", issue.StorageKey, issue.Size)
+		}
+		for _, issue := range report.HashMismatches {
+			fmt.Printf("HASH_MISMATCH node=%d version=%d key=%q expected=%s actual=%s\n",
+				issue.NodeID, issue.VersionID, issue.StorageKey, issue.Expected, issue.Actual)
 		}
 	}
 	if !report.OK() {

@@ -1,7 +1,10 @@
 package maintenance
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,6 +41,14 @@ type OrphanBlob struct {
 	Size       int64  `json:"size"`
 }
 
+type HashMismatch struct {
+	NodeID     uint64 `json:"node_id"`
+	VersionID  uint64 `json:"version_id,omitempty"`
+	StorageKey string `json:"storage_key"`
+	Expected   string `json:"expected_sha256"`
+	Actual     string `json:"actual_sha256"`
+}
+
 type VerifyReport struct {
 	ReferencedFiles    int                  `json:"referenced_files"`
 	ReferencedVersions int                  `json:"referenced_versions"`
@@ -47,17 +58,19 @@ type VerifyReport struct {
 	SizeMismatches     []SizeMismatch       `json:"size_mismatches"`
 	DuplicateRefs      []DuplicateReference `json:"duplicate_references"`
 	Orphans            []OrphanBlob         `json:"orphans"`
+	HashMismatches     []HashMismatch       `json:"hash_mismatches"`
 	IgnoredTemps       int                  `json:"ignored_temporary_files"`
 }
 
 func (r VerifyReport) OK() bool {
-	return len(r.Missing) == 0 && len(r.SizeMismatches) == 0 && len(r.DuplicateRefs) == 0 && len(r.Orphans) == 0
+	return len(r.Missing) == 0 && len(r.SizeMismatches) == 0 && len(r.DuplicateRefs) == 0 && len(r.Orphans) == 0 && len(r.HashMismatches) == 0
 }
 
 type blobReference struct {
 	NodeID    uint64
 	VersionID uint64
 	Size      int64
+	SHA256    string
 }
 
 func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
@@ -84,12 +97,12 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 	references := make(map[string][]blobReference, len(files)+len(versions))
 	for _, file := range files {
 		addReference(&report, references, root, file.StorageKey, blobReference{
-			NodeID: file.NodeID, Size: file.Size,
+			NodeID: file.NodeID, Size: file.Size, SHA256: file.SHA256,
 		})
 	}
 	for _, version := range versions {
 		addReference(&report, references, root, version.StorageKey, blobReference{
-			NodeID: version.NodeID, VersionID: version.ID, Size: version.Size,
+			NodeID: version.NodeID, VersionID: version.ID, Size: version.Size, SHA256: version.SHA256,
 		})
 	}
 	for key, refs := range references {
@@ -103,6 +116,15 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
+			if path != root {
+				rel, relErr := filepath.Rel(root, path)
+				if relErr != nil {
+					return relErr
+				}
+				if filepath.ToSlash(rel) == ".xdrive-uploads" {
+					return filepath.SkipDir
+				}
+			}
 			return nil
 		}
 		if strings.HasPrefix(entry.Name(), ".xdrive-upload-") {
@@ -136,6 +158,7 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 	sort.Slice(report.SizeMismatches, func(i, j int) bool { return report.SizeMismatches[i].StorageKey < report.SizeMismatches[j].StorageKey })
 	sort.Slice(report.DuplicateRefs, func(i, j int) bool { return report.DuplicateRefs[i].StorageKey < report.DuplicateRefs[j].StorageKey })
 	sort.Slice(report.Orphans, func(i, j int) bool { return report.Orphans[i].StorageKey < report.Orphans[j].StorageKey })
+	sort.Slice(report.HashMismatches, func(i, j int) bool { return report.HashMismatches[i].StorageKey < report.HashMismatches[j].StorageKey })
 	return report, nil
 }
 
@@ -170,6 +193,36 @@ func addReference(report *VerifyReport, references map[string][]blobReference, r
 		report.SizeMismatches = append(report.SizeMismatches, SizeMismatch{
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Actual: info.Size(),
 		})
+	}
+	if ref.SHA256 != "" {
+		f, openErr := os.Open(full)
+		if openErr != nil {
+			report.Missing = append(report.Missing, MissingBlob{
+				NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: openErr.Error(),
+			})
+			return
+		}
+		h := sha256.New()
+		_, copyErr := io.Copy(h, f)
+		closeErr := f.Close()
+		if copyErr != nil || closeErr != nil {
+			reason := "hash_read_failed"
+			if copyErr != nil {
+				reason = copyErr.Error()
+			} else if closeErr != nil {
+				reason = closeErr.Error()
+			}
+			report.Missing = append(report.Missing, MissingBlob{
+				NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: reason,
+			})
+			return
+		}
+		actual := hex.EncodeToString(h.Sum(nil))
+		if !strings.EqualFold(actual, ref.SHA256) {
+			report.HashMismatches = append(report.HashMismatches, HashMismatch{
+				NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.SHA256, Actual: actual,
+			})
+		}
 	}
 }
 

@@ -7,6 +7,7 @@ export interface Node {
   type: NodeType
   size: number
   revision: number
+  sha256?: string
   deleted_at?: string
   created_at: string
   updated_at: string
@@ -17,6 +18,7 @@ export interface FileVersion {
   node_id: number
   revision: number
   size: number
+  sha256?: string
   created_at: string
 }
 
@@ -54,6 +56,29 @@ export interface AuthSession {
   accessToken: string
   refreshToken: string
   accessExpiresAt: number
+}
+
+export interface UploadChunkState {
+  index: number
+  size: number
+  sha256: string
+}
+
+export interface UploadSessionState {
+  id: string
+  parent_id?: number
+  node_id?: number
+  name?: string
+  size: number
+  chunk_size: number
+  chunk_count: number
+  sha256?: string
+  resume_key?: string
+  expected_revision?: number
+  status: 'active' | 'finalized'
+  expires_at: string
+  received_chunks: UploadChunkState[]
+  result?: Node
 }
 
 export class ApiError extends Error {
@@ -239,25 +264,81 @@ export class XDriveApi {
   }
 
   async upload(parentID: number, file: File, onProgress?: (percent: number) => void): Promise<Node> {
-    await this.ensureFresh()
-    return new Promise<Node>((resolve, reject) => {
-      const form = new FormData()
-      form.append('file', file, file.name)
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${API_BASE}/api/v1/nodes/${parentID}/files`)
-      if (this.session.accessToken) xhr.setRequestHeader('Authorization', `Bearer ${this.session.accessToken}`)
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100))
-      }
-      xhr.onload = () => {
-        let body: { error?: string } | Node | undefined
-        try { body = JSON.parse(xhr.responseText) as { error?: string } | Node } catch { body = undefined }
-        if (xhr.status >= 200 && xhr.status < 300 && body) resolve(body as Node)
-        else reject(new ApiError(xhr.status, (body as { error?: string } | undefined)?.error || xhr.statusText || 'Upload failed'))
-      }
-      xhr.onerror = () => reject(new Error('Network error while uploading'))
-      xhr.send(form)
+    const chunkSize = 8 * 1024 * 1024
+    const resumeKey = await sha256Buffer(
+      new TextEncoder().encode(`${file.name}\n${file.size}\n${file.lastModified}`).buffer,
+    )
+    const session = await this.request<UploadSessionState>('/api/v1/uploads', {
+      method: 'POST',
+      body: JSON.stringify({
+        parent_id: parentID,
+        name: file.name,
+        size: file.size,
+        chunk_size: chunkSize,
+        resume_key: resumeKey,
+      }),
     })
+    if (session.status === 'finalized' && session.result) {
+      onProgress?.(100)
+      return session.result
+    }
+
+    const received = new Map(session.received_chunks.map((part) => [part.index, part]))
+    let completed = 0
+
+    for (let index = 0; index < session.chunk_count; index += 1) {
+      const start = index * session.chunk_size
+      const end = Math.min(file.size, start + session.chunk_size)
+      const data = await file.slice(start, end).arrayBuffer()
+      const hash = await sha256Buffer(data)
+      const existing = received.get(index)
+      if (existing && existing.size === data.byteLength && existing.sha256 === hash) {
+        completed += data.byteLength
+        onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
+        continue
+      }
+
+      await this.putUploadChunk(session.id, index, hash, data)
+      completed += data.byteLength
+      onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
+    }
+
+    const finalized = await this.request<UploadSessionState>(`/api/v1/uploads/${session.id}/finalize`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+    if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
+    onProgress?.(100)
+    return finalized.result
+  }
+
+  private async putUploadChunk(sessionID: string, index: number, hash: string, data: ArrayBuffer) {
+    await this.ensureFresh()
+    const send = () => fetch(`${API_BASE}/api/v1/uploads/${sessionID}/chunks/${index}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${this.session.accessToken}`,
+        'Content-Type': 'application/octet-stream',
+        'X-Chunk-SHA256': hash,
+      },
+      body: data,
+    })
+
+    let response = await send()
+    if (response.status === 401 && this.session.refreshToken) {
+      await this.refresh(true)
+      response = await send()
+    }
+    if (!response.ok) {
+      let error = response.statusText || 'Chunk upload failed'
+      try {
+        const body = (await response.json()) as { error?: string }
+        if (body.error) error = body.error
+      } catch {
+        // Keep the HTTP status text.
+      }
+      throw new ApiError(response.status, error)
+    }
   }
 
   rename(nodeID: number, revision: number, name: string) {
@@ -344,4 +425,9 @@ export class XDriveApi {
       URL.revokeObjectURL(url)
     }
   }
+}
+
+async function sha256Buffer(data: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('')
 }

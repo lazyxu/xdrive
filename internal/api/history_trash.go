@@ -18,12 +18,13 @@ type fileVersionDTO struct {
 	NodeID    uint64    `json:"node_id"`
 	Revision  uint64    `json:"revision"`
 	Size      int64     `json:"size"`
+	SHA256    string    `json:"sha256,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 func toFileVersionDTO(v meta.FileVersion) fileVersionDTO {
 	return fileVersionDTO{
-		ID: v.ID, NodeID: v.NodeID, Revision: v.Revision, Size: v.Size, CreatedAt: v.CreatedAt,
+		ID: v.ID, NodeID: v.NodeID, Revision: v.Revision, Size: v.Size, SHA256: v.SHA256, CreatedAt: v.CreatedAt,
 	}
 }
 
@@ -232,6 +233,9 @@ func (s *Server) downloadFileVersion(c *gin.Context) {
 	defer f.Close()
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(n.Name))
+	if version.SHA256 != "" {
+		c.Header("X-Content-SHA256", version.SHA256)
+	}
 	http.ServeContent(c.Writer, c.Request, n.Name, version.CreatedAt, f)
 }
 
@@ -277,12 +281,12 @@ func (s *Server) restoreFileVersion(c *gin.Context) {
 		}
 		now := time.Now()
 		if err := tx.Create(&meta.FileVersion{
-			NodeID: id, Revision: current.Revision, Size: file.Size, StorageKey: file.StorageKey, CreatedAt: now,
+			NodeID: id, Revision: current.Revision, Size: file.Size, StorageKey: file.StorageKey, SHA256: file.SHA256, CreatedAt: now,
 		}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&meta.File{}).Where("node_id = ?", id).Updates(map[string]any{
-			"size": selected.Size, "storage_key": selected.StorageKey, "updated_at": now,
+			"size": selected.Size, "storage_key": selected.StorageKey, "sha256": selected.SHA256, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}

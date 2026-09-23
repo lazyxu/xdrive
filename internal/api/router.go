@@ -47,6 +47,11 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/trash/:id", s.trashDeletePermanently)
 	authed.GET("/files/:id/content", s.downloadFile)
 	authed.PUT("/files/:id/content", s.overwriteFile)
+	authed.POST("/uploads", s.createUploadSession)
+	authed.GET("/uploads/:id", s.getUploadSession)
+	authed.PUT("/uploads/:id/chunks/:index", s.putUploadChunk)
+	authed.POST("/uploads/:id/finalize", s.finalizeUploadSession)
+	authed.DELETE("/uploads/:id", s.abortUploadSession)
 	authed.GET("/files/:id/versions", s.fileVersions)
 	authed.GET("/files/:id/versions/:versionID/content", s.downloadFileVersion)
 	authed.POST("/files/:id/versions/:versionID/restore", s.restoreFileVersion)
@@ -68,7 +73,8 @@ func (s *Server) cors() gin.HandlerFunc {
 		if origin != "" && (s.AllowedOrigin == "*" || origin == s.AllowedOrigin) {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, X-Chunk-SHA256")
+			c.Header("Access-Control-Expose-Headers", "ETag, X-Content-SHA256, Content-Range")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		}
 		if c.Request.Method == http.MethodOptions {

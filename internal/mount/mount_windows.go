@@ -221,7 +221,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		}
 	}
 
-	// Existing local files: whole-file upload on size/mtime change. Hydration
+	// Existing local files: resumable fixed-chunk upload on size/mtime change. Hydration
 	// is ignored for a short grace window so reads do not become writes.
 	for rel, entry := range local {
 		base, ok := baseline[rel]
@@ -234,12 +234,8 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		if entry.size == base.localSize && entry.modTime.Equal(base.localModTime) {
 			continue
 		}
-		f, err := os.Open(filepath.Join(p.root, filepath.FromSlash(rel)))
-		if err != nil {
-			continue
-		}
-		n, upErr := p.cli.Overwrite(ctx, base.node.ID, base.node.Revision, f)
-		_ = f.Close()
+		absPath := filepath.Join(p.root, filepath.FromSlash(rel))
+		n, upErr := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, nil)
 		if upErr != nil {
 			if !client.IsRevisionConflict(upErr) || base.node.ParentID == nil {
 				return upErr

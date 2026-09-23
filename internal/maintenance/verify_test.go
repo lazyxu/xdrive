@@ -1,6 +1,8 @@
 package maintenance
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
@@ -54,13 +56,13 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := db.Create(&rootNode).Error; err != nil {
 		t.Fatal(err)
 	}
-	makeFile := func(name, key string, size int64) uint64 {
+	makeFile := func(name, key string, size int64, hash string) uint64 {
 		t.Helper()
 		node := meta.Node{ParentID: &rootNode.ID, Name: name, Type: meta.NodeTypeFile, OwnerID: user.ID, Revision: 1}
 		if err := db.Create(&node).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Create(&meta.File{NodeID: node.ID, StorageKey: key, Size: size}).Error; err != nil {
+		if err := db.Create(&meta.File{NodeID: node.ID, StorageKey: key, Size: size, SHA256: hash}).Error; err != nil {
 			t.Fatal(err)
 		}
 		return node.ID
@@ -70,12 +72,14 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	okKey := "1/docs/ok"
 	mismatchKey := "1/docs/mismatch"
 	missingKey := "1/docs/missing"
-	okID := makeFile("ok.txt", okKey, 2)
-	mismatchID := makeFile("mismatch.txt", mismatchKey, 10)
-	missingID := makeFile("missing.txt", missingKey, 7)
+	hashKey := "1/docs/hash"
+	okID := makeFile("ok.txt", okKey, 2, verifyTestHash("ok"))
+	mismatchID := makeFile("mismatch.txt", mismatchKey, 10, "")
+	missingID := makeFile("missing.txt", missingKey, 7, "")
+	hashID := makeFile("hash.txt", hashKey, 4, verifyTestHash("good"))
 	versionKey := "1/docs/version-old"
 	if err := db.Create(&meta.FileVersion{
-		NodeID: okID, Revision: 1, Size: 3, StorageKey: versionKey,
+		NodeID: okID, Revision: 1, Size: 3, StorageKey: versionKey, SHA256: verifyTestHash("old"),
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +88,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		okKey:        "ok",
 		mismatchKey:  "bad",
 		versionKey:   "old",
+		hashKey:      "evil",
 		"orphan.bin": "orphan",
 	} {
 		path := filepath.Join(root, filepath.FromSlash(key))
@@ -97,6 +102,13 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".xdrive-upload-temp"), []byte("temp"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	uploadTemp := filepath.Join(root, ".xdrive-uploads", "session", "000000")
+	if err := os.MkdirAll(filepath.Dir(uploadTemp), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(uploadTemp, []byte("in-progress"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := Verify(db, root)
 	if err != nil {
@@ -105,7 +117,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if report.OK() {
 		t.Fatal("inconsistent storage reported OK")
 	}
-	if report.ReferencedFiles != 3 || report.ReferencedVersions != 1 || report.BlobFiles != 4 || report.IgnoredTemps != 1 {
+	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 || report.IgnoredTemps != 1 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
@@ -117,6 +129,9 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if len(report.Orphans) != 1 || report.Orphans[0].StorageKey != "orphan.bin" {
 		t.Fatalf("orphans=%+v", report.Orphans)
 	}
+	if len(report.HashMismatches) != 1 || report.HashMismatches[0].NodeID != hashID {
+		t.Fatalf("hash mismatches=%+v want node=%d", report.HashMismatches, hashID)
+	}
 
 	if err := os.Remove(filepath.Join(root, filepath.FromSlash(mismatchKey))); err != nil {
 		t.Fatal(err)
@@ -125,6 +140,9 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(mismatchKey)), []byte("0123456789"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(hashKey)), []byte("good"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	missingPath := filepath.Join(root, filepath.FromSlash(missingKey))
@@ -142,4 +160,9 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if !report.OK() {
 		t.Fatalf("repaired storage not OK: %+v; okID=%d", report, okID)
 	}
+}
+
+func verifyTestHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }

@@ -324,18 +324,12 @@ func (h *linuxHandle) sync(ctx context.Context) error {
 	if err := h.file.Sync(); err != nil {
 		return err
 	}
-	if _, err := h.file.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	updated, err := h.cli.Overwrite(ctx, h.node.ID, h.node.Revision, h.file)
+	updated, err := h.cli.OverwriteFileResumable(ctx, h.node.ID, h.node.Revision, h.path, nil)
 	if err != nil {
 		if !client.IsRevisionConflict(err) || h.node.ParentID == nil {
 			return err
 		}
-		if _, seekErr := h.file.Seek(0, io.SeekStart); seekErr != nil {
-			return seekErr
-		}
-		conflict, uploadErr := h.cli.Upload(ctx, *h.node.ParentID, conflictName(h.node.Name), h.file)
+		conflict, uploadErr := h.cli.UploadFileResumable(ctx, *h.node.ParentID, h.path, conflictName(h.node.Name), nil)
 		if uploadErr != nil {
 			return uploadErr
 		}

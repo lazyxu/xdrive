@@ -10,7 +10,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,6 +38,7 @@ type Node struct {
 	Type      string    `json:"type"`
 	Size      int64     `json:"size"`
 	Revision  uint64    `json:"revision"`
+	SHA256    string    `json:"sha256,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -143,12 +143,7 @@ func (c *Client) Delete(ctx context.Context, id, revision uint64) error {
 }
 
 func (c *Client) UploadFile(ctx context.Context, parentID uint64, path, name string) (Node, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Node{}, err
-	}
-	defer f.Close()
-	return c.Upload(ctx, parentID, name, f)
+	return c.UploadFileResumable(ctx, parentID, path, name, nil)
 }
 
 func (c *Client) Upload(ctx context.Context, parentID uint64, name string, r io.Reader) (Node, error) {
