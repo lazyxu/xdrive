@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           cat .bootstrap/part-* | base64 -d > /tmp/xdrive-src.tar.gz
-          echo "4ce622903956733606708294717f1dc91629755cac199c608541f6544526d7f1  /tmp/xdrive-src.tar.gz" | sha256sum -c -
+          echo "949fd5061b093f6ad734fa3bf79db82665c29b3bf66867998a84b63b0b18f946  /tmp/xdrive-src.tar.gz" | sha256sum -c -
           tar -xzf /tmp/xdrive-src.tar.gz -C .
           rm -rf .bootstrap
           rm -f .github/workflows/bootstrap.yml
