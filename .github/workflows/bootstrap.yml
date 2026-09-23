@@ -1,0 +1,76 @@
+name: Bootstrap MVP source
+
+on:
+  push:
+    branches: ["feat/mvp-cfapi"]
+    paths:
+      - ".bootstrap/**"
+      - ".github/workflows/bootstrap.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-and-test:
+    if: ${{ !contains(github.event.head_commit.message, '[bootstrap-complete]') }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Materialize source
+        shell: bash
+        run: |
+          cat .bootstrap/part-* | base64 -d > /tmp/xdrive-src.tar.gz
+          echo "4ce622903956733606708294717f1dc91629755cac199c608541f6544526d7f1  /tmp/xdrive-src.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/xdrive-src.tar.gz -C .
+          rm -rf .bootstrap
+          rm -f .github/workflows/bootstrap.yml
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: false
+      - name: Go format and dependencies
+        run: |
+          gofmt -w ./cmd ./internal
+          go mod tidy
+      - name: Go tests
+        run: go test -race ./...
+      - name: Go vet
+        run: go vet ./...
+      - name: Go build
+        run: go build ./cmd/server ./cmd/xd
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Web install
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Web typecheck
+        working-directory: web
+        run: npm run lint
+      - name: Web build
+        working-directory: web
+        run: npm run build
+      - name: Commit materialized source
+        shell: bash
+        run: |
+          git config user.name "xDrive CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: implement xDrive MVP with Linux FUSE and Windows CfAPI [bootstrap-complete]"
+          git push origin HEAD:feat/mvp-cfapi
