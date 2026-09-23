@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -12,13 +11,8 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/mount"
+	"github.com/lazyxu/xdrive/internal/userconfig"
 )
-
-type localConfig struct {
-	Server   string `json:"server"`
-	Token    string `json:"token"`
-	Username string `json:"username"`
-}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -37,6 +31,10 @@ func main() {
 		err = status()
 	case "mount":
 		err = mountCmd(os.Args[2:])
+	case "config":
+		err = configCmd(os.Args[2:])
+	case "cleanup":
+		err = cleanupCmd()
 	default:
 		usage()
 		os.Exit(2)
@@ -51,13 +49,15 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `xDrive CLI
 
 Usage:
-  xd register --server http://localhost:8080 --username USER --password PASS
-  xd login    --server http://localhost:8080 --username USER --password PASS
+  xd register --server https://drive.example.com --username USER --password PASS
+  xd login    --server https://drive.example.com --username USER --password PASS
   xd status
-  xd mount PATH
+  xd config --mount PATH
+  xd mount [PATH]
   xd logout
 
-On Linux, PATH is a FUSE mountpoint. On Windows, PATH is a CfAPI sync root directory.`)
+When PATH is omitted, xd uses the configured mount path or ~/xDrive.
+On Linux, the path is a FUSE mountpoint. On Windows, it is a CfAPI sync root.`)
 }
 
 func login(register bool, args []string) error {
@@ -89,27 +89,37 @@ func login(register bool, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := saveConfig(localConfig{Server: strings.TrimRight(*server, "/"), Token: resp.Token, Username: resp.Username}); err != nil {
+	mountPath := ""
+	if existing, loadErr := userconfig.Load(); loadErr == nil {
+		mountPath = existing.MountPath
+	}
+	cfg := userconfig.Config{
+		Server:    strings.TrimRight(*server, "/"),
+		Token:     resp.Token,
+		Username:  resp.Username,
+		MountPath: mountPath,
+	}
+	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
-	fmt.Printf("logged in as %s\n", resp.Username)
+	root, err := userconfig.EffectiveMountPath(cfg)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("logged in as %s\nmount path: %s\n", resp.Username, root)
 	return nil
 }
 
 func logout() error {
-	p, err := configPath()
-	if err != nil {
+	if err := userconfig.Remove(); err != nil {
 		return err
 	}
-	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	fmt.Println("logged out")
+	fmt.Println("logged out; the background agent will stop the active mount")
 	return nil
 }
 
 func status() error {
-	cfg, err := loadConfig()
+	cfg, err := userconfig.Load()
 	if err != nil {
 		return err
 	}
@@ -122,7 +132,37 @@ func status() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("server: %s\nuser: %s\nroot items: %d\n", cfg.Server, cfg.Username, len(children))
+	mountPath, err := userconfig.EffectiveMountPath(cfg)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("server: %s\nuser: %s\nmount: %s\nroot items: %d\n", cfg.Server, cfg.Username, mountPath, len(children))
+	return nil
+}
+
+func configCmd(args []string) error {
+	fs := flag.NewFlagSet("config", flag.ContinueOnError)
+	mountPath := fs.String("mount", "", "default mount/sync-root path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*mountPath) == "" {
+		return fmt.Errorf("--mount PATH is required")
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	abs, err := filepath.Abs(*mountPath)
+	if err != nil {
+		return err
+	}
+	cfg.MountPath = filepath.Clean(abs)
+	if err := userconfig.Save(cfg); err != nil {
+		return err
+	}
+	fmt.Printf("mount path: %s\n", cfg.MountPath)
+	fmt.Println("the background agent will apply the new path automatically")
 	return nil
 }
 
@@ -131,14 +171,19 @@ func mountCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("mount requires exactly one PATH")
+	if fs.NArg() > 1 {
+		return fmt.Errorf("mount accepts zero or one PATH")
 	}
-	cfg, err := loadConfig()
+	cfg, err := userconfig.Load()
 	if err != nil {
 		return err
 	}
-	path, err := filepath.Abs(fs.Arg(0))
+	var path string
+	if fs.NArg() == 1 {
+		path, err = filepath.Abs(fs.Arg(0))
+	} else {
+		path, err = userconfig.EffectiveMountPath(cfg)
+	}
 	if err != nil {
 		return err
 	}
@@ -151,44 +196,14 @@ func mountCmd(args []string) error {
 	return mount.Run(ctx, client.New(cfg.Server, cfg.Token), path)
 }
 
-func configPath() (string, error) {
-	dir, err := os.UserConfigDir()
+func cleanupCmd() error {
+	cfg, err := userconfig.Load()
 	if err != nil {
-		return "", err
+		return nil
 	}
-	return filepath.Join(dir, "xdrive", "config.json"), nil
-}
-
-func saveConfig(cfg localConfig) error {
-	p, err := configPath()
+	root, err := userconfig.EffectiveMountPath(cfg)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(p, b, 0o600)
-}
-
-func loadConfig() (localConfig, error) {
-	var cfg localConfig
-	p, err := configPath()
-	if err != nil {
-		return cfg, err
-	}
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return cfg, fmt.Errorf("not logged in; run xd login: %w", err)
-	}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return cfg, err
-	}
-	if cfg.Server == "" || cfg.Token == "" {
-		return cfg, fmt.Errorf("invalid local config; run xd login again")
-	}
-	return cfg, nil
+	return mount.Cleanup(root)
 }

@@ -2,202 +2,212 @@
 
 > **Mount your cloud as a local drive.**
 
-xDrive is an Apache-2.0 open-source file service with a Web file manager and native desktop filesystem access. The first MVP deliberately keeps storage simple: every object is stored as one complete file on the xDrive server, while PostgreSQL stores the directory tree and metadata.
+xDrive is an Apache-2.0 open-source file service with a Docker-deployed server, a Web file manager, and native desktop filesystem clients.
 
 ## MVP scope
 
 | Area | First release |
 | --- | --- |
-| Server | Go, Gin, GORM, PostgreSQL, JWT |
-| Storage | Local filesystem only |
-| Web | React + TypeScript + Ant Design; login/register, browse, upload/download, create folders, rename and delete |
-| Linux | FUSE mount with `go-fuse/v2`, read/write/create/mkdir/rename/delete |
-| Windows | Windows Cloud Files API (CfAPI), Explorer sync root, placeholders, on-demand hydration, whole-file write-back |
-| CLI | `xd register`, `login`, `status`, `mount`, `logout` |
+| Server | Go + Gin + GORM + PostgreSQL + JWT |
+| Storage | Local filesystem, whole-file objects |
+| Web | React + TypeScript + Ant Design |
+| Linux | FUSE client (`go-fuse/v2`) |
+| Windows | Cloud Files API (CfAPI), Files On-Demand style placeholders |
+| Client delivery | Windows `.exe` installer; Linux `.deb` installer |
 | Multi-user | Per-user metadata and storage isolation |
 
-Not in the MVP: chunking, instant upload/deduplication, small-file packs, CDC, thumbnails, transcoding, public share links, conflict resolution, MinIO, macOS, or mobile clients.
-
-> **Windows note:** CfAPI integrates xDrive as an Explorer cloud-sync directory rather than a WinFsp drive letter. It requires no WinFsp installation. The minimum Windows platform for the Cloud Files API is Windows 10 version 1709. See Microsoft's [Cloud Files API documentation](https://learn.microsoft.com/windows/win32/cfapi/cloud-files-api-portal).
+Not in the MVP: chunking, instant upload/deduplication, small-file packs, CDC, thumbnails/transcoding, public sharing, conflict resolution, MinIO, macOS, or mobile clients.
 
 ## Architecture
 
 ```text
-                         ┌─────────────────────┐
-                         │      xDrive Web     │
-                         │ React + Ant Design  │
-                         └─────────┬───────────┘
-                                   │ HTTPS / REST
- Linux                             │                              Windows
- ┌──────────────┐                  ▼                        ┌──────────────────┐
- │ xd + go-fuse │ ───────►  xDrive Server  ◄────────────── │ xd + Windows    │
- │ /mnt/xdrive  │          Gin + GORM + JWT                │ Cloud Files API │
- └──────────────┘                  │                        │ Explorer folder  │
-                                   ├────────► PostgreSQL    └──────────────────┘
-                                   │          metadata
-                                   ▼
-                            Local filesystem
-                            whole-file blobs
+                            ┌──────────────────────┐
+                            │      xDrive Web      │
+                            │ React + Ant Design   │
+                            └──────────┬───────────┘
+                                       │ /api
+                                       ▼
+ Windows                        ┌──────────────────┐                      Linux
+ ┌────────────────┐             │  xDrive server   │              ┌────────────────┐
+ │ xDrive Agent   │ ◄──HTTPS──► │ Gin + GORM + JWT │ ◄──HTTPS───► │ xd / FUSE      │
+ │ Windows CfAPI  │             └────────┬─────────┘              │ xdrive-agent*  │
+ └────────────────┘                      │                        └────────────────┘
+                                       ┌─┴──────────────┐
+                                       │                │
+                                  PostgreSQL       Local storage
 ```
 
-A stored object uses a key shaped like:
+`*` The Linux background agent is optional; the Windows installer enables the Windows agent automatically for the current user.
+
+## Server: Docker only
+
+The supported server deployment is Docker Compose. The installer uses these default paths:
 
 ```text
-<user-id>/<logical-directory>/<uuid>
+~/.xd/docker-compose.yml
+~/.xd/.env
 ```
 
-The visible filename and directory tree live in PostgreSQL. Renaming a file changes metadata without rewriting the underlying blob.
+### Install from `master` / edge images
 
-## Repository layout
+```bash
+curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
+```
+
+The installer:
+
+1. checks Docker and Docker Compose v2;
+2. creates `~/.xd` with user-only permissions;
+3. writes `~/.xd/docker-compose.yml`;
+4. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
+5. pulls the xDrive server/Web container images;
+6. starts PostgreSQL, the xDrive API server, and the Web UI.
+
+The default Web endpoint is:
 
 ```text
-cmd/
-  server/              xDrive HTTP server
-  xd/                  CLI
-internal/
-  api/                 Gin routes and handlers
-  auth/                password hashing + JWT
-  client/              HTTP client shared by filesystem clients
-  config/              environment configuration
-  meta/                GORM models and portable filename validation
-  mount/               Linux FUSE + Windows CfAPI
-  storage/             storage abstraction + Local implementation
-web/                    React Web UI
-deploy/
-  docker-compose.yml    PostgreSQL + server + Web
-.github/workflows/
-  ci.yml                Linux, Windows, Web CI
+http://SERVER_IP:3000
 ```
 
-## Quick start with Docker Compose
-
-Set a real JWT secret and start the stack:
+Common operations:
 
 ```bash
-export XD_JWT_SECRET='replace-with-a-long-random-secret'
-docker compose -f deploy/docker-compose.yml up --build
+XD_DIR="$HOME/.xd"
+
+docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" ps
+docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" logs -f
+docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" pull
+docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" up -d
+docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" down
 ```
 
-Then open:
+Data is persisted in Docker volumes:
+
+- `xdrive_postgres-data`: PostgreSQL data;
+- `xdrive_file-data`: uploaded file blobs.
+
+For production, put the Web container behind an HTTPS reverse proxy and back up both volumes.
+
+### GHCR visibility
+
+The official Compose file uses:
 
 ```text
-http://localhost:3000
+ghcr.io/lazyxu/xdrive-server
+ghcr.io/lazyxu/xdrive-web
 ```
 
-Compose persists:
+GitHub Container Registry packages are private when first created unless their visibility is changed. For public xDrive distribution, make both packages **Public** once in GitHub package settings. After that, server machines can pull them anonymously.
 
-- PostgreSQL in the `postgres-data` volume.
-- File blobs in the `file-data` volume.
+## Windows client
 
-The default development credentials in Compose are only for the bundled PostgreSQL container; change them before exposing the service publicly.
+Download and run:
 
-## Run the server directly
+```text
+xDriveSetup-amd64.exe
+```
 
-Requirements:
+The installer is per-user and does not require WinFsp. It installs:
 
-- Go 1.25+
-- PostgreSQL
+```text
+xd.exe
+xdrive-agent.exe
+```
 
-Create a database, then:
+under `%LOCALAPPDATA%\Programs\xDrive`, adds the install directory to the user PATH, and starts `xdrive-agent.exe` automatically at login.
+
+The agent is a hidden user-session process. It waits until a valid xDrive login exists, then keeps the configured CfAPI sync root mounted. This is intentionally a user-session background agent rather than a Windows service because the sync root belongs to the interactive user/Explorer session.
+
+Open a **new** PowerShell/Terminal after installation and log in:
+
+```powershell
+xd login --server https://drive.example.com --username alice --password "your-password"
+```
+
+The default sync root is:
+
+```text
+%USERPROFILE%\xDrive
+```
+
+Change it with:
+
+```powershell
+xd config --mount "D:\xDrive"
+```
+
+The background agent notices login/config changes automatically. `xd logout` removes the local credentials and causes the active background mount to stop.
+
+You can still run an explicit foreground mount for troubleshooting:
+
+```powershell
+xd mount "D:\xDrive"
+```
+
+### Windows MVP behavior
+
+- remote files appear as CfAPI placeholders;
+- opening a placeholder hydrates requested ranges from the server;
+- local new files are uploaded as whole files;
+- local modifications are written back as whole files;
+- Web/API-side changes are reconciled periodically;
+- conflict detection/merging is not implemented yet.
+
+The current Windows installer is not code-signed, so Windows SmartScreen may warn on downloaded builds until release signing is added.
+
+## Linux client
+
+Download:
+
+```text
+xdrive-client-linux-amd64.deb
+```
+
+Install on Debian/Ubuntu:
 
 ```bash
-export XD_DATABASE_URL='postgres://xdrive:xdrive@localhost:5432/xdrive?sslmode=disable'
-export XD_JWT_SECRET='replace-with-a-long-random-secret'
-export XD_STORAGE_ROOT='./data'
-go run ./cmd/server
+sudo apt install ./xdrive-client-linux-amd64.deb
 ```
 
-Useful environment variables:
+The package installs `xd`, `xdrive-agent`, and a systemd user service definition. `fuse3` is declared as a package dependency.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `XD_LISTEN_ADDR` | `:8080` | HTTP bind address |
-| `XD_DATABASE_URL` | local PostgreSQL URL | PostgreSQL DSN |
-| `XD_JWT_SECRET` | required | JWT HMAC secret |
-| `XD_JWT_TTL` | `24h` | login token lifetime |
-| `XD_STORAGE_ROOT` | `./data` | Local blob storage root |
-| `XD_ALLOWED_ORIGIN` | `http://localhost:5173` | CORS origin for standalone Web dev |
-| `XD_MAX_UPLOAD_BYTES` | `21474836480` | max whole-file upload size (20 GiB) |
-
-## Web development
+Login and mount:
 
 ```bash
-cd web
-npm install
-npm run dev
+xd login --server https://drive.example.com --username alice --password 'your-password'
+xd mount ~/xDrive
 ```
 
-Vite proxies `/api` to `http://localhost:8080` by default. Set `VITE_DEV_API` to change the development proxy target. For a separately hosted production frontend, `VITE_API_BASE` can be set at build time.
+To use the optional Linux background agent:
+
+```bash
+systemctl --user enable --now xdrive-agent
+```
+
+Change the background mount path with:
+
+```bash
+xd config --mount /path/to/xDrive
+```
 
 ## CLI
 
-Build:
-
-```bash
-go build -o xd ./cmd/xd
+```text
+xd register --server URL --username USER --password PASS
+xd login    --server URL --username USER --password PASS
+xd status
+xd config --mount PATH
+xd mount [PATH]
+xd logout
 ```
 
-Register or log in:
+`XD_PASSWORD` can be used instead of `--password`.
 
-```bash
-./xd register --server http://localhost:8080 --username alice --password 'change-me-123'
-# or
-./xd login --server http://localhost:8080 --username alice --password 'change-me-123'
-
-./xd status
-```
-
-`XD_PASSWORD` can be used instead of `--password`. The CLI stores the server URL and JWT token under the operating system's user config directory with user-only file permissions where supported.
-
-## Linux mount
-
-Linux uses [`github.com/hanwen/go-fuse/v2`](https://github.com/hanwen/go-fuse). The machine must have FUSE support available.
-
-```bash
-mkdir -p "$HOME/xdrive"
-./xd mount "$HOME/xdrive"
-```
-
-The MVP uses a whole-file write strategy:
-
-1. opening an existing file downloads it to a temporary local file;
-2. reads/writes operate on that temporary file;
-3. dirty content is uploaded as one complete object on flush/release.
-
-This is intentionally simple and will be replaced by chunk-aware I/O in a later release.
-
-## Windows Cloud Files API
-
-Windows uses the operating system's Cloud Files API (`cldapi.dll`) directly, so no WinFsp runtime is required.
-
-Build on Windows (or cross-compile):
-
-```powershell
-go build -o xd.exe ./cmd/xd
-```
-
-After login, choose an empty or dedicated local folder as the sync root:
-
-```powershell
-mkdir "$env:USERPROFILE\xDrive"
-.\xd.exe mount "$env:USERPROFILE\xDrive"
-```
-
-The current MVP behavior is:
-
-- remote directories are represented as local directories;
-- remote files are represented by CfAPI placeholders carrying the server node ID;
-- opening a placeholder triggers `CF_CALLBACK_TYPE_FETCH_DATA`, and xDrive hydrates the requested byte ranges from the server;
-- local file additions are uploaded as complete files;
-- local modifications are detected and written back as complete files;
-- Web/API-side changes are reconciled into the sync root periodically;
-- the provider does **not** perform conflict detection or merging. Concurrent edits are outside the MVP scope.
-
-CfAPI support is intentionally isolated in `internal/mount/*_windows.go`, so future Windows work can add richer Explorer registration, pin/dehydrate controls, background startup and a GUI without changing the server protocol.
+The client config is stored under the operating system's user config directory. The access token is user-local configuration; use HTTPS when connecting over an untrusted network.
 
 ## HTTP API
 
-All authenticated endpoints use:
+Authenticated endpoints use:
 
 ```text
 Authorization: Bearer <jwt>
@@ -219,78 +229,92 @@ GET    /api/v1/files/:id/content
 PUT    /api/v1/files/:id/content
 ```
 
-Downloads use Go's `http.ServeContent`, so HTTP range requests are supported. This is also used by the Windows hydration path.
+Downloads support HTTP Range requests, which are also used by the Windows hydration path.
 
-## Tests
+## CI, snapshots, and releases
 
-Run the local test suite:
+Every push runs cross-platform CI. The test matrix covers:
 
-```bash
-go test ./...
-```
+- Linux Go tests with the race detector;
+- PostgreSQL-backed API CRUD and multi-user isolation;
+- Linux FUSE build;
+- Windows CfAPI tests/build;
+- Windows Inno Setup installer build;
+- Linux `.deb` installer build;
+- React type-check/build;
+- server/Web Docker builds;
+- Docker Compose validation.
 
-The API integration test requires PostgreSQL and runs when `XD_TEST_DATABASE_URL` is set:
+Every push to `master` also produces a snapshot bundle and publishes `edge` server images to GHCR.
 
-```bash
-export XD_TEST_DATABASE_URL='postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable'
-go test ./internal/api
-```
-
-CI additionally:
-
-- runs the Go suite with the race detector on Linux;
-- exercises PostgreSQL-backed API CRUD and multi-user isolation;
-- builds the server and CLI on Linux;
-- compiles/tests the Windows CfAPI code on a Windows runner;
-- type-checks and builds the React Web UI.
-
-The Windows CI validates API bindings, struct layouts and compilation. A real Explorer hydration/write-back smoke test still requires an interactive Windows machine and is therefore a release/manual test rather than a hosted-CI claim.
-
-## Build artifacts and releases
-
-GitHub Actions builds release packages automatically:
-
-- every push to `master` produces a downloadable snapshot artifact;
-- pushing a version tag such as `v0.1.0` builds the same packages and creates a GitHub Release automatically;
-- the release contains Linux amd64 server/CLI, Windows amd64 CfAPI CLI, the built Web frontend, and `SHA256SUMS.txt`.
-
-Create a formal release with:
+A `v*` tag creates a GitHub Release and publishes versioned server images plus `latest`:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The generated assets are:
+Release assets are client/deployment deliverables rather than raw application archives:
 
 ```text
-xdrive-linux-amd64.tar.gz
-xdrive-windows-amd64.zip
-xdrive-web.tar.gz
+xDriveSetup-amd64.exe
+xdrive-client-linux-amd64.deb
+xdrive-server-install.sh
+docker-compose.yml
+xdrive.env.example
 SHA256SUMS.txt
+```
+
+## Repository layout
+
+```text
+cmd/
+  server/                 HTTP server
+  xd/                     CLI
+  xdrive-agent/           background client agent
+internal/
+  api/                    Gin routes + handlers
+  auth/                   password hashing + JWT
+  client/                 REST client
+  config/                 server environment config
+  meta/                   GORM models + filename validation
+  mount/                  Linux FUSE + Windows CfAPI
+  storage/                Local storage backend
+  userconfig/             per-user client configuration
+web/                       React Web UI
+packaging/
+  windows/                 Inno Setup definition
+  linux/                   systemd user service
+scripts/
+  build-linux-deb.sh
+  build-windows-installer.ps1
+deploy/
+  docker-compose.yml
+  install-server.sh
+.github/workflows/
+  ci.yml
+  release.yml
 ```
 
 ## Security and MVP limitations
 
-- Use HTTPS in production. JWTs are bearer credentials.
-- Use a long random `XD_JWT_SECRET` and rotate it through your deployment secret manager.
-- xDrive validates names against a Windows-compatible filename subset so the same namespace can be represented on Linux and Windows.
+- Use HTTPS in production; JWTs are bearer credentials.
+- Use the generated long `XD_JWT_SECRET` and keep `~/.xd/.env` private.
+- The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.
 - File operations are owner-scoped at the metadata layer.
-- Deleting a directory recursively deletes its metadata subtree and associated blobs.
-- No quota, antivirus scanning, version history, sharing, audit log or conflict resolution is implemented yet.
+- There is no quota, antivirus scanning, version history, sharing, audit log, or edit-conflict handling yet.
 
 ## Roadmap
 
-After this MVP is stable, likely next steps are:
-
 1. resumable/chunked upload and content hashing;
 2. instant upload/deduplication;
-3. small-file packing;
-4. richer Windows CfAPI integration and offline pinning;
-5. macOS File Provider integration;
-6. thumbnails/EXIF and media processing;
-7. sharing and version/conflict semantics.
+3. Windows tray UI and code-signed installer;
+4. richer CfAPI pin/dehydrate/offline controls;
+5. small-file packing;
+6. macOS File Provider integration;
+7. thumbnails/EXIF/media processing;
+8. sharing and version/conflict semantics.
 
 ## License
 

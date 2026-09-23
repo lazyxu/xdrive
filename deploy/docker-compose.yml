@@ -1,9 +1,11 @@
+name: xdrive
+
 services:
   postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: xdrive
-      POSTGRES_PASSWORD: xdrive
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in ~/.xd/.env}
       POSTGRES_DB: xdrive
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -15,13 +17,11 @@ services:
     restart: unless-stopped
 
   server:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
     environment:
       XD_LISTEN_ADDR: :8080
-      XD_DATABASE_URL: postgres://xdrive:xdrive@postgres:5432/xdrive?sslmode=disable
-      XD_JWT_SECRET: ${XD_JWT_SECRET:-change-this-before-production}
+      XD_DATABASE_URL: postgres://xdrive:${POSTGRES_PASSWORD}@postgres:5432/xdrive?sslmode=disable
+      XD_JWT_SECRET: ${XD_JWT_SECRET:?set XD_JWT_SECRET in ~/.xd/.env}
       XD_STORAGE_ROOT: /data
       XD_ALLOWED_ORIGIN: ${XD_ALLOWED_ORIGIN:-http://localhost:3000}
       XD_MAX_UPLOAD_BYTES: ${XD_MAX_UPLOAD_BYTES:-21474836480}
@@ -33,10 +33,9 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: ../web
+    image: ${XD_WEB_IMAGE:-ghcr.io/lazyxu/xdrive-web:latest}
     ports:
-      - "${XD_WEB_PORT:-3000}:80"
+      - "${XD_WEB_BIND:-0.0.0.0}:${XD_WEB_PORT:-3000}:80"
     depends_on:
       - server
     restart: unless-stopped

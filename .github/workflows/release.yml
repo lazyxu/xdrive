@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  linux-amd64:
+  client-linux-amd64:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,7 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - name: Build Linux package
+      - name: Build Linux client installer
         shell: bash
         run: |
           set -euo pipefail
@@ -27,20 +27,15 @@ jobs:
           else
             version="snapshot-${GITHUB_SHA::7}"
           fi
-          mkdir -p package/xdrive-linux-amd64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o package/xdrive-linux-amd64/xd ./cmd/xd
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o package/xdrive-linux-amd64/xdrive-server ./cmd/server
-          cp README.md LICENSE package/xdrive-linux-amd64/
-          printf '%s\n' "$version" > package/xdrive-linux-amd64/VERSION
-          tar -C package -czf xdrive-linux-amd64.tar.gz xdrive-linux-amd64
+          bash scripts/build-linux-deb.sh "$version" release
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-amd64
-          path: xdrive-linux-amd64.tar.gz
+          name: client-linux-amd64
+          path: release/xdrive-client-linux-amd64.deb
           if-no-files-found: error
           retention-days: 14
 
-  windows-amd64:
+  client-windows-amd64:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,70 +44,106 @@ jobs:
           go-version: "1.25.x"
           cache: true
       - name: Test Windows CfAPI packages
-        run: go test ./internal/mount ./internal/client ./internal/meta ./internal/storage ./internal/auth
-      - name: Build Windows package
+        run: go test ./internal/...
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows client installer
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
           if ($env:GITHUB_REF_TYPE -eq "tag") {
             $version = $env:GITHUB_REF_NAME
           } else {
             $version = "snapshot-" + $env:GITHUB_SHA.Substring(0, 7)
           }
-          New-Item -ItemType Directory -Force "package/xdrive-windows-amd64" | Out-Null
-          $env:CGO_ENABLED = "0"
-          $env:GOOS = "windows"
-          $env:GOARCH = "amd64"
-          go build -trimpath -ldflags="-s -w" -o package/xdrive-windows-amd64/xd.exe ./cmd/xd
-          Copy-Item README.md, LICENSE package/xdrive-windows-amd64/
-          Set-Content -NoNewline package/xdrive-windows-amd64/VERSION $version
-          Compress-Archive -Path package/xdrive-windows-amd64 -DestinationPath xdrive-windows-amd64.zip -Force
+          ./scripts/build-windows-installer.ps1 -Version $version -OutputDir release
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-amd64
-          path: xdrive-windows-amd64.zip
+          name: client-windows-amd64
+          path: release/xDriveSetup-amd64.exe
           if-no-files-found: error
           retention-days: 14
 
-  web:
+  server-images:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: xdrive-server
+            context: .
+            dockerfile: ./Dockerfile
+          - image: xdrive-web
+            context: ./web
+            dockerfile: ./web/Dockerfile
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run build
-      - name: Build Web package
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image tags
+        id: meta
         shell: bash
         run: |
           set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ matrix.image }}"
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="$GITHUB_REF_NAME"
+            tags="$image:$GITHUB_REF_NAME"$'\n'"$image:latest"
           else
             version="snapshot-${GITHUB_SHA::7}"
+            tags="$image:edge"$'\n'"$image:sha-${GITHUB_SHA::7}"
           fi
-          mkdir -p package/xdrive-web
-          cp -R dist package/xdrive-web/dist
-          cp nginx.conf package/xdrive-web/
-          cp ../README.md ../LICENSE package/xdrive-web/
-          printf '%s\n' "$version" > package/xdrive-web/VERSION
-          tar -C package -czf ../xdrive-web.tar.gz xdrive-web
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$tags" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+
+  server-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server deployment assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            source_ref="$GITHUB_REF_NAME"
+            image_tag="$GITHUB_REF_NAME"
+          else
+            source_ref="$GITHUB_SHA"
+            image_tag="edge"
+          fi
+          sed -e "s|@SOURCE_REF@|$source_ref|g" -e "s|@IMAGE_TAG@|$image_tag|g" \
+            deploy/install-server.sh > release/xdrive-server-install.sh
+          chmod +x release/xdrive-server-install.sh
+          cp deploy/docker-compose.yml release/docker-compose.yml
+          cp deploy/.env.example release/xdrive.env.example
       - uses: actions/upload-artifact@v4
         with:
-          name: web
-          path: xdrive-web.tar.gz
+          name: server-deploy
+          path: release/*
           if-no-files-found: error
           retention-days: 14
 
   bundle:
-    needs: [linux-amd64, windows-amd64, web]
+    needs: [client-linux-amd64, client-windows-amd64, server-images, server-deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -126,7 +157,12 @@ jobs:
         run: |
           set -euo pipefail
           cd release
-          sha256sum xdrive-linux-amd64.tar.gz xdrive-windows-amd64.zip xdrive-web.tar.gz > SHA256SUMS.txt
+          sha256sum \
+            xdrive-client-linux-amd64.deb \
+            xDriveSetup-amd64.exe \
+            xdrive-server-install.sh \
+            docker-compose.yml \
+            xdrive.env.example > SHA256SUMS.txt
       - name: Upload combined snapshot
         uses: actions/upload-artifact@v4
         with:

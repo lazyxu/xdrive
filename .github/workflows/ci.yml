@@ -42,11 +42,20 @@ jobs:
           test -z "$files" || (echo "$files" && exit 1)
       - run: go test -race ./...
       - run: go vet ./...
-      - run: go build ./cmd/server ./cmd/xd
-      - name: Validate server image and Compose
+      - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent
+      - name: Build Linux client installer
+        run: bash scripts/build-linux-deb.sh 0.0.0+ci dist
+      - name: Validate server deployment files
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          XD_JWT_SECRET: ci-jwt-secret-that-is-long-enough
+          XD_SERVER_IMAGE: ghcr.io/lazyxu/xdrive-server:edge
+          XD_WEB_IMAGE: ghcr.io/lazyxu/xdrive-web:edge
         run: |
-          docker build -t xdrive/server:test .
+          bash -n deploy/install-server.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
+      - name: Validate server image
+        run: docker build -t xdrive/server:test .
 
   go-windows:
     runs-on: windows-latest
@@ -58,8 +67,18 @@ jobs:
           cache: true
       - run: go mod tidy
       - run: git diff --exit-code -- go.mod go.sum
-      - run: go test ./internal/mount ./internal/client ./internal/meta ./internal/storage ./internal/auth
+      - run: go test ./internal/...
       - run: go build -o xd.exe ./cmd/xd
+      - run: go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows client installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist
+      - name: Verify Windows installer
+        shell: pwsh
+        run: if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
 
   web:
     runs-on: ubuntu-latest
