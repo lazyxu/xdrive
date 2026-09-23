@@ -91,9 +91,9 @@ fi
 fetch() {
   local url="$1" destination="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$destination.tmp"
+    curl -fL --progress-bar "$url" -o "$destination.tmp"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$destination.tmp" "$url"
+    wget --progress=bar:force:noscroll -O "$destination.tmp" "$url"
   else
     echo "xDrive server installer: curl or wget is required." >&2
     exit 1
