@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for xDrive client updates
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+RandomizedDelaySec=30min
+Persistent=true
+Unit=xdrive-update.service
+
+[Install]
+WantedBy=timers.target

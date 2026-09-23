@@ -1,0 +1,9 @@
+[Unit]
+Description=xDrive client automatic updater
+Documentation=https://github.com/lazyxu/xdrive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/xdrive-updater

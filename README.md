@@ -48,11 +48,33 @@ The supported server deployment is Docker Compose. The installer uses these defa
 ~/.xd/.env
 ```
 
-### Install from `master` / edge images
+### Prerequisites
+
+Before running the one-line installer, the server needs:
+
+- Linux amd64;
+- Docker Engine with Docker Compose v2 (`docker compose`);
+- `curl` or `wget`;
+- outbound HTTPS access to GitHub/GHCR and Docker Hub;
+- enough disk space for PostgreSQL plus uploaded file blobs;
+- an inbound port for the Web UI (default TCP 3000), or an HTTPS reverse proxy on 80/443.
+
+No PostgreSQL installation is required on the host; Compose runs PostgreSQL for xDrive.
+
+### One-line install from `master` / edge images
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
 ```
+
+Optional values can be supplied on the same command, for example:
+
+```bash
+XD_WEB_PORT=8088 XD_WEB_BIND=0.0.0.0 \
+  curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
+```
+
+For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag.
 
 The installer:
 
@@ -97,7 +119,7 @@ ghcr.io/lazyxu/xdrive-server
 ghcr.io/lazyxu/xdrive-web
 ```
 
-GitHub Container Registry packages are private when first created unless their visibility is changed. For public xDrive distribution, make both packages **Public** once in GitHub package settings. After that, server machines can pull them anonymously.
+The installer pulls these images anonymously. If a server gets `denied` from GHCR, verify that both container packages allow public/read access, or authenticate that server first with `docker login ghcr.io`.
 
 ## Windows client
 
@@ -144,14 +166,18 @@ You can still run an explicit foreground mount for troubleshooting:
 xd mount "D:\xDrive"
 ```
 
-### Windows MVP behavior
+### Windows synchronization behavior
 
-- remote files appear as CfAPI placeholders;
-- opening a placeholder hydrates requested ranges from the server;
-- local new files are uploaded as whole files;
-- local modifications are written back as whole files;
-- Web/API-side changes are reconciled periodically;
-- conflict detection/merging is not implemented yet.
+Windows uses a **hybrid online-on-demand + bidirectional metadata/content sync** model:
+
+- remote files first appear as CfAPI online placeholders, so their full contents are not downloaded up front;
+- opening a placeholder hydrates the byte ranges Windows requests from the server;
+- once hydrated, the content currently remains cached locally; xDrive does not yet automatically dehydrate old files;
+- local new files/directories are created on the server;
+- local file modifications are uploaded as complete files;
+- local deletions are propagated to the server;
+- Web/API-side creates, changes and deletes are reconciled back into the sync root roughly every 3 seconds;
+- conflict detection/merging is not implemented yet, so concurrent edits use MVP last-writer-style behavior.
 
 The current Windows installer is not code-signed, so Windows SmartScreen may warn on downloaded builds until release signing is added.
 
@@ -190,6 +216,30 @@ Change the background mount path with:
 xd config --mount /path/to/xDrive
 ```
 
+Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folder**. It presents the remote tree as a mounted filesystem. Opening an existing file downloads it into a temporary local cache; reads/writes operate there, and dirty content is uploaded as one complete file on flush/release. It does not proactively download the entire drive.
+
+## Client version checks and automatic updates
+
+Automatic updates only follow stable GitHub Releases tagged `vMAJOR.MINOR.PATCH`. Snapshot builds from `master` deliberately do not auto-update.
+
+Before an update is installed, the client downloads the Release `SHA256SUMS.txt` and verifies the installer/package checksum.
+
+**Windows:** the background agent checks after startup and then about every 6 hours. When a newer stable release exists it downloads `xDriveSetup-amd64.exe`, verifies it, launches the installer silently, exits, and the updated installer starts the agent again.
+
+**Linux:** the `.deb` installs `xdrive-update.timer` as a root-level systemd timer. It checks about every 6 hours and installs a newer verified `xdrive-client-linux-amd64.deb` through `apt-get`. The optional user-level mount agent is separate from this updater.
+
+Useful commands:
+
+```text
+xd version
+xd update
+xd update --install
+```
+
+`xd update` only checks. On Windows, `--install` launches the verified installer. On Linux, normal automatic installation is handled by the root timer; a manual root update can be run with `sudo xdrive-updater`.
+
+Set `XD_DISABLE_AUTO_UPDATE=1` to disable the Windows agent's automatic update checks.
+
 ## CLI
 
 ```text
@@ -198,6 +248,8 @@ xd login    --server URL --username USER --password PASS
 xd status
 xd config --mount PATH
 xd mount [PATH]
+xd version
+xd update [--install]
 xd logout
 ```
 
@@ -272,6 +324,7 @@ cmd/
   server/                 HTTP server
   xd/                     CLI
   xdrive-agent/           background client agent
+  xdrive-updater/         stable-release updater
 internal/
   api/                    Gin routes + handlers
   auth/                   password hashing + JWT
@@ -281,10 +334,12 @@ internal/
   mount/                  Linux FUSE + Windows CfAPI
   storage/                Local storage backend
   userconfig/             per-user client configuration
+  update/                 release check/download/checksum/update logic
+  version/                build-time client version
 web/                       React Web UI
 packaging/
   windows/                 Inno Setup definition
-  linux/                   systemd user service
+  linux/                   systemd user mount service + root update timer
 scripts/
   build-linux-deb.sh
   build-windows-installer.ps1

@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+
 jobs:
   client-linux-amd64:
     runs-on: ubuntu-latest

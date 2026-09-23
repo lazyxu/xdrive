@@ -15,10 +15,12 @@ try {
     $env:CGO_ENABLED = "0"
     $env:GOOS = "windows"
     $env:GOARCH = "amd64"
-    go build -trimpath -ldflags="-s -w" -o (Join-Path $Source "xd.exe") ./cmd/xd
+    $VersionFlag = "-X github.com/lazyxu/xdrive/internal/version.Version=$Version"
+
+    go build -trimpath -ldflags="-s -w $VersionFlag" -o (Join-Path $Source "xd.exe") ./cmd/xd
     if ($LASTEXITCODE -ne 0) { throw "building xd.exe failed" }
 
-    go build -trimpath -ldflags="-s -w -H=windowsgui" -o (Join-Path $Source "xdrive-agent.exe") ./cmd/xdrive-agent
+    go build -trimpath -ldflags="-s -w -H=windowsgui $VersionFlag" -o (Join-Path $Source "xdrive-agent.exe") ./cmd/xdrive-agent
     if ($LASTEXITCODE -ne 0) { throw "building xdrive-agent.exe failed" }
 
     Copy-Item README.md, LICENSE $Source

@@ -11,7 +11,9 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/mount"
+	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 func main() {
@@ -35,6 +37,10 @@ func main() {
 		err = configCmd(os.Args[2:])
 	case "cleanup":
 		err = cleanupCmd()
+	case "version":
+		fmt.Println(version.String())
+	case "update":
+		err = updateCmd(os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -54,6 +60,8 @@ Usage:
   xd status
   xd config --mount PATH
   xd mount [PATH]
+  xd version
+  xd update [--install]
   xd logout
 
 When PATH is omitted, xd uses the configured mount path or ~/xDrive.
@@ -136,7 +144,7 @@ func status() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("server: %s\nuser: %s\nmount: %s\nroot items: %d\n", cfg.Server, cfg.Username, mountPath, len(children))
+	fmt.Printf("server: %s\nuser: %s\nmount: %s\nroot items: %d\nclient version: %s\n", cfg.Server, cfg.Username, mountPath, len(children), version.String())
 	return nil
 }
 
@@ -206,4 +214,39 @@ func cleanupCmd() error {
 		return err
 	}
 	return mount.Cleanup(root)
+}
+
+func updateCmd(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	install := fs.Bool("install", false, "install the available update now")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	current := version.String()
+	if !xupdate.IsReleaseVersion(current) {
+		fmt.Printf("client version: %s\n", current)
+		fmt.Println("automatic update is disabled for development/snapshot builds; install a tagged release first")
+		return nil
+	}
+	result, err := xupdate.CheckLatest(context.Background(), current)
+	if err != nil {
+		return err
+	}
+	if !result.UpdateAvailable {
+		fmt.Printf("xDrive %s is up to date\n", current)
+		return nil
+	}
+	fmt.Printf("update available: %s -> %s\n", current, result.Latest)
+	if !*install {
+		fmt.Println("automatic background update will install it, or run: xd update --install")
+		return nil
+	}
+	started, installed, err := xupdate.InstallLatest(context.Background(), current)
+	if err != nil {
+		return err
+	}
+	if started {
+		fmt.Printf("verified %s; installer started\n", installed.Latest)
+	}
+	return nil
 }

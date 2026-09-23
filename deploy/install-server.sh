@@ -23,6 +23,14 @@ need() {
   }
 }
 
+case "$(uname -m)" in
+  x86_64|amd64) ;;
+  *)
+    echo "xDrive server installer: current published images support Linux amd64 only." >&2
+    exit 1
+    ;;
+esac
+
 need docker
 if ! docker compose version >/dev/null 2>&1; then
   echo "xDrive server installer: Docker Compose v2 is required (docker compose)." >&2
@@ -78,12 +86,12 @@ set_env() {
 
 touch "$ENV_PATH"
 chmod 600 "$ENV_PATH"
-ensure_env POSTGRES_PASSWORD "$(random_hex 24)"
-ensure_env XD_JWT_SECRET "$(random_hex 48)"
-ensure_env XD_WEB_BIND "0.0.0.0"
-ensure_env XD_WEB_PORT "3000"
-ensure_env XD_ALLOWED_ORIGIN "http://localhost:3000"
-ensure_env XD_MAX_UPLOAD_BYTES "21474836480"
+ensure_env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-$(random_hex 24)}"
+ensure_env XD_JWT_SECRET "${XD_JWT_SECRET:-$(random_hex 48)}"
+ensure_env XD_WEB_BIND "${XD_WEB_BIND:-0.0.0.0}"
+ensure_env XD_WEB_PORT "${XD_WEB_PORT:-3000}"
+ensure_env XD_ALLOWED_ORIGIN "${XD_ALLOWED_ORIGIN:-http://localhost:3000}"
+ensure_env XD_MAX_UPLOAD_BYTES "${XD_MAX_UPLOAD_BYTES:-21474836480}"
 set_env XD_SERVER_IMAGE "ghcr.io/lazyxu/xdrive-server:$IMAGE_TAG"
 set_env XD_WEB_IMAGE "ghcr.io/lazyxu/xdrive-web:$IMAGE_TAG"
 

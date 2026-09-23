@@ -7,7 +7,7 @@ fmt:
 	gofmt -w ./cmd ./internal
 
 build:
-	go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent
+	go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
 
 build-linux-client:
 	bash scripts/build-linux-deb.sh 0.0.0+dev dist

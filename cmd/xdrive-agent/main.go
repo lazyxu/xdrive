@@ -13,6 +13,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/userconfig"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 type desiredMount struct {
@@ -37,10 +38,11 @@ func main() {
 		defer logFile.Close()
 	}
 	log.SetPrefix("xdrive-agent: ")
-	log.Printf("starting")
+	log.Printf("starting version %s", version.String())
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	updateReady := startAutoUpdate(ctx)
 
 	var (
 		running       bool
@@ -66,6 +68,16 @@ func main() {
 	stop := func() {
 		if mountCancel != nil {
 			mountCancel()
+		}
+	}
+
+	waitStopped := func() {
+		if !running || mountDone == nil {
+			return
+		}
+		select {
+		case <-mountDone:
+		case <-time.After(5 * time.Second):
 		}
 	}
 
@@ -101,12 +113,12 @@ func main() {
 		select {
 		case <-ctx.Done():
 			stop()
-			if running {
-				select {
-				case <-mountDone:
-				case <-time.After(5 * time.Second):
-				}
-			}
+			waitStopped()
+			return
+		case <-updateReady:
+			log.Printf("verified update installer started; stopping agent for upgrade")
+			stop()
+			waitStopped()
 			return
 		case err := <-mountDone:
 			if err != nil && !errors.Is(err, context.Canceled) {

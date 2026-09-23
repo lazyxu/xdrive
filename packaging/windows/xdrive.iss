@@ -48,7 +48,7 @@ Name: "{group}\xDrive README"; Filename: "{app}\README.md"
 Name: "{group}\Uninstall xDrive"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\xdrive-agent.exe"; Description: "Start xDrive background agent"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\xdrive-agent.exe"; Description: "Start xDrive background agent"; Flags: nowait runhidden; Check: ShouldStartAgent
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-agent.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveAgent"
@@ -63,6 +63,19 @@ begin
   Haystack := ';' + Uppercase(CurrentPath) + ';';
   Needle := ';' + Uppercase(Entry) + ';';
   Result := Pos(Needle, Haystack) > 0;
+end;
+
+function ShouldStartAgent(): Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do begin
+    if CompareText(ParamStr(I), '/NOSTARTAGENT') = 0 then begin
+      Result := False;
+      exit;
+    end;
+  end;
 end;
 
 procedure AddAppToPath;
