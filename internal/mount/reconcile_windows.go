@@ -16,10 +16,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 )
 
-const (
-	winSuppressDuration = 5 * time.Second
-	winHydrationGrace   = 1 * time.Second
-)
+const winHydrationGrace = 1 * time.Second
 
 var errWindowsHydrationSettling = errors.New("Windows placeholder hydration is still settling")
 
@@ -37,9 +34,7 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 
 	pathSet := make(map[string]struct{}, len(changes.Paths)+len(changes.Renames)*2)
 	for _, path := range changes.Paths {
-		if !p.pathSuppressed(path) {
-			pathSet[path] = struct{}{}
-		}
+		pathSet[path] = struct{}{}
 	}
 
 	sort.Slice(changes.Renames, func(i, j int) bool {
@@ -50,9 +45,6 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 		return di < dj
 	})
 	for _, rename := range changes.Renames {
-		if p.pathSuppressed(rename.OldPath) || p.pathSuppressed(rename.NewPath) {
-			continue
-		}
 		handled, err := p.applyLocalRename(ctx, rename, baseline)
 		if err != nil {
 			return err
@@ -72,9 +64,6 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 	processedSubtrees := make([]string, 0)
 	for _, rel := range paths {
 		if underAny(rel, processedSubtrees) {
-			continue
-		}
-		if p.pathSuppressed(rel) {
 			continue
 		}
 		abs := filepath.Join(p.root, filepath.FromSlash(rel))
@@ -101,9 +90,6 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 
 	deletions := make([]string, 0)
 	for rel := range pathSet {
-		if p.pathSuppressed(rel) {
-			continue
-		}
 		if _, err := os.Lstat(filepath.Join(p.root, filepath.FromSlash(rel))); errors.Is(err, os.ErrNotExist) {
 			if _, exists := baseline[rel]; exists {
 				deletions = append(deletions, rel)
@@ -202,12 +188,6 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 		}
 		childRel = filepath.ToSlash(childRel)
 		if _, exists := baseline[childRel]; exists {
-			return nil
-		}
-		if p.pathSuppressed(childRel) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		if err := p.ensureRemoteParent(ctx, childRel, baseline); err != nil {
@@ -319,7 +299,6 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 	if !ok {
 		return fmt.Errorf("conflict source node %d disappeared", base.node.ID)
 	}
-	p.suppressPath(rel)
 	_ = os.Remove(absPath)
 	if err := cfCreatePlaceholder(filepath.Dir(absPath), filepath.Base(absPath), current.ID, current.Size, current.UpdatedAt.UnixNano(), false); err != nil {
 		return err
@@ -379,8 +358,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 
 		base, exists = baseline[rel]
 		if !exists {
-			p.suppressPath(rel)
-			if rn.Type == "dir" {
+					if rn.Type == "dir" {
 				if err := os.MkdirAll(abs, 0o755); err != nil {
 					return err
 				}
@@ -399,8 +377,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		}
 
 		if !localExists {
-			p.suppressPath(rel)
-			if rn.Type == "dir" {
+					if rn.Type == "dir" {
 				if err := os.MkdirAll(abs, 0o755); err != nil {
 					return err
 				}
@@ -419,8 +396,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		}
 
 		if rn.Type == "file" && rn.Revision != base.node.Revision {
-			p.suppressPath(rel)
-			_ = os.Remove(abs)
+					_ = os.Remove(abs)
 			if err := cfCreatePlaceholder(filepath.Dir(abs), filepath.Base(abs), rn.ID, rn.Size, rn.UpdatedAt.UnixNano(), false); err != nil {
 				return err
 			}
@@ -440,8 +416,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		if _, ok := remote[rel]; ok {
 			continue
 		}
-		p.suppressPath(rel)
-		_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
+			_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
 		deletePrefix(baseline, rel)
 	}
 	p.pruneTransientState()
@@ -454,43 +429,12 @@ func (p *winProvider) storeBaseline(baseline map[string]winState) {
 	p.mu.Unlock()
 }
 
-func (p *winProvider) suppressPath(rel string) {
-	rel, ok := normalizeWindowsChangePath(rel)
-	if !ok {
-		return
-	}
-	p.mu.Lock()
-	p.suppressed[rel] = time.Now().Add(winSuppressDuration)
-	p.mu.Unlock()
-}
-
-func (p *winProvider) pathSuppressed(rel string) bool {
-	now := time.Now()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for path, until := range p.suppressed {
-		if now.After(until) {
-			delete(p.suppressed, path)
-			continue
-		}
-		if rel == path {
-			return true
-		}
-	}
-	return false
-}
-
 func (p *winProvider) pruneTransientState() {
 	now := time.Now()
 	p.mu.Lock()
 	for id, t := range p.hydrated {
 		if now.Sub(t) > 30*time.Second {
 			delete(p.hydrated, id)
-		}
-	}
-	for path, until := range p.suppressed {
-		if now.After(until) {
-			delete(p.suppressed, path)
 		}
 	}
 	p.mu.Unlock()
