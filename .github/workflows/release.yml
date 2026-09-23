@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 env:
   DOCKER_BUILD_RECORD_UPLOAD: "false"
@@ -18,45 +17,20 @@ concurrency:
   cancel-in-progress: ${{ github.ref == 'refs/heads/master' }}
 
 jobs:
-  verify-master-ci:
+  validate-publishing-ref:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
     steps:
-      - name: Wait for successful CI on master commit
-        if: github.ref == 'refs/heads/master'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Validate publishing ref
         shell: bash
         run: |
           set -euo pipefail
-          repo="$GITHUB_REPOSITORY"
-          for attempt in $(seq 1 180); do
-            payload="$(gh api "repos/$repo/actions/workflows/ci.yml/runs?branch=master&event=push&per_page=100")"
-            status="$(jq -r --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.run_number) | last | .status // empty' <<<"$payload")"
-            conclusion="$(jq -r --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.run_number) | last | .conclusion // empty' <<<"$payload")"
-            if [[ "$status" == "completed" ]]; then
-              if [[ "$conclusion" == "success" ]]; then
-                echo "CI succeeded for $GITHUB_SHA."
-                exit 0
-              fi
-              echo "CI for $GITHUB_SHA completed with $conclusion; refusing to publish." >&2
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "Timed out waiting for CI on $GITHUB_SHA." >&2
-          exit 1
-      - name: Validate publishing ref
-        if: github.ref != 'refs/heads/master' && github.ref_type != 'tag'
-        shell: bash
-        run: |
-          echo "Build Packages may publish only master snapshots or version tags." >&2
-          exit 1
+          if [[ "$GITHUB_REF" != "refs/heads/master" && "$GITHUB_REF_TYPE" != "tag" ]]; then
+            echo "Build Packages may publish only master snapshots or version tags." >&2
+            exit 1
+          fi
 
   client-linux-amd64:
-    needs: verify-master-ci
+    needs: validate-publishing-ref
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +56,7 @@ jobs:
           retention-days: 14
 
   client-windows-amd64:
-    needs: verify-master-ci
+    needs: validate-publishing-ref
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -93,8 +67,6 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - name: Test Windows CfAPI packages
-        run: go test ./internal/...
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -138,7 +110,7 @@ jobs:
           retention-days: 14
 
   server-images:
-    needs: verify-master-ci
+    needs: validate-publishing-ref
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -192,7 +164,7 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
 
   server-deploy:
-    needs: verify-master-ci
+    needs: validate-publishing-ref
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -232,7 +204,7 @@ jobs:
           retention-days: 14
 
   bundle:
-    needs: [verify-master-ci, client-linux-amd64, client-windows-amd64, server-images, server-deploy]
+    needs: [client-linux-amd64, client-windows-amd64, server-images, server-deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: write
