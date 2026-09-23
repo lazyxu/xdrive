@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ const (
 	winWatchWaitMillis   = 250
 	winLocalDebounce     = 250 * time.Millisecond
 	winLocalMaxBatchWait = 2 * time.Second
+	winWatchRetry        = 2 * time.Second
 	winRemotePoll        = 60 * time.Second
 	winFullAudit         = 15 * time.Minute
 )
@@ -39,23 +41,15 @@ type winChangeSet struct {
 	Overflow bool
 }
 
-func watchWindowsChanges(ctx context.Context, root string) (<-chan winLocalChange, <-chan error) {
-	changes := make(chan winLocalChange, 4096)
-	errs := make(chan error, 1)
-	go func() {
-		defer close(changes)
-		defer close(errs)
-		if err := runWindowsWatcher(ctx, root, changes); err != nil && !errors.Is(err, context.Canceled) {
-			errs <- err
-		}
-	}()
-	return changes, errs
+type windowsDirectoryWatcher struct {
+	handle windows.Handle
+	event  windows.Handle
 }
 
-func runWindowsWatcher(ctx context.Context, root string, out chan<- winLocalChange) error {
+func openWindowsDirectoryWatcher(root string) (*windowsDirectoryWatcher, error) {
 	rootW, err := windows.UTF16PtrFromString(root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	handle, err := windows.CreateFile(
 		rootW,
@@ -67,16 +61,52 @@ func runWindowsWatcher(ctx context.Context, root string, out chan<- winLocalChan
 		0,
 	)
 	if err != nil {
-		return fmt.Errorf("open sync root watcher: %w", err)
+		return nil, fmt.Errorf("open sync root watcher: %w", err)
 	}
-	defer windows.CloseHandle(handle)
-
 	event, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
-		return fmt.Errorf("create sync watcher event: %w", err)
+		_ = windows.CloseHandle(handle)
+		return nil, fmt.Errorf("create sync watcher event: %w", err)
 	}
-	defer windows.CloseHandle(event)
+	return &windowsDirectoryWatcher{handle: handle, event: event}, nil
+}
 
+func (w *windowsDirectoryWatcher) close() {
+	if w == nil {
+		return
+	}
+	if w.handle != 0 {
+		_ = windows.CloseHandle(w.handle)
+		w.handle = 0
+	}
+	if w.event != 0 {
+		_ = windows.CloseHandle(w.event)
+		w.event = 0
+	}
+}
+
+func watchWindowsChanges(ctx context.Context, root string) (<-chan winLocalChange, <-chan error) {
+	changes := make(chan winLocalChange, 4096)
+	errs := make(chan error, 1)
+	watcher, err := openWindowsDirectoryWatcher(root)
+	if err != nil {
+		errs <- err
+		close(changes)
+		close(errs)
+		return changes, errs
+	}
+	go func() {
+		defer close(changes)
+		defer close(errs)
+		defer watcher.close()
+		if err := watcher.run(ctx, changes); err != nil && !errors.Is(err, context.Canceled) {
+			errs <- err
+		}
+	}()
+	return changes, errs
+}
+
+func (w *windowsDirectoryWatcher) run(ctx context.Context, out chan<- winLocalChange) error {
 	mask := uint32(
 		windows.FILE_NOTIFY_CHANGE_FILE_NAME |
 			windows.FILE_NOTIFY_CHANGE_DIR_NAME |
@@ -89,10 +119,10 @@ func runWindowsWatcher(ctx context.Context, root string, out chan<- winLocalChan
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		overlapped := windows.Overlapped{HEvent: event}
+		overlapped := windows.Overlapped{HEvent: w.event}
 		var ignored uint32
 		err := windows.ReadDirectoryChanges(
-			handle,
+			w.handle,
 			&buffer[0],
 			uint32(len(buffer)),
 			true,
@@ -107,38 +137,46 @@ func runWindowsWatcher(ctx context.Context, root string, out chan<- winLocalChan
 
 		for {
 			if err := ctx.Err(); err != nil {
-				_ = windows.CancelIoEx(handle, &overlapped)
+				_ = windows.CancelIoEx(w.handle, &overlapped)
 				return err
 			}
-			status, waitErr := windows.WaitForSingleObject(event, winWatchWaitMillis)
+			status, waitErr := windows.WaitForSingleObject(w.event, winWatchWaitMillis)
 			if waitErr != nil {
-				_ = windows.CancelIoEx(handle, &overlapped)
+				_ = windows.CancelIoEx(w.handle, &overlapped)
 				return fmt.Errorf("wait for directory changes: %w", waitErr)
 			}
 			if status == windows.WAIT_TIMEOUT {
 				continue
 			}
 			if status != windows.WAIT_OBJECT_0 {
-				_ = windows.CancelIoEx(handle, &overlapped)
+				_ = windows.CancelIoEx(w.handle, &overlapped)
 				return fmt.Errorf("wait for directory changes returned status %d", status)
 			}
 			break
 		}
 
 		var n uint32
-		if err := windows.GetOverlappedResult(handle, &overlapped, &n, false); err != nil {
+		if err := windows.GetOverlappedResult(w.handle, &overlapped, &n, false); err != nil {
 			if ctx.Err() != nil || errors.Is(err, windows.ERROR_OPERATION_ABORTED) {
 				return ctx.Err()
 			}
 			return fmt.Errorf("complete directory changes: %w", err)
 		}
 		if n == 0 {
-			out <- winLocalChange{Action: 0}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case out <- winLocalChange{Action: 0}:
+			}
 			continue
 		}
 		parsed, err := parseWindowsNotifyBuffer(buffer[:n])
 		if err != nil {
-			out <- winLocalChange{Action: 0}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case out <- winLocalChange{Action: 0}:
+			}
 			continue
 		}
 		for _, change := range parsed {
@@ -161,7 +199,7 @@ func parseWindowsNotifyBuffer(buf []byte) ([]winLocalChange, error) {
 		next := int(binary.LittleEndian.Uint32(buf[offset : offset+4]))
 		action := binary.LittleEndian.Uint32(buf[offset+4 : offset+8])
 		nameBytes := int(binary.LittleEndian.Uint32(buf[offset+8 : offset+12]))
-		if nameBytes < 0 || nameBytes%2 != 0 || offset+headerSize+nameBytes > len(buf) {
+		if nameBytes%2 != 0 || offset+headerSize+nameBytes > len(buf) {
 			return nil, fmt.Errorf("invalid FILE_NOTIFY_INFORMATION filename length")
 		}
 		u16 := make([]uint16, nameBytes/2)
@@ -202,10 +240,9 @@ func collapseWindowsChanges(changes []winLocalChange) winChangeSet {
 	var pendingOld string
 
 	addPath := func(path string) {
-		if path == "" {
-			return
+		if path != "" {
+			pathSet[path] = struct{}{}
 		}
-		pathSet[path] = struct{}{}
 	}
 
 	for _, change := range changes {
