@@ -83,12 +83,14 @@ const (
 	trayLRDefaultSize  = 0x0040
 	trayIconVersion4   = 4
 
-	trayMenuOpen    = 1
-	trayMenuAccount = 2
-	trayMenuPause   = 3
-	trayMenuUpdate  = 4
-	trayMenuLogout  = 5
-	trayMenuExit    = 6
+	trayMenuOpen      = 1
+	trayMenuAccount   = 2
+	trayMenuPause     = 3
+	trayMenuUpdate    = 4
+	trayMenuLogout    = 5
+	trayMenuExit      = 6
+	trayMenuSyncNow   = 7
+	trayMenuConflicts = 8
 )
 
 type trayIconSet struct {
@@ -375,6 +377,18 @@ func showXDriveMenu(hwnd windows.Handle, ctrl *agentController, control controlU
 		pauseTitle = "恢复同步"
 	}
 	appendTrayItem(menu, pauseFlags, trayMenuPause, pauseTitle)
+
+	syncFlags := uintptr(trayMFString)
+	if !s.Configured || s.AuthStatus != "已登录" || s.Paused {
+		syncFlags |= trayMFGray
+	}
+	appendTrayItem(menu, syncFlags, trayMenuSyncNow, "立即同步")
+
+	conflictFlags := uintptr(trayMFString)
+	if s.ConflictCount == 0 {
+		conflictFlags |= trayMFGray
+	}
+	appendTrayItem(menu, conflictFlags, trayMenuConflicts, fmt.Sprintf("冲突（%d）...", s.ConflictCount))
 	appendTrayItem(menu, trayMFString, trayMenuUpdate, "检查更新")
 
 	logoutFlags := uintptr(trayMFString)
@@ -411,6 +425,22 @@ func showXDriveMenu(hwnd windows.Handle, ctrl *agentController, control controlU
 		go func() {
 			if err := ctrl.TogglePause(); err != nil {
 				showTrayMessage("xDrive", "切换同步状态失败："+err.Error())
+			}
+		}()
+	case trayMenuSyncNow:
+		go func() {
+			if err := ctrl.SyncNow(); err != nil {
+				showTrayMessage("xDrive", "立即同步失败："+err.Error())
+			}
+		}()
+	case trayMenuConflicts:
+		go func() {
+			if control == nil {
+				showTrayMessage("xDrive", "冲突处理页面不可用。")
+				return
+			}
+			if err := control.OpenConflicts(); err != nil {
+				showTrayMessage("xDrive", "打开冲突处理失败："+err.Error())
 			}
 		}()
 	case trayMenuUpdate:
