@@ -19,8 +19,8 @@ const (
 	winWatchWaitMillis   = 250
 	winLocalDebounce     = 250 * time.Millisecond
 	winLocalMaxBatchWait = 2 * time.Second
-	winRemotePoll        = 30 * time.Second
-	winFullAudit         = 10 * time.Minute
+	winRemotePoll        = 60 * time.Second
+	winFullAudit         = 15 * time.Minute
 )
 
 type winLocalChange struct {
