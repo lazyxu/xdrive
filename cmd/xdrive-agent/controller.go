@@ -609,14 +609,14 @@ func (c *agentController) OpenFolder() error {
 
 func (c *agentController) CheckUpdate() (string, bool) {
 	current := version.String()
-	channel, err := xupdate.AutomaticChannel(current)
+	channel, commit, err := xupdate.AutomaticTarget(current)
 	if err != nil {
 		return "检查更新失败：" + err.Error(), false
 	}
 	if channel == "" {
 		return "当前开发构建未绑定自动更新通道；可使用 xd update --channel master 手动切换。", false
 	}
-	started, result, err := xupdate.InstallChannel(context.Background(), current, channel)
+	started, result, err := xupdate.InstallTarget(context.Background(), current, channel, commit)
 	if err != nil {
 		return "检查更新失败：" + err.Error(), false
 	}
