@@ -78,8 +78,7 @@ func TestCheckStableAndDownloadVerified(t *testing.T) {
 	})
 	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(payload) })
 	mux.HandleFunc("/sums", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(checksum + "  " + assetName + "
-"))
+		_, _ = w.Write([]byte(checksum + "  " + assetName + "\n"))
 	})
 	server = httptest.NewServer(mux)
 	defer server.Close()
