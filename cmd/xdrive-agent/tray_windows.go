@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -47,10 +49,16 @@ const (
 	trayWMCallback   = 0x0400 + 1
 
 	trayNIMAdd     = 0x0000
+	trayNIMModify  = 0x0001
 	trayNIMDelete  = 0x0002
 	trayNIFMessage = 0x0001
 	trayNIFIcon    = 0x0002
 	trayNIFTip     = 0x0004
+	trayNIFInfo    = 0x0010
+
+	trayNIIFInfo    = 0x0001
+	trayNIIFWarning = 0x0002
+	trayNIIFError   = 0x0003
 
 	trayMFString    = 0x0000
 	trayMFGray      = 0x0001
@@ -61,6 +69,10 @@ const (
 	trayTPMReturnCmd = 0x0100
 
 	trayIDIApplication = 32512
+	trayIDIError       = 32513
+	trayIDIWarning     = 32515
+	trayIDIInfo        = 32516
+	trayIDIShield      = 32518
 
 	trayMenuOpen    = 1
 	trayMenuAccount = 2
@@ -190,6 +202,32 @@ func runDesktopUI(ctx context.Context, cancel context.CancelFunc, ctrl *agentCon
 	defer trayShellNotifyIcon.Call(trayNIMDelete, uintptr(unsafe.Pointer(&nid)))
 
 	go func() {
+		lastKey := ""
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case n := <-ctrl.Notifications():
+				showTrayNotification(&nid, n.Title, n.Body, n.Kind)
+			case <-ticker.C:
+				s := ctrl.Snapshot()
+				key, iconID, tip := trayVisualState(s)
+				if key == lastKey {
+					continue
+				}
+				lastKey = key
+				hicon, _, _ := trayLoadIcon.Call(0, iconID)
+				nid.HIcon = windows.Handle(hicon)
+				copyTrayUTF16(nid.SzTip[:], tip)
+				nid.UFlags = trayNIFIcon | trayNIFTip
+				trayShellNotifyIcon.Call(trayNIMModify, uintptr(unsafe.Pointer(&nid)))
+			}
+		}
+	}()
+
+	go func() {
 		<-ctx.Done()
 		trayPostMessage.Call(uintptr(hwnd), trayWMClose, 0, 0)
 	}()
@@ -313,6 +351,41 @@ func appendTrayItem(menu, flags, id uintptr, text string) {
 		p, _ = windows.UTF16PtrFromString(text)
 	}
 	trayAppendMenu.Call(menu, flags, id, uintptr(unsafe.Pointer(p)))
+}
+
+func trayVisualState(s agentSnapshot) (string, uintptr, string) {
+	switch {
+	case s.HasConflict:
+		return "conflict", trayIDIWarning, "xDrive · 存在冲突"
+	case s.Paused:
+		return "paused", trayIDIWarning, "xDrive · 已暂停"
+	case !s.Configured || s.AuthStatus == "未登录":
+		return "offline", trayIDIError, "xDrive · 未登录"
+	case s.AuthStatus != "已登录" || strings.Contains(s.SyncStatus, "失败") || strings.Contains(s.SyncStatus, "不可用") || strings.Contains(s.SyncStatus, "错误"):
+		return "offline", trayIDIError, "xDrive · 离线"
+	case strings.Contains(s.SyncStatus, "启动") || strings.Contains(s.SyncStatus, "恢复"):
+		return "syncing", trayIDIApplication, "xDrive · 同步中"
+	default:
+		return "normal", trayIDIInfo, "xDrive · 正常"
+	}
+}
+
+func showTrayNotification(nid *trayNotifyIconData, title, body, kind string) {
+	if nid == nil {
+		return
+	}
+	copyTrayUTF16(nid.SzInfoTitle[:], title)
+	copyTrayUTF16(nid.SzInfo[:], body)
+	nid.UFlags = trayNIFInfo
+	switch kind {
+	case "error":
+		nid.DwInfoFlags = trayNIIFError
+	case "warning":
+		nid.DwInfoFlags = trayNIIFWarning
+	default:
+		nid.DwInfoFlags = trayNIIFInfo
+	}
+	trayShellNotifyIcon.Call(trayNIMModify, uintptr(unsafe.Pointer(nid)))
 }
 
 func showTrayMessage(title, body string) {

@@ -27,13 +27,21 @@ type agentSnapshot struct {
 	Paused             bool
 	MustChangePassword bool
 	LastError          string
+	HasConflict        bool
 	Version            string
 }
 
+type agentNotification struct {
+	Title string
+	Body  string
+	Kind  string
+}
+
 type agentController struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	wake   chan struct{}
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wake          chan struct{}
+	notifications chan agentNotification
 
 	mu   sync.RWMutex
 	snap agentSnapshot
@@ -41,14 +49,24 @@ type agentController struct {
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
 	return &agentController{
-		ctx:    ctx,
-		cancel: cancel,
-		wake:   make(chan struct{}, 1),
+		ctx:           ctx,
+		cancel:        cancel,
+		wake:          make(chan struct{}, 1),
+		notifications: make(chan agentNotification, 16),
 		snap: agentSnapshot{
 			AuthStatus: "未登录",
 			SyncStatus: "等待登录",
 			Version:    version.String(),
 		},
+	}
+}
+
+func (c *agentController) Notifications() <-chan agentNotification { return c.notifications }
+
+func (c *agentController) notify(n agentNotification) {
+	select {
+	case c.notifications <- n:
+	default:
 	}
 }
 
@@ -77,6 +95,17 @@ func (c *agentController) wakeNow() {
 
 func (c *agentController) Run() {
 	updateReady := startAutoUpdate(c.ctx)
+	mount.SetEventSink(func(event mount.Event) {
+		if event.Kind == mount.EventConflict {
+			c.setSnapshot(func(s *agentSnapshot) { s.HasConflict = true; s.SyncStatus = "存在冲突副本" })
+			body := "已保留冲突副本"
+			if event.Path != "" {
+				body += "：" + event.Path
+			}
+			c.notify(agentNotification{Title: "xDrive 冲突", Body: body, Kind: "warning"})
+		}
+	})
+	defer mount.SetEventSink(nil)
 
 	var (
 		running       bool
@@ -113,6 +142,7 @@ func (c *agentController) Run() {
 			s.SyncStatus = "同步正常"
 			s.LastError = ""
 		})
+		c.notify(agentNotification{Title: "xDrive", Body: "同步完成", Kind: "info"})
 		go func() {
 			done <- mount.Run(mctx, cli, d.root)
 		}()
@@ -222,6 +252,7 @@ func (c *agentController) Run() {
 						s.SyncStatus = "同步已停止"
 						s.LastError = ""
 					})
+					c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
 					return
 				}
 				if apiErr.Status == 401 || apiErr.Status == 403 {
@@ -231,6 +262,7 @@ func (c *agentController) Run() {
 						s.SyncStatus = "需要重新登录"
 						s.LastError = err.Error()
 					})
+					c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
 					return
 				}
 			}
@@ -262,6 +294,7 @@ func (c *agentController) Run() {
 					s.SyncStatus = "需要重新登录"
 					s.LastError = err.Error()
 				})
+				c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
 				return
 			}
 			c.setSnapshot(func(s *agentSnapshot) {

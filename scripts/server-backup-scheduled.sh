@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
+ENV_PATH="$CONFIG_DIR/.env"
+[[ -f "$ENV_PATH" ]] || { echo "missing $ENV_PATH" >&2; exit 1; }
+
+retention_days="$(grep '^XD_BACKUP_RETENTION_DAYS=' "$ENV_PATH" | tail -n1 | cut -d= -f2- || true)"
+retention_days="${retention_days:-7}"
+[[ "$retention_days" =~ ^[0-9]+$ ]] || { echo "XD_BACKUP_RETENTION_DAYS must be an integer" >&2; exit 1; }
+
+backup_dir="$CONFIG_DIR/backups"
+"$CONFIG_DIR/server-backup.sh" --config-dir "$CONFIG_DIR" --output-dir "$backup_dir"
+
+if (( retention_days > 0 )); then
+  find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -mtime "+$retention_days" -print -exec rm -rf -- {} +
+fi

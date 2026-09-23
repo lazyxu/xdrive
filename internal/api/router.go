@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ func (s *Server) Router() *gin.Engine {
 	r.MaxMultipartMemory = 8 << 20
 
 	v1 := r.Group("/api/v1")
-	v1.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
+	v1.GET("/healthz", s.healthz)
 	v1.POST("/auth/login", s.login)
 	v1.POST("/auth/refresh", s.refresh)
 	v1.POST("/auth/logout", s.logout)
@@ -65,6 +66,21 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/users/:id/reset-password", s.adminResetPassword)
 	admin.POST("/users/:id/revoke-sessions", s.adminRevokeSessions)
 	return r
+}
+
+func (s *Server) healthz(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	sqlDB, err := s.DB.DB()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "database": "unavailable"})
+		return
+	}
+	if err := sqlDB.PingContext(ctx); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "database": "unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "database": "ok"})
 }
 
 func (s *Server) cors() gin.HandlerFunc {

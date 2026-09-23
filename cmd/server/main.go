@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/api"
 	"github.com/lazyxu/xdrive/internal/auth"
@@ -24,6 +28,11 @@ func main() {
 			return
 		case "storage":
 			if err := runStorageCommand(os.Args[2:]); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "healthcheck":
+			if err := runHealthcheck(os.Args[2:]); err != nil {
 				log.Fatal(err)
 			}
 			return
@@ -81,4 +90,32 @@ func migrate(db *gorm.DB) error {
 		return err
 	}
 	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error
+}
+
+func runHealthcheck(args []string) error {
+	if len(args) > 1 {
+		return fmt.Errorf("usage: xdrive-server healthcheck [URL]")
+	}
+	url := strings.TrimSpace(os.Getenv("XD_HEALTHCHECK_URL"))
+	if len(args) == 1 {
+		url = strings.TrimSpace(args[0])
+	}
+	if url == "" {
+		url = "http://127.0.0.1:8080/api/v1/healthz"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("health request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("health endpoint returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
