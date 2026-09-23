@@ -182,32 +182,6 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 	hydrated := cloneHydrated(p.hydrated)
 	p.mu.Unlock()
 
-	// Local deletions first. If a whole directory disappeared, delete only the
-	// highest missing ancestor; the server recursively removes its subtree.
-	missing := make([]string, 0)
-	for rel := range baseline {
-		if rel != "" {
-			if _, ok := local[rel]; !ok {
-				missing = append(missing, rel)
-			}
-		}
-	}
-	sort.Slice(missing, func(i, j int) bool { return depth(missing[i]) < depth(missing[j]) })
-	deletedPrefix := []string{}
-	for _, rel := range missing {
-		if underAny(rel, deletedPrefix) {
-			continue
-		}
-		if err := p.cli.Delete(ctx, baseline[rel].node.ID); err != nil {
-			var apiErr *client.APIError
-			if !errors.As(err, &apiErr) || apiErr.Status != 404 {
-				return err
-			}
-		}
-		deletedPrefix = append(deletedPrefix, rel)
-		deletePrefix(baseline, rel)
-	}
-
 	// Local additions in parent-first order.
 	localPaths := make([]string, 0, len(local))
 	for rel := range local {
@@ -269,6 +243,33 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			return upErr
 		}
 		baseline[rel] = stateFromLocal(n, entry)
+	}
+
+	// Local deletions run after additions and writes. This ordering matters for
+	// renaming an online-only placeholder: the new path can hydrate from the old
+	// server node before the old node is removed.
+	missing := make([]string, 0)
+	for rel := range baseline {
+		if rel != "" {
+			if _, ok := local[rel]; !ok {
+				missing = append(missing, rel)
+			}
+		}
+	}
+	sort.Slice(missing, func(i, j int) bool { return depth(missing[i]) < depth(missing[j]) })
+	deletedPrefix := []string{}
+	for _, rel := range missing {
+		if underAny(rel, deletedPrefix) {
+			continue
+		}
+		if err := p.cli.Delete(ctx, baseline[rel].node.ID); err != nil {
+			var apiErr *client.APIError
+			if !errors.As(err, &apiErr) || apiErr.Status != 404 {
+				return err
+			}
+		}
+		deletedPrefix = append(deletedPrefix, rel)
+		deletePrefix(baseline, rel)
 	}
 
 	// Pull server-side changes made through Web/API. Local dirty changes were

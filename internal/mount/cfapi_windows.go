@@ -175,13 +175,22 @@ func cfRegister(root string) error {
 		Population: cfPopulationPolicy{Primary: cfPopulationPolicyAlwaysFull},
 	}
 	pol.StructSize = uint32(unsafe.Sizeof(pol))
-	hr, _, _ := procRegisterSyncRoot.Call(
-		uintptr(unsafe.Pointer(rootW)), uintptr(unsafe.Pointer(&reg)), uintptr(unsafe.Pointer(&pol)), cfRegisterFlagUpdate,
-	)
+	register := func(flags uintptr) error {
+		hr, _, _ := procRegisterSyncRoot.Call(
+			uintptr(unsafe.Pointer(rootW)), uintptr(unsafe.Pointer(&reg)), uintptr(unsafe.Pointer(&pol)), flags,
+		)
+		return hresult("CfRegisterSyncRoot", hr)
+	}
+	// UPDATE makes repeated mounts idempotent. A brand-new sync root is not
+	// registered yet, so fall back to a normal registration on first use.
+	err = register(cfRegisterFlagUpdate)
+	if err != nil {
+		err = register(0)
+	}
 	runtime.KeepAlive(identity)
 	runtime.KeepAlive(reg)
 	runtime.KeepAlive(pol)
-	return hresult("CfRegisterSyncRoot", hr)
+	return err
 }
 
 func cfUnregister(root string) error {
