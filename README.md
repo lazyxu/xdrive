@@ -57,9 +57,10 @@ Before running the one-line installer, the server needs:
 - `curl` or `wget`;
 - outbound HTTPS access to GitHub/GHCR and Docker Hub;
 - enough disk space for PostgreSQL plus uploaded file blobs;
-- an inbound port for the Web UI (default TCP 3000), or an HTTPS reverse proxy on 80/443.
+- for public HTTPS, a domain whose DNS resolves to the server and inbound TCP 80/443 reachable from the Internet;
+- enough host resources for the configured container limits.
 
-No PostgreSQL installation is required on the host; Compose runs PostgreSQL for xDrive.
+No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose runs PostgreSQL and the optional Caddy HTTPS reverse proxy for xDrive.
 
 ### One-line install from `master` / edge images
 
@@ -67,11 +68,18 @@ No PostgreSQL installation is required on the host; Compose runs PostgreSQL for 
 curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
 ```
 
-Optional values can be supplied on the same command, for example:
+On an interactive terminal the installer asks for the public domain. If DNS is already configured, the fully non-interactive HTTPS form is still one command:
 
 ```bash
-XD_WEB_PORT=8088 XD_WEB_BIND=0.0.0.0 \
-  curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+  XD_DOMAIN=drive.example.com bash
+```
+
+Leave the domain blank for HTTP/private-network mode. Other overrides use the same pipe-to-`bash` form, for example:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+  XD_WEB_PORT=8088 XD_WEB_BIND=0.0.0.0 bash
 ```
 
 For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag.
@@ -79,19 +87,23 @@ For a tagged release, download and run the release asset `xdrive-server-install.
 The installer:
 
 1. checks Docker and Docker Compose v2;
-2. creates `~/.xd` with user-only permissions;
-3. writes `~/.xd/docker-compose.yml`;
-4. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
-5. pulls the xDrive server/Web container images;
-6. installs `server-backup.sh`, `server-restore.sh`, and `server-verify.sh` into `~/.xd`;
-7. starts PostgreSQL, the xDrive API server, and the Web UI;
-8. if no administrator exists, securely prompts on the terminal to create the first administrator.
+2. creates `~/.xd` with user-only permissions and preserves existing secrets;
+3. stages the new Compose/Caddy/maintenance files;
+4. on upgrades, creates a verified **pre-upgrade backup before replacing deployment files**;
+5. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
+6. pulls the xDrive server/Web images and, when a domain is configured, Caddy;
+7. starts PostgreSQL, waits for database/API/Web health checks, and applies log rotation plus CPU/memory/PID limits;
+8. for a public domain, obtains/renews the TLS certificate automatically and waits until the real HTTPS health endpoint succeeds;
+9. installs a scheduled backup job when `crontab` is available, with retention and overlap protection;
+10. if no administrator exists, securely prompts on the terminal to create the first administrator.
 
-The default Web endpoint is:
+With a configured domain the endpoint is simply:
 
 ```text
-http://SERVER_IP:3000
+https://drive.example.com
 ```
+
+Without a domain, xDrive runs in HTTP/private mode on `XD_WEB_PORT` (default 3000).
 
 ### Administrator bootstrap
 
@@ -129,19 +141,23 @@ docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" down
 Data is persisted in Docker volumes:
 
 - `xdrive_postgres-data`: PostgreSQL data;
-- `xdrive_file-data`: uploaded file blobs.
+- `xdrive_file-data`: uploaded file blobs;
+- `xdrive_caddy-data` / `xdrive_caddy-config`: Caddy certificate/account state when HTTPS is enabled.
 
-For production, put the Web container behind an HTTPS reverse proxy and back up both volumes.
+For production, set `XD_DOMAIN`, point DNS at the server, and allow inbound TCP 80/443. The bundled Caddy service handles reverse proxying and certificate renewal; no hand-written reverse-proxy configuration is required.
 
 ### Backup, restore, and storage consistency
 
-The Docker deployment installs three maintenance tools in `~/.xd`:
+The Docker deployment installs four maintenance tools in `~/.xd`:
 
 ```text
 ~/.xd/server-backup.sh
+~/.xd/server-backup-scheduled.sh
 ~/.xd/server-restore.sh
 ~/.xd/server-verify.sh
 ```
+
+By default, the installer registers a daily scheduled backup at 03:17 local server time and retains seven days. Override with `XD_BACKUP_SCHEDULE` and `XD_BACKUP_RETENTION_DAYS`. Scheduled runs skip rather than overlap if a previous backup is still running.
 
 #### Consistency verification
 
@@ -238,7 +254,7 @@ under `%LOCALAPPDATA%\Programs\xDrive`, adds the install directory to the user P
 
 The agent is a hidden user-session process with a native Windows notification-area (system tray) UI. It is intentionally a user-session process rather than a Windows service because the CfAPI sync root belongs to the interactive user/Explorer session.
 
-For normal use, **no PowerShell or `xd` command is required**. After installation, use the xDrive tray icon:
+For normal use, **no PowerShell or `xd` command is required**. After installation, use the xDrive tray icon. The icon itself now has five branded states — **normal, syncing, paused, offline, and conflict** — and Windows notifications surface completed sync batches, preserved conflict copies, and expired logins.
 
 - the first two disabled lines show the current account/login state and sync state;
 - **登录...** opens xDrive's local account page in the default browser;
@@ -276,7 +292,7 @@ Windows uses a **hybrid online-on-demand + bidirectional metadata/content sync**
 - Web/API-side creates, changes and deletes are reconciled back into the sync root roughly every 3 seconds;
 - concurrent stale writes are rejected by server revisions; the desktop preserves the stale local version as a conflict copy instead of silently overwriting the server winner.
 
-The current Windows installer is not code-signed, so Windows SmartScreen may warn on downloaded builds until release signing is added.
+Stable tagged Windows releases are Authenticode-signed: `xd.exe` and `xdrive-agent.exe` are signed before packaging, then `xDriveSetup-amd64.exe` is signed after Inno Setup builds it. The release workflow refuses to publish a stable Windows installer when the signing certificate secrets are absent. Development/snapshot artifacts can remain unsigned unless signing secrets are configured.
 
 ## Linux client
 
@@ -590,9 +606,11 @@ xDriveSetup-amd64.exe
 xdrive-client-linux-amd64.deb
 xdrive-server-install.sh
 server-backup.sh
+server-backup-scheduled.sh
 server-restore.sh
 server-verify.sh
 docker-compose.yml
+Caddyfile
 xdrive.env.example
 SHA256SUMS.txt
 ```
@@ -649,12 +667,11 @@ deploy/
 ## Roadmap
 
 1. instant upload/global deduplication and optional content-defined chunking;
-2. code-signed Windows installer and richer tray notifications;
-3. richer CfAPI pin/dehydrate/offline controls;
-4. small-file packing;
-5. macOS File Provider integration;
-6. thumbnails/EXIF/media processing;
-7. sharing and richer retention/version policies.
+2. richer CfAPI pin/dehydrate/offline controls and conflict-resolution UI;
+3. small-file packing;
+4. macOS File Provider integration;
+5. thumbnails/EXIF/media processing;
+6. sharing and richer retention/version policies.
 
 ## License
 

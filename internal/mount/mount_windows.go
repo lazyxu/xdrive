@@ -68,9 +68,12 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 	p.connKey = key
 	defer cfDisconnect(key)
 
+	emitEvent(Event{Kind: EventSyncStarted})
 	if err := p.initialSync(ctx); err != nil {
+		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 		return err
 	}
+	emitEvent(Event{Kind: EventSyncCompleted})
 
 	changes, watchErrs := watchWindowsChanges(ctx, root)
 	remoteTicker := time.NewTicker(winRemotePoll)
@@ -130,14 +133,17 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		batch := append([]winLocalChange(nil), pending...)
 		pending = pending[:0]
 		stopBatchTimers()
+		emitEvent(Event{Kind: EventSyncStarted})
 		if err := p.reconcileLocalChanges(ctx, batch); err != nil {
 			if !errors.Is(err, errWindowsHydrationSettling) {
 				fmt.Fprintln(os.Stderr, "xd: Windows local sync:", err)
+				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
 			pending = append(batch, pending...)
 			scheduleLocalRetry()
 			return false
 		}
+		emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
 		return true
 	}
 	queueLocal := func(change winLocalChange) {
@@ -197,6 +203,7 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 			}
 			if err := p.reconcileRemote(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows remote sync:", err)
+				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
 		case <-auditTicker.C:
 			if !flushLocal() {
@@ -204,6 +211,7 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 			}
 			if err := p.reconcile(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
+				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
 		}
 	}

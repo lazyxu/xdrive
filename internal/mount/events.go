@@ -5,12 +5,17 @@ import "sync"
 type EventKind string
 
 const (
-	EventConflict EventKind = "conflict"
+	EventSyncStarted   EventKind = "sync_started"
+	EventSyncCompleted EventKind = "sync_completed"
+	EventSyncFailed    EventKind = "sync_failed"
+	EventConflict      EventKind = "conflict"
 )
 
 type Event struct {
-	Kind EventKind
-	Path string
+	Kind    EventKind
+	Path    string
+	Message string
+	Notify  bool
 }
 
 var mountEventSink struct {

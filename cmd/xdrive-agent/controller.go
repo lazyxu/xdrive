@@ -96,8 +96,37 @@ func (c *agentController) wakeNow() {
 func (c *agentController) Run() {
 	updateReady := startAutoUpdate(c.ctx)
 	mount.SetEventSink(func(event mount.Event) {
-		if event.Kind == mount.EventConflict {
-			c.setSnapshot(func(s *agentSnapshot) { s.HasConflict = true; s.SyncStatus = "存在冲突副本" })
+		switch event.Kind {
+		case mount.EventSyncStarted:
+			c.setSnapshot(func(s *agentSnapshot) {
+				if !s.HasConflict {
+					s.SyncStatus = "正在同步"
+				}
+			})
+		case mount.EventSyncCompleted:
+			notifyComplete := false
+			c.setSnapshot(func(s *agentSnapshot) {
+				if !s.HasConflict {
+					notifyComplete = s.SyncStatus == "正在同步"
+					s.SyncStatus = "同步正常"
+					s.LastError = ""
+				}
+			})
+			if notifyComplete && event.Notify {
+				c.notify(agentNotification{Title: "xDrive", Body: "同步完成", Kind: "info"})
+			}
+		case mount.EventSyncFailed:
+			c.setSnapshot(func(s *agentSnapshot) {
+				if !s.HasConflict {
+					s.SyncStatus = "同步错误"
+				}
+				s.LastError = event.Message
+			})
+		case mount.EventConflict:
+			c.setSnapshot(func(s *agentSnapshot) {
+				s.HasConflict = true
+				s.SyncStatus = "存在冲突副本"
+			})
 			body := "已保留冲突副本"
 			if event.Path != "" {
 				body += "：" + event.Path
@@ -108,11 +137,12 @@ func (c *agentController) Run() {
 	defer mount.SetEventSink(nil)
 
 	var (
-		running       bool
-		currentKey    string
-		mountCancel   context.CancelFunc
-		mountDone     chan error
-		lastAuthCheck time.Time
+		running        bool
+		currentKey     string
+		mountCancel    context.CancelFunc
+		mountDone      chan error
+		lastAuthCheck  time.Time
+		lastAuthNotice string
 	)
 
 	stopMount := func() {
@@ -139,10 +169,9 @@ func (c *agentController) Run() {
 		mountDone = done
 		lastAuthCheck = time.Now()
 		c.setSnapshot(func(s *agentSnapshot) {
-			s.SyncStatus = "同步正常"
+			s.SyncStatus = "正在启动同步"
 			s.LastError = ""
 		})
-		c.notify(agentNotification{Title: "xDrive", Body: "同步完成", Kind: "info"})
 		go func() {
 			done <- mount.Run(mctx, cli, d.root)
 		}()
@@ -161,6 +190,7 @@ func (c *agentController) Run() {
 					Version:    version.String(),
 				}
 			})
+			lastAuthNotice = ""
 			return
 		}
 
@@ -226,9 +256,12 @@ func (c *agentController) Run() {
 			_, err := cli.Root(checkCtx)
 			cancel()
 			if err == nil {
+				lastAuthNotice = ""
 				c.setSnapshot(func(s *agentSnapshot) {
 					s.AuthStatus = "已登录"
-					s.SyncStatus = "同步正常"
+					if !s.HasConflict {
+						s.SyncStatus = "同步正常"
+					}
 					s.LastError = ""
 				})
 				return
@@ -252,7 +285,10 @@ func (c *agentController) Run() {
 						s.SyncStatus = "同步已停止"
 						s.LastError = ""
 					})
-					c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
+					if lastAuthNotice != "invalid" {
+						lastAuthNotice = "invalid"
+						c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
+					}
 					return
 				}
 				if apiErr.Status == 401 || apiErr.Status == 403 {
@@ -262,7 +298,10 @@ func (c *agentController) Run() {
 						s.SyncStatus = "需要重新登录"
 						s.LastError = err.Error()
 					})
-					c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
+					if lastAuthNotice != "invalid" {
+						lastAuthNotice = "invalid"
+						c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
+					}
 					return
 				}
 			}
@@ -294,7 +333,10 @@ func (c *agentController) Run() {
 					s.SyncStatus = "需要重新登录"
 					s.LastError = err.Error()
 				})
-				c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
+				if lastAuthNotice != "invalid" {
+					lastAuthNotice = "invalid"
+					c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
+				}
 				return
 			}
 			c.setSnapshot(func(s *agentSnapshot) {
@@ -305,6 +347,7 @@ func (c *agentController) Run() {
 			return
 		}
 
+		lastAuthNotice = ""
 		c.setSnapshot(func(s *agentSnapshot) {
 			s.AuthStatus = "已登录"
 			s.SyncStatus = "正在启动同步"
@@ -404,6 +447,7 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 			s.SyncStatus = "正在启动同步"
 		}
 		s.Paused = false
+		s.HasConflict = false
 		s.LastError = ""
 	})
 	c.wakeNow()
