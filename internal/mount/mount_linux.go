@@ -22,15 +22,19 @@ type linuxNode struct {
 }
 
 func runPlatform(ctx context.Context, cli *client.Client, mountpoint string) error {
+	emitEvent(Event{Kind: EventSyncStarted})
 	root, err := cli.Root(ctx)
 	if err != nil {
+		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 		return err
 	}
 	rootNode := &linuxNode{cli: cli, node: root}
 	server, err := fs.Mount(mountpoint, rootNode, &fs.Options{MountOptions: fuse.MountOptions{FsName: "xdrive", Name: "xDrive"}})
 	if err != nil {
+		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 		return err
 	}
+	emitEvent(Event{Kind: EventSyncCompleted})
 	go func() { <-ctx.Done(); _ = server.Unmount() }()
 	server.Wait()
 	if ctx.Err() != nil {
