@@ -27,10 +27,24 @@ const (
 
 func keepLocalPlatform(path string) error {
 	path = filepath.Clean(path)
+	state, err := availabilityPlatform(path)
+	if err != nil {
+		return err
+	}
+	if !state.Placeholder {
+		return nil
+	}
 	if err := setPinPath(path, cfPinStatePinned, true); err != nil {
 		return err
 	}
 	return walkCloudFiles(path, func(file string) error {
+		state, err := availabilityPlatform(file)
+		if err != nil {
+			return err
+		}
+		if !state.Placeholder {
+			return nil
+		}
 		return hydratePath(file)
 	})
 }
@@ -45,11 +59,28 @@ func onlineOnlyPlatform(path string) error {
 
 func makeOnlineOnly(path string) error {
 	path = filepath.Clean(path)
+	state, err := availabilityPlatform(path)
+	if err != nil {
+		return err
+	}
+	if !state.Placeholder {
+		return fmt.Errorf("文件尚未同步到云端，请先立即同步")
+	}
+	if err := ensureAllCloudFiles(path); err != nil {
+		return err
+	}
 	if err := setPinPath(path, cfPinStateUnpinned, true); err != nil {
 		return err
 	}
 	var firstErr error
-	err := walkCloudFiles(path, func(file string) error {
+	err = walkCloudFiles(path, func(file string) error {
+		state, stateErr := availabilityPlatform(file)
+		if stateErr != nil {
+			return stateErr
+		}
+		if !state.Placeholder {
+			return nil
+		}
 		if err := dehydratePath(file); err != nil && firstErr == nil {
 			firstErr = err
 		}
@@ -59,6 +90,22 @@ func makeOnlineOnly(path string) error {
 		return err
 	}
 	return firstErr
+}
+
+func ensureAllCloudFiles(path string) error {
+	return walkCloudFiles(path, func(file string) error {
+		state, err := availabilityPlatform(file)
+		if err != nil {
+			return err
+		}
+		if !state.Placeholder {
+			return fmt.Errorf("%s 尚未同步到云端，请先立即同步", file)
+		}
+		if !state.InSync {
+			return fmt.Errorf("%s 正在同步，请同步完成后再释放空间", file)
+		}
+		return nil
+	})
 }
 
 func availabilityPlatform(path string) (FileAvailability, error) {
