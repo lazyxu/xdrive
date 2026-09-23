@@ -49,9 +49,9 @@ type agentController struct {
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
 	return &agentController{
-		ctx:    ctx,
-		cancel: cancel,
-		wake:   make(chan struct{}, 1),
+		ctx:           ctx,
+		cancel:        cancel,
+		wake:          make(chan struct{}, 1),
 		notifications: make(chan agentNotification, 16),
 		snap: agentSnapshot{
 			AuthStatus: "未登录",
