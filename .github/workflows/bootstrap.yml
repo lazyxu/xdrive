@@ -39,7 +39,7 @@ jobs:
           tar -xzf /tmp/xdrive-src.tar.gz -C .
           grep -vF '"path/filepath"' internal/mount/mount_linux.go > /tmp/mount_linux.go && mv /tmp/mount_linux.go internal/mount/mount_linux.go
           rm -rf .bootstrap
-          rm -f BOOTSTRAP_TEST_FAILURE.log
+          rm -f BOOTSTRAP_TEST_FAILURE.log BOOTSTRAP_WEB_FAILURE.log
           rm -f .github/workflows/bootstrap.yml
       - uses: actions/setup-go@v5
         with:
@@ -76,8 +76,21 @@ jobs:
         working-directory: web
         run: npm install --no-audit --no-fund
       - name: Web typecheck
-        working-directory: web
-        run: npm run lint
+        shell: bash
+        run: |
+          set +e
+          (cd web && npm run lint) > /tmp/web-typecheck.log 2>&1
+          rc=$?
+          cat /tmp/web-typecheck.log
+          if [ "$rc" -ne 0 ]; then
+            cp /tmp/web-typecheck.log BOOTSTRAP_WEB_FAILURE.log
+            git config user.name "xDrive CI"
+            git config user.email "actions@users.noreply.github.com"
+            git add BOOTSTRAP_WEB_FAILURE.log
+            git commit -m "chore: capture bootstrap Web typecheck failure"
+            git push origin HEAD:feat/mvp-cfapi
+            exit "$rc"
+          fi
       - name: Web build
         working-directory: web
         run: npm run build
