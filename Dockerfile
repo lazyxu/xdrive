@@ -15,4 +15,5 @@ WORKDIR /app
 COPY --from=build /out/xdrive-server /usr/local/bin/xdrive-server
 VOLUME ["/data"]
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/usr/local/bin/xdrive-server", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/xdrive-server"]
