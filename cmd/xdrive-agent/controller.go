@@ -610,7 +610,6 @@ func (c *agentController) CheckUpdate() (string, bool) {
 	return fmt.Sprintf("已验证 %s，正在启动更新安装。", result.Latest), true
 }
 
-
 func (c *agentController) SyncNow() error {
 	cfg, err := userconfig.Load()
 	if err != nil {
@@ -844,7 +843,6 @@ func isNotFound(err error) bool {
 	var apiErr *client.APIError
 	return errors.As(err, &apiErr) && apiErr.Status == 404
 }
-
 
 func (c *agentController) Quit() { c.cancel() }
 
