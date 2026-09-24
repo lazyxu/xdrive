@@ -16,11 +16,26 @@ cat > "$TMP/bin-ok/curl" <<'SH'
 set -euo pipefail
 url=""
 out=""
+write_out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -o) out="$2"; shift 2 ;;
-    -*) shift ;;
-    *) url="$1"; shift ;;
+    --*=*)
+      echo "old curl mock rejects equals-style long option: $1" >&2
+      exit 2
+      ;;
+    -o|--output)
+      out="$2"; shift 2 ;;
+    --retry|--retry-delay|--connect-timeout)
+      [[ $# -ge 2 ]] || exit 2
+      shift 2 ;;
+    -w|--write-out)
+      write_out="$2"; shift 2 ;;
+    -f|-L|-s|-S|-fsSL)
+      shift ;;
+    -*)
+      shift ;;
+    *)
+      url="$1"; shift ;;
   esac
 done
 [[ -n "$url" ]]
@@ -29,6 +44,9 @@ printf '%s\n' "$url" >> "$TEST_STATE/urls"
 emit() {
   if [[ -n "$out" ]]; then
     printf '%s' "$1" > "$out"
+    if [[ -n "$write_out" ]]; then
+      printf '128\t64\t2.0'
+    fi
   else
     printf '%s' "$1"
   fi
@@ -99,6 +117,11 @@ grep -q "XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-$MASTER_SHORT" "$TMP/config-
 grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
 grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/.env"
 grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
+
+if grep -Eq -- '--(retry|retry-delay|connect-timeout|write-out)=' "$INSTALLER"; then
+  echo "installer must use old-curl-compatible space-separated long option values" >&2
+  exit 1
+fi
 
 if grep -q '/releases/download/snapshot/xdrive-server-install.sh$' "$TMP/state/urls"; then
   echo "raw master installer must not recursively download another installer" >&2

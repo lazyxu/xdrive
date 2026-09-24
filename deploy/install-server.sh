@@ -156,7 +156,9 @@ fetch() {
   if command -v curl >/dev/null 2>&1; then
     monitor_host_rx "download $label" &
     monitor_pid=$!
-    if ! stats="$(curl -fsSL --retry=3 --retry-delay=1 --connect-timeout=15       --write-out='%{size_download}\t%{speed_download}\t%{time_total}'       "$url" -o "$tmp")"; then
+    if ! stats="$(curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 15 \
+      --write-out '%{size_download}\t%{speed_download}\t%{time_total}' \
+      "$url" -o "$tmp")"; then
       [[ -n "$monitor_pid" ]] && kill "$monitor_pid" >/dev/null 2>&1 || true
       [[ -n "$monitor_pid" ]] && wait "$monitor_pid" 2>/dev/null || true
       rm -f "$tmp"
