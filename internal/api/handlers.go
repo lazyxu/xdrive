@@ -618,6 +618,11 @@ func (s *Server) deleteNode(c *gin.Context) {
 			return err
 		}
 		now := time.Now()
+		if err := tx.Model(&meta.Share{}).
+			Where("node_id IN ? AND owner_id = ? AND revoked_at IS NULL", ids, userID(c)).
+			Update("revoked_at", &now).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&meta.Node{}).
 			Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", ids, userID(c)).
 			Updates(map[string]any{"deleted_at": &now, "trash_root_id": id}).Error; err != nil {

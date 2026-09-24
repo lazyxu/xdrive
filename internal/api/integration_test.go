@@ -34,10 +34,10 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
@@ -216,10 +216,10 @@ func TestRefreshTokenRotationAndLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
 		t.Fatal(err)
 	}
 	store, err := storage.NewLocal(t.TempDir())
@@ -263,10 +263,10 @@ func TestRevisionConflictPreservesServerContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
@@ -335,10 +335,10 @@ func TestMutationRequiresIfMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
 		t.Fatal(err)
 	}
 	store, err := storage.NewLocal(t.TempDir())
@@ -367,10 +367,10 @@ func TestAdminUserLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
@@ -436,17 +436,26 @@ func TestAdminUserLifecycle(t *testing.T) {
 	if err := db.First(&stored, "node_id = ?", file.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	shareRes := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/files/%d/shares", file.ID), aliceSession.AccessToken,
+		strings.NewReader(`{"max_downloads":0}`), http.StatusCreated)
+	var managedShare createdShareDTO
+	if err := json.Unmarshal(shareRes.Body.Bytes(), &managedShare); err != nil {
+		t.Fatal(err)
+	}
+	publicShareRequest(t, router, http.MethodGet, managedShare.Token, nil, http.StatusOK)
 
-	// Disable is immediate for both access and refresh credentials.
+	// Disable is immediate for both access and refresh credentials and suspends public shares.
 	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), adminSession.AccessToken,
 		strings.NewReader(`{"disabled":true}`), http.StatusOK)
 	request(t, router, http.MethodGet, "/api/v1/nodes/root", aliceSession.AccessToken, nil, http.StatusForbidden)
 	request(t, router, http.MethodPost, "/api/v1/auth/refresh", "",
 		strings.NewReader(fmt.Sprintf(`{"refresh_token":%q}`, aliceSession.RefreshToken)), http.StatusUnauthorized)
+	publicShareRequest(t, router, http.MethodGet, managedShare.Token, nil, http.StatusGone)
 
 	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), adminSession.AccessToken,
 		strings.NewReader(`{"disabled":false}`), http.StatusOK)
 	aliceEnabled := loginTestUser(t, router, "alice-managed", "alice-new-password", http.StatusOK)
+	publicShareRequest(t, router, http.MethodGet, managedShare.Token, nil, http.StatusOK)
 
 	// Password reset revokes current access + refresh immediately and replaces the password.
 	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/admin/users/%d/reset-password", managed.ID), adminSession.AccessToken,
@@ -491,6 +500,10 @@ func TestAdminUserLifecycle(t *testing.T) {
 	if err := db.First(&meta.User{}, managed.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("deleted user still exists: %v", err)
 	}
+	if err := db.First(&meta.Share{}, managedShare.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted user left share metadata: %v", err)
+	}
+	publicShareRequest(t, router, http.MethodGet, managedShare.Token, nil, http.StatusNotFound)
 	if _, err := store.Open(context.Background(), stored.StorageKey); err == nil {
 		t.Fatal("deleted user's blob still exists")
 	}
@@ -506,10 +519,10 @@ func TestTrashAndVersionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
@@ -650,10 +663,10 @@ func TestTrashRestoreRejectsNameCollision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().DropTable(&meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+	if err := db.Migrator().DropTable(&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {

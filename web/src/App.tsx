@@ -10,6 +10,7 @@ import {
   LogoutOutlined,
   ReloadOutlined,
   RestOutlined,
+  ShareAltOutlined,
   UploadOutlined,
   UserOutlined,
 } from '@ant-design/icons'
@@ -34,6 +35,8 @@ import {
 import type { UploadProps } from 'antd'
 import { ApiError, AuthResult, AuthSession, FileVersion, MeResult, Node, QuotaUsage, XDriveApi, sessionFromAuth } from './api'
 import AdminUsersPanel from './AdminUsers'
+import PublicShareView from './PublicShare'
+import ShareDialog from './ShareDialog'
 
 const { Header, Content } = Layout
 const ACCESS_KEY = 'xdrive.access_token'
@@ -65,6 +68,16 @@ function App() {
   const [session, setSession] = useState<AuthSession>(initialSession)
   const [username, setUsername] = useState(() => localStorage.getItem(USER_KEY) ?? '')
 
+  const publicShareToken = useMemo(() => {
+    const match = window.location.hash.match(/^#\/s\/([^/]+)\/?$/)
+    if (!match) return ''
+    try {
+      return decodeURIComponent(match[1])
+    } catch {
+      return ''
+    }
+  }, [])
+
   const persistSession = useCallback((next: AuthSession) => {
     localStorage.setItem(ACCESS_KEY, next.accessToken)
     localStorage.setItem(LEGACY_TOKEN_KEY, next.accessToken)
@@ -90,6 +103,10 @@ function App() {
 
   const signOut = () => {
     void api.logout().finally(clearSession)
+  }
+
+  if (publicShareToken) {
+    return <PublicShareView token={publicShareToken} />
   }
 
   if (!session.accessToken) {
@@ -162,6 +179,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
+  const [shareNode, setShareNode] = useState<Node | null>(null)
   const [versions, setVersions] = useState<FileVersion[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [folderForm] = Form.useForm<{ name: string }>()
@@ -170,7 +188,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
 
   const current = crumbs.at(-1)
 
-  const handleError = (err: unknown) => {
+  const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401 || err.message.includes('account_disabled')) {
         message.error('Session is no longer valid. Sign in again.')
@@ -188,7 +206,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       }
     }
     message.error(err instanceof Error ? err.message : 'Request failed')
-  }
+  }, [onAuthExpired])
 
   const loadDirectory = async (id: number, nextCrumbs?: Crumb[]) => {
     setLoading(true)
@@ -446,10 +464,11 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                 { title: 'Size', dataIndex: 'size', width: 120, render: (value: number, node: Node) => node.type === 'dir' ? '—' : formatSize(value) },
                 { title: 'Modified', dataIndex: 'updated_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
                 {
-                  title: '', key: 'actions', width: 150, align: 'right',
+                  title: '', key: 'actions', width: 190, align: 'right',
                   render: (_, node) => (
                     <Space size="small">
                       {node.type === 'file' && <Button type="text" aria-label={`Download ${node.name}`} icon={<DownloadOutlined />} onClick={() => api.download(node).catch(handleError)} />}
+                      {node.type === 'file' && <Button type="text" aria-label={`Share ${node.name}`} icon={<ShareAltOutlined />} onClick={() => setShareNode(node)} />}
                       {node.type === 'file' && <Button type="text" aria-label={`History ${node.name}`} icon={<HistoryOutlined />} onClick={() => void openHistory(node)} />}
                       <Button type="text" aria-label={`Rename ${node.name}`} icon={<EditOutlined />} onClick={() => { setRenameNode(node); renameForm.setFieldsValue({ name: node.name }) }} />
                       <Button danger type="text" aria-label={`Delete ${node.name}`} icon={<DeleteOutlined />} onClick={() => remove(node)} />
@@ -606,6 +625,13 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             ]}
           />
         </Modal>
+
+        <ShareDialog
+          api={api}
+          node={shareNode}
+          onClose={() => setShareNode(null)}
+          onError={handleError}
+        />
 
         {profile?.role === 'admin' && (
           <AdminUsersPanel
