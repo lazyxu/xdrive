@@ -95,6 +95,11 @@ jobs:
           bash scripts/test-server-installer-bootstrap.sh
           bash -n scripts/test-server-installer-transaction.sh
           bash scripts/test-server-installer-transaction.sh
+          bash -n scripts/test-server-installer-pipe.sh
+          bash scripts/test-server-installer-pipe.sh
+          bash -n scripts/xdrive-server-host.sh
+          bash -n scripts/test-xdrive-server-host.sh
+          bash scripts/test-xdrive-server-host.sh
           bash -n scripts/cleanup-merged-branches.sh
           bash -n scripts/test-cleanup-merged-branches.sh
           bash scripts/test-cleanup-merged-branches.sh
@@ -133,6 +138,14 @@ jobs:
           grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
           grep -q 'server-doctor.sh' deploy/install-server.sh
           grep -q 'server-doctor.sh' .github/workflows/release.yml
+          grep -q 'xdrive-server-host.sh' deploy/install-server.sh
+          grep -q 'release/xdrive-server' .github/workflows/release.yml
+          if grep -q 'compose create server' scripts/server-backup.sh; then
+            echo "server backup must not create/recreate the formal server service" >&2
+            exit 1
+          fi
+          grep -q 'UPGRADE INCOMPLETE' deploy/install-server.sh
+          grep -q -- '--leave-server-stopped </dev/null' deploy/install-server.sh
           grep -q 'flock -n 9' deploy/install-server.sh
           grep -q -- '--leave-server-stopped' deploy/install-server.sh
           grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh

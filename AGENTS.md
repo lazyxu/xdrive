@@ -5,23 +5,30 @@
 For every code change in this repository, use this workflow by default:
 
 1. Run `git fetch origin` first.
-2. Create a new short-lived branch from the latest `origin/master`.
-3. Make the requested change only on that branch.
-4. Add or update relevant tests.
-5. Run the applicable local tests and require them to pass before opening or updating the PR.
-6. Before the first PR push, fetch `origin` again. Rebase onto `origin/master` only if `master` has actually advanced; do not perform no-op rebases merely to retrigger CI.
-7. Before the final PR push, squash the work branch to exactly one commit relative to `origin/master`. Verify with:
+2. Before creating or continuing a work branch, reconcile every non-`master` branch:
+   - delete branches whose commits are already fully contained in `origin/master`;
+   - inspect every unmerged branch for its diff, PR state, CI state, conflicts, and whether it contains unfinished work;
+   - finish and merge safe in-progress work before starting unrelated work;
+   - delete abandoned, duplicate, or superseded branches;
+   - keep a branch only when there is a concrete reason it cannot yet be merged or deleted, and state that reason.
+   Do not start a fresh implementation while an older viable half-finished branch for the same or related work is still unresolved.
+3. After branch reconciliation, create a new short-lived branch from the latest `origin/master` only when no existing branch should be continued.
+4. Make the requested change only on that branch.
+5. Add or update relevant tests.
+6. Run the applicable local tests and require them to pass before opening or updating the PR.
+7. Before the first PR push, fetch `origin` again. Rebase onto `origin/master` only if `master` has actually advanced; do not perform no-op rebases merely to retrigger CI.
+8. Before the final PR push, squash the work branch to exactly one commit relative to `origin/master`. Verify with:
 
    ```bash
    git rev-list --count origin/master..HEAD
    ```
 
    The result must be `1`. Do not merge a multi-commit work branch into `master`.
-8. Push the branch and open or update the PR. The PR CI run is the authoritative full validation for that source tree. Once it is green, do not push, rebase, amend, or otherwise retrigger CI unless the source tree must change.
-9. If `origin/master` advances after CI is green, rebase only when required by repository rules or to resolve an actual conflict. A required rebase changes the tested commit and therefore requires the PR CI to run again.
-10. Merge the single-commit PR into `master` using a linear-history merge.
-11. After the merge succeeds, delete the merged remote branch.
-12. Keep long-lived branches to a minimum.
+9. Push the branch and open or update the PR. The PR CI run is the authoritative full validation for that source tree. Once it is green, do not push, rebase, amend, or otherwise retrigger CI unless the source tree must change.
+10. If `origin/master` advances after CI is green, rebase only when required by repository rules or to resolve an actual conflict. A required rebase changes the tested commit and therefore requires the PR CI to run again.
+11. Merge the single-commit PR into `master` using a linear-history merge.
+12. After the merge succeeds, delete the merged remote branch.
+13. Keep long-lived branches to a minimum.
 
 ## CI policy
 

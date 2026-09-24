@@ -48,7 +48,7 @@ mkdir -p "$OUTPUT_ROOT"
 OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd)"
 
 compose() {
-  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 wait_postgres() {
@@ -77,19 +77,30 @@ trap restart_server EXIT INT TERM
 
 compose up -d postgres >/dev/null
 wait_postgres
-compose create server >/dev/null
-server_id="$(compose ps -aq server | head -n1)"
-[[ -n "$server_id" ]] || { echo "cannot locate xDrive server container" >&2; exit 1; }
 
-mount_type="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}')"
-if [[ "$mount_type" == "volume" ]]; then
-  data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}')"
-else
-  data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
+server_id="$(compose ps -aq server | head -n1 || true)"
+mount_type=""
+data_source=""
+if [[ -n "$server_id" ]]; then
+  mount_type="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}' </dev/null)"
+  if [[ "$mount_type" == "volume" ]]; then
+    data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' </dev/null)"
+  else
+    data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' </dev/null)"
+  fi
 fi
-[[ -n "$data_source" ]] || { echo "cannot resolve xDrive /data mount" >&2; exit 1; }
+if [[ -z "$data_source" ]]; then
+  data_source="$(docker volume ls -q \
+    --filter 'label=com.docker.compose.project=xdrive' \
+    --filter 'label=com.docker.compose.volume=file-data' </dev/null | head -n1 || true)"
+  [[ -n "$data_source" ]] && mount_type="volume"
+fi
+[[ -n "$data_source" ]] || {
+  echo "cannot resolve xDrive /data mount without creating/recreating the server service" >&2
+  exit 1
+}
 postgres_id="$(compose ps -q postgres | head -n1)"
-postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}')"
+postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </dev/null)"
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 final_dir="$OUTPUT_ROOT/xdrive-backup-$stamp"
@@ -100,7 +111,7 @@ mkdir -p "$partial_dir"
 compose stop server >/dev/null 2>&1 || true
 
 verify_status=0
-compose run --rm --no-deps server storage verify --json > "$partial_dir/verify.json" || verify_status=$?
+compose run -T --rm --no-deps server storage verify --json </dev/null > "$partial_dir/verify.json" || verify_status=$?
 if [[ "$verify_status" != "0" && "$ALLOW_INCONSISTENT" != "1" ]]; then
   echo "xDrive consistency verification failed; backup aborted." >&2
   cat "$partial_dir/verify.json" >&2 || true
@@ -110,7 +121,11 @@ fi
 
 compose exec -T postgres pg_dump -U xdrive -d xdrive -Fc > "$partial_dir/database.dump"
 
-docker run --rm --entrypoint sh   -v "$data_source:/data:ro"   -v "$partial_dir:/backup"   "$postgres_image"   -c 'cd /data && tar -cf /backup/blobs.tar .'
+docker run --rm --entrypoint sh \
+  -v "$data_source:/data:ro" \
+  -v "$partial_dir:/backup" \
+  "$postgres_image" \
+  -c 'cd /data && tar -cf /backup/blobs.tar .' </dev/null
 
 created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 server_image="$(compose config --images | grep 'xdrive-server' | head -n1 || true)"
