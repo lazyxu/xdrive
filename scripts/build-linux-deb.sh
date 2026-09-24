@@ -29,6 +29,24 @@ fi
 DESKTOP_DEPENDS="$(dpkg-deb -f "$DESKTOP_DEB" Depends 2>/dev/null || true)"
 dpkg-deb -x "$DESKTOP_DEB" "$PKG_ROOT"
 
+desktop_launcher="$PKG_ROOT/usr/bin/xdrive-desktop"
+if [[ ! -x "$desktop_launcher" ]]; then
+  desktop_payload="$(find "$PKG_ROOT" -type f -name xdrive-desktop -perm -u+x -print -quit)"
+  if [[ -z "$desktop_payload" ]]; then
+    echo "Electron desktop payload does not contain an executable named xdrive-desktop" >&2
+    exit 1
+  fi
+  desktop_payload_rel="${desktop_payload#"$PKG_ROOT/"}"
+  desktop_target="../../$desktop_payload_rel"
+  mkdir -p "$PKG_ROOT/usr/bin"
+  ln -sfn "$desktop_target" "$desktop_launcher"
+fi
+
+if [[ ! -x "$desktop_launcher" ]]; then
+  echo "Electron desktop launcher is not executable after package merge: /usr/bin/xdrive-desktop" >&2
+  exit 1
+fi
+
 mkdir -p   "$PKG_ROOT/DEBIAN"   "$PKG_ROOT/usr/bin"   "$PKG_ROOT/usr/lib/systemd/user"   "$PKG_ROOT/usr/lib/systemd/system"   "$PKG_ROOT/usr/share/doc/xdrive-client"
 
 VERSION_LDFLAG="-X github.com/lazyxu/xdrive/internal/version.Version=$VERSION"
@@ -44,6 +62,7 @@ install -m 0644 "$ROOT/packaging/linux/xdrive-update.service" "$PKG_ROOT/usr/lib
 install -m 0644 "$ROOT/packaging/linux/xdrive-update.timer" "$PKG_ROOT/usr/lib/systemd/system/xdrive-update.timer"
 install -m 0644 "$ROOT/README.md" "$PKG_ROOT/usr/share/doc/xdrive-client/README.md"
 install -m 0644 "$ROOT/LICENSE" "$PKG_ROOT/usr/share/doc/xdrive-client/LICENSE"
+printf '%s\n' "$VERSION" > "$PKG_ROOT/usr/share/doc/xdrive-client/client-version"
 
 cat > "$PKG_ROOT/DEBIAN/control" <<CONTROL
 Package: xdrive-client
@@ -66,11 +85,23 @@ CONTROL
 cat > "$PKG_ROOT/DEBIAN/postinst" <<'POSTINST'
 #!/bin/sh
 set -e
+for binary in /usr/bin/xd /usr/bin/xdrive-agent /usr/bin/xdrive-desktop; do
+  if [ ! -x "$binary" ]; then
+    printf '%s\n' "xDrive client health check failed: missing $binary" >&2
+    exit 1
+  fi
+done
+expected_version="$(cat /usr/share/doc/xdrive-client/client-version)"
+actual_version="$(/usr/bin/xd version)"
+if [ "$actual_version" != "$expected_version" ]; then
+  printf '%s\n' "xDrive client health check failed: xd version $actual_version != $expected_version" >&2
+  exit 1
+fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable --now xdrive-update.timer >/dev/null 2>&1 || true
 fi
-printf '%s\n' 'xDrive Desktop, background agent, and xd CLI installed.'
+printf '%s\n' 'xDrive Desktop, background agent, and xd CLI installed and verified.'
 printf '%s\n' 'Open xDrive Desktop from the applications menu, or login with xd from a terminal.'
 printf '%s\n' 'The Desktop starts at login by default and keeps the background agent healthy.'
 printf '%s\n' 'Updates are checked automatically: stable builds follow stable; snapshot builds follow master.'

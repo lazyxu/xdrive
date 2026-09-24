@@ -203,11 +203,21 @@ go-linux:
       npm run dist:linux
       popd >/dev/null
       bash scripts/build-linux-deb.sh 0.0.0+ci dist desktop/release/xdrive-desktop-linux-amd64.deb
-      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-updater'
-      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/lib/systemd/system/xdrive-update.timer'
-      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'xdrive-desktop'
+      pkg_root="$(mktemp -d)"
+      dpkg-deb -x dist/xdrive-client-linux-amd64.deb "$pkg_root"
+      test -x "$pkg_root/usr/bin/xdrive-updater" || { echo "unified package missing xdrive-updater" >&2; exit 1; }
+      test -f "$pkg_root/usr/lib/systemd/system/xdrive-update.timer" || { echo "unified package missing update timer" >&2; exit 1; }
+      test -L "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package missing xdrive-desktop link" >&2; exit 1; }
+      test -x "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package xdrive-desktop link is broken" >&2; exit 1; }
+      test -f "$pkg_root/usr/share/doc/xdrive-client/client-version" || { echo "unified package missing client-version marker" >&2; exit 1; }
+      rm -rf "$pkg_root"
       dpkg-deb --field dist/xdrive-client-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
       dpkg-deb --field dist/xdrive-client-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
+      pkg_meta="$(mktemp -d)"
+      dpkg-deb -e dist/xdrive-client-linux-amd64.deb "$pkg_meta"
+      grep -q 'xDrive client health check failed' "$pkg_meta/postinst"
+      grep -q '/usr/bin/xdrive-desktop' "$pkg_meta/postinst"
+      rm -rf "$pkg_meta"
 
       export POSTGRES_PASSWORD=ci-postgres-password
       export XD_JWT_SECRET=ci-jwt-secret-that-is-long-enough

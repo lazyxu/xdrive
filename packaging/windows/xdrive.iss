@@ -37,6 +37,7 @@ SetupIconFile={#SourceDir}\icons\tray-normal.ico
 Source: "{#SourceDir}\xd.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\xdrive-agent.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\desktop\*"; DestDir: "{app}\desktop"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\windows-legacy-cleanup.ps1"; Flags: dontcopy
 Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -105,6 +106,29 @@ begin
   Result := ShouldStartDesktop() and not WizardSilent();
 end;
 
+function ShouldDeferLegacyCleanup(): Boolean;
+begin
+  Result := HasCommandLineSwitch('/DEFERLEGACYCLEANUP');
+end;
+
+procedure RunLegacyDesktopCleanup;
+var
+  ResultCode: Integer;
+  ScriptPath: String;
+  Params: String;
+begin
+  if ShouldDeferLegacyCleanup() then
+    exit;
+  ExtractTemporaryFile('windows-legacy-cleanup.ps1');
+  ScriptPath := ExpandConstant('{tmp}\windows-legacy-cleanup.ps1');
+  Params := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath +
+    '" -UnifiedAppDir "' + ExpandConstant('{app}') + '"';
+  if not Exec('powershell.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Log('legacy Desktop cleanup could not be started')
+  else if ResultCode <> 0 then
+    Log(Format('legacy Desktop cleanup exited with code %d', [ResultCode]));
+end;
+
 procedure AddAppToPath;
 var
   CurrentPath: String;
@@ -152,8 +176,10 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then
+  if CurStep = ssPostInstall then begin
     AddAppToPath;
+    RunLegacyDesktopCleanup;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

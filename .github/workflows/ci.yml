@@ -130,11 +130,21 @@ jobs:
           npm run dist:linux
           popd >/dev/null
           bash scripts/build-linux-deb.sh 0.0.0+ci dist desktop/release/xdrive-desktop-linux-amd64.deb
-          dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-updater'
-          dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/lib/systemd/system/xdrive-update.timer'
-          dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'xdrive-desktop'
+          pkg_root="$(mktemp -d)"
+          dpkg-deb -x dist/xdrive-client-linux-amd64.deb "$pkg_root"
+          test -x "$pkg_root/usr/bin/xdrive-updater" || { echo "unified package missing xdrive-updater" >&2; exit 1; }
+          test -f "$pkg_root/usr/lib/systemd/system/xdrive-update.timer" || { echo "unified package missing update timer" >&2; exit 1; }
+          test -L "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package missing xdrive-desktop link" >&2; exit 1; }
+          test -x "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package xdrive-desktop link is broken" >&2; exit 1; }
+          test -f "$pkg_root/usr/share/doc/xdrive-client/client-version" || { echo "unified package missing client-version marker" >&2; exit 1; }
+          rm -rf "$pkg_root"
           dpkg-deb --field dist/xdrive-client-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
           dpkg-deb --field dist/xdrive-client-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
+          pkg_meta="$(mktemp -d)"
+          dpkg-deb -e dist/xdrive-client-linux-amd64.deb "$pkg_meta"
+          grep -q 'xDrive client health check failed' "$pkg_meta/postinst"
+          grep -q '/usr/bin/xdrive-desktop' "$pkg_meta/postinst"
+          rm -rf "$pkg_meta"
       - name: Validate server deployment files
         env:
           POSTGRES_PASSWORD: ci-postgres-password
@@ -268,6 +278,9 @@ jobs:
         run: |
           $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
           $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
+          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/test-windows-client-upgrade.ps1))
+          $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))
+          $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))
           $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-windows-native.ps1))
           $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-package-windows-native.ps1))
       - run: go build -o xd.exe ./cmd/xd
@@ -319,6 +332,9 @@ jobs:
       - name: Verify Windows installer
         shell: pwsh
         run: if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
+      - name: Validate Windows update transaction and rollback
+        shell: pwsh
+        run: ./scripts/test-windows-client-upgrade.ps1 -Installer ./dist/xDriveSetup-amd64.exe -TargetVersion 0.0.0-ci
       - name: Smoke install and uninstall Windows client
         shell: pwsh
         run: |

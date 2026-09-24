@@ -429,9 +429,9 @@ Windows and Linux clients use the same three release channels as the server:
 
 Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before installation, the client prefers the SHA-256 digest and exact asset size already returned by the GitHub Release API; legacy releases without a digest fall back to `SHA256SUMS.txt`. Release assets are downloaded from the GitHub asset API first and the browser download URL second. Interactive/manual updates print five stages (check, checksum, download, verify, install), show the target installer/package size before transfer, and report downloaded bytes / total / percentage / current rate / elapsed time during transfer. Partial files are kept as `.part` files and resumed with HTTP Range across retries **and across a later rerun of the update command**, so a weak connection no longer forces a large installer back to byte zero. Metadata and checksum requests also retry with backoff. The short metadata timeout is not used as the total installer download deadline.
 
-**Windows:** the background updater resolves and verifies `xDriveSetup-amd64.exe`. That single asset now contains Electron Desktop, Agent, and `xd`, so `xd update --install` upgrades the complete client rather than only the Go Core. Silent installation restarts Agent and Desktop in background mode.
+**Windows:** the background updater resolves and verifies `xDriveSetup-amd64.exe`. That single asset contains Electron Desktop, Agent, and `xd`, so `xd update --install` upgrades the complete client rather than only the Go Core. The updater now hands installation to a detached transaction: it stops Desktop/Agent, creates a last-known-good copy of the installed client, installs with automatic starts suppressed, verifies the new `xd` version and Agent Desktop-IPC handshake, then starts the new Desktop. Only after those checks pass does it remove an older standalone `xDrive Desktop` installation from Phase 2–5. If installation or health verification fails, the previous client directory is restored and the old Agent/Desktop are restarted. Transaction state is written under the user cache directory. Run `xd update --status` to inspect the latest state (`preparing`, `installing`, `verifying`, `success`, `rolled_back`, or `failed`) together with the target version and local transaction log path. `xd doctor` reports only the state, target version, and timestamp; local paths and transaction error text are intentionally omitted from the diagnostic report.
 
-**Linux:** `xdrive-update.timer` installs a verified `xdrive-client-linux-amd64.deb` through `apt-get`. That package contains Desktop, Agent, `xd`, FUSE integration, and updater files, so the same update transaction advances the complete client.
+**Linux:** `xdrive-update.timer` installs a verified `xdrive-client-linux-amd64.deb` through `apt-get`. That package contains Desktop, Agent, `xd`, FUSE integration, and updater files, so the same package transaction advances the complete client. The package post-install hook verifies that all three client executables exist and that `xd version` matches the package's embedded target version before reporting success.
 
 Useful commands:
 
@@ -442,10 +442,13 @@ xd update --install
 xd update --channel stable
 xd update --channel master --install
 xd update --channel commit --commit 0123456789ab --install
+xd update --status
 xd doctor
 ```
 
-`xd doctor` produces a copy/paste-safe client report with version/update channel, GitHub update metadata reachability, local config, credential backend, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks CfAPI sync-root registration and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
+`xd doctor` produces a copy/paste-safe client report with version/update channel, GitHub update metadata reachability, local config, credential backend, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks the most recent client-upgrade transaction state, CfAPI sync-root registration, and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
+
+`xd update --status` shows the full local transaction record on platforms that support detached update transactions, including the local log path. Use `xd doctor` when a redacted, copy/paste-safe summary is needed.
 
 For a persistent pinned commit target, set both `XD_UPDATE_CHANNEL=commit` and `XD_UPDATE_COMMIT=<sha>` in the updater environment. `XD_UPDATE_CHANNEL=stable|master` can also override the build's default channel. On Linux a manual root update can use `sudo xdrive-updater --channel ...`.
 
@@ -469,6 +472,7 @@ xd config --mount PATH
 xd mount [PATH]
 xd version
 xd update [--channel stable|master|commit] [--commit SHA] [--install]
+xd update --status
 xd doctor [--strict]
 xd logout
 ```

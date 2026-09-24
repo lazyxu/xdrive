@@ -49,6 +49,16 @@ type Result struct {
 	Checksums       Asset
 }
 
+type InstallStatus struct {
+	State          string `json:"state"`
+	CurrentVersion string `json:"current_version"`
+	TargetVersion  string `json:"target_version"`
+	Message        string `json:"message"`
+	RolledBack     bool   `json:"rolled_back"`
+	UpdatedAt      string `json:"updated_at"`
+	LogPath        string `json:"-"`
+}
+
 type Checker struct {
 	Repository    string
 	APIBase       string
@@ -1045,9 +1055,13 @@ func InstallTargetWithProgress(ctx context.Context, current, channel, commit str
 		return false, result, err
 	}
 	reportProgress(progress, ProgressEvent{Step: 5, Stage: "install", Message: "starting platform installer"})
-	if err := installDownloaded(ctx, path); err != nil {
+	installMessage, err := installDownloaded(ctx, path, result)
+	if err != nil {
 		return false, result, err
 	}
-	reportProgress(progress, ProgressEvent{Step: 5, Stage: "install", Message: "installer started"})
+	if strings.TrimSpace(installMessage) == "" {
+		installMessage = "platform installer accepted"
+	}
+	reportProgress(progress, ProgressEvent{Step: 5, Stage: "install", Message: installMessage})
 	return true, result, nil
 }

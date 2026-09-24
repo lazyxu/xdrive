@@ -65,6 +65,7 @@ Usage:
   xd mount [PATH]
   xd version
   xd update [--channel stable|master|commit] [--commit SHA] [--install]
+  xd update --status
   xd doctor [--strict]
   xd logout
 
@@ -336,10 +337,38 @@ func cleanupCmd() error {
 func updateCmd(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	install := fs.Bool("install", false, "install the available update now")
+	showStatus := fs.Bool("status", false, "show the most recent platform update transaction")
 	channelFlag := fs.String("channel", "", "update channel: stable, master, or commit")
 	commitFlag := fs.String("commit", "", "commit SHA for the commit channel")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *showStatus {
+		if *install || strings.TrimSpace(*channelFlag) != "" || strings.TrimSpace(*commitFlag) != "" {
+			return fmt.Errorf("--status cannot be combined with --install, --channel, or --commit")
+		}
+		status, err := xupdate.LastInstallStatus()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("state: %s\n", status.State)
+		if status.CurrentVersion != "" {
+			fmt.Printf("from: %s\n", status.CurrentVersion)
+		}
+		if status.TargetVersion != "" {
+			fmt.Printf("to: %s\n", status.TargetVersion)
+		}
+		if status.Message != "" {
+			fmt.Printf("message: %s\n", status.Message)
+		}
+		fmt.Printf("rolled back: %t\n", status.RolledBack)
+		if status.UpdatedAt != "" {
+			fmt.Printf("updated at: %s\n", status.UpdatedAt)
+		}
+		if status.LogPath != "" {
+			fmt.Printf("log: %s\n", status.LogPath)
+		}
+		return nil
 	}
 
 	current := version.String()
@@ -379,7 +408,7 @@ func updateCmd(args []string) error {
 			return err
 		}
 		if started {
-			fmt.Printf("updated target verified: %s from %s channel; installer started\n", installed.Latest, normalized)
+			fmt.Printf("updated target verified: %s from %s channel; upgrade handoff accepted\n", installed.Latest, normalized)
 		}
 		return nil
 	}

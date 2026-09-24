@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
 func platformDoctorChecks(mountPath string) []doctorCheck {
 	var checks []doctorCheck
+	checks = append(checks, windowsUpdateTransactionCheck())
 	if mountPath != "" {
 		path16, err := windows.UTF16PtrFromString(filepath.VolumeName(mountPath) + "\\")
 		if err == nil {
@@ -54,6 +56,43 @@ func platformDoctorChecks(mountPath string) []doctorCheck {
 		}
 	}
 	return checks
+}
+
+func windowsUpdateTransactionCheck() doctorCheck {
+	state, err := xupdate.LastInstallStatus()
+	if err != nil {
+		if strings.Contains(err.Error(), "no Windows client update transaction has been recorded") {
+			return doctorCheck{Name: "last client update", Status: doctorPass, Detail: "no update transaction recorded"}
+		}
+		return doctorCheck{Name: "last client update", Status: doctorWarn, Detail: "transaction state unavailable"}
+	}
+	return windowsUpdateTransactionCheckFromStatus(state)
+}
+
+func windowsUpdateTransactionCheckFromStatus(state xupdate.InstallStatus) doctorCheck {
+	status := doctorWarn
+	label := strings.TrimSpace(state.State)
+	switch label {
+	case "success":
+		status = doctorPass
+	case "rolled_back":
+		status = doctorWarn
+	case "failed":
+		status = doctorFail
+	case "preparing", "installing", "verifying":
+		status = doctorWarn
+	default:
+		label = "unknown"
+	}
+
+	detail := label
+	if target := strings.TrimSpace(state.TargetVersion); target != "" {
+		detail += " -> " + target
+	}
+	if updated := strings.TrimSpace(state.UpdatedAt); updated != "" {
+		detail += " @ " + updated
+	}
+	return doctorCheck{Name: "last client update", Status: status, Detail: detail}
 }
 
 func windowsSyncRootRegistered(root string) (bool, string) {

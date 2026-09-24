@@ -129,6 +129,12 @@ try {
     New-Item -ItemType Directory -Force $IconTarget | Out-Null
     Copy-Item $IconSource (Join-Path $IconTarget "tray-normal.ico")
 
+    $LegacyCleanupSource = Join-Path $Root "internal\update\windows_legacy_cleanup.ps1"
+    if (-not (Test-Path $LegacyCleanupSource)) {
+        throw "Windows legacy Desktop cleanup script is missing: $LegacyCleanupSource"
+    }
+    Copy-Item $LegacyCleanupSource (Join-Path $Source "windows-legacy-cleanup.ps1")
+
     $DesktopTarget = Join-Path $Source "desktop"
     New-Item -ItemType Directory -Force $DesktopTarget | Out-Null
     Copy-Item (Join-Path $DesktopSourceDir "*") $DesktopTarget -Recurse -Force
