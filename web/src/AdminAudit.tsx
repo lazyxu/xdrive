@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { AuditEvent, XDriveApi } from './api'
+import type { XDriveApi } from './api'
+import type { AuditEvent } from '../../ui/shared/src'
 
 const ACTION_OPTIONS = [
   'auth.login.success',

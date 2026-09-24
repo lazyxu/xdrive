@@ -122,7 +122,7 @@ jobs:
             context: .
             dockerfile: ./Dockerfile
           - image: xdrive-web
-            context: ./web
+            context: .
             dockerfile: ./web/Dockerfile
           - image: xdrive-caddy
             context: .
