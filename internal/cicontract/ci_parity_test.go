@@ -81,17 +81,18 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	githubText := collectYAMLStrings(github)
 	gitlabText := collectYAMLStrings(gitlab)
+	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
-	gitlabContractText := gitlabText + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
+	gitlabContractText := gitlabText + "\n" + goVersionCheck + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
 	for _, command := range []string{
 		"npm install --no-audit --no-fund",
 		"npm run test:main",
 		"node scripts/set-version.mjs 0.0.0-ci",
 		"npm run dist:linux",
 		"npm run dist:win",
-		"go mod tidy",
+		"go mod tidy \"-go=1.25\"",
 		"git diff --exit-code -- go.mod go.sum",
 		"go test -p 1 -race ./...",
 		"go vet ./...",
@@ -143,6 +144,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "GitLab CI", gitlabRaw,
 		"- local: /infra/ci/images.yml",
+		"bash scripts/ci/check-go-min-version.sh 1.25",
 		".electron-linux-cache:",
 		"XDG_CACHE_HOME: \"$CI_PROJECT_DIR/.cache\"",
 		"ELECTRON_BUILDER_CACHE: \"$CI_PROJECT_DIR/.cache/electron-builder\"",
@@ -162,8 +164,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		strings.Contains(gitlabRaw, "$LASTEXITCODE") {
 		t.Errorf("GitLab Windows jobs must be Bash-compatible; raw PowerShell syntax found in .gitlab-ci.yml")
 	}
+	requireRaw(t, "Go minimum-version check", goVersionCheck,
+		"Go >= $minimum is required",
+		"Go version OK:",
+	)
 	requireRaw(t, "GitLab Windows Bash wrappers", gitlabWindowsBash,
 		"set -euo pipefail",
+		"bash scripts/ci/check-go-min-version.sh 1.25",
 		"powershell.exe",
 		"go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
 		"install innosetup --no-progress -y",
