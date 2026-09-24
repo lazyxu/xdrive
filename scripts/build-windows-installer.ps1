@@ -106,20 +106,13 @@ try {
     Sign-Artifact (Join-Path $Source "xd.exe")
     Sign-Artifact (Join-Path $Source "xdrive-agent.exe")
 
-    $IconSource = Join-Path $Root "packaging\windows\icons"
+    $IconSource = Join-Path $Root "packaging\windows\icons\tray-normal.ico"
     $IconTarget = Join-Path $Source "icons"
     if (-not (Test-Path $IconSource)) {
-        throw "Windows tray icon assets are missing: $IconSource"
+        throw "Windows installer icon is missing: $IconSource"
     }
     New-Item -ItemType Directory -Force $IconTarget | Out-Null
-    Copy-Item (Join-Path $IconSource "*.ico") $IconTarget
-    $ExpectedIcons = @("normal", "syncing", "paused", "offline", "conflict")
-    foreach ($state in $ExpectedIcons) {
-        $icon = Join-Path $IconTarget "tray-$state.ico"
-        if (-not (Test-Path $icon)) {
-            throw "Windows tray icon asset missing: $icon"
-        }
-    }
+    Copy-Item $IconSource (Join-Path $IconTarget "tray-normal.ico")
 
     Copy-Item README.md, LICENSE $Source
 } finally {

@@ -6,6 +6,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   session,
   Tray,
   type OpenDialogOptions,
@@ -14,6 +15,7 @@ import {
   AgentIPCClient,
   AgentIPCError,
   type AgentConflict,
+  type AgentFileAvailability,
   type AgentSettings,
   type AgentStatus,
 } from './agent_client.cjs'
@@ -139,8 +141,29 @@ function createTray() {
   rebuildTrayMenu()
 }
 
+function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnectionState) {
+  if (!previous.connected || !next.connected || !previous.status || !next.status || !Notification.isSupported()) return
+
+  const before = previous.status
+  const after = next.status
+  if (after.conflict_count > before.conflict_count) {
+    new Notification({
+      title: 'xDrive conflict',
+      body: `${after.conflict_count} unresolved conflict${after.conflict_count === 1 ? '' : 's'} need attention.`,
+    }).show()
+  } else if (before.sync_status === '正在同步' && after.sync_status === '同步正常') {
+    new Notification({ title: 'xDrive', body: 'Sync completed.' }).show()
+  }
+
+  if (before.auth_status !== after.auth_status && (after.auth_status === '登录已过期' || after.auth_status === '账户已禁用')) {
+    new Notification({ title: 'xDrive', body: 'Your xDrive session needs attention. Open xDrive Desktop to sign in again.' }).show()
+  }
+}
+
 function publishAgentState(next: AgentConnectionState) {
-  const changed = JSON.stringify(agentState) !== JSON.stringify(next)
+  const previous = agentState
+  const changed = JSON.stringify(previous) !== JSON.stringify(next)
+  if (changed) notifyAgentTransition(previous, next)
   agentState = next
   rebuildTrayMenu()
   if (changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent:state', next)
@@ -278,6 +301,27 @@ function registerIPCHandlers() {
       return { ok: false, error: { code: 'invalid_input', message: 'At least one valid setting is required.' } }
     }
     return runAgentAction<AgentSettings>(() => requireAgentClient().updateSettings(update))
+  })
+  ipcMain.handle('agent:set-sync-rule', (_event, path: unknown, mode: unknown) => {
+    if (typeof path !== 'string' || !path.trim() || (mode !== 'exclude' && mode !== 'always-local' && mode !== 'default')) {
+      return { ok: false, error: { code: 'invalid_input', message: 'A sync-rule path and valid mode are required.' } }
+    }
+    return runAgentAction<AgentSettings>(() => requireAgentClient().setSyncRule(path, mode), false)
+  })
+  ipcMain.handle('agent:get-file-availability', (_event, path: unknown) => {
+    if (typeof path !== 'string' || !path.trim()) {
+      return { ok: false, error: { code: 'invalid_input', message: 'A file or directory path is required.' } }
+    }
+    return runAgentAction<AgentFileAvailability>(() => requireAgentClient().fileAvailability(path), false)
+  })
+  ipcMain.handle('agent:set-file-availability', (_event, path: unknown, action: unknown) => {
+    if (
+      typeof path !== 'string' || !path.trim() ||
+      (action !== 'keep' && action !== 'release' && action !== 'online' && action !== 'sync')
+    ) {
+      return { ok: false, error: { code: 'invalid_input', message: 'A path and valid file-availability action are required.' } }
+    }
+    return runAgentAction(() => requireAgentClient().setFileAvailability(path, action), action === 'sync')
   })
   ipcMain.handle('agent:get-conflicts', () => runAgentAction<AgentConflict[]>(() => requireAgentClient().conflicts(), false))
   ipcMain.handle('agent:open-conflict', (_event, id: unknown, both: unknown) => {

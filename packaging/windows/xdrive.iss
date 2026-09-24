@@ -36,7 +36,6 @@ SetupIconFile={#SourceDir}\icons\tray-normal.ico
 [Files]
 Source: "{#SourceDir}\xd.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\xdrive-agent.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\icons\*.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -46,7 +45,6 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
 
 [Icons]
-Name: "{userprograms}\\xDrive"; Filename: "{app}\\xdrive-agent.exe"; WorkingDir: "{app}"; IconFilename: "{app}\\icons\\tray-normal.ico"; AppUserModelID: "xDrive.Client"
 Name: "{group}\xDrive README"; Filename: "{app}\README.md"
 Name: "{group}\Uninstall xDrive"; Filename: "{uninstallexe}"
 

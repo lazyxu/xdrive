@@ -31,6 +31,17 @@ declare global {
     sync_rules: Array<{ path: string; mode: string }>
   }
 
+  type AgentFileAvailability = {
+    Path: string
+    Mode: string
+    Placeholder: boolean
+    Pinned: boolean
+    OnlineOnly: boolean
+    AvailableOffline: boolean
+    InSync: boolean
+    Syncing: boolean
+  }
+
   type AgentConflict = {
     id: string
     server?: string
@@ -68,6 +79,9 @@ declare global {
         syncNow: () => Promise<DesktopResult<AgentStatus>>
         getSettings: () => Promise<DesktopResult<AgentSettings>>
         updateSettings: (input: { mount_path?: string; cache_limit_bytes?: number }) => Promise<DesktopResult<AgentSettings>>
+        setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => Promise<DesktopResult<AgentSettings>>
+        getFileAvailability: (path: string) => Promise<DesktopResult<AgentFileAvailability>>
+        setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') => Promise<DesktopResult<AgentFileAvailability | { ok: boolean }>>
         getConflicts: () => Promise<DesktopResult<AgentConflict[]>>
         openConflict: (id: string, both?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
         resolveConflict: (id: string, choice: 'server' | 'local') => Promise<DesktopResult<{ ok: boolean }>>

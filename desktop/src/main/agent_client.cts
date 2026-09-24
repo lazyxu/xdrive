@@ -22,6 +22,17 @@ export type AgentSettings = {
   sync_rules: Array<{ path: string; mode: string }>
 }
 
+export type AgentFileAvailability = {
+  Path: string
+  Mode: string
+  Placeholder: boolean
+  Pinned: boolean
+  OnlineOnly: boolean
+  AvailableOffline: boolean
+  InSync: boolean
+  Syncing: boolean
+}
+
 export type AgentConflict = {
   id: string
   server?: string
@@ -114,6 +125,19 @@ export class AgentIPCClient {
 
   updateSettings(input: { mount_path?: string; cache_limit_bytes?: number }) {
     return this.request<AgentSettings>('PATCH', '/v1/settings', input)
+  }
+
+  setSyncRule(path: string, mode: 'exclude' | 'always-local' | 'default') {
+    return this.request<AgentSettings>('PUT', '/v1/settings/sync-rule', { path, mode })
+  }
+
+  fileAvailability(path: string) {
+    const query = new URLSearchParams({ path })
+    return this.request<AgentFileAvailability>('GET', `/v1/file-availability?${query.toString()}`)
+  }
+
+  setFileAvailability(path: string, action: 'keep' | 'release' | 'online' | 'sync') {
+    return this.request<AgentFileAvailability | { ok: boolean }>('POST', '/v1/file-availability', { path, action }, 130_000)
   }
 
   async conflicts() {

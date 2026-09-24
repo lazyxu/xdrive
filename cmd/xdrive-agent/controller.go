@@ -34,17 +34,10 @@ type agentSnapshot struct {
 	Version            string
 }
 
-type agentNotification struct {
-	Title string
-	Body  string
-	Kind  string
-}
-
 type agentController struct {
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wake          chan struct{}
-	notifications chan agentNotification
+	ctx    context.Context
+	cancel context.CancelFunc
+	wake   chan struct{}
 
 	mu               sync.RWMutex
 	snap             agentSnapshot
@@ -57,7 +50,6 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		ctx:              ctx,
 		cancel:           cancel,
 		wake:             make(chan struct{}, 1),
-		notifications:    make(chan agentNotification, 16),
 		snapshotRevision: 1,
 		snapshotChanged:  make(chan struct{}),
 		snap: agentSnapshot{
@@ -65,15 +57,6 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 			SyncStatus: "等待登录",
 			Version:    version.String(),
 		},
-	}
-}
-
-func (c *agentController) Notifications() <-chan agentNotification { return c.notifications }
-
-func (c *agentController) notify(n agentNotification) {
-	select {
-	case c.notifications <- n:
-	default:
 	}
 }
 
@@ -145,17 +128,12 @@ func (c *agentController) Run() {
 				}
 			})
 		case mount.EventSyncCompleted:
-			notifyComplete := false
 			c.setSnapshot(func(s *agentSnapshot) {
 				if !s.HasConflict {
-					notifyComplete = s.SyncStatus == "正在同步"
 					s.SyncStatus = "同步正常"
 					s.LastError = ""
 				}
 			})
-			if notifyComplete && event.Notify {
-				c.notify(agentNotification{Title: "xDrive", Body: "同步完成", Kind: "info"})
-			}
 		case mount.EventSyncFailed:
 			c.setSnapshot(func(s *agentSnapshot) {
 				if !s.HasConflict {
@@ -193,23 +171,17 @@ func (c *agentController) Run() {
 			c.setSnapshot(func(s *agentSnapshot) {
 				s.SyncStatus = "存在冲突副本"
 			})
-			body := "已保留冲突副本"
-			if event.Path != "" {
-				body += "：" + event.Path
-			}
-			c.notify(agentNotification{Title: "xDrive 冲突", Body: body, Kind: "warning"})
 		}
 	})
 	defer mount.SetEventSink(nil)
 
 	var (
-		running        bool
-		currentKey     string
-		mountCancel    context.CancelFunc
-		mountDone      chan error
-		lastAuthCheck  time.Time
-		lastAuthNotice string
-		conflictKey    string
+		running       bool
+		currentKey    string
+		mountCancel   context.CancelFunc
+		mountDone     chan error
+		lastAuthCheck time.Time
+		conflictKey   string
 	)
 
 	stopMount := func() {
@@ -257,7 +229,6 @@ func (c *agentController) Run() {
 					Version:    version.String(),
 				}
 			})
-			lastAuthNotice = ""
 			conflictKey = ""
 			c.setSnapshot(func(s *agentSnapshot) {
 				s.HasConflict = false
@@ -334,7 +305,6 @@ func (c *agentController) Run() {
 			_, err := cli.Root(checkCtx)
 			cancel()
 			if err == nil {
-				lastAuthNotice = ""
 				c.setSnapshot(func(s *agentSnapshot) {
 					s.AuthStatus = "已登录"
 					if !s.HasConflict {
@@ -363,10 +333,6 @@ func (c *agentController) Run() {
 						s.SyncStatus = "同步已停止"
 						s.LastError = ""
 					})
-					if lastAuthNotice != "invalid" {
-						lastAuthNotice = "invalid"
-						c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
-					}
 					return
 				}
 				if apiErr.Status == 401 || apiErr.Status == 403 {
@@ -376,10 +342,6 @@ func (c *agentController) Run() {
 						s.SyncStatus = "需要重新登录"
 						s.LastError = err.Error()
 					})
-					if lastAuthNotice != "invalid" {
-						lastAuthNotice = "invalid"
-						c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
-					}
 					return
 				}
 			}
@@ -411,10 +373,6 @@ func (c *agentController) Run() {
 					s.SyncStatus = "需要重新登录"
 					s.LastError = err.Error()
 				})
-				if lastAuthNotice != "invalid" {
-					lastAuthNotice = "invalid"
-					c.notify(agentNotification{Title: "xDrive", Body: "登录已失效，请重新登录。", Kind: "warning"})
-				}
 				return
 			}
 			c.setSnapshot(func(s *agentSnapshot) {
@@ -424,8 +382,6 @@ func (c *agentController) Run() {
 			})
 			return
 		}
-
-		lastAuthNotice = ""
 		c.setSnapshot(func(s *agentSnapshot) {
 			s.AuthStatus = "已登录"
 			s.SyncStatus = "正在启动同步"
