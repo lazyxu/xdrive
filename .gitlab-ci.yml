@@ -105,21 +105,7 @@ desktop-windows:
   tags:
     - windows
   script:
-    - |
-      $ErrorActionPreference = "Stop"
-      $nodeMajor = [int]((& node -p "process.versions.node.split('.')[0]").Trim())
-      if ($nodeMajor -ne 22) { throw "Node.js 22 is required; found $(node --version)" }
-      Set-Location desktop
-      npm install --no-audit --no-fund
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      npm run test:main
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      node scripts/set-version.mjs 0.0.0-ci
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      npm run dist:win
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      if (-not (Test-Path ./release/xDriveDesktopSetup-amd64.exe)) { throw "desktop installer missing" }
-      if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop executable missing" }
+    - bash scripts/ci/gitlab-desktop-windows.sh
 
 go-linux:
   image: $XDRIVE_CI_GO_IMAGE
@@ -238,6 +224,8 @@ go-linux:
       bash scripts/test-cleanup-merged-branches.sh
       bash -n scripts/test-update-channels.sh
       bash scripts/test-update-channels.sh
+      bash -n scripts/ci/gitlab-desktop-windows.sh
+      bash -n scripts/ci/gitlab-go-windows.sh
 
       docker compose -f deploy/docker-compose.yml config >/dev/null
       XD_DOMAIN=drive.example.test \
@@ -309,114 +297,7 @@ go-windows:
   tags:
     - windows
   script:
-    - |
-      $ErrorActionPreference = "Stop"
-
-      $goVersion = (& go version).Trim()
-      if ($goVersion -notmatch 'go1\.25(\.| )') { throw "Go 1.25.x is required; found $goVersion" }
-      $nodeMajor = [int]((& node -p "process.versions.node.split('.')[0]").Trim())
-      if ($nodeMajor -ne 22) { throw "Node.js 22 is required; found $(node --version)" }
-
-      go mod tidy
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      git diff --exit-code -- go.mod go.sum
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      go test ./internal/... ./cmd/xdrive-agent
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
-      $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
-
-      go build -o xd.exe ./cmd/xd
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      choco install innosetup --no-progress -y
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      $password = "xdrive-ci-signing"
-      $secure = ConvertTo-SecureString $password -AsPlainText -Force
-      $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
-      $ciTemp = Join-Path $env:CI_PROJECT_DIR ".gitlab-ci-tmp"
-      New-Item -ItemType Directory -Force -Path $ciTemp | Out-Null
-      $pfx = Join-Path $ciTemp "xdrive-ci-signing.pfx"
-      Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
-      $env:XD_WINDOWS_SIGN_PFX_PATH = $pfx
-      $env:XD_WINDOWS_SIGN_PFX_PASSWORD = $password
-      $env:CSC_LINK = $pfx
-      $env:CSC_KEY_PASSWORD = $password
-
-      Push-Location desktop
-      npm install --no-audit --no-fund
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      node scripts/set-version.mjs 0.0.0-ci
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      npm run dist:win
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      Pop-Location
-
-      ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      $targets = @(
-        "./dist/windows-build/xd.exe",
-        "./dist/windows-build/xdrive-agent.exe",
-        "./dist/windows-build/desktop/xdrive-desktop.exe",
-        "./dist/xDriveSetup-amd64.exe"
-      )
-      foreach ($target in $targets) {
-        $signature = Get-AuthenticodeSignature $target
-        if ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
-          throw "missing Authenticode signature for $target"
-        }
-        if ($signature.SignerCertificate.Subject -ne "CN=xDrive CI Test") {
-          throw "unexpected signer for $($target): $($signature.SignerCertificate.Subject)"
-        }
-      }
-
-      if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
-
-      $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
-      $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
-      $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
-      if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
-
-      $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
-      if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
-      if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
-      if (-not (Test-Path (Join-Path $app "desktop\xdrive-desktop.exe"))) { throw "installed Electron desktop missing" }
-      if (Test-Path (Join-Path $app "icons")) { throw "runtime tray icons must not be installed" }
-      $shortcutRoots = @(
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
-        (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
-      )
-      $shortcut = $shortcutRoots |
-        Where-Object { Test-Path $_ } |
-        ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
-        Select-Object -First 1
-      if ($null -eq $shortcut) { throw "Start menu xDrive shortcut missing" }
-
-      $reported = & (Join-Path $app "xd.exe") version
-      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      if ($reported.Trim() -ne "0.0.0-ci") { throw "embedded version mismatch: $reported" }
-
-      $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-      $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
-      if ($runValue -notlike "*xdrive-agent.exe*") { throw "xDriveAgent autorun registration missing" }
-
-      $uninstaller = Join-Path $app "unins000.exe"
-      if (-not (Test-Path $uninstaller)) { throw "uninstaller missing" }
-      $u = Start-Process -FilePath $uninstaller -ArgumentList $args -Wait -PassThru
-      if ($u.ExitCode -ne 0) { throw "uninstaller exit code $($u.ExitCode)" }
-
-      if (Test-Path (Join-Path $app "xd.exe")) { throw "xd.exe remains after uninstall" }
-      $left = Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
-      if ($null -ne $left) { throw "xDriveAgent autorun remains after uninstall" }
-
-      Remove-Item -Recurse -Force $ciTemp -ErrorAction SilentlyContinue
+    - bash scripts/ci/gitlab-go-windows.sh
 
 web:
   image: $XDRIVE_CI_NODE_IMAGE
