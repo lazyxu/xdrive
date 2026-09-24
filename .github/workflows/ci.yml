@@ -101,6 +101,9 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: go mod tidy
       - run: git diff --exit-code -- go.mod go.sum
       - name: Check formatting
@@ -118,11 +121,19 @@ jobs:
       - run: go test -p 1 -race ./...
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
-      - name: Build Linux client installer
+      - name: Build Linux unified client installer
         run: |
-          bash scripts/build-linux-deb.sh 0.0.0+ci dist
+          pushd desktop >/dev/null
+          npm install --no-audit --no-fund
+          node scripts/set-version.mjs 0.0.0-ci
+          npm run dist:linux
+          popd >/dev/null
+          bash scripts/build-linux-deb.sh 0.0.0+ci dist desktop/release/xdrive-desktop-linux-amd64.deb
           dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-updater'
           dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/lib/systemd/system/xdrive-update.timer'
+          dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'xdrive-desktop'
+          dpkg-deb --field dist/xdrive-client-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
+          dpkg-deb --field dist/xdrive-client-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
       - name: Validate server deployment files
         env:
           POSTGRES_PASSWORD: ci-postgres-password
@@ -225,6 +236,9 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: go mod tidy
       - run: git diff --exit-code -- go.mod go.sum
       - run: go test ./internal/... ./cmd/xdrive-agent
@@ -251,15 +265,25 @@ jobs:
           Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
           "XD_WINDOWS_SIGN_PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Build and sign Windows client installer
+          "CSC_LINK=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CSC_KEY_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build embedded Windows desktop runtime
         shell: pwsh
-        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -TimestampUrl "" -SkipSignatureTrustCheck
+        working-directory: desktop
+        run: |
+          npm install --no-audit --no-fund
+          node scripts/set-version.mjs 0.0.0-ci
+          npm run dist:win
+      - name: Build and sign Windows unified client installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
       - name: Verify Windows Authenticode signatures
         shell: pwsh
         run: |
           $targets = @(
             "./dist/windows-build/xd.exe",
             "./dist/windows-build/xdrive-agent.exe",
+            "./dist/windows-build/desktop/xdrive-desktop.exe",
             "./dist/xDriveSetup-amd64.exe"
           )
           foreach ($target in $targets) {
@@ -279,14 +303,15 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
-          $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT")
+          $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
           $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
 
           $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
           if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
           if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
-          if (Test-Path (Join-Path $app "icons")) { throw "headless agent must not install runtime tray icons" }
+          if (-not (Test-Path (Join-Path $app "desktop\xdrive-desktop.exe"))) { throw "installed Electron desktop missing" }
+          if (Test-Path (Join-Path $app "icons")) { throw "runtime tray icons must not be installed" }
           $shortcutRoots = @(
             (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
             (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
@@ -295,7 +320,7 @@ jobs:
             Where-Object { Test-Path $_ } |
             ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
             Select-Object -First 1
-          if ($null -ne $shortcut) { throw "headless agent must not install a visible xDrive application shortcut" }
+          if ($null -eq $shortcut) { throw "unified client must install the xDrive Desktop shortcut" }
           $reported = & (Join-Path $app "xd.exe") version
           if ($reported.Trim() -ne "0.0.0-ci") { throw "embedded version mismatch: $reported" }
 

@@ -381,82 +381,21 @@ Download and run:
 xDriveSetup-amd64.exe
 ```
 
-The installer is per-user and does not require WinFsp. It installs:
+This is the **unified Windows client installer**. It is per-user, does not require WinFsp, and installs all three client components under `%LOCALAPPDATA%\Programs\xDrive`:
 
 ```text
-xd.exe
-xdrive-agent.exe
+desktop\xdrive-desktop.exe   Electron graphical client
+xdrive-agent.exe             headless CfAPI/sync core
+xd.exe                       CLI / diagnostics / automation
 ```
 
-under `%LOCALAPPDATA%\Programs\xDrive`, adds the install directory to the user PATH, and starts `xdrive-agent.exe` automatically at login.
+The installer adds `xd` to the user PATH, registers the headless Agent for current-user login startup, creates the visible **xDrive** Start-menu shortcut for Electron Desktop, and starts Desktop after an interactive install. Silent updates restart Desktop in background/Tray mode.
 
-The agent is a hidden user-session process with a native Windows notification-area (system tray) UI. It is intentionally a user-session process rather than a Windows service because the CfAPI sync root belongs to the interactive user/Explorer session.
+Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, conflict center, file-availability controls, selective-sync settings, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
 
-For normal use, **no PowerShell or `xd` command is required**. After installation, use the xDrive tray icon. The icon itself now has five branded states — **normal, syncing, paused, offline, and conflict** — and Windows notifications surface completed sync batches, preserved conflict copies, and expired logins.
+The separate `xDriveDesktopSetup-amd64.exe` artifact is retained temporarily for transition/testing compatibility, but normal installation and `xd update` use `xDriveSetup-amd64.exe`.
 
-- the first two disabled lines show the current account/login state and sync state;
-- **登录...** opens xDrive's local account page in the default browser;
-- **打开 xDrive** opens the current sync root in Explorer;
-- **暂停同步 / 恢复同步** disconnects/reconnects the provider while preserving the configured state across restarts;
-- **立即同步** immediately flushes pending local changes and performs a full remote reconciliation;
-- **冲突（N）...** opens the local conflict center when unresolved conflict copies exist;
-- **账户 / 设置...** opens the local control center for login/password, mount path, file availability, and conflict handling;
-- **检查更新** immediately runs the stable-release update check;
-- **注销** removes the local JWT credentials and stops the active mount;
-- **退出 xDrive** closes the tray agent. The Start menu contains an **xDrive** shortcut to start it again.
-
-The local control center listens only on `127.0.0.1`, uses a random per-agent-session URL token, sends credentials directly to the configured xDrive server, and does not save the password. It shows the current sync state and unresolved-conflict count, and it can inspect/control a file or directory inside the xDrive root:
-
-- **始终保留在此设备 / Always keep on this device** pins the placeholder and hydrates its content;
-- **释放空间 / Free up space** and **仅在线 / Online only** unpin and dehydrate in-sync placeholders;
-- **立即同步 / Sync now** requests an immediate provider reconciliation;
-- directory-level **此设备不同步 / Exclude on this device** rules keep selected remote subtrees out of this Windows sync root without deleting their cloud contents;
-- directory-level **始终保留在此设备 / Always keep** rules persist across agent restarts and pin/hydrate current and newly discovered files below that directory; removing the rule stops future enforcement but does not forcibly dehydrate already-local content;
-- an optional local cache ceiling (GiB) automatically dehydrates least-recently-used, unpinned, in-sync files when the evictable cache exceeds the configured limit; `0` means unlimited;
-- manually pinned and always-local content is never evicted by the cache ceiling and can therefore make actual disk usage exceed the configured cache limit;
-- a file that is not yet safely represented in the cloud is never dehydrated or removed for selective sync: xDrive asks the user to finish synchronization first.
-
-There is no registration button; accounts are provisioned by an administrator. If the administrator issued a temporary password with `must_change_password`, the agent blocks synchronization until the user changes it. The default sync root is:
-
-```text
-%USERPROFILE%\xDrive
-```
-
-The `xd` CLI remains available for advanced use and troubleshooting:
-
-```powershell
-xd status
-xd config --mount "D:\xDrive"
-xd mount "D:\xDrive"
-```
-
-### Windows synchronization behavior
-
-Windows uses a **hybrid online-on-demand + bidirectional metadata/content sync** model:
-
-- remote files first appear as CfAPI online placeholders, so their full contents are not downloaded up front;
-- Explorer uses Windows' native cloud-file state icons and hydration verbs for xDrive placeholders;
-- opening a placeholder hydrates the byte ranges Windows requests from the server;
-- pinned placeholders are kept locally; in-sync unpinned placeholders can be explicitly dehydrated and xDrive opts into Windows' automatic-dehydration support;
-- persistent selective-sync rules are stored as normalized paths relative to the sync root; excluded remote directories are omitted only on that device, while always-local directories are automatically pinned and hydrated;
-- changing a directory policy restarts the local provider against the same account/root so the new rule is applied atomically from a fresh remote walk;
-- the cache limiter measures allocated on-disk bytes for evictable CfAPI placeholders and releases the least-recently-used eligible files first; pinned, dirty/not-in-sync, excluded, and always-local content is not an eviction candidate;
-- local new files/directories are uploaded and then converted into in-sync CfAPI placeholders, so they participate in the same Explorer availability controls;
-- local file modifications use resumable 8 MiB chunks with per-chunk SHA-256 and server-side whole-file SHA-256;
-- local deletions are propagated to the server;
-- Web/API-side creates, changes and deletes are reconciled back into the sync root, with **立即同步** available for an explicit reconciliation;
-- concurrent stale writes are rejected by server revisions; the desktop preserves the stale local version as a conflict copy instead of silently overwriting the server winner.
-
-Conflict records are persisted locally per server/account so they survive an agent restart. The conflict center offers four actions:
-
-- **查看冲突** reveals the conflict copy in Explorer;
-- **打开两个版本** opens both the current server winner and the preserved local conflict copy;
-- **保留本地版本** overwrites the current server node using its latest revision, preserves normal server version history, then removes the conflict copy;
-- **保留服务器版本** keeps the server winner and removes the conflict copy.
-
-A resolution failure leaves the conflict record intact so the user can retry instead of silently losing either version.
-
-Stable tagged Windows releases are Authenticode-signed: `xd.exe` and `xdrive-agent.exe` are signed before packaging, then `xDriveSetup-amd64.exe` is signed after Inno Setup builds it. The release workflow refuses to publish a stable Windows installer when the signing certificate secrets are absent. Development/snapshot artifacts can remain unsigned unless signing secrets are configured.
+Stable tagged Windows releases Authenticode-sign `xd.exe`, `xdrive-agent.exe`, the embedded `xdrive-desktop.exe`, and the final unified `xDriveSetup-amd64.exe`. Stable publishing is refused when the signing certificate secrets are absent.
 
 ## Linux client
 
@@ -472,30 +411,13 @@ Install on Debian/Ubuntu:
 sudo apt install ./xdrive-client-linux-amd64.deb
 ```
 
-The package installs `xd`, `xdrive-agent`, and a systemd user service definition. `fuse3` is declared as a package dependency.
+This is the **unified Linux client package**. It contains Electron Desktop together with `xd`, `xdrive-agent`, the FUSE client, updater, and systemd unit definitions. The package absorbs/replaces the earlier standalone `xdrive-desktop` package during migration, so users do not need to install two packages.
 
-Login and mount:
+Electron Desktop starts at user login by default and keeps the Agent healthy. The background Agent can still run independently, and `xd` remains available for terminal workflows. `fuse3` and the Electron runtime dependencies are declared by the unified package.
 
-```bash
-xd login --server https://drive.example.com --username alice --password 'your-password'
-# If the administrator issued a temporary password:
-xd password --current 'temporary-password' --new 'new-password'
-xd mount ~/xDrive
-```
+The separate `xdrive-desktop-linux-amd64.deb` release asset is retained temporarily for transition/testing compatibility; normal installation and automatic updates use `xdrive-client-linux-amd64.deb`.
 
-To use the optional Linux background agent:
-
-```bash
-systemctl --user enable --now xdrive-agent
-```
-
-Change the background mount path with:
-
-```bash
-xd config --mount /path/to/xDrive
-```
-
-Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folder**. It presents the remote tree as a mounted filesystem. Opening an existing file downloads it into a temporary local cache; reads/writes operate there, and dirty content is uploaded through the same resumable 8 MiB chunk protocol on flush/release. It does not proactively download the entire drive.
+Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folder**. It presents the remote tree as a mounted filesystem. Opening an existing file downloads it into a temporary local cache; reads/writes operate there, and dirty content is uploaded through the same resumable 8 MiB chunk protocol on flush/release.
 
 ## Client version checks and automatic updates
 
@@ -507,9 +429,9 @@ Windows and Linux clients use the same three release channels as the server:
 
 Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before installation, the client prefers the SHA-256 digest and exact asset size already returned by the GitHub Release API; legacy releases without a digest fall back to `SHA256SUMS.txt`. Release assets are downloaded from the GitHub asset API first and the browser download URL second. Interactive/manual updates print five stages (check, checksum, download, verify, install), show the target installer/package size before transfer, and report downloaded bytes / total / percentage / current rate / elapsed time during transfer. Partial files are kept as `.part` files and resumed with HTTP Range across retries **and across a later rerun of the update command**, so a weak connection no longer forces a large installer back to byte zero. Metadata and checksum requests also retry with backoff. The short metadata timeout is not used as the total installer download deadline.
 
-**Windows:** the background agent checks after startup and then about every 6 hours. Stable builds follow stable; snapshot builds follow master. When an update exists it verifies `xDriveSetup-amd64.exe`, launches it silently, exits, and the updated installer starts the agent again.
+**Windows:** the background updater resolves and verifies `xDriveSetup-amd64.exe`. That single asset now contains Electron Desktop, Agent, and `xd`, so `xd update --install` upgrades the complete client rather than only the Go Core. Silent installation restarts Agent and Desktop in background mode.
 
-**Linux:** the `.deb` installs `xdrive-update.timer` as a root-level systemd timer. It uses the same default channel logic and installs a verified `xdrive-client-linux-amd64.deb` through `apt-get`. The optional user-level mount agent is separate from this updater.
+**Linux:** `xdrive-update.timer` installs a verified `xdrive-client-linux-amd64.deb` through `apt-get`. That package contains Desktop, Agent, `xd`, FUSE integration, and updater files, so the same update transaction advances the complete client.
 
 Useful commands:
 
