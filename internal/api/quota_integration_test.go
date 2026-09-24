@@ -58,7 +58,7 @@ func TestUserQuotaCountsCurrentTrashAndHistory(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{},
-		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{},
+		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}

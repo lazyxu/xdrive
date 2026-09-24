@@ -98,6 +98,24 @@ type Share struct {
 
 func (Share) TableName() string { return "xd_shares" }
 
+type AuditEvent struct {
+	ID            uint64    `gorm:"primaryKey"`
+	ActorUserID   *uint64   `gorm:"index"`
+	ActorUsername string    `gorm:"size:64;index"`
+	ActorRole     string    `gorm:"size:16"`
+	Action        string    `gorm:"size:80;not null;index"`
+	TargetType    string    `gorm:"size:32;index"`
+	TargetID      string    `gorm:"size:128;index"`
+	TargetLabel   string    `gorm:"size:255"`
+	Result        string    `gorm:"size:16;not null;index"`
+	RequestID     string    `gorm:"size:64;index"`
+	IPAddress     string    `gorm:"size:64"`
+	Metadata      string    `gorm:"type:text"`
+	CreatedAt     time.Time `gorm:"not null;index"`
+}
+
+func (AuditEvent) TableName() string { return "xd_audit_events" }
+
 const (
 	UploadStatusActive    = "active"
 	UploadStatusFinalized = "finalized"

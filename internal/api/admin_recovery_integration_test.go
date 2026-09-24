@@ -26,14 +26,14 @@ func TestBootstrapAndRecoveryAdminCanLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{},
+		&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{},
-		&meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{},
+		&meta.FileVersion{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}
