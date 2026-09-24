@@ -65,31 +65,31 @@ No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose run
 ### One-line install from `master` / edge images
 
 ```bash
-curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
+curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
 ```
 
 The bootstrap installer supports three release channels. The canonical raw-`master` one-line install defaults to the latest fully successful **master** snapshot; a packaged stable release defaults to **stable**. The selected channel is persisted in `~/.xd/.env` and reused by later runs.
 
 ```bash
 # Latest stable vMAJOR.MINOR.PATCH release
-curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   bash -s -- --channel stable
 
 # Latest fully successful master snapshot
-curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   bash -s -- --channel master
 
 # A specific successfully published master commit (short or full SHA)
-curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   bash -s -- --channel commit --commit 0123456789ab
 ```
 
-The raw bootstrap resolves the selected successfully published release/commit in-process and downloads deployment assets from that exact source. The `master` channel uses the rolling successful `snapshot` release and exact `sha-<commit>` container images rather than the mutable `edge` tag. The `commit` channel requires the immutable `snapshot-<sha12>` release, so commits without a complete successful published build are rejected.
+The raw bootstrap is intentionally downloaded silently so its own progress animation cannot corrupt piped terminal output. The installer then prints structured stages and download diagnostics (asset names, transfer summaries, and live host receive rate for longer transfers). The raw bootstrap resolves the selected successfully published release/commit in-process and downloads deployment assets from that exact source. The `master` channel uses the rolling successful `snapshot` release and exact `sha-<commit>` container images rather than the mutable `edge` tag. The `commit` channel requires the immutable `snapshot-<sha12>` release, so commits without a complete successful published build are rejected.
 
 On an interactive terminal the installer asks for the public domain plus the AliDNS AccessKey ID/Secret. For a fully non-interactive DNS-01 + 8443 deployment:
 
 ```bash
-curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   XD_DOMAIN=drive.example.com XD_HTTPS_PORT=8443 \
   ALIYUN_ACCESS_KEY_ID=your-key-id ALIYUN_ACCESS_KEY_SECRET=your-key-secret \
   bash -s -- --channel stable
@@ -100,7 +100,7 @@ Use a RAM user/key scoped to DNS record management rather than a broad account k
 Leave the domain blank for HTTP/private-network mode. Other overrides use the same pipe-to-`bash` form, for example:
 
 ```bash
-curl -fL --progress-bar https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
+curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
   XD_WEB_PORT=8088 XD_WEB_BIND=0.0.0.0 bash
 ```
 
@@ -382,7 +382,7 @@ Windows and Linux clients use the same three release channels as the server:
 - **master** — latest fully successful master build from the rolling `snapshot` prerelease;
 - **commit** — an immutable successfully published master build identified by commit SHA and released as `snapshot-<sha12>`.
 
-Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before any installation, the client downloads `SHA256SUMS.txt` from the same release and verifies the installer/package checksum.
+Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before any installation, the client downloads `SHA256SUMS.txt` from the same release and verifies the installer/package checksum. Interactive/manual updates print five stages (check, checksum, download, verify, install); installer downloads report bytes, percentage, current transfer rate, and elapsed time. The short metadata timeout is not used as the total installer download deadline.
 
 **Windows:** the background agent checks after startup and then about every 6 hours. Stable builds follow stable; snapshot builds follow master. When an update exists it verifies `xDriveSetup-amd64.exe`, launches it silently, exits, and the updated installer starts the agent again.
 

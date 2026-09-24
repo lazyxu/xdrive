@@ -112,19 +112,70 @@ if [[ "$requested_channel" == "commit" && -z "$requested_commit" ]]; then
   fi
 fi
 
+format_bytes() {
+  awk -v bytes="${1:-0}" 'BEGIN {
+    split("B KiB MiB GiB TiB", unit, " ");
+    n = bytes + 0; i = 1;
+    while (n >= 1024 && i < 5) { n /= 1024; i++ }
+    if (i == 1) printf "%.0f %s", n, unit[i]; else printf "%.1f %s", n, unit[i]
+  }'
+}
+
+host_rx_bytes() {
+  [[ -r /proc/net/dev ]] || return 1
+  awk 'NR > 2 {
+    iface=$1; gsub(":", "", iface);
+    if (iface != "lo") total += $2
+  } END { printf "%.0f\n", total + 0 }' /proc/net/dev
+}
+
+monitor_host_rx() {
+  local label="$1" start prev now current delta elapsed
+  [[ -t 2 ]] || return 0
+  prev="$(host_rx_bytes 2>/dev/null || true)"
+  [[ -n "$prev" ]] || return 0
+  start="$(date +%s)"
+  while true; do
+    sleep 2
+    current="$(host_rx_bytes 2>/dev/null || true)"
+    [[ -n "$current" ]] || return 0
+    now="$(date +%s)"
+    delta=$(( current - prev ))
+    (( delta < 0 )) && delta=0
+    elapsed=$(( now - start ))
+    printf '[xDrive] %s | current host RX: %s/s | elapsed: %ss\n'       "$label" "$(format_bytes $(( delta / 2 )))" "$elapsed" >&2
+    prev="$current"
+  done
+}
+
 fetch() {
-  local url="$1" destination="$2" tmp="$2.tmp"
+  local url="$1" destination="$2" label="${3:-$(basename "$2")}" tmp="$2.tmp"
+  local stats size speed seconds monitor_pid=""
   rm -f "$tmp"
+  printf '[xDrive] download: %s\n' "$label"
   if command -v curl >/dev/null 2>&1; then
-    if ! curl -fL --progress-bar "$url" -o "$tmp"; then
+    monitor_host_rx "download $label" &
+    monitor_pid=$!
+    if ! stats="$(curl -fsSL --retry=3 --retry-delay=1 --connect-timeout=15       --write-out='%{size_download}\t%{speed_download}\t%{time_total}'       "$url" -o "$tmp")"; then
+      [[ -n "$monitor_pid" ]] && kill "$monitor_pid" >/dev/null 2>&1 || true
+      [[ -n "$monitor_pid" ]] && wait "$monitor_pid" 2>/dev/null || true
       rm -f "$tmp"
       return 1
+    fi
+    [[ -n "$monitor_pid" ]] && kill "$monitor_pid" >/dev/null 2>&1 || true
+    [[ -n "$monitor_pid" ]] && wait "$monitor_pid" 2>/dev/null || true
+    IFS=$'\t' read -r size speed seconds <<< "$stats"
+    if [[ -n "${size:-}" && -n "${speed:-}" && -n "${seconds:-}" ]]; then
+      printf '[xDrive] downloaded: %s | %s | avg %s/s | %ss\n'         "$label" "$(format_bytes "$size")" "$(format_bytes "$speed")" "$seconds"
+    else
+      printf '[xDrive] downloaded: %s\n' "$label"
     fi
   elif command -v wget >/dev/null 2>&1; then
     if ! wget --progress=bar:force:noscroll -O "$tmp" "$url"; then
       rm -f "$tmp"
       return 1
     fi
+    printf '[xDrive] downloaded: %s\n' "$label"
   else
     echo "xDrive server installer: curl or wget is required." >&2
     return 1
@@ -288,10 +339,12 @@ mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
 
 raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
-fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml"
-fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile"
+fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/6 docker-compose.yml"
+fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/6 Caddyfile"
+asset_no=2
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh; do
-  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script"
+  asset_no=$((asset_no + 1))
+  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/6 $maintenance_script"
   chmod 700 "$STAGING_DIR/$maintenance_script"
 done
 chmod 600 "$STAGING_DIR/docker-compose.yml" "$STAGING_DIR/Caddyfile"
@@ -644,7 +697,14 @@ if [[ "${XD_INSTALL_NO_START:-0}" == "1" ]]; then
 fi
 
 stage 7 "pull images and start services"
-if ! compose pull; then
+echo "[xDrive] pulling container images (plain layer progress; no animated/ANSI progress bar)..."
+pull_started="$(date +%s)"
+pull_monitor_pid=""
+monitor_host_rx "container image pull" &
+pull_monitor_pid=$!
+if ! compose --progress plain pull; then
+  [[ -n "$pull_monitor_pid" ]] && kill "$pull_monitor_pid" >/dev/null 2>&1 || true
+  [[ -n "$pull_monitor_pid" ]] && wait "$pull_monitor_pid" 2>/dev/null || true
   cat >&2 <<'MSG'
 xDrive server installer: container pull failed.
 Make the xdrive-server, xdrive-web, and xdrive-caddy packages Public in GitHub package settings,
@@ -652,6 +712,9 @@ or authenticate first with: docker login ghcr.io
 MSG
   exit 1
 fi
+[[ -n "$pull_monitor_pid" ]] && kill "$pull_monitor_pid" >/dev/null 2>&1 || true
+[[ -n "$pull_monitor_pid" ]] && wait "$pull_monitor_pid" 2>/dev/null || true
+echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
 compose up -d --remove-orphans
 
 stage 8 "verify service health"

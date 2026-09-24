@@ -313,7 +313,24 @@ func updateCmd(args []string) error {
 		return fmt.Errorf("--commit SHA is required for commit channel")
 	}
 
-	result, err := xupdate.CheckTarget(context.Background(), current, normalized, commit)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	if *install {
+		started, installed, err := xupdate.InstallTargetWithProgress(ctx, current, normalized, commit, func(event xupdate.ProgressEvent) {
+			fmt.Println(xupdate.FormatProgress(event))
+		})
+		if err != nil {
+			return err
+		}
+		if started {
+			fmt.Printf("updated target verified: %s from %s channel; installer started\n", installed.Latest, normalized)
+		}
+		return nil
+	}
+
+	fmt.Printf("[update 1/1] check: checking %s channel from %s\n", normalized, current)
+	result, err := xupdate.CheckTarget(ctx, current, normalized, commit)
 	if err != nil {
 		return err
 	}
@@ -322,20 +339,10 @@ func updateCmd(args []string) error {
 		return nil
 	}
 	fmt.Printf("update available on %s: %s -> %s\n", normalized, current, result.Latest)
-	if !*install {
-		if normalized == xupdate.ChannelCommit {
-			fmt.Printf("run: xd update --channel commit --commit %s --install\n", result.Commit)
-		} else {
-			fmt.Printf("run: xd update --channel %s --install\n", normalized)
-		}
-		return nil
-	}
-	started, installed, err := xupdate.InstallTarget(context.Background(), current, normalized, commit)
-	if err != nil {
-		return err
-	}
-	if started {
-		fmt.Printf("verified %s from %s channel; installer started\n", installed.Latest, normalized)
+	if normalized == xupdate.ChannelCommit {
+		fmt.Printf("run: xd update --channel commit --commit %s --install\n", result.Commit)
+	} else {
+		fmt.Printf("run: xd update --channel %s --install\n", normalized)
 	}
 	return nil
 }

@@ -38,7 +38,9 @@ func startAutoUpdate(ctx context.Context) <-chan struct{} {
 			case <-timer.C:
 			case <-ticker.C:
 			}
-			started, result, err := xupdate.InstallTarget(ctx, version.String(), channel, commit)
+			started, result, err := xupdate.InstallTargetWithProgress(ctx, version.String(), channel, commit, func(event xupdate.ProgressEvent) {
+				log.Print(xupdate.FormatProgress(event))
+			})
 			if err != nil {
 				log.Printf("auto-update check (%s) failed: %v", channel, err)
 				continue
