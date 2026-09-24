@@ -74,7 +74,25 @@ services: {}
     emit 'example.invalid { respond "ok" }
 '
     ;;
-  */0123456789abcdef0123456789abcdef01234567/scripts/server-backup.sh|\
+  */0123456789abcdef0123456789abcdef01234567/scripts/server-backup.sh)
+    emit '#!/usr/bin/env bash
+set -euo pipefail
+output=""
+leave=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config-dir) shift 2 ;;
+    --output-dir) output="$2"; shift 2 ;;
+    --leave-server-stopped) leave=1; shift ;;
+    *) shift ;;
+  esac
+done
+[[ "$leave" == "1" ]]
+dir="$output/xdrive-backup-test"
+mkdir -p "$dir"
+printf "%s\n" "$dir"
+'
+    ;;
   */0123456789abcdef0123456789abcdef01234567/scripts/server-backup-scheduled.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-restore.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-verify.sh)
@@ -215,7 +233,7 @@ if [[ "$1" == "exec" && "$2" == "-i" && "$args" == *"psql -U xdrive -d xdrive -v
   exit 0
 fi
 
-if [[ "$1" == "compose" && "$args" == *" ps -q server"* ]]; then
+if [[ "$1" == "compose" && ( "$args" == *" ps -q server"* || "$args" == *" ps -aq server"* ) ]]; then
   echo "xdrive-server-1"
   exit 0
 fi
@@ -260,6 +278,7 @@ grep -q '^POSTGRES_PASSWORD=stale-db-password$' "$TMP/config-upgrade/.env"
 grep -q '^XD_JWT_SECRET=legacy-jwt-secret$' "$TMP/config-upgrade/.env"
 grep -q 'Repaired the managed PostgreSQL role password to match xDrive configuration and verified Docker-network authentication.' "$TMP/upgrade.out"
 grep -q 'Recovered JWT secret from the existing xDrive server container.' "$TMP/upgrade.out"
-grep -q 'Existing xDrive deployment detected; creating pre-upgrade backup...' "$TMP/upgrade.out"
+grep -q '\[xDrive\] existing deployment detected; entering upgrade maintenance window...' "$TMP/upgrade.out"
+grep -q '\[xDrive\] transaction armed; rollback backup:' "$TMP/upgrade.out"
 
 echo "server installer bootstrap and stage-reporting tests passed"

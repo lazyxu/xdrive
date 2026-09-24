@@ -12,11 +12,20 @@ BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
 BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 STAGING_DIR="$CONFIG_DIR/.install-staging"
+UPGRADE_STATE_DIR="$CONFIG_DIR/.upgrade-transaction"
+INSTALL_LOCK_PATH="$CONFIG_DIR/.install.lock"
+PULL_LOG="$CONFIG_DIR/.install-pull.log"
 
 STAGE_TOTAL=9
 STAGE_NO=0
 CURRENT_STAGE="startup"
 LAST_ERROR_COMMAND=""
+ROLLBACK_ARMED=0
+ROLLBACK_RUNNING=0
+UPGRADE_EXISTING=0
+DATABASE_ROLLBACK_REQUIRED=0
+PRE_UPGRADE_BACKUP=""
+PULL_MONITOR_PID=""
 
 stage() {
   STAGE_NO="$1"
@@ -24,15 +33,55 @@ stage() {
   printf '\n[xDrive] [%s/%s] %s\n' "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE"
 }
 
+stop_pull_monitor() {
+  if [[ -n "${PULL_MONITOR_PID:-}" ]]; then
+    kill "$PULL_MONITOR_PID" >/dev/null 2>&1 || true
+    wait "$PULL_MONITOR_PID" 2>/dev/null || true
+    PULL_MONITOR_PID=""
+  fi
+}
+
 trap 'LAST_ERROR_COMMAND="${BASH_COMMAND:-unknown}"' ERR
 on_exit() {
   local status=$?
+  stop_pull_monitor
   if [[ "$status" -ne 0 ]]; then
-    printf '\n[xDrive] FAILED at stage %s/%s: %s (exit %s)\n' \
-      "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$status" >&2
+    if [[ "$UPGRADE_EXISTING" == "1" || "$ROLLBACK_ARMED" == "1" ]]; then
+      printf '\n[xDrive] UPGRADE FAILED at stage %s/%s: %s (exit %s)\n' \
+        "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$status" >&2
+    else
+      printf '\n[xDrive] FAILED at stage %s/%s: %s (exit %s)\n' \
+        "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$status" >&2
+    fi
+    if [[ "$ROLLBACK_ARMED" == "1" && "$ROLLBACK_RUNNING" != "1" ]]; then
+      ROLLBACK_ARMED=0
+      if rollback_upgrade; then
+        echo "[xDrive] UPGRADE FAILED -> ROLLBACK SUCCESS" >&2
+      else
+        echo "[xDrive] ROLLBACK FAILED" >&2
+        echo "[xDrive] rollback state preserved at: $UPGRADE_STATE_DIR" >&2
+      fi
+    fi
   fi
 }
 trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+acquire_install_lock() {
+  mkdir -p "$CONFIG_DIR"
+  chmod 700 "$CONFIG_DIR"
+  command -v flock >/dev/null 2>&1 || {
+    echo "xDrive server installer: flock is required for transactional install/update locking." >&2
+    exit 1
+  }
+  exec 9>"$INSTALL_LOCK_PATH"
+  if ! flock -n 9; then
+    echo "xDrive server installer: another install/update is already running for $CONFIG_DIR." >&2
+    exit 75
+  fi
+  printf '%s\n' "$$" 1>&9
+}
 
 usage() {
   cat <<'USAGE'
@@ -68,6 +117,8 @@ while [[ $# -gt 0 ]]; do
       exit 2 ;;
   esac
 done
+
+acquire_install_lock
 
 existing_env_value() {
   local key="$1"
@@ -130,20 +181,21 @@ host_rx_bytes() {
 }
 
 monitor_host_rx() {
-  local label="$1" start prev now current delta elapsed
+  local label="$1" interval="${2:-2}" start prev now current delta elapsed
   [[ -t 2 ]] || return 0
   prev="$(host_rx_bytes 2>/dev/null || true)"
   [[ -n "$prev" ]] || return 0
   start="$(date +%s)"
   while true; do
-    sleep 2
+    sleep "$interval"
     current="$(host_rx_bytes 2>/dev/null || true)"
     [[ -n "$current" ]] || return 0
     now="$(date +%s)"
     delta=$(( current - prev ))
     (( delta < 0 )) && delta=0
     elapsed=$(( now - start ))
-    printf '[xDrive] %s | current host RX: %s/s | elapsed: %ss\n'       "$label" "$(format_bytes $(( delta / 2 )))" "$elapsed" >&2
+    printf '[xDrive] %s | current host RX: %s/s | elapsed: %ss\n' \
+      "$label" "$(format_bytes $(( delta / interval )))" "$elapsed" >&2
     prev="$current"
   done
 }
@@ -339,7 +391,6 @@ fi
 stage 3 "download deployment assets"
 mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
-
 raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
 fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/6 docker-compose.yml"
 fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/6 Caddyfile"
@@ -546,10 +597,151 @@ https_url() {
   fi
 }
 
+set_env_in_file() {
+  local file="$1" key="$2" value="$3" tmp
+  tmp="$file.tmp"
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    awk -v k="$key" -v v="$value" 'BEGIN{FS="="} $1==k{print k "=" v; next} {print}' "$file" > "$tmp"
+    mv "$tmp" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+snapshot_transaction_file() {
+  local name="$1" path="$2" mode="$3"
+  if [[ -e "$path" ]]; then
+    install -m "$mode" "$path" "$UPGRADE_STATE_DIR/files/$name"
+  else
+    : > "$UPGRADE_STATE_DIR/absent-$name"
+  fi
+}
+
+restore_transaction_file() {
+  local name="$1" path="$2" mode="$3"
+  if [[ -f "$UPGRADE_STATE_DIR/absent-$name" ]]; then
+    rm -f "$path"
+  elif [[ -f "$UPGRADE_STATE_DIR/files/$name" ]]; then
+    install -m "$mode" "$UPGRADE_STATE_DIR/files/$name" "$path"
+  else
+    echo "[xDrive] rollback state is missing $name" >&2
+    return 1
+  fi
+}
+
+prepare_upgrade_transaction() {
+  rm -rf "$UPGRADE_STATE_DIR"
+  mkdir -p "$UPGRADE_STATE_DIR/files"
+  chmod 700 "$UPGRADE_STATE_DIR" "$UPGRADE_STATE_DIR/files"
+
+  snapshot_transaction_file ".env" "$ENV_PATH" 600
+  snapshot_transaction_file "docker-compose.yml" "$COMPOSE_PATH" 600
+  snapshot_transaction_file "Caddyfile" "$CADDY_PATH" 600
+  snapshot_transaction_file "server-backup.sh" "$CONFIG_DIR/server-backup.sh" 700
+  snapshot_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700
+  snapshot_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700
+  snapshot_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700
+  install -m 700 "$STAGING_DIR/server-restore.sh" "$UPGRADE_STATE_DIR/rollback-restore.sh"
+
+  cat > "$UPGRADE_STATE_DIR/state" <<EOF
+pid=$$
+target_source=$SOURCE_REF
+target_image_tag=$IMAGE_TAG
+started_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+  chmod 600 "$UPGRADE_STATE_DIR/state"
+}
+
+rollback_compose() {
+  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+  else
+    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+  fi
+}
+
+rollback_upgrade() {
+  local ok=1 i
+  ROLLBACK_RUNNING=1
+  echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
+  docker stop xdrive-caddy-1 xdrive-web-1 xdrive-server-1 >/dev/null 2>&1 || true
+
+  echo "[xDrive] rollback: restoring previous deployment files..." >&2
+  restore_transaction_file ".env" "$ENV_PATH" 600 || ok=0
+  restore_transaction_file "docker-compose.yml" "$COMPOSE_PATH" 600 || ok=0
+  restore_transaction_file "Caddyfile" "$CADDY_PATH" 600 || ok=0
+  restore_transaction_file "server-backup.sh" "$CONFIG_DIR/server-backup.sh" 700 || ok=0
+  restore_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700 || ok=0
+  restore_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700 || ok=0
+  restore_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700 || ok=0
+  if [[ "$ok" != "1" ]]; then
+    ROLLBACK_RUNNING=0
+    return 1
+  fi
+
+  if [[ "$DATABASE_ROLLBACK_REQUIRED" == "1" ]]; then
+    if [[ -z "$PRE_UPGRADE_BACKUP" || ! -d "$PRE_UPGRADE_BACKUP" ]]; then
+      echo "[xDrive] rollback: pre-upgrade backup is unavailable; refusing to reopen the API." >&2
+      ROLLBACK_RUNNING=0
+      return 1
+    fi
+    echo "[xDrive] rollback: restoring database and blobs from $PRE_UPGRADE_BACKUP ..." >&2
+    if ! "$UPGRADE_STATE_DIR/rollback-restore.sh" "$PRE_UPGRADE_BACKUP" \
+        --config-dir "$CONFIG_DIR" --yes --no-safety-backup >&2; then
+      echo "[xDrive] rollback: data restore failed; API remains stopped." >&2
+      ROLLBACK_RUNNING=0
+      return 1
+    fi
+  else
+    echo "[xDrive] rollback: database restore not required for this failure point." >&2
+  fi
+
+  echo "[xDrive] rollback: starting previous deployment..." >&2
+  if ! rollback_compose up -d --remove-orphans >&2; then
+    ROLLBACK_RUNNING=0
+    return 1
+  fi
+
+  for i in $(seq 1 60); do
+    if rollback_compose exec -T server xdrive-server healthcheck >/dev/null 2>&1; then
+      echo "[xDrive] rollback: previous server is healthy." >&2
+      rm -rf "$UPGRADE_STATE_DIR"
+      ROLLBACK_RUNNING=0
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "[xDrive] rollback: previous server did not become healthy." >&2
+  rollback_compose logs --tail=100 postgres server web >&2 || true
+  ROLLBACK_RUNNING=0
+  return 1
+}
+
+commit_upgrade_transaction() {
+  if [[ "$ROLLBACK_ARMED" == "1" ]]; then
+    ROLLBACK_ARMED=0
+    rm -rf "$UPGRADE_STATE_DIR"
+    echo "[xDrive] transaction committed; automatic rollback is no longer armed."
+  fi
+}
+
 stage 4 "prepare server configuration"
+if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] \
+    && docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq server 2>/dev/null | grep -q .; then
+  UPGRADE_EXISTING=1
+  prepare_upgrade_transaction
+fi
+
 touch "$ENV_PATH"
 chmod 600 "$ENV_PATH"
 recover_existing_runtime_secrets
+if [[ "$UPGRADE_EXISTING" == "1" ]]; then
+  set_env_in_file "$UPGRADE_STATE_DIR/files/.env" POSTGRES_PASSWORD "$(env_value POSTGRES_PASSWORD)"
+  set_env_in_file "$UPGRADE_STATE_DIR/files/.env" XD_JWT_SECRET "$(env_value XD_JWT_SECRET)"
+  ROLLBACK_ARMED=1
+  echo "[xDrive] transaction prepared; deployment rollback is armed."
+fi
 ensure_env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-$(random_hex 24)}"
 ensure_env XD_JWT_SECRET "${XD_JWT_SECRET:-$(random_hex 48)}"
 ensure_env XD_ACCESS_TOKEN_TTL "${XD_ACCESS_TOKEN_TTL:-15m}"
@@ -633,19 +825,28 @@ else
 fi
 
 stage 5 "create pre-upgrade backup"
-# Upgrade safety: take a backup with the currently installed deployment before
-# replacing compose/scripts or switching image tags. If an older installation
-# predates the maintenance scripts, use the freshly staged backup tool against
-# the old compose/env files. A failed backup aborts the upgrade.
-if [[ -f "$COMPOSE_PATH" ]]; then
-  if docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -q server 2>/dev/null | grep -q .; then
-    backup_tool="$CONFIG_DIR/server-backup.sh"
-    if [[ ! -x "$backup_tool" ]]; then
-      backup_tool="$STAGING_DIR/server-backup.sh"
-    fi
-    echo "Existing xDrive deployment detected; creating pre-upgrade backup..."
-    "$backup_tool" --config-dir "$CONFIG_DIR" --output-dir "$CONFIG_DIR/pre-upgrade-backups"
+if [[ "$UPGRADE_EXISTING" == "1" ]]; then
+  echo "[xDrive] existing deployment detected; entering upgrade maintenance window..."
+  docker stop xdrive-caddy-1 xdrive-web-1 >/dev/null 2>&1 || true
+
+  backup_output=""
+  if ! backup_output="$("$STAGING_DIR/server-backup.sh" \
+      --config-dir "$CONFIG_DIR" \
+      --output-dir "$CONFIG_DIR/pre-upgrade-backups" \
+      --leave-server-stopped)"; then
+    echo "$backup_output" >&2
+    echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
+    exit 1
   fi
+  printf '%s\n' "$backup_output"
+  PRE_UPGRADE_BACKUP="$(printf '%s\n' "$backup_output" | tail -n1)"
+  if [[ ! -d "$PRE_UPGRADE_BACKUP" ]]; then
+    echo "xDrive server installer: backup completed without a usable backup directory." >&2
+    exit 1
+  fi
+  printf '%s\n' "$PRE_UPGRADE_BACKUP" > "$UPGRADE_STATE_DIR/pre-upgrade-backup"
+  chmod 600 "$UPGRADE_STATE_DIR/pre-upgrade-backup"
+  echo "[xDrive] transaction armed; rollback backup: $PRE_UPGRADE_BACKUP"
 fi
 
 stage 6 "install deployment files"
@@ -693,42 +894,68 @@ echo "xDrive compose: $COMPOSE_PATH"
 echo "xDrive env:     $ENV_PATH"
 
 if [[ "${XD_INSTALL_NO_START:-0}" == "1" ]]; then
+  commit_upgrade_transaction
   stage 9 "complete"
   echo "Files installed without starting containers."
   exit 0
 fi
 
 stage 7 "pull images and start services"
-echo "[xDrive] pulling container images (plain layer progress; no animated/ANSI progress bar)..."
+echo "[xDrive] pulling container images; detailed Docker output is captured in $PULL_LOG"
+: > "$PULL_LOG"
+chmod 600 "$PULL_LOG"
 pull_started="$(date +%s)"
-pull_monitor_pid=""
-monitor_host_rx "container image pull" &
-pull_monitor_pid=$!
-if ! compose --progress plain pull; then
-  [[ -n "$pull_monitor_pid" ]] && kill "$pull_monitor_pid" >/dev/null 2>&1 || true
-  [[ -n "$pull_monitor_pid" ]] && wait "$pull_monitor_pid" 2>/dev/null || true
-  cat >&2 <<'MSG'
-xDrive server installer: container pull failed.
-Make the xdrive-server, xdrive-web, and xdrive-caddy packages Public in GitHub package settings,
-or authenticate first with: docker login ghcr.io
-MSG
+monitor_host_rx "container image pull" 5 &
+PULL_MONITOR_PID=$!
+if ! compose --progress plain pull >"$PULL_LOG" 2>&1; then
+  stop_pull_monitor
+  echo "xDrive server installer: container pull failed. Last Docker pull messages:" >&2
+  tail -n 40 "$PULL_LOG" >&2 || true
   exit 1
 fi
-[[ -n "$pull_monitor_pid" ]] && kill "$pull_monitor_pid" >/dev/null 2>&1 || true
-[[ -n "$pull_monitor_pid" ]] && wait "$pull_monitor_pid" 2>/dev/null || true
+stop_pull_monitor
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
-compose up -d --remove-orphans
+rm -f "$PULL_LOG"
+
+if [[ "$UPGRADE_EXISTING" == "1" ]]; then
+  DATABASE_ROLLBACK_REQUIRED=1
+fi
+compose up -d postgres server
 
 stage 8 "verify service health"
 healthy=0
 for _ in $(seq 1 60); do
-  if compose exec -T server xdrive-server healthcheck >/dev/null 2>&1; then healthy=1; break; fi
+  if compose exec -T server xdrive-server healthcheck >/dev/null 2>&1; then
+    healthy=1
+    break
+  fi
   sleep 2
 done
 if [[ "$healthy" != "1" ]]; then
-  echo "xDrive server did not become healthy. Recent logs:" >&2
-  compose logs --tail=100 postgres server web >&2 || true
+  echo "xDrive server did not become healthy after migration/startup. Recent logs:" >&2
+  compose logs --tail=100 postgres server >&2 || true
   exit 1
+fi
+
+# Keep data rollback armed through all stage-8 validation. Public services are
+# still considered inside the maintenance transaction until Web/TLS are proven.
+compose up -d web
+web_healthy=0
+for _ in $(seq 1 30); do
+  if compose exec -T web wget -q -O /dev/null http://127.0.0.1/api/v1/healthz >/dev/null 2>&1; then
+    web_healthy=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$web_healthy" != "1" ]]; then
+  echo "xDrive Web/API proxy did not become healthy. Recent logs:" >&2
+  compose logs --tail=100 server web >&2 || true
+  exit 1
+fi
+
+if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+  compose up -d caddy
 fi
 
 wait_https() {
@@ -766,6 +993,14 @@ wait_https() {
 
 if [[ -n "$(env_value XD_DOMAIN)" ]]; then
   wait_https "$(env_value XD_DOMAIN)" "$(env_value XD_HTTPS_PORT)"
+fi
+
+DATABASE_ROLLBACK_REQUIRED=0
+commit_upgrade_transaction
+if [[ "$UPGRADE_EXISTING" == "1" ]]; then
+  echo "[xDrive] UPGRADE SUCCESS: $SOURCE_REF is healthy."
+else
+  echo "[xDrive] INSTALL SUCCESS: $SOURCE_REF is healthy."
 fi
 
 stage 9 "finalize installation"

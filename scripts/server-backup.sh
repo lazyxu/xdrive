@@ -5,10 +5,11 @@ umask 077
 CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
 OUTPUT_ROOT=""
 ALLOW_INCONSISTENT=0
+LEAVE_SERVER_STOPPED=0
 
 usage() {
   cat <<'EOF'
-Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent]
+Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped]
 
 Creates an xDrive backup directory containing:
   database.dump   PostgreSQL custom-format dump
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --config-dir) CONFIG_DIR="$2"; shift 2 ;;
     --output-dir) OUTPUT_ROOT="$2"; shift 2 ;;
     --allow-inconsistent) ALLOW_INCONSISTENT=1; shift ;;
+    --leave-server-stopped) LEAVE_SERVER_STOPPED=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -67,7 +69,7 @@ if compose ps --status running --services | grep -qx server; then
 fi
 
 restart_server() {
-  if [[ "$server_was_running" == "1" ]]; then
+  if [[ "$server_was_running" == "1" && "$LEAVE_SERVER_STOPPED" != "1" ]]; then
     compose start server >/dev/null 2>&1 || true
   fi
 }

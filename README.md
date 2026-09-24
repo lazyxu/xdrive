@@ -106,9 +106,11 @@ curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazy
 
 For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag.
 
+Upgrades are serialized with an exclusive `flock` lock. Existing deployments enter a maintenance window after the pre-upgrade backup: public Web/Caddy containers are stopped, the new API is started and health-checked before public services are reopened, and deployment files are treated as a transaction. If the new API fails after migration/startup begins, xDrive restores the verified pre-upgrade database/blob backup plus the previous deployment files and images. Failures before the database is touched restore deployment state only. Docker pull's noisy per-layer output is captured to a private log; the terminal shows concise xDrive transfer summaries instead. If rollback itself cannot complete, the transaction state is retained under `~/.xd/.upgrade-transaction` for manual recovery.
+
 The installer:
 
-1. checks Docker and Docker Compose v2;
+1. checks Docker and Docker Compose v2 and acquires the exclusive install/update lock;
 2. creates `~/.xd` with user-only permissions and preserves existing secrets;
 3. stages the new Compose/Caddy/maintenance files;
 4. on upgrades, creates a verified **pre-upgrade backup before replacing deployment files**;
