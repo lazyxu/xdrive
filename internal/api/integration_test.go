@@ -57,9 +57,32 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 
 	tokenA := createTestUser(t, db, router, "alice", "password-a")
 	tokenB := createTestUser(t, db, router, "bob-user", "password-b")
-	rootA := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
 
+	meRes := request(t, router, http.MethodGet, "/api/v1/me", tokenA, nil, http.StatusOK)
+	var me struct {
+		ID       uint64 `json:"id"`
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}
+	if err := json.Unmarshal(meRes.Body.Bytes(), &me); err != nil {
+		t.Fatal(err)
+	}
+	if me.ID == 0 || me.Username != "alice" || me.Role != meta.UserRoleUser {
+		t.Fatalf("unexpected /me response: %+v", me)
+	}
+
+	rootA := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
 	dir := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", rootA.ID), tokenA, strings.NewReader(`{"name":"docs"}`), http.StatusCreated)
+
+	childrenRes := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", rootA.ID), tokenA, nil, http.StatusOK)
+	var rootChildren []nodeDTO
+	if err := json.Unmarshal(childrenRes.Body.Bytes(), &rootChildren); err != nil {
+		t.Fatal(err)
+	}
+	if len(rootChildren) != 1 || rootChildren[0].ID != dir.ID {
+		t.Fatalf("unexpected root children: %+v", rootChildren)
+	}
+
 	file := uploadTestFile(t, router, tokenA, dir.ID, "hello.txt", "hello world")
 	if file.Size != 11 {
 		t.Fatalf("size=%d", file.Size)

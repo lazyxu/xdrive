@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -52,6 +54,14 @@ func TestLocalReady(t *testing.T) {
 	if err := s.Ready(context.Background()); err != nil {
 		t.Fatalf("ready: %v", err)
 	}
+	info, err := os.Stat(filepath.Join(s.root, UploadStagingDir))
+	if err != nil {
+		t.Fatalf("stat upload staging directory: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("upload staging path is not a directory")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := s.Ready(ctx); err == nil {

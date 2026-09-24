@@ -100,6 +100,15 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 		t.Fatalf("unexpected upload session: %+v", session)
 	}
 
+	statusRes := request(t, router, http.MethodGet, "/api/v1/uploads/"+session.ID, token, nil, http.StatusOK)
+	var status uploadSessionDTO
+	if err := json.Unmarshal(statusRes.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.ID != session.ID || status.Status != meta.UploadStatusActive || status.ChunkCount != session.ChunkCount || len(status.Received) != 0 {
+		t.Fatalf("unexpected upload status: %+v", status)
+	}
+
 	putPart := func(sessionID string, index int, content []byte, hash string, status int) {
 		t.Helper()
 		requestWithHeaders(
@@ -115,6 +124,16 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	part1 := data[chunkSize : 2*chunkSize]
 	part2 := data[2*chunkSize:]
 	hash0, hash1, hash2 := sha256Hex(part0), sha256Hex(part1), sha256Hex(part2)
+
+	oversizedPart0 := append(append([]byte(nil), part0...), 0)
+	putPart(session.ID, 0, oversizedPart0, hash0, http.StatusRequestEntityTooLarge)
+	var recordedParts int64
+	if err := db.Model(&meta.UploadPart{}).Where("session_id = ?", session.ID).Count(&recordedParts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if recordedParts != 0 {
+		t.Fatalf("oversized chunk created upload part rows: %d", recordedParts)
+	}
 
 	putPart(session.ID, 0, part0, hash0, http.StatusCreated)
 	// Same chunk/hash is idempotent and returns the already recorded part.

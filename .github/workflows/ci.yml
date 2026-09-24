@@ -134,6 +134,7 @@ jobs:
           bash -n scripts/test-server-doctor.sh
           bash scripts/test-server-doctor.sh
           bash -n scripts/test-server-backup-restore.sh
+          bash -n scripts/test-server-chunk-storage.sh
           bash -n scripts/test-server-installer-bootstrap.sh
           bash scripts/test-server-installer-bootstrap.sh
           bash -n scripts/test-server-installer-transaction.sh
@@ -200,7 +201,9 @@ jobs:
           grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
           grep -q 'detailed Docker output is captured in' deploy/install-server.sh
       - name: Validate server image
-        run: docker build -t xdrive/server:test .
+        run: |
+          docker build -t xdrive/server:test .
+          bash scripts/test-server-chunk-storage.sh
       - name: Validate Caddy AliDNS image
         run: |
           docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .

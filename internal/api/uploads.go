@@ -288,12 +288,25 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		}
 	}
 
-	key := fmt.Sprintf(".xdrive-uploads/%d/%s/%06d-%s", session.OwnerID, session.ID, index, uuid.NewString())
+	key := fmt.Sprintf("%s/%d/%s/%06d-%s", storage.UploadStagingDir, session.OwnerID, session.ID, index, uuid.NewString())
 	h := sha256.New()
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, expectedSize+1)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, expectedSize)
 	size, err := s.Store.Put(c.Request.Context(), key, io.TeeReader(c.Request.Body, h))
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			fail(c, http.StatusRequestEntityTooLarge, "chunk too large")
+			return
+		}
+		s.ensureObservability()
+		s.obs.logger.Error("chunk_storage_write_failed",
+			"request_id", requestIDFromContext(c),
+			"upload_id", session.ID,
+			"chunk_index", index,
+			"user_id", session.OwnerID,
+			"error", err,
+		)
 		fail(c, http.StatusInternalServerError, "chunk storage write failed")
 		return
 	}
