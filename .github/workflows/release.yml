@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   DOCKER_BUILD_RECORD_UPLOAD: "false"
@@ -20,15 +21,45 @@ jobs:
   validate-publishing-ref:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate publishing ref
+      - name: Validate publishing ref and wait for CI
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" != "refs/heads/master" && "$GITHUB_REF_TYPE" != "tag" ]]; then
-            echo "Build Packages may publish only master snapshots or version tags." >&2
+          if [[ "$GITHUB_REF" != "refs/heads/master" && "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "Build Packages may publish only master snapshots or v* version tags." >&2
             exit 1
           fi
 
+          ci_run_id=""
+          ci_status=""
+          ci_conclusion=""
+          for _ in $(seq 1 360); do
+            ci_state="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=20" \
+              --jq '.workflow_runs | sort_by(.created_at) | last | if . == null then "" else "\(.id)|\(.status)|\(.conclusion // "")" end')"
+            if [[ -n "$ci_state" ]]; then
+              IFS="|" read -r ci_run_id ci_status ci_conclusion <<< "$ci_state"
+              case "$ci_status" in
+                completed)
+                  if [[ "$ci_conclusion" == "success" ]]; then
+                    echo "CI gate passed: run $ci_run_id for $GITHUB_SHA"
+                    break
+                  fi
+                  echo "Build Packages blocked: CI run $ci_run_id concluded $ci_conclusion for $GITHUB_SHA." >&2
+                  exit 1
+                  ;;
+                queued|in_progress|pending|requested|waiting)
+                  ;;
+              esac
+            fi
+            sleep 10
+          done
+
+          if [[ -z "$ci_run_id" || "$ci_status" != "completed" || "$ci_conclusion" != "success" ]]; then
+            echo "Build Packages timed out waiting for successful CI for $GITHUB_SHA." >&2
+            exit 1
+          fi
   client-linux-amd64:
     needs: validate-publishing-ref
     runs-on: ubuntu-latest
@@ -306,6 +337,7 @@ jobs:
           sed \
             -e "s|@SOURCE_REF@|$source_ref|g" \
             -e "s|@IMAGE_TAG@|$image_tag|g" \
+            -e "s|@IMAGE_REGISTRY@|ghcr.io/$GITHUB_REPOSITORY_OWNER|g" \
             -e "s|@RELEASE_CHANNEL@|$release_channel|g" \
             -e "s|@RELEASE_COMMIT@|$release_commit|g" \
             deploy/install-server.sh > release/xdrive-server-install.sh

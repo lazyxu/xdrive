@@ -2,6 +2,7 @@ variables:
   # Linux GitLab jobs run inside these images; runner tags only select the host.
   XDRIVE_CI_GO_IMAGE: "golang:1.25-bookworm"
   XDRIVE_CI_NODE_IMAGE: "node:22-bookworm"
+  XDRIVE_CI_GLAB_IMAGE: "registry.gitlab.com/gitlab-org/cli:latest"
 
   # go-linux needs Node for the unified Electron package and Docker CLI/Compose
   # for deployment/container regression tests. Keep these pinned and install
