@@ -1,6 +1,7 @@
 package update
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -309,5 +311,306 @@ func TestDownloadVerifiedUsesTransferProgressWithoutMetadataTimeout(t *testing.T
 	}
 	if !foundDownload || !foundVerify {
 		t.Fatalf("missing progress events: download=%v verify=%v events=%+v", foundDownload, foundVerify, events)
+	}
+}
+
+func TestReleaseDigestUsesAPIAssetAndSkipsChecksumManifest(t *testing.T) {
+	payload := []byte("release-api-asset")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	const assetName = "xDriveSetup-amd64.exe"
+
+	var server *httptest.Server
+	var checksumHits, browserHits, apiHits int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/lazyxu/xdrive/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"tag_name": "v0.2.0",
+			"assets": []map[string]any{
+				{
+					"id": 42, "name": assetName, "size": len(payload), "digest": digest,
+					"url":                  server.URL + "/repos/lazyxu/xdrive/releases/assets/42",
+					"browser_download_url": server.URL + "/browser-asset",
+				},
+				{
+					"id": 43, "name": "SHA256SUMS.txt", "size": 128,
+					"url":                  server.URL + "/repos/lazyxu/xdrive/releases/assets/43",
+					"browser_download_url": server.URL + "/sums",
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/repos/lazyxu/xdrive/releases/assets/42", func(w http.ResponseWriter, r *http.Request) {
+		apiHits++
+		if r.Header.Get("Accept") != "application/octet-stream" {
+			t.Fatalf("asset API accept=%q", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+		_, _ = w.Write(payload)
+	})
+	mux.HandleFunc("/browser-asset", func(w http.ResponseWriter, r *http.Request) {
+		browserHits++
+		http.Error(w, "browser path should not be needed", http.StatusBadGateway)
+	})
+	mux.HandleFunc("/sums", func(w http.ResponseWriter, r *http.Request) {
+		checksumHits++
+		http.Error(w, "checksum manifest should not be needed", http.StatusBadGateway)
+	})
+	server = httptest.NewServer(mux)
+	defer server.Close()
+
+	checker := Checker{
+		Repository: "lazyxu/xdrive", APIBase: server.URL, HTTP: server.Client(),
+		RetryAttempts: 2, RetryBase: time.Millisecond,
+	}
+	result, err := checker.CheckChannel(context.Background(), "v0.1.0", assetName, ChannelStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Asset.Size != int64(len(payload)) || result.Asset.Digest != digest || result.Asset.ID != 42 {
+		t.Fatalf("asset metadata=%+v", result.Asset)
+	}
+	path, err := DownloadVerifiedWithProgress(context.Background(), checker, result, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("download=%q want=%q", got, payload)
+	}
+	if apiHits != 1 || browserHits != 0 || checksumHits != 0 {
+		t.Fatalf("hits api=%d browser=%d sums=%d", apiHits, browserHits, checksumHits)
+	}
+}
+
+func TestDownloadVerifiedResumesPartialAsset(t *testing.T) {
+	payload := []byte("0123456789abcdefghijklmnopqrstuvwxyz")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	const assetName = "xDriveSetup-amd64.exe"
+
+	var server *httptest.Server
+	var ranges []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) {
+		ranges = append(ranges, r.Header.Get("Range"))
+		if r.Header.Get("Range") != "bytes=10-" {
+			t.Fatalf("range=%q want bytes=10-", r.Header.Get("Range"))
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes 10-%d/%d", len(payload)-1, len(payload)))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)-10))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(payload[10:])
+	})
+	server = httptest.NewServer(mux)
+	defer server.Close()
+
+	dir := t.TempDir()
+	part := filepath.Join(dir, assetName+".part")
+	if err := os.WriteFile(part, payload[:10], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	checker := Checker{HTTP: server.Client(), RetryAttempts: 2, RetryBase: time.Millisecond}
+	result := Result{
+		Current: "v0.1.0", Latest: "v0.2.0", UpdateAvailable: true,
+		Asset: Asset{Name: assetName, APIURL: server.URL + "/asset", Size: int64(len(payload)), Digest: digest},
+	}
+	path, err := DownloadVerifiedWithProgress(context.Background(), checker, result, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("resumed download=%q want=%q", got, payload)
+	}
+	if len(ranges) != 1 || ranges[0] != "bytes=10-" {
+		t.Fatalf("ranges=%v", ranges)
+	}
+}
+
+func TestUpdateMetadataRetriesTransientFailures(t *testing.T) {
+	const assetName = "xDriveSetup-amd64.exe"
+	payload := []byte("asset")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+
+	var hits int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/lazyxu/xdrive/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits < 3 {
+			http.Error(w, "transient", http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"tag_name": "v0.2.0",
+			"assets": []map[string]any{
+				{"id": 1, "name": assetName, "size": len(payload), "digest": digest, "browser_download_url": "https://example.invalid/asset"},
+			},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	checker := Checker{
+		Repository: "lazyxu/xdrive", APIBase: server.URL, HTTP: server.Client(),
+		RetryAttempts: 3, RetryBase: time.Millisecond,
+	}
+	result, err := checker.CheckChannel(context.Background(), "v0.1.0", assetName, ChannelStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.UpdateAvailable || hits != 3 {
+		t.Fatalf("result=%+v hits=%d", result, hits)
+	}
+}
+
+func TestDownloadFallsBackFromAPIAssetToBrowserURL(t *testing.T) {
+	payload := []byte("browser-fallback")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	const assetName = "xDriveSetup-amd64.exe"
+
+	var apiHits, browserHits int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api-asset", func(w http.ResponseWriter, r *http.Request) {
+		apiHits++
+		http.Error(w, "temporary API asset failure", http.StatusBadGateway)
+	})
+	mux.HandleFunc("/browser-asset", func(w http.ResponseWriter, r *http.Request) {
+		browserHits++
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+		_, _ = w.Write(payload)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	checker := Checker{HTTP: server.Client(), RetryAttempts: 2, RetryBase: time.Millisecond}
+	result := Result{
+		Current: "v0.1.0", Latest: "v0.2.0", UpdateAvailable: true,
+		Asset: Asset{
+			Name: assetName, ReleaseTag: "v0.2.0",
+			APIURL: server.URL + "/api-asset", URL: server.URL + "/browser-asset",
+			Size: int64(len(payload)), Digest: digest,
+		},
+	}
+	path, err := DownloadVerifiedWithProgress(context.Background(), checker, result, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) || apiHits != 1 || browserHits != 1 {
+		t.Fatalf("download=%q apiHits=%d browserHits=%d", got, apiHits, browserHits)
+	}
+}
+
+func TestUpdateAssetMirrorIsPreferred(t *testing.T) {
+	t.Setenv("XD_UPDATE_ASSET_MIRROR", "https://mirror.example/xdrive/")
+	asset := Asset{
+		Name: "xDriveSetup-amd64.exe", ReleaseTag: "snapshot-abc123",
+		APIURL: "https://api.github.example/asset/1",
+		URL:    "https://github.example/download/asset",
+	}
+	sources := assetDownloadSources(asset)
+	want := "https://mirror.example/xdrive/snapshot-abc123/xDriveSetup-amd64.exe"
+	if len(sources) != 3 || sources[0] != want {
+		t.Fatalf("sources=%v want mirror first=%q", sources, want)
+	}
+}
+
+func TestCorruptCompletedPartialIsRedownloaded(t *testing.T) {
+	payload := []byte("fresh-installer")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	const assetName = "xDriveSetup-amd64.exe"
+
+	var ranges []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) {
+		ranges = append(ranges, r.Header.Get("Range"))
+		if r.Header.Get("Range") != "" {
+			t.Fatalf("unexpected resume for corrupt full partial: %q", r.Header.Get("Range"))
+		}
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+		_, _ = w.Write(payload)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	dir := t.TempDir()
+	part := filepath.Join(dir, assetName+".part")
+	corrupt := bytes.Repeat([]byte("x"), len(payload))
+	if err := os.WriteFile(part, corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	checker := Checker{HTTP: server.Client(), RetryAttempts: 2, RetryBase: time.Millisecond}
+	result := Result{
+		Current: "v0.1.0", Latest: "v0.2.0", UpdateAvailable: true,
+		Asset: Asset{Name: assetName, APIURL: server.URL + "/asset", Size: int64(len(payload)), Digest: digest},
+	}
+	path, err := DownloadVerifiedWithProgress(context.Background(), checker, result, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("download=%q want=%q", got, payload)
+	}
+	if len(ranges) != 1 || ranges[0] != "" {
+		t.Fatalf("ranges=%v", ranges)
+	}
+}
+
+func TestFormatProgressShowsCurrentAndTotal(t *testing.T) {
+	got := FormatProgress(ProgressEvent{
+		Step: 3, Stage: "download xDriveSetup-amd64.exe",
+		Current: 2 << 20, Total: 8 << 20,
+		BytesPerSecond: 512 << 10, Elapsed: 5 * time.Second,
+	})
+	for _, want := range []string{"2.0 MiB / 8.0 MiB", "25.0%", "512.0 KiB/s", "elapsed 5s"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("progress %q missing %q", got, want)
+		}
+	}
+}
+
+func TestProbeAssetDownloadUsesRange(t *testing.T) {
+	var gotRange string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		w.Header().Set("Content-Range", "bytes 0-0/6432558")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte{0})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	asset := Asset{
+		Name:       "xDriveSetup-amd64.exe",
+		ReleaseTag: "snapshot-test",
+		APIURL:     server.URL + "/asset",
+		Size:       6432558,
+	}
+	source, err := ProbeAssetDownload(context.Background(), "snapshot-deadbeef", asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source == "" || gotRange != "bytes=0-0" {
+		t.Fatalf("source=%q range=%q", source, gotRange)
 	}
 }

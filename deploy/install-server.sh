@@ -11,6 +11,7 @@ IMAGE_TAG="${XD_IMAGE_TAG:-@IMAGE_TAG@}"
 BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
 BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
+IMAGE_REGISTRY="${XD_IMAGE_REGISTRY:-}"
 STAGING_DIR="$CONFIG_DIR/.install-staging"
 UPGRADE_STATE_DIR="$CONFIG_DIR/.upgrade-transaction"
 INSTALL_LOCK_PATH="$CONFIG_DIR/.install.lock"
@@ -222,6 +223,121 @@ monitor_host_rx() {
   done
 }
 
+render_pull_json() {
+  local service="$1" line id text current total
+  local now sum_current sum_total rate pct elapsed started
+  local last_print=0 previous_time previous_current=0
+  declare -A layer_current=()
+  declare -A layer_total=()
+
+  started="$(date +%s)"
+  previous_time="$started"
+  while IFS= read -r line; do
+    id="$(printf '%s\n' "$line" | sed -n 's/.*"id":[[:space:]]*"\([^"]*\)".*/\1/p')"
+    text="$(printf '%s\n' "$line" | sed -n 's/.*"text":[[:space:]]*"\([^"]*\)".*/\1/p')"
+    current="$(printf '%s\n' "$line" | sed -n 's/.*"current":[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
+    total="$(printf '%s\n' "$line" | sed -n 's/.*"total":[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
+
+    [[ -n "$id" ]] || continue
+    case "$text" in
+      Downloading)
+        if [[ -n "$total" && "$total" -gt 0 ]]; then
+          layer_total["$id"]="$total"
+          layer_current["$id"]="${current:-0}"
+        fi
+        ;;
+      "Download complete"|"Pull complete"|"Already exists")
+        if [[ -n "${layer_total[$id]:-}" ]]; then
+          layer_current["$id"]="${layer_total[$id]}"
+        fi
+        ;;
+      *) continue ;;
+    esac
+
+    sum_current=0
+    sum_total=0
+    for id in "${!layer_total[@]}"; do
+      sum_total=$(( sum_total + layer_total[$id] ))
+      sum_current=$(( sum_current + ${layer_current[$id]:-0} ))
+    done
+    (( sum_total > 0 )) || continue
+
+    now="$(date +%s)"
+    if (( now - last_print < 2 && sum_current < sum_total )); then
+      continue
+    fi
+    pct=$(( sum_current * 100 / sum_total ))
+    elapsed=$(( now - started ))
+    rate=0
+    if (( now > previous_time && sum_current >= previous_current )); then
+      rate=$(( (sum_current - previous_current) / (now - previous_time) ))
+    fi
+    printf '[xDrive] pull %-8s | %s / %s (%d%%) | %s/s | elapsed %ss\n' \
+      "$service" "$(format_bytes "$sum_current")" "$(format_bytes "$sum_total")" "$pct" "$(format_bytes "$rate")" "$elapsed"
+    last_print="$now"
+    previous_time="$now"
+    previous_current="$sum_current"
+  done
+}
+
+pull_json_supported() {
+  compose --progress json version </dev/null >/dev/null 2>&1
+}
+
+pull_service_json() {
+  local service="$1" statuses
+  compose --progress json pull "$service" 2>&1 |
+    tee -a "$PULL_LOG" |
+    render_pull_json "$service"
+  statuses=("${PIPESTATUS[@]}")
+  return "${statuses[0]}"
+}
+
+pull_service_plain() {
+  local service="$1" rc
+  monitor_host_rx "container pull $service" 5 &
+  PULL_MONITOR_PID=$!
+  if compose --progress plain pull "$service" >>"$PULL_LOG" 2>&1; then
+    rc=0
+  else
+    rc=$?
+  fi
+  stop_pull_monitor
+  return "$rc"
+}
+
+pull_service_with_retry() {
+  local service="$1" attempt retry_wait
+  for attempt in $(seq 1 "$pull_attempts"); do
+    printf '[xDrive] pull %s attempt %s/%s...\n' "$service" "$attempt" "$pull_attempts"
+    printf '\n===== pull %s attempt %s/%s at %s =====\n' \
+      "$service" "$attempt" "$pull_attempts" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$PULL_LOG"
+
+    if [[ "$pull_progress_mode" == "json" ]]; then
+      if pull_service_json "$service"; then
+        printf '[xDrive] pull %s complete.\n' "$service"
+        return 0
+      fi
+    else
+      if pull_service_plain "$service"; then
+        printf '[xDrive] pull %s complete.\n' "$service"
+        return 0
+      fi
+    fi
+
+    if (( attempt < pull_attempts )); then
+      retry_wait=$(( pull_retry_delay * attempt ))
+      echo "[xDrive] pull $service failed; retrying in ${retry_wait}s (completed layers are reused)." >&2
+      sleep "$retry_wait"
+    fi
+  done
+
+  echo "xDrive server installer: pull $service failed after $pull_attempts attempts. Last Docker pull messages:" >&2
+  tail -n 40 "$PULL_LOG" >&2 || true
+  echo "xDrive server installer: repeated registry failures usually mean Docker daemon connectivity is poor." >&2
+  echo "Shell HTTPS_PROXY may not affect Docker pulls; configure the Docker daemon proxy or set XD_IMAGE_REGISTRY to an alternate registry mirror." >&2
+  return 1
+}
 fetch() {
   local url="$1" destination="$2" label="${3:-$(basename "$2")}" tmp="$2.tmp"
   local stats size speed seconds monitor_pid=""
@@ -230,7 +346,7 @@ fetch() {
   if command -v curl >/dev/null 2>&1; then
     monitor_host_rx "download $label" &
     monitor_pid=$!
-    if ! stats="$(curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 15 \
+    if ! stats="$(curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 10 \
       --write-out '%{size_download}\t%{speed_download}\t%{time_total}' \
       "$url" -o "$tmp" </dev/null)"; then
       [[ -n "$monitor_pid" ]] && kill "$monitor_pid" >/dev/null 2>&1 || true
@@ -262,9 +378,9 @@ fetch() {
 fetch_stdout() {
   local url="$1"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url"
+    curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 10 "$url"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- "$url"
+    wget -q --tries=5 --timeout=15 -O- "$url"
   else
     echo "xDrive server installer: curl or wget is required." >&2
     exit 1
@@ -590,6 +706,17 @@ MSG
 }
 
 
+validate_image_registry() {
+  local value="$1"
+  if [[ -z "$value" || "$value" == *"://"* || "$value" == *" "* || "$value" == *$'\t'* ]]; then
+    echo "xDrive server installer: XD_IMAGE_REGISTRY must be a registry namespace without a URL scheme, for example ghcr.io/lazyxu." >&2
+    return 1
+  fi
+  if [[ ! "$value" =~ ^[A-Za-z0-9._:-]+(/[A-Za-z0-9._-]+)*$ ]]; then
+    echo "xDrive server installer: invalid XD_IMAGE_REGISTRY: $value" >&2
+    return 1
+  fi
+}
 validate_domain() {
   local value="$1"
   if [[ -z "$value" ]]; then
@@ -799,6 +926,7 @@ ensure_env XD_HTTPS_BIND "${XD_HTTPS_BIND:-0.0.0.0}"
 ensure_env XD_HTTPS_PORT "${XD_HTTPS_PORT:-8443}"
 ensure_env ALIYUN_ACCESS_KEY_ID "${ALIYUN_ACCESS_KEY_ID:-}"
 ensure_env ALIYUN_ACCESS_KEY_SECRET "${ALIYUN_ACCESS_KEY_SECRET:-}"
+ensure_env XD_POSTGRES_IMAGE "${XD_POSTGRES_IMAGE:-postgres:17-alpine}"
 ensure_env XD_POSTGRES_MEMORY_LIMIT "${XD_POSTGRES_MEMORY_LIMIT:-1g}"
 ensure_env XD_POSTGRES_CPU_LIMIT "${XD_POSTGRES_CPU_LIMIT:-1.0}"
 ensure_env XD_POSTGRES_PIDS_LIMIT "${XD_POSTGRES_PIDS_LIMIT:-256}"
@@ -817,6 +945,14 @@ ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"
 ensure_env XD_RELEASE_COMMIT "${requested_commit:-}"
+if [[ -z "$IMAGE_REGISTRY" ]]; then
+  IMAGE_REGISTRY="$(existing_env_value XD_IMAGE_REGISTRY)"
+fi
+IMAGE_REGISTRY="${IMAGE_REGISTRY%/}"
+[[ -n "$IMAGE_REGISTRY" ]] || IMAGE_REGISTRY="ghcr.io/lazyxu"
+validate_image_registry "$IMAGE_REGISTRY"
+ensure_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
+set_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
 set_env XD_RELEASE_CHANNEL "$requested_channel"
 if [[ "$requested_channel" == "commit" ]]; then
   set_env XD_RELEASE_COMMIT "$requested_commit"
@@ -897,9 +1033,9 @@ stage 6 "install deployment files"
 # Only point at the new release images after the old deployment has been
 # backed up successfully. This keeps pre-upgrade verification on the exact
 # server/Web version that owns the current database and blob layout.
-set_env XD_SERVER_IMAGE "ghcr.io/lazyxu/xdrive-server:$IMAGE_TAG"
-set_env XD_WEB_IMAGE "ghcr.io/lazyxu/xdrive-web:$IMAGE_TAG"
-set_env XD_CADDY_IMAGE "ghcr.io/lazyxu/xdrive-caddy:$IMAGE_TAG"
+set_env XD_SERVER_IMAGE "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
+set_env XD_WEB_IMAGE "$IMAGE_REGISTRY/xdrive-web:$IMAGE_TAG"
+set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
 install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
@@ -977,31 +1113,23 @@ if (( pull_attempts < 1 || pull_attempts > 10 )); then
   echo "xDrive server installer: XD_PULL_ATTEMPTS must be between 1 and 10." >&2
   exit 2
 fi
-monitor_host_rx "container image pull" 5 &
-PULL_MONITOR_PID=$!
-pull_ok=0
-for pull_attempt in $(seq 1 "$pull_attempts"); do
-  printf '[xDrive] container image pull attempt %s/%s...\n' "$pull_attempt" "$pull_attempts"
-  {
-    printf '\n===== pull attempt %s/%s at %s =====\n' "$pull_attempt" "$pull_attempts" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    compose --progress plain pull
-  } >>"$PULL_LOG" 2>&1 && {
-    pull_ok=1
-    break
-  }
 
-  if (( pull_attempt < pull_attempts )); then
-    retry_wait=$(( pull_retry_delay * pull_attempt ))
-    echo "[xDrive] container image pull failed; retrying in ${retry_wait}s (already-downloaded layers are reused)." >&2
-    sleep "$retry_wait"
-  fi
-done
-stop_pull_monitor
-if [[ "$pull_ok" != "1" ]]; then
-  echo "xDrive server installer: container pull failed after $pull_attempts attempts. Last Docker pull messages:" >&2
-  tail -n 40 "$PULL_LOG" >&2 || true
-  exit 1
+pull_progress_mode="plain"
+if pull_json_supported; then
+  pull_progress_mode="json"
+  echo "[xDrive] Docker Compose JSON progress available; showing real downloaded/total bytes per service."
+else
+  echo "[xDrive] Docker Compose JSON progress unavailable; falling back to host RX rate." >&2
 fi
+
+pull_services=(postgres server web)
+if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+  pull_services+=(caddy)
+fi
+for pull_service in "${pull_services[@]}"; do
+  pull_service_with_retry "$pull_service"
+done
+
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
 rm -f "$PULL_LOG"
 

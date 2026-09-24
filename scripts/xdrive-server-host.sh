@@ -94,10 +94,10 @@ record_system_audit() {
 download_installer() {
   local destination="$1"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 15 \
+    curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 10 \
       "$INSTALLER_URL" -o "$destination" </dev/null
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -O "$destination" "$INSTALLER_URL" </dev/null
+    wget -q --tries=5 --timeout=15 -O "$destination" "$INSTALLER_URL" </dev/null
   else
     echo "xdrive-server: curl or wget is required to update." >&2
     return 1

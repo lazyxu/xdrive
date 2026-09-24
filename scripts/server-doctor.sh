@@ -248,17 +248,36 @@ else
   record WARN "TLS" "XD_DOMAIN is empty; server is in HTTP/private mode"
 fi
 
+shell_proxy=0
+[[ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]] && shell_proxy=1
+docker_proxy="$(docker info --format '{{.HTTPSProxy}}' </dev/null 2>/dev/null || true)"
+if [[ "$shell_proxy" == "1" && -z "$docker_proxy" ]]; then
+  record WARN "Docker HTTPS proxy" "shell HTTPS_PROXY is set but Docker daemon proxy is empty; registry pulls may bypass the shell proxy"
+elif [[ -n "$docker_proxy" ]]; then
+  record PASS "Docker HTTPS proxy" "configured in Docker daemon"
+else
+  record PASS "Docker HTTPS proxy" "not configured; Docker uses direct registry access"
+fi
+
 if command -v curl >/dev/null 2>&1; then
-  if curl -fsS --max-time 8 -o /dev/null https://api.github.com/; then
-    record PASS "GitHub network" "api.github.com reachable"
-  else
-    record WARN "GitHub network" "api.github.com unreachable"
-  fi
-  ghcr_code="$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' https://ghcr.io/v2/ || true)"
-  case "$ghcr_code" in
-    200|401) record PASS "GHCR network" "ghcr.io reachable (HTTP $ghcr_code)" ;;
-    *) record WARN "GHCR network" "ghcr.io returned HTTP ${ghcr_code:-none}" ;;
-  esac
+  external_http_check() {
+    local name="$1" url="$2" result code remote connect tls total speed
+    result="$(curl -sS -L --connect-timeout 5 --max-time 8 -o /dev/null \
+      -w '%{http_code}\t%{remote_ip}\t%{time_connect}\t%{time_appconnect}\t%{time_total}\t%{speed_download}' \
+      "$url" 2>/dev/null || true)"
+    IFS=$'\t' read -r code remote connect tls total speed <<< "$result"
+    if [[ -n "$code" && "$code" != "000" ]]; then
+      record PASS "$name" "HTTP $code remote=${remote:-?} connect=${connect:-?}s tls=${tls:-?}s total=${total:-?}s avg=${speed:-0}B/s"
+    else
+      record WARN "$name" "$url unreachable or timed out"
+    fi
+  }
+
+  external_http_check "GitHub API" "https://api.github.com/"
+  external_http_check "GitHub Web" "https://github.com/"
+  external_http_check "Release CDN" "https://release-assets.githubusercontent.com/"
+  external_http_check "GHCR registry" "https://ghcr.io/v2/"
+  external_http_check "Container CDN" "https://pkg-containers.githubusercontent.com/"
 else
   record WARN "external network" "curl unavailable; GitHub/GHCR checks skipped"
 fi

@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,8 +30,13 @@ const (
 )
 
 type Asset struct {
-	Name string
-	URL  string
+	ID         int64
+	Name       string
+	ReleaseTag string
+	URL        string
+	APIURL     string
+	Size       int64
+	Digest     string
 }
 
 type Result struct {
@@ -43,16 +50,22 @@ type Result struct {
 }
 
 type Checker struct {
-	Repository string
-	APIBase    string
-	HTTP       *http.Client
+	Repository    string
+	APIBase       string
+	HTTP          *http.Client
+	RetryAttempts int
+	RetryBase     time.Duration
 }
 
 type releaseResponse struct {
 	TagName string `json:"tag_name"`
 	Assets  []struct {
+		ID                 int64  `json:"id"`
+		URL                string `json:"url"`
 		Name               string `json:"name"`
 		BrowserDownloadURL string `json:"browser_download_url"`
+		Size               int64  `json:"size"`
+		Digest             string `json:"digest"`
 	} `json:"assets"`
 }
 
@@ -76,10 +89,20 @@ func DefaultChecker() Checker {
 	if base == "" {
 		base = defaultAPIBase
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyFromEnvironment
+	transport.DialContext = (&net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ResponseHeaderTimeout = 15 * time.Second
 	return Checker{
-		Repository: repo,
-		APIBase:    base,
-		HTTP:       &http.Client{Timeout: 30 * time.Second},
+		Repository:    repo,
+		APIBase:       base,
+		HTTP:          &http.Client{Transport: transport, Timeout: 20 * time.Second},
+		RetryAttempts: 5,
+		RetryBase:     2 * time.Second,
 	}
 }
 
@@ -215,19 +238,28 @@ func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel, c
 	}
 
 	for _, a := range rel.Assets {
+		apiURL := strings.TrimSpace(a.URL)
+		if a.ID > 0 {
+			apiURL = fmt.Sprintf("%s/repos/%s/releases/assets/%d", c.APIBase, c.Repository, a.ID)
+		}
+		asset := Asset{
+			ID: a.ID, Name: a.Name, ReleaseTag: result.Latest,
+			URL: a.BrowserDownloadURL, APIURL: apiURL,
+			Size: a.Size, Digest: a.Digest,
+		}
 		switch a.Name {
 		case assetName:
-			result.Asset = Asset{Name: a.Name, URL: a.BrowserDownloadURL}
+			result.Asset = asset
 		case "SHA256SUMS.txt":
-			result.Checksums = Asset{Name: a.Name, URL: a.BrowserDownloadURL}
+			result.Checksums = asset
 		}
 	}
 	if result.UpdateAvailable {
-		if result.Asset.URL == "" {
+		if len(assetDownloadSources(result.Asset)) == 0 {
 			return result, fmt.Errorf("%s channel %s does not contain %s", channel, result.Latest, assetName)
 		}
-		if result.Checksums.URL == "" {
-			return result, fmt.Errorf("%s channel %s does not contain SHA256SUMS.txt", channel, result.Latest)
+		if _, ok := assetSHA256(result.Asset); !ok && len(assetDownloadSources(result.Checksums)) == 0 {
+			return result, fmt.Errorf("%s channel %s does not contain a SHA-256 digest or SHA256SUMS.txt", channel, result.Latest)
 		}
 	}
 	return result, nil
@@ -236,6 +268,15 @@ func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel, c
 func (c Checker) withDefaults() Checker {
 	if c.HTTP == nil {
 		c.HTTP = http.DefaultClient
+	}
+	if c.RetryAttempts <= 0 {
+		c.RetryAttempts = 5
+	}
+	if c.RetryAttempts > 10 {
+		c.RetryAttempts = 10
+	}
+	if c.RetryBase <= 0 {
+		c.RetryBase = 2 * time.Second
 	}
 	if strings.TrimSpace(c.Repository) == "" {
 		c.Repository = defaultRepository
@@ -249,26 +290,119 @@ func (c Checker) withDefaults() Checker {
 
 func (c Checker) release(ctx context.Context, path, current string) (releaseResponse, error) {
 	var rel releaseResponse
-	url := fmt.Sprintf("%s/repos/%s%s", c.APIBase, c.Repository, path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
+	requestURL := fmt.Sprintf("%s/repos/%s%s", c.APIBase, c.Repository, path)
+	if err := c.getJSONWithRetry(ctx, requestURL, current, "release metadata", &rel); err != nil {
 		return rel, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "xdrive-updater/"+current)
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return rel, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return rel, fmt.Errorf("update check failed: %s", resp.Status)
-	}
-	dec := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes))
-	if err := dec.Decode(&rel); err != nil {
-		return rel, fmt.Errorf("decode release metadata: %w", err)
 	}
 	return rel, nil
+}
+
+func (c Checker) getJSONWithRetry(ctx context.Context, requestURL, current, label string, out any) error {
+	c = c.withDefaults()
+	var lastErr error
+	for attempt := 1; attempt <= c.RetryAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "xdrive-updater/"+current)
+		resp, err := c.HTTP.Do(req)
+		if err == nil {
+			if resp.StatusCode == http.StatusOK {
+				decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(out)
+				_ = resp.Body.Close()
+				if decodeErr == nil {
+					return nil
+				}
+				lastErr = fmt.Errorf("decode %s: %w", label, decodeErr)
+			} else {
+				lastErr = fmt.Errorf("%s request failed: %s", label, resp.Status)
+				_ = resp.Body.Close()
+				if !retryableStatus(resp.StatusCode) {
+					return lastErr
+				}
+			}
+		} else {
+			lastErr = err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if attempt < c.RetryAttempts {
+			if err := waitRetry(ctx, c.RetryBase, attempt); err != nil {
+				return err
+			}
+		}
+	}
+	return fmt.Errorf("%s failed after %d attempts via %s: %w; check HTTPS connectivity/HTTPS_PROXY, or configure XD_UPDATE_ASSET_MIRROR for release downloads",
+		label, c.RetryAttempts, endpointHost(requestURL), lastErr)
+}
+
+func retryableStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusTooEarly ||
+		status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+func waitRetry(ctx context.Context, base time.Duration, attempt int) error {
+	multipliers := [...]int{1, 2, 5, 10, 15}
+	index := attempt - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(multipliers) {
+		index = len(multipliers) - 1
+	}
+	delay := time.Duration(multipliers[index]) * base
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
+	}
+}
+
+func endpointHost(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return raw
+	}
+	return parsed.Host
+}
+
+func assetSHA256(asset Asset) (string, bool) {
+	digest := strings.TrimSpace(asset.Digest)
+	if len(digest) != len("sha256:")+64 || !strings.HasPrefix(strings.ToLower(digest), "sha256:") {
+		return "", false
+	}
+	hexDigest := strings.ToLower(strings.TrimPrefix(strings.ToLower(digest), "sha256:"))
+	if _, err := hex.DecodeString(hexDigest); err != nil {
+		return "", false
+	}
+	return hexDigest, true
+}
+
+func assetDownloadSources(asset Asset) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 3)
+	mirror := strings.TrimRight(strings.TrimSpace(os.Getenv("XD_UPDATE_ASSET_MIRROR")), "/")
+	if mirror != "" && asset.ReleaseTag != "" && asset.Name != "" {
+		mirrorURL := mirror + "/" + url.PathEscape(asset.ReleaseTag) + "/" + url.PathEscape(asset.Name)
+		seen[mirrorURL] = struct{}{}
+		out = append(out, mirrorURL)
+	}
+	for _, raw := range []string{asset.APIURL, asset.URL} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if _, ok := seen[raw]; ok {
+			continue
+		}
+		seen[raw] = struct{}{}
+		out = append(out, raw)
+	}
+	return out
 }
 
 func validCommitRef(ref string) bool {
@@ -297,24 +431,10 @@ func (c Checker) resolveCommit(ctx context.Context, commit, current string) (str
 	if !validCommitRef(commit) {
 		return "", fmt.Errorf("commit must be 7-40 hexadecimal characters")
 	}
-	url := fmt.Sprintf("%s/repos/%s/commits/%s", c.APIBase, c.Repository, commit)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "xdrive-updater/"+current)
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("commit %s is not available: %s", commit, resp.Status)
-	}
+	requestURL := fmt.Sprintf("%s/repos/%s/commits/%s", c.APIBase, c.Repository, commit)
 	var out commitResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&out); err != nil {
-		return "", fmt.Errorf("decode commit metadata: %w", err)
+	if err := c.getJSONWithRetry(ctx, requestURL, current, "commit metadata", &out); err != nil {
+		return "", err
 	}
 	sha := strings.ToLower(strings.TrimSpace(out.SHA))
 	if len(sha) != 40 {
@@ -336,24 +456,10 @@ func (c Checker) verifySnapshotTag(ctx context.Context, sha, current string) err
 }
 
 func (c Checker) tagCommit(ctx context.Context, tag, current string) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/git/ref/tags/%s", c.APIBase, c.Repository, tag)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "xdrive-updater/"+current)
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("tag %s lookup failed: %s", tag, resp.Status)
-	}
+	requestURL := fmt.Sprintf("%s/repos/%s/git/ref/tags/%s", c.APIBase, c.Repository, tag)
 	var ref refResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&ref); err != nil {
-		return "", fmt.Errorf("decode tag ref: %w", err)
+	if err := c.getJSONWithRetry(ctx, requestURL, current, "tag metadata", &ref); err != nil {
+		return "", err
 	}
 	sha := strings.ToLower(strings.TrimSpace(ref.Object.SHA))
 	if len(sha) != 40 || ref.Object.Type != "commit" {
@@ -363,24 +469,10 @@ func (c Checker) tagCommit(ctx context.Context, tag, current string) (string, er
 }
 
 func (c Checker) snapshotCommit(ctx context.Context, current string) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/git/ref/tags/snapshot", c.APIBase, c.Repository)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "xdrive-updater/"+current)
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("snapshot ref check failed: %s", resp.Status)
-	}
+	requestURL := fmt.Sprintf("%s/repos/%s/git/ref/tags/snapshot", c.APIBase, c.Repository)
 	var ref refResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&ref); err != nil {
-		return "", fmt.Errorf("decode snapshot ref: %w", err)
+	if err := c.getJSONWithRetry(ctx, requestURL, current, "snapshot metadata", &ref); err != nil {
+		return "", err
 	}
 	sha := strings.ToLower(strings.TrimSpace(ref.Object.SHA))
 	if len(sha) != 40 || ref.Object.Type != "commit" {
@@ -469,139 +561,297 @@ func DownloadVerifiedWithProgress(ctx context.Context, checker Checker, result R
 		return "", err
 	}
 
-	reportProgress(progress, ProgressEvent{Step: 2, Stage: "checksum", Message: "downloading SHA256SUMS.txt"})
-	expected, err := downloadChecksum(ctx, checker.HTTP, result.Checksums.URL, result.Asset.Name, result.Current)
-	if err != nil {
-		return "", err
+	expected, hasDigest := assetSHA256(result.Asset)
+	if hasDigest {
+		message := "using SHA-256 from release metadata"
+		if result.Asset.Size > 0 {
+			message += "; installer size " + formatBytes(float64(result.Asset.Size))
+		}
+		reportProgress(progress, ProgressEvent{Step: 2, Stage: "checksum", Message: message})
+	} else {
+		reportProgress(progress, ProgressEvent{Step: 2, Stage: "checksum", Message: "release digest unavailable; downloading SHA256SUMS.txt with retry/fallback"})
+		var err error
+		expected, err = downloadChecksum(ctx, checker, result.Checksums, result.Asset.Name, result.Current, progress)
+		if err != nil {
+			return "", err
+		}
+		reportProgress(progress, ProgressEvent{Step: 2, Stage: "checksum", Message: "checksum manifest ready"})
 	}
-	reportProgress(progress, ProgressEvent{Step: 2, Stage: "checksum", Message: "checksum manifest ready"})
 
 	dst := filepath.Join(dir, result.Asset.Name)
-	tmp := dst + ".tmp"
-	if err := downloadFileWithProgress(ctx, checker.HTTP, result.Asset.URL, tmp, result.Current, result.Asset.Name, progress); err != nil {
-		_ = os.Remove(tmp)
+	_ = os.Remove(dst + ".tmp")
+	if ok, err := verifyFileSHA256(dst, expected); err == nil && ok {
+		reportProgress(progress, ProgressEvent{
+			Step: 3, Stage: "download " + result.Asset.Name,
+			Message: "verified installer already cached; reusing it",
+		})
+		return dst, nil
+	}
+
+	part := dst + ".part"
+	if result.Asset.Size > 0 {
+		if info, err := os.Stat(part); err == nil {
+			switch {
+			case info.Size() > result.Asset.Size:
+				_ = os.Remove(part)
+			case info.Size() == result.Asset.Size:
+				if ok, verifyErr := verifyFileSHA256(part, expected); verifyErr != nil || !ok {
+					_ = os.Remove(part)
+				}
+			}
+		}
+	}
+	if err := downloadFileWithProgress(ctx, checker, result.Asset, part, result.Current, progress); err != nil {
 		return "", err
 	}
 
 	reportProgress(progress, ProgressEvent{Step: 4, Stage: "verify", Message: "verifying SHA-256"})
-	f, err := os.Open(tmp)
+	ok, err := verifyFileSHA256(part, expected)
 	if err != nil {
 		return "", err
 	}
-	h := sha256.New()
-	_, hashErr := io.Copy(h, f)
-	closeErr := f.Close()
-	if hashErr != nil {
-		return "", hashErr
-	}
-	if closeErr != nil {
-		return "", closeErr
-	}
-	actual := hex.EncodeToString(h.Sum(nil))
-	if !strings.EqualFold(actual, expected) {
-		_ = os.Remove(tmp)
-		return "", fmt.Errorf("checksum mismatch for %s: got %s want %s", result.Asset.Name, actual, expected)
+	if !ok {
+		_ = os.Remove(part)
+		return "", fmt.Errorf("checksum mismatch for %s; partial cache removed", result.Asset.Name)
 	}
 	reportProgress(progress, ProgressEvent{Step: 4, Stage: "verify", Message: "SHA-256 verified"})
-	if err := os.Rename(tmp, dst); err != nil {
+	_ = os.Remove(dst)
+	if err := os.Rename(part, dst); err != nil {
 		return "", err
 	}
 	return dst, nil
 }
 
-func downloadChecksum(ctx context.Context, h *http.Client, url, assetName, current string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func verifyFileSHA256(path, expected string) (bool, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return "", err
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false, err
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+	return strings.EqualFold(actual, expected), nil
+}
+
+func downloadChecksum(ctx context.Context, checker Checker, asset Asset, assetName, current string, progress ProgressFunc) (string, error) {
+	checker = checker.withDefaults()
+	sources := assetDownloadSources(asset)
+	if len(sources) == 0 {
+		return "", fmt.Errorf("SHA256SUMS.txt has no download source")
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= checker.RetryAttempts; attempt++ {
+		for _, source := range sources {
+			body, err := downloadSmallAsset(ctx, checker.HTTP, source, asset.APIURL, current)
+			if err == nil {
+				lastErr = nil
+				s := bufio.NewScanner(strings.NewReader(string(body)))
+				for s.Scan() {
+					fields := strings.Fields(s.Text())
+					if len(fields) >= 2 && strings.TrimPrefix(fields[len(fields)-1], "*") == assetName {
+						if len(fields[0]) != 64 {
+							lastErr = fmt.Errorf("invalid checksum for %s", assetName)
+							break
+						}
+						if _, decodeErr := hex.DecodeString(fields[0]); decodeErr != nil {
+							lastErr = fmt.Errorf("invalid checksum for %s", assetName)
+							break
+						}
+						return strings.ToLower(fields[0]), nil
+					}
+				}
+				if scanErr := s.Err(); scanErr != nil {
+					lastErr = scanErr
+				} else if lastErr == nil {
+					lastErr = fmt.Errorf("checksum for %s not found", assetName)
+				}
+			} else {
+				lastErr = err
+			}
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if attempt < checker.RetryAttempts {
+			reportProgress(progress, ProgressEvent{
+				Step: 2, Stage: "checksum",
+				Message: fmt.Sprintf("checksum download failed; retrying attempt %d/%d", attempt+1, checker.RetryAttempts),
+			})
+			if err := waitRetry(ctx, checker.RetryBase, attempt); err != nil {
+				return "", err
+			}
+		}
+	}
+	return "", fmt.Errorf("checksum download failed after %d attempts via %s: %w; check HTTPS connectivity/HTTPS_PROXY or XD_UPDATE_ASSET_MIRROR",
+		checker.RetryAttempts, sourceHosts(sources), lastErr)
+}
+
+func downloadSmallAsset(ctx context.Context, h *http.Client, source, apiURL, current string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "xdrive-updater/"+current)
+	req.Header.Set("Accept-Encoding", "identity")
+	if source == apiURL {
+		req.Header.Set("Accept", "application/octet-stream")
+	}
 	resp, err := h.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download checksums failed: %s", resp.Status)
+		return nil, fmt.Errorf("download from %s failed: %s", endpointHost(source), resp.Status)
 	}
-	s := bufio.NewScanner(io.LimitReader(resp.Body, maxMetadataBytes))
-	for s.Scan() {
-		fields := strings.Fields(s.Text())
-		if len(fields) >= 2 && strings.TrimPrefix(fields[len(fields)-1], "*") == assetName {
-			if len(fields[0]) != 64 {
-				return "", fmt.Errorf("invalid checksum for %s", assetName)
-			}
-			return strings.ToLower(fields[0]), nil
-		}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxMetadataBytes+1))
+	if err != nil {
+		return nil, err
 	}
-	if err := s.Err(); err != nil {
-		return "", err
+	if len(body) > maxMetadataBytes {
+		return nil, fmt.Errorf("download from %s exceeded metadata limit", endpointHost(source))
 	}
-	return "", fmt.Errorf("checksum for %s not found", assetName)
+	return body, nil
 }
 
-func downloadFileWithProgress(ctx context.Context, h *http.Client, url, path, current, name string, progress ProgressFunc) error {
-	if h == nil {
-		h = http.DefaultClient
+func downloadFileWithProgress(ctx context.Context, checker Checker, asset Asset, path, current string, progress ProgressFunc) error {
+	checker = checker.withDefaults()
+	sources := assetDownloadSources(asset)
+	if len(sources) == 0 {
+		return fmt.Errorf("%s has no download source", asset.Name)
 	}
-	downloadClient := *h
-	// Metadata requests keep their short timeout, but a large installer must not
-	// inherit that as a total transfer deadline. Cancellation still comes from ctx.
+	downloadClient := *checker.HTTP
+	// Metadata requests keep their short timeout, but installer downloads must
+	// not use a total transfer deadline. Dial/TLS timeouts still come from the
+	// configured transport and cancellation comes from ctx.
 	downloadClient.Timeout = 0
 
 	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		if attempt > 1 {
-			reportProgress(progress, ProgressEvent{
-				Step: 3, Stage: "download", Message: fmt.Sprintf("retrying %s (attempt %d/3)", name, attempt),
-			})
+	for attempt := 1; attempt <= checker.RetryAttempts; attempt++ {
+		info, _ := os.Stat(path)
+		currentBytes := int64(0)
+		if info != nil {
+			currentBytes = info.Size()
 		}
-		lastErr = downloadFileAttempt(ctx, &downloadClient, url, path, current, name, progress)
-		if lastErr == nil {
+		if asset.Size > 0 && currentBytes == asset.Size {
+			reportProgress(progress, ProgressEvent{
+				Step: 3, Stage: "download " + asset.Name,
+				Current: currentBytes, Total: asset.Size,
+			})
 			return nil
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if attempt > 1 {
+			reportProgress(progress, ProgressEvent{
+				Step: 3, Stage: "download",
+				Message: fmt.Sprintf("retrying %s (attempt %d/%d); resume from %s / %s",
+					asset.Name, attempt, checker.RetryAttempts,
+					formatBytes(float64(currentBytes)), formatExpectedSize(asset.Size)),
+			})
 		}
-		if attempt < 3 {
-			select {
-			case <-ctx.Done():
+
+		for _, source := range sources {
+			lastErr = downloadFileAttempt(ctx, &downloadClient, source, asset.APIURL, path, current, asset, progress)
+			if lastErr == nil {
+				return nil
+			}
+			if ctx.Err() != nil {
 				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+		if attempt < checker.RetryAttempts {
+			if err := waitRetry(ctx, checker.RetryBase, attempt); err != nil {
+				return err
 			}
 		}
 	}
-	return lastErr
+	return fmt.Errorf("download %s failed after %d attempts via %s: %w; check HTTPS connectivity/HTTPS_PROXY or XD_UPDATE_ASSET_MIRROR",
+		asset.Name, checker.RetryAttempts, sourceHosts(sources), lastErr)
 }
 
-func downloadFileAttempt(ctx context.Context, h *http.Client, url, path, current, name string, progress ProgressFunc) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func downloadFileAttempt(ctx context.Context, h *http.Client, source, apiURL, path, current string, asset Asset, progress ProgressFunc) error {
+	resumeFrom := int64(0)
+	if info, err := os.Stat(path); err == nil {
+		resumeFrom = info.Size()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("User-Agent", "xdrive-updater/"+current)
+	req.Header.Set("Accept-Encoding", "identity")
+	if source == apiURL {
+		req.Header.Set("Accept", "application/octet-stream")
+	}
+	if resumeFrom > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeFrom))
+	}
 	resp, err := h.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", endpointHost(source), err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download update failed: %s", resp.Status)
+
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && asset.Size > 0 && resumeFrom == asset.Size {
+		return nil
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("%s returned %s", endpointHost(source), resp.Status)
+	}
+	if source == apiURL && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "application/json") {
+		return fmt.Errorf("%s returned JSON instead of the release asset", endpointHost(source))
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	appendMode := resp.StatusCode == http.StatusPartialContent && resumeFrom > 0
+	if appendMode {
+		if start, total, ok := parseContentRange(resp.Header.Get("Content-Range")); ok {
+			if start != resumeFrom {
+				return fmt.Errorf("%s resumed at byte %d, expected %d", endpointHost(source), start, resumeFrom)
+			}
+			if asset.Size > 0 && total > 0 && total != asset.Size {
+				return fmt.Errorf("%s reported total %d, release metadata says %d", endpointHost(source), total, asset.Size)
+			}
+		}
+	} else {
+		resumeFrom = 0
+	}
+
+	flags := os.O_CREATE | os.O_WRONLY
+	if appendMode {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	f, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
 		return err
 	}
 
-	total := resp.ContentLength
-	if total < 0 {
-		total = 0
+	total := asset.Size
+	if total <= 0 {
+		if appendMode {
+			total = resumeFrom + resp.ContentLength
+		} else {
+			total = resp.ContentLength
+		}
+		if total < 0 {
+			total = 0
+		}
 	}
 	start := time.Now()
 	lastReport := start
-	var currentBytes int64
-	var lastBytes int64
-	reportProgress(progress, ProgressEvent{Step: 3, Stage: "download " + name, Total: total})
+	currentBytes := resumeFrom
+	lastBytes := resumeFrom
+	reportProgress(progress, ProgressEvent{
+		Step: 3, Stage: "download " + asset.Name,
+		Current: currentBytes, Total: total,
+	})
 
 	buf := make([]byte, 256*1024)
 	for {
@@ -621,7 +871,7 @@ func downloadFileAttempt(ctx context.Context, h *http.Client, url, path, current
 			if now.Sub(lastReport) >= time.Second {
 				rate := float64(currentBytes-lastBytes) / now.Sub(lastReport).Seconds()
 				reportProgress(progress, ProgressEvent{
-					Step: 3, Stage: "download " + name,
+					Step: 3, Stage: "download " + asset.Name,
 					Current: currentBytes, Total: total, BytesPerSecond: rate, Elapsed: now.Sub(start),
 				})
 				lastReport = now
@@ -633,23 +883,88 @@ func downloadFileAttempt(ctx context.Context, h *http.Client, url, path, current
 		}
 		if readErr != nil {
 			_ = f.Close()
-			return readErr
+			return fmt.Errorf("%s interrupted at %s: %w", endpointHost(source), formatBytes(float64(currentBytes)), readErr)
 		}
 	}
-
 	if err := f.Close(); err != nil {
 		return err
 	}
+	if total > 0 && currentBytes != total {
+		return fmt.Errorf("%s ended at %s / %s", endpointHost(source),
+			formatBytes(float64(currentBytes)), formatBytes(float64(total)))
+	}
 	elapsed := time.Since(start)
-	rate := float64(currentBytes)
+	rate := float64(currentBytes - resumeFrom)
 	if elapsed > 0 {
 		rate /= elapsed.Seconds()
 	}
 	reportProgress(progress, ProgressEvent{
-		Step: 3, Stage: "download " + name,
+		Step: 3, Stage: "download " + asset.Name,
 		Current: currentBytes, Total: total, BytesPerSecond: rate, Elapsed: elapsed,
 	})
 	return nil
+}
+
+func parseContentRange(value string) (start, total int64, ok bool) {
+	var end int64
+	if _, err := fmt.Sscanf(strings.TrimSpace(value), "bytes %d-%d/%d", &start, &end, &total); err != nil {
+		return 0, 0, false
+	}
+	return start, total, true
+}
+
+func sourceHosts(sources []string) string {
+	hosts := make([]string, 0, len(sources))
+	seen := map[string]struct{}{}
+	for _, source := range sources {
+		host := endpointHost(source)
+		if _, ok := seen[host]; ok {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	return strings.Join(hosts, ", ")
+}
+
+func formatExpectedSize(size int64) string {
+	if size <= 0 {
+		return "unknown"
+	}
+	return formatBytes(float64(size))
+}
+
+func ProbeAssetDownload(ctx context.Context, current string, asset Asset) (string, error) {
+	checker := DefaultChecker().withDefaults()
+	sources := assetDownloadSources(asset)
+	if len(sources) == 0 {
+		return "", fmt.Errorf("%s has no download source", asset.Name)
+	}
+	var lastErr error
+	for _, source := range sources {
+		started := time.Now()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("User-Agent", "xdrive-updater/"+current)
+		req.Header.Set("Range", "bytes=0-0")
+		if source == asset.APIURL {
+			req.Header.Set("Accept", "application/octet-stream")
+		}
+		resp, err := checker.HTTP.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent {
+			return fmt.Sprintf("%s reachable in %s (HTTP %d)",
+				endpointHost(source), time.Since(started).Round(time.Millisecond), resp.StatusCode), nil
+		}
+		lastErr = fmt.Errorf("%s returned %s", endpointHost(source), resp.Status)
+	}
+	return "", fmt.Errorf("release asset download path unavailable via %s: %w", sourceHosts(sources), lastErr)
 }
 
 func CheckLatest(ctx context.Context, current string) (Result, error) {
@@ -672,7 +987,8 @@ func CheckTarget(ctx context.Context, current, channel, commit string) (Result, 
 }
 
 // InstallLatest checks the default channel for the current build, verifies
-// SHA256SUMS.txt and starts/executes the platform installer.
+// the release SHA-256 digest (falling back to SHA256SUMS.txt for legacy
+// releases), and starts/executes the platform installer.
 func InstallLatest(ctx context.Context, current string) (bool, Result, error) {
 	channel, commit, err := AutomaticTarget(current)
 	if err != nil {
@@ -711,8 +1027,12 @@ func InstallTargetWithProgress(ctx context.Context, current, channel, commit str
 		})
 		return false, result, nil
 	}
+	message := fmt.Sprintf("update available: %s -> %s", current, result.Latest)
+	if result.Asset.Size > 0 {
+		message += fmt.Sprintf(" | %s %s", result.Asset.Name, formatBytes(float64(result.Asset.Size)))
+	}
 	reportProgress(progress, ProgressEvent{
-		Step: 1, Stage: "check", Message: fmt.Sprintf("update available: %s -> %s", current, result.Latest),
+		Step: 1, Stage: "check", Message: message,
 	})
 
 	cache, err := os.UserCacheDir()

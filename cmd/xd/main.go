@@ -394,6 +394,9 @@ func updateCmd(args []string) error {
 		return nil
 	}
 	fmt.Printf("update available on %s: %s -> %s\n", normalized, current, result.Latest)
+	if result.Asset.Size > 0 {
+		fmt.Printf("download: %s (%s)\n", result.Asset.Name, formatStorageBytes(result.Asset.Size))
+	}
 	if normalized == xupdate.ChannelCommit {
 		fmt.Printf("run: xd update --channel commit --commit %s --install\n", result.Commit)
 	} else {

@@ -93,10 +93,30 @@ func runDoctorChecks() []doctorCheck {
 		cancel()
 		if checkErr != nil {
 			checks = append(checks, doctorCheck{Name: "update metadata", Status: doctorWarn, Detail: checkErr.Error()})
-		} else if result.UpdateAvailable {
-			checks = append(checks, doctorCheck{Name: "update metadata", Status: doctorWarn, Detail: "update available: " + result.Latest})
 		} else {
-			checks = append(checks, doctorCheck{Name: "update metadata", Status: doctorPass, Detail: "channel metadata reachable; client is current"})
+			if result.UpdateAvailable {
+				detail := "update available: " + result.Latest
+				if result.Asset.Size > 0 {
+					detail += " (" + formatStorageBytes(result.Asset.Size) + ")"
+				}
+				checks = append(checks, doctorCheck{Name: "update metadata", Status: doctorWarn, Detail: detail})
+			} else {
+				checks = append(checks, doctorCheck{Name: "update metadata", Status: doctorPass, Detail: "channel metadata reachable; client is current"})
+			}
+			if result.Asset.Name != "" {
+				probeCtx, probeCancel := context.WithTimeout(context.Background(), 8*time.Second)
+				source, probeErr := xupdate.ProbeAssetDownload(probeCtx, version.String(), result.Asset)
+				probeCancel()
+				if probeErr != nil {
+					checks = append(checks, doctorCheck{Name: "update download", Status: doctorWarn, Detail: probeErr.Error()})
+				} else {
+					detail := source
+					if result.Asset.Size > 0 {
+						detail += "; asset " + formatStorageBytes(result.Asset.Size)
+					}
+					checks = append(checks, doctorCheck{Name: "update download", Status: doctorPass, Detail: detail})
+				}
+			}
 		}
 	}
 

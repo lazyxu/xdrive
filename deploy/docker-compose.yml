@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: ${XD_POSTGRES_IMAGE:-postgres:17-alpine}
     environment:
       POSTGRES_USER: xdrive
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in ~/.xd/.env}
