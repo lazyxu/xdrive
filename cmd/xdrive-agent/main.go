@@ -34,6 +34,12 @@ func main() {
 	defer cancel()
 
 	ctrl := newAgentController(ctx, cancel)
+	ipc, ipcErr := startDesktopIPC(ctx, ctrl)
+	if ipcErr != nil {
+		log.Printf("desktop IPC unavailable: %v", ipcErr)
+	} else {
+		defer ipc.Close()
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
