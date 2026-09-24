@@ -15,6 +15,9 @@ STAGING_DIR="$CONFIG_DIR/.install-staging"
 UPGRADE_STATE_DIR="$CONFIG_DIR/.upgrade-transaction"
 INSTALL_LOCK_PATH="$CONFIG_DIR/.install.lock"
 PULL_LOG="$CONFIG_DIR/.install-pull.log"
+HOST_BIN_DIR="${XD_HOST_BIN_DIR:-/usr/local/bin}"
+HOST_MANAGER_PATH="$CONFIG_DIR/xdrive-server"
+HOST_MANAGER_LINK="$HOST_BIN_DIR/xdrive-server"
 
 STAGE_TOTAL=9
 STAGE_NO=0
@@ -663,8 +666,10 @@ prepare_upgrade_transaction() {
   snapshot_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700
   snapshot_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700
   snapshot_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700
-  snapshot_transaction_file "server-doctor.sh" "$CONFIG_DIR/server-doctor.sh" 700
-  snapshot_transaction_file "xdrive-server" "$CONFIG_DIR/xdrive-server" 700
+  # The read-only doctor and host-side xdrive-server manager are intentionally
+  # outside the runtime rollback set. Once published control-plane tools are
+  # installed they remain available to diagnose and retry a rolled-back
+  # deployment.
   install -m 700 "$STAGING_DIR/server-restore.sh" "$UPGRADE_STATE_DIR/rollback-restore.sh"
 
   cat > "$UPGRADE_STATE_DIR/state" <<EOF
@@ -698,13 +703,20 @@ rollback_upgrade() {
   restore_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700 || ok=0
   restore_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700 || ok=0
   restore_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700 || ok=0
-  restore_transaction_file "server-doctor.sh" "$CONFIG_DIR/server-doctor.sh" 700 || ok=0
-  restore_transaction_file "xdrive-server" "$CONFIG_DIR/xdrive-server" 700 || ok=0
-  if [[ -f "$UPGRADE_STATE_DIR/absent-xdrive-server" && -L /usr/local/bin/xdrive-server ]]; then
-    cli_target="$(readlink -f /usr/local/bin/xdrive-server 2>/dev/null || true)"
-    if [[ -z "$cli_target" || "$cli_target" == "$CONFIG_DIR/xdrive-server" ]]; then
-      rm -f /usr/local/bin/xdrive-server
+
+  # Keep the newly installed read-only doctor and host manager across an
+  # application rollback. The runtime deployment is restored, but the control
+  # plane must stay available so an operator can run
+  # xdrive-server update/status/doctor without bootstrapping again.
+  if [[ -f "$CONFIG_DIR/server-doctor.sh" ]]; then
+    chmod 700 "$CONFIG_DIR/server-doctor.sh" || ok=0
+  fi
+  if [[ -f "$HOST_MANAGER_PATH" ]]; then
+    chmod 700 "$HOST_MANAGER_PATH" || ok=0
+    if [[ -d "$HOST_BIN_DIR" && -w "$HOST_BIN_DIR" ]]; then
+      ln -sfn "$HOST_MANAGER_PATH" "$HOST_MANAGER_LINK" || ok=0
     fi
+    echo "[xDrive] rollback: retaining host manager and doctor for retry/recovery." >&2
   fi
   if [[ "$ok" != "1" ]]; then
     ROLLBACK_RUNNING=0
@@ -894,12 +906,12 @@ install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$CONFIG_DIR/$maintenance_script"
 done
-install -m 700 "$STAGING_DIR/xdrive-server" "$CONFIG_DIR/xdrive-server"
-if [[ -d /usr/local/bin && -w /usr/local/bin ]]; then
-  ln -sfn "$CONFIG_DIR/xdrive-server" /usr/local/bin/xdrive-server
-  echo "Host manager:    /usr/local/bin/xdrive-server"
+install -m 700 "$STAGING_DIR/xdrive-server" "$HOST_MANAGER_PATH"
+if [[ -d "$HOST_BIN_DIR" && -w "$HOST_BIN_DIR" ]]; then
+  ln -sfn "$HOST_MANAGER_PATH" "$HOST_MANAGER_LINK"
+  echo "Host manager:    $HOST_MANAGER_LINK"
 else
-  echo "Host manager:    $CONFIG_DIR/xdrive-server"
+  echo "Host manager:    $HOST_MANAGER_PATH"
   echo "Add $CONFIG_DIR to PATH to use: xdrive-server"
 fi
 rm -rf "$STAGING_DIR"
@@ -953,15 +965,43 @@ echo "[xDrive] pulling container images; detailed Docker output is captured in $
 : > "$PULL_LOG"
 chmod 600 "$PULL_LOG"
 pull_started="$(date +%s)"
+pull_attempts="${XD_PULL_ATTEMPTS:-3}"
+pull_retry_delay="${XD_PULL_RETRY_DELAY_SECONDS:-5}"
+case "$pull_attempts" in
+  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_ATTEMPTS must be an integer." >&2; exit 2 ;;
+esac
+case "$pull_retry_delay" in
+  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_RETRY_DELAY_SECONDS must be an integer." >&2; exit 2 ;;
+esac
+if (( pull_attempts < 1 || pull_attempts > 10 )); then
+  echo "xDrive server installer: XD_PULL_ATTEMPTS must be between 1 and 10." >&2
+  exit 2
+fi
 monitor_host_rx "container image pull" 5 &
 PULL_MONITOR_PID=$!
-if ! compose --progress plain pull >"$PULL_LOG" 2>&1; then
-  stop_pull_monitor
-  echo "xDrive server installer: container pull failed. Last Docker pull messages:" >&2
+pull_ok=0
+for pull_attempt in $(seq 1 "$pull_attempts"); do
+  printf '[xDrive] container image pull attempt %s/%s...\n' "$pull_attempt" "$pull_attempts"
+  {
+    printf '\n===== pull attempt %s/%s at %s =====\n' "$pull_attempt" "$pull_attempts" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    compose --progress plain pull
+  } >>"$PULL_LOG" 2>&1 && {
+    pull_ok=1
+    break
+  }
+
+  if (( pull_attempt < pull_attempts )); then
+    retry_wait=$(( pull_retry_delay * pull_attempt ))
+    echo "[xDrive] container image pull failed; retrying in ${retry_wait}s (already-downloaded layers are reused)." >&2
+    sleep "$retry_wait"
+  fi
+done
+stop_pull_monitor
+if [[ "$pull_ok" != "1" ]]; then
+  echo "xDrive server installer: container pull failed after $pull_attempts attempts. Last Docker pull messages:" >&2
   tail -n 40 "$PULL_LOG" >&2 || true
   exit 1
 fi
-stop_pull_monitor
 echo "[xDrive] container image pull complete in $(( $(date +%s) - pull_started ))s."
 rm -f "$PULL_LOG"
 

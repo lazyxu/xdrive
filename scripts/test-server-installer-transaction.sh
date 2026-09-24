@@ -20,7 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$TMP/bin" "$TMP/state" "$TMP/config"
+mkdir -p "$TMP/bin" "$TMP/state" "$TMP/config" "$TMP/host-bin"
 
 # Hold the installer lock and verify a second invocation refuses to run.
 exec 8>"$TMP/config/.install.lock"
@@ -175,7 +175,15 @@ case "$1" in
     exit 0
     ;;
   pull)
-    # Simulate the repetitive Docker progress that must stay in the private log.
+    count="$(cat "$TEST_STATE/pull-count" 2>/dev/null || echo 0)"
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$TEST_STATE/pull-count"
+    mode="${TEST_PULL_MODE:-success}"
+    if [[ "$mode" == "permanent" || ( "$mode" == "transient" && "$count" -lt 3 ) ]]; then
+      echo "failed to copy: read tcp: connection reset by peer" >&2
+      exit 1
+    fi
+    # Simulate repetitive Docker progress that must stay in the private log.
     for _ in 1 2 3 4 5; do
       echo "ff96944839b7 Downloading 3.146MB"
     done
@@ -186,7 +194,7 @@ case "$1" in
     ;;
   exec)
     if [[ "$args" == *"xdrive-server healthcheck"* ]]; then
-      if [[ -f "$TEST_STATE/data-restored" ]]; then
+      if [[ "${TEST_HEALTH_OK:-0}" == "1" || -f "$TEST_STATE/data-restored" ]]; then
         exit 0
       fi
       exit 1
@@ -226,9 +234,15 @@ for script in server-backup.sh server-backup-scheduled.sh server-restore.sh serv
 done
 
 set +e
+rm -f "$TMP/state/pull-count"
 TEST_STATE="$TMP/state" \
+TEST_PULL_MODE=transient \
+TEST_HEALTH_OK=0 \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config" \
+XD_HOST_BIN_DIR="$TMP/host-bin" \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
 bash "$INSTALLER" --channel master >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"
 status=$?
@@ -243,11 +257,52 @@ grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/
 grep -q '^XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-oldoldoldold$' "$TMP/config/.env"
 grep -q '^XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-oldoldoldold$' "$TMP/config/.env"
 test ! -d "$TMP/config/.upgrade-transaction"
+[[ "$(cat "$TMP/state/pull-count")" == "3" ]]
+grep -q 'container image pull attempt 3/3' "$TMP/upgrade.out"
+grep -q 'container image pull failed; retrying' "$TMP/upgrade.err"
+test -x "$TMP/config/xdrive-server"
+test -x "$TMP/config/server-doctor.sh"
+test -L "$TMP/host-bin/xdrive-server"
+[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/xdrive-server" ]]
+grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/upgrade.err"
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
 if grep -q 'Downloading 3.146MB' "$TMP/upgrade.out" || grep -q 'Downloading 3.146MB' "$TMP/upgrade.err"; then
   echo "raw Docker pull progress leaked into user output" >&2
   exit 1
 fi
+
+# Reproduce the production failure point: all image-pull attempts fail before
+# any new application container or migration is started. Rollback must restore
+# the old deployment without a database restore and must keep the host manager
+# available for another xdrive-server update.
+rm -f "$TMP/state/pull-count" "$TMP/state/data-restored"
+set +e
+TEST_STATE="$TMP/state" \
+TEST_PULL_MODE=permanent \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
+XD_HOST_BIN_DIR="$TMP/host-bin" \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_NONINTERACTIVE=1 \
+bash "$INSTALLER" --channel master >"$TMP/pull-fail.out" 2>"$TMP/pull-fail.err"
+pull_fail_status=$?
+set -e
+
+[[ "$pull_fail_status" -ne 0 ]]
+[[ "$(cat "$TMP/state/pull-count")" == "3" ]]
+grep -q 'container pull failed after 3 attempts' "$TMP/pull-fail.err"
+grep -q 'database restore not required for this failure point' "$TMP/pull-fail.err"
+grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/pull-fail.err"
+test ! -f "$TMP/state/data-restored"
+grep -q '^old-compose$' "$TMP/config/docker-compose.yml"
+grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/.env"
+test -x "$TMP/config/xdrive-server"
+test -x "$TMP/config/server-doctor.sh"
+test -L "$TMP/host-bin/xdrive-server"
+[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/xdrive-server" ]]
+grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/pull-fail.err"
 
 echo "server transactional upgrade tests passed"
