@@ -116,6 +116,10 @@ xdrive-server doctor
 xdrive-server status
 xdrive-server backup
 xdrive-server verify
+xdrive-server admin list
+xdrive-server admin reset-password admin
+xdrive-server admin enable admin
+xdrive-server admin disable USER
 ```
 
 The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. The `xdrive-server` executable inside `xdrive-server-1` remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
@@ -168,6 +172,28 @@ unset P
 ```
 
 The bootstrap command works only while **no administrator account exists**. Existing ordinary users do not block first-admin bootstrap. Once an administrator exists, all additional users and administrators must be created through the authenticated administrator interface.
+
+If an account password is forgotten, the original password cannot be read back: xDrive stores only a password hash. A Docker-host administrator can list account names and securely reset a password with the host manager:
+
+```bash
+xdrive-server admin list
+xdrive-server admin reset-password admin
+xdrive-server admin enable admin
+xdrive-server admin disable USER
+```
+
+The interactive reset prompts twice on `/dev/tty` with terminal echo disabled. The password is not placed in shell history, process arguments, `~/.xd/.env`, or xDrive logs. A successful reset immediately increments the account session version and revokes all outstanding refresh sessions, so existing clients must sign in again. Recovery resets require a password change at the next login by default; pass `--no-must-change` only when the replacement password is already the account's final password.
+
+For automation, explicitly opt into stdin mode:
+
+```bash
+read -s -p 'New password: ' P; echo
+printf '%s\n' "$P" | xdrive-server admin reset-password \
+  admin --password-stdin
+unset P
+```
+
+`xdrive-server admin disable USER` immediately revokes that account's sessions. The last active administrator is protected from disable so the deployment cannot accidentally lose all active administrators; `enable` reverses an account disable. `xdrive-server admin list` prints only non-secret account metadata (ID, username, role, status, password-change flag, quota, and last-login time); it never prints password hashes or session tokens.
 
 Common operations:
 
