@@ -1,3 +1,5 @@
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import os = require('node:os')
 import path = require('node:path')
 import {
   app,
@@ -11,9 +13,11 @@ import {
   Tray,
   type OpenDialogOptions,
 } from 'electron'
+import { AgentLifecycle } from './agent_lifecycle.cjs'
 import {
   AgentIPCClient,
   AgentIPCError,
+  type AgentHello,
   type AgentConflict,
   type AgentFileAvailability,
   type AgentSettings,
@@ -24,6 +28,7 @@ const TRAY_ICON_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA20lEQV
 
 type AgentConnectionState = {
   connected: boolean
+  hello?: AgentHello
   status?: AgentStatus
   error?: string
 }
@@ -36,8 +41,84 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
 let agentClient: AgentIPCClient | null = null
+let agentLifecycle: AgentLifecycle | null = null
 let agentState: AgentConnectionState = { connected: false, error: 'Connecting to xdrive-agent…' }
 let agentMonitor: AbortController | null = null
+const backgroundLaunch = process.argv.includes('--background')
+const desktopPreferencesName = 'desktop-settings.json'
+
+type DesktopPreferences = {
+  start_at_login: boolean
+}
+
+async function loadDesktopPreferences(): Promise<DesktopPreferences> {
+  const file = path.join(app.getPath('userData'), desktopPreferencesName)
+  try {
+    const parsed = JSON.parse(await readFile(file, 'utf8')) as Partial<DesktopPreferences>
+    if (typeof parsed.start_at_login === 'boolean') {
+      return { start_at_login: parsed.start_at_login }
+    }
+  } catch {
+    // First run or malformed local preference: use the product default below.
+  }
+  return { start_at_login: true }
+}
+
+async function saveDesktopPreferences(preferences: DesktopPreferences) {
+  const dir = app.getPath('userData')
+  await mkdir(dir, { recursive: true })
+  await writeFile(
+    path.join(dir, desktopPreferencesName),
+    JSON.stringify(preferences, null, 2) + '\n',
+    { encoding: 'utf8', mode: 0o600 },
+  )
+}
+
+function quoteDesktopExec(value: string) {
+  return '"' + value.replace(/([\\"])/g, '\\$1') + '"'
+}
+
+async function applyStartAtLogin(enabled: boolean) {
+  if (!app.isPackaged) return
+
+  if (process.platform === 'win32') {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      path: process.execPath,
+      args: enabled ? ['--background'] : [],
+    })
+    return
+  }
+
+  if (process.platform === 'linux') {
+    const configHome = process.env.XDG_CONFIG_HOME?.trim() || path.join(os.homedir(), '.config')
+    const autostartDir = path.join(configHome, 'autostart')
+    const desktopFile = path.join(autostartDir, 'xdrive-desktop.desktop')
+    if (!enabled) {
+      await rm(desktopFile, { force: true })
+      return
+    }
+    await mkdir(autostartDir, { recursive: true })
+    const contents = [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=xDrive Desktop',
+      'Comment=Start xDrive in the background',
+      `Exec=${quoteDesktopExec(process.execPath)} --background`,
+      'Terminal=false',
+      'X-GNOME-Autostart-enabled=true',
+      '',
+    ].join('\n')
+    await writeFile(desktopFile, contents, { encoding: 'utf8', mode: 0o600 })
+  }
+}
+
+async function setStartAtLogin(enabled: boolean) {
+  const preferences = { start_at_login: enabled }
+  await saveDesktopPreferences(preferences)
+  await applyStartAtLogin(enabled)
+  return preferences
+}
 
 function showMainWindow() {
   if (!mainWindow) return
@@ -46,7 +127,7 @@ function showMainWindow() {
   mainWindow.focus()
 }
 
-function createMainWindow() {
+function createMainWindow(showOnReady = true) {
   const win = new BrowserWindow({
     width: 1120,
     height: 760,
@@ -84,7 +165,9 @@ function createMainWindow() {
   const devURL = process.env.XD_DESKTOP_DEV_URL
   if (devURL) void win.loadURL(devURL)
   else void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    if (showOnReady) win.show()
+  })
   win.webContents.once('did-finish-load', () => win.webContents.send('agent:state', agentState))
 }
 
@@ -186,10 +269,16 @@ function requireAgentClient() {
   return agentClient
 }
 
+function requireAgentLifecycle() {
+  if (!agentLifecycle) throw new AgentIPCError('agent_unavailable', 0, 'xdrive-agent lifecycle is not initialized.')
+  return agentLifecycle
+}
+
 async function refreshAgentState() {
   try {
+    const hello = await requireAgentLifecycle().ensureRunning()
     const status = await requireAgentClient().status()
-    const next: AgentConnectionState = { connected: true, status }
+    const next: AgentConnectionState = { connected: true, hello, status }
     publishAgentState(next)
     return next
   } catch (error) {
@@ -228,20 +317,25 @@ function startAgentMonitor() {
   void (async () => {
     while (!monitor.signal.aborted) {
       try {
+        const hello = await requireAgentLifecycle().ensureRunning()
         const status = await requireAgentClient().status(monitor.signal)
-        publishAgentState({ connected: true, status })
+        publishAgentState({ connected: true, hello, status })
         let revision = status.revision
         while (!monitor.signal.aborted) {
           const event = await requireAgentClient().events(revision, 25_000, monitor.signal)
           if (!event) continue
           revision = event.revision
-          publishAgentState({ connected: true, status: event.status })
+          publishAgentState({ connected: true, hello, status: event.status })
         }
       } catch (error) {
         if (monitor.signal.aborted) return
         publishAgentState({ connected: false, error: agentError(error).message })
         requireAgentClient().invalidate()
-        await wait(2_000, monitor.signal)
+        if (error instanceof AgentIPCError && error.code === 'incompatible_agent') {
+          await wait(5_000, monitor.signal)
+        } else {
+          await wait(1_000, monitor.signal)
+        }
       }
     }
   })()
@@ -249,6 +343,17 @@ function startAgentMonitor() {
 
 function registerIPCHandlers() {
   ipcMain.handle('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch }))
+  ipcMain.handle('desktop:get-startup', () => loadDesktopPreferences())
+  ipcMain.handle('desktop:set-startup', async (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') {
+      return { ok: false, error: { code: 'invalid_input', message: 'start_at_login must be a boolean.' } }
+    }
+    try {
+      return { ok: true, data: await setStartAtLogin(enabled) }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
   ipcMain.handle('desktop:select-directory', async (_event, defaultPath?: unknown) => {
     const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'], title: 'Choose xDrive sync folder' }
     if (typeof defaultPath === 'string' && defaultPath.trim()) options.defaultPath = defaultPath
@@ -258,6 +363,19 @@ function registerIPCHandlers() {
 
   ipcMain.handle('agent:get-state', () => agentState)
   ipcMain.handle('agent:retry', () => refreshAgentState())
+  ipcMain.handle('agent:restart', async () => {
+    try {
+      const hello = await requireAgentLifecycle().restart()
+      const status = await requireAgentClient().status()
+      const next: AgentConnectionState = { connected: true, hello, status }
+      publishAgentState(next)
+      return { ok: true, data: next }
+    } catch (error) {
+      const next: AgentConnectionState = { connected: false, error: agentError(error).message }
+      publishAgentState(next)
+      return { ok: false, error: agentError(error) }
+    }
+  })
   ipcMain.handle('agent:login', (_event, input: unknown) => {
     const value = input as Partial<{ server: string; username: string; password: string; mount_path: string }>
     if (!value || typeof value.server !== 'string' || typeof value.username !== 'string' || typeof value.password !== 'string') {
@@ -356,13 +474,20 @@ if (!primaryInstance) {
     quitting = true
     agentMonitor?.abort()
   })
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
     Menu.setApplicationMenu(null)
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+
+    const preferences = await loadDesktopPreferences()
+    await applyStartAtLogin(preferences.start_at_login).catch((error) => {
+      console.error('failed to configure desktop startup:', error)
+    })
+
     agentClient = new AgentIPCClient(path.join(app.getPath('appData'), 'xdrive', 'desktop-ipc.json'))
+    agentLifecycle = new AgentLifecycle(agentClient)
     registerIPCHandlers()
-    createMainWindow()
+    createMainWindow(!backgroundLaunch)
     createTray()
     startAgentMonitor()
   })

@@ -667,6 +667,7 @@ The IPC does **not** expose access or refresh tokens. In the Electron integratio
 Phase 3 endpoints are:
 
 ```text
+GET   /v1/hello
 GET   /v1/status
 GET   /v1/events?after_revision=N&timeout_ms=25000
 
@@ -690,11 +691,16 @@ POST  /v1/conflicts/open
 POST  /v1/conflicts/resolve
 
 POST  /v1/open-folder
+POST  /v1/lifecycle/shutdown
 ```
 
 `/v1/events` is a bounded long-poll over monotonically increasing in-memory status revisions. It returns immediately when the revision changes and otherwise returns `204 No Content` at the requested timeout. This avoids fixed-interval renderer polling without introducing a second persistent event protocol.
 
 The Electron desktop client consumes this IPC from its **main process**. The renderer sees only typed business operations through the preload bridge; the discovery URL and bearer token never cross into renderer state. Electron is now the sole graphical client: it covers sign-in, required password changes, live sync state, pause/resume, sync-now, opening the sync folder, Windows file-availability controls, selective-sync rules, mount/cache settings, logout, conflict review/resolution, tray actions, and desktop notifications. The Go `xdrive-agent` is headless and owns only sync/system capabilities plus Desktop IPC. The `xd` CLI remains fully supported.
+
+Desktop lifecycle negotiation starts with `GET /v1/hello`. The response advertises the Agent version, PID, platform/architecture, supported Desktop IPC protocol range, and named capabilities. Desktop refuses an incompatible protocol instead of silently calling endpoints with mismatched semantics. The current protocol range is `1..1`.
+
+Electron also owns user-session lifecycle behavior. By default the packaged Desktop registers itself to start at login with `--background`, creates only the Tray surface on that launch, and automatically starts `xdrive-agent` when IPC discovery is absent. If the Agent exits unexpectedly, Desktop retries and restores it. A manual **Restart Agent** action uses the authenticated lifecycle shutdown endpoint, waits for the old process to stop, then starts a fresh single Agent instance. Linux now has a real per-user process lock, matching the existing Windows single-instance guarantee.
 
 ## HTTP API
 

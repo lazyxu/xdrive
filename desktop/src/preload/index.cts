@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   retry: () => ipcRenderer.invoke('agent:retry'),
+  restart: () => ipcRenderer.invoke('agent:restart'),
   login: (input: { server: string; username: string; password: string; mount_path?: string }) => ipcRenderer.invoke('agent:login', input),
   logout: () => ipcRenderer.invoke('agent:logout'),
   changePassword: (input: { current_password: string; new_password: string }) => ipcRenderer.invoke('agent:change-password', input),
@@ -27,6 +28,8 @@ const agent = Object.freeze({
 
 contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   getInfo: () => ipcRenderer.invoke('desktop:get-info'),
+  getStartup: () => ipcRenderer.invoke('desktop:get-startup'),
+  setStartup: (enabled: boolean) => ipcRenderer.invoke('desktop:set-startup', enabled),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),

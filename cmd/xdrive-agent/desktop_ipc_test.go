@@ -141,9 +141,48 @@ func desktopIPCRequest(t *testing.T, handler http.Handler, method, path, body st
 	return res
 }
 
+func TestDesktopIPCHelloAndShutdown(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{revision: 1}
+	shutdown := make(chan struct{}, 1)
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {
+		select {
+		case shutdown <- struct{}{}:
+		default:
+		}
+	})
+
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/hello", "")
+	if res.Code != http.StatusOK {
+		t.Fatalf("hello status=%d body=%s", res.Code, res.Body.String())
+	}
+	var hello desktopIPCHello
+	if err := json.NewDecoder(res.Body).Decode(&hello); err != nil {
+		t.Fatal(err)
+	}
+	if hello.ProtocolMin != desktopIPCProtocolMin || hello.ProtocolMax != desktopIPCProtocolMax {
+		t.Fatalf("unexpected protocol range: %+v", hello)
+	}
+	if hello.DiscoveryVersion != desktopIPCAPIVersion || hello.AgentVersion == "" || hello.PID <= 0 {
+		t.Fatalf("unexpected hello: %+v", hello)
+	}
+	if len(hello.Capabilities) == 0 {
+		t.Fatal("hello capabilities are empty")
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/lifecycle/shutdown", "")
+	if res.Code != http.StatusOK {
+		t.Fatalf("shutdown status=%d body=%s", res.Code, res.Body.String())
+	}
+	select {
+	case <-shutdown:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown callback was not invoked")
+	}
+}
+
 func TestDesktopIPCRequiresLoopbackAndToken(t *testing.T) {
 	ctrl := &fakeDesktopIPCController{revision: 1}
-	handler := newDesktopIPCHandler(ctrl, "secret")
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
 	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/v1/status", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
@@ -176,7 +215,7 @@ func TestDesktopIPCStatusAndEvents(t *testing.T) {
 			Version:       "test",
 		},
 	}
-	handler := newDesktopIPCHandler(ctrl, "secret")
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
 	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/status", "")
 	if res.Code != http.StatusOK {
@@ -213,7 +252,7 @@ func TestDesktopIPCActions(t *testing.T) {
 		fileState: mount.FileAvailability{Path: "/tmp/xdrive/a.txt", Mode: "always-local", Placeholder: true, Pinned: true, InSync: true},
 		items:     []conflictstate.Record{{ID: "c1", OriginalPath: "a.txt", ConflictPath: "a-conflict.txt"}},
 	}
-	handler := newDesktopIPCHandler(ctrl, "secret")
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
 	cases := []struct {
 		method string
@@ -268,7 +307,7 @@ func TestDesktopIPCActions(t *testing.T) {
 
 func TestDesktopIPCRejectsUnknownJSONFields(t *testing.T) {
 	ctrl := &fakeDesktopIPCController{revision: 1}
-	handler := newDesktopIPCHandler(ctrl, "secret")
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 	res := desktopIPCRequest(t, handler, http.MethodPost, "/v1/auth/login", `{"server":"x","username":"u","password":"p","unexpected":true}`)
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())

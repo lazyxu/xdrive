@@ -2,6 +2,18 @@ export {}
 
 declare global {
   type DesktopInfo = { version: string; platform: string; arch: string }
+  type DesktopStartup = { start_at_login: boolean }
+
+  type AgentHello = {
+    discovery_version: number
+    protocol_min: number
+    protocol_max: number
+    agent_version: string
+    pid: number
+    platform: string
+    arch: string
+    capabilities: string[]
+  }
 
   type AgentStatus = {
     revision: number
@@ -21,6 +33,7 @@ declare global {
 
   type AgentConnectionState = {
     connected: boolean
+    hello?: AgentHello
     status?: AgentStatus
     error?: string
   }
@@ -66,12 +79,15 @@ declare global {
   interface Window {
     xdriveDesktop: {
       getInfo: () => Promise<DesktopInfo>
+      getStartup: () => Promise<DesktopStartup>
+      setStartup: (enabled: boolean) => Promise<DesktopResult<DesktopStartup>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
       hide: () => void
       quit: () => void
       agent: {
         getState: () => Promise<AgentConnectionState>
         retry: () => Promise<AgentConnectionState>
+        restart: () => Promise<DesktopResult<AgentConnectionState>>
         login: (input: { server: string; username: string; password: string; mount_path?: string }) => Promise<DesktopResult<AgentStatus>>
         logout: () => Promise<DesktopResult<AgentStatus>>
         changePassword: (input: { current_password: string; new_password: string }) => Promise<DesktopResult<AgentStatus>>

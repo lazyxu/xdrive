@@ -34,7 +34,7 @@ func main() {
 	defer cancel()
 
 	ctrl := newAgentController(ctx, cancel)
-	ipc, ipcErr := startDesktopIPC(ctx, ctrl)
+	ipc, ipcErr := startDesktopIPC(ctx, ctrl, cancel)
 	if ipcErr != nil {
 		log.Printf("desktop IPC unavailable: %v", ipcErr)
 	} else {

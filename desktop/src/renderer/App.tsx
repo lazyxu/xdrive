@@ -18,6 +18,7 @@ function cacheGiB(bytes: number) {
 
 export default function App() {
   const [info, setInfo] = useState<DesktopInfo | null>(null)
+  const [startAtLogin, setStartAtLogin] = useState(true)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
   const [view, setView] = useState<View>('overview')
   const [busy, setBusy] = useState('')
@@ -46,6 +47,9 @@ export default function App() {
     let active = true
     void window.xdriveDesktop.getInfo().then((value) => {
       if (active) setInfo(value)
+    })
+    void window.xdriveDesktop.getStartup().then((value) => {
+      if (active) setStartAtLogin(value.start_at_login)
     })
     void window.xdriveDesktop.agent.getState().then((value) => {
       if (active) setAgent(value)
@@ -96,6 +100,21 @@ export default function App() {
     } finally {
       setBusy('')
     }
+  }
+
+  const restartAgent = async () => {
+    const data = await run('restart-agent', () => window.xdriveDesktop.agent.restart(), 'xdrive-agent restarted.')
+    if (data) setAgent(data)
+  }
+
+  const changeStartAtLogin = async (enabled: boolean) => {
+    const result = await window.xdriveDesktop.setStartup(enabled)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    setStartAtLogin(result.data.start_at_login)
+    setNotice(enabled ? 'xDrive Desktop will start at login.' : 'Start at login disabled.')
   }
 
   const retry = async () => {
@@ -215,12 +234,17 @@ export default function App() {
           <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>Desktop</span></div></div>
           <p className="eyebrow">AGENT CONNECTION</p>
           <h1>{headline}</h1>
-          <p className="subtitle">xDrive Desktop needs the Go background agent. Install or start the xDrive client agent, then retry.</p>
+          <p className="subtitle">xDrive Desktop automatically starts and monitors the Go background agent. If recovery fails, verify that the xDrive Core package is installed.</p>
           <div className="offline-box">{agent.error || 'Waiting for desktop IPC discovery…'}</div>
           {error && <div className="alert error">{error}</div>}
-          <button className="primary wide" type="button" disabled={busy === 'retry'} onClick={() => void retry()}>
-            {busy === 'retry' ? 'Connecting…' : 'Retry connection'}
-          </button>
+          <div className="offline-actions">
+            <button className="primary" type="button" disabled={!!busy} onClick={() => void retry()}>
+              {busy === 'retry' ? 'Connecting…' : 'Retry connection'}
+            </button>
+            <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent()}>
+              {busy === 'restart-agent' ? 'Restarting…' : 'Start / restart Agent'}
+            </button>
+          </div>
           <p className="footnote">{info ? `Desktop ${info.version} · ${platformLabel(info.platform)} ${info.arch}` : 'Loading desktop information…'}</p>
         </section>
       </div>
@@ -313,7 +337,7 @@ export default function App() {
             <section className="status-grid">
               <article className="status-card"><span className={`status-dot ${status?.paused ? 'waiting' : 'ready'}`} /><div><strong>Sync</strong><p>{status?.sync_status}</p></div></article>
               <article className="status-card"><span className={`status-dot ${status?.has_conflict ? 'warning' : 'ready'}`} /><div><strong>Conflicts</strong><p>{status?.conflict_count || 0} unresolved</p></div></article>
-              <article className="status-card"><span className="status-dot ready" /><div><strong>Agent</strong><p>{status?.auth_status} · v{status?.version}</p></div></article>
+              <article className="status-card"><span className="status-dot ready" /><div><strong>Agent</strong><p>{status?.auth_status} · v{agent.hello?.agent_version || status?.version} · IPC {agent.hello?.protocol_min ?? '?'}-{agent.hello?.protocol_max ?? '?'}</p></div></article>
               <article className="status-card"><span className="status-dot ready" /><div><strong>Desktop bridge</strong><p>Connected through protected local IPC.</p></div></article>
             </section>
 
@@ -407,7 +431,16 @@ export default function App() {
 
         {view === 'settings' && (
           <section className="panel">
-            <div className="section-heading"><div><p className="eyebrow">CLIENT SETTINGS</p><h2>Sync and cache</h2></div></div>
+            <div className="section-heading">
+              <div><p className="eyebrow">CLIENT SETTINGS</p><h2>Sync, lifecycle and cache</h2></div>
+              <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent()}>
+                {busy === 'restart-agent' ? 'Restarting Agent…' : 'Restart Agent'}
+              </button>
+            </div>
+            <label className="toggle-row">
+              <input type="checkbox" checked={startAtLogin} onChange={(e) => void changeStartAtLogin(e.target.checked)} />
+              <span><strong>Start xDrive Desktop at login</strong><small>Starts directly in the system tray and keeps the background Agent healthy.</small></span>
+            </label>
             {!settings ? <div className="empty-state">Loading settings…</div> : (
               <form className="settings-form" onSubmit={saveSettings}>
                 <label>
