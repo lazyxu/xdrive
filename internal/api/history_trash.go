@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -162,6 +163,12 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		if err := tx.Where("node_id IN ?", ids).Delete(&meta.File{}).Error; err != nil {
 			return err
 		}
+		if err := recordAuditTx(tx, auditEventFromContext(c, auditpkg.ActionPermanentDelete, "node",
+			fmt.Sprintf("%d", id), "", auditpkg.ResultSuccess, map[string]any{
+				"subtree_nodes": len(ids), "file_count": len(files), "version_count": len(versions),
+			})); err != nil {
+			return err
+		}
 		return tx.Where("id IN ? AND owner_id = ?", ids, userID(c)).Delete(&meta.Node{}).Error
 	})
 	if err != nil {
@@ -296,9 +303,16 @@ func (s *Server) restoreFileVersion(c *gin.Context) {
 		if err := tx.Delete(&meta.FileVersion{}, selected.ID).Error; err != nil {
 			return err
 		}
-		return tx.Model(&meta.Node{}).
+		if err := tx.Model(&meta.Node{}).
 			Where("id = ? AND owner_id = ? AND revision = ? AND deleted_at IS NULL", id, userID(c), expected).
-			Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": now}).Error
+			Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": now}).Error; err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditEventFromContext(c, auditpkg.ActionVersionRestore, "file",
+			fmt.Sprintf("%d", id), "", auditpkg.ResultSuccess, map[string]any{
+				"restored_version_id": versionID, "restored_revision": selected.Revision,
+				"previous_revision": expected,
+			}))
 	})
 	if err != nil {
 		if errors.Is(err, errRevisionConflict) {

@@ -95,6 +95,22 @@ export interface AdminUser {
   updated_at: string
 }
 
+export interface AuditEvent {
+  id: number
+  actor_user_id?: number
+  actor_username?: string
+  actor_role?: string
+  action: string
+  target_type?: string
+  target_id?: string
+  target_label?: string
+  result: 'success' | 'failure'
+  request_id?: string
+  ip_address?: string
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
 export interface AuthSession {
   accessToken: string
   refreshToken: string
@@ -266,6 +282,23 @@ export class XDriveApi {
 
   adminUsers() {
     return this.request<AdminUser[]>('/api/v1/admin/users')
+  }
+
+  adminAudit(params: {
+    limit?: number
+    before_id?: number
+    action?: string
+    result?: 'success' | 'failure'
+    actor?: string
+  } = {}) {
+    const query = new URLSearchParams()
+    if (params.limit) query.set('limit', String(params.limit))
+    if (params.before_id) query.set('before_id', String(params.before_id))
+    if (params.action) query.set('action', params.action)
+    if (params.result) query.set('result', params.result)
+    if (params.actor) query.set('actor', params.actor)
+    const suffix = query.toString()
+    return this.request<AuditEvent[]>(`/api/v1/admin/audit${suffix ? `?${suffix}` : ''}`)
   }
 
   adminCreateUser(input: { username: string; password: string; role: 'user' | 'admin'; must_change_password: boolean; quota_bytes: number }) {

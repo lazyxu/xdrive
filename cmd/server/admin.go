@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/admin"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
@@ -88,6 +89,7 @@ func createBootstrapAdmin(db *gorm.DB, args []string) error {
 	if err != nil {
 		return err
 	}
+	recordHostAdminAudit(db, auditpkg.ActionAdminUserCreate, user, map[string]any{"bootstrap": true})
 	fmt.Printf("created xDrive administrator %s (id=%d)\n", user.Username, user.ID)
 	return nil
 }
@@ -137,6 +139,7 @@ func resetAdminPassword(db *gorm.DB, args []string) error {
 	if err != nil {
 		return err
 	}
+	recordHostAdminAudit(db, auditpkg.ActionAdminPasswordReset, user, map[string]any{"must_change_password": mustChange})
 	fmt.Printf("reset password for %s (id=%d); existing sessions revoked; must_change_password=%t\n",
 		user.Username, user.ID, user.MustChangePassword)
 	return nil
@@ -191,6 +194,11 @@ func setAdminAccountDisabled(db *gorm.DB, args []string, disabled bool) error {
 	if err != nil {
 		return err
 	}
+	action := auditpkg.ActionAdminUserEnable
+	if disabled {
+		action = auditpkg.ActionAdminUserDisable
+	}
+	recordHostAdminAudit(db, action, user, map[string]any{"disabled": disabled})
 	if disabled {
 		fmt.Printf("disabled %s (id=%d); existing sessions revoked\n", user.Username, user.ID)
 	} else {
@@ -226,6 +234,16 @@ func parseSingleUsername(args []string) (string, error) {
 		return "", fmt.Errorf("username is required")
 	}
 	return username, nil
+}
+
+func recordHostAdminAudit(db *gorm.DB, action string, target meta.User, metadata map[string]any) {
+	if err := auditpkg.Record(db, auditpkg.Event{
+		ActorUsername: "host", ActorRole: "system",
+		Action: action, TargetType: "user", TargetID: fmt.Sprintf("%d", target.ID),
+		TargetLabel: target.Username, Result: auditpkg.ResultSuccess, Metadata: metadata,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: admin action succeeded but audit event could not be recorded: %v\n", err)
+	}
 }
 
 func readAdminPassword() (string, error) {

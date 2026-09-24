@@ -26,7 +26,11 @@ retention_days="${retention_days:-7}"
 [[ "$retention_days" =~ ^[0-9]+$ ]] || { echo "XD_BACKUP_RETENTION_DAYS must be an integer" >&2; exit 1; }
 
 backup_dir="$CONFIG_DIR/backups"
-"$CONFIG_DIR/server-backup.sh" --config-dir "$CONFIG_DIR" --output-dir "$backup_dir"
+if [[ -x "$CONFIG_DIR/xdrive-server" ]]; then
+  XD_CONFIG_DIR="$CONFIG_DIR" "$CONFIG_DIR/xdrive-server" backup --output-dir "$backup_dir"
+else
+  "$CONFIG_DIR/server-backup.sh" --config-dir "$CONFIG_DIR" --output-dir "$backup_dir"
+fi
 
 if (( retention_days > 0 )); then
   find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -mtime "+$retention_days" -print -exec rm -rf -- {} +

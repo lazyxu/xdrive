@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
@@ -113,6 +114,7 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 	if req.MustChangePassword != nil {
 		mustChange = *req.MustChangePassword
 	}
+	actor, _ := currentUser(c)
 	var user meta.User
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		user = meta.User{
@@ -126,7 +128,12 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
-		return tx.Create(&meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}).Error
+		if err := tx.Create(&meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}).Error; err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminUserCreate, user, auditpkg.ResultSuccess, map[string]any{
+			"role": user.Role, "quota_bytes": user.QuotaBytes, "must_change_password": user.MustChangePassword,
+		}))
 	})
 	if err != nil {
 		if isDuplicate(err) {
@@ -164,6 +171,7 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 		return
 	}
 
+	actor, _ := currentUser(c)
 	var updated meta.User
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var target meta.User
@@ -224,7 +232,37 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 				return err
 			}
 		}
-		return tx.First(&updated, target.ID).Error
+		if err := tx.First(&updated, target.ID).Error; err != nil {
+			return err
+		}
+		if req.Role != nil && target.Role != updated.Role {
+			if err := recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminRoleChange, target, auditpkg.ResultSuccess, map[string]any{
+				"old_role": target.Role, "new_role": updated.Role,
+			})); err != nil {
+				return err
+			}
+		}
+		if req.QuotaBytes != nil && target.QuotaBytes != updated.QuotaBytes {
+			if err := recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminQuotaChange, target, auditpkg.ResultSuccess, map[string]any{
+				"old_quota_bytes": target.QuotaBytes, "new_quota_bytes": updated.QuotaBytes,
+			})); err != nil {
+				return err
+			}
+		}
+		oldDisabled := target.DisabledAt != nil
+		updatedDisabled := updated.DisabledAt != nil
+		if req.Disabled != nil && oldDisabled != updatedDisabled {
+			action := auditpkg.ActionAdminUserEnable
+			if updatedDisabled {
+				action = auditpkg.ActionAdminUserDisable
+			}
+			if err := recordAuditTx(tx, auditUserEvent(c, actor, action, target, auditpkg.ResultSuccess, map[string]any{
+				"disabled": updatedDisabled,
+			})); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		switch {
@@ -272,6 +310,7 @@ func (s *Server) adminResetPassword(c *gin.Context) {
 	if req.MustChangePassword != nil {
 		mustChange = *req.MustChangePassword
 	}
+	actor, _ := currentUser(c)
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		var target meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, id).Error; err != nil {
@@ -284,7 +323,12 @@ func (s *Server) adminResetPassword(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return revokeUserSessions(tx, id)
+		if err := revokeUserSessions(tx, id); err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminPasswordReset, target, auditpkg.ResultSuccess, map[string]any{
+			"must_change_password": mustChange,
+		}))
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -303,6 +347,7 @@ func (s *Server) adminRevokeSessions(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid user id")
 		return
 	}
+	actor, _ := currentUser(c)
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var target meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, id).Error; err != nil {
@@ -312,7 +357,10 @@ func (s *Server) adminRevokeSessions(c *gin.Context) {
 			Update("session_version", gorm.Expr("session_version + 1")).Error; err != nil {
 			return err
 		}
-		return revokeUserSessions(tx, id)
+		if err := revokeUserSessions(tx, id); err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminSessionRevoke, target, auditpkg.ResultSuccess, nil))
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -336,6 +384,7 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 		return
 	}
 
+	actor, _ := currentUser(c)
 	var files []meta.File
 	var versions []meta.FileVersion
 	var uploadParts []meta.UploadPart
@@ -394,6 +443,11 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 			}
 		}
 		if err := tx.Where("user_id = ?", id).Delete(&meta.RefreshToken{}).Error; err != nil {
+			return err
+		}
+		if err := recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminUserDelete, target, auditpkg.ResultSuccess, map[string]any{
+			"node_count": len(nodeIDs), "file_count": len(files), "version_count": len(versions),
+		})); err != nil {
 			return err
 		}
 		return tx.Delete(&meta.User{}, id).Error
@@ -461,7 +515,10 @@ func (s *Server) changePassword(c *gin.Context) {
 			return err
 		}
 		session, err = s.issueSession(tx, user)
-		return err
+		if err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditUserEvent(c, user, auditpkg.ActionPasswordChange, user, auditpkg.ResultSuccess, nil))
 	})
 	if err != nil {
 		if errors.Is(err, errInvalidCurrentPassword) {

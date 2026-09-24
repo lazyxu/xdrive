@@ -27,6 +27,7 @@ Usage:
   xdrive-server doctor [--strict]
   xdrive-server status
   xdrive-server backup [server-backup.sh options...]
+  xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify
   xdrive-server admin list
   xdrive-server admin reset-password USER [--no-must-change]
@@ -71,6 +72,25 @@ compose_with_stdin() {
   fi
 }
 
+record_system_audit() {
+  local action="$1" result="$2" target_id="${3:-}"
+  [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || return 0
+
+  local args=(audit record --action "$action" --result "$result")
+  if [[ -n "$target_id" ]]; then
+    args+=(--target-id "$target_id")
+  fi
+
+  if compose exec -T server xdrive-server "${args[@]}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if compose run --rm -T --no-deps server "${args[@]}" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "xdrive-server: warning: could not persist audit event $action/$result" >&2
+  return 0
+}
+
 download_installer() {
   local destination="$1"
   if command -v curl >/dev/null 2>&1; then
@@ -85,10 +105,19 @@ download_installer() {
 }
 
 update_cmd() (
-  local tmp installer
+  local tmp installer status target_commit audit_target="" previous=""
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-server-update.XXXXXX")"
   installer="$tmp/install-server.sh"
   trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  for arg in "$@"; do
+    case "$previous" in
+      --commit) audit_target="$arg" ;;
+      --channel) [[ -z "$audit_target" ]] && audit_target="$arg" ;;
+    esac
+    previous="$arg"
+  done
+  [[ -n "$audit_target" ]] || audit_target="$(env_value XD_RELEASE_CHANNEL)"
 
   echo "[xDrive] downloading host installer..."
   download_installer "$installer"
@@ -97,10 +126,19 @@ update_cmd() (
   echo "[xDrive] installer downloaded and syntax-checked."
 
   if [[ -t 0 && -r /dev/tty && -w /dev/tty ]]; then
-    bash "$installer" "$@" </dev/tty
+    if bash "$installer" "$@" </dev/tty; then status=0; else status=$?; fi
   else
-    XD_NONINTERACTIVE=1 bash "$installer" "$@" </dev/null
+    if XD_NONINTERACTIVE=1 bash "$installer" "$@" </dev/null; then status=0; else status=$?; fi
   fi
+
+  target_commit="$(env_value XD_RELEASE_COMMIT)"
+  if [[ "$status" -eq 0 ]]; then
+    [[ -n "$target_commit" ]] && audit_target="$target_commit"
+    record_system_audit system.update success "$audit_target"
+  else
+    record_system_audit system.update failure "$audit_target"
+  fi
+  return "$status"
 )
 
 doctor_cmd() {
@@ -121,12 +159,33 @@ status_cmd() {
 }
 
 backup_cmd() {
-  local script="$CONFIG_DIR/server-backup.sh"
+  local script="$CONFIG_DIR/server-backup.sh" status
   [[ -x "$script" ]] || {
     echo "xdrive-server: backup tool is not installed at $script" >&2
     return 1
   }
-  XD_CONFIG_DIR="$CONFIG_DIR" exec "$script" "$@"
+  if XD_CONFIG_DIR="$CONFIG_DIR" "$script" "$@"; then status=0; else status=$?; fi
+  if [[ "$status" -eq 0 ]]; then
+    record_system_audit system.backup success
+  else
+    record_system_audit system.backup failure
+  fi
+  return "$status"
+}
+
+restore_cmd() {
+  local script="$CONFIG_DIR/server-restore.sh" status
+  [[ -x "$script" ]] || {
+    echo "xdrive-server: restore tool is not installed at $script" >&2
+    return 1
+  }
+  if XD_CONFIG_DIR="$CONFIG_DIR" "$script" "$@"; then status=0; else status=$?; fi
+  if [[ "$status" -eq 0 ]]; then
+    record_system_audit system.restore success
+  else
+    record_system_audit system.restore failure
+  fi
+  return "$status"
 }
 
 verify_cmd() {
@@ -223,6 +282,7 @@ case "$cmd" in
   doctor) doctor_cmd "$@" ;;
   status) status_cmd "$@" ;;
   backup) backup_cmd "$@" ;;
+  restore) restore_cmd "$@" ;;
   verify) verify_cmd ;;
   admin) admin_cmd "$@" ;;
   version) version_cmd ;;

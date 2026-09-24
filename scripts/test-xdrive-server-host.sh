@@ -8,7 +8,12 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
-    for file in update.out update.err doctor.out admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin; do
+    for file in \
+      update.out update.err backup.out restore.out backup-fail.err doctor.out \
+      admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
+      state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
+      state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
+      state/audit-calls state/restore-args; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -50,6 +55,9 @@ cat > "$TMP/bin/docker" <<'SH'
 set -euo pipefail
 printf '%s\n' "$*" >> "$TEST_STATE/docker-args"
 case "$*" in
+  *"audit record"*)
+    printf '%s\n' "$*" >> "$TEST_STATE/audit-calls"
+    ;;
   *"admin list"*)
     readlink /proc/$$/fd/0 > "$TEST_STATE/admin-list-stdin" 2>/dev/null || true
     if [[ "$(cat "$TEST_STATE/admin-list-stdin" 2>/dev/null || true)" == pipe:* ]]; then
@@ -79,6 +87,25 @@ esac
 SH
 chmod +x "$TMP/bin/docker"
 
+cat > "$TMP/config/server-backup.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${TEST_BACKUP_FAIL:-0}" == "1" ]]; then
+  echo "mock backup failed" >&2
+  exit 7
+fi
+echo "/tmp/mock-xdrive-backup"
+SH
+chmod +x "$TMP/config/server-backup.sh"
+
+cat > "$TMP/config/server-restore.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" > "$TEST_STATE/restore-args"
+echo "mock restore complete"
+SH
+chmod +x "$TMP/config/server-restore.sh"
+
 cat > "$TMP/config/server-doctor.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -86,6 +113,7 @@ printf '%s\n' "$*" > "$TEST_STATE/doctor-args"
 echo "mock doctor"
 SH
 chmod +x "$TMP/config/server-doctor.sh"
+
 printf 'XD_DOMAIN=\n' > "$TMP/config/.env"
 printf 'name: xdrive\nservices: {}\n' > "$TMP/config/docker-compose.yml"
 
@@ -103,6 +131,33 @@ if grep -q '^pipe:' "$TMP/state/installer-stdin"; then
   exit 1
 fi
 grep -q 'installer downloaded and syntax-checked' "$TMP/update.out"
+grep -q -- 'audit record --action system.update --result success' "$TMP/state/audit-calls"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
+bash "$HOST" backup >"$TMP/backup.out"
+grep -q '/tmp/mock-xdrive-backup' "$TMP/backup.out"
+grep -q -- 'audit record --action system.backup --result success' "$TMP/state/audit-calls"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
+bash "$HOST" restore /tmp/backup --yes >"$TMP/restore.out"
+grep -q '^/tmp/backup --yes$' "$TMP/state/restore-args"
+grep -q -- 'audit record --action system.restore --result success' "$TMP/state/audit-calls"
+
+set +e
+TEST_BACKUP_FAIL=1 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
+bash "$HOST" backup >/dev/null 2>"$TMP/backup-fail.err"
+backup_fail_status=$?
+set -e
+[[ "$backup_fail_status" -eq 7 ]]
+grep -q 'mock backup failed' "$TMP/backup-fail.err"
+grep -q -- 'audit record --action system.backup --result failure' "$TMP/state/audit-calls"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
@@ -164,7 +219,7 @@ before="$(wc -l < "$TMP/state/docker-args")"
 if TEST_STATE="$TMP/state" \
   PATH="$TMP/bin:/usr/bin:/bin" \
   XD_CONFIG_DIR="$TMP/config" \
-  bash "$HOST" admin reset-password admin --password exposed-secret > /dev/null 2>"$TMP/password-arg.err"; then
+  bash "$HOST" admin reset-password admin --password exposed-secret >/dev/null 2>"$TMP/password-arg.err"; then
   echo "--password unexpectedly accepted" >&2
   exit 1
 fi

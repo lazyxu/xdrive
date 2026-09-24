@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
@@ -78,25 +79,54 @@ func (s *Server) login(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
+	username := strings.TrimSpace(req.Username)
 	var user meta.User
-	if err := s.DB.Where("username = ?", strings.TrimSpace(req.Username)).First(&user).Error; err != nil ||
+	if err := s.DB.Where("username = ?", username).First(&user).Error; err != nil ||
 		auth.CheckPassword(user.PasswordHash, req.Password) != nil {
+		s.recordAuditBestEffort(c, auditpkg.Event{
+			Action: auditpkg.ActionLoginFailure, TargetType: "user", TargetLabel: username,
+			Result: auditpkg.ResultFailure, RequestID: strings.TrimSpace(c.GetHeader("X-Request-ID")),
+			IPAddress: clientIPAddress(c), Metadata: map[string]any{"reason": "invalid_credentials"},
+		})
 		fail(c, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 	if user.DisabledAt != nil {
+		uid := user.ID
+		s.recordAuditBestEffort(c, auditpkg.Event{
+			ActorUserID: &uid, ActorUsername: user.Username, ActorRole: user.Role,
+			Action: auditpkg.ActionLoginFailure, TargetType: "user",
+			TargetID: strconv.FormatUint(user.ID, 10), TargetLabel: user.Username,
+			Result: auditpkg.ResultFailure, RequestID: strings.TrimSpace(c.GetHeader("X-Request-ID")),
+			IPAddress: clientIPAddress(c), Metadata: map[string]any{"reason": "account_disabled"},
+		})
 		fail(c, http.StatusForbidden, "account_disabled")
 		return
 	}
+
+	var session authResponse
 	now := time.Now()
-	if err := s.DB.Model(&meta.User{}).Where("id = ?", user.ID).Update("last_login_at", &now).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "login failed")
-		return
-	}
-	user.LastLoginAt = &now
-	session, err := s.issueSession(s.DB, user)
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&meta.User{}).Where("id = ?", user.ID).Update("last_login_at", &now).Error; err != nil {
+			return err
+		}
+		user.LastLoginAt = &now
+		issued, err := s.issueSession(tx, user)
+		if err != nil {
+			return err
+		}
+		session = issued
+		uid := user.ID
+		return recordAuditTx(tx, auditpkg.Event{
+			ActorUserID: &uid, ActorUsername: user.Username, ActorRole: user.Role,
+			Action: auditpkg.ActionLoginSuccess, TargetType: "user",
+			TargetID: strconv.FormatUint(user.ID, 10), TargetLabel: user.Username,
+			Result: auditpkg.ResultSuccess, RequestID: strings.TrimSpace(c.GetHeader("X-Request-ID")),
+			IPAddress: clientIPAddress(c),
+		})
+	})
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "session creation failed")
+		fail(c, http.StatusInternalServerError, "login failed")
 		return
 	}
 	c.JSON(http.StatusOK, session)

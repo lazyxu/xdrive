@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AuditOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -35,6 +36,7 @@ import {
 import type { UploadProps } from 'antd'
 import { ApiError, AuthResult, AuthSession, FileVersion, MeResult, Node, QuotaUsage, XDriveApi, sessionFromAuth } from './api'
 import AdminUsersPanel from './AdminUsers'
+import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
 
@@ -175,6 +177,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
   const [folderOpen, setFolderOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<Node | null>(null)
   const [adminOpen, setAdminOpen] = useState(false)
+  const [auditOpen, setAuditOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
@@ -415,9 +418,14 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
           </div>
           <Space>
             {profile?.role === 'admin' && (
-              <Button type="text" icon={<UserOutlined />} onClick={() => setAdminOpen(true)} className="logout-button">
-                Users
-              </Button>
+              <>
+                <Button type="text" icon={<UserOutlined />} onClick={() => setAdminOpen(true)} className="logout-button">
+                  Users
+                </Button>
+                <Button type="text" icon={<AuditOutlined />} onClick={() => setAuditOpen(true)} className="logout-button">
+                  Audit
+                </Button>
+              </>
             )}
             {quota && (
               <Tooltip title={`Current files ${formatSize(quota.logical_file_bytes)} · Recycle bin ${formatSize(quota.trash_bytes)} · History ${formatSize(quota.history_bytes)}`}>
@@ -634,13 +642,20 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
         />
 
         {profile?.role === 'admin' && (
-          <AdminUsersPanel
-            api={api}
-            open={adminOpen}
-            currentUserID={profile.id}
-            onClose={() => setAdminOpen(false)}
-            onChanged={() => { void refreshQuota() }}
-          />
+          <>
+            <AdminUsersPanel
+              api={api}
+              open={adminOpen}
+              currentUserID={profile.id}
+              onClose={() => setAdminOpen(false)}
+              onChanged={() => { void refreshQuota() }}
+            />
+            <AdminAuditPanel
+              api={api}
+              open={auditOpen}
+              onClose={() => setAuditOpen(false)}
+            />
+          </>
         )}
       </Layout>
     </>

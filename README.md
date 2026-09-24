@@ -115,6 +115,7 @@ xdrive-server update --channel commit --commit 0123456789ab
 xdrive-server doctor
 xdrive-server status
 xdrive-server backup
+xdrive-server restore BACKUP_DIR --yes
 xdrive-server verify
 xdrive-server admin list
 xdrive-server admin reset-password admin
@@ -194,6 +195,23 @@ unset P
 ```
 
 `xdrive-server admin disable USER` immediately revokes that account's sessions. The last active administrator is protected from disable so the deployment cannot accidentally lose all active administrators; `enable` reverses an account disable. `xdrive-server admin list` prints only non-secret account metadata (ID, username, role, status, password-change flag, quota, and last-login time); it never prints password hashes or session tokens.
+
+### Audit log
+
+xDrive stores security-sensitive audit events in PostgreSQL table `xd_audit_events`. Administrators can review them from the Web **Audit** page or through `GET /api/v1/admin/audit`.
+
+The first audit phase intentionally avoids ordinary file reads/downloads. It records:
+
+- login success/failure;
+- password changes and administrator password resets;
+- administrator user creation, role changes, enable/disable, session revocation, quota changes, and user deletion;
+- permanent recycle-bin deletion and historical-version restore;
+- host-manager backup, restore, and update outcomes when the running server version supports the audit recorder.
+
+Audit rows contain actor identity, action, target identifiers, success/failure, time, client IP, request ID when available, and small structured metadata such as old/new role or quota values. Passwords, password hashes, access/refresh tokens, share tokens, and file contents are never placed in audit metadata. File audit events use node/version identifiers rather than storing file contents.
+
+Host maintenance audit writes are best-effort by design: a catastrophic restore/update failure can leave the API or database intentionally unavailable, and an old pre-audit image cannot write the new audit schema. The maintenance command's original success/failure result is never changed merely because its audit write is unavailable.
+
 
 Common operations:
 
@@ -839,7 +857,7 @@ deploy/
 - The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.
 - File operations are owner-scoped at the metadata layer.
-- There is no antivirus scanning or audit log yet; public sharing is download-only and file-only in this phase.
+- There is no antivirus scanning yet; public sharing is download-only and file-only in this phase. Security-sensitive audit logging is enabled, while routine file reads are intentionally not audited.
 
 ## Roadmap
 

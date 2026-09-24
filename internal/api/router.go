@@ -66,6 +66,7 @@ func (s *Server) Router() *gin.Engine {
 	admin := authed.Group("/admin")
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
+	admin.GET("/audit", s.adminAuditEvents)
 	admin.POST("/users", s.adminCreateUser)
 	admin.PATCH("/users/:id", s.adminUpdateUser)
 	admin.DELETE("/users/:id", s.adminDeleteUser)
