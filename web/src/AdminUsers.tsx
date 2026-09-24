@@ -16,6 +16,7 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { AdminUser, XDriveApi } from './api'
+import { formatBinarySize as formatBytes } from '../../ui/shared/src'
 
 type CreateForm = {
   username: string
@@ -35,14 +36,6 @@ type ResetForm = {
 }
 
 const GIB = 1024 ** 3
-
-function formatBytes(bytes: number) {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / 1024 ** i
-  return `${value >= 10 || i === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[i]}`
-}
 
 function quotaToGiB(bytes: number) {
   return bytes === 0 ? 0 : Number((bytes / GIB).toFixed(3))

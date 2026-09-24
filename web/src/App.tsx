@@ -35,6 +35,7 @@ import {
 } from 'antd'
 import type { UploadProps } from 'antd'
 import { ApiError, AuthResult, AuthSession, FileVersion, MeResult, Node, QuotaUsage, XDriveApi, sessionFromAuth } from './api'
+import { formatSize } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -48,14 +49,6 @@ const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 
 type Crumb = { id: number; name: string }
-
-function formatSize(bytes: number) {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / 1024 ** i
-  return `${value >= 10 || i === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[i]}`
-}
 
 function initialSession(): AuthSession {
   const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
