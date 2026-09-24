@@ -62,4 +62,5 @@ popd >/dev/null
 
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action BuildInstaller
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action VerifySignatures
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-windows-client-upgrade.ps1 -Installer ./dist/xDriveSetup-amd64.exe -TargetVersion 0.0.0-ci
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action SmokeInstall

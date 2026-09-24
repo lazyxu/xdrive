@@ -55,5 +55,5 @@ func main() {
 		log.Printf("xDrive updater: %s is current on %s channel", current, channel)
 		return
 	}
-	log.Printf("xDrive updater: installing %s from %s channel", result.Latest, channel)
+	log.Printf("xDrive updater: install handoff accepted for %s from %s channel", result.Latest, channel)
 }

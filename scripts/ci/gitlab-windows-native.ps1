@@ -15,6 +15,9 @@ try {
         "ValidateScripts" {
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/test-windows-client-upgrade.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-windows-native.ps1))
         }
 
