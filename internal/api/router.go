@@ -36,6 +36,7 @@ func (s *Server) Router() *gin.Engine {
 	authed := v1.Group("")
 	authed.Use(s.requireAuth())
 	authed.GET("/me", s.me)
+	authed.GET("/me/quota", s.quotaUsage)
 	authed.POST("/me/change-password", s.changePassword)
 	authed.GET("/nodes/root", s.root)
 	authed.GET("/nodes/:id/children", s.children)

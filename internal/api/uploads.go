@@ -138,7 +138,17 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("sha256 = ? OR sha256 = ''", req.SHA256)
 		}
 		if err := q.Order("created_at DESC").First(&existing).Error; err == nil {
-			if existing.Status == meta.UploadStatusFinalized || time.Now().Before(existing.ExpiresAt) {
+			if existing.Status == meta.UploadStatusFinalized {
+				s.writeUploadSession(c, existing, http.StatusOK)
+				return
+			}
+			if time.Now().Before(existing.ExpiresAt) {
+				if _, err := s.ensureQuota(s.DB, uid, existing.TotalSize, false); err != nil {
+					if !writeQuotaError(c, err) {
+						fail(c, http.StatusInternalServerError, "quota check failed")
+					}
+					return
+				}
 				if existing.SHA256 == "" && req.SHA256 != "" {
 					_ = s.DB.Model(&existing).Update("sha256", req.SHA256).Error
 					existing.SHA256 = req.SHA256
@@ -180,6 +190,13 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			fail(c, http.StatusConflict, "name already exists")
 			return
 		}
+	}
+
+	if _, err := s.ensureQuota(s.DB, uid, req.Size, false); err != nil {
+		if !writeQuotaError(c, err) {
+			fail(c, http.StatusInternalServerError, "quota check failed")
+		}
+		return
 	}
 
 	session := meta.UploadSession{
@@ -358,6 +375,15 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		fail(c, http.StatusGone, "upload session expired")
 		return
 	}
+	// Fail before assembling a new retained blob when the quota is already
+	// exhausted. The transaction below repeats this check while holding the
+	// user row lock so concurrent finalizes cannot jointly oversubscribe quota.
+	if _, err := s.ensureQuota(s.DB, session.OwnerID, session.TotalSize, false); err != nil {
+		if !writeQuotaError(c, err) {
+			fail(c, http.StatusInternalServerError, "quota check failed")
+		}
+		return
+	}
 
 	var parts []meta.UploadPart
 	if err := s.DB.Where("session_id = ?", session.ID).Order("part_index ASC").Find(&parts).Error; err != nil {
@@ -447,6 +473,9 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
 		}
+		if _, err := s.ensureQuota(tx, currentSession.OwnerID, currentSession.TotalSize, true); err != nil {
+			return err
+		}
 
 		now := time.Now()
 		if currentSession.NodeID == nil {
@@ -510,6 +539,9 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
+		if writeQuotaError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, errUploadFinalized):
 			fresh, lookupErr := s.ownedUploadSession(session.OwnerID, session.ID)

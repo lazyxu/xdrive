@@ -41,12 +41,27 @@ export interface MeResult {
   must_change_password: boolean
 }
 
+export interface QuotaUsage {
+  quota_bytes: number
+  physical_used_bytes: number
+  logical_file_bytes: number
+  trash_bytes: number
+  history_bytes: number
+  over_quota: boolean
+}
+
 export interface AdminUser {
   id: number
   username: string
   role: 'user' | 'admin'
   disabled: boolean
   must_change_password: boolean
+  quota_bytes: number
+  physical_used_bytes: number
+  logical_file_bytes: number
+  trash_bytes: number
+  history_bytes: number
+  over_quota: boolean
   last_login_at?: string
   created_at: string
   updated_at: string
@@ -208,6 +223,10 @@ export class XDriveApi {
     return this.request<MeResult>('/api/v1/me')
   }
 
+  quota() {
+    return this.request<QuotaUsage>('/api/v1/me/quota')
+  }
+
   async changePassword(currentPassword: string, newPassword: string) {
     const result = await this.request<AuthResult>('/api/v1/me/change-password', {
       method: 'POST',
@@ -221,14 +240,14 @@ export class XDriveApi {
     return this.request<AdminUser[]>('/api/v1/admin/users')
   }
 
-  adminCreateUser(input: { username: string; password: string; role: 'user' | 'admin'; must_change_password: boolean }) {
+  adminCreateUser(input: { username: string; password: string; role: 'user' | 'admin'; must_change_password: boolean; quota_bytes: number }) {
     return this.request<AdminUser>('/api/v1/admin/users', {
       method: 'POST',
       body: JSON.stringify(input),
     })
   }
 
-  adminUpdateUser(id: number, input: { role?: 'user' | 'admin'; disabled?: boolean }) {
+  adminUpdateUser(id: number, input: { role?: 'user' | 'admin'; disabled?: boolean; quota_bytes?: number }) {
     return this.request<AdminUser>(`/api/v1/admin/users/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),

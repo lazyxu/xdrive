@@ -493,9 +493,28 @@ Administrators can use the Web **Users** panel to:
 - promote/demote roles while protecting the last active administrator;
 - reset a password, which immediately revokes existing sessions;
 - revoke all sessions without changing the password;
+- set a per-user storage quota (or leave the account unlimited);
+- inspect current-file, recycle-bin, version-history, and total physical usage;
 - permanently delete a user and that user's stored files.
 
 Ordinary users can change only their own password. A user marked `must_change_password` can access only identity/password-change endpoints until the password is changed.
+
+## Storage quota
+
+Each account has an administrator-managed `quota_bytes`; `0` means unlimited. Users can inspect their own usage at `GET /api/v1/me/quota`. The Web header shows **used / total** with a current-files / recycle-bin / history breakdown, and `xd status` prints the same accounting. The administrator **Users** panel shows the breakdown for every account and can change the quota.
+
+Quota follows retained physical file content, not only the visible directory tree:
+
+- `logical_file_bytes`: current blobs belonging to active files;
+- `trash_bytes`: current blobs whose nodes are in the recycle bin;
+- `history_bytes`: all retained historical-version blobs;
+- `physical_used_bytes = logical_file_bytes + trash_bytes + history_bytes`.
+
+Current files, recycle-bin content, and historical versions therefore all count. Moving a file into the recycle bin does **not** free quota; permanent deletion does. Restoring a historical version swaps which retained blob is current versus historical, so it does not change total physical usage. A successful overwrite consumes the full size of the new blob because the previous current blob becomes a retained historical version.
+
+Direct uploads and resumable-session creation perform an early capacity check. The authoritative publish/finalize transaction checks quota again while holding a per-user database lock, so concurrent uploads cannot each observe the same remaining capacity and collectively exceed it. A rejected write returns HTTP `507` with `error: quota_exceeded`, the configured quota, current physical usage, and required byte counts.
+
+Administrators may lower a quota below current usage. Existing data is never deleted; the account is reported as over quota and positive-size uploads/overwrites remain blocked until usage falls below the limit or the quota is raised. In-progress resumable-upload chunks are temporary staging data and are not counted as retained user quota; they are deleted after finalize/abort or session expiry, so host-level free-space monitoring remains a separate concern.
 
 ## Recycle bin and file version history
 
@@ -522,6 +541,7 @@ POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
 GET    /api/v1/me
+GET    /api/v1/me/quota
 POST   /api/v1/me/change-password
 GET    /api/v1/nodes/root
 GET    /api/v1/nodes/:id/children
@@ -755,7 +775,7 @@ deploy/
 - The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.
 - File operations are owner-scoped at the metadata layer.
-- There is no quota, antivirus scanning, public sharing, or audit log yet.
+- There is no antivirus scanning, public sharing, or audit log yet.
 
 ## Roadmap
 

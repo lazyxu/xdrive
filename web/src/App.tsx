@@ -26,12 +26,13 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
 } from 'antd'
 import type { UploadProps } from 'antd'
-import { ApiError, AuthResult, AuthSession, FileVersion, MeResult, Node, XDriveApi, sessionFromAuth } from './api'
+import { ApiError, AuthResult, AuthSession, FileVersion, MeResult, Node, QuotaUsage, XDriveApi, sessionFromAuth } from './api'
 import AdminUsersPanel from './AdminUsers'
 
 const { Header, Content } = Layout
@@ -149,6 +150,7 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
 function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveApi; username: string; onAuthExpired: () => void; onLogout: () => void }) {
   const [modal, modalContext] = Modal.useModal()
   const [profile, setProfile] = useState<MeResult | null>(null)
+  const [quota, setQuota] = useState<QuotaUsage | null>(null)
   const [items, setItems] = useState<Node[]>([])
   const [crumbs, setCrumbs] = useState<Crumb[]>([])
   const [loading, setLoading] = useState(true)
@@ -180,6 +182,10 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
         message.warning('Change your password before using files.')
         return
       }
+      if (err.status === 507 && err.message.includes('quota_exceeded')) {
+        message.error('Storage quota exceeded. Permanently delete recycle-bin items or ask an administrator to increase the quota.')
+        return
+      }
     }
     message.error(err instanceof Error ? err.message : 'Request failed')
   }
@@ -197,12 +203,21 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
     }
   }
 
+  const refreshQuota = async () => {
+    try {
+      setQuota(await api.quota())
+    } catch (err) {
+      handleError(err)
+    }
+  }
+
   const loadInitial = async () => {
     setLoading(true)
     try {
       const me = await api.me()
       setProfile(me)
       if (me.must_change_password) return
+      setQuota(await api.quota())
       const root = await api.root()
       const list = await api.list(root.id)
       setCrumbs([{ id: root.id, name: 'My files' }])
@@ -293,6 +308,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
         await api.upload(current.id, file as File, setUploadProgress)
         message.success(`${file.name} uploaded`)
         await loadDirectory(current.id)
+        await refreshQuota()
       } catch (err) {
         handleError(err)
       } finally {
@@ -335,6 +351,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
           await api.remove(node.id, node.revision)
           message.success('Moved to recycle bin')
           if (current) await loadDirectory(current.id)
+          await refreshQuota()
         } catch (err) { handleError(err) }
       },
     })
@@ -383,6 +400,13 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
               <Button type="text" icon={<UserOutlined />} onClick={() => setAdminOpen(true)} className="logout-button">
                 Users
               </Button>
+            )}
+            {quota && (
+              <Tooltip title={`Current files ${formatSize(quota.logical_file_bytes)} · Recycle bin ${formatSize(quota.trash_bytes)} · History ${formatSize(quota.history_bytes)}`}>
+                <Typography.Text className="username">
+                  Storage {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? 'Unlimited' : formatSize(quota.quota_bytes)}
+                </Typography.Text>
+              </Tooltip>
             )}
             <Typography.Text className="username">{username}</Typography.Text>
             <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">Sign out</Button>
@@ -498,6 +522,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                           message.success('Restored')
                           await loadTrash()
                           if (current) await loadDirectory(current.id)
+                          await refreshQuota()
                         } catch (err) { handleError(err) }
                       }}
                     >
@@ -516,6 +541,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                             await api.permanentlyDeleteTrash(node.id, node.revision)
                             message.success('Permanently deleted')
                             await loadTrash()
+                            await refreshQuota()
                           } catch (err) { handleError(err) }
                         },
                       })}
@@ -567,6 +593,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                             setHistoryNode(restored)
                             setVersions(await api.versions(restored.id))
                             if (current) await loadDirectory(current.id)
+                            await refreshQuota()
                           } catch (err) { handleError(err) }
                         },
                       })}
@@ -586,6 +613,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             open={adminOpen}
             currentUserID={profile.id}
             onClose={() => setAdminOpen(false)}
+            onChanged={() => { void refreshQuota() }}
           />
         )}
       </Layout>

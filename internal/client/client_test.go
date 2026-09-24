@@ -215,3 +215,27 @@ func TestManagedSessionRecoversCrossProcessRefreshRotation(t *testing.T) {
 		t.Fatalf("refresh calls=%v", gotCalls)
 	}
 }
+
+func TestQuotaUsage(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/me/quota" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("Authorization=%q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"quota_bytes":30,"physical_used_bytes":23,"logical_file_bytes":17,"trash_bytes":0,"history_bytes":6,"over_quota":false}`)
+	}))
+	defer ts.Close()
+
+	quota, err := New(ts.URL, "token").Quota(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quota.QuotaBytes != 30 || quota.PhysicalUsedBytes != 23 || quota.LogicalFileBytes != 17 ||
+		quota.TrashBytes != 0 || quota.HistoryBytes != 6 || quota.OverQuota {
+		t.Fatalf("unexpected quota response: %+v", quota)
+	}
+}

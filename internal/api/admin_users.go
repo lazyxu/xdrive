@@ -19,6 +19,12 @@ type userDTO struct {
 	Role               string     `json:"role"`
 	Disabled           bool       `json:"disabled"`
 	MustChangePassword bool       `json:"must_change_password"`
+	QuotaBytes         int64      `json:"quota_bytes"`
+	PhysicalUsedBytes  int64      `json:"physical_used_bytes"`
+	LogicalFileBytes   int64      `json:"logical_file_bytes"`
+	TrashBytes         int64      `json:"trash_bytes"`
+	HistoryBytes       int64      `json:"history_bytes"`
+	OverQuota          bool       `json:"over_quota"`
 	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
@@ -31,10 +37,25 @@ func toUserDTO(user meta.User) userDTO {
 		Role:               user.Role,
 		Disabled:           user.DisabledAt != nil,
 		MustChangePassword: user.MustChangePassword,
+		QuotaBytes:         user.QuotaBytes,
 		LastLoginAt:        user.LastLoginAt,
 		CreatedAt:          user.CreatedAt,
 		UpdatedAt:          user.UpdatedAt,
 	}
+}
+
+func userDTOWithQuota(db *gorm.DB, user meta.User) (userDTO, error) {
+	usage, err := quotaUsageForUser(db, user)
+	if err != nil {
+		return userDTO{}, err
+	}
+	dto := toUserDTO(user)
+	dto.PhysicalUsedBytes = usage.PhysicalUsedBytes
+	dto.LogicalFileBytes = usage.LogicalFileBytes
+	dto.TrashBytes = usage.TrashBytes
+	dto.HistoryBytes = usage.HistoryBytes
+	dto.OverQuota = usage.OverQuota
+	return dto, nil
 }
 
 func (s *Server) adminListUsers(c *gin.Context) {
@@ -45,7 +66,12 @@ func (s *Server) adminListUsers(c *gin.Context) {
 	}
 	out := make([]userDTO, 0, len(users))
 	for _, user := range users {
-		out = append(out, toUserDTO(user))
+		dto, err := userDTOWithQuota(s.DB, user)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "load user quota usage failed")
+			return
+		}
+		out = append(out, dto)
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -56,6 +82,7 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 		Password           string `json:"password"`
 		Role               string `json:"role"`
 		MustChangePassword *bool  `json:"must_change_password"`
+		QuotaBytes         int64  `json:"quota_bytes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
@@ -64,6 +91,10 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 	req.Username = strings.TrimSpace(req.Username)
 	if len(req.Username) < 3 || len(req.Username) > 64 {
 		fail(c, http.StatusBadRequest, "username must be 3-64 characters")
+		return
+	}
+	if req.QuotaBytes < 0 {
+		fail(c, http.StatusBadRequest, "quota_bytes must be zero or greater")
 		return
 	}
 	if req.Role == "" {
@@ -90,6 +121,7 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 			Role:               req.Role,
 			MustChangePassword: mustChange,
 			SessionVersion:     1,
+			QuotaBytes:         req.QuotaBytes,
 		}
 		if err := tx.Create(&user).Error; err != nil {
 			return err
@@ -104,7 +136,12 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 		}
 		return
 	}
-	c.JSON(http.StatusCreated, toUserDTO(user))
+	dto, err := userDTOWithQuota(s.DB, user)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load user quota usage failed")
+		return
+	}
+	c.JSON(http.StatusCreated, dto)
 }
 
 func (s *Server) adminUpdateUser(c *gin.Context) {
@@ -114,11 +151,16 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Role     *string `json:"role"`
-		Disabled *bool   `json:"disabled"`
+		Role       *string `json:"role"`
+		Disabled   *bool   `json:"disabled"`
+		QuotaBytes *int64  `json:"quota_bytes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if req.QuotaBytes != nil && *req.QuotaBytes < 0 {
+		fail(c, http.StatusBadRequest, "quota_bytes must be zero or greater")
 		return
 	}
 
@@ -162,6 +204,9 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 		if req.Role != nil {
 			updates["role"] = newRole
 		}
+		if req.QuotaBytes != nil {
+			updates["quota_bytes"] = *req.QuotaBytes
+		}
 		if req.Disabled != nil {
 			if *req.Disabled {
 				now := time.Now()
@@ -196,7 +241,12 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 		}
 		return
 	}
-	c.JSON(http.StatusOK, toUserDTO(updated))
+	dto, dtoErr := userDTOWithQuota(s.DB, updated)
+	if dtoErr != nil {
+		fail(c, http.StatusInternalServerError, "load user quota usage failed")
+		return
+	}
+	c.JSON(http.StatusOK, dto)
 }
 
 func (s *Server) adminResetPassword(c *gin.Context) {
