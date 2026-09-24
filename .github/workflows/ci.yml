@@ -104,7 +104,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: go mod tidy
+      - run: go mod tidy "-go=1.25"
       - run: git diff --exit-code -- go.mod go.sum
       - name: Check formatting
         shell: bash
@@ -166,6 +166,13 @@ jobs:
           bash scripts/test-cleanup-merged-branches.sh
           bash -n scripts/test-update-channels.sh
           bash scripts/test-update-channels.sh
+          bash -n scripts/ci/check-go-min-version.sh
+          XDRIVE_CI_GO_VERSION_OVERRIDE=go1.25.0 bash scripts/ci/check-go-min-version.sh 1.25
+          XDRIVE_CI_GO_VERSION_OVERRIDE=go1.26.0 bash scripts/ci/check-go-min-version.sh 1.25
+          if XDRIVE_CI_GO_VERSION_OVERRIDE=go1.24.9 bash scripts/ci/check-go-min-version.sh 1.25; then
+            echo "Go 1.24 must be rejected by the minimum-version check" >&2
+            exit 1
+          fi
           bash -n scripts/ci/gitlab-desktop-windows.sh
           bash -n scripts/ci/gitlab-go-windows.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
@@ -241,7 +248,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: go mod tidy
+      - run: go mod tidy "-go=1.25"
       - run: git diff --exit-code -- go.mod go.sum
       - run: go test ./internal/... ./cmd/xdrive-agent
       - name: Windows CfAPI E2E

@@ -16,17 +16,14 @@ else
   exit 1
 fi
 
-if ! go version | grep -Eq 'go1\.25(\.| )'; then
-  echo "Go 1.25.x is required; found $(go version)." >&2
-  exit 1
-fi
+bash scripts/ci/check-go-min-version.sh 1.25
 node_major="$(node -p 'process.versions.node.split(".")[0]')"
 if [[ "$node_major" != "22" ]]; then
   echo "Node.js 22 is required; found $(node --version)." >&2
   exit 1
 fi
 
-go mod tidy
+go mod tidy "-go=1.25"
 git diff --exit-code -- go.mod go.sum
 go test ./internal/... ./cmd/xdrive-agent
 go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
