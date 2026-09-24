@@ -106,3 +106,43 @@ test('discovery rejects non-loopback endpoints', async (t) => {
     return true
   })
 })
+
+test('file availability and selective sync use dedicated agent endpoints', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    let body = null
+    if (req.method !== 'GET') {
+      const chunks = []
+      for await (const chunk of req) chunks.push(chunk)
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    }
+    seen.push({ method: req.method, path: url.pathname, query: url.searchParams.get('path'), body })
+    if (url.pathname === '/v1/settings/sync-rule') {
+      json(res, 200, { mount_path: '/xDrive', cache_limit_bytes: 0, sync_rules: [{ path: 'Projects/Archive', mode: 'exclude' }] })
+      return
+    }
+    json(res, 200, {
+      Path: '/xDrive/report.docx',
+      Mode: 'always-local',
+      Placeholder: true,
+      Pinned: true,
+      OnlineOnly: false,
+      AvailableOffline: true,
+      InSync: true,
+      Syncing: false,
+    })
+  })
+
+  const state = await client.fileAvailability('/xDrive/report.docx')
+  assert.equal(state.Mode, 'always-local')
+  await client.setFileAvailability('/xDrive/report.docx', 'release')
+  const settings = await client.setSyncRule('Projects/Archive', 'exclude')
+  assert.equal(settings.sync_rules[0].mode, 'exclude')
+
+  assert.deepEqual(seen, [
+    { method: 'GET', path: '/v1/file-availability', query: '/xDrive/report.docx', body: null },
+    { method: 'POST', path: '/v1/file-availability', query: null, body: { path: '/xDrive/report.docx', action: 'release' } },
+    { method: 'PUT', path: '/v1/settings/sync-rule', query: null, body: { path: 'Projects/Archive', mode: 'exclude' } },
+  ])
+})

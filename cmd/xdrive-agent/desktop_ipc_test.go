@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/conflictstate"
+	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
@@ -34,6 +35,11 @@ type fakeDesktopIPCController struct {
 	syncs         int
 	updateMount   *string
 	updateCache   *int64
+	rulePath      string
+	ruleMode      string
+	filePath      string
+	fileAction    string
+	fileState     mount.FileAvailability
 	openFolderN   int
 	openID        string
 	openBoth      bool
@@ -81,6 +87,25 @@ func (f *fakeDesktopIPCController) Settings() (userconfig.Config, string, error)
 
 func (f *fakeDesktopIPCController) UpdateSettings(mountPath *string, cacheLimitBytes *int64) error {
 	f.updateMount, f.updateCache = mountPath, cacheLimitBytes
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) SetSelectiveSyncRule(path, mode string) error {
+	f.rulePath, f.ruleMode = path, mode
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) FileAvailability(path string) (mount.FileAvailability, error) {
+	f.filePath = path
+	state := f.fileState
+	if state.Path == "" {
+		state.Path = path
+	}
+	return state, f.err
+}
+
+func (f *fakeDesktopIPCController) SetFileAvailability(path, action string) error {
+	f.filePath, f.fileAction = path, action
 	return f.err
 }
 
@@ -176,7 +201,7 @@ func TestDesktopIPCStatusAndEvents(t *testing.T) {
 }
 
 func TestDesktopIPCActions(t *testing.T) {
-	mount := "/tmp/xdrive"
+	mountPath := "/tmp/xdrive"
 	cache := int64(5 << 30)
 	ctrl := &fakeDesktopIPCController{
 		revision: 1,
@@ -184,8 +209,9 @@ func TestDesktopIPCActions(t *testing.T) {
 			CacheLimitBytes: 2 << 30,
 			SyncRules:       []userconfig.SyncRule{{Path: "archive", Mode: userconfig.SyncModeExclude}},
 		},
-		root:  "/existing",
-		items: []conflictstate.Record{{ID: "c1", OriginalPath: "a.txt", ConflictPath: "a-conflict.txt"}},
+		root:      "/existing",
+		fileState: mount.FileAvailability{Path: "/tmp/xdrive/a.txt", Mode: "always-local", Placeholder: true, Pinned: true, InSync: true},
+		items:     []conflictstate.Record{{ID: "c1", OriginalPath: "a.txt", ConflictPath: "a-conflict.txt"}},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret")
 
@@ -202,6 +228,9 @@ func TestDesktopIPCActions(t *testing.T) {
 		{http.MethodPost, "/v1/sync/now", ""},
 		{http.MethodGet, "/v1/settings", ""},
 		{http.MethodPatch, "/v1/settings", `{"mount_path":"/tmp/xdrive","cache_limit_bytes":5368709120}`},
+		{http.MethodPut, "/v1/settings/sync-rule", `{"path":"Projects/Archive","mode":"exclude"}`},
+		{http.MethodGet, "/v1/file-availability?path=%2Ftmp%2Fxdrive%2Fa.txt", ""},
+		{http.MethodPost, "/v1/file-availability", `{"path":"/tmp/xdrive/a.txt","action":"keep"}`},
 		{http.MethodGet, "/v1/conflicts", ""},
 		{http.MethodPost, "/v1/conflicts/open", `{"id":"c1","both":true}`},
 		{http.MethodPost, "/v1/conflicts/resolve", `{"id":"c1","choice":"server"}`},
@@ -223,8 +252,14 @@ func TestDesktopIPCActions(t *testing.T) {
 	if ctrl.paused == nil || *ctrl.paused {
 		t.Fatalf("resume did not leave paused=false")
 	}
-	if ctrl.updateMount == nil || *ctrl.updateMount != mount || ctrl.updateCache == nil || *ctrl.updateCache != cache {
+	if ctrl.updateMount == nil || *ctrl.updateMount != mountPath || ctrl.updateCache == nil || *ctrl.updateCache != cache {
 		t.Fatalf("settings update not forwarded: mount=%v cache=%v", ctrl.updateMount, ctrl.updateCache)
+	}
+	if ctrl.rulePath != "Projects/Archive" || ctrl.ruleMode != "exclude" {
+		t.Fatalf("sync rule not forwarded: path=%q mode=%q", ctrl.rulePath, ctrl.ruleMode)
+	}
+	if ctrl.filePath != "/tmp/xdrive/a.txt" || ctrl.fileAction != "keep" {
+		t.Fatalf("file availability action not forwarded: path=%q action=%q", ctrl.filePath, ctrl.fileAction)
 	}
 	if ctrl.openID != "c1" || !ctrl.openBoth || ctrl.resolveID != "c1" || ctrl.resolveChoice != "server" || ctrl.openFolderN != 1 {
 		t.Fatalf("conflict/folder actions not forwarded")

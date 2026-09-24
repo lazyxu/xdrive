@@ -20,6 +20,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
+	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
@@ -76,6 +77,9 @@ type desktopIPCController interface {
 	SyncNow() error
 	Settings() (userconfig.Config, string, error)
 	UpdateSettings(mountPath *string, cacheLimitBytes *int64) error
+	SetSelectiveSyncRule(path, mode string) error
+	FileAvailability(path string) (mount.FileAvailability, error)
+	SetFileAvailability(path, action string) error
 	Conflicts() []conflictstate.Record
 	OpenConflict(id string, both bool) error
 	ResolveConflict(id, choice string) error
@@ -237,6 +241,9 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string) http.Handler 
 	mux.HandleFunc("POST /v1/sync/now", h.syncNow)
 	mux.HandleFunc("GET /v1/settings", h.settings)
 	mux.HandleFunc("PATCH /v1/settings", h.updateSettings)
+	mux.HandleFunc("PUT /v1/settings/sync-rule", h.setSyncRule)
+	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
+	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("GET /v1/conflicts", h.conflicts)
 	mux.HandleFunc("POST /v1/conflicts/open", h.openConflict)
 	mux.HandleFunc("POST /v1/conflicts/resolve", h.resolveConflict)
@@ -408,6 +415,73 @@ func (h *desktopIPCHandler) updateSettings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	h.settings(w, r)
+}
+
+func (h *desktopIPCHandler) setSyncRule(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Path string `json:"path"`
+		Mode string `json:"mode"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Path) == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_sync_rule", "path is required")
+		return
+	}
+	if err := h.ctrl.SetSelectiveSyncRule(input.Path, input.Mode); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	h.settings(w, r)
+}
+
+func (h *desktopIPCHandler) fileAvailability(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_path", "path is required")
+		return
+	}
+	state, err := h.ctrl.FileAvailability(path)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, state)
+}
+
+func (h *desktopIPCHandler) setFileAvailability(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Path   string `json:"path"`
+		Action string `json:"action"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Path) == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_path", "path is required")
+		return
+	}
+	switch input.Action {
+	case "keep", "release", "online", "sync":
+	default:
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_action", "action must be keep, release, online, or sync")
+		return
+	}
+	if err := h.ctrl.SetFileAvailability(input.Path, input.Action); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	state, err := h.ctrl.FileAvailability(input.Path)
+	if err != nil {
+		if input.Action == "sync" {
+			writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, state)
 }
 
 func (h *desktopIPCHandler) conflicts(w http.ResponseWriter, _ *http.Request) {

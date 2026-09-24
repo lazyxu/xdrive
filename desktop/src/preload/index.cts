@@ -10,6 +10,10 @@ const agent = Object.freeze({
   syncNow: () => ipcRenderer.invoke('agent:sync-now'),
   getSettings: () => ipcRenderer.invoke('agent:get-settings'),
   updateSettings: (input: { mount_path?: string; cache_limit_bytes?: number }) => ipcRenderer.invoke('agent:update-settings', input),
+  setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => ipcRenderer.invoke('agent:set-sync-rule', path, mode),
+  getFileAvailability: (path: string) => ipcRenderer.invoke('agent:get-file-availability', path),
+  setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') =>
+    ipcRenderer.invoke('agent:set-file-availability', path, action),
   getConflicts: () => ipcRenderer.invoke('agent:get-conflicts'),
   openConflict: (id: string, both = false) => ipcRenderer.invoke('agent:open-conflict', id, both),
   resolveConflict: (id: string, choice: 'server' | 'local') => ipcRenderer.invoke('agent:resolve-conflict', id, choice),

@@ -680,6 +680,10 @@ POST  /v1/sync/now
 
 GET   /v1/settings
 PATCH /v1/settings
+PUT   /v1/settings/sync-rule
+
+GET   /v1/file-availability?path=<path>
+POST  /v1/file-availability
 
 GET   /v1/conflicts
 POST  /v1/conflicts/open
@@ -690,7 +694,7 @@ POST  /v1/open-folder
 
 `/v1/events` is a bounded long-poll over monotonically increasing in-memory status revisions. It returns immediately when the revision changes and otherwise returns `204 No Content` at the requested timeout. This avoids fixed-interval renderer polling without introducing a second persistent event protocol.
 
-The Electron desktop client consumes this IPC from its **main process**. The renderer sees only typed business operations through the preload bridge; the discovery URL and bearer token never cross into renderer state. Phase 4 covers sign-in, required password changes, live sync state, pause/resume, sync-now, opening the sync folder, mount/cache settings, logout, and conflict review/resolution. The legacy Windows agent control UI remains temporarily available until the Phase 5 compatibility cleanup.
+The Electron desktop client consumes this IPC from its **main process**. The renderer sees only typed business operations through the preload bridge; the discovery URL and bearer token never cross into renderer state. Electron is now the sole graphical client: it covers sign-in, required password changes, live sync state, pause/resume, sync-now, opening the sync folder, Windows file-availability controls, selective-sync rules, mount/cache settings, logout, conflict review/resolution, tray actions, and desktop notifications. The Go `xdrive-agent` is headless and owns only sync/system capabilities plus Desktop IPC. The `xd` CLI remains fully supported.
 
 ## HTTP API
 

@@ -284,11 +284,7 @@ jobs:
           $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
           if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
           if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
-          foreach ($state in @("normal", "syncing", "paused", "offline", "conflict")) {
-            if (-not (Test-Path (Join-Path $app "icons\tray-$state.ico"))) {
-              throw "installed tray icon missing: $state"
-            }
-          }
+          if (Test-Path (Join-Path $app "icons")) { throw "headless agent must not install runtime tray icons" }
           $shortcutRoots = @(
             (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
             (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
@@ -297,7 +293,7 @@ jobs:
             Where-Object { Test-Path $_ } |
             ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
             Select-Object -First 1
-          if ($null -eq $shortcut) { throw "Start menu xDrive shortcut missing" }
+          if ($null -ne $shortcut) { throw "headless agent must not install a visible xDrive application shortcut" }
           $reported = & (Join-Path $app "xd.exe") version
           if ($reported.Trim() -ne "0.0.0-ci") { throw "embedded version mismatch: $reported" }
 

@@ -1,20 +1,20 @@
 # xDrive Desktop
 
-Phase 4 connects the Electron desktop UI to the existing Go `xdrive-agent` through the private Desktop IPC introduced in Phase 3.
+xDrive Desktop is the graphical client for the headless Go `xdrive-agent`.
 
 ## Responsibilities
 
-- Electron main window, single-instance lifecycle, and system tray;
+- Electron main window, single-instance lifecycle, system tray, and desktop notifications;
 - Electron Main reads `desktop-ipc.json`, owns the local bearer token, and performs all Agent HTTP requests;
 - the sandboxed renderer receives only narrow business operations through preload/`contextBridge`;
-- login, required password change, logout, sync status, pause/resume, sync-now, open-folder, settings, and conflict resolution;
-- agent status updates use the Phase 3 revision/long-poll endpoint;
-- React renderer continues to consume `ui/shared`;
+- login, required password change, logout, live sync state, pause/resume, sync-now, open-folder, mount/cache settings, conflict resolution;
+- Windows file availability controls: always-local, free-space, online-only, and manual sync;
+- selective-sync rule management;
 - Windows NSIS and Linux DEB desktop packaging.
 
-The renderer never receives the Agent IPC URL/token or xDrive access/refresh tokens. Authentication and secret storage remain owned by the Go agent.
+The renderer never receives the Agent IPC URL/token or xDrive access/refresh tokens. Authentication, DPAPI/Secret Service credentials, CfAPI/FUSE, synchronization, and update ownership remain in the Go core.
 
-Phase 4 does not remove the legacy Windows agent tray/control page yet; that compatibility cleanup remains Phase 5. It also does not automatically launch `xdrive-agent`. When the agent is unavailable, Electron shows a disconnected state and allows the user to retry. This avoids accidentally starting duplicate Linux agents before Linux single-instance ownership is hardened.
+The core and desktop packages are still distributed separately. On Windows, `xDriveSetup-amd64.exe` installs the headless background agent plus the retained `xd` CLI; `xDriveDesktopSetup-amd64.exe` installs the Electron UI. On Linux, the corresponding packages are `xdrive-client-linux-amd64.deb` and `xdrive-desktop-linux-amd64.deb`.
 
 ## Development
 

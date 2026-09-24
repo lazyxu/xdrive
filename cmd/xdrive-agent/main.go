@@ -46,9 +46,7 @@ func main() {
 		ctrl.Run()
 	}()
 
-	if err := startAgentUI(ctx, cancel, ctrl); err != nil && ctx.Err() == nil {
-		log.Printf("desktop UI stopped: %v", err)
-	}
+	<-ctx.Done()
 	cancel()
 	<-done
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { formatBinarySize } from '@xdrive/shared'
 
-type View = 'overview' | 'conflicts' | 'settings'
+type View = 'overview' | 'files' | 'conflicts' | 'settings'
 
 function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
@@ -35,6 +35,9 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [mountPath, setMountPath] = useState('')
   const [cacheLimit, setCacheLimit] = useState('0')
+  const [syncRulePath, setSyncRulePath] = useState('')
+  const [filePath, setFilePath] = useState('')
+  const [fileState, setFileState] = useState<AgentFileAvailability | null>(null)
 
   const status = agent.status
   const configured = !!status?.configured
@@ -64,6 +67,7 @@ export default function App() {
     }
     if (view === 'settings') void loadSettings()
     if (view === 'conflicts') void loadConflicts()
+    if (view === 'files' && !filePath && status?.mount_path) setFilePath(status.mount_path)
     // Refresh when the agent revision changes so settings/conflicts stay current.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured, status?.revision])
@@ -161,6 +165,40 @@ export default function App() {
     if (data) setSettings(data)
   }
 
+  const checkFileAvailability = async () => {
+    const path = filePath.trim()
+    if (!path) {
+      setError('Enter a file or directory inside the xDrive sync folder.')
+      return
+    }
+    const data = await run('file-state', () => window.xdriveDesktop.agent.getFileAvailability(path))
+    if (data) setFileState(data)
+  }
+
+  const setFileAvailability = async (action: 'keep' | 'release' | 'online' | 'sync') => {
+    const path = filePath.trim()
+    if (!path) {
+      setError('Enter a file or directory inside the xDrive sync folder.')
+      return
+    }
+    const data = await run(`file-${action}`, () => window.xdriveDesktop.agent.setFileAvailability(path, action), 'File availability updated.')
+    if (data && 'Mode' in data) setFileState(data)
+    else if (action !== 'sync') void checkFileAvailability()
+  }
+
+  const updateSyncRule = async (path: string, mode: 'exclude' | 'always-local' | 'default') => {
+    const rulePath = path.trim()
+    if (!rulePath) {
+      setError('Enter a directory path inside xDrive.')
+      return
+    }
+    const data = await run(`rule-${mode}`, () => window.xdriveDesktop.agent.setSyncRule(rulePath, mode), 'Selective sync updated.')
+    if (data) {
+      setSettings(data)
+      setSyncRulePath('')
+    }
+  }
+
   const loadConflicts = async () => {
     const result = await window.xdriveDesktop.agent.getConflicts()
     if (!result.ok) {
@@ -239,6 +277,7 @@ export default function App() {
         <div className="brand"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>Desktop</span></div></div>
         <nav aria-label="Desktop sections">
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>Overview</button>
+          <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>Files</button>
           <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>
             Conflicts {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}
           </button>
@@ -291,6 +330,44 @@ export default function App() {
               </dl>
             </section>
           </>
+        )}
+
+        {view === 'files' && (
+          <section className="panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">WINDOWS FILE AVAILABILITY</p>
+                <h2>Control local storage for a synced item</h2>
+              </div>
+            </div>
+            {info?.platform !== 'win32' ? (
+              <div className="empty-state">File availability controls require Windows CfAPI. Linux continues to use FUSE sync behavior.</div>
+            ) : (
+              <>
+                <label className="field-label">
+                  File or directory path
+                  <div className="input-action">
+                    <input value={filePath} onChange={(e) => setFilePath(e.target.value)} placeholder={status?.mount_path || 'Path inside xDrive'} />
+                    <button className="secondary" type="button" disabled={!!busy} onClick={() => void checkFileAvailability()}>Check</button>
+                  </div>
+                </label>
+                {fileState && (
+                  <div className="file-state-grid">
+                    <div><span>Mode</span><strong>{fileState.Mode}</strong></div>
+                    <div><span>In sync</span><strong>{fileState.InSync ? 'Yes' : 'No'}</strong></div>
+                    <div><span>Available offline</span><strong>{fileState.AvailableOffline ? 'Yes' : 'No'}</strong></div>
+                    <div><span>Placeholder</span><strong>{fileState.Placeholder ? 'Yes' : 'No'}</strong></div>
+                  </div>
+                )}
+                <div className="form-actions">
+                  <button className="primary" type="button" disabled={!!busy} onClick={() => void setFileAvailability('keep')}>Always keep on this device</button>
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void setFileAvailability('release')}>Free up space</button>
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void setFileAvailability('online')}>Online only</button>
+                  <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void setFileAvailability('sync')}>Sync now</button>
+                </div>
+              </>
+            )}
+          </section>
         )}
 
         {view === 'conflicts' && (
@@ -348,7 +425,29 @@ export default function App() {
                   </div>
                   <small>0 means unlimited. Current value: {formatBinarySize(settings.cache_limit_bytes)}.</small>
                 </label>
-                <div className="setting-meta">Selective sync rules configured: {settings.sync_rules.length}</div>
+                <div className="settings-divider" />
+                <label>
+                  Selective sync directory
+                  <div className="input-action">
+                    <input value={syncRulePath} onChange={(e) => setSyncRulePath(e.target.value)} placeholder="Projects/Archive" />
+                  </div>
+                  <small>Use a path relative to the xDrive root, or a full path inside the sync folder.</small>
+                </label>
+                <div className="form-actions compact">
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void updateSyncRule(syncRulePath, 'exclude')}>Do not sync on this device</button>
+                  <button className="primary" type="button" disabled={!!busy} onClick={() => void updateSyncRule(syncRulePath, 'always-local')}>Always keep locally</button>
+                </div>
+                {settings.sync_rules.length > 0 ? (
+                  <div className="rule-list">
+                    {settings.sync_rules.map((rule) => (
+                      <div className="rule-row" key={`${rule.path}:${rule.mode}`}>
+                        <div><strong>{rule.path}</strong><span>{rule.mode === 'exclude' ? 'Not synced on this device' : 'Always local'}</span></div>
+                        <button className="secondary" type="button" disabled={!!busy} onClick={() => void updateSyncRule(rule.path, 'default')}>Remove rule</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : <div className="setting-meta">No selective sync rules configured.</div>}
+                <div className="settings-divider" />
                 <div className="form-actions">
                   <button className="primary" type="submit" disabled={busy === 'settings'}>{busy === 'settings' ? 'Saving…' : 'Save settings'}</button>
                   <button className="danger" type="button" disabled={!!busy} onClick={() => {
