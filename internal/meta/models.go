@@ -82,6 +82,22 @@ type FileVersion struct {
 
 func (FileVersion) TableName() string { return "xd_file_versions" }
 
+type Share struct {
+	ID            uint64     `gorm:"primaryKey"`
+	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
+	NodeID        uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
+	TokenHash     string     `gorm:"size:64;not null;uniqueIndex"`
+	PasswordHash  string     `gorm:"size:255"`
+	ExpiresAt     *time.Time `gorm:"index"`
+	MaxDownloads  int64      `gorm:"not null;default:0"`
+	DownloadCount int64      `gorm:"not null;default:0"`
+	RevokedAt     *time.Time `gorm:"index"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (Share) TableName() string { return "xd_shares" }
+
 const (
 	UploadStatusActive    = "active"
 	UploadStatusFinalized = "finalized"

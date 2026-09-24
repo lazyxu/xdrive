@@ -153,6 +153,9 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		if err := tx.Where("node_id IN ?", ids).Find(&files).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("node_id IN ?", ids).Delete(&meta.Share{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("node_id IN ?", ids).Delete(&meta.FileVersion{}).Error; err != nil {
 			return err
 		}

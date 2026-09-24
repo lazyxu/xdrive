@@ -365,6 +365,9 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 			if err := tx.Where("node_id IN ?", nodeIDs).Find(&files).Error; err != nil {
 				return err
 			}
+			if err := tx.Where("node_id IN ?", nodeIDs).Delete(&meta.Share{}).Error; err != nil {
+				return err
+			}
 			if err := tx.Where("node_id IN ?", nodeIDs).Delete(&meta.FileVersion{}).Error; err != nil {
 				return err
 			}

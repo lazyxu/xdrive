@@ -16,7 +16,7 @@ xDrive is an Apache-2.0 open-source file service with a Docker-deployed server, 
 | Client delivery | Windows `.exe` installer; Linux `.deb` installer |
 | Multi-user | Administrator-provisioned accounts, roles, per-user isolation |
 
-Not in the MVP: chunking, instant upload/deduplication, small-file packs, CDC, thumbnails/transcoding, public sharing, MinIO, macOS, or mobile clients.
+Not in the MVP: global/cross-file deduplication, content-defined chunking (CDC), small-file packs, thumbnails/transcoding, directory/upload sharing, MinIO, macOS, or mobile clients.
 
 ## Architecture
 
@@ -552,6 +552,29 @@ Every successful content overwrite preserves the previous blob in `xd_file_versi
 
 Recycle-bin and version-restore mutations retain the same `If-Match` revision preconditions used by normal conflict protection.
 
+## Download-only share links
+
+The Web UI can create a public **download-only** link for an individual file. The first version deliberately does not expose directory ZIP downloads or anonymous uploads.
+
+Each share can have:
+
+- an optional expiration time;
+- an optional password (bcrypt-hashed, minimum 8 characters when set);
+- an optional maximum download count, where `0` means unlimited;
+- explicit owner revocation.
+
+The bearer share token contains 256 bits of randomness. xDrive returns the raw token only once, when the share is created, and PostgreSQL stores only its SHA-256 hash. The Web link uses a URL fragment such as:
+
+```text
+https://drive.example.com:8443/#/s/<share-token>
+```
+
+Browser fragments are not sent in the HTTP request path, so the raw share token is not written into normal Web/Caddy/API access URLs. The Web client sends the token to the API only in the `X-XDrive-Share-Token` request header. Treat a share link like a bearer credential and avoid logging that header in custom reverse-proxy configurations.
+
+Moving a shared file, or a parent directory containing it, into the recycle bin permanently revokes all affected share links in the same database transaction. Restoring the file does **not** reactivate those old links. Permanent deletion removes the corresponding share metadata. Renaming, moving between active directories, or replacing the file contents does not revoke the link; an active share downloads the file's current content.
+
+Download-count admission is serialized with a PostgreSQL row lock, so simultaneous requests cannot collectively exceed a configured maximum. Wrong passwords do not consume the download count. Shares owned by a disabled account are unavailable while that account is disabled.
+
 ## HTTP API
 
 Authenticated endpoints use:
@@ -590,6 +613,14 @@ DELETE /api/v1/uploads/:id
 GET    /api/v1/files/:id/versions
 GET    /api/v1/files/:id/versions/:versionID/content
 POST   /api/v1/files/:id/versions/:versionID/restore
+
+POST   /api/v1/files/:id/shares
+GET    /api/v1/files/:id/shares
+DELETE /api/v1/shares/:id
+
+GET    /api/v1/public/share
+POST   /api/v1/public/share/download
+       X-XDrive-Share-Token: <raw-share-token>
 
 GET    /api/v1/admin/users
 POST   /api/v1/admin/users
@@ -801,7 +832,7 @@ deploy/
 - The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.
 - File operations are owner-scoped at the metadata layer.
-- There is no antivirus scanning, public sharing, or audit log yet.
+- There is no antivirus scanning or audit log yet; public sharing is download-only and file-only in this phase.
 
 ## Roadmap
 
@@ -810,7 +841,7 @@ deploy/
 3. small-file packing;
 4. macOS File Provider integration;
 5. thumbnails/EXIF/media processing;
-6. sharing and richer retention/version policies.
+6. directory/upload sharing and richer retention/version policies.
 
 ## License
 

@@ -32,6 +32,8 @@ func (s *Server) Router() *gin.Engine {
 	v1.POST("/auth/login", s.login)
 	v1.POST("/auth/refresh", s.refresh)
 	v1.POST("/auth/logout", s.logout)
+	v1.GET("/public/share", s.publicShareMetadata)
+	v1.POST("/public/share/download", s.publicShareDownload)
 
 	authed := v1.Group("")
 	authed.Use(s.requireAuth())
@@ -57,6 +59,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/files/:id/versions", s.fileVersions)
 	authed.GET("/files/:id/versions/:versionID/content", s.downloadFileVersion)
 	authed.POST("/files/:id/versions/:versionID/restore", s.restoreFileVersion)
+	authed.POST("/files/:id/shares", s.createFileShare)
+	authed.GET("/files/:id/shares", s.listFileShares)
+	authed.DELETE("/shares/:id", s.revokeShare)
 
 	admin := authed.Group("/admin")
 	admin.Use(s.requireAdmin())
@@ -90,7 +95,7 @@ func (s *Server) cors() gin.HandlerFunc {
 		if origin != "" && (s.AllowedOrigin == "*" || origin == s.AllowedOrigin) {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, X-Chunk-SHA256")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, X-Chunk-SHA256, X-XDrive-Share-Token")
 			c.Header("Access-Control-Expose-Headers", "ETag, X-Content-SHA256, Content-Range")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		}

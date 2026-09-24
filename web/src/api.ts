@@ -22,6 +22,34 @@ export interface FileVersion {
   created_at: string
 }
 
+export type ShareStatus = 'active' | 'expired' | 'exhausted' | 'revoked'
+
+export interface FileShare {
+  id: number
+  node_id: number
+  has_password: boolean
+  expires_at?: string
+  max_downloads: number
+  download_count: number
+  revoked_at?: string
+  status: ShareStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface CreatedFileShare extends FileShare {
+  token: string
+}
+
+export interface PublicShare {
+  name: string
+  size: number
+  requires_password: boolean
+  expires_at?: string
+  max_downloads: number
+  download_count: number
+}
+
 export interface AuthResult {
   token: string
   access_token: string
@@ -415,6 +443,67 @@ export class XDriveApi {
       method: 'POST',
       headers: { 'If-Match': `"${currentRevision}"` },
     })
+  }
+
+  createShare(nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) {
+    return this.request<CreatedFileShare>(`/api/v1/files/${nodeID}/shares`, {
+      method: 'POST',
+      body: JSON.stringify({
+        expires_at: input.expires_at || null,
+        password: input.password || '',
+        max_downloads: input.max_downloads ?? 0,
+      }),
+    })
+  }
+
+  shares(nodeID: number) {
+    return this.request<FileShare[]>(`/api/v1/files/${nodeID}/shares`)
+  }
+
+  revokeShare(shareID: number) {
+    return this.request<void>(`/api/v1/shares/${shareID}`, { method: 'DELETE' })
+  }
+
+  publicShare(token: string) {
+    return this.request<PublicShare>('/api/v1/public/share', {
+      headers: { 'X-XDrive-Share-Token': token },
+    }, false)
+  }
+
+  async downloadPublicShare(token: string, password: string, filename: string) {
+    const response = await fetch(
+      `${API_BASE}/api/v1/public/share/download`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-XDrive-Share-Token': token,
+        },
+        body: JSON.stringify({ password }),
+      },
+    )
+    if (!response.ok) {
+      let error = response.statusText || 'Shared download failed'
+      try {
+        const body = (await response.json()) as { error?: string }
+        if (body.error) error = body.error
+      } catch {
+        // Keep the HTTP status text.
+      }
+      throw new ApiError(response.status, error)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    try {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } finally {
+      URL.revokeObjectURL(url)
+    }
   }
 
   downloadURL(nodeID: number) {
