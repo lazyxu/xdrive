@@ -28,6 +28,11 @@ Usage:
   xdrive-server status
   xdrive-server backup [server-backup.sh options...]
   xdrive-server verify
+  xdrive-server admin list
+  xdrive-server admin reset-password USER [--no-must-change]
+  xdrive-server admin reset-password USER --password-stdin [--no-must-change]
+  xdrive-server admin enable USER
+  xdrive-server admin disable USER
   xdrive-server version
 
 This command runs on the Docker host. It manages ~/.xd and the xDrive
@@ -53,6 +58,16 @@ compose() {
     docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
   else
     docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  fi
+}
+
+compose_with_stdin() {
+  local domain
+  domain="$(env_value XD_DOMAIN)"
+  if [[ -n "$domain" ]]; then
+    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+  else
+    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
   fi
 }
 
@@ -123,6 +138,72 @@ verify_cmd() {
   XD_CONFIG_DIR="$CONFIG_DIR" exec "$script" "$@"
 }
 
+admin_cmd() {
+  [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || {
+    echo "xdrive-server: no xDrive deployment found in $CONFIG_DIR" >&2
+    return 1
+  }
+
+  local subcommand="${1:-}"
+  [[ -n "$subcommand" ]] || {
+    echo "usage: xdrive-server admin <list|reset-password|enable|disable>" >&2
+    return 2
+  }
+  shift || true
+
+  case "$subcommand" in
+    list)
+      compose exec -T server xdrive-server admin list "$@"
+      ;;
+    enable|disable)
+      compose exec -T server xdrive-server admin "$subcommand" "$@"
+      ;;
+    reset-password)
+      local password_stdin=0 arg password confirm
+      for arg in "$@"; do
+        case "$arg" in
+          --password-stdin)
+            password_stdin=1
+            ;;
+          --password|--password=*)
+            echo "xdrive-server: --password is not supported; use the interactive prompt or --password-stdin." >&2
+            return 2
+            ;;
+        esac
+      done
+
+      if [[ "$password_stdin" == "1" ]]; then
+        compose_with_stdin exec -T server xdrive-server admin reset-password "$@"
+        return
+      fi
+
+      if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
+        echo "xdrive-server: no interactive terminal; pass --password-stdin and provide the password on stdin." >&2
+        return 2
+      fi
+      read -r -s -p "New password: " password </dev/tty
+      printf '\n' >/dev/tty
+      read -r -s -p "Confirm password: " confirm </dev/tty
+      printf '\n' >/dev/tty
+      if [[ -z "$password" ]]; then
+        echo "xdrive-server: password is empty." >&2
+        return 2
+      fi
+      if [[ "$password" != "$confirm" ]]; then
+        echo "xdrive-server: passwords do not match." >&2
+        return 2
+      fi
+      printf '%s\n' "$password" |
+        compose_with_stdin exec -T server xdrive-server admin reset-password "$@" --password-stdin
+      unset password confirm
+      ;;
+    *)
+      echo "usage: xdrive-server admin <list|reset-password|enable|disable>" >&2
+      return 2
+      ;;
+  esac
+}
+
 version_cmd() {
   local channel commit image
   channel="$(env_value XD_RELEASE_CHANNEL)"
@@ -143,6 +224,7 @@ case "$cmd" in
   status) status_cmd "$@" ;;
   backup) backup_cmd "$@" ;;
   verify) verify_cmd ;;
+  admin) admin_cmd "$@" ;;
   version) version_cmd ;;
   -h|--help|help) usage ;;
   *) echo "xdrive-server: unknown command: $cmd" >&2; usage >&2; exit 2 ;;
