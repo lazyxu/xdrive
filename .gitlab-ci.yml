@@ -58,6 +58,17 @@ variables:
         docker --version
         docker compose version
 
+.electron-linux-cache:
+  variables:
+    XDG_CACHE_HOME: "$CI_PROJECT_DIR/.cache"
+    ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
+  cache:
+    key: "xdrive-electron-linux-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/electron/
+      - .cache/electron-builder/
+    policy: pull-push
+
 single-commit:
   image: $XDRIVE_CI_GO_IMAGE
   stage: test
@@ -81,6 +92,7 @@ single-commit:
 
 desktop-linux:
   image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
   stage: test
   tags:
     - linux
@@ -109,6 +121,7 @@ desktop-windows:
 
 go-linux:
   image: $XDRIVE_CI_GO_IMAGE
+  extends: .electron-linux-cache
   stage: test
   resource_group: xdrive-go-linux-docker
   tags:

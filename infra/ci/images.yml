@@ -9,3 +9,9 @@ variables:
   XDRIVE_CI_NODE_VERSION: "22.23.3"
   XDRIVE_CI_DOCKER_VERSION: "27.5.1"
   XDRIVE_CI_COMPOSE_VERSION: "v2.32.4"
+
+  # GitLab runners can be bandwidth-constrained when fetching GitHub release
+  # assets. These can be overridden by project/group CI/CD variables when an
+  # internal mirror is available.
+  ELECTRON_MIRROR: "https://cdn.npmmirror.com/binaries/electron/"
+  ELECTRON_BUILDER_BINARIES_MIRROR: "https://cdn.npmmirror.com/binaries/electron-builder-binaries/"
