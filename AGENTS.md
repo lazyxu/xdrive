@@ -32,19 +32,19 @@ For every code change in this repository, use this workflow by default:
 
 ## CI policy
 
-- Full CI runs for GitHub pull requests or GitLab merge requests targeting `master`, not for ordinary pushes to short-lived feature/fix branches.
+- Full CI runs for GitHub pull requests or GitLab merge requests targeting `master`, and also for direct pushes to `master` on both providers. Ordinary pushes to short-lived feature/fix branches do not run full CI.
 - GitHub `workflow_dispatch` and a GitLab Web/Run pipeline are the equivalent manual full-CI entry points.
-- A successful PR/MR CI run is the normal test gate. Do not duplicate the same full test suite on the subsequent `master` push.
-- `master` and version-tag workflows should focus on build, packaging, signing, image publication, and release-specific validation.
-- Release jobs should not rerun test suites that are already required by PR/MR CI unless a test is specifically validating the produced release artifact.
+- A successful PR/MR CI run is the pre-merge test gate. The subsequent `master` push intentionally runs the same full CI again on each provider as post-merge/mirror verification.
+- Release and version-tag workflows should focus on build, packaging, signing, image publication, and release-specific validation.
+- Release jobs should not rerun test suites that are already required by the full CI unless a test is specifically validating the produced release artifact.
 
 ## GitHub / GitLab CI parity
 
 - `.github/workflows/ci.yml` and `.gitlab-ci.yml` are two front ends for the same CI contract. Any change to CI jobs, platform coverage, toolchain versions, test/build commands, Docker/deployment validation, trigger semantics, or merge gates must update both files in the same code change.
 - Keep these jobs one-to-one across both systems: `single-commit`, `desktop-linux`, `desktop-windows`, `go-linux`, `go-windows`, and `web`.
-- Keep trigger behavior equivalent: GitHub PR-to-`master` corresponds to GitLab MR-to-`master`; GitHub `workflow_dispatch` corresponds to a GitLab Web/Run pipeline; GitHub cancel-in-progress corresponds to GitLab interruptible auto-cancel.
+- Keep trigger behavior equivalent: GitHub PR-to-`master` corresponds to GitLab MR-to-`master`; pushes to `master` run full CI on both providers; GitHub `workflow_dispatch` corresponds to a GitLab Web/Run pipeline; GitHub cancel-in-progress corresponds to GitLab interruptible auto-cancel.
 - `internal/cicontract/ci_parity_test.go` is the executable parity guard. It parses both YAML files, requires the same job set and key commands, and is part of the normal Go test suites. Do not weaken or bypass it to make one CI provider diverge.
-- GitLab runner tags default to `linux` and `windows` through `XD_GITLAB_LINUX_RUNNER_TAG` and `XD_GITLAB_WINDOWS_RUNNER_TAG`; projects may override those CI/CD variables. GitLab supports CI/CD variables in runner tags.
+- GitLab jobs use the same literal runner tags as the established GitLab runner setup: `linux` for Linux jobs and `windows` for Windows jobs. Do not indirect these tags through CI/CD variables unless the runner topology itself changes.
 - The GitLab Linux runner must be an x86_64 Linux shell runner with Bash, Git, Go 1.25.x, Node.js 22, npm, Docker Engine with Compose v2, Python 3, curl, and `dpkg-deb`; the runner user must be allowed to use Docker. The `go-linux` job uses a resource group because the deployment tests intentionally exercise real Docker Compose resources.
 - The GitLab Windows runner must be a Windows shell runner using PowerShell with Go 1.25.x, Node.js 22, npm, Chocolatey, Windows CfAPI support, certificate creation/signing support, and permission to install/use Inno Setup.
 
