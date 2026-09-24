@@ -43,6 +43,15 @@ type Node struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type QuotaUsage struct {
+	QuotaBytes        int64 `json:"quota_bytes"`
+	PhysicalUsedBytes int64 `json:"physical_used_bytes"`
+	LogicalFileBytes  int64 `json:"logical_file_bytes"`
+	TrashBytes        int64 `json:"trash_bytes"`
+	HistoryBytes      int64 `json:"history_bytes"`
+	OverQuota         bool  `json:"over_quota"`
+}
+
 type AuthResponse struct {
 	Token              string `json:"token"`
 	AccessToken        string `json:"access_token"`
@@ -92,6 +101,12 @@ func (c *Client) authenticate(ctx context.Context, path, username, password stri
 		return out, err
 	}
 	return out, nil
+}
+
+func (c *Client) Quota(ctx context.Context) (QuotaUsage, error) {
+	var out QuotaUsage
+	err := c.json(ctx, http.MethodGet, "/api/v1/me/quota", nil, &out)
+	return out, err
 }
 
 func (c *Client) Root(ctx context.Context) (Node, error) {

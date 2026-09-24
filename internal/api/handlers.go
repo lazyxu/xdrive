@@ -312,6 +312,12 @@ func (s *Server) uploadFile(c *gin.Context) {
 		fail(c, http.StatusConflict, "name already exists")
 		return
 	}
+	if _, err := s.ensureQuota(s.DB, userID(c), fh.Size, false); err != nil {
+		if !writeQuotaError(c, err) {
+			fail(c, http.StatusInternalServerError, "quota check failed")
+		}
+		return
+	}
 	s.uploadMultipart(c, parent, fh)
 }
 
@@ -337,6 +343,9 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 	contentHash := hex.EncodeToString(h.Sum(nil))
 	var n meta.Node
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := s.ensureQuota(tx, userID(c), size, true); err != nil {
+			return err
+		}
 		n = meta.Node{ParentID: &parent.ID, Name: fh.Filename, Type: meta.NodeTypeFile, OwnerID: userID(c)}
 		if err := tx.Create(&n).Error; err != nil {
 			return err
@@ -345,6 +354,9 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
+		if writeQuotaError(c, err) {
+			return
+		}
 		if isDuplicate(err) {
 			fail(c, http.StatusConflict, "name already exists")
 		} else {
@@ -401,6 +413,14 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		revisionConflict(c, expected, n.Revision)
 		return
 	}
+	if c.Request.ContentLength >= 0 {
+		if _, err := s.ensureQuota(s.DB, userID(c), c.Request.ContentLength, false); err != nil {
+			if !writeQuotaError(c, err) {
+				fail(c, http.StatusInternalServerError, "quota check failed")
+			}
+			return
+		}
+	}
 
 	logical, err := s.logicalPath(n)
 	if err != nil {
@@ -419,6 +439,9 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	contentHash := hex.EncodeToString(h.Sum(nil))
 	var currentRevision uint64
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := s.ensureQuota(tx, userID(c), size, true); err != nil {
+			return err
+		}
 		var current meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, userID(c)).First(&current).Error; err != nil {
@@ -449,6 +472,9 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
+		if writeQuotaError(c, err) {
+			return
+		}
 		if errors.Is(err, errRevisionConflict) {
 			revisionConflict(c, expected, currentRevision)
 			return

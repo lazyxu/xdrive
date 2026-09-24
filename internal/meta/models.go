@@ -22,6 +22,7 @@ type User struct {
 	Role               string     `gorm:"size:16;not null;default:user;index"`
 	MustChangePassword bool       `gorm:"not null;default:false"`
 	SessionVersion     uint64     `gorm:"not null;default:1"`
+	QuotaBytes         int64      `gorm:"not null;default:0"`
 	DisabledAt         *time.Time `gorm:"index"`
 	LastLoginAt        *time.Time
 	CreatedAt          time.Time

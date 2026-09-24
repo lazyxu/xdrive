@@ -181,12 +181,30 @@ func logout() error {
 	return nil
 }
 
+func formatStorageBytes(bytes int64) string {
+	units := []string{"B", "KiB", "MiB", "GiB", "TiB"}
+	value := float64(bytes)
+	unit := 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	if unit == 0 || value >= 10 {
+		return fmt.Sprintf("%.0f %s", value, units[unit])
+	}
+	return fmt.Sprintf("%.1f %s", value, units[unit])
+}
+
 func status() error {
 	cfg, err := userconfig.Load()
 	if err != nil {
 		return err
 	}
 	cli, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+	quota, err := cli.Quota(context.Background())
 	if err != nil {
 		return err
 	}
@@ -202,7 +220,15 @@ func status() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("server: %s\nuser: %s\nmount: %s\ncredential store: %s\nroot items: %d\nclient version: %s\n", cfg.Server, cfg.Username, mountPath, userconfig.CredentialBackend(cfg), len(children), version.String())
+	quotaLimit := "unlimited"
+	if quota.QuotaBytes > 0 {
+		quotaLimit = formatStorageBytes(quota.QuotaBytes)
+	}
+	fmt.Printf("server: %s\nuser: %s\nmount: %s\ncredential store: %s\nroot items: %d\nstorage: %s / %s\nstorage detail: files %s, trash %s, history %s\nclient version: %s\n",
+		cfg.Server, cfg.Username, mountPath, userconfig.CredentialBackend(cfg), len(children),
+		formatStorageBytes(quota.PhysicalUsedBytes), quotaLimit,
+		formatStorageBytes(quota.LogicalFileBytes), formatStorageBytes(quota.TrashBytes), formatStorageBytes(quota.HistoryBytes),
+		version.String())
 	return nil
 }
 
