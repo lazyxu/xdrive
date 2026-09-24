@@ -1,25 +1,27 @@
 # xDrive Desktop
 
-Phase 2 introduces the Electron desktop shell only. It deliberately does **not** connect to `xdrive-agent`, authenticate users, mount storage, or perform sync.
+Phase 4 connects the Electron desktop UI to the existing Go `xdrive-agent` through the private Desktop IPC introduced in Phase 3.
 
-## Responsibilities in this phase
+## Responsibilities
 
-- Electron main window and single-instance behavior;
-- system tray with Open and Quit actions;
-- minimize/close-to-tray lifecycle;
-- sandboxed renderer with `contextIsolation`, `nodeIntegration: false`, and a narrow preload `contextBridge`;
-- React renderer consuming `ui/shared`;
-- Windows NSIS and Linux DEB packaging as standalone `xdrive-desktop` artifacts.
+- Electron main window, single-instance lifecycle, and system tray;
+- Electron Main reads `desktop-ipc.json`, owns the local bearer token, and performs all Agent HTTP requests;
+- the sandboxed renderer receives only narrow business operations through preload/`contextBridge`;
+- login, required password change, logout, sync status, pause/resume, sync-now, open-folder, settings, and conflict resolution;
+- agent status updates use the Phase 3 revision/long-poll endpoint;
+- React renderer continues to consume `ui/shared`;
+- Windows NSIS and Linux DEB desktop packaging.
 
-The existing `xd`, `xdrive-agent`, Windows client installer, and Linux client package remain unchanged and continue to ship separately.
+The renderer never receives the Agent IPC URL/token or xDrive access/refresh tokens. Authentication and secret storage remain owned by the Go agent.
+
+Phase 4 does not remove the legacy Windows agent tray/control page yet; that compatibility cleanup remains Phase 5. It also does not automatically launch `xdrive-agent`. When the agent is unavailable, Electron shows a disconnected state and allows the user to retry. This avoids accidentally starting duplicate Linux agents before Linux single-instance ownership is hardened.
 
 ## Development
 
 ```bash
 cd desktop
 npm install --no-audit --no-fund
+npm run test:main
 npm run build
 npm start
 ```
-
-For renderer-only development, run Vite and launch Electron with `XD_DESKTOP_DEV_URL=http://127.0.0.1:5174` after compiling the main/preload scripts.
