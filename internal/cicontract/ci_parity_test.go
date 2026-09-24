@@ -139,11 +139,17 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"pull_request:",
 		"push:",
 		"branches: [\"master\"]",
+		"tags: [\"v*\"]",
 		"workflow_dispatch:",
 		"cancel-in-progress: true",
 	)
 	requireRaw(t, "GitLab CI", gitlabRaw,
 		"- local: /infra/ci/images.yml",
+		"- local: /infra/ci/gitlab-release.yml",
+		"- package",
+		"- promote",
+		"- release",
+		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_TAG =~ /^v.+/",
 		"bash scripts/ci/check-go-min-version.sh 1.25",
 		".electron-linux-cache:",
 		"XDG_CACHE_HOME: \"$CI_PROJECT_DIR/.cache\"",
@@ -180,6 +186,103 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"./scripts/build-windows-installer.ps1",
 		"Get-AuthenticodeSignature",
 		"Start-Process -FilePath $installer",
+	)
+}
+
+func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
+	root := repositoryRoot(t)
+	githubRelease := readFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
+	gitlabRelease := readFile(t, filepath.Join(root, "infra", "ci", "gitlab-release.yml"))
+	var gitlabReleaseConfig map[string]any
+	if err := yaml.Unmarshal([]byte(gitlabRelease), &gitlabReleaseConfig); err != nil {
+		t.Fatalf("parse GitLab release CI: %v", err)
+	}
+	installerTemplate := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
+	gitlabReleaseScripts := strings.Join([]string{
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-version.sh")),
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux.sh")),
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows.sh")),
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows-native.ps1")),
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-images.sh")),
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-promote-images.sh")),
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-publish-release.sh")),
+	}, "\n")
+
+	releaseAssets := []string{
+		"xdrive-client-linux-amd64.deb",
+		"xDriveSetup-amd64.exe",
+		"xdrive-desktop-linux-amd64.deb",
+		"xDriveDesktopSetup-amd64.exe",
+		"xdrive-server-install.sh",
+		"server-backup.sh",
+		"server-backup-scheduled.sh",
+		"server-restore.sh",
+		"server-verify.sh",
+		"server-doctor.sh",
+		"xdrive-server",
+		"docker-compose.yml",
+		"Caddyfile",
+		"xdrive.env.example",
+		"SHA256SUMS.txt",
+	}
+	for _, asset := range releaseAssets {
+		if !strings.Contains(githubRelease, asset) {
+			t.Errorf("GitHub release contract is missing asset %q", asset)
+		}
+		if !strings.Contains(gitlabRelease+"\n"+gitlabReleaseScripts, asset) {
+			t.Errorf("GitLab release contract is missing asset %q", asset)
+		}
+	}
+
+	for _, imageName := range []string{"xdrive-server", "xdrive-web", "xdrive-caddy"} {
+		if !strings.Contains(githubRelease, imageName) {
+			t.Errorf("GitHub release contract is missing image %q", imageName)
+		}
+		if !strings.Contains(gitlabReleaseScripts, imageName) {
+			t.Errorf("GitLab release contract is missing image %q", imageName)
+		}
+	}
+
+	requireRaw(t, "server installer registry contract", installerTemplate,
+		"IMAGE_REGISTRY=\"${XD_IMAGE_REGISTRY:-@IMAGE_REGISTRY@}\"",
+		`[[ -z "$IMAGE_REGISTRY" || "$IMAGE_REGISTRY" == "@IMAGE_REGISTRY@" ]]`,
+		`[[ -n "$IMAGE_REGISTRY" ]] || IMAGE_REGISTRY="ghcr.io/lazyxu"`,
+	)
+
+	requireRaw(t, "GitHub Build Packages", githubRelease,
+		"branches: [\"master\"]",
+		"tags: [\"v*\"]",
+		"snapshot-${GITHUB_SHA::12}",
+		"0.0.0-snapshot.${GITHUB_SHA::12}",
+		"target_tag=\"edge\"",
+		"target_tag=\"latest\"",
+		"retention-days: 14",
+		"s|@IMAGE_REGISTRY@|ghcr.io/$GITHUB_REPOSITORY_OWNER|g",
+		"actions: read",
+		"actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push",
+		"CI gate passed:",
+		"Build Packages blocked:",
+	)
+	requireRaw(t, "GitLab Build Packages", gitlabRelease,
+		"package-linux-amd64:",
+		"package-windows-amd64:",
+		"package-server-images:",
+		"promote-server-images:",
+		"publish-release:",
+		"expire_in: 14 days",
+		"GLAB_ENABLE_CI_AUTOLOGIN: \"true\"",
+		"image: $XDRIVE_CI_GLAB_IMAGE",
+	)
+	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
+		"snapshot-$short_sha",
+		"0.0.0-snapshot.$short_sha",
+		"XDRIVE_PROMOTION_TAG=\"edge\"",
+		"XDRIVE_PROMOTION_TAG=\"latest\"",
+		"--use-package-registry",
+		"--package-name xdrive-build-packages",
+		"XD_WINDOWS_SIGN_PFX_B64",
+		"Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD",
+		"s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g",
 	)
 }
 
