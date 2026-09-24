@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CopyOutlined, DeleteOutlined, LinkOutlined, LockOutlined } from '@ant-design/icons'
 import { Alert, Button, Form, Input, InputNumber, Modal, Space, Table, Tag, Typography, message } from 'antd'
-import { FileShare, Node, XDriveApi } from './api'
+import type { XDriveApi } from './api'
+import type { FileShare, Node } from '../../ui/shared/src'
 
 type ShareFormValues = {
   expiresAt?: string

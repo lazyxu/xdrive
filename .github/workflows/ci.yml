@@ -280,4 +280,4 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - name: Validate web image
-        run: docker build -t xdrive/web:test .
+        run: docker build -f Dockerfile -t xdrive/web:test ..
