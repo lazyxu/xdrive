@@ -28,14 +28,15 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ChangesEnvironment=yes
 CloseApplications=yes
-CloseApplicationsFilter=xdrive-agent.exe
+CloseApplicationsFilter=xdrive-agent.exe,xdrive-desktop.exe
 RestartApplications=no
-UninstallDisplayName=xDrive Client
+UninstallDisplayName=xDrive
 SetupIconFile={#SourceDir}\icons\tray-normal.ico
 
 [Files]
 Source: "{#SourceDir}\xd.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\xdrive-agent.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\desktop\*"; DestDir: "{app}\desktop"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -43,16 +44,21 @@ Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "xDriveAgent"; ValueData: """{app}\xdrive-agent.exe"""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\xd.exe"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xdrive-desktop.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\desktop\xdrive-desktop.exe"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xdrive-desktop.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}\desktop"
 
 [Icons]
+Name: "{group}\xDrive"; Filename: "{app}\desktop\xdrive-desktop.exe"; WorkingDir: "{app}\desktop"; AppUserModelID: "io.github.lazyxu.xdrive.desktop"
 Name: "{group}\xDrive README"; Filename: "{app}\README.md"
 Name: "{group}\Uninstall xDrive"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{app}\xdrive-agent.exe"; Description: "Start xDrive background agent"; Flags: nowait runhidden; Check: ShouldStartAgent
+Filename: "{app}\desktop\xdrive-desktop.exe"; Parameters: "--background"; Description: "Start xDrive Desktop in the background"; Flags: nowait runhidden; Check: ShouldStartDesktopBackground
+Filename: "{app}\desktop\xdrive-desktop.exe"; Description: "Open xDrive Desktop"; Flags: nowait postinstall skipifsilent; Check: ShouldStartDesktopForeground
 
 [UninstallRun]
-Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-agent.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveAgent"
+Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-desktop.exe /F >NUL 2>&1 & taskkill /IM xdrive-agent.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveProcesses"
 Filename: "{app}\xd.exe"; Parameters: "cleanup"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "CleanupXDriveSyncRoot"
 
 [Code]
@@ -66,17 +72,37 @@ begin
   Result := Pos(Needle, Haystack) > 0;
 end;
 
-function ShouldStartAgent(): Boolean;
+function HasCommandLineSwitch(const SwitchName: String): Boolean;
 var
   I: Integer;
 begin
-  Result := True;
+  Result := False;
   for I := 1 to ParamCount do begin
-    if CompareText(ParamStr(I), '/NOSTARTAGENT') = 0 then begin
-      Result := False;
+    if CompareText(ParamStr(I), SwitchName) = 0 then begin
+      Result := True;
       exit;
     end;
   end;
+end;
+
+function ShouldStartAgent(): Boolean;
+begin
+  Result := not HasCommandLineSwitch('/NOSTARTAGENT');
+end;
+
+function ShouldStartDesktop(): Boolean;
+begin
+  Result := not HasCommandLineSwitch('/NOSTARTDESKTOP');
+end;
+
+function ShouldStartDesktopBackground(): Boolean;
+begin
+  Result := ShouldStartDesktop() and WizardSilent();
+end;
+
+function ShouldStartDesktopForeground(): Boolean;
+begin
+  Result := ShouldStartDesktop() and not WizardSilent();
 end;
 
 procedure AddAppToPath;
@@ -120,7 +146,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM xdrive-agent.exe /F >NUL 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM xdrive-desktop.exe /F >NUL 2>&1 & taskkill /IM xdrive-agent.exe /F >NUL 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
 end;
 

@@ -95,6 +95,11 @@ go-linux:
       command -v dpkg-deb >/dev/null
       command -v python3 >/dev/null
       command -v curl >/dev/null
+      node_major="$(node -p 'process.versions.node.split(".")[0]')"
+      if [[ "$node_major" != "22" ]]; then
+        echo "Node.js 22 is required; found $(node --version)." >&2
+        exit 1
+      fi
 
       pg_container="xdrive-ci-postgres-$CI_JOB_ID"
       cleanup_postgres() {
@@ -141,9 +146,17 @@ go-linux:
       go vet ./...
       go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
 
-      bash scripts/build-linux-deb.sh 0.0.0+ci dist
+      pushd desktop >/dev/null
+      npm install --no-audit --no-fund
+      node scripts/set-version.mjs 0.0.0-ci
+      npm run dist:linux
+      popd >/dev/null
+      bash scripts/build-linux-deb.sh 0.0.0+ci dist desktop/release/xdrive-desktop-linux-amd64.deb
       dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-updater'
       dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/lib/systemd/system/xdrive-update.timer'
+      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'xdrive-desktop'
+      dpkg-deb --field dist/xdrive-client-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
+      dpkg-deb --field dist/xdrive-client-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
 
       export POSTGRES_PASSWORD=ci-postgres-password
       export XD_JWT_SECRET=ci-jwt-secret-that-is-long-enough
@@ -251,6 +264,8 @@ go-windows:
 
       $goVersion = (& go version).Trim()
       if ($goVersion -notmatch 'go1\.25(\.| )') { throw "Go 1.25.x is required; found $goVersion" }
+      $nodeMajor = [int]((& node -p "process.versions.node.split('.')[0]").Trim())
+      if ($nodeMajor -ne 22) { throw "Node.js 22 is required; found $(node --version)" }
 
       go mod tidy
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -281,13 +296,25 @@ go-windows:
       Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
       $env:XD_WINDOWS_SIGN_PFX_PATH = $pfx
       $env:XD_WINDOWS_SIGN_PFX_PASSWORD = $password
+      $env:CSC_LINK = $pfx
+      $env:CSC_KEY_PASSWORD = $password
 
-      ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -TimestampUrl "" -SkipSignatureTrustCheck
+      Push-Location desktop
+      npm install --no-audit --no-fund
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      node scripts/set-version.mjs 0.0.0-ci
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      npm run dist:win
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      Pop-Location
+
+      ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       $targets = @(
         "./dist/windows-build/xd.exe",
         "./dist/windows-build/xdrive-agent.exe",
+        "./dist/windows-build/desktop/xdrive-desktop.exe",
         "./dist/xDriveSetup-amd64.exe"
       )
       foreach ($target in $targets) {
@@ -303,18 +330,15 @@ go-windows:
       if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
 
       $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
-      $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT")
+      $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
       $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
       if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
 
       $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
       if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
       if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
-      foreach ($state in @("normal", "syncing", "paused", "offline", "conflict")) {
-        if (-not (Test-Path (Join-Path $app "icons\tray-$state.ico"))) {
-          throw "installed tray icon missing: $state"
-        }
-      }
+      if (-not (Test-Path (Join-Path $app "desktop\xdrive-desktop.exe"))) { throw "installed Electron desktop missing" }
+      if (Test-Path (Join-Path $app "icons")) { throw "runtime tray icons must not be installed" }
       $shortcutRoots = @(
         (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
         (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")

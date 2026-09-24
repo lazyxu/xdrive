@@ -1,6 +1,7 @@
 param(
     [string]$Version = "0.0.0-dev",
     [string]$OutputDir = "dist",
+    [string]$DesktopSourceDir = "",
     [string]$SigningPfxPath = $env:XD_WINDOWS_SIGN_PFX_PATH,
     [string]$SigningPassword = $env:XD_WINDOWS_SIGN_PFX_PASSWORD,
     [string]$TimestampUrl = "http://timestamp.digicert.com",
@@ -11,8 +12,22 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Output = [System.IO.Path]::GetFullPath((Join-Path $Root $OutputDir))
 $Source = Join-Path $Output "windows-build"
+if (Test-Path $Source) {
+    Remove-Item -Recurse -Force $Source
+}
 New-Item -ItemType Directory -Force $Source | Out-Null
 New-Item -ItemType Directory -Force $Output | Out-Null
+
+if ([string]::IsNullOrWhiteSpace($DesktopSourceDir)) {
+    $DesktopSourceDir = Join-Path $Root "desktop\release\win-unpacked"
+} elseif (-not [System.IO.Path]::IsPathRooted($DesktopSourceDir)) {
+    $DesktopSourceDir = Join-Path $Root $DesktopSourceDir
+}
+$DesktopSourceDir = [System.IO.Path]::GetFullPath($DesktopSourceDir)
+$DesktopExe = Join-Path $DesktopSourceDir "xdrive-desktop.exe"
+if (-not (Test-Path $DesktopExe)) {
+    throw "Electron desktop runtime is missing: $DesktopExe. Build desktop/release/win-unpacked first."
+}
 
 function Find-SignTool {
     $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
@@ -113,6 +128,14 @@ try {
     }
     New-Item -ItemType Directory -Force $IconTarget | Out-Null
     Copy-Item $IconSource (Join-Path $IconTarget "tray-normal.ico")
+
+    $DesktopTarget = Join-Path $Source "desktop"
+    New-Item -ItemType Directory -Force $DesktopTarget | Out-Null
+    Copy-Item (Join-Path $DesktopSourceDir "*") $DesktopTarget -Recurse -Force
+
+    if (-not (Test-Path (Join-Path $DesktopTarget "xdrive-desktop.exe"))) {
+        throw "copying Electron desktop runtime failed"
+    }
 
     Copy-Item README.md, LICENSE $Source
 } finally {

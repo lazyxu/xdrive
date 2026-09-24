@@ -38,7 +38,10 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - name: Build Linux client installer
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build Linux unified client installer
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +50,17 @@ jobs:
           else
             version="snapshot-${GITHUB_SHA::12}"
           fi
-          bash scripts/build-linux-deb.sh "$version" release
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            desktop_version="${GITHUB_REF_NAME#v}"
+          else
+            desktop_version="0.0.0-snapshot.${GITHUB_SHA::12}"
+          fi
+          pushd desktop >/dev/null
+          npm install --no-audit --no-fund
+          node scripts/set-version.mjs "$desktop_version"
+          npm run dist:linux
+          popd >/dev/null
+          bash scripts/build-linux-deb.sh "$version" release desktop/release/xdrive-desktop-linux-amd64.deb
       - uses: actions/upload-artifact@v4
         with:
           name: client-linux-amd64
@@ -67,6 +80,9 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -77,7 +93,21 @@ jobs:
           $path = Join-Path $env:RUNNER_TEMP "xdrive-codesign.pfx"
           [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
           "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Build Windows client installer
+          "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CSC_KEY_PASSWORD=$env:XD_WINDOWS_SIGN_PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build embedded Windows desktop runtime
+        shell: pwsh
+        working-directory: desktop
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = "0.0.0-snapshot." + $env:GITHUB_SHA.Substring(0, 12)
+          }
+          npm install --no-audit --no-fund
+          node scripts/set-version.mjs $version
+          npm run dist:win
+      - name: Build Windows unified client installer
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_TYPE -eq "tag") {
@@ -88,7 +118,7 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PATH)) {
             throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
           }
-          ./scripts/build-windows-installer.ps1 -Version $version -OutputDir release
+          ./scripts/build-windows-installer.ps1 -Version $version -OutputDir release -DesktopSourceDir desktop/release/win-unpacked
       - name: Verify Windows Authenticode signatures
         if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
         shell: pwsh
@@ -96,6 +126,7 @@ jobs:
           $targets = @(
             "./release/windows-build/xd.exe",
             "./release/windows-build/xdrive-agent.exe",
+            "./release/windows-build/desktop/xdrive-desktop.exe",
             "./release/xDriveSetup-amd64.exe"
           )
           foreach ($target in $targets) {

@@ -3,6 +3,7 @@ set -euo pipefail
 
 VERSION="${1:-0.0.0+dev}"
 OUT_DIR="${2:-dist}"
+DESKTOP_DEB="${3:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 case "$VERSION" in
@@ -13,6 +14,21 @@ esac
 
 PKG_ROOT="$(mktemp -d)"
 trap 'rm -rf "$PKG_ROOT"' EXIT
+
+if [[ -z "$DESKTOP_DEB" ]]; then
+  DESKTOP_DEB="$ROOT/desktop/release/xdrive-desktop-linux-amd64.deb"
+elif [[ "$DESKTOP_DEB" != /* ]]; then
+  DESKTOP_DEB="$ROOT/$DESKTOP_DEB"
+fi
+if [[ ! -f "$DESKTOP_DEB" ]]; then
+  echo "Electron desktop package is required: $DESKTOP_DEB" >&2
+  echo "Build desktop/release/xdrive-desktop-linux-amd64.deb first or pass it as the third argument." >&2
+  exit 1
+fi
+
+DESKTOP_DEPENDS="$(dpkg-deb -f "$DESKTOP_DEB" Depends 2>/dev/null || true)"
+dpkg-deb -x "$DESKTOP_DEB" "$PKG_ROOT"
+
 mkdir -p   "$PKG_ROOT/DEBIAN"   "$PKG_ROOT/usr/bin"   "$PKG_ROOT/usr/lib/systemd/user"   "$PKG_ROOT/usr/lib/systemd/system"   "$PKG_ROOT/usr/share/doc/xdrive-client"
 
 VERSION_LDFLAG="-X github.com/lazyxu/xdrive/internal/version.Version=$VERSION"
@@ -36,12 +52,15 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: xDrive Project <noreply@github.com>
-Depends: fuse3, ca-certificates
+Depends: fuse3, ca-certificates${DESKTOP_DEPENDS:+, $DESKTOP_DEPENDS}
 Recommends: libsecret-tools
+Conflicts: xdrive-desktop
+Replaces: xdrive-desktop
+Provides: xdrive-desktop
 Homepage: https://github.com/lazyxu/xdrive
-Description: xDrive Linux client
+Description: xDrive Linux desktop client
  Mount an xDrive server as a local filesystem using FUSE.
- Includes xd, the optional user mount agent, and the channel-aware automatic updater.
+ Includes xDrive Desktop, xd, the background agent, and the channel-aware automatic updater.
 CONTROL
 
 cat > "$PKG_ROOT/DEBIAN/postinst" <<'POSTINST'
@@ -51,9 +70,9 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable --now xdrive-update.timer >/dev/null 2>&1 || true
 fi
-printf '%s\n' 'xDrive client installed.'
-printf '%s\n' 'Login with: xd login --server URL --username USER --password PASS'
-printf '%s\n' 'Optional background mount: systemctl --user enable --now xdrive-agent'
+printf '%s\n' 'xDrive Desktop, background agent, and xd CLI installed.'
+printf '%s\n' 'Open xDrive Desktop from the applications menu, or login with xd from a terminal.'
+printf '%s\n' 'The Desktop starts at login by default and keeps the background agent healthy.'
 printf '%s\n' 'Updates are checked automatically: stable builds follow stable; snapshot builds follow master.'
 printf '%s\n' 'Pin a commit with XD_UPDATE_CHANNEL=commit and XD_UPDATE_COMMIT=<sha>.'
 exit 0
