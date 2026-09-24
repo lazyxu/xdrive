@@ -1,0 +1,35 @@
+appId: io.github.lazyxu.xdrive.desktop
+productName: xDrive Desktop
+asar: true
+npmRebuild: false
+directories:
+  output: release
+files:
+  - dist/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  executableName: xdrive-desktop
+  artifactName: xDriveDesktopSetup-amd64.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+linux:
+  target:
+    - target: deb
+      arch:
+        - x64
+  executableName: xdrive-desktop
+  artifactName: xdrive-desktop-linux-amd64.${ext}
+  category: Utility
+  synopsis: xDrive desktop shell
+  description: xDrive Electron desktop shell. Phase 2 provides only the desktop window, tray, and secure preload bridge; it does not connect to the xDrive agent yet.
+deb:
+  packageName: xdrive-desktop
+  priority: optional
+  maintainer: xDrive Project <noreply@github.com>
