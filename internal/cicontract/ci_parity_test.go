@@ -105,6 +105,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	requireRaw(t, "GitHub CI", githubRaw,
 		"pull_request:",
+		"push:",
 		"branches: [\"master\"]",
 		"workflow_dispatch:",
 		"cancel-in-progress: true",
@@ -112,6 +113,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "GitLab CI", gitlabRaw,
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
+		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH == \"master\"",
 		"$CI_PIPELINE_SOURCE == \"web\"",
 		"on_new_commit: interruptible",
 		"interruptible: true",
@@ -200,7 +202,7 @@ func assertRunnerParity(t *testing.T, github, gitlab map[string]any, expected ma
 		if !ok || len(tagValues) != 1 {
 			t.Fatalf("GitLab job %s tags=%v, want one platform tag", jobName, gitlabJob["tags"])
 		}
-		wantTag := "$XD_GITLAB_" + strings.ToUpper(platform) + "_RUNNER_TAG"
+		wantTag := platform
 		if got := fmt.Sprint(tagValues[0]); got != wantTag {
 			t.Errorf("GitLab job %s tag=%q want=%q", jobName, got, wantTag)
 		}
