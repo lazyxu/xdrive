@@ -96,6 +96,11 @@ grep -q '\[PASS\] Docker' "$TMP/report"
 grep -q '\[PASS\] PostgreSQL auth' "$TMP/report"
 grep -q '\[PASS\] TLS/local HTTPS' "$TMP/report"
 grep -q '/api/v1/readyz' "$TMP/state/curl-args"
+grep -q 'https://api.github.com/' "$TMP/state/curl-args"
+grep -q 'https://github.com/' "$TMP/state/curl-args"
+grep -q 'https://release-assets.githubusercontent.com/' "$TMP/state/curl-args"
+grep -q 'https://ghcr.io/v2/' "$TMP/state/curl-args"
+grep -q 'https://pkg-containers.githubusercontent.com/' "$TMP/state/curl-args"
 grep -q 'summary:' "$TMP/report"
 
 for secret in super-secret-db-password super-secret-jwt super-secret-alidns token-should-not-leak db-password-should-not-leak refresh-should-not-leak env-should-not-leak; do

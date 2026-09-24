@@ -90,6 +90,15 @@ bash "$tmp" --channel master
 bash "$tmp" --channel commit --commit 0123456789ab
 ```
 
+For weak/regionally constrained registry connectivity, xDrive can use an alternate registry namespace for its own three images:
+
+```bash
+XD_IMAGE_REGISTRY=registry.example.com/xdrive \
+bash "$tmp" --channel master
+```
+
+The value is persisted as `XD_IMAGE_REGISTRY` and produces `<registry>/xdrive-server`, `<registry>/xdrive-web`, and `<registry>/xdrive-caddy`. PostgreSQL defaults to `postgres:17-alpine` and can be redirected separately with `XD_POSTGRES_IMAGE`. Docker pulls are performed by the **Docker daemon**, so a shell-level `HTTPS_PROXY` is not sufficient on many hosts; configure the Docker daemon proxy when a proxy is required.
+
 For a fully non-interactive public deployment, export the deployment variables before executing the downloaded installer:
 
 ```bash
@@ -129,7 +138,7 @@ The host manager downloads the latest bootstrap installer to a temporary file, v
 
 For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag. Releases also publish the standalone host manager asset `xdrive-server`.
 
-Upgrades are serialized with an exclusive `flock` lock. Existing deployments enter a maintenance window after the pre-upgrade backup: public Web/Caddy containers are stopped, the new API is started and health-checked before public services are reopened, and deployment files are treated as a transaction. If the new API fails after migration/startup begins, xDrive restores the verified pre-upgrade database/blob backup plus the previous deployment files and images. Failures before the database is touched restore deployment state only. Docker pull's noisy per-layer output is captured to a private log; the terminal shows concise xDrive transfer summaries instead. If rollback itself cannot complete, the transaction state is retained under `~/.xd/.upgrade-transaction` for manual recovery.
+Upgrades are serialized with an exclusive `flock` lock. Existing deployments enter a maintenance window after the pre-upgrade backup: public Web/Caddy containers are stopped, the new API is started and health-checked before public services are reopened, and deployment files are treated as a transaction. If the new API fails after migration/startup begins, xDrive restores the verified pre-upgrade database/blob backup plus the previous deployment files and images. Failures before the database is touched restore deployment state only. Container images are pulled **one service at a time** so a transient failure retries only the affected service. On Docker Compose versions with JSON progress support, the terminal shows real downloaded bytes / known total bytes / percentage / current rate for that service while raw Docker events remain in the private pull log. Older Compose versions fall back to host RX reporting. If rollback itself cannot complete, the transaction state is retained under `~/.xd/.upgrade-transaction` for manual recovery.
 
 The installer:
 
@@ -139,7 +148,7 @@ The installer:
 4. stages the new Compose/Caddy/maintenance files and host manager;
 5. on upgrades, creates a verified **pre-upgrade backup before replacing deployment files** without creating/recreating the formal server service;
 6. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
-7. pulls the xDrive server/Web images and, when a domain is configured, the `xdrive-caddy` image containing the AliDNS plugin;
+7. pulls PostgreSQL plus the xDrive server/Web images one service at a time and, when a domain is configured, the `xdrive-caddy` image containing the AliDNS plugin;
 8. starts PostgreSQL, waits for database/API/Web health checks, and applies log rotation plus CPU/memory/PID limits;
 9. for a public domain, obtains/renews the TLS certificate through AliDNS DNS-01 and waits until the real HTTPS health endpoint succeeds on `XD_HTTPS_PORT`;
 10. installs a scheduled backup job when `crontab` is available, with retention and overlap protection;
@@ -496,7 +505,7 @@ Windows and Linux clients use the same three release channels as the server:
 - **master** — latest fully successful master build from the rolling `snapshot` prerelease;
 - **commit** — an immutable successfully published master build identified by commit SHA and released as `snapshot-<sha12>`.
 
-Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before any installation, the client downloads `SHA256SUMS.txt` from the same release and verifies the installer/package checksum. Interactive/manual updates print five stages (check, checksum, download, verify, install); installer downloads report bytes, percentage, current transfer rate, and elapsed time. The short metadata timeout is not used as the total installer download deadline.
+Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before installation, the client prefers the SHA-256 digest and exact asset size already returned by the GitHub Release API; legacy releases without a digest fall back to `SHA256SUMS.txt`. Release assets are downloaded from the GitHub asset API first and the browser download URL second. Interactive/manual updates print five stages (check, checksum, download, verify, install), show the target installer/package size before transfer, and report downloaded bytes / total / percentage / current rate / elapsed time during transfer. Partial files are kept as `.part` files and resumed with HTTP Range across retries **and across a later rerun of the update command**, so a weak connection no longer forces a large installer back to byte zero. Metadata and checksum requests also retry with backoff. The short metadata timeout is not used as the total installer download deadline.
 
 **Windows:** the background agent checks after startup and then about every 6 hours. Stable builds follow stable; snapshot builds follow master. When an update exists it verifies `xDriveSetup-amd64.exe`, launches it silently, exits, and the updated installer starts the agent again.
 
@@ -517,6 +526,14 @@ xd doctor
 `xd doctor` produces a copy/paste-safe client report with version/update channel, GitHub update metadata reachability, local config, credential backend, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks CfAPI sync-root registration and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
 
 For a persistent pinned commit target, set both `XD_UPDATE_CHANNEL=commit` and `XD_UPDATE_COMMIT=<sha>` in the updater environment. `XD_UPDATE_CHANNEL=stable|master` can also override the build's default channel. On Linux a manual root update can use `sudo xdrive-updater --channel ...`.
+
+For restricted or high-latency networks, the updater honors the standard `HTTPS_PROXY` environment used by Go's HTTP transport. A regional/custom asset mirror can be configured with:
+
+```text
+XD_UPDATE_ASSET_MIRROR=https://mirror.example.com/xdrive
+```
+
+The mirror contract is `<base>/<release-tag>/<asset-name>`; it is tried before the GitHub asset API and browser download URL, while SHA-256 verification remains mandatory. `XD_UPDATE_API_BASE` can additionally point metadata/API requests at a compatible GitHub API proxy.
 
 Set `XD_DISABLE_AUTO_UPDATE=1` to disable the Windows agent's automatic update checks.
 

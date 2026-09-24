@@ -137,10 +137,6 @@ set -euo pipefail
 args="$*"
 printf '%s\n' "$args" >> "$TEST_STATE/docker-calls"
 
-if [[ "$1" == "compose" && "$2" == "version" ]]; then
-  exit 0
-fi
-
 if [[ "$1" == "inspect" ]]; then
   exit 1
 fi
@@ -150,7 +146,6 @@ if [[ "$1" == "stop" ]]; then
 fi
 
 if [[ "$1" == "ps" ]]; then
-  # managed_container_id label fallback: no matching legacy container here.
   exit 0
 fi
 
@@ -159,15 +154,20 @@ if [[ "$1" != "compose" ]]; then
   exit 9
 fi
 
+progress_mode=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     compose) shift ;;
-    --profile|--env-file|-f|--progress) shift 2 ;;
+    --profile|--env-file|-f) shift 2 ;;
+    --progress) progress_mode="$2"; shift 2 ;;
     *) break ;;
   esac
 done
 
 case "$1" in
+  version)
+    exit 0
+    ;;
   ps)
     if [[ "$args" == *"ps -aq server"* ]]; then
       echo "old-server"
@@ -175,18 +175,24 @@ case "$1" in
     exit 0
     ;;
   pull)
-    count="$(cat "$TEST_STATE/pull-count" 2>/dev/null || echo 0)"
+    service="${2:-all}"
+    count_file="$TEST_STATE/pull-count-$service"
+    count="$(cat "$count_file" 2>/dev/null || echo 0)"
     count=$((count + 1))
-    printf '%s\n' "$count" > "$TEST_STATE/pull-count"
+    printf '%s\n' "$count" > "$count_file"
     mode="${TEST_PULL_MODE:-success}"
-    if [[ "$mode" == "permanent" || ( "$mode" == "transient" && "$count" -lt 3 ) ]]; then
+    if [[ "$mode" == "permanent" || ( "$mode" == "transient" && "$service" == "postgres" && "$count" -lt 3 ) ]]; then
       echo "failed to copy: read tcp: connection reset by peer" >&2
       exit 1
     fi
-    # Simulate repetitive Docker progress that must stay in the private log.
-    for _ in 1 2 3 4 5; do
+    if [[ "$progress_mode" == "json" ]]; then
+      printf '%s\n' \
+        '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","details":"1 KiB","current":1024,"total":4096,"percent":25}' \
+        '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","details":"4 KiB","current":4096,"total":4096,"percent":100}' \
+        '{"id":"layer-a","parent_id":"Image mock","status":"done","text":"Download complete","percent":100}'
+    else
       echo "ff96944839b7 Downloading 3.146MB"
-    done
+    fi
     exit 0
     ;;
   up)
@@ -234,7 +240,7 @@ for script in server-backup.sh server-backup-scheduled.sh server-restore.sh serv
 done
 
 set +e
-rm -f "$TMP/state/pull-count"
+rm -f "$TMP/state"/pull-count-*
 TEST_STATE="$TMP/state" \
 TEST_PULL_MODE=transient \
 TEST_HEALTH_OK=0 \
@@ -257,9 +263,13 @@ grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/
 grep -q '^XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-oldoldoldold$' "$TMP/config/.env"
 grep -q '^XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-oldoldoldold$' "$TMP/config/.env"
 test ! -d "$TMP/config/.upgrade-transaction"
-[[ "$(cat "$TMP/state/pull-count")" == "3" ]]
-grep -q 'container image pull attempt 3/3' "$TMP/upgrade.out"
-grep -q 'container image pull failed; retrying' "$TMP/upgrade.err"
+[[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
+[[ "$(cat "$TMP/state/pull-count-server")" == "1" ]]
+[[ "$(cat "$TMP/state/pull-count-web")" == "1" ]]
+grep -q 'pull postgres attempt 3/3' "$TMP/upgrade.out"
+grep -q 'pull postgres failed; retrying' "$TMP/upgrade.err"
+grep -q 'pull postgres.*1.0 KiB / 4.0 KiB (25%)' "$TMP/upgrade.out"
+grep -q 'pull postgres.*4.0 KiB / 4.0 KiB (100%)' "$TMP/upgrade.out"
 test -x "$TMP/config/xdrive-server"
 test -x "$TMP/config/server-doctor.sh"
 test -L "$TMP/host-bin/xdrive-server"
@@ -267,8 +277,8 @@ test -L "$TMP/host-bin/xdrive-server"
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/upgrade.err"
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
-if grep -q 'Downloading 3.146MB' "$TMP/upgrade.out" || grep -q 'Downloading 3.146MB' "$TMP/upgrade.err"; then
-  echo "raw Docker pull progress leaked into user output" >&2
+if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then
+  echo "raw Docker JSON progress leaked into user output" >&2
   exit 1
 fi
 
@@ -276,7 +286,7 @@ fi
 # any new application container or migration is started. Rollback must restore
 # the old deployment without a database restore and must keep the host manager
 # available for another xdrive-server update.
-rm -f "$TMP/state/pull-count" "$TMP/state/data-restored"
+rm -f "$TMP/state"/pull-count-* "$TMP/state/data-restored"
 set +e
 TEST_STATE="$TMP/state" \
 TEST_PULL_MODE=permanent \
@@ -292,8 +302,10 @@ pull_fail_status=$?
 set -e
 
 [[ "$pull_fail_status" -ne 0 ]]
-[[ "$(cat "$TMP/state/pull-count")" == "3" ]]
-grep -q 'container pull failed after 3 attempts' "$TMP/pull-fail.err"
+[[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
+test ! -f "$TMP/state/pull-count-server"
+test ! -f "$TMP/state/pull-count-web"
+grep -q 'pull postgres failed after 3 attempts' "$TMP/pull-fail.err"
 grep -q 'database restore not required for this failure point' "$TMP/pull-fail.err"
 grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/pull-fail.err"
 test ! -f "$TMP/state/data-restored"

@@ -149,4 +149,27 @@ if grep -q '/releases/download/.*/xdrive-server-install.sh' "$TMP/state/urls"; t
   exit 1
 fi
 
+mkdir -p "$TMP/mirror"
+export XD_IMAGE_REGISTRY=registry.example.test/team
+run_case mirror --channel master
+unset XD_IMAGE_REGISTRY
+[[ "$(env_value "$TMP/mirror" XD_IMAGE_REGISTRY)" == "registry.example.test/team" ]]
+[[ "$(env_value "$TMP/mirror" XD_SERVER_IMAGE)" == "registry.example.test/team/xdrive-server:sha-$SHORT_SHA" ]]
+[[ "$(env_value "$TMP/mirror" XD_WEB_IMAGE)" == "registry.example.test/team/xdrive-web:sha-$SHORT_SHA" ]]
+[[ "$(env_value "$TMP/mirror" XD_CADDY_IMAGE)" == "registry.example.test/team/xdrive-caddy:sha-$SHORT_SHA" ]]
+
+
+set +e
+XD_IMAGE_REGISTRY=https://registry.example.test/team \
+  XDRIVE_TEST_STATE="$TMP/state" \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$TMP/invalid-registry" \
+  XD_NONINTERACTIVE=1 \
+  XD_INSTALL_NO_START=1 \
+  bash "$INSTALLER" --channel master >"$TMP/invalid-registry.out" 2>"$TMP/invalid-registry.err"
+invalid_registry_status=$?
+set -e
+[[ "$invalid_registry_status" -ne 0 ]]
+grep -q 'XD_IMAGE_REGISTRY must be a registry namespace without a URL scheme' "$TMP/invalid-registry.err"
+
 echo "server update channel resolution tests passed"
