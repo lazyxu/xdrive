@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,14 +16,26 @@ import (
 	"github.com/lazyxu/xdrive/internal/secretstore"
 )
 
+const (
+	SyncModeExclude     = "exclude"
+	SyncModeAlwaysLocal = "always-local"
+)
+
+type SyncRule struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+}
+
 type Config struct {
-	Server             string `json:"server"`
-	SessionID          string `json:"session_id,omitempty"`
-	Username           string `json:"username"`
-	Role               string `json:"role,omitempty"`
-	MustChangePassword bool   `json:"must_change_password,omitempty"`
-	MountPath          string `json:"mount_path,omitempty"`
-	Paused             bool   `json:"paused,omitempty"`
+	Server             string     `json:"server"`
+	SessionID          string     `json:"session_id,omitempty"`
+	Username           string     `json:"username"`
+	Role               string     `json:"role,omitempty"`
+	MustChangePassword bool       `json:"must_change_password,omitempty"`
+	MountPath          string     `json:"mount_path,omitempty"`
+	Paused             bool       `json:"paused,omitempty"`
+	SyncRules          []SyncRule `json:"sync_rules,omitempty"`
+	CacheLimitBytes    int64      `json:"cache_limit_bytes,omitempty"`
 
 	// Legacy plaintext fields are retained only for one-time migration.
 	Token            string    `json:"token,omitempty"`
@@ -54,6 +68,9 @@ func Load() (Config, error) {
 	}
 	cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
 	cfg.Username = strings.TrimSpace(cfg.Username)
+	if err := normalizeStoragePolicy(&cfg); err != nil {
+		return Config{}, fmt.Errorf("invalid storage policy: %w", err)
+	}
 	if cfg.AccessToken == "" {
 		cfg.AccessToken = cfg.Token
 	}
@@ -89,6 +106,9 @@ func Load() (Config, error) {
 func Save(cfg Config) error {
 	cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
 	cfg.Username = strings.TrimSpace(cfg.Username)
+	if err := normalizeStoragePolicy(&cfg); err != nil {
+		return err
+	}
 	if cfg.Server == "" || cfg.SessionID == "" {
 		return fmt.Errorf("server and session id are required")
 	}
@@ -262,6 +282,84 @@ func credentialLabel(cfg Config) string {
 		return "xDrive"
 	}
 	return "xDrive " + cfg.Username + " @ " + cfg.Server
+}
+
+func normalizeStoragePolicy(cfg *Config) error {
+	if cfg.CacheLimitBytes < 0 {
+		return fmt.Errorf("cache limit must be zero or greater")
+	}
+	seen := make(map[string]int)
+	rules := make([]SyncRule, 0, len(cfg.SyncRules))
+	for _, rule := range cfg.SyncRules {
+		clean, err := NormalizeSyncRulePath(rule.Path)
+		if err != nil {
+			return err
+		}
+		mode := strings.TrimSpace(rule.Mode)
+		if mode != SyncModeExclude && mode != SyncModeAlwaysLocal {
+			return fmt.Errorf("invalid sync rule mode %q", rule.Mode)
+		}
+		key := strings.ToLower(clean)
+		if index, ok := seen[key]; ok {
+			rules[index] = SyncRule{Path: clean, Mode: mode}
+			continue
+		}
+		seen[key] = len(rules)
+		rules = append(rules, SyncRule{Path: clean, Mode: mode})
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		li, lj := strings.ToLower(rules[i].Path), strings.ToLower(rules[j].Path)
+		if li == lj {
+			return rules[i].Mode < rules[j].Mode
+		}
+		return li < lj
+	})
+	for _, rule := range rules {
+		if rule.Mode != SyncModeAlwaysLocal {
+			continue
+		}
+		for _, parent := range rules {
+			if parent.Mode != SyncModeExclude || strings.EqualFold(parent.Path, rule.Path) {
+				continue
+			}
+			if pathContains(parent.Path, rule.Path) {
+				return fmt.Errorf("always-local path %q is inside excluded path %q", rule.Path, parent.Path)
+			}
+		}
+	}
+	cfg.SyncRules = rules
+	return nil
+}
+
+func NormalizeSyncRulePath(value string) (string, error) {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if value == "" {
+		return "", fmt.Errorf("sync rule path is required")
+	}
+	clean := pathpkg.Clean(value)
+	if clean == "." || clean == "/" || strings.HasPrefix(clean, "/") ||
+		clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("sync rule path must be a relative path inside xDrive")
+	}
+	if strings.Contains(clean, ":") {
+		return "", fmt.Errorf("sync rule path must not contain a drive prefix")
+	}
+	return strings.Trim(clean, "/"), nil
+}
+
+func pathContains(parent, child string) bool {
+	parent = strings.ToLower(strings.Trim(parent, "/"))
+	child = strings.ToLower(strings.Trim(child, "/"))
+	return child == parent || strings.HasPrefix(child, parent+"/")
+}
+
+func (cfg Config) StoragePolicyKey() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "cache=%d;", cfg.CacheLimitBytes)
+	for _, rule := range cfg.SyncRules {
+		fmt.Fprintf(&b, "%s=%s;", strings.ToLower(rule.Path), rule.Mode)
+	}
+	return b.String()
 }
 
 func clearLegacySecrets(cfg *Config) {

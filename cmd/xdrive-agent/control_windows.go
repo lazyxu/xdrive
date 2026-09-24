@@ -6,12 +6,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"html/template"
 	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
+	"strings"
 	"time"
+
+	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
 type localControl struct {
@@ -48,6 +52,8 @@ func startControlUI(ctx context.Context, ctrl *agentController) (controlUI, erro
 	mux.HandleFunc("/pause", handler.pause)
 	mux.HandleFunc("/sync", handler.sync)
 	mux.HandleFunc("/file", handler.fileAction)
+	mux.HandleFunc("/policy", handler.policy)
+	mux.HandleFunc("/cache", handler.cache)
 	mux.HandleFunc("/conflict/open", handler.conflictOpen)
 	mux.HandleFunc("/conflict/resolve", handler.conflictResolve)
 	mux.HandleFunc("/logout", handler.logout)
@@ -100,6 +106,16 @@ func (h *controlHandler) index(w http.ResponseWriter, r *http.Request) {
 		Paused: s.Paused, MustChangePassword: s.MustChangePassword,
 		LastError: s.LastError, Version: s.Version, Message: r.URL.Query().Get("message"),
 		ConflictCount: s.ConflictCount,
+	}
+	if cfg, err := userconfig.Load(); err == nil {
+		data.CacheLimitGiB = formatCacheGiB(cfg.CacheLimitBytes)
+		for _, rule := range cfg.SyncRules {
+			label := "始终保留在此设备"
+			if rule.Mode == userconfig.SyncModeExclude {
+				label = "此设备不同步"
+			}
+			data.SyncRules = append(data.SyncRules, syncRulePageItem{Path: rule.Path, Mode: rule.Mode, Label: label})
+		}
 	}
 	if s.Configured {
 		path := r.URL.Query().Get("file")
@@ -238,6 +254,44 @@ func (h *controlHandler) fileAction(w http.ResponseWriter, r *http.Request) {
 	h.redirect(w, r, message)
 }
 
+func (h *controlHandler) policy(w http.ResponseWriter, r *http.Request) {
+	if !h.parse(w, r) {
+		return
+	}
+	mode := strings.TrimSpace(r.FormValue("mode"))
+	if err := h.ctrl.SetSelectiveSyncRule(r.FormValue("rule_path"), mode); err != nil {
+		h.redirect(w, r, "选择性同步设置失败："+err.Error())
+		return
+	}
+	message := "已移除目录级规则；现有本地内容保持不变，可按需使用“释放空间”。"
+	switch mode {
+	case userconfig.SyncModeExclude:
+		message = "此目录已设为本设备不同步；云端内容不会被删除。"
+	case userconfig.SyncModeAlwaysLocal:
+		message = "此目录已设为始终保留在此设备。"
+	}
+	h.redirect(w, r, message)
+}
+
+func (h *controlHandler) cache(w http.ResponseWriter, r *http.Request) {
+	if !h.parse(w, r) {
+		return
+	}
+	if err := h.ctrl.SetCacheLimitGiB(r.FormValue("cache_gib")); err != nil {
+		h.redirect(w, r, "缓存策略设置失败："+err.Error())
+		return
+	}
+	h.redirect(w, r, "本地缓存上限已更新；0 表示不限制。")
+}
+
+func formatCacheGiB(bytes int64) string {
+	if bytes <= 0 {
+		return "0"
+	}
+	value := float64(bytes) / float64(int64(1)<<30)
+	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", value), "0"), ".")
+}
+
 func (h *controlHandler) conflictOpen(w http.ResponseWriter, r *http.Request) {
 	if !h.parse(w, r) {
 		return
@@ -294,6 +348,12 @@ type conflictPageItem struct {
 	Created      string
 }
 
+type syncRulePageItem struct {
+	Path  string
+	Mode  string
+	Label string
+}
+
 type controlPageData struct {
 	Token              string
 	Configured         bool
@@ -310,6 +370,8 @@ type controlPageData struct {
 	ConflictCount      int
 	FilePath           string
 	FileState          string
+	SyncRules          []syncRulePageItem
+	CacheLimitGiB      string
 	Conflicts          []conflictPageItem
 }
 
@@ -361,6 +423,26 @@ form.inline{display:inline}.footer{font-size:12px;color:#98a2b3;margin-top:18px}
 <button class="secondary" name="action" value="online" type="submit">仅在线</button>
 <button class="secondary" name="action" value="sync" type="submit">立即同步</button>
 </div></form>
+</div>
+
+<div class="card"><h2>选择性同步与本地缓存</h2>
+<p class="muted">规则使用 xDrive 根目录内的相对路径。排除目录前会验证本地内容已经安全同步；始终保留目录不会被缓存 LRU 自动释放。</p>
+<form method="post" action="/policy?token={{.Token}}">
+<label>目录路径（可输入相对路径，例如 Projects\Archive，或完整 xDrive 路径）</label><input name="rule_path" required placeholder="Projects\Archive">
+<div class="actions">
+<button class="secondary" name="mode" value="exclude" type="submit">此设备不同步</button>
+<button name="mode" value="always-local" type="submit">始终保留在此设备</button>
+<button class="secondary" name="mode" value="default" type="submit">恢复默认</button>
+</div></form>
+{{if .SyncRules}}<div style="margin-top:18px">
+{{range .SyncRules}}<div class="conflict"><div><strong class="path">{{.Path}}</strong> <span class="badge">{{.Label}}</span></div>
+<form class="inline" method="post" action="/policy?token={{$.Token}}"><input type="hidden" name="rule_path" value="{{.Path}}"><input type="hidden" name="mode" value="default"><div class="actions"><button class="secondary" type="submit">删除规则</button></div></form></div>{{end}}
+</div>{{else}}<p class="muted">当前没有目录级选择性同步规则。</p>{{end}}
+<form method="post" action="/cache?token={{.Token}}">
+<label>自动缓存上限（GiB）</label><input name="cache_gib" type="number" min="0" max="16384" step="0.25" value="{{.CacheLimitGiB}}" required>
+<div class="actions"><button type="submit">保存缓存上限</button></div>
+</form>
+<p class="muted">0 表示不限制。达到上限后，xDrive 按最近访问时间优先释放未固定且已安全同步的文件；手动固定和“始终保留”内容不会被自动释放，因此实际磁盘占用可以高于该值。</p>
 </div>
 
 <div class="card" id="conflicts"><h2>冲突处理 {{if .ConflictCount}}（{{.ConflictCount}}）{{end}}</h2>

@@ -32,6 +32,10 @@ type winProvider struct {
 	mu         sync.Mutex
 	baseline   map[string]winState
 	hydrated   map[uint64]time.Time
+	accessed   map[uint64]time.Time
+	policy     syncPolicy
+	cacheLimit int64
+	cacheGrace time.Duration
 	manualSync chan struct{}
 }
 
@@ -41,6 +45,10 @@ var activeWinProvider struct {
 }
 
 func runPlatform(ctx context.Context, cli *client.Client, root string) error {
+	return runPlatformWithOptions(ctx, cli, root, Options{})
+}
+
+func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string, opts Options) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
@@ -52,6 +60,10 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 		root:       root,
 		baseline:   map[string]winState{},
 		hydrated:   map[uint64]time.Time{},
+		accessed:   map[uint64]time.Time{},
+		policy:     newSyncPolicy(opts),
+		cacheLimit: opts.CacheLimitBytes,
+		cacheGrace: 30 * time.Second,
 		manualSync: make(chan struct{}, 1),
 	}
 	activeWinProvider.Lock()
@@ -82,6 +94,8 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 	defer remoteTicker.Stop()
 	auditTicker := time.NewTicker(winFullAudit)
 	defer auditTicker.Stop()
+	cacheTicker := time.NewTicker(30 * time.Second)
+	defer cacheTicker.Stop()
 
 	var (
 		pending         []winLocalChange
@@ -215,6 +229,13 @@ func runPlatform(ctx context.Context, cli *client.Client, root string) error {
 				fmt.Fprintln(os.Stderr, "xd: Windows full audit:", err)
 				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 			}
+		case <-cacheTicker.C:
+			if !flushLocal() {
+				continue
+			}
+			if err := p.enforceCacheSnapshot(); err != nil {
+				fmt.Fprintln(os.Stderr, "xd: Windows cache policy:", err)
+			}
 		case <-p.manualSync:
 			if !flushLocal() {
 				continue
@@ -243,8 +264,10 @@ func fetchData(info *cfCallbackInfo, params *cfCallbackParametersFetchData) {
 		cfTransferFailure(info, params.RequiredFileOffset, params.RequiredLength)
 		return
 	}
+	now := time.Now()
 	p.mu.Lock()
-	p.hydrated[id] = time.Now()
+	p.hydrated[id] = now
+	p.accessed[id] = now
 	p.mu.Unlock()
 	offset, remaining := params.RequiredFileOffset, params.RequiredLength
 	const chunkSize int64 = 4 << 20
@@ -277,10 +300,14 @@ func copyIdentity(ptr unsafe.Pointer, n uint32) []byte {
 }
 
 func (p *winProvider) initialSync(ctx context.Context) error {
-	remote, err := p.cli.Walk(ctx)
+	remoteAll, err := p.cli.Walk(ctx)
 	if err != nil {
 		return err
 	}
+	if err := p.prepareExcludedLocal(remoteAll); err != nil {
+		return err
+	}
+	remote := p.filterRemote(remoteAll)
 	paths := sortedPaths(remote, true)
 	for _, rel := range paths {
 		if rel == "" {
@@ -301,7 +328,10 @@ func (p *winProvider) initialSync(ctx context.Context) error {
 			}
 		}
 	}
-	return p.captureBaseline(remote)
+	if err := p.captureBaseline(remote); err != nil {
+		return err
+	}
+	return p.applyStoragePolicySnapshot()
 }
 
 func (p *winProvider) captureBaseline(remote map[string]client.Node) error {
@@ -324,7 +354,7 @@ func (p *winProvider) captureBaseline(remote map[string]client.Node) error {
 }
 
 func (p *winProvider) reconcile(ctx context.Context) error {
-	local, err := scanLocal(p.root)
+	local, err := scanLocalWithPolicy(p.root, p.policy)
 	if err != nil {
 		return err
 	}
@@ -481,6 +511,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	remote = p.filterRemote(remote)
 	remotePaths := sortedPaths(remote, true)
 	for _, rel := range remotePaths {
 		if rel == "" {
@@ -550,6 +581,12 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		}
 		_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
 		deletePrefix(baseline, rel)
+	}
+	if err := p.applyAlwaysLocal(baseline); err != nil {
+		return err
+	}
+	if err := p.enforceCache(baseline); err != nil {
+		return err
 	}
 	p.mu.Lock()
 	p.baseline = baseline

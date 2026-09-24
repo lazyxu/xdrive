@@ -34,3 +34,16 @@ func TestControlAuthorizationRejectsMissingToken(t *testing.T) {
 		t.Fatal("matching session token was rejected")
 	}
 }
+
+func TestFormatCacheGiB(t *testing.T) {
+	cases := map[int64]string{
+		0:       "0",
+		1 << 30: "1",
+		5 << 29: "2.5",
+	}
+	for bytes, want := range cases {
+		if got := formatCacheGiB(bytes); got != want {
+			t.Fatalf("formatCacheGiB(%d)=%q want=%q", bytes, got, want)
+		}
+	}
+}

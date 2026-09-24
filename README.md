@@ -350,7 +350,11 @@ The local control center listens only on `127.0.0.1`, uses a random per-agent-se
 - **始终保留在此设备 / Always keep on this device** pins the placeholder and hydrates its content;
 - **释放空间 / Free up space** and **仅在线 / Online only** unpin and dehydrate in-sync placeholders;
 - **立即同步 / Sync now** requests an immediate provider reconciliation;
-- a file that is not yet safely represented in the cloud is never dehydrated: xDrive asks the user to finish synchronization first.
+- directory-level **此设备不同步 / Exclude on this device** rules keep selected remote subtrees out of this Windows sync root without deleting their cloud contents;
+- directory-level **始终保留在此设备 / Always keep** rules persist across agent restarts and pin/hydrate current and newly discovered files below that directory; removing the rule stops future enforcement but does not forcibly dehydrate already-local content;
+- an optional local cache ceiling (GiB) automatically dehydrates least-recently-used, unpinned, in-sync files when the evictable cache exceeds the configured limit; `0` means unlimited;
+- manually pinned and always-local content is never evicted by the cache ceiling and can therefore make actual disk usage exceed the configured cache limit;
+- a file that is not yet safely represented in the cloud is never dehydrated or removed for selective sync: xDrive asks the user to finish synchronization first.
 
 There is no registration button; accounts are provisioned by an administrator. If the administrator issued a temporary password with `must_change_password`, the agent blocks synchronization until the user changes it. The default sync root is:
 
@@ -374,6 +378,9 @@ Windows uses a **hybrid online-on-demand + bidirectional metadata/content sync**
 - Explorer uses Windows' native cloud-file state icons and hydration verbs for xDrive placeholders;
 - opening a placeholder hydrates the byte ranges Windows requests from the server;
 - pinned placeholders are kept locally; in-sync unpinned placeholders can be explicitly dehydrated and xDrive opts into Windows' automatic-dehydration support;
+- persistent selective-sync rules are stored as normalized paths relative to the sync root; excluded remote directories are omitted only on that device, while always-local directories are automatically pinned and hydrated;
+- changing a directory policy restarts the local provider against the same account/root so the new rule is applied atomically from a fresh remote walk;
+- the cache limiter measures allocated on-disk bytes for evictable CfAPI placeholders and releases the least-recently-used eligible files first; pinned, dirty/not-in-sync, excluded, and always-local content is not an eviction candidate;
 - local new files/directories are uploaded and then converted into in-sync CfAPI placeholders, so they participate in the same Explorer availability controls;
 - local file modifications use resumable 8 MiB chunks with per-chunk SHA-256 and server-side whole-file SHA-256;
 - local deletions are propagated to the server;
@@ -837,7 +844,7 @@ deploy/
 ## Roadmap
 
 1. instant upload/global deduplication and optional content-defined chunking;
-2. selective-sync rules, configurable cache/dehydration policy, and richer version-history UI;
+2. richer version-history UI plus advanced cache telemetry and policy controls;
 3. small-file packing;
 4. macOS File Provider integration;
 5. thumbnails/EXIF/media processing;
