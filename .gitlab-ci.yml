@@ -1,3 +1,6 @@
+include:
+  - local: /infra/ci/images.yml
+
 stages:
   - test
 
@@ -16,7 +19,47 @@ default:
 variables:
   GIT_DEPTH: "0"
 
+.ci-linux-helpers:
+  before_script:
+    - &ensure_linux_fetch_tools |
+        set -euo pipefail
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+        rm -rf /var/lib/apt/lists/*
+    - &install_node22 |
+        set -euo pipefail
+        case "$(uname -m)" in
+          x86_64) node_arch="x64" ;;
+          *) echo "unsupported GitLab Linux CI architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        tmp="$(mktemp -d)"
+        node_file="node-v${XDRIVE_CI_NODE_VERSION}-linux-${node_arch}.tar.xz"
+        curl -fsSL "https://nodejs.org/dist/v${XDRIVE_CI_NODE_VERSION}/${node_file}" -o "$tmp/$node_file"
+        curl -fsSL "https://nodejs.org/dist/v${XDRIVE_CI_NODE_VERSION}/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt"
+        (cd "$tmp" && grep " ${node_file}$" SHASUMS256.txt | sha256sum -c -)
+        tar -xJf "$tmp/$node_file" -C /usr/local --strip-components=1
+        rm -rf "$tmp"
+        test "$(node -p 'process.versions.node')" = "$XDRIVE_CI_NODE_VERSION"
+    - &install_docker_cli |
+        set -euo pipefail
+        case "$(uname -m)" in
+          x86_64) docker_arch="x86_64"; compose_arch="x86_64" ;;
+          *) echo "unsupported GitLab Linux CI architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        tmp="$(mktemp -d)"
+        curl -fsSL "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${XDRIVE_CI_DOCKER_VERSION}.tgz" -o "$tmp/docker.tgz"
+        tar -xzf "$tmp/docker.tgz" -C "$tmp"
+        install -m 0755 "$tmp/docker/docker" /usr/local/bin/docker
+        install -d /usr/local/lib/docker/cli-plugins
+        curl -fsSL "https://github.com/docker/compose/releases/download/${XDRIVE_CI_COMPOSE_VERSION}/docker-compose-linux-${compose_arch}" -o /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+        rm -rf "$tmp"
+        docker --version
+        docker compose version
+
 single-commit:
+  image: $XDRIVE_CI_GO_IMAGE
   stage: test
   tags:
     - linux
@@ -37,6 +80,7 @@ single-commit:
       fi
 
 desktop-linux:
+  image: $XDRIVE_CI_NODE_IMAGE
   stage: test
   tags:
     - linux
@@ -78,10 +122,15 @@ desktop-windows:
       if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop executable missing" }
 
 go-linux:
+  image: $XDRIVE_CI_GO_IMAGE
   stage: test
   resource_group: xdrive-go-linux-docker
   tags:
     - linux
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_node22
+    - *install_docker_cli
   script:
     - |
       set -euo pipefail
@@ -92,6 +141,7 @@ go-linux:
       fi
       command -v docker >/dev/null
       docker compose version >/dev/null
+      docker info >/dev/null
       command -v dpkg-deb >/dev/null
       command -v python3 >/dev/null
       command -v curl >/dev/null
@@ -369,9 +419,13 @@ go-windows:
       Remove-Item -Recurse -Force $ciTemp -ErrorAction SilentlyContinue
 
 web:
+  image: $XDRIVE_CI_NODE_IMAGE
   stage: test
   tags:
     - linux
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_docker_cli
   script:
     - |
       set -euo pipefail
@@ -381,6 +435,7 @@ web:
         exit 1
       fi
       command -v docker >/dev/null
+      docker info >/dev/null
       cd web
       npm ci --no-audit --no-fund
       npm run lint

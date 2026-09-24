@@ -49,6 +49,27 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"web":             "linux",
 	}
 	assertRunnerParity(t, github, gitlab, expectedPlatforms)
+	assertGitLabJobImages(t, gitlab, map[string]string{
+		"single-commit":   "$XDRIVE_CI_GO_IMAGE",
+		"desktop-linux":   "$XDRIVE_CI_NODE_IMAGE",
+		"desktop-windows": "",
+		"go-linux":        "$XDRIVE_CI_GO_IMAGE",
+		"go-windows":      "",
+		"web":             "$XDRIVE_CI_NODE_IMAGE",
+	})
+
+	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
+	var imageConfig map[string]any
+	if err := yaml.Unmarshal([]byte(imageConfigRaw), &imageConfig); err != nil {
+		t.Fatalf("parse GitLab CI image config: %v", err)
+	}
+	requireRaw(t, "GitLab CI image config", imageConfigRaw,
+		"XDRIVE_CI_GO_IMAGE: \"golang:1.25-bookworm\"",
+		"XDRIVE_CI_NODE_IMAGE: \"node:22-bookworm\"",
+		"XDRIVE_CI_NODE_VERSION: \"22.23.3\"",
+		"XDRIVE_CI_DOCKER_VERSION: \"27.5.1\"",
+		"XDRIVE_CI_COMPOSE_VERSION: \"v2.32.4\"",
+	)
 
 	githubText := collectYAMLStrings(github)
 	gitlabText := collectYAMLStrings(gitlab)
@@ -111,6 +132,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"cancel-in-progress: true",
 	)
 	requireRaw(t, "GitLab CI", gitlabRaw,
+		"- local: /infra/ci/images.yml",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
 		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH == \"master\"",
@@ -205,6 +227,30 @@ func assertRunnerParity(t *testing.T, github, gitlab map[string]any, expected ma
 		wantTag := platform
 		if got := fmt.Sprint(tagValues[0]); got != wantTag {
 			t.Errorf("GitLab job %s tag=%q want=%q", jobName, got, wantTag)
+		}
+	}
+}
+
+func assertGitLabJobImages(t *testing.T, gitlab map[string]any, expected map[string]string) {
+	t.Helper()
+	for jobName, wantImage := range expected {
+		job, ok := gitlab[jobName].(map[string]any)
+		if !ok {
+			t.Fatalf("GitLab job %q missing or invalid", jobName)
+		}
+		imageValue, hasImage := job["image"]
+		if wantImage == "" {
+			if hasImage {
+				t.Errorf("GitLab job %s image=%v, want no image for native Windows runner", jobName, imageValue)
+			}
+			continue
+		}
+		if !hasImage {
+			t.Errorf("GitLab job %s is missing image=%q", jobName, wantImage)
+			continue
+		}
+		if got := fmt.Sprint(imageValue); got != wantImage {
+			t.Errorf("GitLab job %s image=%q want=%q", jobName, got, wantImage)
 		}
 	}
 }
