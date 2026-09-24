@@ -90,6 +90,8 @@ jobs:
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-installer-bootstrap.sh
           bash scripts/test-server-installer-bootstrap.sh
+          bash -n scripts/test-server-installer-transaction.sh
+          bash scripts/test-server-installer-transaction.sh
           bash -n scripts/cleanup-merged-branches.sh
           bash -n scripts/test-cleanup-merged-branches.sh
           bash scripts/test-cleanup-merged-branches.sh
@@ -121,11 +123,15 @@ jobs:
             exit 1
           fi
 
-          backup_line="$(grep -n 'creating pre-upgrade backup' deploy/install-server.sh | head -n1 | cut -d: -f1)"
+          backup_line="$(grep -n '^stage 5 "create pre-upgrade backup"' deploy/install-server.sh | head -n1 | cut -d: -f1)"
           image_line="$(grep -n '^set_env XD_SERVER_IMAGE ' deploy/install-server.sh | head -n1 | cut -d: -f1)"
           test -n "$backup_line" -a -n "$image_line"
           test "$backup_line" -lt "$image_line"
           grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
+          grep -q 'flock -n 9' deploy/install-server.sh
+          grep -q -- '--leave-server-stopped' deploy/install-server.sh
+          grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
+          grep -q 'detailed Docker output is captured in' deploy/install-server.sh
       - name: Validate server image
         run: docker build -t xdrive/server:test .
       - name: Validate Caddy AliDNS image
