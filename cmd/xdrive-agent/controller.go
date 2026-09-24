@@ -46,16 +46,20 @@ type agentController struct {
 	wake          chan struct{}
 	notifications chan agentNotification
 
-	mu   sync.RWMutex
-	snap agentSnapshot
+	mu               sync.RWMutex
+	snap             agentSnapshot
+	snapshotRevision uint64
+	snapshotChanged  chan struct{}
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
 	return &agentController{
-		ctx:           ctx,
-		cancel:        cancel,
-		wake:          make(chan struct{}, 1),
-		notifications: make(chan agentNotification, 16),
+		ctx:              ctx,
+		cancel:           cancel,
+		wake:             make(chan struct{}, 1),
+		notifications:    make(chan agentNotification, 16),
+		snapshotRevision: 1,
+		snapshotChanged:  make(chan struct{}),
 		snap: agentSnapshot{
 			AuthStatus: "未登录",
 			SyncStatus: "等待登录",
@@ -74,15 +78,49 @@ func (c *agentController) notify(n agentNotification) {
 }
 
 func (c *agentController) Snapshot() agentSnapshot {
+	snapshot, _ := c.SnapshotWithRevision()
+	return snapshot
+}
+
+func (c *agentController) SnapshotWithRevision() (agentSnapshot, uint64) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.snap
+	return c.snap, c.snapshotRevision
+}
+
+func (c *agentController) WaitSnapshot(ctx context.Context, after uint64) (agentSnapshot, uint64, bool) {
+	for {
+		c.mu.RLock()
+		snapshot := c.snap
+		revision := c.snapshotRevision
+		changed := c.snapshotChanged
+		c.mu.RUnlock()
+
+		if revision != after {
+			return snapshot, revision, true
+		}
+		select {
+		case <-ctx.Done():
+			return snapshot, revision, false
+		case <-changed:
+		}
+	}
 }
 
 func (c *agentController) setSnapshot(fn func(*agentSnapshot)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	before := c.snap
 	fn(&c.snap)
+	if c.snap == before {
+		return
+	}
+	if c.snapshotChanged == nil {
+		c.snapshotChanged = make(chan struct{})
+	}
+	c.snapshotRevision++
+	close(c.snapshotChanged)
+	c.snapshotChanged = make(chan struct{})
 }
 
 func (c *agentController) setLastError(msg string) {
@@ -537,25 +575,49 @@ func (c *agentController) ChangePassword(currentPassword, newPassword string) er
 	return nil
 }
 
-func (c *agentController) SaveMountPath(path string) error {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return fmt.Errorf("同步目录不能为空")
+func (c *agentController) Settings() (userconfig.Config, string, error) {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return userconfig.Config{}, "", err
 	}
+	root, err := userconfig.EffectiveMountPath(cfg)
+	if err != nil {
+		return cfg, "", err
+	}
+	return cfg, root, nil
+}
+
+func (c *agentController) UpdateSettings(mountPath *string, cacheLimitBytes *int64) error {
 	cfg, err := userconfig.Load()
 	if err != nil {
 		return err
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return err
+	if mountPath != nil {
+		path := strings.TrimSpace(*mountPath)
+		if path == "" {
+			return fmt.Errorf("同步目录不能为空")
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		cfg.MountPath = filepath.Clean(abs)
 	}
-	cfg.MountPath = filepath.Clean(abs)
+	if cacheLimitBytes != nil {
+		if *cacheLimitBytes < 0 || *cacheLimitBytes > 16<<40 {
+			return fmt.Errorf("缓存上限必须是 0–16 TiB；0 表示不限制")
+		}
+		cfg.CacheLimitBytes = *cacheLimitBytes
+	}
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
 	c.wakeNow()
 	return nil
+}
+
+func (c *agentController) SaveMountPath(path string) error {
+	return c.UpdateSettings(&path, nil)
 }
 
 func mountOptionsFromConfig(cfg userconfig.Config) mount.Options {
@@ -646,16 +708,8 @@ func (c *agentController) SetCacheLimitGiB(value string) error {
 	if err != nil || gib < 0 || gib > 16384 {
 		return fmt.Errorf("缓存上限必须是 0–16384 GiB；0 表示不限制")
 	}
-	cfg, err := userconfig.Load()
-	if err != nil {
-		return err
-	}
-	cfg.CacheLimitBytes = int64(gib * float64(int64(1)<<30))
-	if err := userconfig.Save(cfg); err != nil {
-		return err
-	}
-	c.wakeNow()
-	return nil
+	bytes := int64(gib * float64(int64(1)<<30))
+	return c.UpdateSettings(nil, &bytes)
 }
 
 func findRemotePathFold(remote map[string]client.Node, rel string) (string, client.Node, bool) {
@@ -703,18 +757,18 @@ func validateExcludedDirectory(root, abs string, remote map[string]client.Node) 
 	})
 }
 
-func (c *agentController) TogglePause() error {
+func (c *agentController) SetPaused(paused bool) error {
 	cfg, err := userconfig.Load()
 	if err != nil {
 		return err
 	}
-	cfg.Paused = !cfg.Paused
+	cfg.Paused = paused
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
 	c.setSnapshot(func(s *agentSnapshot) {
-		s.Paused = cfg.Paused
-		if cfg.Paused {
+		s.Paused = paused
+		if paused {
 			s.SyncStatus = "已暂停"
 		} else {
 			s.SyncStatus = "正在恢复同步"
@@ -722,6 +776,14 @@ func (c *agentController) TogglePause() error {
 	})
 	c.wakeNow()
 	return nil
+}
+
+func (c *agentController) TogglePause() error {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	return c.SetPaused(!cfg.Paused)
 }
 
 func (c *agentController) Logout() error {

@@ -650,6 +650,48 @@ Moving a shared file, or a parent directory containing it, into the recycle bin 
 
 Download-count admission is serialized with a PostgreSQL row lock, so simultaneous requests cannot collectively exceed a configured maximum. Wrong passwords do not consume the download count. Shares owned by a disabled account are unavailable while that account is disabled.
 
+## Desktop agent IPC
+
+The Go background agent exposes a private, process-lifetime Desktop IPC endpoint for the Electron main process. It is deliberately separate from the public xDrive server API and from the browser-facing Web UI.
+
+At agent startup, xDrive binds an ephemeral **loopback-only** HTTP listener and writes a discovery document named `desktop-ipc.json` below the current user's xDrive config directory. The document contains the loopback base URL, API version, agent PID, and a random 256-bit bearer token. The config directory is restricted to the current user and the discovery file is written with mode `0600` where the platform supports POSIX permissions. The file is removed when the owning agent exits; an agent never deletes a discovery file whose token belongs to another process.
+
+Desktop IPC authentication is independent of the xDrive server login. Every request must originate from a loopback address and send:
+
+```text
+Authorization: Bearer <desktop-ipc-token>
+```
+
+The IPC does **not** expose access or refresh tokens. In the Electron integration phase, only the Electron main process should read the discovery file; the renderer should continue to use the narrow preload bridge.
+
+Phase 3 endpoints are:
+
+```text
+GET   /v1/status
+GET   /v1/events?after_revision=N&timeout_ms=25000
+
+POST  /v1/auth/login
+POST  /v1/auth/logout
+POST  /v1/auth/change-password
+
+POST  /v1/sync/pause
+POST  /v1/sync/resume
+POST  /v1/sync/now
+
+GET   /v1/settings
+PATCH /v1/settings
+
+GET   /v1/conflicts
+POST  /v1/conflicts/open
+POST  /v1/conflicts/resolve
+
+POST  /v1/open-folder
+```
+
+`/v1/events` is a bounded long-poll over monotonically increasing in-memory status revisions. It returns immediately when the revision changes and otherwise returns `204 No Content` at the requested timeout. This avoids fixed-interval renderer polling without introducing a second persistent event protocol.
+
+The Electron shell is still intentionally **not connected** to this IPC in Phase 3; wiring the Electron main process and preload bridge to these endpoints is Phase 4.
+
 ## HTTP API
 
 Authenticated endpoints use:
