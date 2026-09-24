@@ -22,6 +22,10 @@ type linuxNode struct {
 }
 
 func runPlatform(ctx context.Context, cli *client.Client, mountpoint string) error {
+	return runPlatformWithOptions(ctx, cli, mountpoint, Options{})
+}
+
+func runPlatformWithOptions(ctx context.Context, cli *client.Client, mountpoint string, _ Options) error {
 	emitEvent(Event{Kind: EventSyncStarted})
 	root, err := cli.Root(ctx)
 	if err != nil {

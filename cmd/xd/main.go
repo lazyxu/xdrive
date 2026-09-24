@@ -97,14 +97,23 @@ func login(args []string) error {
 	}
 	mountPath := ""
 	sessionID := ""
+	var syncRules []userconfig.SyncRule
+	var cacheLimitBytes int64
 	if existing, loadErr := userconfig.Load(); loadErr == nil {
 		mountPath = existing.MountPath
 		sessionID = existing.SessionID
+		cacheLimitBytes = existing.CacheLimitBytes
+		if strings.EqualFold(strings.TrimRight(existing.Server, "/"), strings.TrimRight(*server, "/")) &&
+			existing.Username == resp.Username {
+			syncRules = append([]userconfig.SyncRule(nil), existing.SyncRules...)
+		}
 	}
 	cfg := userconfig.Config{
-		Server:    strings.TrimRight(*server, "/"),
-		MountPath: mountPath,
-		SessionID: sessionID,
+		Server:          strings.TrimRight(*server, "/"),
+		MountPath:       mountPath,
+		SessionID:       sessionID,
+		SyncRules:       syncRules,
+		CacheLimitBytes: cacheLimitBytes,
 	}
 	if err := cfg.ApplyAuth(resp, true); err != nil {
 		return err
@@ -224,11 +233,15 @@ func status() error {
 	if quota.QuotaBytes > 0 {
 		quotaLimit = formatStorageBytes(quota.QuotaBytes)
 	}
-	fmt.Printf("server: %s\nuser: %s\nmount: %s\ncredential store: %s\nroot items: %d\nstorage: %s / %s\nstorage detail: files %s, trash %s, history %s\nclient version: %s\n",
+	cacheLimit := "unlimited"
+	if cfg.CacheLimitBytes > 0 {
+		cacheLimit = formatStorageBytes(cfg.CacheLimitBytes)
+	}
+	fmt.Printf("server: %s\nuser: %s\nmount: %s\ncredential store: %s\nroot items: %d\nstorage: %s / %s\nstorage detail: files %s, trash %s, history %s\nlocal cache limit: %s\nselective sync rules: %d\nclient version: %s\n",
 		cfg.Server, cfg.Username, mountPath, userconfig.CredentialBackend(cfg), len(children),
 		formatStorageBytes(quota.PhysicalUsedBytes), quotaLimit,
 		formatStorageBytes(quota.LogicalFileBytes), formatStorageBytes(quota.TrashBytes), formatStorageBytes(quota.HistoryBytes),
-		version.String())
+		cacheLimit, len(cfg.SyncRules), version.String())
 	return nil
 }
 
@@ -292,7 +305,20 @@ func mountCmd(args []string) error {
 		return err
 	}
 	fmt.Printf("xDrive mounted at %s; press Ctrl+C to stop\n", path)
-	return mount.Run(ctx, cli, path)
+	return mount.RunWithOptions(ctx, cli, path, mountOptionsFromConfig(cfg))
+}
+
+func mountOptionsFromConfig(cfg userconfig.Config) mount.Options {
+	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes}
+	for _, rule := range cfg.SyncRules {
+		switch rule.Mode {
+		case userconfig.SyncModeExclude:
+			opts.ExcludedPaths = append(opts.ExcludedPaths, rule.Path)
+		case userconfig.SyncModeAlwaysLocal:
+			opts.AlwaysLocalPaths = append(opts.AlwaysLocalPaths, rule.Path)
+		}
+	}
+	return opts
 }
 
 func cleanupCmd() error {

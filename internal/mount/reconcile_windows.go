@@ -34,6 +34,9 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 
 	pathSet := make(map[string]struct{}, len(changes.Paths)+len(changes.Renames)*2)
 	for _, path := range changes.Paths {
+		if p.policy.excludedPath(path) {
+			continue
+		}
 		pathSet[path] = struct{}{}
 	}
 
@@ -45,6 +48,19 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 		return di < dj
 	})
 	for _, rename := range changes.Renames {
+		oldExcluded := p.policy.excludedPath(rename.OldPath)
+		newExcluded := p.policy.excludedPath(rename.NewPath)
+		if oldExcluded && newExcluded {
+			continue
+		}
+		if oldExcluded {
+			pathSet[rename.NewPath] = struct{}{}
+			continue
+		}
+		if newExcluded {
+			pathSet[rename.OldPath] = struct{}{}
+			continue
+		}
 		handled, err := p.applyLocalRename(ctx, rename, baseline)
 		if err != nil {
 			return err
@@ -115,6 +131,12 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 		}
 		deletePrefix(baseline, rel)
 		deletedPrefix = append(deletedPrefix, rel)
+	}
+	if err := p.applyAlwaysLocal(baseline); err != nil {
+		return err
+	}
+	if err := p.enforceCache(baseline); err != nil {
+		return err
 	}
 	p.pruneTransientState()
 	return nil
@@ -190,6 +212,12 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 			return err
 		}
 		childRel = filepath.ToSlash(childRel)
+		if p.policy.excludedPath(childRel) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if _, exists := baseline[childRel]; exists {
 			return nil
 		}
@@ -338,6 +366,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	remote = p.filterRemote(remote)
 	p.mu.Lock()
 	baseline := cloneBaseline(p.baseline)
 	hydrated := cloneHydrated(p.hydrated)
@@ -443,6 +472,12 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 		_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
 		deletePrefix(baseline, rel)
 	}
+	if err := p.applyAlwaysLocal(baseline); err != nil {
+		return err
+	}
+	if err := p.enforceCache(baseline); err != nil {
+		return err
+	}
 	p.pruneTransientState()
 	return nil
 }
@@ -459,6 +494,11 @@ func (p *winProvider) pruneTransientState() {
 	for id, t := range p.hydrated {
 		if now.Sub(t) > 30*time.Second {
 			delete(p.hydrated, id)
+		}
+	}
+	for id, t := range p.accessed {
+		if now.Sub(t) > 30*24*time.Hour {
+			delete(p.accessed, id)
 		}
 	}
 	p.mu.Unlock()

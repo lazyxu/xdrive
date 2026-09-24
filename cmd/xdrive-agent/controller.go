@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -201,7 +202,7 @@ func (c *agentController) Run() {
 			s.LastError = ""
 		})
 		go func() {
-			done <- mount.Run(mctx, cli, d.root)
+			done <- mount.RunWithOptions(mctx, cli, d.root, mountOptionsFromConfig(d.cfg))
 		}()
 	}
 
@@ -455,17 +456,25 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 	}
 
 	sessionID := ""
+	var syncRules []userconfig.SyncRule
+	var cacheLimitBytes int64
 	if old, loadErr := userconfig.Load(); loadErr == nil {
 		if mountPath == "" {
 			mountPath = old.MountPath
 		}
 		sessionID = old.SessionID
+		cacheLimitBytes = old.CacheLimitBytes
+		if strings.EqualFold(strings.TrimRight(old.Server, "/"), server) && old.Username == resp.Username {
+			syncRules = append([]userconfig.SyncRule(nil), old.SyncRules...)
+		}
 	}
 	cfg := userconfig.Config{
-		Server:    server,
-		MountPath: mountPath,
-		SessionID: sessionID,
-		Paused:    false,
+		Server:          server,
+		MountPath:       mountPath,
+		SessionID:       sessionID,
+		Paused:          false,
+		SyncRules:       syncRules,
+		CacheLimitBytes: cacheLimitBytes,
 	}
 	if err := cfg.ApplyAuth(resp, true); err != nil {
 		return err
@@ -547,6 +556,151 @@ func (c *agentController) SaveMountPath(path string) error {
 	}
 	c.wakeNow()
 	return nil
+}
+
+func mountOptionsFromConfig(cfg userconfig.Config) mount.Options {
+	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes}
+	for _, rule := range cfg.SyncRules {
+		switch rule.Mode {
+		case userconfig.SyncModeExclude:
+			opts.ExcludedPaths = append(opts.ExcludedPaths, rule.Path)
+		case userconfig.SyncModeAlwaysLocal:
+			opts.AlwaysLocalPaths = append(opts.AlwaysLocalPaths, rule.Path)
+		}
+	}
+	return opts
+}
+
+func (c *agentController) SetSelectiveSyncRule(path, mode string) error {
+	cfg, root, abs, err := managedPath(path)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return err
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == "" {
+		return fmt.Errorf("不能对整个 xDrive 根目录设置选择性同步规则")
+	}
+	rel, err = userconfig.NormalizeSyncRulePath(rel)
+	if err != nil {
+		return err
+	}
+
+	mode = strings.TrimSpace(mode)
+	if mode != "" && mode != "default" &&
+		mode != userconfig.SyncModeExclude && mode != userconfig.SyncModeAlwaysLocal {
+		return fmt.Errorf("未知的选择性同步模式")
+	}
+
+	canonical := rel
+	if mode != "" && mode != "default" {
+		ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+		defer cancel()
+		cli, err := userconfig.NewClient(cfg)
+		if err != nil {
+			return err
+		}
+		remote, err := cli.Walk(ctx)
+		if err != nil {
+			return err
+		}
+		remotePath, node, ok := findRemotePathFold(remote, rel)
+		if !ok || node.Type != "dir" {
+			return fmt.Errorf("选择性同步规则只能应用到已存在的云端目录")
+		}
+		canonical = remotePath
+		if mode == userconfig.SyncModeExclude {
+			if err := validateExcludedDirectory(root, abs, remote); err != nil {
+				return err
+			}
+		}
+	}
+
+	next := make([]userconfig.SyncRule, 0, len(cfg.SyncRules)+1)
+	for _, rule := range cfg.SyncRules {
+		if strings.EqualFold(rule.Path, rel) || strings.EqualFold(rule.Path, canonical) {
+			continue
+		}
+		next = append(next, rule)
+	}
+	if mode != "" && mode != "default" {
+		next = append(next, userconfig.SyncRule{Path: canonical, Mode: mode})
+	}
+	cfg.SyncRules = next
+	if err := userconfig.Save(cfg); err != nil {
+		return err
+	}
+	c.wakeNow()
+	return nil
+}
+
+func (c *agentController) SetCacheLimitGiB(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "0"
+	}
+	gib, err := strconv.ParseFloat(value, 64)
+	if err != nil || gib < 0 || gib > 16384 {
+		return fmt.Errorf("缓存上限必须是 0–16384 GiB；0 表示不限制")
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	cfg.CacheLimitBytes = int64(gib * float64(int64(1)<<30))
+	if err := userconfig.Save(cfg); err != nil {
+		return err
+	}
+	c.wakeNow()
+	return nil
+}
+
+func findRemotePathFold(remote map[string]client.Node, rel string) (string, client.Node, bool) {
+	for path, node := range remote {
+		if strings.EqualFold(path, rel) {
+			return path, node, true
+		}
+	}
+	return "", client.Node{}, false
+}
+
+func validateExcludedDirectory(root, abs string, remote map[string]client.Node) error {
+	if _, err := os.Lstat(abs); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return filepath.WalkDir(abs, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		_, remoteNode, ok := findRemotePathFold(remote, rel)
+		if !ok {
+			return fmt.Errorf("%s 仅存在于本机；请先完成同步再排除此目录", path)
+		}
+		if entry.IsDir() != (remoteNode.Type == "dir") {
+			return fmt.Errorf("%s 与云端对象类型不一致", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		state, err := mount.Availability(path)
+		if err != nil {
+			return err
+		}
+		if !state.Placeholder || !state.InSync {
+			return fmt.Errorf("%s 尚未安全同步到云端；请先立即同步", path)
+		}
+		return nil
+	})
 }
 
 func (c *agentController) TogglePause() error {
@@ -694,6 +848,8 @@ func managedPath(path string) (userconfig.Config, string, string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		path = root
+	} else if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -851,6 +1007,6 @@ func loadDesired() (desiredMount, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return desiredMount{}, err
 	}
-	key := cfg.Server + "\x00" + cfg.SessionID + "\x00" + root
+	key := cfg.Server + "\x00" + cfg.SessionID + "\x00" + root + "\x00" + cfg.StoragePolicyKey()
 	return desiredMount{key: key, root: root, cfg: cfg}, nil
 }

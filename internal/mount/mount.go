@@ -7,5 +7,9 @@ import (
 )
 
 func Run(ctx context.Context, cli *client.Client, root string) error {
-	return runPlatform(ctx, cli, root)
+	return RunWithOptions(ctx, cli, root, Options{})
+}
+
+func RunWithOptions(ctx context.Context, cli *client.Client, root string, opts Options) error {
+	return runPlatformWithOptions(ctx, cli, root, opts)
 }
