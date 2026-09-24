@@ -1,5 +1,16 @@
 import { readFile } from 'node:fs/promises'
 
+export type AgentHello = {
+  discovery_version: number
+  protocol_min: number
+  protocol_max: number
+  agent_version: string
+  pid: number
+  platform: string
+  arch: string
+  capabilities: string[]
+}
+
 export type AgentStatus = {
   revision: number
   configured: boolean
@@ -70,6 +81,9 @@ export class AgentIPCError extends Error {
 }
 
 export class AgentIPCClient {
+  static readonly protocolMin = 1
+  static readonly protocolMax = 1
+
   private readonly discoveryPath: string
   private discovery: AgentDiscovery | null = null
 
@@ -79,6 +93,33 @@ export class AgentIPCClient {
 
   invalidate() {
     this.discovery = null
+  }
+
+  async hello(signal?: AbortSignal) {
+    let hello: AgentHello
+    try {
+      hello = await this.request<AgentHello>('GET', '/v1/hello', undefined, 10_000, signal)
+    } catch (error) {
+      if (error instanceof AgentIPCError && error.status === 404) {
+        throw new AgentIPCError(
+          'incompatible_agent',
+          404,
+          'xdrive-agent is too old for this xDrive Desktop version. Update the xDrive Core package.',
+        )
+      }
+      throw error
+    }
+    if (
+      hello.protocol_max < AgentIPCClient.protocolMin ||
+      hello.protocol_min > AgentIPCClient.protocolMax
+    ) {
+      throw new AgentIPCError(
+        'incompatible_agent',
+        0,
+        `Desktop IPC protocol mismatch: desktop supports ${AgentIPCClient.protocolMin}-${AgentIPCClient.protocolMax}, agent supports ${hello.protocol_min}-${hello.protocol_max}.`,
+      )
+    }
+    return hello
   }
 
   status(signal?: AbortSignal) {
@@ -155,6 +196,10 @@ export class AgentIPCClient {
 
   openFolder() {
     return this.request<{ ok: boolean }>('POST', '/v1/open-folder')
+  }
+
+  shutdown() {
+    return this.request<{ ok: boolean }>('POST', '/v1/lifecycle/shutdown')
   }
 
   private async loadDiscovery(force = false): Promise<AgentDiscovery> {

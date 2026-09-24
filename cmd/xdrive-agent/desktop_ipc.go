@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,10 +23,13 @@ import (
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/userconfig"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 const (
 	desktopIPCAPIVersion       = 1
+	desktopIPCProtocolMin      = 1
+	desktopIPCProtocolMax      = 1
 	desktopIPCDiscoveryName    = "desktop-ipc.json"
 	desktopIPCMaxBodyBytes     = 64 << 10
 	desktopIPCDefaultEventWait = 25 * time.Second
@@ -37,6 +41,30 @@ type desktopIPCDiscovery struct {
 	BaseURL string `json:"base_url"`
 	Token   string `json:"token"`
 	PID     int    `json:"pid"`
+}
+
+type desktopIPCHello struct {
+	DiscoveryVersion int      `json:"discovery_version"`
+	ProtocolMin      int      `json:"protocol_min"`
+	ProtocolMax      int      `json:"protocol_max"`
+	AgentVersion     string   `json:"agent_version"`
+	PID              int      `json:"pid"`
+	Platform         string   `json:"platform"`
+	Arch             string   `json:"arch"`
+	Capabilities     []string `json:"capabilities"`
+}
+
+var desktopIPCCapabilities = []string{
+	"status",
+	"status-events",
+	"auth",
+	"sync-control",
+	"settings",
+	"selective-sync",
+	"file-availability",
+	"conflicts",
+	"open-folder",
+	"lifecycle-shutdown",
 }
 
 type desktopIPCStatus struct {
@@ -93,7 +121,7 @@ type desktopIPCServer struct {
 	cleanupOnce   sync.Once
 }
 
-func startDesktopIPC(ctx context.Context, ctrl desktopIPCController) (*desktopIPCServer, error) {
+func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown func()) (*desktopIPCServer, error) {
 	var tokenBytes [32]byte
 	if _, err := rand.Read(tokenBytes[:]); err != nil {
 		return nil, err
@@ -124,7 +152,7 @@ func startDesktopIPC(ctx context.Context, ctrl desktopIPCController) (*desktopIP
 
 	s := &desktopIPCServer{
 		server: &http.Server{
-			Handler:           newDesktopIPCHandler(ctrl, token),
+			Handler:           newDesktopIPCHandler(ctrl, token, shutdown),
 			ReadHeaderTimeout: 5 * time.Second,
 			IdleTimeout:       35 * time.Second,
 		},
@@ -228,9 +256,10 @@ func removeDesktopIPCDiscoveryIfOwned(path, token string) {
 	_ = os.Remove(path)
 }
 
-func newDesktopIPCHandler(ctrl desktopIPCController, token string) http.Handler {
-	h := &desktopIPCHandler{ctrl: ctrl}
+func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func()) http.Handler {
+	h := &desktopIPCHandler{ctrl: ctrl, shutdown: shutdown}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/hello", h.hello)
 	mux.HandleFunc("GET /v1/status", h.status)
 	mux.HandleFunc("GET /v1/events", h.events)
 	mux.HandleFunc("POST /v1/auth/login", h.login)
@@ -248,11 +277,13 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string) http.Handler 
 	mux.HandleFunc("POST /v1/conflicts/open", h.openConflict)
 	mux.HandleFunc("POST /v1/conflicts/resolve", h.resolveConflict)
 	mux.HandleFunc("POST /v1/open-folder", h.openFolder)
+	mux.HandleFunc("POST /v1/lifecycle/shutdown", h.shutdownAgent)
 	return desktopIPCAuth(token, mux)
 }
 
 type desktopIPCHandler struct {
-	ctrl desktopIPCController
+	ctrl     desktopIPCController
+	shutdown func()
 }
 
 func desktopIPCAuth(token string, next http.Handler) http.Handler {
@@ -274,6 +305,31 @@ func desktopIPCAuth(token string, next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
+	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCHello{
+		DiscoveryVersion: desktopIPCAPIVersion,
+		ProtocolMin:      desktopIPCProtocolMin,
+		ProtocolMax:      desktopIPCProtocolMax,
+		AgentVersion:     version.String(),
+		PID:              os.Getpid(),
+		Platform:         runtime.GOOS,
+		Arch:             runtime.GOARCH,
+		Capabilities:     append([]string(nil), desktopIPCCapabilities...),
+	})
+}
+
+func (h *desktopIPCHandler) shutdownAgent(w http.ResponseWriter, _ *http.Request) {
+	if h.shutdown == nil {
+		writeDesktopIPCError(w, http.StatusServiceUnavailable, "shutdown_unavailable", "agent shutdown is unavailable")
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		h.shutdown()
+	}()
 }
 
 func (h *desktopIPCHandler) status(w http.ResponseWriter, _ *http.Request) {

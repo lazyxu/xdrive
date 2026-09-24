@@ -146,3 +146,53 @@ test('file availability and selective sync use dedicated agent endpoints', async
     { method: 'PUT', path: '/v1/settings/sync-rule', query: null, body: { path: 'Projects/Archive', mode: 'exclude' } },
   ])
 })
+
+
+test('hello validates protocol compatibility and shutdown endpoint', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    if (req.url === '/v1/hello') {
+      json(res, 200, {
+        discovery_version: 1,
+        protocol_min: 1,
+        protocol_max: 1,
+        agent_version: 'snapshot-test',
+        pid: 42,
+        platform: 'linux',
+        arch: 'amd64',
+        capabilities: ['status', 'lifecycle-shutdown'],
+      })
+      return
+    }
+    if (req.url === '/v1/lifecycle/shutdown') {
+      json(res, 200, { ok: true })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  const hello = await client.hello()
+  assert.equal(hello.protocol_min, 1)
+  assert.equal(hello.protocol_max, 1)
+  assert.equal(hello.agent_version, 'snapshot-test')
+  assert.deepEqual(await client.shutdown(), { ok: true })
+})
+
+test('hello rejects an incompatible agent protocol', async (t) => {
+  const { client } = await fixture(t, (_req, res) => {
+    json(res, 200, {
+      discovery_version: 1,
+      protocol_min: 2,
+      protocol_max: 3,
+      agent_version: 'future',
+      pid: 42,
+      platform: 'linux',
+      arch: 'amd64',
+      capabilities: [],
+    })
+  })
+  await assert.rejects(client.hello(), (error) => {
+    assert.ok(error instanceof AgentIPCError)
+    assert.equal(error.code, 'incompatible_agent')
+    return true
+  })
+})
