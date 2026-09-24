@@ -457,25 +457,33 @@ func parseVersion(v string) ([3]int64, bool) {
 }
 
 func DownloadVerified(ctx context.Context, checker Checker, result Result, dir string) (string, error) {
+	return DownloadVerifiedWithProgress(ctx, checker, result, dir, nil)
+}
+
+func DownloadVerifiedWithProgress(ctx context.Context, checker Checker, result Result, dir string, progress ProgressFunc) (string, error) {
 	if !result.UpdateAvailable {
 		return "", errors.New("no update is available")
 	}
-	if checker.HTTP == nil {
-		checker.HTTP = http.DefaultClient
-	}
+	checker = checker.withDefaults()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
+
+	reportProgress(progress, ProgressEvent{Step: 2, Stage: "checksum", Message: "downloading SHA256SUMS.txt"})
 	expected, err := downloadChecksum(ctx, checker.HTTP, result.Checksums.URL, result.Asset.Name, result.Current)
 	if err != nil {
 		return "", err
 	}
+	reportProgress(progress, ProgressEvent{Step: 2, Stage: "checksum", Message: "checksum manifest ready"})
+
 	dst := filepath.Join(dir, result.Asset.Name)
 	tmp := dst + ".tmp"
-	if err := downloadFile(ctx, checker.HTTP, result.Asset.URL, tmp, result.Current); err != nil {
+	if err := downloadFileWithProgress(ctx, checker.HTTP, result.Asset.URL, tmp, result.Current, result.Asset.Name, progress); err != nil {
 		_ = os.Remove(tmp)
 		return "", err
 	}
+
+	reportProgress(progress, ProgressEvent{Step: 4, Stage: "verify", Message: "verifying SHA-256"})
 	f, err := os.Open(tmp)
 	if err != nil {
 		return "", err
@@ -494,6 +502,7 @@ func DownloadVerified(ctx context.Context, checker Checker, result Result, dir s
 		_ = os.Remove(tmp)
 		return "", fmt.Errorf("checksum mismatch for %s: got %s want %s", result.Asset.Name, actual, expected)
 	}
+	reportProgress(progress, ProgressEvent{Step: 4, Stage: "verify", Message: "SHA-256 verified"})
 	if err := os.Rename(tmp, dst); err != nil {
 		return "", err
 	}
@@ -530,7 +539,41 @@ func downloadChecksum(ctx context.Context, h *http.Client, url, assetName, curre
 	return "", fmt.Errorf("checksum for %s not found", assetName)
 }
 
-func downloadFile(ctx context.Context, h *http.Client, url, path, current string) error {
+func downloadFileWithProgress(ctx context.Context, h *http.Client, url, path, current, name string, progress ProgressFunc) error {
+	if h == nil {
+		h = http.DefaultClient
+	}
+	downloadClient := *h
+	// Metadata requests keep their short timeout, but a large installer must not
+	// inherit that as a total transfer deadline. Cancellation still comes from ctx.
+	downloadClient.Timeout = 0
+
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			reportProgress(progress, ProgressEvent{
+				Step: 3, Stage: "download", Message: fmt.Sprintf("retrying %s (attempt %d/3)", name, attempt),
+			})
+		}
+		lastErr = downloadFileAttempt(ctx, &downloadClient, url, path, current, name, progress)
+		if lastErr == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+	}
+	return lastErr
+}
+
+func downloadFileAttempt(ctx context.Context, h *http.Client, url, path, current, name string, progress ProgressFunc) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -544,16 +587,69 @@ func downloadFile(ctx context.Context, h *http.Client, url, path, current string
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download update failed: %s", resp.Status)
 	}
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(f, resp.Body)
-	closeErr := f.Close()
-	if copyErr != nil {
-		return copyErr
+
+	total := resp.ContentLength
+	if total < 0 {
+		total = 0
 	}
-	return closeErr
+	start := time.Now()
+	lastReport := start
+	var currentBytes int64
+	var lastBytes int64
+	reportProgress(progress, ProgressEvent{Step: 3, Stage: "download " + name, Total: total})
+
+	buf := make([]byte, 256*1024)
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			written, writeErr := f.Write(buf[:n])
+			currentBytes += int64(written)
+			if writeErr != nil {
+				_ = f.Close()
+				return writeErr
+			}
+			if written != n {
+				_ = f.Close()
+				return io.ErrShortWrite
+			}
+			now := time.Now()
+			if now.Sub(lastReport) >= time.Second {
+				rate := float64(currentBytes-lastBytes) / now.Sub(lastReport).Seconds()
+				reportProgress(progress, ProgressEvent{
+					Step: 3, Stage: "download " + name,
+					Current: currentBytes, Total: total, BytesPerSecond: rate, Elapsed: now.Sub(start),
+				})
+				lastReport = now
+				lastBytes = currentBytes
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			_ = f.Close()
+			return readErr
+		}
+	}
+
+	if err := f.Close(); err != nil {
+		return err
+	}
+	elapsed := time.Since(start)
+	rate := float64(currentBytes)
+	if elapsed > 0 {
+		rate /= elapsed.Seconds()
+	}
+	reportProgress(progress, ProgressEvent{
+		Step: 3, Stage: "download " + name,
+		Current: currentBytes, Total: total, BytesPerSecond: rate, Elapsed: elapsed,
+	})
+	return nil
 }
 
 func CheckLatest(ctx context.Context, current string) (Result, error) {
@@ -593,21 +689,45 @@ func InstallChannel(ctx context.Context, current, channel string) (bool, Result,
 }
 
 func InstallTarget(ctx context.Context, current, channel, commit string) (bool, Result, error) {
-	result, err := CheckTarget(ctx, current, channel, commit)
-	if err != nil || !result.UpdateAvailable {
+	return InstallTargetWithProgress(ctx, current, channel, commit, nil)
+}
+
+func InstallTargetWithProgress(ctx context.Context, current, channel, commit string, progress ProgressFunc) (bool, Result, error) {
+	normalized, err := NormalizeChannel(channel)
+	if err != nil {
+		return false, Result{Current: current}, err
+	}
+	checker := DefaultChecker()
+	reportProgress(progress, ProgressEvent{
+		Step: 1, Stage: "check", Message: fmt.Sprintf("checking %s channel from %s", normalized, current),
+	})
+	result, err := checker.CheckTarget(ctx, current, platformAssetName(), normalized, commit)
+	if err != nil {
 		return false, result, err
 	}
+	if !result.UpdateAvailable {
+		reportProgress(progress, ProgressEvent{
+			Step: 1, Stage: "check", Message: fmt.Sprintf("%s is current on %s channel", current, normalized),
+		})
+		return false, result, nil
+	}
+	reportProgress(progress, ProgressEvent{
+		Step: 1, Stage: "check", Message: fmt.Sprintf("update available: %s -> %s", current, result.Latest),
+	})
+
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		cache = os.TempDir()
 	}
 	dir := filepath.Join(cache, "xdrive", "updates", result.Latest)
-	path, err := DownloadVerified(ctx, DefaultChecker(), result, dir)
+	path, err := DownloadVerifiedWithProgress(ctx, checker, result, dir, progress)
 	if err != nil {
 		return false, result, err
 	}
+	reportProgress(progress, ProgressEvent{Step: 5, Stage: "install", Message: "starting platform installer"})
 	if err := installDownloaded(ctx, path); err != nil {
 		return false, result, err
 	}
+	reportProgress(progress, ProgressEvent{Step: 5, Stage: "install", Message: "installer started"})
 	return true, result, nil
 }

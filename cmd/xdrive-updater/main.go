@@ -44,7 +44,9 @@ func main() {
 		return
 	}
 
-	started, result, err := xupdate.InstallTarget(context.Background(), current, channel, commit)
+	started, result, err := xupdate.InstallTargetWithProgress(context.Background(), current, channel, commit, func(event xupdate.ProgressEvent) {
+		log.Print(xupdate.FormatProgress(event))
+	})
 	if err != nil {
 		log.Printf("xDrive updater: %v", err)
 		return
