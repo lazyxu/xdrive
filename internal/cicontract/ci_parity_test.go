@@ -69,6 +69,14 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"XDRIVE_CI_NODE_VERSION: \"22.23.3\"",
 		"XDRIVE_CI_DOCKER_VERSION: \"27.5.1\"",
 		"XDRIVE_CI_COMPOSE_VERSION: \"v2.32.4\"",
+		"ELECTRON_MIRROR: \"https://cdn.npmmirror.com/binaries/electron/\"",
+		"ELECTRON_BUILDER_BINARIES_MIRROR: \"https://cdn.npmmirror.com/binaries/electron-builder-binaries/\"",
+	)
+
+	desktopPackageRaw := readFile(t, filepath.Join(root, "desktop", "package.json"))
+	requireRaw(t, "desktop package scripts", desktopPackageRaw,
+		"electron-builder --win nsis --x64 --publish never",
+		"electron-builder --linux deb --x64 --publish never",
 	)
 
 	githubText := collectYAMLStrings(github)
@@ -135,6 +143,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "GitLab CI", gitlabRaw,
 		"- local: /infra/ci/images.yml",
+		".electron-linux-cache:",
+		"XDG_CACHE_HOME: \"$CI_PROJECT_DIR/.cache\"",
+		"ELECTRON_BUILDER_CACHE: \"$CI_PROJECT_DIR/.cache/electron-builder\"",
+		"extends: .electron-linux-cache",
 		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-go-windows.sh",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
