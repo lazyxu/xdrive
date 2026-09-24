@@ -42,6 +42,8 @@ func main() {
 		fmt.Println(version.String())
 	case "update":
 		err = updateCmd(os.Args[2:])
+	case "doctor":
+		err = doctorCmd(os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -63,6 +65,7 @@ Usage:
   xd mount [PATH]
   xd version
   xd update [--channel stable|master|commit] [--commit SHA] [--install]
+  xd doctor [--strict]
   xd logout
 
 Accounts are created by an xDrive administrator; self-registration is not supported.

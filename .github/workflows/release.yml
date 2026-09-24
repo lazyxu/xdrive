@@ -194,8 +194,8 @@ jobs:
           cp deploy/docker-compose.yml release/docker-compose.yml
           cp deploy/Caddyfile release/Caddyfile
           cp deploy/.env.example release/xdrive.env.example
-          cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh release/
-          chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh
+          cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh release/
+          chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh release/server-doctor.sh
       - uses: actions/upload-artifact@v4
         with:
           name: server-deploy
@@ -238,6 +238,7 @@ jobs:
             server-backup-scheduled.sh \
             server-restore.sh \
             server-verify.sh \
+            server-doctor.sh \
             docker-compose.yml \
             Caddyfile \
             xdrive.env.example > SHA256SUMS.txt

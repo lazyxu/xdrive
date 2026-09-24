@@ -87,6 +87,9 @@ jobs:
           bash -n scripts/server-backup-scheduled.sh
           bash -n scripts/server-restore.sh
           bash -n scripts/server-verify.sh
+          bash -n scripts/server-doctor.sh
+          bash -n scripts/test-server-doctor.sh
+          bash scripts/test-server-doctor.sh
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-installer-bootstrap.sh
           bash scripts/test-server-installer-bootstrap.sh
@@ -128,6 +131,8 @@ jobs:
           test -n "$backup_line" -a -n "$image_line"
           test "$backup_line" -lt "$image_line"
           grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
+          grep -q 'server-doctor.sh' deploy/install-server.sh
+          grep -q 'server-doctor.sh' .github/workflows/release.yml
           grep -q 'flock -n 9' deploy/install-server.sh
           grep -q -- '--leave-server-stopped' deploy/install-server.sh
           grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh

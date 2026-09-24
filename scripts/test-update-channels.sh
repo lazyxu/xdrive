@@ -66,7 +66,7 @@ services: {}
     emit 'example.invalid { respond "ok" }
 '
     ;;
-  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh)
+  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '

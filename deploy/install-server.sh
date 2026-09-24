@@ -392,12 +392,12 @@ stage 3 "download deployment assets"
 mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
 raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
-fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/6 docker-compose.yml"
-fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/6 Caddyfile"
+fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/7 docker-compose.yml"
+fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/7 Caddyfile"
 asset_no=2
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
   asset_no=$((asset_no + 1))
-  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/6 $maintenance_script"
+  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/7 $maintenance_script"
   chmod 700 "$STAGING_DIR/$maintenance_script"
 done
 chmod 600 "$STAGING_DIR/docker-compose.yml" "$STAGING_DIR/Caddyfile"
@@ -641,6 +641,7 @@ prepare_upgrade_transaction() {
   snapshot_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700
   snapshot_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700
   snapshot_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700
+  snapshot_transaction_file "server-doctor.sh" "$CONFIG_DIR/server-doctor.sh" 700
   install -m 700 "$STAGING_DIR/server-restore.sh" "$UPGRADE_STATE_DIR/rollback-restore.sh"
 
   cat > "$UPGRADE_STATE_DIR/state" <<EOF
@@ -674,6 +675,7 @@ rollback_upgrade() {
   restore_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700 || ok=0
   restore_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700 || ok=0
   restore_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700 || ok=0
+  restore_transaction_file "server-doctor.sh" "$CONFIG_DIR/server-doctor.sh" 700 || ok=0
   if [[ "$ok" != "1" ]]; then
     ROLLBACK_RUNNING=0
     return 1
@@ -859,7 +861,7 @@ set_env XD_CADDY_IMAGE "ghcr.io/lazyxu/xdrive-caddy:$IMAGE_TAG"
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
 install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$CONFIG_DIR/$maintenance_script"
 done
 rm -rf "$STAGING_DIR"
@@ -1039,5 +1041,6 @@ fi
 echo "Backup now:      $CONFIG_DIR/server-backup.sh"
 echo "Restore:         $CONFIG_DIR/server-restore.sh"
 echo "Verify storage:  $CONFIG_DIR/server-verify.sh"
+echo "Diagnose server: $CONFIG_DIR/server-doctor.sh"
 echo "Release channel: $(env_value XD_RELEASE_CHANNEL)${requested_commit:+ ($requested_commit)}"
 echo "Manage: docker compose --env-file '$ENV_PATH' -f '$COMPOSE_PATH' <command>"
