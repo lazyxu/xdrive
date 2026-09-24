@@ -172,14 +172,23 @@ For production, set `XD_DOMAIN`, provide `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS
 
 ### Backup, restore, and storage consistency
 
-The Docker deployment installs four maintenance tools in `~/.xd`:
+The Docker deployment installs five maintenance tools in `~/.xd`:
 
 ```text
 ~/.xd/server-backup.sh
 ~/.xd/server-backup-scheduled.sh
 ~/.xd/server-restore.sh
 ~/.xd/server-verify.sh
+~/.xd/server-doctor.sh
 ```
+
+For support and troubleshooting, run:
+
+```bash
+~/.xd/server-doctor.sh
+```
+
+It checks Docker/Compose, current release state, container health, PostgreSQL authentication, data mounts, disk space, upgrade-lock/rollback state, TLS/public reachability, GitHub/GHCR reachability, and appends the last 100 container log lines after automatic secret redaction. It is read-only by default. Use `--strict` when automation should fail on diagnostic errors.
 
 By default, the installer registers a daily scheduled backup at 03:17 local server time and retains seven days. Override with `XD_BACKUP_SCHEDULE` and `XD_BACKUP_RETENTION_DAYS`. Scheduled runs skip rather than overlap if a previous backup is still running.
 
@@ -399,7 +408,10 @@ xd update --install
 xd update --channel stable
 xd update --channel master --install
 xd update --channel commit --commit 0123456789ab --install
+xd doctor
 ```
+
+`xd doctor` produces a copy/paste-safe client report with version/update channel, GitHub update metadata reachability, local config, credential backend, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks CfAPI sync-root registration and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
 
 For a persistent pinned commit target, set both `XD_UPDATE_CHANNEL=commit` and `XD_UPDATE_COMMIT=<sha>` in the updater environment. `XD_UPDATE_CHANNEL=stable|master` can also override the build's default channel. On Linux a manual root update can use `sudo xdrive-updater --channel ...`.
 
@@ -415,6 +427,7 @@ xd config --mount PATH
 xd mount [PATH]
 xd version
 xd update [--channel stable|master|commit] [--commit SHA] [--install]
+xd doctor [--strict]
 xd logout
 ```
 
@@ -661,6 +674,7 @@ server-backup.sh
 server-backup-scheduled.sh
 server-restore.sh
 server-verify.sh
+server-doctor.sh
 docker-compose.yml
 Caddyfile
 xdrive.env.example
@@ -698,7 +712,9 @@ scripts/
   server-backup.sh
   server-restore.sh
   server-verify.sh
+  server-doctor.sh
   test-server-backup-restore.sh
+  test-server-doctor.sh
 deploy/
   Caddy.Dockerfile          Caddy + AliDNS DNS-01 module
   Caddyfile
