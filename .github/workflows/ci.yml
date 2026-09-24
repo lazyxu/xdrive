@@ -138,6 +138,12 @@ jobs:
           grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
           grep -q 'server-doctor.sh' deploy/install-server.sh
           grep -q 'server-doctor.sh' .github/workflows/release.yml
+          grep -q '/api/v1/readyz' deploy/install-server.sh
+          grep -q '/api/v1/readyz' scripts/server-doctor.sh
+          if grep -q '/api/v1/healthz' deploy/install-server.sh; then
+            echo "install readiness gates must use /readyz, not /healthz" >&2
+            exit 1
+          fi
           grep -q 'xdrive-server-host.sh' deploy/install-server.sh
           grep -q 'release/xdrive-server' .github/workflows/release.yml
           if grep -q 'compose create server' scripts/server-backup.sh; then

@@ -80,6 +80,34 @@ func (l *Local) Open(_ context.Context, key string) (*os.File, error) {
 	return os.Open(full)
 }
 
+func (l *Local) Ready(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := os.Stat(l.root)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("storage root is not a directory")
+	}
+	tmp, err := os.CreateTemp(l.root, ".xdrive-ready-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write([]byte{0}); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	return os.Remove(name)
+}
+
 func (l *Local) Delete(_ context.Context, key string) error {
 	full, err := l.resolve(key)
 	if err != nil {

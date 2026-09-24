@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -19,6 +20,7 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "admin":
@@ -69,7 +71,7 @@ func main() {
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
 	defer janitorCancel()
 	srv.StartUploadJanitor(janitorCtx)
-	log.Printf("xDrive server listening on %s", cfg.ListenAddr)
+	slog.Info("server_listening", "address", cfg.ListenAddr)
 	if err := srv.Router().Run(cfg.ListenAddr); err != nil {
 		log.Fatal(err)
 	}
@@ -106,7 +108,7 @@ func runHealthcheck(args []string) error {
 		url = strings.TrimSpace(args[0])
 	}
 	if url == "" {
-		url = "http://127.0.0.1:8080/api/v1/healthz"
+		url = "http://127.0.0.1:8080/api/v1/readyz"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()

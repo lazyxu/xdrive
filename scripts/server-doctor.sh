@@ -234,12 +234,12 @@ if [[ -n "$domain" ]]; then
   port="${https_port:-8443}"
   url="https://$domain"
   [[ "$port" != "443" ]] && url+=":$port"
-  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 8 --resolve "$domain:$port:$probe_ip" "$url/api/v1/healthz" >/dev/null 2>&1; then
-    record PASS "TLS/local HTTPS" "$url certificate and health endpoint verified"
+  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 8 --resolve "$domain:$port:$probe_ip" "$url/api/v1/readyz" >/dev/null 2>&1; then
+    record PASS "TLS/local HTTPS" "$url certificate and readiness endpoint verified"
   else
-    record FAIL "TLS/local HTTPS" "$url failed certificate/health verification"
+    record FAIL "TLS/local HTTPS" "$url failed certificate/readiness verification"
   fi
-  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 8 "$url/api/v1/healthz" >/dev/null 2>&1; then
+  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 8 "$url/api/v1/readyz" >/dev/null 2>&1; then
     record PASS "public HTTPS" "$url reachable through normal DNS/routing"
   else
     record WARN "public HTTPS" "$url not reachable from this host through normal DNS/routing"

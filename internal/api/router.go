@@ -20,15 +20,19 @@ type Server struct {
 	RefreshTTL     time.Duration
 	AllowedOrigin  string
 	MaxUploadBytes int64
+	obs            *serverObservability
 }
 
 func (s *Server) Router() *gin.Engine {
+	s.ensureObservability()
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery(), s.cors())
+	r.Use(s.requestID(), s.observeHTTP(), s.recovery(), s.cors())
 	r.MaxMultipartMemory = 8 << 20
+	r.GET("/metrics", s.metrics)
 
 	v1 := r.Group("/api/v1")
 	v1.GET("/healthz", s.healthz)
+	v1.GET("/readyz", s.readyz)
 	v1.POST("/auth/login", s.login)
 	v1.POST("/auth/refresh", s.refresh)
 	v1.POST("/auth/logout", s.logout)
@@ -76,18 +80,41 @@ func (s *Server) Router() *gin.Engine {
 }
 
 func (s *Server) healthz(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-	defer cancel()
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+type storageReadinessChecker interface {
+	Ready(context.Context) error
+}
+
+func (s *Server) readyz(c *gin.Context) {
+	databaseStatus := "ok"
+	storageStatus := "ok"
+
+	dbCtx, dbCancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	sqlDB, err := s.DB.DB()
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "database": "unavailable"})
-		return
+	if err != nil || sqlDB.PingContext(dbCtx) != nil {
+		databaseStatus = "unavailable"
 	}
-	if err := sqlDB.PingContext(ctx); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"ok": false, "database": "unavailable"})
-		return
+	dbCancel()
+
+	if checker, ok := s.Store.(storageReadinessChecker); ok {
+		storageCtx, storageCancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		if err := checker.Ready(storageCtx); err != nil {
+			storageStatus = "unavailable"
+		}
+		storageCancel()
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "database": "ok"})
+
+	status := http.StatusOK
+	if databaseStatus != "ok" || storageStatus != "ok" {
+		status = http.StatusServiceUnavailable
+	}
+	c.JSON(status, gin.H{
+		"ok":       status == http.StatusOK,
+		"database": databaseStatus,
+		"storage":  storageStatus,
+	})
 }
 
 func (s *Server) cors() gin.HandlerFunc {
@@ -96,8 +123,8 @@ func (s *Server) cors() gin.HandlerFunc {
 		if origin != "" && (s.AllowedOrigin == "*" || origin == s.AllowedOrigin) {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, X-Chunk-SHA256, X-XDrive-Share-Token")
-			c.Header("Access-Control-Expose-Headers", "ETag, X-Content-SHA256, Content-Range")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, X-Chunk-SHA256, X-XDrive-Share-Token, X-Request-ID")
+			c.Header("Access-Control-Expose-Headers", "ETag, X-Content-SHA256, Content-Range, X-Request-ID")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		}
 		if c.Request.Method == http.MethodOptions {

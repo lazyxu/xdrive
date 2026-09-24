@@ -212,6 +212,39 @@ Audit rows contain actor identity, action, target identifiers, success/failure, 
 
 Host maintenance audit writes are best-effort by design: a catastrophic restore/update failure can leave the API or database intentionally unavailable, and an old pre-audit image cannot write the new audit schema. The maintenance command's original success/failure result is never changed merely because its audit write is unavailable.
 
+### Server observability
+
+The API now emits a bounded request ID for every request. A valid incoming `X-Request-ID` is preserved; otherwise the server generates one and returns it in the response. The same ID is available to security audit events, so an administrator can correlate an Audit row with the corresponding server request log.
+
+Normal API access logs are structured JSON written to server stdout. They include the request ID, HTTP method, Gin route template, status, duration, response size, client IP, and authenticated numeric user ID when available. The logger intentionally uses route templates rather than raw query strings and does not log Authorization, refresh tokens, share tokens, passwords, or file contents. Successful liveness/readiness/metrics probes are omitted from access logs to avoid probe noise; failed probes are logged.
+
+Health is split into two endpoints:
+
+- `GET /api/v1/healthz` is **liveness only**: if the Go process can serve the request it returns 200.
+- `GET /api/v1/readyz` is **readiness**: it requires PostgreSQL to respond and the local blob-store root to be writable. Docker health checks, install/upgrade gates, HTTPS readiness checks, and server doctor use this endpoint.
+
+Prometheus-compatible metrics are exposed by the API process at:
+
+```text
+GET http://server:8080/metrics
+```
+
+This route is intentionally outside `/api/`. The bundled Web Nginx and Caddy path therefore do **not** proxy it to the public Web endpoint; it is intended for a collector attached to the Docker network or another explicitly configured private monitoring path.
+
+The first metric set includes:
+
+- request count and cumulative latency by method/route/status;
+- API 5xx count;
+- login failures;
+- quota rejections;
+- upload session/chunk/finalize/overwrite/multipart success and failure;
+- active non-expired upload sessions;
+- PostgreSQL database size and SQL connection-pool gauges;
+- retained blob bytes, in-progress non-reused staging bytes, and managed blob-object counts;
+- live metric-collection success/error counters.
+
+`xdrive_managed_blob_bytes` is application-managed blob accounting from PostgreSQL references (current files + history + non-reused staging chunks). It is not a filesystem crawler and therefore intentionally does not claim to include orphan files; use `server-verify.sh` and host disk monitoring for orphan/free-space diagnostics.
+
 
 Common operations:
 
@@ -611,6 +644,8 @@ Authorization: Bearer <jwt>
 Main routes:
 
 ```text
+GET    /api/v1/healthz
+GET    /api/v1/readyz
 POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
@@ -648,6 +683,7 @@ POST   /api/v1/public/share/download
        X-XDrive-Share-Token: <raw-share-token>
 
 GET    /api/v1/admin/users
+GET    /api/v1/admin/audit
 POST   /api/v1/admin/users
 PATCH  /api/v1/admin/users/:id
 DELETE /api/v1/admin/users/:id

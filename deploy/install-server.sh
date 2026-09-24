@@ -1030,7 +1030,7 @@ fi
 compose up -d web
 web_healthy=0
 for _ in $(seq 1 30); do
-  if compose exec -T web wget -q -O /dev/null http://127.0.0.1/api/v1/healthz >/dev/null 2>&1; then
+  if compose exec -T web wget -q -O /dev/null http://127.0.0.1/api/v1/readyz >/dev/null 2>&1; then
     web_healthy=1
     break
   fi
@@ -1059,12 +1059,12 @@ wait_https() {
   echo "Waiting for AliDNS DNS-01 certificate and HTTPS readiness on port $port..."
   for attempt in $(seq 1 90); do
     if command -v curl >/dev/null 2>&1; then
-      if curl -fsS --max-time 8 --resolve "$domain:$port:$probe_ip" "$url/api/v1/healthz" >/dev/null 2>&1; then
+      if curl -fsS --max-time 8 --resolve "$domain:$port:$probe_ip" "$url/api/v1/readyz" >/dev/null 2>&1; then
         echo "HTTPS ready: $url"
         return 0
       fi
     elif command -v wget >/dev/null 2>&1; then
-      if wget -q --timeout=8 --spider "$url/api/v1/healthz" >/dev/null 2>&1; then
+      if wget -q --timeout=8 --spider "$url/api/v1/readyz" >/dev/null 2>&1; then
         echo "HTTPS ready: $url"
         return 0
       fi
