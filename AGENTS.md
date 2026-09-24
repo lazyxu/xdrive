@@ -15,8 +15,8 @@ For every code change in this repository, use this workflow by default:
 3. After branch reconciliation, create a new short-lived branch from the latest `origin/master` only when no existing branch should be continued.
 4. Make the requested change only on that branch.
 5. Add or update relevant tests.
-6. Run the applicable local tests and require them to pass before opening or updating the PR.
-7. Before the first PR push, fetch `origin` again. Rebase onto `origin/master` only if `master` has actually advanced; do not perform no-op rebases merely to retrigger CI.
+6. Run the applicable local tests and require them to pass before opening or updating the PR/MR.
+7. Before the first PR/MR validation push, fetch `origin` again. Rebase onto `origin/master` only if `master` has actually advanced; do not perform no-op rebases merely to retrigger CI.
 8. Before the final PR push, squash the work branch to exactly one commit relative to `origin/master`. Verify with:
 
    ```bash
@@ -24,19 +24,29 @@ For every code change in this repository, use this workflow by default:
    ```
 
    The result must be `1`. Do not merge a multi-commit work branch into `master`.
-9. Push the branch and open or update the PR. The PR CI run is the authoritative full validation for that source tree. Once it is green, do not push, rebase, amend, or otherwise retrigger CI unless the source tree must change.
-10. If `origin/master` advances after CI is green, rebase only when required by repository rules or to resolve an actual conflict. A required rebase changes the tested commit and therefore requires the PR CI to run again.
-11. Merge the single-commit PR into `master` using a linear-history merge.
+9. Push the branch and open or update the PR (or the corresponding GitLab MR when validating the GitLab mirror). The PR/MR CI run is the authoritative full validation for that source tree. Once it is green, do not push, rebase, amend, or otherwise retrigger CI unless the source tree must change.
+10. If `origin/master` advances after CI is green, rebase only when required by repository rules or to resolve an actual conflict. A required rebase changes the tested commit and therefore requires the PR/MR CI to run again.
+11. Merge the single-commit PR/MR into `master` using a linear-history merge.
 12. After the merge succeeds, delete the merged remote branch.
 13. Keep long-lived branches to a minimum.
 
 ## CI policy
 
-- Full CI runs for pull requests targeting `master`, not for ordinary pushes to short-lived feature/fix branches.
-- `workflow_dispatch` may be used when an explicit manual full-CI run is needed.
-- A successful PR CI run is the normal test gate. Do not duplicate the same full test suite on the subsequent `master` push.
+- Full CI runs for GitHub pull requests or GitLab merge requests targeting `master`, not for ordinary pushes to short-lived feature/fix branches.
+- GitHub `workflow_dispatch` and a GitLab Web/Run pipeline are the equivalent manual full-CI entry points.
+- A successful PR/MR CI run is the normal test gate. Do not duplicate the same full test suite on the subsequent `master` push.
 - `master` and version-tag workflows should focus on build, packaging, signing, image publication, and release-specific validation.
-- Release jobs should not rerun test suites that are already required by PR CI unless a test is specifically validating the produced release artifact.
+- Release jobs should not rerun test suites that are already required by PR/MR CI unless a test is specifically validating the produced release artifact.
+
+## GitHub / GitLab CI parity
+
+- `.github/workflows/ci.yml` and `.gitlab-ci.yml` are two front ends for the same CI contract. Any change to CI jobs, platform coverage, toolchain versions, test/build commands, Docker/deployment validation, trigger semantics, or merge gates must update both files in the same code change.
+- Keep these jobs one-to-one across both systems: `single-commit`, `desktop-linux`, `desktop-windows`, `go-linux`, `go-windows`, and `web`.
+- Keep trigger behavior equivalent: GitHub PR-to-`master` corresponds to GitLab MR-to-`master`; GitHub `workflow_dispatch` corresponds to a GitLab Web/Run pipeline; GitHub cancel-in-progress corresponds to GitLab interruptible auto-cancel.
+- `internal/cicontract/ci_parity_test.go` is the executable parity guard. It parses both YAML files, requires the same job set and key commands, and is part of the normal Go test suites. Do not weaken or bypass it to make one CI provider diverge.
+- GitLab runner tags default to `linux` and `windows` through `XD_GITLAB_LINUX_RUNNER_TAG` and `XD_GITLAB_WINDOWS_RUNNER_TAG`; projects may override those CI/CD variables. GitLab supports CI/CD variables in runner tags.
+- The GitLab Linux runner must be an x86_64 Linux shell runner with Bash, Git, Go 1.25.x, Node.js 22, npm, Docker Engine with Compose v2, Python 3, curl, and `dpkg-deb`; the runner user must be allowed to use Docker. The `go-linux` job uses a resource group because the deployment tests intentionally exercise real Docker Compose resources.
+- The GitLab Windows runner must be a Windows shell runner using PowerShell with Go 1.25.x, Node.js 22, npm, Chocolatey, Windows CfAPI support, certificate creation/signing support, and permission to install/use Inno Setup.
 
 ## Master protection
 

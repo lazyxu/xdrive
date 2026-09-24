@@ -1,0 +1,365 @@
+stages:
+  - test
+
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "master"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - when: never
+
+default:
+  interruptible: true
+
+variables:
+  GIT_DEPTH: "0"
+  XD_GITLAB_LINUX_RUNNER_TAG: "linux"
+  XD_GITLAB_WINDOWS_RUNNER_TAG: "windows"
+
+single-commit:
+  stage: test
+  tags:
+    - "$XD_GITLAB_LINUX_RUNNER_TAG"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - when: never
+  script:
+    - |
+      set -euo pipefail
+      target="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-master}"
+      source_sha="${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
+      git fetch --no-tags origin "$target"
+      count="$(git rev-list --count "origin/$target..$source_sha")"
+      if [[ "$count" != "1" ]]; then
+        echo "MR must contain exactly one commit before merge; found $count." >&2
+        echo "Fetch/rebase origin/$target, squash the work branch to one commit, push it, and rerun CI." >&2
+        exit 1
+      fi
+
+desktop-linux:
+  stage: test
+  tags:
+    - "$XD_GITLAB_LINUX_RUNNER_TAG"
+  script:
+    - |
+      set -euo pipefail
+      node_major="$(node -p 'process.versions.node.split(".")[0]')"
+      if [[ "$node_major" != "22" ]]; then
+        echo "Node.js 22 is required; found $(node --version)." >&2
+        exit 1
+      fi
+      cd desktop
+      npm install --no-audit --no-fund
+      npm run test:main
+      node scripts/set-version.mjs 0.0.0-ci
+      npm run dist:linux
+      test -f release/xdrive-desktop-linux-amd64.deb
+      dpkg-deb --info release/xdrive-desktop-linux-amd64.deb >/dev/null
+
+desktop-windows:
+  stage: test
+  tags:
+    - "$XD_GITLAB_WINDOWS_RUNNER_TAG"
+  script:
+    - |
+      $ErrorActionPreference = "Stop"
+      $nodeMajor = [int]((& node -p "process.versions.node.split('.')[0]").Trim())
+      if ($nodeMajor -ne 22) { throw "Node.js 22 is required; found $(node --version)" }
+      Set-Location desktop
+      npm install --no-audit --no-fund
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      npm run test:main
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      node scripts/set-version.mjs 0.0.0-ci
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      npm run dist:win
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if (-not (Test-Path ./release/xDriveDesktopSetup-amd64.exe)) { throw "desktop installer missing" }
+      if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop executable missing" }
+
+go-linux:
+  stage: test
+  resource_group: xdrive-go-linux-docker
+  tags:
+    - "$XD_GITLAB_LINUX_RUNNER_TAG"
+  script:
+    - |
+      set -euo pipefail
+
+      if ! go version | grep -Eq 'go1\.25(\.| )'; then
+        echo "Go 1.25.x is required; found $(go version)." >&2
+        exit 1
+      fi
+      command -v docker >/dev/null
+      docker compose version >/dev/null
+      command -v dpkg-deb >/dev/null
+      command -v python3 >/dev/null
+      command -v curl >/dev/null
+
+      pg_container="xdrive-ci-postgres-$CI_JOB_ID"
+      cleanup_postgres() {
+        docker rm -f "$pg_container" >/dev/null 2>&1 || true
+      }
+      trap cleanup_postgres EXIT INT TERM
+      cleanup_postgres
+
+      docker run -d \
+        --name "$pg_container" \
+        -e POSTGRES_USER=xdrive \
+        -e POSTGRES_PASSWORD=xdrive \
+        -e POSTGRES_DB=xdrive_test \
+        -p 127.0.0.1::5432 \
+        postgres:17-alpine >/dev/null
+
+      pg_ready=0
+      for _ in $(seq 1 60); do
+        if docker exec "$pg_container" pg_isready -U xdrive -d xdrive_test >/dev/null 2>&1; then
+          pg_ready=1
+          break
+        fi
+        sleep 1
+      done
+      if [[ "$pg_ready" != "1" ]]; then
+        docker logs "$pg_container" >&2 || true
+        echo "PostgreSQL test service did not become ready." >&2
+        exit 1
+      fi
+      pg_port="$(docker port "$pg_container" 5432/tcp | head -n1 | awk -F: '{print $NF}')"
+      export XD_TEST_DATABASE_URL="postgres://xdrive:xdrive@127.0.0.1:$pg_port/xdrive_test?sslmode=disable"
+
+      go mod tidy
+      git diff --exit-code -- go.mod go.sum
+
+      files="$(gofmt -l $(find cmd internal -name '*.go' -type f))"
+      if [[ -n "$files" ]]; then
+        echo "$files"
+        gofmt -d $files
+        exit 1
+      fi
+
+      go test -p 1 -race ./...
+      go vet ./...
+      go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
+
+      bash scripts/build-linux-deb.sh 0.0.0+ci dist
+      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-updater'
+      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/lib/systemd/system/xdrive-update.timer'
+
+      export POSTGRES_PASSWORD=ci-postgres-password
+      export XD_JWT_SECRET=ci-jwt-secret-that-is-long-enough
+      export XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:edge
+      export XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:edge
+      export XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:edge
+
+      bash -n deploy/install-server.sh
+      bash -n scripts/server-backup.sh
+      bash -n scripts/server-backup-scheduled.sh
+      bash -n scripts/server-restore.sh
+      bash -n scripts/server-verify.sh
+      bash -n scripts/server-doctor.sh
+      bash -n scripts/test-server-doctor.sh
+      bash scripts/test-server-doctor.sh
+      bash -n scripts/test-server-backup-restore.sh
+      bash -n scripts/test-server-chunk-storage.sh
+      bash -n scripts/test-server-installer-bootstrap.sh
+      bash scripts/test-server-installer-bootstrap.sh
+      bash -n scripts/test-server-installer-transaction.sh
+      bash scripts/test-server-installer-transaction.sh
+      bash -n scripts/test-server-installer-pipe.sh
+      bash scripts/test-server-installer-pipe.sh
+      bash -n scripts/xdrive-server-host.sh
+      bash -n scripts/test-xdrive-server-host.sh
+      bash scripts/test-xdrive-server-host.sh
+      bash -n scripts/cleanup-merged-branches.sh
+      bash -n scripts/test-cleanup-merged-branches.sh
+      bash scripts/test-cleanup-merged-branches.sh
+      bash -n scripts/test-update-channels.sh
+      bash scripts/test-update-channels.sh
+
+      docker compose -f deploy/docker-compose.yml config >/dev/null
+      XD_DOMAIN=drive.example.test \
+      XD_HTTPS_PORT=8443 \
+      ALIYUN_ACCESS_KEY_ID=ci-key \
+      ALIYUN_ACCESS_KEY_SECRET=ci-secret \
+        docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
+
+      generated="$(mktemp)"
+      sed \
+        -e 's|@SOURCE_REF@|0123456789abcdef0123456789abcdef01234567|g' \
+        -e 's|@IMAGE_TAG@|sha-0123456789ab|g' \
+        -e 's|@RELEASE_CHANNEL@|master|g' \
+        -e 's|@RELEASE_COMMIT@|0123456789abcdef0123456789abcdef01234567|g' \
+        deploy/install-server.sh > "$generated"
+      bash -n "$generated"
+      grep -q 'sha-0123456789ab' "$generated"
+      grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
+      rm -f "$generated"
+
+      grep -q 'tags="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+      grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
+      grep -q 'target_tag="edge"' .github/workflows/release.yml
+      grep -q 'xdrive-caddy' .github/workflows/release.yml
+      grep -q '8443}:443/tcp' deploy/docker-compose.yml
+      grep -q 'dns alidns' deploy/Caddyfile
+      if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
+        echo "server image jobs must not publish edge before the full bundle succeeds" >&2
+        exit 1
+      fi
+
+      backup_line="$(grep -n '^stage 5 "create pre-upgrade backup"' deploy/install-server.sh | head -n1 | cut -d: -f1)"
+      image_line="$(grep -n '^set_env XD_SERVER_IMAGE ' deploy/install-server.sh | head -n1 | cut -d: -f1)"
+      test -n "$backup_line" -a -n "$image_line"
+      test "$backup_line" -lt "$image_line"
+      grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
+      grep -q 'server-doctor.sh' deploy/install-server.sh
+      grep -q 'server-doctor.sh' .github/workflows/release.yml
+      grep -q '/api/v1/readyz' deploy/install-server.sh
+      grep -q '/api/v1/readyz' scripts/server-doctor.sh
+      if grep -q '/api/v1/healthz' deploy/install-server.sh; then
+        echo "install readiness gates must use /readyz, not /healthz" >&2
+        exit 1
+      fi
+      grep -q 'xdrive-server-host.sh' deploy/install-server.sh
+      grep -q 'release/xdrive-server' .github/workflows/release.yml
+      if grep -q 'compose create server' scripts/server-backup.sh; then
+        echo "server backup must not create/recreate the formal server service" >&2
+        exit 1
+      fi
+      grep -q 'UPGRADE INCOMPLETE' deploy/install-server.sh
+      grep -q -- '--leave-server-stopped </dev/null' deploy/install-server.sh
+      grep -q 'flock -n 9' deploy/install-server.sh
+      grep -q -- '--leave-server-stopped' deploy/install-server.sh
+      grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
+      grep -q 'detailed Docker output is captured in' deploy/install-server.sh
+
+      docker build -t xdrive/server:test .
+      bash scripts/test-server-chunk-storage.sh
+
+      docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
+      docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
+
+      bash scripts/test-server-backup-restore.sh
+
+go-windows:
+  stage: test
+  resource_group: xdrive-go-windows
+  tags:
+    - "$XD_GITLAB_WINDOWS_RUNNER_TAG"
+  script:
+    - |
+      $ErrorActionPreference = "Stop"
+
+      $goVersion = (& go version).Trim()
+      if ($goVersion -notmatch 'go1\.25(\.| )') { throw "Go 1.25.x is required; found $goVersion" }
+
+      go mod tidy
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      git diff --exit-code -- go.mod go.sum
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      go test ./internal/... ./cmd/xdrive-agent
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
+      $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
+
+      go build -o xd.exe ./cmd/xd
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      choco install innosetup --no-progress -y
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      $password = "xdrive-ci-signing"
+      $secure = ConvertTo-SecureString $password -AsPlainText -Force
+      $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
+      $ciTemp = Join-Path $env:CI_PROJECT_DIR ".gitlab-ci-tmp"
+      New-Item -ItemType Directory -Force -Path $ciTemp | Out-Null
+      $pfx = Join-Path $ciTemp "xdrive-ci-signing.pfx"
+      Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
+      $env:XD_WINDOWS_SIGN_PFX_PATH = $pfx
+      $env:XD_WINDOWS_SIGN_PFX_PASSWORD = $password
+
+      ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -TimestampUrl "" -SkipSignatureTrustCheck
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      $targets = @(
+        "./dist/windows-build/xd.exe",
+        "./dist/windows-build/xdrive-agent.exe",
+        "./dist/xDriveSetup-amd64.exe"
+      )
+      foreach ($target in $targets) {
+        $signature = Get-AuthenticodeSignature $target
+        if ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
+          throw "missing Authenticode signature for $target"
+        }
+        if ($signature.SignerCertificate.Subject -ne "CN=xDrive CI Test") {
+          throw "unexpected signer for $($target): $($signature.SignerCertificate.Subject)"
+        }
+      }
+
+      if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
+
+      $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
+      $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT")
+      $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
+      if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+
+      $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
+      if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
+      if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
+      foreach ($state in @("normal", "syncing", "paused", "offline", "conflict")) {
+        if (-not (Test-Path (Join-Path $app "icons\tray-$state.ico"))) {
+          throw "installed tray icon missing: $state"
+        }
+      }
+      $shortcutRoots = @(
+        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
+        (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
+      )
+      $shortcut = $shortcutRoots |
+        Where-Object { Test-Path $_ } |
+        ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
+        Select-Object -First 1
+      if ($null -eq $shortcut) { throw "Start menu xDrive shortcut missing" }
+
+      $reported = & (Join-Path $app "xd.exe") version
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if ($reported.Trim() -ne "0.0.0-ci") { throw "embedded version mismatch: $reported" }
+
+      $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+      $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
+      if ($runValue -notlike "*xdrive-agent.exe*") { throw "xDriveAgent autorun registration missing" }
+
+      $uninstaller = Join-Path $app "unins000.exe"
+      if (-not (Test-Path $uninstaller)) { throw "uninstaller missing" }
+      $u = Start-Process -FilePath $uninstaller -ArgumentList $args -Wait -PassThru
+      if ($u.ExitCode -ne 0) { throw "uninstaller exit code $($u.ExitCode)" }
+
+      if (Test-Path (Join-Path $app "xd.exe")) { throw "xd.exe remains after uninstall" }
+      $left = Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
+      if ($null -ne $left) { throw "xDriveAgent autorun remains after uninstall" }
+
+      Remove-Item -Recurse -Force $ciTemp -ErrorAction SilentlyContinue
+
+web:
+  stage: test
+  tags:
+    - "$XD_GITLAB_LINUX_RUNNER_TAG"
+  script:
+    - |
+      set -euo pipefail
+      node_major="$(node -p 'process.versions.node.split(".")[0]')"
+      if [[ "$node_major" != "22" ]]; then
+        echo "Node.js 22 is required; found $(node --version)." >&2
+        exit 1
+      fi
+      command -v docker >/dev/null
+      cd web
+      npm ci --no-audit --no-fund
+      npm run lint
+      npm run build
+      docker build -f Dockerfile -t xdrive/web:test ..
