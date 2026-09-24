@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+for cmd in go node npm git powershell.exe; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "required Windows CI command is missing from PATH: $cmd" >&2
+    exit 1
+  fi
+done
+if command -v choco >/dev/null 2>&1; then
+  choco_cmd="choco"
+elif command -v choco.exe >/dev/null 2>&1; then
+  choco_cmd="choco.exe"
+else
+  echo "Chocolatey is required for the Windows GitLab runner." >&2
+  exit 1
+fi
+
+if ! go version | grep -Eq 'go1\.25(\.| )'; then
+  echo "Go 1.25.x is required; found $(go version)." >&2
+  exit 1
+fi
+node_major="$(node -p 'process.versions.node.split(".")[0]')"
+if [[ "$node_major" != "22" ]]; then
+  echo "Node.js 22 is required; found $(node --version)." >&2
+  exit 1
+fi
+
+go mod tidy
+git diff --exit-code -- go.mod go.sum
+go test ./internal/... ./cmd/xdrive-agent
+go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
+
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action ValidateScripts
+
+go build -o xd.exe ./cmd/xd
+go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
+
+"$choco_cmd" install innosetup --no-progress -y
+
+ci_tmp="$PWD/.gitlab-ci-tmp"
+rm -rf "$ci_tmp"
+mkdir -p "$ci_tmp"
+trap 'rm -rf "$ci_tmp"' EXIT INT TERM
+pfx_posix="$ci_tmp/xdrive-ci-signing.pfx"
+if command -v cygpath >/dev/null 2>&1; then
+  pfx_native="$(cygpath -w "$pfx_posix")"
+else
+  pfx_native="$pfx_posix"
+fi
+password="xdrive-ci-signing"
+
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action PrepareSigning -PfxPath "$pfx_native" -Password "$password"
+
+export XD_WINDOWS_SIGN_PFX_PATH="$pfx_native"
+export XD_WINDOWS_SIGN_PFX_PASSWORD="$password"
+export CSC_LINK="$pfx_native"
+export CSC_KEY_PASSWORD="$password"
+
+pushd desktop >/dev/null
+npm install --no-audit --no-fund
+node scripts/set-version.mjs 0.0.0-ci
+npm run dist:win
+popd >/dev/null
+
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action BuildInstaller
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action VerifySignatures
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action SmokeInstall

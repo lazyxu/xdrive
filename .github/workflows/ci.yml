@@ -166,6 +166,8 @@ jobs:
           bash scripts/test-cleanup-merged-branches.sh
           bash -n scripts/test-update-channels.sh
           bash scripts/test-update-channels.sh
+          bash -n scripts/ci/gitlab-desktop-windows.sh
+          bash -n scripts/ci/gitlab-go-windows.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
           XD_DOMAIN=drive.example.test XD_HTTPS_PORT=8443 ALIYUN_ACCESS_KEY_ID=ci-key ALIYUN_ACCESS_KEY_SECRET=ci-secret docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
 
@@ -249,6 +251,7 @@ jobs:
         run: |
           $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
           $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
+          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-windows-native.ps1))
       - run: go build -o xd.exe ./cmd/xd
       - run: go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
       - name: Install Inno Setup

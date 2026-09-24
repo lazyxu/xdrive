@@ -73,6 +73,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	githubText := collectYAMLStrings(github)
 	gitlabText := collectYAMLStrings(gitlab)
+	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
+	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
+	gitlabContractText := gitlabText + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
 	for _, command := range []string{
 		"npm install --no-audit --no-fund",
 		"npm run test:main",
@@ -100,8 +104,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
 		"go build -o xd.exe ./cmd/xd",
 		"go build -ldflags=\"-H=windowsgui\" -o xdrive-agent.exe ./cmd/xdrive-agent",
-		"choco install innosetup --no-progress -y",
-		"./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl \"\" -SkipSignatureTrustCheck",
 		"npm ci --no-audit --no-fund",
 		"npm run lint",
 		"npm run build",
@@ -110,8 +112,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		if !strings.Contains(githubText, command) {
 			t.Errorf("GitHub CI is missing parity command %q", command)
 		}
-		if !strings.Contains(gitlabText, command) {
-			t.Errorf("GitLab CI is missing parity command %q", command)
+		if !strings.Contains(gitlabContractText, command) {
+			t.Errorf("GitLab CI contract is missing parity command %q", command)
 		}
 	}
 
@@ -133,12 +135,32 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "GitLab CI", gitlabRaw,
 		"- local: /infra/ci/images.yml",
+		"bash scripts/ci/gitlab-desktop-windows.sh",
+		"bash scripts/ci/gitlab-go-windows.sh",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
 		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH == \"master\"",
 		"$CI_PIPELINE_SOURCE == \"web\"",
 		"on_new_commit: interruptible",
 		"interruptible: true",
+	)
+
+	if strings.Contains(gitlabRaw, "$ErrorActionPreference") ||
+		strings.Contains(gitlabRaw, "Set-Location desktop") ||
+		strings.Contains(gitlabRaw, "$LASTEXITCODE") {
+		t.Errorf("GitLab Windows jobs must be Bash-compatible; raw PowerShell syntax found in .gitlab-ci.yml")
+	}
+	requireRaw(t, "GitLab Windows Bash wrappers", gitlabWindowsBash,
+		"set -euo pipefail",
+		"powershell.exe",
+		"go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
+		"install innosetup --no-progress -y",
+	)
+	requireRaw(t, "GitLab Windows native helper", gitlabWindowsNative,
+		"ValidateSet(\"ValidateScripts\", \"PrepareSigning\", \"BuildInstaller\", \"VerifySignatures\", \"SmokeInstall\")",
+		"./scripts/build-windows-installer.ps1",
+		"Get-AuthenticodeSignature",
+		"Start-Process -FilePath $installer",
 	)
 }
 
