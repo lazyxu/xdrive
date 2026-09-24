@@ -151,6 +151,9 @@ docker run --rm --entrypoint sh \
   "$postgres_image" \
   -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} \; && tar -xf /backup/blobs.tar -C /data' </dev/null
 
+echo "Repairing restored storage ownership..."
+compose run -T --rm --no-deps --user 0:0 server storage prepare --force </dev/null
+
 echo "Verifying restored metadata and blobs..."
 compose run -T --rm --no-deps server storage verify --json </dev/null
 

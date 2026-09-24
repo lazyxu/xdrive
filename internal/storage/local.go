@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const UploadStagingDir = ".xdrive-uploads"
+
 type Local struct {
 	root string
 }
@@ -21,7 +23,11 @@ func NewLocal(root string) (*Local, error) {
 	if err := os.MkdirAll(abs, 0o750); err != nil {
 		return nil, err
 	}
-	return &Local{root: abs}, nil
+	local := &Local{root: abs}
+	if err := local.Ready(context.Background()); err != nil {
+		return nil, fmt.Errorf("storage root is not writable: %w", err)
+	}
+	return local, nil
 }
 
 func (l *Local) resolve(key string) (string, error) {
@@ -91,14 +97,35 @@ func (l *Local) Ready(ctx context.Context) error {
 	if !info.IsDir() {
 		return fmt.Errorf("storage root is not a directory")
 	}
-	tmp, err := os.CreateTemp(l.root, ".xdrive-ready-*")
+	if err := probeWritableDirectory(ctx, l.root); err != nil {
+		return fmt.Errorf("storage root: %w", err)
+	}
+
+	staging := filepath.Join(l.root, UploadStagingDir)
+	if err := os.MkdirAll(staging, 0o750); err != nil {
+		return fmt.Errorf("upload staging directory: %w", err)
+	}
+	if err := probeWritableDirectory(ctx, staging); err != nil {
+		return fmt.Errorf("upload staging directory: %w", err)
+	}
+	return nil
+}
+
+func probeWritableDirectory(ctx context.Context, dir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".xdrive-ready-*")
 	if err != nil {
 		return err
 	}
 	name := tmp.Name()
-	if _, err := tmp.Write([]byte{0}); err != nil {
+	cleanup := func() {
 		_ = tmp.Close()
 		_ = os.Remove(name)
+	}
+	if _, err := tmp.Write([]byte{0}); err != nil {
+		cleanup()
 		return err
 	}
 	if err := tmp.Close(); err != nil {

@@ -27,6 +27,20 @@ services:
     cpus: ${XD_POSTGRES_CPU_LIMIT:-1.0}
     pids_limit: ${XD_POSTGRES_PIDS_LIMIT:-256}
 
+  storage-init:
+    image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
+    user: "0:0"
+    environment:
+      XD_STORAGE_ROOT: /data
+    volumes:
+      - file-data:/data
+    command: ["storage", "prepare", "--uid", "65532", "--gid", "65532"]
+    restart: "no"
+    logging: *default-logging
+    mem_limit: ${XD_STORAGE_INIT_MEMORY_LIMIT:-256m}
+    cpus: ${XD_STORAGE_INIT_CPU_LIMIT:-0.25}
+    pids_limit: ${XD_STORAGE_INIT_PIDS_LIMIT:-64}
+
   server:
     image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
     environment:
@@ -41,6 +55,8 @@ services:
     volumes:
       - file-data:/data
     depends_on:
+      storage-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     healthcheck:
