@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+REPOSITORY="${XD_REPOSITORY:-lazyxu/xdrive}"
+INSTALLER_URL="${XD_INSTALLER_URL:-https://raw.githubusercontent.com/$REPOSITORY/master/deploy/install-server.sh}"
+
+resolve_self() {
+  if command -v readlink >/dev/null 2>&1; then
+    readlink -f "${BASH_SOURCE[0]}" 2>/dev/null && return 0
+  fi
+  printf '%s\n' "${BASH_SOURCE[0]}"
+}
+
+SELF_PATH="$(resolve_self)"
+DEFAULT_CONFIG_DIR="$(cd "$(dirname "$SELF_PATH")" && pwd)"
+CONFIG_DIR="${XD_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}"
+ENV_PATH="$CONFIG_DIR/.env"
+COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
+
+usage() {
+  cat <<'EOF'
+xDrive server host manager
+
+Usage:
+  xdrive-server update [--channel stable|master|commit] [--commit SHA]
+  xdrive-server doctor [--strict]
+  xdrive-server status
+  xdrive-server backup [server-backup.sh options...]
+  xdrive-server verify
+  xdrive-server version
+
+This command runs on the Docker host. It manages ~/.xd and the xDrive
+containers; it is not the xdrive-server API daemon inside the container.
+EOF
+}
+
+env_value() {
+  local key="$1" value
+  [[ -f "$ENV_PATH" ]] || return 0
+  value="$(grep "^$key=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  value="${value%$'\r'}"
+  if [[ "$value" == \"*\" && "$value" == *\" && ${#value} -ge 2 ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s\n' "$value"
+}
+
+compose() {
+  local domain
+  domain="$(env_value XD_DOMAIN)"
+  if [[ -n "$domain" ]]; then
+    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  else
+    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  fi
+}
+
+download_installer() {
+  local destination="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 15 \
+      "$INSTALLER_URL" -o "$destination" </dev/null
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "$destination" "$INSTALLER_URL" </dev/null
+  else
+    echo "xdrive-server: curl or wget is required to update." >&2
+    return 1
+  fi
+}
+
+update_cmd() (
+  local tmp installer
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-server-update.XXXXXX")"
+  installer="$tmp/install-server.sh"
+  trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  echo "[xDrive] downloading host installer..."
+  download_installer "$installer"
+  chmod 700 "$installer"
+  bash -n "$installer"
+  echo "[xDrive] installer downloaded and syntax-checked."
+
+  if [[ -t 0 && -r /dev/tty && -w /dev/tty ]]; then
+    bash "$installer" "$@" </dev/tty
+  else
+    XD_NONINTERACTIVE=1 bash "$installer" "$@" </dev/null
+  fi
+)
+
+doctor_cmd() {
+  local doctor="$CONFIG_DIR/server-doctor.sh"
+  [[ -x "$doctor" ]] || {
+    echo "xdrive-server: server doctor is not installed at $doctor" >&2
+    return 1
+  }
+  XD_CONFIG_DIR="$CONFIG_DIR" exec "$doctor" "$@"
+}
+
+status_cmd() {
+  [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || {
+    echo "xdrive-server: no xDrive deployment found in $CONFIG_DIR" >&2
+    return 1
+  }
+  compose ps
+}
+
+backup_cmd() {
+  local script="$CONFIG_DIR/server-backup.sh"
+  [[ -x "$script" ]] || {
+    echo "xdrive-server: backup tool is not installed at $script" >&2
+    return 1
+  }
+  XD_CONFIG_DIR="$CONFIG_DIR" exec "$script" "$@"
+}
+
+verify_cmd() {
+  local script="$CONFIG_DIR/server-verify.sh"
+  [[ -x "$script" ]] || {
+    echo "xdrive-server: verify tool is not installed at $script" >&2
+    return 1
+  }
+  XD_CONFIG_DIR="$CONFIG_DIR" exec "$script" "$@"
+}
+
+version_cmd() {
+  local channel commit image
+  channel="$(env_value XD_RELEASE_CHANNEL)"
+  commit="$(env_value XD_RELEASE_COMMIT)"
+  image="$(env_value XD_SERVER_IMAGE)"
+  printf 'channel: %s\n' "${channel:-unknown}"
+  [[ -n "$commit" ]] && printf 'commit: %s\n' "${commit:0:12}"
+  [[ -n "$image" ]] && printf 'server image: %s\n' "$image"
+}
+
+cmd="${1:-}"
+[[ -n "$cmd" ]] || { usage >&2; exit 2; }
+shift || true
+
+case "$cmd" in
+  update) update_cmd "$@" ;;
+  doctor) doctor_cmd "$@" ;;
+  status) status_cmd "$@" ;;
+  backup) backup_cmd "$@" ;;
+  verify) verify_cmd ;;
+  version) version_cmd ;;
+  -h|--help|help) usage ;;
+  *) echo "xdrive-server: unknown command: $cmd" >&2; usage >&2; exit 2 ;;
+esac

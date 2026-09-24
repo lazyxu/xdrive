@@ -79,6 +79,10 @@ if [[ "$SAFETY_BACKUP" == "1" ]]; then
 fi
 
 compose() {
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+}
+
+compose_with_stdin() {
   docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
 }
 
@@ -110,30 +114,45 @@ trap on_exit EXIT INT TERM
 
 compose up -d postgres >/dev/null
 wait_postgres
-compose create server >/dev/null
 compose stop server >/dev/null 2>&1 || true
 
-server_id="$(compose ps -aq server | head -n1)"
-[[ -n "$server_id" ]] || { echo "cannot locate xDrive server container" >&2; exit 1; }
-mount_type="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}')"
-if [[ "$mount_type" == "volume" ]]; then
-  data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}')"
-else
-  data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
+server_id="$(compose ps -aq server | head -n1 || true)"
+mount_type=""
+data_source=""
+if [[ -n "$server_id" ]]; then
+  mount_type="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}' </dev/null)"
+  if [[ "$mount_type" == "volume" ]]; then
+    data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' </dev/null)"
+  else
+    data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' </dev/null)"
+  fi
 fi
-[[ -n "$data_source" ]] || { echo "cannot resolve xDrive /data mount" >&2; exit 1; }
+if [[ -z "$data_source" ]]; then
+  data_source="$(docker volume ls -q \
+    --filter 'label=com.docker.compose.project=xdrive' \
+    --filter 'label=com.docker.compose.volume=file-data' </dev/null | head -n1 || true)"
+  [[ -n "$data_source" ]] && mount_type="volume"
+fi
+[[ -n "$data_source" ]] || {
+  echo "cannot resolve xDrive /data mount without creating/recreating the server service" >&2
+  exit 1
+}
 postgres_id="$(compose ps -q postgres | head -n1)"
-postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}')"
+postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </dev/null)"
 
 compose exec -T postgres psql -U xdrive -d postgres -v ON_ERROR_STOP=1   -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'xdrive' AND pid <> pg_backend_pid();" >/dev/null
 compose exec -T postgres dropdb -U xdrive --if-exists xdrive
 compose exec -T postgres createdb -U xdrive -O xdrive xdrive
-compose exec -T postgres pg_restore -U xdrive -d xdrive --no-owner --no-privileges < "$BACKUP_DIR/database.dump"
+compose_with_stdin exec -T postgres pg_restore -U xdrive -d xdrive --no-owner --no-privileges < "$BACKUP_DIR/database.dump"
 
-docker run --rm --entrypoint sh   -v "$data_source:/data"   -v "$BACKUP_DIR:/backup:ro"   "$postgres_image"   -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} \; && tar -xf /backup/blobs.tar -C /data'
+docker run --rm --entrypoint sh \
+  -v "$data_source:/data" \
+  -v "$BACKUP_DIR:/backup:ro" \
+  "$postgres_image" \
+  -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} \; && tar -xf /backup/blobs.tar -C /data' </dev/null
 
 echo "Verifying restored metadata and blobs..."
-compose run --rm --no-deps server storage verify --json
+compose run -T --rm --no-deps server storage verify --json </dev/null
 
 if [[ "$server_was_running" == "1" ]]; then
   compose start server >/dev/null

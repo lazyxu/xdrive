@@ -32,7 +32,7 @@ ENV_PATH="$CONFIG_DIR/.env"
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 
 compose() {
-  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 wait_postgres() {
@@ -48,7 +48,7 @@ wait_postgres() {
 }
 
 if [[ "$ONLINE" == "1" ]]; then
-  compose exec -T server xdrive-server storage verify --json
+  compose exec -T server xdrive-server storage verify --json </dev/null
   exit $?
 fi
 
@@ -67,4 +67,4 @@ trap restart_server EXIT INT TERM
 compose up -d postgres >/dev/null
 wait_postgres
 compose stop server >/dev/null 2>&1 || true
-compose run --rm --no-deps server storage verify --json
+compose run -T --rm --no-deps server storage verify --json </dev/null

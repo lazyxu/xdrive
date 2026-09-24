@@ -44,23 +44,42 @@ stop_pull_monitor() {
 trap 'LAST_ERROR_COMMAND="${BASH_COMMAND:-unknown}"' ERR
 on_exit() {
   local status=$?
+  local final_status="$status"
+  local rollback_status=0
   stop_pull_monitor
+
+  if [[ "$ROLLBACK_ARMED" == "1" && "$ROLLBACK_RUNNING" != "1" ]]; then
+    trap - EXIT ERR INT TERM
+    set +e
+    if [[ "$status" -eq 0 ]]; then
+      printf '\n[xDrive] UPGRADE INCOMPLETE at stage %s/%s: transaction exited before commit; forcing rollback.\n' \
+        "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" >&2
+      final_status=70
+    else
+      printf '\n[xDrive] UPGRADE FAILED at stage %s/%s: %s (exit %s)\n' \
+        "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$status" >&2
+    fi
+
+    ROLLBACK_ARMED=0
+    rollback_upgrade
+    rollback_status=$?
+    if [[ "$rollback_status" -eq 0 ]]; then
+      echo "[xDrive] UPGRADE FAILED -> ROLLBACK SUCCESS" >&2
+    else
+      echo "[xDrive] ROLLBACK FAILED" >&2
+      echo "[xDrive] rollback state preserved at: $UPGRADE_STATE_DIR" >&2
+      final_status=71
+    fi
+    exit "$final_status"
+  fi
+
   if [[ "$status" -ne 0 ]]; then
-    if [[ "$UPGRADE_EXISTING" == "1" || "$ROLLBACK_ARMED" == "1" ]]; then
+    if [[ "$UPGRADE_EXISTING" == "1" ]]; then
       printf '\n[xDrive] UPGRADE FAILED at stage %s/%s: %s (exit %s)\n' \
         "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$status" >&2
     else
       printf '\n[xDrive] FAILED at stage %s/%s: %s (exit %s)\n' \
         "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$status" >&2
-    fi
-    if [[ "$ROLLBACK_ARMED" == "1" && "$ROLLBACK_RUNNING" != "1" ]]; then
-      ROLLBACK_ARMED=0
-      if rollback_upgrade; then
-        echo "[xDrive] UPGRADE FAILED -> ROLLBACK SUCCESS" >&2
-      else
-        echo "[xDrive] ROLLBACK FAILED" >&2
-        echo "[xDrive] rollback state preserved at: $UPGRADE_STATE_DIR" >&2
-      fi
     fi
   fi
 }
@@ -210,7 +229,7 @@ fetch() {
     monitor_pid=$!
     if ! stats="$(curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 15 \
       --write-out '%{size_download}\t%{speed_download}\t%{time_total}' \
-      "$url" -o "$tmp")"; then
+      "$url" -o "$tmp" </dev/null)"; then
       [[ -n "$monitor_pid" ]] && kill "$monitor_pid" >/dev/null 2>&1 || true
       [[ -n "$monitor_pid" ]] && wait "$monitor_pid" 2>/dev/null || true
       rm -f "$tmp"
@@ -225,7 +244,7 @@ fetch() {
       printf '[xDrive] downloaded: %s\n' "$label"
     fi
   elif command -v wget >/dev/null 2>&1; then
-    if ! wget --progress=bar:force:noscroll -O "$tmp" "$url"; then
+    if ! wget --progress=bar:force:noscroll -O "$tmp" "$url" </dev/null; then
       rm -f "$tmp"
       return 1
     fi
@@ -383,7 +402,7 @@ case "$(uname -m)" in
 esac
 
 need docker
-if ! docker compose version >/dev/null 2>&1; then
+if ! docker compose version </dev/null >/dev/null 2>&1; then
   echo "xDrive server installer: Docker Compose v2 is required (docker compose)." >&2
   exit 1
 fi
@@ -392,14 +411,17 @@ stage 3 "download deployment assets"
 mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
 raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
-fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/7 docker-compose.yml"
-fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/7 Caddyfile"
+fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/8 docker-compose.yml"
+fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/8 Caddyfile"
 asset_no=2
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
   asset_no=$((asset_no + 1))
-  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/7 $maintenance_script"
+  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/8 $maintenance_script"
   chmod 700 "$STAGING_DIR/$maintenance_script"
 done
+asset_no=$((asset_no + 1))
+fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/8 xdrive-server"
+chmod 700 "$STAGING_DIR/xdrive-server"
 chmod 600 "$STAGING_DIR/docker-compose.yml" "$STAGING_DIR/Caddyfile"
 
 random_hex() {
@@ -449,14 +471,14 @@ managed_container_id() {
   # The compose project is explicitly named xdrive, so prefer the stable
   # container name. This also works for older deployments whose compose labels
   # may be missing or differ from the current project metadata.
-  if docker inspect "$conventional" >/dev/null 2>&1; then
+  if docker inspect "$conventional" </dev/null >/dev/null 2>&1; then
     printf '%s\n' "$conventional"
     return 0
   fi
 
   # Fall back to Compose discovery when the conventional name is unavailable.
   if [[ -f "$COMPOSE_PATH" ]]; then
-    id="$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq "$service" 2>/dev/null | head -n1 || true)"
+    id="$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq "$service" </dev/null 2>/dev/null | head -n1 || true)"
     if [[ -n "$id" ]]; then
       printf '%s\n' "$id"
       return 0
@@ -465,23 +487,23 @@ managed_container_id() {
 
   docker ps -aq \
     --filter "label=com.docker.compose.project=xdrive" \
-    --filter "label=com.docker.compose.service=$service" 2>/dev/null | head -n1
+    --filter "label=com.docker.compose.service=$service" </dev/null 2>/dev/null | head -n1
 }
 
 container_env_value() {
   local container_id="$1" key="$2"
   [[ -n "$container_id" ]] || return 0
-  docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+  docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' </dev/null 2>/dev/null \
     | sed -n "s/^${key}=//p" | tail -n1
 }
 
 wait_existing_postgres() {
   local container_id="$1" i
-  if [[ "$(docker inspect "$container_id" --format '{{.State.Running}}' 2>/dev/null || true)" != "true" ]]; then
-    docker start "$container_id" >/dev/null
+  if [[ "$(docker inspect "$container_id" --format '{{.State.Running}}' </dev/null 2>/dev/null || true)" != "true" ]]; then
+    docker start "$container_id" </dev/null >/dev/null
   fi
   for i in $(seq 1 30); do
-    if docker exec "$container_id" pg_isready -h 127.0.0.1 -U xdrive -d xdrive >/dev/null 2>&1; then
+    if docker exec "$container_id" pg_isready -h 127.0.0.1 -U xdrive -d xdrive </dev/null >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -502,13 +524,13 @@ postgres_password_works() {
     set -- $(hostname -i)
     [ "$#" -gt 0 ]
     exec psql -h "$1" -U xdrive -d xdrive -Atqc "SELECT 1"
-  ' >/dev/null 2>&1
+  ' </dev/null >/dev/null 2>&1
 }
 
 repair_postgres_password_via_local_socket() {
   local container_id="$1" password="$2"
   [[ -n "$password" ]] || return 1
-  docker exec "$container_id" psql -U xdrive -d xdrive -Atqc 'SELECT 1' >/dev/null 2>&1 || return 1
+  docker exec "$container_id" psql -U xdrive -d xdrive -Atqc 'SELECT 1' </dev/null >/dev/null 2>&1 || return 1
   docker exec -i "$container_id" \
     psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -v "password_value=$password" >/dev/null <<'SQL'
 ALTER ROLE xdrive WITH PASSWORD :'password_value';
@@ -642,6 +664,7 @@ prepare_upgrade_transaction() {
   snapshot_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700
   snapshot_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700
   snapshot_transaction_file "server-doctor.sh" "$CONFIG_DIR/server-doctor.sh" 700
+  snapshot_transaction_file "xdrive-server" "$CONFIG_DIR/xdrive-server" 700
   install -m 700 "$STAGING_DIR/server-restore.sh" "$UPGRADE_STATE_DIR/rollback-restore.sh"
 
   cat > "$UPGRADE_STATE_DIR/state" <<EOF
@@ -655,9 +678,9 @@ EOF
 
 rollback_compose() {
   if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
   else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
   fi
 }
 
@@ -665,7 +688,7 @@ rollback_upgrade() {
   local ok=1 i
   ROLLBACK_RUNNING=1
   echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
-  docker stop xdrive-caddy-1 xdrive-web-1 xdrive-server-1 >/dev/null 2>&1 || true
+  docker stop xdrive-caddy-1 xdrive-web-1 xdrive-server-1 </dev/null >/dev/null 2>&1 || true
 
   echo "[xDrive] rollback: restoring previous deployment files..." >&2
   restore_transaction_file ".env" "$ENV_PATH" 600 || ok=0
@@ -676,6 +699,13 @@ rollback_upgrade() {
   restore_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700 || ok=0
   restore_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700 || ok=0
   restore_transaction_file "server-doctor.sh" "$CONFIG_DIR/server-doctor.sh" 700 || ok=0
+  restore_transaction_file "xdrive-server" "$CONFIG_DIR/xdrive-server" 700 || ok=0
+  if [[ -f "$UPGRADE_STATE_DIR/absent-xdrive-server" && -L /usr/local/bin/xdrive-server ]]; then
+    cli_target="$(readlink -f /usr/local/bin/xdrive-server 2>/dev/null || true)"
+    if [[ -z "$cli_target" || "$cli_target" == "$CONFIG_DIR/xdrive-server" ]]; then
+      rm -f /usr/local/bin/xdrive-server
+    fi
+  fi
   if [[ "$ok" != "1" ]]; then
     ROLLBACK_RUNNING=0
     return 1
@@ -689,7 +719,7 @@ rollback_upgrade() {
     fi
     echo "[xDrive] rollback: restoring database and blobs from $PRE_UPGRADE_BACKUP ..." >&2
     if ! "$UPGRADE_STATE_DIR/rollback-restore.sh" "$PRE_UPGRADE_BACKUP" \
-        --config-dir "$CONFIG_DIR" --yes --no-safety-backup >&2; then
+        --config-dir "$CONFIG_DIR" --yes --no-safety-backup </dev/null >&2; then
       echo "[xDrive] rollback: data restore failed; API remains stopped." >&2
       ROLLBACK_RUNNING=0
       return 1
@@ -730,7 +760,7 @@ commit_upgrade_transaction() {
 
 stage 4 "prepare server configuration"
 if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] \
-    && docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq server 2>/dev/null | grep -q .; then
+    && docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq server </dev/null 2>/dev/null | grep -q .; then
   UPGRADE_EXISTING=1
   prepare_upgrade_transaction
 fi
@@ -829,13 +859,13 @@ fi
 stage 5 "create pre-upgrade backup"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   echo "[xDrive] existing deployment detected; entering upgrade maintenance window..."
-  docker stop xdrive-caddy-1 xdrive-web-1 >/dev/null 2>&1 || true
+  docker stop xdrive-caddy-1 xdrive-web-1 </dev/null >/dev/null 2>&1 || true
 
   backup_output=""
   if ! backup_output="$("$STAGING_DIR/server-backup.sh" \
       --config-dir "$CONFIG_DIR" \
       --output-dir "$CONFIG_DIR/pre-upgrade-backups" \
-      --leave-server-stopped)"; then
+      --leave-server-stopped </dev/null)"; then
     echo "$backup_output" >&2
     echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
     exit 1
@@ -864,9 +894,25 @@ install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$CONFIG_DIR/$maintenance_script"
 done
+install -m 700 "$STAGING_DIR/xdrive-server" "$CONFIG_DIR/xdrive-server"
+if [[ -d /usr/local/bin && -w /usr/local/bin ]]; then
+  ln -sfn "$CONFIG_DIR/xdrive-server" /usr/local/bin/xdrive-server
+  echo "Host manager:    /usr/local/bin/xdrive-server"
+else
+  echo "Host manager:    $CONFIG_DIR/xdrive-server"
+  echo "Add $CONFIG_DIR to PATH to use: xdrive-server"
+fi
 rm -rf "$STAGING_DIR"
 
 compose() {
+  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  else
+    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  fi
+}
+
+compose_with_stdin() {
   if [[ -n "$(env_value XD_DOMAIN)" ]]; then
     docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
   else
@@ -1022,7 +1068,7 @@ if ! compose exec -T server xdrive-server admin exists >/dev/null 2>&1; then
       if [[ "$admin_password" == "$admin_password_confirm" && -n "$admin_password" ]]; then break; fi
       echo "Passwords did not match; try again." >/dev/tty
     done
-    printf '%s\n' "$admin_password" | compose exec -T server xdrive-server admin create --username "$admin_username" --password-stdin
+    printf '%s\n' "$admin_password" | compose_with_stdin exec -T server xdrive-server admin create --username "$admin_username" --password-stdin
     unset admin_password admin_password_confirm
   else
     echo "Create the first administrator with:"
@@ -1041,6 +1087,7 @@ fi
 echo "Backup now:      $CONFIG_DIR/server-backup.sh"
 echo "Restore:         $CONFIG_DIR/server-restore.sh"
 echo "Verify storage:  $CONFIG_DIR/server-verify.sh"
-echo "Diagnose server: $CONFIG_DIR/server-doctor.sh"
+echo "Diagnose server: xdrive-server doctor"
+echo "Update server:   xdrive-server update"
 echo "Release channel: $(env_value XD_RELEASE_CHANNEL)${requested_commit:+ ($requested_commit)}"
-echo "Manage: docker compose --env-file '$ENV_PATH' -f '$COMPOSE_PATH' <command>"
+echo "Manage: xdrive-server status|doctor|update|backup|verify"

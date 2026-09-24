@@ -62,64 +62,83 @@ Before running the one-line installer, the server needs:
 
 No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose runs PostgreSQL and the optional xDrive Caddy image with the AliDNS DNS-01 module. DNS-01 certificate issuance does not require inbound ports 80 or 443.
 
-### One-line install from `master` / edge images
+### Bootstrap install and server management
+
+Do not stream the installer directly into `bash`. Download it completely first, then execute the file so Docker/Compose subprocesses can never consume the shell source stream:
 
 ```bash
-curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | bash
+tmp="$(mktemp)"
+curl -fsSL --retry 3 --connect-timeout 15 \
+  https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh \
+  -o "$tmp"
+bash "$tmp" --channel master
+rc=$?
+rm -f "$tmp"
+exit "$rc"
 ```
 
-The bootstrap installer supports three release channels. The canonical raw-`master` one-line install defaults to the latest fully successful **master** snapshot; a packaged stable release defaults to **stable**. The selected channel is persisted in `~/.xd/.env` and reused by later runs.
+The bootstrap installer supports three release channels. The selected channel is persisted in `~/.xd/.env`.
 
 ```bash
 # Latest stable vMAJOR.MINOR.PATCH release
-curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
-  bash -s -- --channel stable
+bash "$tmp" --channel stable
 
 # Latest fully successful master snapshot
-curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
-  bash -s -- --channel master
+bash "$tmp" --channel master
 
-# A specific successfully published master commit (short or full SHA)
-curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
-  bash -s -- --channel commit --commit 0123456789ab
+# A specific successfully published master commit
+bash "$tmp" --channel commit --commit 0123456789ab
 ```
 
-The raw bootstrap is intentionally downloaded silently so its own progress animation cannot corrupt piped terminal output. The installer then prints structured stages and download diagnostics (asset names, transfer summaries, and live host receive rate for longer transfers). The raw bootstrap resolves the selected successfully published release/commit in-process and downloads deployment assets from that exact source. The `master` channel uses the rolling successful `snapshot` release and exact `sha-<commit>` container images rather than the mutable `edge` tag. The `commit` channel requires the immutable `snapshot-<sha12>` release, so commits without a complete successful published build are rejected.
-
-On an interactive terminal the installer asks for the public domain plus the AliDNS AccessKey ID/Secret. For a fully non-interactive DNS-01 + 8443 deployment:
+For a fully non-interactive public deployment, export the deployment variables before executing the downloaded installer:
 
 ```bash
-curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
-  XD_DOMAIN=drive.example.com XD_HTTPS_PORT=8443 \
-  ALIYUN_ACCESS_KEY_ID=your-key-id ALIYUN_ACCESS_KEY_SECRET=your-key-secret \
-  bash -s -- --channel stable
+XD_DOMAIN=drive.example.com \
+XD_HTTPS_PORT=8443 \
+ALIYUN_ACCESS_KEY_ID=your-key-id \
+ALIYUN_ACCESS_KEY_SECRET=your-key-secret \
+bash "$tmp" --channel stable
 ```
 
-Use a RAM user/key scoped to DNS record management rather than a broad account key.
-
-Leave the domain blank for HTTP/private-network mode. Other overrides use the same pipe-to-`bash` form, for example:
+After the first successful install, the installer places the host-side manager at `~/.xd/xdrive-server` and, when `/usr/local/bin` is writable, links it as:
 
 ```bash
-curl -fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh | \
-  XD_WEB_PORT=8088 XD_WEB_BIND=0.0.0.0 bash
+xdrive-server
 ```
 
-For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag.
+Routine server operations should then use the host manager rather than re-running a pipe bootstrap:
+
+```bash
+xdrive-server update
+xdrive-server update --channel master
+xdrive-server update --channel commit --commit 0123456789ab
+xdrive-server doctor
+xdrive-server status
+xdrive-server backup
+xdrive-server verify
+```
+
+The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. The `xdrive-server` executable inside `xdrive-server-1` remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
+
+The host manager downloads the latest bootstrap installer to a temporary file, validates it with `bash -n`, and then runs that file with stdin detached from any download pipe. The installer resolves the selected successfully published release/commit and uses immutable `sha-<commit>` images for master/commit channels.
+
+For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag. Releases also publish the standalone host manager asset `xdrive-server`.
 
 Upgrades are serialized with an exclusive `flock` lock. Existing deployments enter a maintenance window after the pre-upgrade backup: public Web/Caddy containers are stopped, the new API is started and health-checked before public services are reopened, and deployment files are treated as a transaction. If the new API fails after migration/startup begins, xDrive restores the verified pre-upgrade database/blob backup plus the previous deployment files and images. Failures before the database is touched restore deployment state only. Docker pull's noisy per-layer output is captured to a private log; the terminal shows concise xDrive transfer summaries instead. If rollback itself cannot complete, the transaction state is retained under `~/.xd/.upgrade-transaction` for manual recovery.
 
 The installer:
 
 1. checks Docker and Docker Compose v2 and acquires the exclusive install/update lock;
-2. creates `~/.xd` with user-only permissions and preserves existing secrets;
-3. stages the new Compose/Caddy/maintenance files;
-4. on upgrades, creates a verified **pre-upgrade backup before replacing deployment files**;
-5. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
-6. pulls the xDrive server/Web images and, when a domain is configured, the `xdrive-caddy` image containing the AliDNS plugin;
-7. starts PostgreSQL, waits for database/API/Web health checks, and applies log rotation plus CPU/memory/PID limits;
-8. for a public domain, obtains/renews the TLS certificate through AliDNS DNS-01 and waits until the real HTTPS health endpoint succeeds on `XD_HTTPS_PORT`;
-9. installs a scheduled backup job when `crontab` is available, with retention and overlap protection;
-10. if no administrator exists, securely prompts on the terminal to create the first administrator.
+2. detaches every non-interactive Docker/Compose operation from installer stdin so a piped source stream can never be consumed by a child process;
+3. creates `~/.xd` with user-only permissions and preserves existing secrets;
+4. stages the new Compose/Caddy/maintenance files and host manager;
+5. on upgrades, creates a verified **pre-upgrade backup before replacing deployment files** without creating/recreating the formal server service;
+6. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
+7. pulls the xDrive server/Web images and, when a domain is configured, the `xdrive-caddy` image containing the AliDNS plugin;
+8. starts PostgreSQL, waits for database/API/Web health checks, and applies log rotation plus CPU/memory/PID limits;
+9. for a public domain, obtains/renews the TLS certificate through AliDNS DNS-01 and waits until the real HTTPS health endpoint succeeds on `XD_HTTPS_PORT`;
+10. installs a scheduled backup job when `crontab` is available, with retention and overlap protection;
+11. if no administrator exists, securely prompts on the terminal to create the first administrator.
 
 With a configured domain and the default external HTTPS port the endpoint is:
 
@@ -675,6 +694,7 @@ server-backup-scheduled.sh
 server-restore.sh
 server-verify.sh
 server-doctor.sh
+xdrive-server
 docker-compose.yml
 Caddyfile
 xdrive.env.example
@@ -713,7 +733,10 @@ scripts/
   server-restore.sh
   server-verify.sh
   server-doctor.sh
+  xdrive-server-host.sh
   test-server-backup-restore.sh
+  test-server-installer-pipe.sh
+  test-xdrive-server-host.sh
   test-server-doctor.sh
 deploy/
   Caddy.Dockerfile          Caddy + AliDNS DNS-01 module

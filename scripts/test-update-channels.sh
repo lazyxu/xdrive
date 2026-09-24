@@ -19,7 +19,8 @@ url=""
 output=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -o) output="$2"; shift 2 ;;
+    -o|--output) output="$2"; shift 2 ;;
+    --retry|--retry-delay|--connect-timeout|-w|--write-out) shift 2 ;;
     -*) shift ;;
     *) url="$1"; shift ;;
   esac
@@ -66,7 +67,7 @@ services: {}
     emit 'example.invalid { respond "ok" }
 '
     ;;
-  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh)
+  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '
@@ -95,12 +96,17 @@ run_case() {
   shift
   local cfg="$TMP/$name"
   mkdir -p "$cfg"
-  XDRIVE_TEST_STATE="$TMP/state" \
-  PATH="$TMP/bin:/usr/bin:/bin" \
-  XD_CONFIG_DIR="$cfg" \
-  XD_NONINTERACTIVE=1 \
-  XD_INSTALL_NO_START=1 \
-    bash "$INSTALLER" "$@" >"$TMP/$name.out" 2>"$TMP/$name.err"
+  if ! XDRIVE_TEST_STATE="$TMP/state" \
+    PATH="$TMP/bin:/usr/bin:/bin" \
+    XD_CONFIG_DIR="$cfg" \
+    XD_NONINTERACTIVE=1 \
+    XD_INSTALL_NO_START=1 \
+      bash "$INSTALLER" "$@" >"$TMP/$name.out" 2>"$TMP/$name.err"; then
+    echo "update-channel case failed: $name" >&2
+    cat "$TMP/$name.out" >&2 || true
+    cat "$TMP/$name.err" >&2 || true
+    exit 1
+  fi
 }
 
 env_value() {

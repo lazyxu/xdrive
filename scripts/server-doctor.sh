@@ -81,9 +81,9 @@ env_value() {
 
 compose() {
   if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
   else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
   fi
 }
 
@@ -98,9 +98,9 @@ container_report() {
     fi
     return
   fi
-  state="$(docker inspect "$id" --format '{{.State.Status}}' 2>/dev/null || true)"
-  health="$(docker inspect "$id" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' 2>/dev/null || true)"
-  image="$(docker inspect "$id" --format '{{.Config.Image}}' 2>/dev/null || true)"
+  state="$(docker inspect "$id" --format '{{.State.Status}}' </dev/null 2>/dev/null || true)"
+  health="$(docker inspect "$id" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' </dev/null 2>/dev/null || true)"
+  image="$(docker inspect "$id" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
   if [[ "$state" == "running" && ( "$health" == "healthy" || "$health" == "none" ) ]]; then
     record PASS "container $service" "state=$state health=$health image=$image"
   else
@@ -115,7 +115,7 @@ volume_report() {
     record WARN "$service data mount" "container not found"
     return
   fi
-  info="$(docker inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{if .Name}}volume={{.Name}}{{else}}bind={{.Source}}{{end}}{{end}}{{end}}" 2>/dev/null || true)"
+  info="$(docker inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{if .Name}}volume={{.Name}}{{else}}bind={{.Source}}{{end}}{{end}}{{end}}" </dev/null 2>/dev/null || true)"
   if [[ -n "$info" ]]; then
     record PASS "$service data mount" "$info -> $destination"
   else
@@ -130,13 +130,13 @@ echo "redaction: passwords, JWTs, access/refresh tokens, Authorization headers a
 echo
 
 if command -v docker >/dev/null 2>&1; then
-  record PASS "Docker" "$(docker --version 2>/dev/null || echo installed)"
+  record PASS "Docker" "$(docker --version </dev/null 2>/dev/null || echo installed)"
 else
   record FAIL "Docker" "docker command not found"
 fi
 
-if docker compose version >/dev/null 2>&1; then
-  record PASS "Docker Compose" "$(docker compose version 2>/dev/null | head -n1)"
+if docker compose version </dev/null >/dev/null 2>&1; then
+  record PASS "Docker Compose" "$(docker compose version </dev/null 2>/dev/null | head -n1)"
 else
   record FAIL "Docker Compose" "docker compose v2 unavailable"
 fi
@@ -203,7 +203,7 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
       set -- $(hostname -i)
       [ "$#" -gt 0 ]
       exec psql -h "$1" -U xdrive -d xdrive -Atqc "SELECT 1"
-    ' >/dev/null 2>&1; then
+    ' </dev/null >/dev/null 2>&1; then
       record PASS "PostgreSQL auth" "xdrive role authenticates over the Docker network"
     else
       record FAIL "PostgreSQL auth" "xdrive role password does not authenticate over the Docker network"
@@ -219,7 +219,7 @@ fi
 if command -v df >/dev/null 2>&1; then
   df_line="$(df -hP "$CONFIG_DIR" 2>/dev/null | tail -n1 || true)"
   [[ -n "$df_line" ]] && record PASS "config disk" "$df_line" || record WARN "config disk" "unable to read filesystem usage"
-  docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  docker_root="$(docker info --format '{{.DockerRootDir}}' </dev/null 2>/dev/null || true)"
   if [[ -n "$docker_root" ]]; then
     root_line="$(df -hP "$docker_root" 2>/dev/null | tail -n1 || true)"
     [[ -n "$root_line" ]] && record PASS "Docker disk" "$root_line" || record WARN "Docker disk" "unable to read Docker filesystem usage"
