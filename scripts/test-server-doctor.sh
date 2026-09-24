@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCTOR="$ROOT/scripts/server-doctor.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/config"
+mkdir -p "$TMP/bin" "$TMP/config" "$TMP/state"
 
 cat > "$TMP/config/.env" <<'EOF'
 POSTGRES_PASSWORD=super-secret-db-password
@@ -70,6 +70,7 @@ chmod +x "$TMP/bin/docker"
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$*" >> "$TEST_STATE/curl-args"
 for arg in "$@"; do
   if [[ "$arg" == "-w" || "$arg" == "--write-out" ]]; then
     printf '401'
@@ -87,13 +88,14 @@ echo '/dev/test 100G 20G 80G 20% /'
 SH
 chmod +x "$TMP/bin/df"
 
-PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/config" \
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/config" \
   bash "$DOCTOR" >"$TMP/report" 2>"$TMP/err"
 
 grep -q '^xDrive server diagnostic report' "$TMP/report"
 grep -q '\[PASS\] Docker' "$TMP/report"
 grep -q '\[PASS\] PostgreSQL auth' "$TMP/report"
 grep -q '\[PASS\] TLS/local HTTPS' "$TMP/report"
+grep -q '/api/v1/readyz' "$TMP/state/curl-args"
 grep -q 'summary:' "$TMP/report"
 
 for secret in super-secret-db-password super-secret-jwt super-secret-alidns token-should-not-leak db-password-should-not-leak refresh-should-not-leak env-should-not-leak; do

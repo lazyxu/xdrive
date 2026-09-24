@@ -43,3 +43,18 @@ func TestLocalRejectsTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalReady(t *testing.T) {
+	s, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Ready(context.Background()); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := s.Ready(ctx); err == nil {
+		t.Fatal("expected cancelled readiness check to fail")
+	}
+}
