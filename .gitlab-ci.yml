@@ -90,6 +90,11 @@ go-linux:
         echo "Go 1.25.x is required; found $(go version)." >&2
         exit 1
       fi
+      node_major="$(node -p 'process.versions.node.split(".")[0]')"
+      if [[ "$node_major" != "22" ]]; then
+        echo "Node.js 22 is required; found $(node --version)." >&2
+        exit 1
+      fi
       command -v docker >/dev/null
       docker compose version >/dev/null
       command -v dpkg-deb >/dev/null
@@ -143,7 +148,11 @@ go-linux:
 
       bash scripts/build-linux-deb.sh 0.0.0+ci dist
       dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-updater'
+      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-agent'
+      dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/bin/xdrive-desktop'
       dpkg-deb --contents dist/xdrive-client-linux-amd64.deb | grep -q 'usr/lib/systemd/system/xdrive-update.timer'
+      dpkg-deb --field dist/xdrive-client-linux-amd64.deb Package | grep -qx 'xdrive-client'
+      dpkg-deb --field dist/xdrive-client-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
 
       export POSTGRES_PASSWORD=ci-postgres-password
       export XD_JWT_SECRET=ci-jwt-secret-that-is-long-enough
@@ -251,6 +260,8 @@ go-windows:
 
       $goVersion = (& go version).Trim()
       if ($goVersion -notmatch 'go1\.25(\.| )') { throw "Go 1.25.x is required; found $goVersion" }
+      $nodeMajor = [int]((& node -p "process.versions.node.split('.')[0]").Trim())
+      if ($nodeMajor -ne 22) { throw "Node.js 22 is required; found $(node --version)" }
 
       go mod tidy
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -288,6 +299,7 @@ go-windows:
       $targets = @(
         "./dist/windows-build/xd.exe",
         "./dist/windows-build/xdrive-agent.exe",
+        "./dist/windows-build/desktop/xdrive-desktop.exe",
         "./dist/xDriveSetup-amd64.exe"
       )
       foreach ($target in $targets) {
@@ -303,18 +315,15 @@ go-windows:
       if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
 
       $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
-      $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT")
+      $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
       $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
       if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
 
       $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
       if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
       if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
-      foreach ($state in @("normal", "syncing", "paused", "offline", "conflict")) {
-        if (-not (Test-Path (Join-Path $app "icons\tray-$state.ico"))) {
-          throw "installed tray icon missing: $state"
-        }
-      }
+      if (-not (Test-Path (Join-Path $app "desktop\xdrive-desktop.exe"))) { throw "installed Electron desktop missing" }
+      if (Test-Path (Join-Path $app "icons")) { throw "headless agent must not install runtime tray icons" }
       $shortcutRoots = @(
         (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
         (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
@@ -323,7 +332,7 @@ go-windows:
         Where-Object { Test-Path $_ } |
         ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
         Select-Object -First 1
-      if ($null -eq $shortcut) { throw "Start menu xDrive shortcut missing" }
+      if ($null -eq $shortcut) { throw "unified installer must install the xDrive Desktop shortcut" }
 
       $reported = & (Join-Path $app "xd.exe") version
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -339,6 +348,7 @@ go-windows:
       if ($u.ExitCode -ne 0) { throw "uninstaller exit code $($u.ExitCode)" }
 
       if (Test-Path (Join-Path $app "xd.exe")) { throw "xd.exe remains after uninstall" }
+      if (Test-Path (Join-Path $app "desktop\xdrive-desktop.exe")) { throw "xdrive-desktop.exe remains after uninstall" }
       $left = Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
       if ($null -ne $left) { throw "xDriveAgent autorun remains after uninstall" }
 

@@ -38,6 +38,9 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Build Linux client installer
         shell: bash
         run: |
@@ -67,6 +70,9 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -96,6 +102,7 @@ jobs:
           $targets = @(
             "./release/windows-build/xd.exe",
             "./release/windows-build/xdrive-agent.exe",
+            "./release/windows-build/desktop/xdrive-desktop.exe",
             "./release/xDriveSetup-amd64.exe"
           )
           foreach ($target in $targets) {

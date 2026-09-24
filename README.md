@@ -702,6 +702,8 @@ Desktop lifecycle negotiation starts with `GET /v1/hello`. The response advertis
 
 Electron also owns user-session lifecycle behavior. By default the packaged Desktop registers itself to start at login with `--background`, creates only the Tray surface on that launch, and automatically starts `xdrive-agent` when IPC discovery is absent. If the Agent exits unexpectedly, Desktop retries and restores it. A manual **Restart Agent** action uses the authenticated lifecycle shutdown endpoint, waits for the old process to stop, then starts a fresh single Agent instance. Linux now has a real per-user process lock, matching the existing Windows single-instance guarantee.
 
+The primary client installers are now **unified bundles**. `xDriveSetup-amd64.exe` on Windows and `xdrive-client-linux-amd64.deb` on Linux both contain Electron Desktop, the headless Agent, `xd`, and the updater. Their asset names intentionally remain unchanged so existing `xd update` clients automatically download the unified bundle instead of updating only the Go Core. Windows migrates the previous standalone Desktop installation on upgrade; Linux declares `Conflicts/Replaces/Provides: xdrive-desktop` so dpkg performs the migration. The standalone Desktop assets remain published temporarily as rollback/transition artifacts but are no longer the normal installation target.
+
 ## HTTP API
 
 Authenticated endpoints use:
@@ -893,10 +895,10 @@ git push origin v0.1.0
 Release assets are client/deployment deliverables rather than raw application archives:
 
 ```text
-xDriveSetup-amd64.exe
-xdrive-client-linux-amd64.deb
-xDriveDesktopSetup-amd64.exe
-xdrive-desktop-linux-amd64.deb
+xDriveSetup-amd64.exe              # unified Windows client: Desktop + Agent + xd
+xdrive-client-linux-amd64.deb       # unified Linux client: Desktop + Agent + xd
+xDriveDesktopSetup-amd64.exe        # transitional standalone Desktop package
+xdrive-desktop-linux-amd64.deb      # transitional standalone Desktop package
 xdrive-server-install.sh
 server-backup.sh
 server-backup-scheduled.sh

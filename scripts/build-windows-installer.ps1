@@ -11,8 +11,28 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Output = [System.IO.Path]::GetFullPath((Join-Path $Root $OutputDir))
 $Source = Join-Path $Output "windows-build"
+if (Test-Path $Source) {
+    Remove-Item -Recurse -Force $Source
+}
 New-Item -ItemType Directory -Force $Source | Out-Null
 New-Item -ItemType Directory -Force $Output | Out-Null
+
+function Get-DesktopVersion([string]$ClientVersion) {
+    if ($ClientVersion -match '^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$') {
+        return $Matches[1]
+    }
+    if ($ClientVersion -match '^snapshot-([0-9A-Fa-f]{7,40})$') {
+        $sha = $Matches[1]
+        if ($sha.Length -gt 12) { $sha = $sha.Substring(0, 12) }
+        return "0.0.0-snapshot.$sha"
+    }
+    if ($ClientVersion -match '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+        return $ClientVersion
+    }
+    $suffix = ($ClientVersion -replace '[^0-9A-Za-z.-]', '.').Trim('.')
+    if ([string]::IsNullOrWhiteSpace($suffix)) { $suffix = "dev" }
+    return "0.0.0-$suffix"
+}
 
 function Find-SignTool {
     $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
@@ -105,6 +125,41 @@ try {
 
     Sign-Artifact (Join-Path $Source "xd.exe")
     Sign-Artifact (Join-Path $Source "xdrive-agent.exe")
+
+    $DesktopRoot = Join-Path $Root "desktop"
+    $DesktopPackage = Join-Path $DesktopRoot "package.json"
+    $OriginalDesktopPackage = Get-Content -Raw $DesktopPackage
+    try {
+        Push-Location $DesktopRoot
+        npm ci --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) {
+            throw "installing Electron desktop dependencies failed"
+        }
+        $DesktopVersion = Get-DesktopVersion $Version
+        node scripts/set-version.mjs $DesktopVersion
+        if ($LASTEXITCODE -ne 0) {
+            throw "setting Electron desktop version failed"
+        }
+        npm run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "building Electron desktop failed"
+        }
+        npx electron-builder --win dir --x64
+        if ($LASTEXITCODE -ne 0) {
+            throw "assembling Electron desktop runtime failed"
+        }
+    } finally {
+        Pop-Location
+        Set-Content -Path $DesktopPackage -Value $OriginalDesktopPackage -NoNewline
+    }
+
+    $DesktopUnpacked = Join-Path $DesktopRoot "release\win-unpacked"
+    if (-not (Test-Path (Join-Path $DesktopUnpacked "xdrive-desktop.exe"))) {
+        throw "Electron desktop executable was not created: $DesktopUnpacked"
+    }
+    $DesktopTarget = Join-Path $Source "desktop"
+    Copy-Item -Recurse -Force $DesktopUnpacked $DesktopTarget
+    Sign-Artifact (Join-Path $DesktopTarget "xdrive-desktop.exe")
 
     $IconSource = Join-Path $Root "packaging\windows\icons\tray-normal.ico"
     $IconTarget = Join-Path $Source "icons"

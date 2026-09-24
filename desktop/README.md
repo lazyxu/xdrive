@@ -15,7 +15,7 @@ xDrive Desktop is the graphical client for the headless Go `xdrive-agent`.
 
 The renderer never receives the Agent IPC URL/token or xDrive access/refresh tokens. Authentication, DPAPI/Secret Service credentials, CfAPI/FUSE, synchronization, and update ownership remain in the Go core.
 
-The core and desktop packages are still distributed separately. On Windows, `xDriveSetup-amd64.exe` installs the headless background agent plus the retained `xd` CLI; `xDriveDesktopSetup-amd64.exe` installs the Electron UI. On Linux, the corresponding packages are `xdrive-client-linux-amd64.deb` and `xdrive-desktop-linux-amd64.deb`.
+The primary packages are unified. On Windows, `xDriveSetup-amd64.exe` installs Electron Desktop, the headless background Agent, and the retained `xd` CLI into one application directory. On Linux, `xdrive-client-linux-amd64.deb` contains the same complete client and replaces the earlier standalone `xdrive-desktop` package when present. The separate `xDriveDesktopSetup-amd64.exe` and `xdrive-desktop-linux-amd64.deb` assets remain temporarily available only as transition/rollback artifacts. Existing `xd update` clients continue requesting the same primary asset names, so an update now also installs the Electron Desktop.
 
 ## Development
 

@@ -28,7 +28,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ChangesEnvironment=yes
 CloseApplications=yes
-CloseApplicationsFilter=xdrive-agent.exe
+CloseApplicationsFilter=xdrive-agent.exe;xdrive-desktop.exe
 RestartApplications=no
 UninstallDisplayName=xDrive Client
 SetupIconFile={#SourceDir}\icons\tray-normal.ico
@@ -36,6 +36,7 @@ SetupIconFile={#SourceDir}\icons\tray-normal.ico
 [Files]
 Source: "{#SourceDir}\xd.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\xdrive-agent.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\desktop\*"; DestDir: "{app}\desktop"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -45,13 +46,16 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xd.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
 
 [Icons]
+Name: "{group}\xDrive"; Filename: "{app}\desktop\xdrive-desktop.exe"; WorkingDir: "{app}\desktop"
 Name: "{group}\xDrive README"; Filename: "{app}\README.md"
 Name: "{group}\Uninstall xDrive"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{app}\xdrive-agent.exe"; Description: "Start xDrive background agent"; Flags: nowait runhidden; Check: ShouldStartAgent
+Filename: "{app}\desktop\xdrive-desktop.exe"; Parameters: "--background"; Description: "Start xDrive Desktop"; Flags: nowait runhidden; Check: ShouldStartDesktop
 
 [UninstallRun]
+Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-desktop.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveDesktop"
 Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-agent.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveAgent"
 Filename: "{app}\xd.exe"; Parameters: "cleanup"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "CleanupXDriveSyncRoot"
 
@@ -73,6 +77,19 @@ begin
   Result := True;
   for I := 1 to ParamCount do begin
     if CompareText(ParamStr(I), '/NOSTARTAGENT') = 0 then begin
+      Result := False;
+      exit;
+    end;
+  end;
+end;
+
+function ShouldStartDesktop(): Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do begin
+    if CompareText(ParamStr(I), '/NOSTARTDESKTOP') = 0 then begin
       Result := False;
       exit;
     end;
@@ -119,8 +136,17 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  LegacyDesktopUninstaller: String;
 begin
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM xdrive-desktop.exe /F >NUL 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{cmd}'), '/C taskkill /IM xdrive-agent.exe /F >NUL 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  LegacyDesktopUninstaller := ExpandConstant('{localappdata}\Programs\xDrive Desktop\Uninstall xDrive Desktop.exe');
+  if FileExists(LegacyDesktopUninstaller) then
+    Exec(LegacyDesktopUninstaller, '/S', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  DeleteFile(ExpandConstant('{userprograms}\xDrive Desktop.lnk'));
+  DeleteFile(ExpandConstant('{userdesktop}\xDrive Desktop.lnk'));
   Result := '';
 end;
 
