@@ -40,6 +40,8 @@ jobs:
           node-version: "22"
       - name: Install desktop dependencies
         run: npm install --no-audit --no-fund
+      - name: Test desktop main IPC client
+        run: npm run test:main
       - name: Set CI desktop version
         run: node scripts/set-version.mjs 0.0.0-ci
       - name: Build Linux desktop package
@@ -61,6 +63,8 @@ jobs:
           node-version: "22"
       - name: Install desktop dependencies
         run: npm install --no-audit --no-fund
+      - name: Test desktop main IPC client
+        run: npm run test:main
       - name: Set CI desktop version
         run: node scripts/set-version.mjs 0.0.0-ci
       - name: Build Windows desktop package

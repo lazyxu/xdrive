@@ -28,7 +28,7 @@ linux:
   artifactName: xdrive-desktop-linux-amd64.${ext}
   category: Utility
   synopsis: xDrive desktop shell
-  description: xDrive Electron desktop shell. Phase 2 provides only the desktop window, tray, and secure preload bridge; it does not connect to the xDrive agent yet.
+  description: xDrive Electron desktop client with secure local integration to the Go xdrive-agent.
 deb:
   packageName: xdrive-desktop
   priority: optional
