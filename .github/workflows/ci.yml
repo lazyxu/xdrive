@@ -28,6 +28,49 @@ jobs:
             exit 1
           fi
 
+  desktop-linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install desktop dependencies
+        run: npm install --no-audit --no-fund
+      - name: Set CI desktop version
+        run: node scripts/set-version.mjs 0.0.0-ci
+      - name: Build Linux desktop package
+        run: npm run dist:linux
+      - name: Verify Linux desktop package
+        run: |
+          test -f release/xdrive-desktop-linux-amd64.deb
+          dpkg-deb --info release/xdrive-desktop-linux-amd64.deb >/dev/null
+
+  desktop-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install desktop dependencies
+        run: npm install --no-audit --no-fund
+      - name: Set CI desktop version
+        run: node scripts/set-version.mjs 0.0.0-ci
+      - name: Build Windows desktop package
+        run: npm run dist:win
+      - name: Verify Windows desktop package
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ./release/xDriveDesktopSetup-amd64.exe)) { throw "desktop installer missing" }
+          if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop executable missing" }
+
   go-linux:
     runs-on: ubuntu-latest
     services:

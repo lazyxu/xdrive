@@ -109,6 +109,94 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  desktop-linux-amd64:
+    needs: validate-publishing-ref
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install desktop dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build Linux desktop installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.0.0-snapshot.${GITHUB_SHA::12}"
+          fi
+          node scripts/set-version.mjs "$version"
+          npm run dist:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-amd64
+          path: desktop/release/xdrive-desktop-linux-amd64.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  desktop-windows-amd64:
+    needs: validate-publishing-ref
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install desktop dependencies
+        run: npm install --no-audit --no-fund
+      - name: Prepare Windows desktop signing certificate
+        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
+        shell: pwsh
+        working-directory: .
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-codesign.pfx"
+          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
+          "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CSC_KEY_PASSWORD=$env:XD_WINDOWS_SIGN_PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build Windows desktop installer
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = "0.0.0-snapshot." + $env:GITHUB_SHA.Substring(0, 12)
+          }
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            throw "Stable Windows desktop releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
+          }
+          node scripts/set-version.mjs $version
+          npm run dist:win
+      - name: Verify Windows desktop signatures
+        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
+        shell: pwsh
+        run: |
+          $targets = @(
+            "./release/win-unpacked/xdrive-desktop.exe",
+            "./release/xDriveDesktopSetup-amd64.exe"
+          )
+          foreach ($target in $targets) {
+            $sig = Get-AuthenticodeSignature $target
+            if ($sig.Status -ne "Valid") { throw "invalid Authenticode signature for ${target}: $($sig.Status)" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-amd64
+          path: desktop/release/xDriveDesktopSetup-amd64.exe
+          if-no-files-found: error
+          retention-days: 14
+
   server-images:
     needs: validate-publishing-ref
     runs-on: ubuntu-latest
@@ -205,7 +293,7 @@ jobs:
           retention-days: 14
 
   bundle:
-    needs: [client-linux-amd64, client-windows-amd64, server-images, server-deploy]
+    needs: [client-linux-amd64, client-windows-amd64, desktop-linux-amd64, desktop-windows-amd64, server-images, server-deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -221,6 +309,16 @@ jobs:
         with:
           name: client-windows-amd64
           path: release
+      - name: Download Linux desktop installer
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-linux-amd64
+          path: release
+      - name: Download Windows desktop installer
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows-amd64
+          path: release
       - name: Download server deployment assets
         uses: actions/download-artifact@v4
         with:
@@ -234,6 +332,8 @@ jobs:
           sha256sum \
             xdrive-client-linux-amd64.deb \
             xDriveSetup-amd64.exe \
+            xdrive-desktop-linux-amd64.deb \
+            xDriveDesktopSetup-amd64.exe \
             xdrive-server-install.sh \
             server-backup.sh \
             server-backup-scheduled.sh \

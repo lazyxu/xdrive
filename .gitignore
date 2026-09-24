@@ -27,6 +27,11 @@ web/dist/
 web/.vite/
 *.tsbuildinfo
 
+# Desktop Electron
+desktop/node_modules/
+desktop/dist/
+desktop/release/
+
 # Editors / OS
 .idea/
 .vscode/

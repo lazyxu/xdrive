@@ -843,6 +843,8 @@ Release assets are client/deployment deliverables rather than raw application ar
 ```text
 xDriveSetup-amd64.exe
 xdrive-client-linux-amd64.deb
+xDriveDesktopSetup-amd64.exe
+xdrive-desktop-linux-amd64.deb
 xdrive-server-install.sh
 server-backup.sh
 server-backup-scheduled.sh
@@ -877,7 +879,13 @@ internal/
   userconfig/             per-user non-secret client configuration
   update/                 release check/download/checksum/update logic
   version/                build-time client version
+ui/
+  shared/                  shared Web/Electron UI contracts + pure helpers
 web/                       React Web UI
+desktop/                   Electron desktop shell
+  src/main/                Electron main process
+  src/preload/             narrow contextBridge preload
+  src/renderer/            React renderer
 packaging/
   windows/                 Inno Setup definition
   linux/                   systemd user mount service + root update timer
