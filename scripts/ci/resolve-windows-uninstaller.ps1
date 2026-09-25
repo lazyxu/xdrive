@@ -5,7 +5,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "windows-path-normalization.ps1")
+
 $appFull = [System.IO.Path]::GetFullPath($AppDir).TrimEnd('\')
+$appComparable = Get-XDriveComparablePath $appFull
 if (-not (Test-Path -LiteralPath $UninstallKey)) {
     $candidates = @()
     if (Test-Path -LiteralPath $appFull) {
@@ -32,7 +35,8 @@ if ($raw -match '^\s*"([^"]+)"') {
 
 $full = [System.IO.Path]::GetFullPath($uninstaller)
 $parent = [System.IO.Path]::GetFullPath((Split-Path -Parent $full)).TrimEnd('\')
-if (-not [string]::Equals($parent, $appFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+$parentComparable = Get-XDriveComparablePath $parent
+if (-not [string]::Equals($parentComparable, $appComparable, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "xDrive uninstaller is outside the unified app directory: $full (expected under $appFull)"
 }
 

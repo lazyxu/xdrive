@@ -112,6 +112,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		gitlabGoWindows
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
 	windowsUninstallerResolver := readFile(t, filepath.Join(root, "scripts", "ci", "resolve-windows-uninstaller.ps1"))
+	windowsPathNormalizer := readFile(t, filepath.Join(root, "scripts", "ci", "windows-path-normalization.ps1"))
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" + goVersionCheck + "\n" + artifactVersion + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
@@ -311,7 +312,19 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"UninstallString",
 		"^unins\\d+\\.exe$",
 		"outside the unified app directory",
+		"windows-path-normalization.ps1",
+		"Get-XDriveComparablePath",
 	)
+	requireRaw(t, "Windows WOW64 path normalizer", windowsPathNormalizer,
+		"Get-XDriveComparablePath",
+		"[Environment]::Is64BitOperatingSystem",
+		"[Environment]::Is64BitProcess",
+		"System32\\config\\systemprofile",
+		"SysWOW64\\config\\systemprofile",
+	)
+	if strings.Contains(windowsPathNormalizer, "Sysnative\\config\\systemprofile") {
+		t.Errorf("WOW64 path normalizer must not treat Sysnative as equivalent to SysWOW64")
+	}
 	requireRaw(t, "Windows uninstaller resolver regression", windowsUninstallerTest,
 		"unins001.exe",
 		"resolver must reject uninstallers outside the unified app directory",
