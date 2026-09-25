@@ -119,4 +119,64 @@ func TestUploadFileResumableSkipsCompletedChunkAndRetries(t *testing.T) {
 	}
 }
 
+func TestUploadFileResumableInstantFinalizeSkipsChunks(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "instant.bin")
+	data := []byte("instant-upload-client-payload")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	hash := hex.EncodeToString(sum[:])
+
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/uploads" {
+			t.Fatalf("unexpected request after instant finalize: %s %s", r.Method, r.URL.Path)
+		}
+		var init UploadInit
+		if err := json.NewDecoder(r.Body).Decode(&init); err != nil {
+			t.Fatal(err)
+		}
+		if init.SHA256 != hash || init.ResumeKey != hash || init.Size != int64(len(data)) {
+			t.Fatalf("init=%+v", init)
+		}
+		if len(init.ChunkSHA256) != 1 || init.ChunkSHA256[0] != hash {
+			t.Fatalf("chunk hashes=%v", init.ChunkSHA256)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(UploadSession{
+			ID: "instant-session", ParentID: init.ParentID, Name: init.Name,
+			Size: init.Size, ChunkSize: DefaultUploadChunkSize, ChunkCount: 1,
+			SHA256: init.SHA256, ResumeKey: init.ResumeKey,
+			Status: "finalized", ExpiresAt: time.Now().Add(time.Hour),
+			Result: &Node{
+				ID: 77, ParentID: uint64Ptr(1), Name: "instant.bin", Type: "file",
+				Size: int64(len(data)), Revision: 1, SHA256: hash,
+			},
+		})
+	}))
+	defer server.Close()
+
+	var progress [][2]int64
+	cli := New(server.URL, "token")
+	node, err := cli.UploadFileResumable(context.Background(), 1, path, "instant.bin", func(done, total int64) {
+		progress = append(progress, [2]int64{done, total})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.ID != 77 || node.SHA256 != hash {
+		t.Fatalf("node=%+v", node)
+	}
+	if len(requests) != 1 || requests[0] != "POST /api/v1/uploads" {
+		t.Fatalf("requests=%v", requests)
+	}
+	if len(progress) != 1 || progress[0] != [2]int64{int64(len(data)), int64(len(data))} {
+		t.Fatalf("progress=%v", progress)
+	}
+}
+
 func uint64Ptr(v uint64) *uint64 { return &v }

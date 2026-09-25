@@ -229,6 +229,12 @@ func uploadOperation(method, route string) string {
 	}
 }
 
+func (o *serverObservability) noteUpload(operation, result string) {
+	o.mu.Lock()
+	o.uploads[uploadMetricKey{Operation: operation, Result: result}]++
+	o.mu.Unlock()
+}
+
 func (o *serverObservability) noteCollectionError() {
 	o.mu.Lock()
 	o.collectionErrors++
