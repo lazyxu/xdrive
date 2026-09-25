@@ -66,6 +66,31 @@ export interface QuotaUsage {
   over_quota: boolean
 }
 
+export interface StorageSizeBucket {
+  key: string
+  label: string
+  count: number
+  bytes: number
+}
+
+export interface StorageStats {
+  scope: 'self' | 'global'
+  cas_blob_count: number
+  cas_physical_bytes: number
+  cas_logical_referenced_bytes: number
+  cas_dedup_saved_bytes: number
+  cas_dedup_ratio: number
+  cas_savings_ratio: number
+  average_blob_size_bytes: number
+  p50_blob_size_bytes: number
+  p90_blob_size_bytes: number
+  p99_blob_size_bytes: number
+  legacy_blob_count: number
+  legacy_physical_bytes: number
+  buckets: StorageSizeBucket[]
+  generated_at: string
+}
+
 export interface AdminUser {
   id: number
   username: string

@@ -10,6 +10,7 @@ const agent = Object.freeze({
   cloudChildren: (parentID: number) => ipcRenderer.invoke('agent:cloud-children', parentID),
   cloudSearch: (query: string) => ipcRenderer.invoke('agent:cloud-search', query),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
+  cloudStorageStats: () => ipcRenderer.invoke('agent:cloud-storage-stats'),
   cloudTrash: () => ipcRenderer.invoke('agent:cloud-trash'),
   cloudRestoreTrash: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-restore-trash', id, revision),
   cloudDeleteTrash: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-delete-trash', id, revision),

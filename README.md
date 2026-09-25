@@ -250,6 +250,9 @@ The first metric set includes:
 - active non-expired upload sessions;
 - PostgreSQL database size and SQL connection-pool gauges;
 - retained blob bytes, in-progress non-reused staging bytes, and managed blob-object counts;
+- CAS physical/logical bytes, dedup saved bytes and dedup ratio;
+- CAS blob count, average size, p50/p90/p99 size percentiles, and eight non-overlapping size buckets from `<16 KiB` through `>=64 MiB`;
+- retained pre-CAS legacy object count/bytes, reported separately from the CAS distribution;
 - live metric-collection success/error counters.
 
 `xdrive_managed_blob_bytes` counts unique retained physical blob objects referenced by current files/history plus non-reused staging chunks. Multiple metadata references to one content-addressed blob are counted once. It is not a filesystem crawler and therefore intentionally does not claim to include orphan files; use `server-verify.sh` and host disk monitoring for orphan/free-space diagnostics.
@@ -765,6 +768,11 @@ When the client supplies the full SHA-256 during `POST /api/v1/uploads`, xDrive 
 
 This is intentionally not CDC: insertions near the beginning can still shift later fixed blocks during upload, and partial/chunk-level content is not shared across unrelated files.
 
+Phase 12 adds **Storage Intelligence** before changing the storage format again. Authenticated users can query `GET /api/v1/me/storage` for owner-scoped CAS statistics; administrators can query `GET /api/v1/admin/storage` for the global view. The same user view is exposed in Web and Desktop without exposing another user's storage profile. Statistics include CAS blob count, physical bytes, logical referenced bytes, dedup saved bytes/ratio, average size, p50/p90/p99, and these fixed non-overlapping buckets: `<16 KiB`, `16–64 KiB`, `64–256 KiB`, `256 KiB–1 MiB`, `1–4 MiB`, `4–16 MiB`, `16–64 MiB`, and `>=64 MiB`. Legacy pre-CAS objects are reported separately and are not mixed into CAS percentiles.
+
+The purpose of these measurements is to make the next storage-format decision data-driven: a high count/byte share of very small blobs supports small-file packing, while large-file workloads with meaningful cross-file internal redundancy support evaluating CDC. Percentiles are calculated by PostgreSQL rather than by loading all blob sizes into the API process.
+
+
 ## Conflict protection
 
 xDrive uses optimistic concurrency control for mutations of existing nodes. Every node has a monotonically increasing `revision` value.
@@ -924,11 +932,12 @@ deploy/
 
 ## Roadmap
 
-1. optional content-defined chunking after fixed-block/global-CAS behavior has enough production data;
-2. small-file packing;
-3. macOS File Provider integration;
-4. thumbnails/EXIF/media processing;
-5. directory/upload sharing and richer retention/version policies.
+1. use Phase 12 Storage Intelligence production data as the decision gate for the next storage-format change;
+2. optional content-defined chunking when large-file/internal-redundancy data justifies it;
+3. small-file packing when small-blob count/metadata pressure justifies it;
+4. macOS File Provider integration;
+5. thumbnails/EXIF/media processing;
+6. directory/upload sharing and richer retention/version policies.
 
 ## License
 

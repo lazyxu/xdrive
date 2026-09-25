@@ -115,6 +115,24 @@ export type AgentCloudQuota = {
   over_quota: boolean
 }
 
+export type AgentCloudStorageStats = {
+  scope: 'self' | 'global'
+  cas_blob_count: number
+  cas_physical_bytes: number
+  cas_logical_referenced_bytes: number
+  cas_dedup_saved_bytes: number
+  cas_dedup_ratio: number
+  cas_savings_ratio: number
+  average_blob_size_bytes: number
+  p50_blob_size_bytes: number
+  p90_blob_size_bytes: number
+  p99_blob_size_bytes: number
+  legacy_blob_count: number
+  legacy_physical_bytes: number
+  buckets: Array<{ key: string; label: string; count: number; bytes: number }>
+  generated_at: string
+}
+
 export type AgentCloudVersion = {
   id: number
   node_id: number
@@ -332,6 +350,10 @@ export class AgentIPCClient {
 
   cloudQuota() {
     return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota')
+  }
+
+  cloudStorageStats() {
+    return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats')
   }
 
   cloudTrash() {

@@ -67,6 +67,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"storage-intelligence",
 	"conflicts",
 	"transfers",
 	"transfer-events",
@@ -134,6 +135,7 @@ type desktopIPCController interface {
 	CloudList(context.Context, uint64) ([]client.Node, error)
 	CloudSearch(context.Context, string) ([]agentCloudSearchResult, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
+	CloudStorageStats(context.Context) (client.StorageStats, error)
 	CloudTrash(context.Context) ([]client.Node, error)
 	CloudRestoreTrash(context.Context, uint64, uint64) (client.Node, error)
 	CloudDeleteTrash(context.Context, uint64, uint64) error
@@ -321,6 +323,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
+	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
 	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)
 	mux.HandleFunc("POST /v1/cloud/trash/restore", h.cloudRestoreTrash)
 	mux.HandleFunc("POST /v1/cloud/trash/delete", h.cloudDeleteTrash)
@@ -628,6 +631,15 @@ func (h *desktopIPCHandler) cloudQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, quota)
+}
+
+func (h *desktopIPCHandler) cloudStorageStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.ctrl.CloudStorageStats(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, stats)
 }
 
 func (h *desktopIPCHandler) cloudTrash(w http.ResponseWriter, r *http.Request) {

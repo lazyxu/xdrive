@@ -290,6 +290,25 @@ test('cloud management uses dedicated agent endpoints', async (t) => {
       case '/v1/cloud/trash':
         json(res, 200, [{ id: 4, name: 'old.txt', type: 'file', size: 5, revision: 3, deleted_at: new Date(0).toISOString(), created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }])
         return
+      case '/v1/cloud/storage-stats':
+        json(res, 200, {
+          scope: 'self',
+          cas_blob_count: 9,
+          cas_physical_bytes: 400,
+          cas_logical_referenced_bytes: 600,
+          cas_dedup_saved_bytes: 200,
+          cas_dedup_ratio: 1.5,
+          cas_savings_ratio: 1 / 3,
+          average_blob_size_bytes: 44,
+          p50_blob_size_bytes: 12,
+          p90_blob_size_bytes: 100,
+          p99_blob_size_bytes: 200,
+          legacy_blob_count: 0,
+          legacy_physical_bytes: 0,
+          buckets: [],
+          generated_at: new Date(0).toISOString(),
+        })
+        return
       case '/v1/cloud/trash/restore':
         json(res, 200, { id: 4, name: 'old.txt', type: 'file', size: 5, revision: 4, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() })
         return
@@ -321,6 +340,7 @@ test('cloud management uses dedicated agent endpoints', async (t) => {
   assert.equal((await client.cloudChildren(1))[0].name, 'Projects')
   assert.equal((await client.cloudSearch('report'))[0].path, 'Projects/report.pdf')
   assert.equal((await client.cloudQuota()).physical_used_bytes, 400)
+  assert.equal((await client.cloudStorageStats()).cas_blob_count, 9)
   assert.equal((await client.cloudTrash())[0].id, 4)
   assert.equal((await client.cloudRestoreTrash(4, 3)).revision, 4)
   assert.equal((await client.cloudDeleteTrash(4, 3)).ok, true)
@@ -335,6 +355,7 @@ test('cloud management uses dedicated agent endpoints', async (t) => {
     ['GET', '/v1/cloud/children'],
     ['GET', '/v1/cloud/search'],
     ['GET', '/v1/cloud/quota'],
+    ['GET', '/v1/cloud/storage-stats'],
     ['GET', '/v1/cloud/trash'],
     ['POST', '/v1/cloud/trash/restore'],
     ['POST', '/v1/cloud/trash/delete'],
@@ -346,7 +367,7 @@ test('cloud management uses dedicated agent endpoints', async (t) => {
   ])
   assert.equal(seen[1].query, '?parent_id=1')
   assert.equal(seen[2].query, '?q=report')
-  assert.deepEqual(seen[5].body, { id: 4, revision: 3 })
+  assert.deepEqual(seen[6].body, { id: 4, revision: 3 })
 })
 
 test('file availability and selective sync use dedicated agent endpoints', async (t) => {

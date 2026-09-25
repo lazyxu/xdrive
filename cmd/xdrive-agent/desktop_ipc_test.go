@@ -62,6 +62,7 @@ type fakeDesktopIPCController struct {
 	cloudChildren    []client.Node
 	cloudSearch      []agentCloudSearchResult
 	cloudQuota       client.QuotaUsage
+	cloudStorage     client.StorageStats
 	cloudTrash       []client.Node
 	cloudVersions    []client.FileVersion
 	cloudShares      []client.FileShare
@@ -145,6 +146,10 @@ func (f *fakeDesktopIPCController) CloudSearch(context.Context, string) ([]agent
 
 func (f *fakeDesktopIPCController) CloudQuota(context.Context) (client.QuotaUsage, error) {
 	return f.cloudQuota, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudStorageStats(context.Context) (client.StorageStats, error) {
+	return f.cloudStorage, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudTrash(context.Context) ([]client.Node, error) {
@@ -479,6 +484,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 			Crumbs: []agentCloudCrumb{{ID: 1, Name: "My files"}, {ID: 2, Name: "Projects"}},
 		}},
 		cloudQuota:    client.QuotaUsage{QuotaBytes: 1000, PhysicalUsedBytes: 400, LogicalFileBytes: 300, TrashBytes: 50, HistoryBytes: 50},
+		cloudStorage:  client.StorageStats{Scope: "self", CASBlobCount: 9, CASPhysicalBytes: 400, CASLogicalReferencedBytes: 600, CASDedupSavedBytes: 200, CASDedupRatio: 1.5, P50BlobSizeBytes: 12},
 		cloudTrash:    []client.Node{{ID: 4, Name: "old.txt", Type: "file", Revision: 3, DeletedAt: &now}},
 		cloudVersions: []client.FileVersion{{ID: 5, NodeID: 3, Revision: 1, Size: 12, CreatedAt: now}},
 		cloudShares:   []client.FileShare{{ID: 6, NodeID: 3, Status: "active"}},
@@ -500,6 +506,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/children?parent_id=1", "", "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/search?q=report", "", "\"Projects/report.pdf\""},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"physical_used_bytes\":400"},
+		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
 		{http.MethodGet, "/v1/cloud/trash", "", "\"old.txt\""},
 		{http.MethodPost, "/v1/cloud/trash/restore", `{"id":4,"revision":3}`, "\"revision\":4"},
 		{http.MethodPost, "/v1/cloud/trash/delete", `{"id":4,"revision":3}`, "\"ok\":true"},

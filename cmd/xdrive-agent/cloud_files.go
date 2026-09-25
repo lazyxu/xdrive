@@ -142,6 +142,14 @@ func (c *agentController) CloudQuota(ctx context.Context) (client.QuotaUsage, er
 	return cli.Quota(ctx)
 }
 
+func (c *agentController) CloudStorageStats(ctx context.Context) (client.StorageStats, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.StorageStats{}, err
+	}
+	return cli.StorageStats(ctx)
+}
+
 func (c *agentController) CloudTrash(ctx context.Context) ([]client.Node, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
