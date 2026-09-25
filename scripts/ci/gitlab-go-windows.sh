@@ -31,6 +31,7 @@ go test ./internal/... ./cmd/xdrive-agent
 go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
 
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action ValidateScripts
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/test-windows-uninstaller-resolver.ps1
 
 go build -o xd.exe ./cmd/xd
 go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent

@@ -95,6 +95,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
+	windowsUninstallerResolver := readFile(t, filepath.Join(root, "scripts", "ci", "resolve-windows-uninstaller.ps1"))
+	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
+	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" + goVersionCheck + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
 	for _, command := range []string{
 		"npm install --no-audit --no-fund",
@@ -218,13 +221,37 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"powershell.exe",
 		"go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
 		"install innosetup --no-progress -y",
+		"test-windows-uninstaller-resolver.ps1",
 	)
 	requireRaw(t, "GitLab Windows native helper", gitlabWindowsNative,
 		"ValidateSet(\"ValidateScripts\", \"PrepareSigning\", \"BuildInstaller\", \"VerifySignatures\", \"SmokeInstall\")",
+		"resolve-windows-uninstaller.ps1",
 		"./scripts/build-windows-installer.ps1",
 		"Get-AuthenticodeSignature",
 		"Start-Process -FilePath $installer",
 	)
+	requireRaw(t, "Windows uninstaller resolver", windowsUninstallerResolver,
+		"UninstallString",
+		"^unins\\d+\\.exe$",
+		"outside the unified app directory",
+	)
+	requireRaw(t, "Windows uninstaller resolver regression", windowsUninstallerTest,
+		"unins001.exe",
+		"resolver must reject uninstallers outside the unified app directory",
+	)
+	requireRaw(t, "Windows upgrade transaction test", windowsUpgradeTest,
+		"resolve-windows-uninstaller.ps1",
+		"transaction test uninstalling via",
+	)
+	for label, content := range map[string]string{
+		"GitHub Windows CI":                githubRaw,
+		"GitLab Windows native helper":     gitlabWindowsNative,
+		"Windows upgrade transaction test": windowsUpgradeTest,
+	} {
+		if strings.Contains(content, "unins000.exe") {
+			t.Errorf("%s must not hard-code Inno Setup uninstaller filename unins000.exe", label)
+		}
+	}
 }
 
 func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {

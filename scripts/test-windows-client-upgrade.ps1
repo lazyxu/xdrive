@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $TransactionScript = Join-Path $Root "internal\update\windows_upgrade_transaction.ps1"
 $LegacyCleanupScript = Join-Path $Root "internal\update\windows_legacy_cleanup.ps1"
+$UninstallerResolver = Join-Path $Root "scripts\ci\resolve-windows-uninstaller.ps1"
 $AppDir = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $TransactionRoot = Join-Path $env:LOCALAPPDATA "xdrive\updates\transaction"
@@ -185,10 +186,11 @@ if ($null -eq $matchedDesktop) {
 
 Stop-XDriveProcesses
 
-$uninstaller = Join-Path $AppDir "unins000.exe"
-if (-not (Test-Path -LiteralPath $uninstaller)) {
-    throw "uninstaller missing after transaction test"
+$uninstaller = (& $UninstallerResolver -AppDir $AppDir | Out-String).Trim()
+if ([string]::IsNullOrWhiteSpace($uninstaller)) {
+    throw "uninstaller resolver returned an empty path after transaction test"
 }
+Write-Host "transaction test uninstalling via $uninstaller"
 $uninstall = Start-Process -FilePath $uninstaller -ArgumentList $installArgs -PassThru
 if (-not $uninstall.WaitForExit(120000)) {
     Stop-Process -Id $uninstall.Id -Force -ErrorAction SilentlyContinue

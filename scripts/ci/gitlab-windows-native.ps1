@@ -19,6 +19,8 @@ try {
             $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-windows-native.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/resolve-windows-uninstaller.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-uninstaller-resolver.ps1))
         }
 
         "PrepareSigning" {
@@ -74,8 +76,8 @@ try {
             $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
             if ($runValue -notlike "*xdrive-agent.exe*") { throw "xDriveAgent autorun registration missing" }
 
-            $uninstaller = Join-Path $app "unins000.exe"
-            if (-not (Test-Path $uninstaller)) { throw "uninstaller missing" }
+            $uninstaller = (& ./scripts/ci/resolve-windows-uninstaller.ps1 -AppDir $app | Out-String).Trim()
+            if ([string]::IsNullOrWhiteSpace($uninstaller)) { throw "uninstaller resolver returned an empty path" }
             $u = Start-Process -FilePath $uninstaller -ArgumentList $args -Wait -PassThru
             if ($u.ExitCode -ne 0) { throw "uninstaller exit code $($u.ExitCode)" }
 
