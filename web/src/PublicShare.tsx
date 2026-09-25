@@ -22,11 +22,11 @@ export default function PublicShareView({ token }: { token: string }) {
       } catch (err) {
         if (!active) return
         if (err instanceof ApiError && err.status === 410) {
-          setError('This share has expired, reached its download limit, or was revoked.')
+          setError('此分享已过期、达到下载上限或已被撤销。')
         } else if (err instanceof ApiError && err.status === 404) {
-          setError('This share link does not exist.')
+          setError('此分享链接不存在。')
         } else {
-          setError(err instanceof Error ? err.message : 'Unable to load this share.')
+          setError(err instanceof Error ? err.message : '无法加载此分享。')
         }
       } finally {
         if (active) setLoading(false)
@@ -44,11 +44,11 @@ export default function PublicShareView({ token }: { token: string }) {
       setShare((current) => current ? { ...current, download_count: current.download_count + 1 } : current)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setError('Incorrect share password.')
+        setError('分享密码错误。')
       } else if (err instanceof ApiError && err.status === 410) {
-        setError('This share has expired, reached its download limit, or was revoked.')
+        setError('此分享已过期、达到下载上限或已被撤销。')
       } else {
-        setError(err instanceof Error ? err.message : 'Download failed.')
+        setError(err instanceof Error ? err.message : '下载失败。')
       }
     } finally {
       setDownloading(false)
@@ -64,7 +64,7 @@ export default function PublicShareView({ token }: { token: string }) {
           <div className="brand-mark">x</div>
           <div>
             <Typography.Title level={2} style={{ margin: 0 }}>xDrive</Typography.Title>
-            <Typography.Text type="secondary">Secure file share</Typography.Text>
+            <Typography.Text type="secondary">安全文件分享</Typography.Text>
           </div>
         </div>
 
@@ -82,11 +82,11 @@ export default function PublicShareView({ token }: { token: string }) {
             </Space>
 
             <Typography.Text type="secondary">
-              {share.expires_at ? `Expires ${new Date(share.expires_at).toLocaleString()}` : 'No expiration'}
+              {share.expires_at ? `过期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'}
               {' · '}
               {share.max_downloads > 0
-                ? `${Math.max(0, share.max_downloads - share.download_count)} of ${share.max_downloads} downloads remaining`
-                : 'Unlimited downloads'}
+                ? `剩余 ${Math.max(0, share.max_downloads - share.download_count)} / ${share.max_downloads} 次下载`
+                : '不限下载次数'}
             </Typography.Text>
 
             {share.requires_password && (
@@ -95,12 +95,12 @@ export default function PublicShareView({ token }: { token: string }) {
                 onChange={(event) => setPassword(event.target.value)}
                 onPressEnter={() => void download()}
                 prefix={<LockOutlined />}
-                placeholder="Share password"
+                placeholder="分享密码"
                 autoComplete="current-password"
               />
             )}
 
-            {exhausted && <Alert type="warning" showIcon message="This share has reached its download limit." />}
+            {exhausted && <Alert type="warning" showIcon message="此分享已达到下载上限。" />}
 
             <Button
               type="primary"
@@ -110,7 +110,7 @@ export default function PublicShareView({ token }: { token: string }) {
               onClick={() => void download()}
               block
             >
-              Download
+              下载
             </Button>
           </Space>
         )}

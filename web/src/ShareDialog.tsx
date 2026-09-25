@@ -18,10 +18,10 @@ function defaultExpiryInput() {
 
 function statusTag(status: FileShare['status']) {
   switch (status) {
-    case 'active': return <Tag color="green">Active</Tag>
-    case 'expired': return <Tag>Expired</Tag>
-    case 'exhausted': return <Tag color="orange">Limit reached</Tag>
-    case 'revoked': return <Tag color="red">Revoked</Tag>
+    case 'active': return <Tag color="green">有效</Tag>
+    case 'expired': return <Tag>已过期</Tag>
+    case 'exhausted': return <Tag color="orange">已达上限</Tag>
+    case 'revoked': return <Tag color="red">已撤销</Tag>
   }
 }
 
@@ -76,7 +76,7 @@ export default function ShareDialog({
     if (values.expiresAt) {
       const parsed = new Date(values.expiresAt)
       if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
-        message.error('Expiration must be in the future')
+        message.error('过期时间必须晚于当前时间')
         return
       }
       expiresAt = parsed.toISOString()
@@ -90,7 +90,7 @@ export default function ShareDialog({
         max_downloads: values.maxDownloads || 0,
       })
       setCreatedLink(`${window.location.origin}/#/s/${created.token}`)
-      message.success('Share link created')
+      message.success('分享链接已创建')
       await load()
     } catch (err) {
       onError(err)
@@ -103,15 +103,15 @@ export default function ShareDialog({
     if (!createdLink) return
     try {
       await navigator.clipboard.writeText(createdLink)
-      message.success('Share link copied')
+      message.success('分享链接已复制')
     } catch {
-      message.error('Could not copy automatically. Copy the link manually.')
+      message.error('无法自动复制，请手动复制链接。')
     }
   }
 
   return (
     <Modal
-      title={node ? `Share — ${node.name}` : 'Share'}
+      title={node ? `分享 — ${node.name}` : '分享'}
       open={!!node}
       onCancel={onClose}
       footer={null}
@@ -121,34 +121,34 @@ export default function ShareDialog({
       <Alert
         type="info"
         showIcon
-        message="Share tokens are shown only once"
-        description="xDrive stores only a one-way token hash. Copy a newly created link now; existing links can be revoked but cannot be revealed again."
+        message="分享令牌只显示一次"
+        description="xDrive 只保存单向令牌哈希。请立即复制新创建的链接；已有链接可以撤销，但无法再次显示。"
         style={{ marginBottom: 18 }}
       />
 
       {createdLink && (
         <Space.Compact style={{ width: '100%', marginBottom: 18 }}>
           <Input value={createdLink} readOnly prefix={<LinkOutlined />} />
-          <Button icon={<CopyOutlined />} onClick={() => void copyCreatedLink()}>Copy</Button>
+          <Button icon={<CopyOutlined />} onClick={() => void copyCreatedLink()}>复制</Button>
         </Space.Compact>
       )}
 
-      <Typography.Title level={5}>Create a download link</Typography.Title>
+      <Typography.Title level={5}>创建下载链接</Typography.Title>
       <Form form={form} layout="vertical" onFinish={create}>
         <Space align="start" wrap>
-          <Form.Item name="expiresAt" label="Expires">
+          <Form.Item name="expiresAt" label="过期时间">
             <Input type="datetime-local" />
           </Form.Item>
-          <Form.Item name="maxDownloads" label="Maximum downloads" extra="0 means unlimited">
+          <Form.Item name="maxDownloads" label="最大下载次数" extra="0 表示不限">
             <InputNumber min={0} precision={0} style={{ width: 180 }} />
           </Form.Item>
           <Form.Item
             name="password"
-            label="Password (optional)"
+            label="密码（可选）"
             rules={[{
               validator: async (_, value?: string) => {
                 if (!value || value.length >= 8) return
-                throw new Error('Use at least 8 characters')
+                throw new Error('至少需要 8 个字符')
               },
             }]}
           >
@@ -156,49 +156,49 @@ export default function ShareDialog({
           </Form.Item>
         </Space>
         <Button type="primary" htmlType="submit" loading={creating} icon={<LinkOutlined />}>
-          Create share link
+          创建分享链接
         </Button>
       </Form>
 
-      <Typography.Title level={5} style={{ marginTop: 24 }}>Existing shares</Typography.Title>
+      <Typography.Title level={5} style={{ marginTop: 24 }}>已有分享</Typography.Title>
       <Table<FileShare>
         rowKey="id"
         size="small"
         loading={loading}
         dataSource={shares}
         pagination={false}
-        locale={{ emptyText: 'No share links for this file' }}
+        locale={{ emptyText: '此文件暂无分享链接' }}
         columns={[
           {
-            title: 'Created',
+            title: '创建时间',
             dataIndex: 'created_at',
             width: 190,
             render: (value: string) => new Date(value).toLocaleString(),
           },
           {
-            title: 'Status',
+            title: '状态',
             dataIndex: 'status',
             width: 130,
             render: (value: FileShare['status']) => statusTag(value),
           },
           {
-            title: 'Protection',
+            title: '保护方式',
             dataIndex: 'has_password',
             width: 120,
-            render: (value: boolean) => value ? 'Password' : 'Link only',
+            render: (value: boolean) => value ? '密码' : '仅链接',
           },
           {
-            title: 'Expires',
+            title: '过期时间',
             dataIndex: 'expires_at',
             width: 190,
-            render: (value?: string) => value ? new Date(value).toLocaleString() : 'Never',
+            render: (value?: string) => value ? new Date(value).toLocaleString() : '永不过期',
           },
           {
-            title: 'Downloads',
+            title: '下载次数',
             width: 140,
             render: (_, share) => share.max_downloads > 0
               ? `${share.download_count} / ${share.max_downloads}`
-              : `${share.download_count} / unlimited`,
+              : `${share.download_count} / 不限`,
           },
           {
             title: '',
@@ -213,14 +213,14 @@ export default function ShareDialog({
                 onClick={async () => {
                   try {
                     await api.revokeShare(share.id)
-                    message.success('Share revoked')
+                    message.success('分享已撤销')
                     await load()
                   } catch (err) {
                     onError(err)
                   }
                 }}
               >
-                Revoke
+                撤销
               </Button>
             ),
           },
