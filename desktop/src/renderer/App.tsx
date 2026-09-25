@@ -8,7 +8,7 @@ function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
   if (platform === 'linux') return 'Linux'
   if (platform === 'darwin') return 'macOS'
-  return platform || 'Unknown'
+  return platform || '未知'
 }
 
 function cacheGiB(bytes: number) {
@@ -22,22 +22,43 @@ function formatTransferSpeed(bytesPerSecond: number) {
 }
 
 function formatElapsed(milliseconds: number) {
-  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '0s'
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '0 秒'
   const seconds = Math.floor(milliseconds / 1000)
-  if (seconds < 60) return `${seconds}s`
+  if (seconds < 60) return `${seconds} 秒`
   const minutes = Math.floor(seconds / 60)
   const remain = seconds % 60
-  if (minutes < 60) return `${minutes}m ${remain}s`
+  if (minutes < 60) return `${minutes} 分 ${remain} 秒`
   const hours = Math.floor(minutes / 60)
-  return `${hours}h ${minutes % 60}m`
+  return `${hours} 小时 ${minutes % 60} 分`
 }
 
 function transferKindLabel(kind: string) {
-  if (kind === 'upload') return 'Upload'
-  if (kind === 'download') return 'Download'
-  if (kind === 'hydration') return 'Hydration'
-  if (kind === 'dehydration') return 'Free space'
+  if (kind === 'upload') return '上传'
+  if (kind === 'download') return '下载'
+  if (kind === 'hydration') return '下载到本地'
+  if (kind === 'dehydration') return '释放空间'
   return kind
+}
+
+function viewLabel(view: View) {
+  const labels: Record<View, string> = {
+    overview: '概览',
+    cloud: '云端文件',
+    transfers: '传输',
+    files: '存储',
+    conflicts: '冲突',
+    diagnostics: '诊断',
+    settings: '设置',
+  }
+  return labels[view]
+}
+
+function shareStatusLabel(status: string) {
+  if (status === 'active') return '有效'
+  if (status === 'expired') return '已过期'
+  if (status === 'exhausted') return '已达下载上限'
+  if (status === 'revoked') return '已撤销'
+  return status
 }
 
 export default function App() {
@@ -170,12 +191,12 @@ export default function App() {
   }, [view, agent.connected, configured])
 
   const headline = useMemo(() => {
-    if (!agent.connected) return 'xdrive-agent is not connected'
-    if (!configured) return 'Sign in to xDrive'
-    if (status?.must_change_password) return 'Change your password'
-    if (status?.has_conflict) return `${status.conflict_count} conflict${status.conflict_count === 1 ? '' : 's'} need attention`
-    if (status?.paused) return 'Sync is paused'
-    return status?.sync_status || 'xDrive is ready'
+    if (!agent.connected) return 'xdrive-agent 未连接'
+    if (!configured) return '登录 xDrive'
+    if (status?.must_change_password) return '修改密码'
+    if (status?.has_conflict) return `${status.conflict_count} 个冲突需要处理`
+    if (status?.paused) return '同步已暂停'
+    return status?.sync_status || 'xDrive 已就绪'
   }, [agent.connected, configured, status])
 
   const run = async <T,>(name: string, action: () => Promise<DesktopResult<T>>, success?: string) => {
@@ -196,7 +217,7 @@ export default function App() {
   }
 
   const restartAgent = async () => {
-    const data = await run('restart-agent', () => window.xdriveDesktop.agent.restart(), 'xdrive-agent restarted.')
+    const data = await run('restart-agent', () => window.xdriveDesktop.agent.restart(), 'xdrive-agent 已重启。')
     if (data) setAgent(data)
   }
 
@@ -207,7 +228,7 @@ export default function App() {
       return
     }
     setStartAtLogin(result.data.start_at_login)
-    setNotice(enabled ? 'xDrive Desktop will start at login.' : 'Start at login disabled.')
+    setNotice(enabled ? 'xDrive 桌面版将在登录系统后自动启动。' : '已关闭开机启动。')
   }
 
   const retry = async () => {
@@ -215,7 +236,7 @@ export default function App() {
     setError('')
     const state = await window.xdriveDesktop.agent.retry()
     setAgent(state)
-    if (!state.connected) setError(state.error || 'xdrive-agent is not available.')
+    if (!state.connected) setError(state.error || 'xdrive-agent 当前不可用。')
     setBusy('')
   }
 
@@ -238,13 +259,13 @@ export default function App() {
   const changePassword = async (event: FormEvent) => {
     event.preventDefault()
     if (newPassword !== confirmPassword) {
-      setError('The new passwords do not match.')
+      setError('两次输入的新密码不一致。')
       return
     }
     const result = await run('password', () => window.xdriveDesktop.agent.changePassword({
       current_password: currentPassword,
       new_password: newPassword,
-    }), 'Password updated.')
+    }), '密码已更新。')
     if (result) {
       setCurrentPassword('')
       setNewPassword('')
@@ -267,13 +288,13 @@ export default function App() {
     event.preventDefault()
     const gib = Number(cacheLimit)
     if (!Number.isFinite(gib) || gib < 0 || gib > 16384) {
-      setError('Cache limit must be between 0 and 16384 GiB.')
+      setError('缓存上限必须在 0 到 16384 GiB 之间。')
       return
     }
     const data = await run('settings', () => window.xdriveDesktop.agent.updateSettings({
       mount_path: mountPath.trim(),
       cache_limit_bytes: Math.round(gib * 1024 ** 3),
-    }), 'Settings saved.')
+    }), '设置已保存。')
     if (data) setSettings(data)
   }
 
@@ -308,7 +329,7 @@ export default function App() {
     const data = await run(
       `storage-rule-${path}-${mode}`,
       () => window.xdriveDesktop.agent.setSyncRule(path, mode),
-      'Folder policy updated.',
+      '文件夹策略已更新。',
     )
     if (!data) return
     setSettings(data)
@@ -320,11 +341,11 @@ export default function App() {
     if (!data) return
     setCacheStats(data.stats)
     if (data.released_files === 0 && data.failed_files === 0) {
-      setNotice('No reclaimable cache is currently available.')
+      setNotice('当前没有可释放的缓存。')
       return
     }
-    const failed = data.failed_files > 0 ? ` · ${data.failed_files} file(s) could not be released` : ''
-    setNotice(`Released ${formatBinarySize(data.released_bytes)} from ${data.released_files} file(s)${failed}.`)
+    const failed = data.failed_files > 0 ? ` · ${data.failed_files} 个文件无法释放` : ''
+    setNotice(`已从 ${data.released_files} 个文件释放 ${formatBinarySize(data.released_bytes)}${failed}。`)
   }
 
   const toggleStoragePath = (path: string) => {
@@ -341,10 +362,10 @@ export default function App() {
     const expanded = expandedStorage.has(node.path)
     const inherited = node.mode === 'default' && node.effective_mode !== 'default'
     const effectiveLabel = node.effective_mode === 'exclude'
-      ? 'Not synced'
+      ? '不同步'
       : node.effective_mode === 'always-local'
-        ? 'Always keep'
-        : 'Default'
+        ? '始终保留'
+        : '默认'
     return (
       <div className="storage-node" key={node.path}>
         <div className="storage-row" style={{ paddingLeft: `${12 + depth * 18}px` }}>
@@ -352,7 +373,7 @@ export default function App() {
             className="tree-toggle"
             type="button"
             disabled={children.length === 0}
-            aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
+            aria-label={expanded ? '折叠文件夹' : '展开文件夹'}
             onClick={() => toggleStoragePath(node.path)}
           >
             {children.length === 0 ? '·' : expanded ? '▾' : '▸'}
@@ -360,12 +381,12 @@ export default function App() {
           <div className="storage-folder">
             <strong>{node.name}</strong>
             <span>{node.file_count} file{node.file_count === 1 ? '' : 's'} · {formatBinarySize(node.total_bytes)}</span>
-            {inherited && <small>Inherited: {effectiveLabel}</small>}
+            {inherited && <small>继承策略：{effectiveLabel}</small>}
           </div>
-          <div className="storage-modes" role="group" aria-label={`Storage policy for ${node.name}`}>
-            <button className={node.mode === 'default' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'default')}>Default</button>
-            <button className={node.mode === 'exclude' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'exclude')}>Not synced</button>
-            <button className={node.mode === 'always-local' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'always-local')}>Always keep</button>
+          <div className="storage-modes" role="group" aria-label={`${node.name} 的存储策略`}>
+            <button className={node.mode === 'default' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'default')}>默认</button>
+            <button className={node.mode === 'exclude' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'exclude')}>不同步</button>
+            <button className={node.mode === 'always-local' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'always-local')}>始终保留</button>
           </div>
         </div>
         {expanded && children.map((child) => renderStorageNode(child, depth + 1))}
@@ -374,7 +395,7 @@ export default function App() {
   }
 
   const retryTransfer = async (id: string) => {
-    const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), 'Transfer retry completed.')
+    const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), '传输重试已完成。')
     if (data) setTransfers(data)
   }
 
@@ -430,7 +451,7 @@ export default function App() {
       }
       setCloudRoot(rootResult.data)
       setCloudItems(childrenResult.data)
-      setCloudCrumbs([{ id: rootResult.data.id, name: 'My files' }])
+      setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
       setCloudQuota(quotaResult.data)
       setCloudSearchActive(false)
       setCloudResults([])
@@ -443,7 +464,7 @@ export default function App() {
   const searchCloud = async () => {
     const query = cloudQuery.trim()
     if (query.length < 2) {
-      setError('Search requires at least 2 characters.')
+      setError('搜索关键字至少需要 2 个字符。')
       return
     }
     setBusy('cloud-search')
@@ -478,7 +499,7 @@ export default function App() {
   }
 
   const restoreCloudTrash = async (node: AgentCloudNode) => {
-    const data = await run('cloud-trash-restore', () => window.xdriveDesktop.agent.cloudRestoreTrash(node.id, node.revision), 'Item restored.')
+    const data = await run('cloud-trash-restore', () => window.xdriveDesktop.agent.cloudRestoreTrash(node.id, node.revision), '项目已恢复。')
     if (!data) return
     await loadCloudTrash()
     await refreshCloudQuota()
@@ -486,14 +507,14 @@ export default function App() {
   }
 
   const deleteCloudTrash = async (node: AgentCloudNode) => {
-    if (!window.confirm(`Permanently delete ${node.name}? This also removes stored history and cannot be undone.`)) return
-    const data = await run('cloud-trash-delete', () => window.xdriveDesktop.agent.cloudDeleteTrash(node.id, node.revision), 'Permanently deleted.')
+    if (!window.confirm(`永久删除 ${node.name}？这也会删除已保存的历史版本，且无法撤销。`)) return
+    const data = await run('cloud-trash-delete', () => window.xdriveDesktop.agent.cloudDeleteTrash(node.id, node.revision), '已永久删除。')
     if (!data) return
     await loadCloudTrash()
     await refreshCloudQuota()
   }
 
-  const openCloudHistory = async (node: AgentCloudNode, crumbs = cloudCrumbs) => {
+  const openCloud历史版本 = async (node: AgentCloudNode, crumbs = cloudCrumbs) => {
     setBusy('cloud-history')
     setError('')
     try {
@@ -512,11 +533,11 @@ export default function App() {
 
   const restoreCloudVersion = async (version: AgentCloudVersion) => {
     if (!cloudHistoryNode) return
-    if (!window.confirm(`Restore revision r${version.revision}? The current content will be preserved in history.`)) return
+    if (!window.confirm(`恢复到版本 r${version.revision}？当前内容会先保留到历史版本中。`)) return
     const restored = await run(
       'cloud-version-restore',
       () => window.xdriveDesktop.agent.cloudRestoreVersion(cloudHistoryNode.id, cloudHistoryNode.revision, version.id),
-      'Version restored.',
+      '版本已恢复。',
     )
     if (!restored) return
     setCloudHistoryNode(restored)
@@ -553,15 +574,15 @@ export default function App() {
     const days = Number(shareExpiresDays)
     const maxDownloads = Number(shareMaxDownloads)
     if (!Number.isFinite(days) || days < 0 || days > 3650) {
-      setError('Share expiration must be between 0 and 3650 days.')
+      setError('分享有效期必须在 0 到 3650 天之间。')
       return
     }
     if (!Number.isSafeInteger(maxDownloads) || maxDownloads < 0) {
-      setError('Maximum downloads must be a non-negative integer.')
+      setError('最大下载次数必须是非负整数。')
       return
     }
     if (sharePassword && sharePassword.length < 8) {
-      setError('Share password must contain at least 8 characters.')
+      setError('分享密码至少需要 8 个字符。')
       return
     }
     const expiresAt = days > 0 ? new Date(Date.now() + days * 86400_000).toISOString() : undefined
@@ -572,7 +593,7 @@ export default function App() {
         password: sharePassword,
         max_downloads: maxDownloads,
       }),
-      'Share link created. Copy it now; the token is shown only once.',
+      '分享链接已创建。请立即复制，令牌只会显示一次。',
     )
     if (!created) return
     setCreatedShareURL(created.url)
@@ -581,7 +602,7 @@ export default function App() {
   }
 
   const revokeCloudShare = async (share: AgentCloudShare) => {
-    const data = await run('cloud-share-revoke', () => window.xdriveDesktop.agent.cloudRevokeShare(share.id), 'Share revoked.')
+    const data = await run('cloud-share-revoke', () => window.xdriveDesktop.agent.cloudRevokeShare(share.id), '分享已撤销。')
     if (!data || !cloudShareNode) return
     const shares = await window.xdriveDesktop.agent.cloudShares(cloudShareNode.id)
     if (shares.ok) setCloudShares(shares.data)
@@ -591,9 +612,9 @@ export default function App() {
     if (!createdShareURL) return
     try {
       await navigator.clipboard.writeText(createdShareURL)
-      setNotice('Share link copied.')
+      setNotice('分享链接已复制。')
     } catch {
-      setError('Could not copy automatically. Select and copy the link manually.')
+      setError('无法自动复制，请手动选择并复制链接。')
     }
   }
 
@@ -624,7 +645,7 @@ export default function App() {
   const exportDiagnostics = async () => {
     const data = await run('export-diagnostics', () => window.xdriveDesktop.agent.exportDiagnostics())
     if (!data) return
-    if (data.saved) setNotice('Diagnostic report exported.')
+    if (data.saved) setNotice('诊断报告已导出。')
   }
 
   const loadConflicts = async () => {
@@ -640,21 +661,21 @@ export default function App() {
     return (
       <div className="center-shell">
         <section className="auth-panel">
-          <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>Desktop</span></div></div>
-          <p className="eyebrow">AGENT CONNECTION</p>
+          <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>桌面版</span></div></div>
+          <p className="eyebrow">AGENT 连接</p>
           <h1>{headline}</h1>
-          <p className="subtitle">xDrive Desktop automatically starts and monitors the Go background agent. If recovery fails, verify that the xDrive Core package is installed.</p>
-          <div className="offline-box">{agent.error || 'Waiting for desktop IPC discovery…'}</div>
+          <p className="subtitle">xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。</p>
+          <div className="offline-box">{agent.error || '正在等待桌面 IPC 连接…'}</div>
           {error && <div className="alert error">{error}</div>}
           <div className="offline-actions">
             <button className="primary" type="button" disabled={!!busy} onClick={() => void retry()}>
-              {busy === 'retry' ? 'Connecting…' : 'Retry connection'}
+              {busy === 'retry' ? '正在连接…' : '重试连接'}
             </button>
             <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent()}>
-              {busy === 'restart-agent' ? 'Restarting…' : 'Start / restart Agent'}
+              {busy === 'restart-agent' ? '正在重启…' : '启动 / 重启 Agent'}
             </button>
           </div>
-          <p className="footnote">{info ? `Desktop ${info.version} · ${platformLabel(info.platform)} ${info.arch}` : 'Loading desktop information…'}</p>
+          <p className="footnote">{info ? `桌面版 ${info.version} · ${platformLabel(info.platform)} ${info.arch}` : '正在加载桌面信息…'}</p>
         </section>
       </div>
     )
@@ -664,22 +685,22 @@ export default function App() {
     return (
       <div className="center-shell">
         <form className="auth-panel" onSubmit={login}>
-          <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>Desktop</span></div></div>
-          <p className="eyebrow">SIGN IN</p>
+          <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>桌面版</span></div></div>
+          <p className="eyebrow">登录</p>
           <h1>{headline}</h1>
-          <p className="subtitle">Credentials are passed to the Go agent. The Electron renderer never receives access or refresh tokens.</p>
+          <p className="subtitle">凭据会直接传递给 Go Agent，Electron 渲染进程不会接触 access token 或 refresh token。</p>
           {error && <div className="alert error">{error}</div>}
-          <label>Server<input value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://drive.example.com" required /></label>
-          <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required /></label>
-          <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
+          <label>服务器<input value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://drive.example.com" required /></label>
+          <label>用户名<input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required /></label>
+          <label>密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
           <label>
-            Sync folder <span className="optional">optional</span>
+            同步文件夹 <span className="optional">可选</span>
             <div className="input-action">
-              <input value={loginMount} onChange={(e) => setLoginMount(e.target.value)} placeholder="Use default xDrive folder" />
-              <button type="button" className="secondary" onClick={() => void chooseDirectory(loginMount, setLoginMount)}>Browse</button>
+              <input value={loginMount} onChange={(e) => setLoginMount(e.target.value)} placeholder="使用默认 xDrive 文件夹" />
+              <button type="button" className="secondary" onClick={() => void chooseDirectory(loginMount, setLoginMount)}>浏览</button>
             </div>
           </label>
-          <button className="primary wide" type="submit" disabled={busy === 'login'}>{busy === 'login' ? 'Signing in…' : 'Sign in'}</button>
+          <button className="primary wide" type="submit" disabled={busy === 'login'}>{busy === 'login' ? '正在登录…' : '登录'}</button>
         </form>
       </div>
     )
@@ -690,15 +711,15 @@ export default function App() {
       <div className="center-shell">
         <form className="auth-panel" onSubmit={changePassword}>
           <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>{status.username}</span></div></div>
-          <p className="eyebrow">PASSWORD CHANGE REQUIRED</p>
+          <p className="eyebrow">需要修改密码</p>
           <h1>{headline}</h1>
-          <p className="subtitle">Your administrator requires a password change before sync can start.</p>
+          <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
           {error && <div className="alert error">{error}</div>}
           {notice && <div className="alert success">{notice}</div>}
-          <label>Current password<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required /></label>
-          <label>New password<input type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required /></label>
-          <label>Confirm new password<input type="password" minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></label>
-          <button className="primary wide" type="submit" disabled={busy === 'password'}>{busy === 'password' ? 'Updating…' : 'Change password'}</button>
+          <label>当前密码<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required /></label>
+          <label>新密码<input type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required /></label>
+          <label>确认新密码<input type="password" minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></label>
+          <button className="primary wide" type="submit" disabled={busy === 'password'}>{busy === 'password' ? '正在更新…' : '修改密码'}</button>
         </form>
       </div>
     )
@@ -707,39 +728,39 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>Desktop</span></div></div>
-        <nav aria-label="Desktop sections">
-          <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>Overview</button>
-          <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>Cloud files</button>
+        <div className="brand"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>桌面版</span></div></div>
+        <nav aria-label="桌面版功能区">
+          <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>概览</button>
+          <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>云端文件</button>
           <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>
-            Transfers {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}
+            传输 {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}
           </button>
-          <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>Storage</button>
+          <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>存储</button>
           <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>
-            Conflicts {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}
+            冲突 {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}
           </button>
-          <button className={`nav-item ${view === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setView('diagnostics')}>Diagnostics</button>
-          <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} type="button" onClick={() => setView('settings')}>Settings</button>
+          <button className={`nav-item ${view === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setView('diagnostics')}>诊断</button>
+          <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} type="button" onClick={() => setView('settings')}>设置</button>
         </nav>
         <div className="account">
           <strong>{status?.username}</strong>
           <span>{status?.server}</span>
           <span>Agent {status?.version}</span>
-          <span>{info ? `Desktop ${info.version}` : ''}</span>
+          <span>{info ? `桌面版 ${info.version}` : ''}</span>
         </div>
       </aside>
 
       <main className="content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">{view.toUpperCase()}</p>
+            <p className="eyebrow">{viewLabel(view)}</p>
             <h1>{headline}</h1>
             <p className="subtitle">{status?.last_error || `${status?.auth_status} · ${status?.sync_status}`}</p>
           </div>
           <div className="actions">
-            <button className="secondary" type="button" disabled={!!busy} onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}>Open folder</button>
-            <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void run('sync', () => window.xdriveDesktop.agent.syncNow(), 'Sync requested.')}>Sync now</button>
-            <button className="primary" type="button" disabled={!!busy} onClick={() => void run('pause', () => window.xdriveDesktop.agent.setPaused(!status?.paused))}>{status?.paused ? 'Resume' : 'Pause'}</button>
+            <button className="secondary" type="button" disabled={!!busy} onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}>打开文件夹</button>
+            <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void run('sync', () => window.xdriveDesktop.agent.syncNow(), '已请求立即同步。')}>立即同步</button>
+            <button className="primary" type="button" disabled={!!busy} onClick={() => void run('pause', () => window.xdriveDesktop.agent.setPaused(!status?.paused))}>{status?.paused ? '继续同步' : '暂停同步'}</button>
           </div>
         </header>
 
@@ -749,22 +770,22 @@ export default function App() {
         {view === 'overview' && (
           <>
             <section className="status-grid">
-              <article className="status-card"><span className={`status-dot ${status?.paused ? 'waiting' : 'ready'}`} /><div><strong>Sync</strong><p>{status?.sync_status}</p></div></article>
-              <article className="status-card"><span className={`status-dot ${status?.has_conflict ? 'warning' : 'ready'}`} /><div><strong>Conflicts</strong><p>{status?.conflict_count || 0} unresolved</p></div></article>
+              <article className="status-card"><span className={`status-dot ${status?.paused ? 'waiting' : 'ready'}`} /><div><strong>同步</strong><p>{status?.sync_status}</p></div></article>
+              <article className="status-card"><span className={`status-dot ${status?.has_conflict ? 'warning' : 'ready'}`} /><div><strong>冲突</strong><p>{status?.conflict_count || 0} 个未解决</p></div></article>
               <article className="status-card"><span className="status-dot ready" /><div><strong>Agent</strong><p>{status?.auth_status} · v{agent.hello?.agent_version || status?.version} · IPC {agent.hello?.protocol_min ?? '?'}-{agent.hello?.protocol_max ?? '?'}</p></div></article>
-              <article className="status-card"><span className="status-dot ready" /><div><strong>Desktop bridge</strong><p>Connected through protected local IPC.</p></div></article>
+              <article className="status-card"><span className="status-dot ready" /><div><strong>桌面桥接</strong><p>已通过受保护的本地 IPC 连接。</p></div></article>
             </section>
 
             <section className="system-card">
               <div className="section-heading">
-                <div><p className="eyebrow">SYNC LOCATION</p><h2>{status?.mount_path || 'Default xDrive folder'}</h2></div>
-                <button className="secondary" type="button" onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}>Open</button>
+                <div><p className="eyebrow">同步位置</p><h2>{status?.mount_path || '默认 xDrive 文件夹'}</h2></div>
+                <button className="secondary" type="button" onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}>打开</button>
               </div>
               <dl>
-                <div><dt>Server</dt><dd>{status?.server}</dd></div>
-                <div><dt>User</dt><dd>{status?.username}</dd></div>
-                <div><dt>State</dt><dd>{status?.paused ? 'Paused' : status?.sync_status}</dd></div>
-                <div><dt>Revision</dt><dd>{status?.revision}</dd></div>
+                <div><dt>服务器</dt><dd>{status?.server}</dd></div>
+                <div><dt>用户</dt><dd>{status?.username}</dd></div>
+                <div><dt>状态</dt><dd>{status?.paused ? '已暂停' : status?.sync_status}</dd></div>
+                <div><dt>修订号</dt><dd>{status?.revision}</dd></div>
               </dl>
             </section>
           </>
@@ -776,29 +797,29 @@ export default function App() {
           <section className="panel cloud-panel">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">CLOUD FILES</p>
-                <h2>Browse and manage cloud content</h2>
-                <p className="cloud-note">Cloud operations run through xdrive-agent. The Renderer never receives server access or refresh tokens.</p>
+                <p className="eyebrow">云端文件</p>
+                <h2>浏览和管理云端内容</h2>
+                <p className="cloud-note">云端操作通过 xdrive-agent 执行，渲染进程不会接触服务器 access token 或 refresh token。</p>
               </div>
               <div className="cloud-heading-actions">
                 <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudTrash()}>
-                  Recycle bin
+                  回收站
                 </button>
                 <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudHome()}>
-                  {busy === 'cloud-load' ? 'Refreshing…' : 'Refresh'}
+                  {busy === 'cloud-load' ? '正在刷新…' : '刷新'}
                 </button>
               </div>
             </div>
 
             {cloudQuota?.over_quota && (
-              <div className="alert error">Storage is over quota. Permanently delete recycle-bin content or ask an administrator to increase the quota.</div>
+              <div className="alert error">存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。</div>
             )}
             {cloudQuota && (
               <div className="cloud-quota-grid">
-                <div><span>Physical usage</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `of ${formatBinarySize(cloudQuota.quota_bytes)}` : 'Unlimited quota'}</small></div>
-                <div><span>Current files</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>Active logical content</small></div>
-                <div><span>Recycle bin</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>Counts toward physical quota</small></div>
-                <div><span>History</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>Stored previous versions</small></div>
+                <div><span>物理占用</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `of ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}</small></div>
+                <div><span>当前文件</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>有效逻辑内容</small></div>
+                <div><span>回收站</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>计入物理配额</small></div>
+                <div><span>历史版本</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>已保存的历史内容</small></div>
               </div>
             )}
 
@@ -807,7 +828,7 @@ export default function App() {
                 <input
                   value={cloudQuery}
                   onChange={(event) => setCloudQuery(event.target.value)}
-                  placeholder="Search all cloud files and folders"
+                  placeholder="搜索全部云端文件和文件夹"
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       event.preventDefault()
@@ -816,7 +837,7 @@ export default function App() {
                   }}
                 />
                 <button className="primary" type="button" disabled={!!busy || cloudQuery.trim().length < 2} onClick={() => void searchCloud()}>
-                  {busy === 'cloud-search' ? 'Searching…' : 'Search'}
+                  {busy === 'cloud-search' ? '正在搜索…' : '搜索'}
                 </button>
               </div>
               {cloudSearchActive && (
@@ -824,7 +845,7 @@ export default function App() {
                   setCloudSearchActive(false)
                   setCloudResults([])
                   setCloudQuery('')
-                }}>Clear results</button>
+                }}>清除结果</button>
               )}
             </div>
 
@@ -845,7 +866,7 @@ export default function App() {
 
             <div className="cloud-list">
               <div className="cloud-list-header">
-                <span>Name</span><span>Size</span><span>Modified</span><span />
+                <span>名称</span><span>大小</span><span>修改时间</span><span />
               </div>
               {cloudSearchActive ? (
                 cloudResults.length === 0 ? (
@@ -860,18 +881,18 @@ export default function App() {
                     <span>{new Date(result.node.updated_at).toLocaleString()}</span>
                     <div className="cloud-row-actions">
                       {result.node.type === 'dir' ? (
-                        <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudDirectory(result.node.id, result.crumbs)}>Open</button>
+                        <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudDirectory(result.node.id, result.crumbs)}>打开</button>
                       ) : (
                         <>
-                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudHistory(result.node, result.crumbs)}>History</button>
-                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudShares(result.node)}>Share</button>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloud历史版本(result.node, result.crumbs)}>历史版本</button>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudShares(result.node)}>分享</button>
                         </>
                       )}
                     </div>
                   </div>
                 ))
               ) : cloudItems.length === 0 ? (
-                <div className="cloud-empty">This cloud folder is empty.</div>
+                <div className="cloud-empty">此云端文件夹为空。</div>
               ) : (
                 cloudItems.map((node) => (
                   <div className="cloud-row" key={node.id}>
@@ -886,11 +907,11 @@ export default function App() {
                         <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudDirectory(
                           node.id,
                           [...cloudCrumbs, { id: node.id, name: node.name }],
-                        )}>Open</button>
+                        )}>打开</button>
                       ) : (
                         <>
-                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudHistory(node, cloudCrumbs)}>History</button>
-                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudShares(node)}>Share</button>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloud历史版本(node, cloudCrumbs)}>历史版本</button>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudShares(node)}>分享</button>
                         </>
                       )}
                     </div>
@@ -902,17 +923,17 @@ export default function App() {
             {cloudTrashOpen && (
               <div className="cloud-subpanel">
                 <div className="cloud-subpanel-heading">
-                  <div><strong>Recycle bin</strong><span>{cloudTrash.length} item{cloudTrash.length === 1 ? '' : 's'}</span></div>
-                  <button className="secondary" type="button" onClick={() => setCloudTrashOpen(false)}>Close</button>
+                  <div><strong>回收站</strong><span>{cloudTrash.length} item{cloudTrash.length === 1 ? '' : 's'}</span></div>
+                  <button className="secondary" type="button" onClick={() => setCloudTrashOpen(false)}>关闭</button>
                 </div>
-                {cloudTrash.length === 0 ? <div className="cloud-empty">Recycle bin is empty.</div> : (
+                {cloudTrash.length === 0 ? <div className="cloud-empty">回收站为空。</div> : (
                   <div className="cloud-compact-list">
                     {cloudTrash.map((node) => (
                       <div className="cloud-compact-row" key={node.id}>
                         <div><strong>{node.name}</strong><span>{node.type === 'dir' ? 'Folder' : formatBinarySize(node.size)} · deleted {node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</span></div>
                         <div className="cloud-row-actions">
-                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>Restore</button>
-                          <button className="danger" type="button" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>Delete permanently</button>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>恢复</button>
+                          <button className="danger" type="button" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>永久删除</button>
                         </div>
                       </div>
                     ))}
@@ -924,19 +945,19 @@ export default function App() {
             {cloudHistoryNode && (
               <div className="cloud-subpanel">
                 <div className="cloud-subpanel-heading">
-                  <div><strong>Version history — {cloudHistoryNode.name}</strong><span>Current revision r{cloudHistoryNode.revision}</span></div>
+                  <div><strong>版本历史 — {cloudHistoryNode.name}</strong><span>当前版本 r{cloudHistoryNode.revision}</span></div>
                   <button className="secondary" type="button" onClick={() => {
                     setCloudHistoryNode(null)
                     setCloudHistoryCrumbs([])
                     setCloudVersions([])
-                  }}>Close</button>
+                  }}>关闭</button>
                 </div>
-                {cloudVersions.length === 0 ? <div className="cloud-empty">No previous versions yet.</div> : (
+                {cloudVersions.length === 0 ? <div className="cloud-empty">暂无历史版本。</div> : (
                   <div className="cloud-compact-list">
                     {cloudVersions.map((version) => (
                       <div className="cloud-compact-row" key={version.id}>
                         <div><strong>Revision r{version.revision}</strong><span>{formatBinarySize(version.size)} · {new Date(version.created_at).toLocaleString()}</span></div>
-                        <button className="primary" type="button" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>Restore</button>
+                        <button className="primary" type="button" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>恢复</button>
                       </div>
                     ))}
                   </div>
@@ -947,56 +968,56 @@ export default function App() {
             {cloudShareNode && (
               <div className="cloud-subpanel">
                 <div className="cloud-subpanel-heading">
-                  <div><strong>Share — {cloudShareNode.name}</strong><span>Share tokens are shown only once when created.</span></div>
+                  <div><strong>分享 — {cloudShareNode.name}</strong><span>分享令牌只会在创建时显示一次。</span></div>
                   <button className="secondary" type="button" onClick={() => {
                     setCloudShareNode(null)
                     setCloudShares([])
                     setCreatedShareURL('')
-                  }}>Close</button>
+                  }}>关闭</button>
                 </div>
 
                 {createdShareURL && (
                   <div className="share-created-row">
                     <input value={createdShareURL} readOnly />
-                    <button className="primary" type="button" onClick={() => void copyShareURL()}>Copy link</button>
+                    <button className="primary" type="button" onClick={() => void copyShareURL()}>复制链接</button>
                   </div>
                 )}
 
                 <div className="share-form">
                   <label>
-                    Expires after
+                    有效期
                     <div className="input-with-unit">
                       <input type="number" min="0" max="3650" step="1" value={shareExpiresDays} onChange={(event) => setShareExpiresDays(event.target.value)} />
-                      <span>days</span>
+                      <span>天</span>
                     </div>
-                    <small>0 means never expires.</small>
+                    <small>0 表示永不过期。</small>
                   </label>
                   <label>
-                    Maximum downloads
+                    最大下载次数
                     <input type="number" min="0" step="1" value={shareMaxDownloads} onChange={(event) => setShareMaxDownloads(event.target.value)} />
-                    <small>0 means unlimited.</small>
+                    <small>0 表示不限次数。</small>
                   </label>
                   <label>
-                    Password (optional)
-                    <input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} placeholder="At least 8 characters" />
+                    密码（可选）
+                    <input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} placeholder="至少 8 个字符" />
                   </label>
                   <button className="primary" type="button" disabled={!!busy} onClick={() => void createCloudShare()}>
-                    {busy === 'cloud-share-create' ? 'Creating…' : 'Create share link'}
+                    {busy === 'cloud-share-create' ? '正在创建…' : '创建分享链接'}
                   </button>
                 </div>
 
                 <div className="cloud-compact-list">
-                  {cloudShares.length === 0 ? <div className="cloud-empty">No share links for this file.</div> : cloudShares.map((share) => (
+                  {cloudShares.length === 0 ? <div className="cloud-empty">此文件暂无分享链接。</div> : cloudShares.map((share) => (
                     <div className="cloud-compact-row" key={share.id}>
                       <div>
-                        <strong>{share.status}</strong>
+                        <strong>{shareStatusLabel(share.status)}</strong>
                         <span>
-                          {share.has_password ? 'Password protected' : 'Link only'} ·
-                          {' '}{share.expires_at ? `expires ${new Date(share.expires_at).toLocaleString()}` : 'never expires'} ·
-                          {' '}{share.download_count}{share.max_downloads > 0 ? ` / ${share.max_downloads}` : ' / unlimited'} downloads
+                          {share.has_password ? '密码保护' : '仅链接'} ·
+                          {' '}{share.expires_at ? `到期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'} ·
+                          {' '}{share.download_count}{share.max_downloads > 0 ? ` / ${share.max_downloads}` : ' / 不限'} 次下载
                         </span>
                       </div>
-                      <button className="danger" type="button" disabled={!!busy || share.status === 'revoked'} onClick={() => void revokeCloudShare(share)}>Revoke</button>
+                      <button className="danger" type="button" disabled={!!busy || share.status === 'revoked'} onClick={() => void revokeCloudShare(share)}>撤销</button>
                     </div>
                   ))}
                 </div>
@@ -1009,30 +1030,30 @@ export default function App() {
           <section className="panel transfer-panel">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">TRANSFER CENTER</p>
-                <h2>Uploads, downloads and local availability</h2>
+                <p className="eyebrow">传输中心</p>
+                <h2>上传、下载与本地可用性</h2>
               </div>
               <div className="transfer-summary">
-                <span><strong>{activeTransfers.length}</strong> active</span>
-                <span><strong>{completedTransfers.length}</strong> completed</span>
-                <span><strong>{failedTransfers.length}</strong> failed</span>
+                <span><strong>{activeTransfers.length}</strong> 进行中</span>
+                <span><strong>{completedTransfers.length}</strong> 已完成</span>
+                <span><strong>{failedTransfers.length}</strong> 失败</span>
               </div>
             </div>
 
             {([
-              ['In progress', activeTransfers],
-              ['Completed', completedTransfers],
-              ['Failed', failedTransfers],
+              ['进行中', activeTransfers],
+              ['已完成', completedTransfers],
+              ['失败', failedTransfers],
             ] as Array<[string, AgentTransfer[]]>).map(([label, items]) => (
               <div className="transfer-section" key={label}>
                 <div className="transfer-section-title"><h3>{label}</h3><span>{items.length}</span></div>
-                {items.length === 0 ? <div className="transfer-empty">No {label.toLowerCase()} transfers.</div> : (
+                {items.length === 0 ? <div className="transfer-empty">暂无{label}任务。</div> : (
                   <div className="transfer-list">
                     {items.map((item) => {
                       const percent = Math.max(0, Math.min(100, item.percent || 0))
                       const byteProgress = item.bytes_total > 0
                         ? `${formatBinarySize(item.bytes_done)} / ${formatBinarySize(item.bytes_total)}`
-                        : item.bytes_done > 0 ? formatBinarySize(item.bytes_done) : 'No byte stream'
+                        : item.bytes_done > 0 ? formatBinarySize(item.bytes_done) : '暂无字节流'
                       return (
                         <article className="transfer-row" key={item.id}>
                           <div className="transfer-main">
@@ -1043,17 +1064,17 @@ export default function App() {
                             {(item.state === 'running' || item.state === 'retrying') && (
                               <div className="transfer-progress">
                                 <div className="transfer-progress-track"><span style={{ width: `${percent}%` }} /></div>
-                                <span>{item.bytes_total > 0 ? `${percent.toFixed(1)}%` : item.state === 'retrying' ? 'Retrying' : 'Working'}</span>
+                                <span>{item.bytes_total > 0 ? `${percent.toFixed(1)}%` : item.state === 'retrying' ? '正在重试' : '处理中'}</span>
                               </div>
                             )}
                             {item.error && <div className="transfer-error">{item.error}</div>}
                             <div className="transfer-meta">
-                              <span>{item.direction}</span>
+                              <span>{transferKindLabel(item.direction)}</span>
                               <span>{byteProgress}</span>
-                              <span>Now {formatTransferSpeed(item.instant_bytes_per_second)}</span>
-                              <span>Avg {formatTransferSpeed(item.average_bytes_per_second)}</span>
+                              <span>当前 {formatTransferSpeed(item.instant_bytes_per_second)}</span>
+                              <span>平均 {formatTransferSpeed(item.average_bytes_per_second)}</span>
                               <span>{formatElapsed(item.elapsed_ms)}</span>
-                              {item.retry_count > 0 && <span>{item.retry_count} retr{item.retry_count === 1 ? 'y' : 'ies'}</span>}
+                              {item.retry_count > 0 && <span>重试 {item.retry_count} 次</span>}
                             </div>
                           </div>
                           {item.state === 'failed' && item.retryable && (
@@ -1063,7 +1084,7 @@ export default function App() {
                               disabled={!!busy}
                               onClick={() => void retryTransfer(item.id)}
                             >
-                              {busy === `retry-transfer-${item.id}` ? 'Retrying…' : 'Retry'}
+                              {busy === `retry-transfer-${item.id}` ? '正在重试…' : '重试'}
                             </button>
                           )}
                         </article>
@@ -1080,44 +1101,44 @@ export default function App() {
           <section className="panel storage-panel">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">STORAGE POLICIES</p>
-                <h2>Choose what this device keeps</h2>
-                <p className="storage-note">Policies apply to cloud folders. Default follows the nearest parent policy; “Not synced” removes the folder from this device, while “Always keep” pins its synced content locally.</p>
+                <p className="eyebrow">存储策略</p>
+                <h2>选择此设备保留的内容</h2>
+                <p className="storage-note">策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。</p>
               </div>
               <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadStorage()}>
-                {busy === 'storage' ? 'Refreshing…' : 'Refresh'}
+                {busy === 'storage' ? '正在刷新…' : '刷新'}
               </button>
             </div>
 
             {cacheStats ? (
               <div className="cache-card">
                 <div className="cache-metrics">
-                  <div><span>Used</span><strong>{formatBinarySize(cacheStats.used_bytes)}</strong><small>{cacheStats.cached_files} cached files</small></div>
-                  <div><span>Limit</span><strong>{cacheStats.limit_bytes > 0 ? formatBinarySize(cacheStats.limit_bytes) : 'Unlimited'}</strong><small>Pinned content is protected</small></div>
-                  <div><span>Reclaimable</span><strong>{formatBinarySize(cacheStats.reclaimable_bytes)}</strong><small>{cacheStats.reclaimable_files} files</small></div>
-                  <div><span>Pinned</span><strong>{formatBinarySize(cacheStats.pinned_bytes)}</strong><small>{cacheStats.pinned_files} files</small></div>
+                  <div><span>已使用</span><strong>{formatBinarySize(cacheStats.used_bytes)}</strong><small>{cacheStats.cached_files} 个缓存文件</small></div>
+                  <div><span>上限</span><strong>{cacheStats.limit_bytes > 0 ? formatBinarySize(cacheStats.limit_bytes) : '不限'}</strong><small>固定内容受保护</small></div>
+                  <div><span>可释放</span><strong>{formatBinarySize(cacheStats.reclaimable_bytes)}</strong><small>{cacheStats.reclaimable_files} 个文件</small></div>
+                  <div><span>已固定</span><strong>{formatBinarySize(cacheStats.pinned_bytes)}</strong><small>{cacheStats.pinned_files} 个文件</small></div>
                 </div>
                 {cacheStats.supported ? (
                   <div className="cache-actions">
-                    <p>Only fully synced, unpinned Cloud Files are released. “Always keep” content is never reclaimed.</p>
+                    <p>只会释放已完整同步且未固定的云端文件。“始终保留”的内容永远不会被回收。</p>
                     <button className="secondary" type="button" disabled={!!busy || cacheStats.reclaimable_bytes <= 0} onClick={() => void releaseReclaimableCache()}>
-                      {busy === 'release-cache' ? 'Releasing…' : 'Release reclaimable cache'}
+                      {busy === 'release-cache' ? '正在释放…' : '释放可回收缓存'}
                     </button>
                   </div>
                 ) : (
-                  <div className="cache-unavailable">{cacheStats.reason || 'Persistent local cache management is unavailable on this platform.'}</div>
+                  <div className="cache-unavailable">{cacheStats.reason || '当前平台不支持持久化本地缓存管理。'}</div>
                 )}
               </div>
-            ) : <div className="empty-state">Loading cache usage…</div>}
+            ) : <div className="empty-state">正在加载缓存用量…</div>}
 
             <div className="storage-tree-header">
-              <div><strong>Cloud folders</strong><span>Default / Not synced / Always keep</span></div>
-              {storageTree && <span>{storageTree.file_count} files · {formatBinarySize(storageTree.total_bytes)}</span>}
+              <div><strong>云端文件夹</strong><span>默认 / 不同步 / 始终保留</span></div>
+              {storageTree && <span>{storageTree.file_count} 个文件 · {formatBinarySize(storageTree.total_bytes)}</span>}
             </div>
             {!storageTree ? (
-              <div className="empty-state">Loading cloud folder tree…</div>
+              <div className="empty-state">正在加载云端文件夹树…</div>
             ) : (storageTree.children || []).length === 0 ? (
-              <div className="empty-state">No cloud folders yet.</div>
+              <div className="empty-state">暂无云端文件夹。</div>
             ) : (
               <div className="storage-tree">{(storageTree.children || []).map((node) => renderStorageNode(node))}</div>
             )}
@@ -1127,30 +1148,30 @@ export default function App() {
         {view === 'conflicts' && (
           <section className="panel">
             <div className="section-heading">
-              <div><p className="eyebrow">CONFLICT COPIES</p><h2>Resolve sync conflicts</h2></div>
-              <button className="secondary" type="button" onClick={() => void loadConflicts()}>Refresh</button>
+              <div><p className="eyebrow">冲突副本</p><h2>解决同步冲突</h2></div>
+              <button className="secondary" type="button" onClick={() => void loadConflicts()}>刷新</button>
             </div>
-            {conflicts.length === 0 ? <div className="empty-state">No unresolved conflicts.</div> : (
+            {conflicts.length === 0 ? <div className="empty-state">没有未解决的冲突。</div> : (
               <div className="conflict-list">
                 {conflicts.map((item) => (
                   <article className="conflict-row" key={item.id}>
                     <div className="conflict-copy">
                       <strong>{item.original_path}</strong>
-                      <span>Conflict copy: {item.conflict_path}</span>
+                      <span>冲突副本：{item.conflict_path}</span>
                       <span>{new Date(item.created_at).toLocaleString()}</span>
                     </div>
                     <div className="row-actions">
-                      <button className="secondary" type="button" onClick={() => void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))}>Open both</button>
+                      <button className="secondary" type="button" onClick={() => void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))}>同时打开</button>
                       <button className="secondary" type="button" onClick={() => {
-                        if (window.confirm('Keep the server version and remove the local conflict copy?')) {
-                          void run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), 'Conflict resolved.').then(() => loadConflicts())
+                        if (window.confirm('保留服务器版本并删除本地冲突副本？')) {
+                          void run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts())
                         }
-                      }}>Keep server</button>
+                      }}>保留服务器版本</button>
                       <button className="primary" type="button" onClick={() => {
-                        if (window.confirm('Use the local conflict copy to replace the server version?')) {
-                          void run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), 'Conflict resolved.').then(() => loadConflicts())
+                        if (window.confirm('使用本地冲突副本替换服务器版本？')) {
+                          void run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts())
                         }
-                      }}>Keep local</button>
+                      }}>保留本地版本</button>
                     </div>
                   </article>
                 ))}
@@ -1164,49 +1185,49 @@ export default function App() {
           <section className="panel diagnostics-panel">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">DOCTOR + SELF REPAIR</p>
-                <h2>Client diagnostics</h2>
-                <p className="diagnostic-note">The Agent runs the same redacted checks used by <code>xd doctor</code>. Secrets, session IDs and home paths are not exposed to the renderer.</p>
+                <p className="eyebrow">诊断与自修复</p>
+                <h2>客户端诊断</h2>
+                <p className="diagnostic-note">Agent 会运行与 <code>xd doctor</code> 相同的脱敏检查。密钥、会话 ID 和用户目录路径不会暴露给渲染进程。</p>
               </div>
               <button className="primary" type="button" disabled={!!busy} onClick={() => void loadDiagnostics()}>
-                {busy === 'diagnostics' ? 'Checking…' : 'Run diagnostics'}
+                {busy === 'diagnostics' ? '正在检查…' : '运行诊断'}
               </button>
             </div>
 
             {diagnostics ? (
               <>
                 <div className="diagnostic-summary">
-                  <div className="diagnostic-count pass"><strong>{diagnostics.summary.pass}</strong><span>Passed</span></div>
-                  <div className="diagnostic-count warn"><strong>{diagnostics.summary.warn}</strong><span>Warnings</span></div>
-                  <div className="diagnostic-count fail"><strong>{diagnostics.summary.fail}</strong><span>Failed</span></div>
-                  <div className="diagnostic-generated"><span>Last checked</span><strong>{new Date(diagnostics.generated_at).toLocaleString()}</strong></div>
+                  <div className="diagnostic-count pass"><strong>{diagnostics.summary.pass}</strong><span>通过</span></div>
+                  <div className="diagnostic-count warn"><strong>{diagnostics.summary.warn}</strong><span>警告</span></div>
+                  <div className="diagnostic-count fail"><strong>{diagnostics.summary.fail}</strong><span>失败</span></div>
+                  <div className="diagnostic-generated"><span>上次检查</span><strong>{new Date(diagnostics.generated_at).toLocaleString()}</strong></div>
                 </div>
 
                 <div className="diagnostic-actions">
                   <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent().then(() => loadDiagnostics())}>
-                    {busy === 'restart-agent' ? 'Restarting…' : 'Restart Agent'}
+                    {busy === 'restart-agent' ? '正在重启 Agent…' : '重启 Agent'}
                   </button>
                   <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void runDiagnosticAction(
                     'reconnect',
                     () => window.xdriveDesktop.agent.reconnect(),
-                    'Sync engine reconnected.',
+                    '同步引擎已重新连接。',
                   )}>
-                    {busy === 'reconnect' ? 'Reconnecting…' : 'Reconnect'}
+                    {busy === 'reconnect' ? '正在重新连接…' : '重新连接'}
                   </button>
                   <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void runDiagnosticAction(
                     'repair-sync-root',
                     () => window.xdriveDesktop.agent.repairSyncRoot(),
-                    'Sync root repaired and reconnected.',
+                    '同步根目录已修复并重新连接。',
                   )}>
-                    {busy === 'repair-sync-root' ? 'Repairing…' : 'Repair Sync Root'}
+                    {busy === 'repair-sync-root' ? '正在修复…' : '修复同步根目录'}
                   </button>
                   <button className="secondary" type="button" disabled={!!busy} onClick={() => void run(
                     'open-logs',
                     () => window.xdriveDesktop.agent.openLogs(),
-                    'Opened xDrive logs.',
-                  )}>Open logs</button>
+                    '已打开 xDrive 日志。',
+                  )}>打开日志</button>
                   <button className="secondary" type="button" disabled={!!busy} onClick={() => void exportDiagnostics()}>
-                    {busy === 'export-diagnostics' ? 'Exporting…' : 'Export report'}
+                    {busy === 'export-diagnostics' ? '正在导出…' : '导出报告'}
                   </button>
                 </div>
 
@@ -1223,7 +1244,7 @@ export default function App() {
                 </div>
               </>
             ) : (
-              <div className="empty-state">Run diagnostics to check Server/TLS, login and credential storage, Agent/IPC, sync root, CfAPI/FUSE, cache policy, version compatibility and disk space.</div>
+              <div className="empty-state">运行诊断可检查服务器/TLS、登录与凭据存储、Agent/IPC、同步根目录、CfAPI/FUSE、缓存策略、版本兼容性和磁盘空间。</div>
             )}
           </section>
         )}
@@ -1231,26 +1252,26 @@ export default function App() {
         {view === 'settings' && (
           <section className="panel">
             <div className="section-heading">
-              <div><p className="eyebrow">CLIENT SETTINGS</p><h2>Sync, lifecycle and cache</h2></div>
+              <div><p className="eyebrow">客户端设置</p><h2>同步、生命周期与缓存</h2></div>
               <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent()}>
-                {busy === 'restart-agent' ? 'Restarting Agent…' : 'Restart Agent'}
+                {busy === 'restart-agent' ? '正在重启 Agent…' : '重启 Agent'}
               </button>
             </div>
             <label className="toggle-row">
               <input type="checkbox" checked={startAtLogin} onChange={(e) => void changeStartAtLogin(e.target.checked)} />
-              <span><strong>Start xDrive Desktop at login</strong><small>Starts directly in the system tray and keeps the background Agent healthy.</small></span>
+              <span><strong>登录系统后启动 xDrive 桌面版</strong><small>启动后直接驻留系统托盘，并保持后台 Agent 正常运行。</small></span>
             </label>
-            {!settings ? <div className="empty-state">Loading settings…</div> : (
+            {!settings ? <div className="empty-state">正在加载设置…</div> : (
               <form className="settings-form" onSubmit={saveSettings}>
                 <label>
-                  Sync folder
+                  同步文件夹
                   <div className="input-action">
                     <input value={mountPath} onChange={(e) => setMountPath(e.target.value)} required />
-                    <button type="button" className="secondary" onClick={() => void chooseDirectory(mountPath, setMountPath)}>Browse</button>
+                    <button type="button" className="secondary" onClick={() => void chooseDirectory(mountPath, setMountPath)}>浏览</button>
                   </div>
                 </label>
                 <label>
-                  Cache limit
+                  缓存上限
                   <div className="input-with-unit">
                     <input
                       type="number"
@@ -1266,24 +1287,24 @@ export default function App() {
                   </div>
                   <small>
                     {info?.platform === 'win32'
-                      ? `0 means unlimited. Current value: ${formatBinarySize(settings.cache_limit_bytes)}. Pinned / Always keep content is protected from eviction.`
-                      : 'Persistent hydration cache limits apply to Windows CfAPI. Linux FUSE uses per-open temporary files.'}
+                      ? `0 表示不限。当前值：${formatBinarySize(settings.cache_limit_bytes)}。已固定 / 始终保留的内容不会被清理。`
+                      : '持久化下载缓存上限适用于 Windows CfAPI；Linux FUSE 对每次打开使用临时文件。'}
                   </small>
                 </label>
                 <div className="settings-divider" />
                 <div className="setting-link-row">
                   <div>
-                    <strong>Folder storage policies</strong>
-                    <span>Use the Storage page to choose Default, Not synced, or Always keep from the cloud directory tree.</span>
+                    <strong>文件夹存储策略</strong>
+                    <span>可在“存储”页面的云端目录树中选择“默认”“不同步”或“始终保留”。</span>
                   </div>
-                  <button className="secondary" type="button" onClick={() => setView('files')}>Manage storage</button>
+                  <button className="secondary" type="button" onClick={() => setView('files')}>管理存储</button>
                 </div>
                 <div className="settings-divider" />
                 <div className="form-actions">
-                  <button className="primary" type="submit" disabled={busy === 'settings'}>{busy === 'settings' ? 'Saving…' : 'Save settings'}</button>
+                  <button className="primary" type="submit" disabled={busy === 'settings'}>{busy === 'settings' ? '正在保存…' : '保存设置'}</button>
                   <button className="danger" type="button" disabled={!!busy} onClick={() => {
-                    if (window.confirm('Sign out of xDrive on this device?')) void run('logout', () => window.xdriveDesktop.agent.logout())
-                  }}>Sign out</button>
+                    if (window.confirm('确定要在此设备上退出 xDrive 吗？')) void run('logout', () => window.xdriveDesktop.agent.logout())
+                  }}>退出登录</button>
                 </div>
               </form>
             )}

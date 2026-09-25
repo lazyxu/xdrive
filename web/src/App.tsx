@@ -127,7 +127,7 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
     try {
       onAuthenticated(await api.login(values.username, values.password))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Request failed')
+      setError(err instanceof Error ? err.message : '请求失败')
     } finally {
       setBusy(false)
     }
@@ -140,21 +140,21 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
           <div className="brand-mark">x</div>
           <div>
             <Typography.Title level={2} style={{ margin: 0 }}>xDrive</Typography.Title>
-            <Typography.Text type="secondary">Mount your cloud as a local drive.</Typography.Text>
+            <Typography.Text type="secondary">将云端文件挂载为本地磁盘。</Typography.Text>
           </div>
         </div>
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 18 }} />}
         <Form layout="vertical" onFinish={submit} requiredMark={false}>
-          <Form.Item label="Username" name="username" rules={[{ required: true }, { min: 3, max: 64 }]}>
+          <Form.Item label="用户名" name="username" rules={[{ required: true }, { min: 3, max: 64 }]}>
             <Input autoFocus autoComplete="username" />
           </Form.Item>
-          <Form.Item label="Password" name="password" rules={[{ required: true }, { min: 8, max: 128 }]}>
+          <Form.Item label="密码" name="password" rules={[{ required: true }, { min: 8, max: 128 }]}>
             <Input.Password autoComplete="current-password" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" loading={busy} block>Sign in</Button>
+          <Button type="primary" htmlType="submit" loading={busy} block>登录</Button>
         </Form>
         <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0, textAlign: 'center' }}>
-          Accounts are created by your xDrive administrator.
+          账户由 xDrive 管理员创建。
         </Typography.Paragraph>
       </Card>
     </div>
@@ -189,21 +189,21 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401 || err.message.includes('account_disabled')) {
-        message.error('Session is no longer valid. Sign in again.')
+        message.error('登录状态已失效，请重新登录。')
         onAuthExpired()
         return
       }
       if (err.message.includes('password_change_required')) {
         setProfile((currentProfile) => currentProfile ? { ...currentProfile, must_change_password: true } : currentProfile)
-        message.warning('Change your password before using files.')
+        message.warning('请先修改密码，再使用文件功能。')
         return
       }
       if (err.status === 507 && err.message.includes('quota_exceeded')) {
-        message.error('Storage quota exceeded. Permanently delete recycle-bin items or ask an administrator to increase the quota.')
+        message.error('存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。')
         return
       }
     }
-    message.error(err instanceof Error ? err.message : 'Request failed')
+    message.error(err instanceof Error ? err.message : '请求失败')
   }, [onAuthExpired])
 
   const loadDirectory = async (id: number, nextCrumbs?: Crumb[]) => {
@@ -236,7 +236,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       setQuota(await api.quota())
       const root = await api.root()
       const list = await api.list(root.id)
-      setCrumbs([{ id: root.id, name: 'My files' }])
+      setCrumbs([{ id: root.id, name: '我的文件' }])
       setItems(list)
     } catch (err) {
       handleError(err)
@@ -266,15 +266,15 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
           </div>
           <Space>
             <Typography.Text className="username">{username}</Typography.Text>
-            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">Sign out</Button>
+            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">退出登录</Button>
           </Space>
         </Header>
         <Content className="content-wrap">
-          <Card className="auth-card" title="Change your temporary password">
+          <Card className="auth-card" title="修改临时密码">
             <Alert
               type="warning"
               showIcon
-              message="Your administrator requires a password change before file access is enabled."
+              message="管理员要求先修改密码，之后才能访问文件。"
               style={{ marginBottom: 18 }}
             />
             <Form
@@ -282,29 +282,29 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
               layout="vertical"
               onFinish={async (values) => {
                 if (values.next !== values.confirm) {
-                  message.error('New passwords do not match')
+                  message.error('两次输入的新密码不一致')
                   return
                 }
                 try {
                   await api.changePassword(values.current, values.next)
                   passwordForm.resetFields()
-                  message.success('Password changed')
+                  message.success('密码已修改')
                   setProfile({ ...profile, must_change_password: false })
                 } catch (err) {
                   handleError(err)
                 }
               }}
             >
-              <Form.Item name="current" label="Current password" rules={[{ required: true }]}>
+              <Form.Item name="current" label="当前密码" rules={[{ required: true }]}>
                 <Input.Password autoComplete="current-password" />
               </Form.Item>
-              <Form.Item name="next" label="New password" rules={[{ required: true }, { min: 8 }]}>
+              <Form.Item name="next" label="新密码" rules={[{ required: true }, { min: 8 }]}>
                 <Input.Password autoComplete="new-password" />
               </Form.Item>
-              <Form.Item name="confirm" label="Confirm new password" rules={[{ required: true }, { min: 8 }]}>
+              <Form.Item name="confirm" label="确认新密码" rules={[{ required: true }, { min: 8 }]}>
                 <Input.Password autoComplete="new-password" />
               </Form.Item>
-              <Button type="primary" htmlType="submit">Change password</Button>
+              <Button type="primary" htmlType="submit">修改密码</Button>
             </Form>
           </Card>
         </Content>
@@ -322,7 +322,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       try {
         setUploadProgress(0)
         await api.upload(current.id, file as File, setUploadProgress)
-        message.success(`${file.name} uploaded`)
+        message.success(`${file.name} 已上传`)
         await loadDirectory(current.id)
         await refreshQuota()
       } catch (err) {
@@ -356,16 +356,16 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
 
   const remove = (node: Node) => {
     modal.confirm({
-      title: `Move ${node.name} to the recycle bin?`,
+      title: `将 ${node.name} 移到回收站？`,
       content: node.type === 'dir'
-        ? 'The directory and everything inside it will disappear from synced folders, but can be restored later.'
-        : 'The file will disappear from synced folders, but can be restored later.',
-      okText: 'Move to recycle bin',
+        ? '该文件夹及其中的全部内容会从同步文件夹中移除，但之后仍可恢复。'
+        : '该文件会从同步文件夹中移除，但之后仍可恢复。',
+      okText: '移到回收站',
       okButtonProps: { danger: true },
       async onOk() {
         try {
           await api.remove(node.id, node.revision)
-          message.success('Moved to recycle bin')
+          message.success('已移到回收站')
           if (current) await loadDirectory(current.id)
           await refreshQuota()
         } catch (err) { handleError(err) }
@@ -415,22 +415,22 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             {profile?.role === 'admin' && (
               <>
                 <Button type="text" icon={<UserOutlined />} onClick={() => setAdminOpen(true)} className="logout-button">
-                  Users
+                  用户管理
                 </Button>
                 <Button type="text" icon={<AuditOutlined />} onClick={() => setAuditOpen(true)} className="logout-button">
-                  Audit
+                  审计日志
                 </Button>
               </>
             )}
             {quota && (
-              <Tooltip title={`Current files ${formatSize(quota.logical_file_bytes)} · Recycle bin ${formatSize(quota.trash_bytes)} · History ${formatSize(quota.history_bytes)}`}>
+              <Tooltip title={`当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)}`}>
                 <Typography.Text className="username">
-                  Storage {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? 'Unlimited' : formatSize(quota.quota_bytes)}
+                  存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}
                 </Typography.Text>
               </Tooltip>
             )}
             <Typography.Text className="username">{username}</Typography.Text>
-            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">Sign out</Button>
+            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">退出登录</Button>
           </Space>
         </Header>
         <Content className="content-wrap">
@@ -440,10 +440,10 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                 title: index === crumbs.length - 1 ? crumb.name : <a onClick={() => loadDirectory(crumb.id, crumbs.slice(0, index + 1))}>{crumb.name}</a>,
               }))} />
               <Space wrap>
-                <Button icon={<ReloadOutlined />} onClick={() => current && loadDirectory(current.id)}>Refresh</Button>
-                <Button icon={<RestOutlined />} onClick={openTrash}>Recycle bin</Button>
-                <Button icon={<FolderAddOutlined />} onClick={() => setFolderOpen(true)}>New folder</Button>
-                <Upload {...uploadProps}><Button type="primary" icon={<UploadOutlined />}>Upload</Button></Upload>
+                <Button icon={<ReloadOutlined />} onClick={() => current && loadDirectory(current.id)}>刷新</Button>
+                <Button icon={<RestOutlined />} onClick={openTrash}>回收站</Button>
+                <Button icon={<FolderAddOutlined />} onClick={() => setFolderOpen(true)}>新建文件夹</Button>
+                <Upload {...uploadProps}><Button type="primary" icon={<UploadOutlined />}>上传</Button></Upload>
               </Space>
             </div>
             {uploadProgress !== null && <div className="upload-progress"><Progress percent={uploadProgress} size="small" /></div>}
@@ -452,29 +452,29 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
               loading={loading}
               dataSource={items}
               pagination={false}
-              locale={{ emptyText: 'This folder is empty' }}
+              locale={{ emptyText: '此文件夹为空' }}
               columns={[
                 {
-                  title: 'Name', dataIndex: 'name', key: 'name',
+                  title: '名称', dataIndex: 'name', key: 'name',
                   render: (_, node) => (
                     <Space>
                       {node.type === 'dir' ? <FolderOpenOutlined className="folder-icon" /> : <FileOutlined />}
                       {node.type === 'dir' ? <a onDoubleClick={() => enterDirectory(node)} onClick={() => enterDirectory(node)}>{node.name}</a> : <span>{node.name}</span>}
-                      {node.type === 'dir' && <Tag>Folder</Tag>}
+                      {node.type === 'dir' && <Tag>文件夹</Tag>}
                     </Space>
                   ),
                 },
-                { title: 'Size', dataIndex: 'size', width: 120, render: (value: number, node: Node) => node.type === 'dir' ? '—' : formatSize(value) },
-                { title: 'Modified', dataIndex: 'updated_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
+                { title: '大小', dataIndex: 'size', width: 120, render: (value: number, node: Node) => node.type === 'dir' ? '—' : formatSize(value) },
+                { title: '修改时间', dataIndex: 'updated_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
                 {
                   title: '', key: 'actions', width: 190, align: 'right',
                   render: (_, node) => (
                     <Space size="small">
-                      {node.type === 'file' && <Button type="text" aria-label={`Download ${node.name}`} icon={<DownloadOutlined />} onClick={() => api.download(node).catch(handleError)} />}
-                      {node.type === 'file' && <Button type="text" aria-label={`Share ${node.name}`} icon={<ShareAltOutlined />} onClick={() => setShareNode(node)} />}
-                      {node.type === 'file' && <Button type="text" aria-label={`History ${node.name}`} icon={<HistoryOutlined />} onClick={() => void openHistory(node)} />}
-                      <Button type="text" aria-label={`Rename ${node.name}`} icon={<EditOutlined />} onClick={() => { setRenameNode(node); renameForm.setFieldsValue({ name: node.name }) }} />
-                      <Button danger type="text" aria-label={`Delete ${node.name}`} icon={<DeleteOutlined />} onClick={() => remove(node)} />
+                      {node.type === 'file' && <Button type="text" aria-label={`下载 ${node.name}`} icon={<DownloadOutlined />} onClick={() => api.download(node).catch(handleError)} />}
+                      {node.type === 'file' && <Button type="text" aria-label={`分享 ${node.name}`} icon={<ShareAltOutlined />} onClick={() => setShareNode(node)} />}
+                      {node.type === 'file' && <Button type="text" aria-label={`历史版本 ${node.name}`} icon={<HistoryOutlined />} onClick={() => void openHistory(node)} />}
+                      <Button type="text" aria-label={`重命名 ${node.name}`} icon={<EditOutlined />} onClick={() => { setRenameNode(node); renameForm.setFieldsValue({ name: node.name }) }} />
+                      <Button danger type="text" aria-label={`删除 ${node.name}`} icon={<DeleteOutlined />} onClick={() => remove(node)} />
                     </Space>
                   ),
                 },
@@ -483,26 +483,26 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
           </Card>
         </Content>
 
-        <Modal title="New folder" open={folderOpen} onCancel={() => setFolderOpen(false)} footer={null} destroyOnClose>
+        <Modal title="新建文件夹" open={folderOpen} onCancel={() => setFolderOpen(false)} footer={null} destroyOnClose>
           <Form form={folderForm} layout="vertical" onFinish={createFolder}>
-            <Form.Item name="name" label="Folder name" rules={[{ required: true, whitespace: true, max: 255 }]}>
+            <Form.Item name="name" label="文件夹名称" rules={[{ required: true, whitespace: true, max: 255 }]}>
               <Input autoFocus />
             </Form.Item>
-            <Button type="primary" htmlType="submit">Create</Button>
+            <Button type="primary" htmlType="submit">创建</Button>
           </Form>
         </Modal>
 
-        <Modal title="Rename" open={!!renameNode} onCancel={() => setRenameNode(null)} footer={null} destroyOnClose>
+        <Modal title="重命名" open={!!renameNode} onCancel={() => setRenameNode(null)} footer={null} destroyOnClose>
           <Form form={renameForm} layout="vertical" onFinish={rename}>
-            <Form.Item name="name" label="Name" rules={[{ required: true, whitespace: true, max: 255 }]}>
+            <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true, max: 255 }]}>
               <Input autoFocus />
             </Form.Item>
-            <Button type="primary" htmlType="submit">Save</Button>
+            <Button type="primary" htmlType="submit">保存</Button>
           </Form>
         </Modal>
 
         <Modal
-          title="Recycle bin"
+          title="回收站"
           open={trashOpen}
           onCancel={() => setTrashOpen(false)}
           footer={null}
@@ -513,7 +513,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             loading={trashLoading}
             dataSource={trashItems}
             pagination={false}
-            locale={{ emptyText: 'Recycle bin is empty' }}
+            locale={{ emptyText: '回收站为空' }}
             columns={[
               {
                 title: 'Name',
@@ -526,13 +526,13 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                 ),
               },
               {
-                title: 'Deleted',
+                title: '删除时间',
                 dataIndex: 'deleted_at',
                 width: 190,
                 render: (value?: string) => value ? new Date(value).toLocaleString() : '—',
               },
               {
-                title: 'Actions',
+                title: '操作',
                 width: 220,
                 render: (_, node) => (
                   <Space>
@@ -541,34 +541,34 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                       onClick={async () => {
                         try {
                           await api.restoreTrash(node.id, node.revision)
-                          message.success('Restored')
+                          message.success('已恢复')
                           await loadTrash()
                           if (current) await loadDirectory(current.id)
                           await refreshQuota()
                         } catch (err) { handleError(err) }
                       }}
                     >
-                      Restore
+                      恢复
                     </Button>
                     <Button
                       danger
                       size="small"
                       onClick={() => modal.confirm({
-                        title: `Permanently delete ${node.name}?`,
-                        content: 'The item, current content and all stored file versions will be permanently removed.',
-                        okText: 'Delete permanently',
+                        title: `永久删除 ${node.name}？`,
+                        content: '该项目、当前内容以及所有已保存的历史版本都将被永久删除。',
+                        okText: '永久删除',
                         okButtonProps: { danger: true },
                         async onOk() {
                           try {
                             await api.permanentlyDeleteTrash(node.id, node.revision)
-                            message.success('Permanently deleted')
+                            message.success('已永久删除')
                             await loadTrash()
                             await refreshQuota()
                           } catch (err) { handleError(err) }
                         },
                       })}
                     >
-                      Delete permanently
+                      永久删除
                     </Button>
                   </Space>
                 ),
@@ -578,7 +578,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
         </Modal>
 
         <Modal
-          title={historyNode ? `Version history — ${historyNode.name}` : 'Version history'}
+          title={historyNode ? `版本历史 — ${historyNode.name}` : '版本历史'}
           open={!!historyNode}
           onCancel={() => { setHistoryNode(null); setVersions([]) }}
           footer={null}
@@ -589,29 +589,29 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             loading={versionsLoading}
             dataSource={versions}
             pagination={false}
-            locale={{ emptyText: 'No previous versions yet' }}
+            locale={{ emptyText: '暂无历史版本' }}
             columns={[
-              { title: 'Revision', dataIndex: 'revision', width: 110, render: (value: number) => `r${value}` },
-              { title: 'Size', dataIndex: 'size', width: 120, render: (value: number) => formatSize(value) },
-              { title: 'Saved', dataIndex: 'created_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
+              { title: '版本', dataIndex: 'revision', width: 110, render: (value: number) => `r${value}` },
+              { title: '大小', dataIndex: 'size', width: 120, render: (value: number) => formatSize(value) },
+              { title: '保存时间', dataIndex: 'created_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
               {
-                title: 'Actions',
+                title: '操作',
                 render: (_, version) => historyNode && (
                   <Space>
                     <Button size="small" onClick={() => api.downloadVersion(historyNode, version).catch(handleError)}>
-                      Download
+                      下载
                     </Button>
                     <Button
                       size="small"
                       type="primary"
                       onClick={() => modal.confirm({
-                        title: `Restore revision ${version.revision}?`,
-                        content: 'The current content will first be preserved as another historical version.',
-                        okText: 'Restore version',
+                        title: `恢复到版本 ${version.revision}？`,
+                        content: '当前内容会先保留为一个新的历史版本。',
+                        okText: '恢复版本',
                         async onOk() {
                           try {
                             const restored = await api.restoreVersion(historyNode.id, historyNode.revision, version.id)
-                            message.success('Version restored')
+                            message.success('版本已恢复')
                             setHistoryNode(restored)
                             setVersions(await api.versions(restored.id))
                             if (current) await loadDirectory(current.id)
@@ -620,7 +620,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                         },
                       })}
                     >
-                      Restore
+                      恢复
                     </Button>
                   </Space>
                 ),

@@ -115,8 +115,8 @@ async function applyStartAtLogin(enabled: boolean) {
     const contents = [
       '[Desktop Entry]',
       'Type=Application',
-      'Name=xDrive Desktop',
-      'Comment=Start xDrive in the background',
+      'Name=xDrive 桌面版',
+      'Comment=在后台启动 xDrive',
       `Exec=${quoteDesktopExec(process.execPath)} --background`,
       'Terminal=false',
       'X-GNOME-Autostart-enabled=true',
@@ -147,7 +147,7 @@ function createMainWindow(showOnReady = true) {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    title: 'xDrive Desktop',
+    title: 'xDrive 桌面版',
     backgroundColor: '#f5f7fb',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),
@@ -185,11 +185,11 @@ function createMainWindow(showOnReady = true) {
 }
 
 function statusLabel() {
-  if (!agentState.connected) return 'Agent not connected'
+  if (!agentState.connected) return 'Agent 未连接'
   const status = agentState.status
-  if (!status) return 'Connecting'
-  if (status.has_conflict) return `Conflicts (${status.conflict_count})`
-  if (status.paused) return 'Paused'
+  if (!status) return '正在连接'
+  if (status.has_conflict) return `冲突 (${status.conflict_count})`
+  if (status.paused) return '已暂停'
   return status.sync_status || status.auth_status
 }
 
@@ -201,25 +201,25 @@ function rebuildTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: statusLabel(), enabled: false },
     { type: 'separator' },
-    { label: 'Open xDrive Desktop', click: showMainWindow },
+    { label: '打开 xDrive 桌面版', click: showMainWindow },
     {
-      label: 'Open xDrive Folder',
+      label: '打开 xDrive 文件夹',
       enabled: agentState.connected && configured,
       click: () => { void runAgentAction(() => requireAgentClient().openFolder(), false) },
     },
     {
-      label: 'Sync Now',
+      label: '立即同步',
       enabled: agentState.connected && configured && !status?.paused,
       click: () => { void runAgentAction(() => requireAgentClient().syncNow()) },
     },
     {
-      label: status?.paused ? 'Resume Sync' : 'Pause Sync',
+      label: status?.paused ? '继续同步' : '暂停同步',
       enabled: agentState.connected && configured,
       click: () => { void runAgentAction(() => requireAgentClient().setPaused(!status?.paused)) },
     },
     { type: 'separator' },
     {
-      label: 'Quit xDrive Desktop',
+      label: '退出 xDrive 桌面版',
       click: () => {
         quitting = true
         app.quit()
@@ -244,15 +244,15 @@ function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnec
   const after = next.status
   if (after.conflict_count > before.conflict_count) {
     new Notification({
-      title: 'xDrive conflict',
-      body: `${after.conflict_count} unresolved conflict${after.conflict_count === 1 ? '' : 's'} need attention.`,
+      title: 'xDrive 冲突',
+      body: `${after.conflict_count} 个未解决冲突需要处理。`,
     }).show()
   } else if (before.sync_status === '正在同步' && after.sync_status === '同步正常') {
-    new Notification({ title: 'xDrive', body: 'Sync completed.' }).show()
+    new Notification({ title: 'xDrive', body: '同步已完成。' }).show()
   }
 
   if (before.auth_status !== after.auth_status && (after.auth_status === '登录已过期' || after.auth_status === '账户已禁用')) {
-    new Notification({ title: 'xDrive', body: 'Your xDrive session needs attention. Open xDrive Desktop to sign in again.' }).show()
+    new Notification({ title: 'xDrive', body: 'xDrive 登录状态需要处理，请打开 xDrive 桌面版重新登录。' }).show()
   }
 }
 
@@ -275,9 +275,9 @@ function publishAgentTransfers(next: AgentTransfers) {
 
 function withDesktopCompatibility(report: AgentDiagnosticReport, hello: AgentHello): AgentDiagnosticReport {
   const compatibility = {
-    name: 'Desktop / Agent compatibility',
+    name: '桌面版 / Agent 兼容性',
     status: 'PASS' as const,
-    detail: `Desktop ${app.getVersion()} · Agent ${hello.agent_version} · IPC desktop ${AgentIPCClient.protocolMin}-${AgentIPCClient.protocolMax} / agent ${hello.protocol_min}-${hello.protocol_max}`,
+    detail: `桌面版 ${app.getVersion()} · Agent ${hello.agent_version} · IPC 桌面版 ${AgentIPCClient.protocolMin}-${AgentIPCClient.protocolMax} / Agent ${hello.protocol_min}-${hello.protocol_max}`,
   }
   const checks = [...report.checks, compatibility]
   return {
@@ -451,7 +451,7 @@ function registerIPCHandlers() {
     }
   })
   ipcMain.handle('desktop:select-directory', async (_event, defaultPath?: unknown) => {
-    const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'], title: 'Choose xDrive sync folder' }
+    const options: OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'], title: '选择 xDrive 同步文件夹' }
     if (typeof defaultPath === 'string' && defaultPath.trim()) options.defaultPath = defaultPath
     const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
     return result.canceled ? null : result.filePaths[0] ?? null
@@ -681,9 +681,9 @@ function registerIPCHandlers() {
       const report = withDesktopCompatibility(await requireAgentClient().diagnostics(), hello)
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
       const options = {
-        title: 'Export xDrive diagnostic report',
+        title: '导出 xDrive 诊断报告',
         defaultPath: path.join(app.getPath('documents'), `xdrive-diagnostics-${stamp}.txt`),
-        filters: [{ name: 'Text report', extensions: ['txt'] }],
+        filters: [{ name: '文本报告', extensions: ['txt'] }],
       }
       const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
       if (result.canceled || !result.filePath) return { ok: true, data: { saved: false } }

@@ -63,7 +63,7 @@ export default function AdminAuditPanel({
       setEvents((current) => reset ? batch : [...current, ...batch])
       setHasMore(batch.length === 100)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : 'Failed to load audit log')
+      message.error(err instanceof Error ? err.message : '加载审计日志失败')
     } finally {
       setLoading(false)
     }
@@ -77,28 +77,28 @@ export default function AdminAuditPanel({
 
   const columns: ColumnsType<AuditEvent> = [
     {
-      title: 'Time',
+      title: '时间',
       width: 190,
       render: (_, event) => new Date(event.created_at).toLocaleString(),
     },
     {
-      title: 'Actor',
+      title: '操作者',
       width: 150,
       render: (_, event) => (
         <Space direction="vertical" size={0}>
-          <Typography.Text>{event.actor_username || 'anonymous'}</Typography.Text>
+          <Typography.Text>{event.actor_username || '匿名'}</Typography.Text>
           {event.actor_role && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{event.actor_role}</Typography.Text>}
         </Space>
       ),
     },
     {
-      title: 'Action',
+      title: '操作',
       dataIndex: 'action',
       width: 220,
       render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
     },
     {
-      title: 'Target',
+      title: '目标',
       width: 190,
       render: (_, event) => {
         const label = event.target_label || event.target_id || '—'
@@ -112,15 +112,15 @@ export default function AdminAuditPanel({
       },
     },
     {
-      title: 'Result',
+      title: '结果',
       dataIndex: 'result',
       width: 100,
       render: (value: AuditEvent['result']) => (
-        <Tag color={value === 'success' ? 'green' : 'red'}>{value}</Tag>
+        <Tag color={value === 'success' ? 'green' : 'red'}>{value === 'success' ? '成功' : '失败'}</Tag>
       ),
     },
     {
-      title: 'Source',
+      title: '来源',
       width: 220,
       render: (_, event) => (
         <Space direction="vertical" size={0}>
@@ -134,7 +134,7 @@ export default function AdminAuditPanel({
       ),
     },
     {
-      title: 'Details',
+      title: '详情',
       render: (_, event) => (
         <Typography.Text
           type="secondary"
@@ -149,7 +149,7 @@ export default function AdminAuditPanel({
 
   return (
     <Modal
-      title="Audit log"
+      title="审计日志"
       open={open}
       onCancel={onClose}
       footer={null}
@@ -160,7 +160,7 @@ export default function AdminAuditPanel({
           <Select
             allowClear
             showSearch
-            placeholder="Action"
+            placeholder="操作"
             style={{ width: 260 }}
             value={action}
             onChange={(value) => setAction(value)}
@@ -168,24 +168,24 @@ export default function AdminAuditPanel({
           />
           <Select
             allowClear
-            placeholder="Result"
+            placeholder="结果"
             style={{ width: 140 }}
             value={result}
             onChange={(value?: 'success' | 'failure') => setResult(value)}
             options={[
-              { value: 'success', label: 'Success' },
-              { value: 'failure', label: 'Failure' },
+              { value: 'success', label: '成功' },
+              { value: 'failure', label: '失败' },
             ]}
           />
           <Input
             allowClear
-            placeholder="Actor username"
+            placeholder="操作者用户名"
             style={{ width: 220 }}
             value={actor}
             onChange={(event) => setActor(event.target.value)}
             onPressEnter={() => void load(true)}
           />
-          <Button type="primary" onClick={() => void load(true)}>Apply</Button>
+          <Button type="primary" onClick={() => void load(true)}>应用</Button>
           <Button onClick={() => {
             const cleared: Filters = { action: undefined, result: undefined, actor: '' }
             setAction(undefined)
@@ -193,7 +193,7 @@ export default function AdminAuditPanel({
             setActor('')
             void load(true, cleared)
           }}>
-            Clear
+            清除
           </Button>
         </Space>
 
@@ -205,12 +205,12 @@ export default function AdminAuditPanel({
           columns={columns}
           pagination={false}
           scroll={{ x: 1300 }}
-          locale={{ emptyText: 'No audit events found' }}
+          locale={{ emptyText: '未找到审计事件' }}
         />
 
         {hasMore && (
           <div style={{ textAlign: 'center' }}>
-            <Button loading={loading} onClick={() => void load(false)}>Load older events</Button>
+            <Button loading={loading} onClick={() => void load(false)}>加载更早记录</Button>
           </div>
         )}
       </Space>
