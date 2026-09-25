@@ -32,15 +32,16 @@ type Client struct {
 }
 
 type Node struct {
-	ID        uint64    `json:"id"`
-	ParentID  *uint64   `json:"parent_id,omitempty"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	Size      int64     `json:"size"`
-	Revision  uint64    `json:"revision"`
-	SHA256    string    `json:"sha256,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        uint64     `json:"id"`
+	ParentID  *uint64    `json:"parent_id,omitempty"`
+	Name      string     `json:"name"`
+	Type      string     `json:"type"`
+	Size      int64      `json:"size"`
+	Revision  uint64     `json:"revision"`
+	SHA256    string     `json:"sha256,omitempty"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 type QuotaUsage struct {

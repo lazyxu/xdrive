@@ -262,6 +262,93 @@ test('storage tree and cache use dedicated agent endpoints', async (t) => {
   ])
 })
 
+
+test('cloud management uses dedicated agent endpoints', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    const chunks = []
+    if (req.method !== 'GET') {
+      for await (const chunk of req) chunks.push(chunk)
+    }
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null
+    seen.push({ method: req.method, path: url.pathname, query: url.search, body })
+
+    switch (url.pathname) {
+      case '/v1/cloud/root':
+        json(res, 200, { id: 1, name: 'root', type: 'dir', size: 0, revision: 1, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() })
+        return
+      case '/v1/cloud/children':
+        json(res, 200, [{ id: 2, parent_id: 1, name: 'Projects', type: 'dir', size: 0, revision: 1, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }])
+        return
+      case '/v1/cloud/search':
+        json(res, 200, [{ node: { id: 3, name: 'report.pdf', type: 'file', size: 12, revision: 2, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }, path: 'Projects/report.pdf', crumbs: [{ id: 1, name: 'My files' }, { id: 2, name: 'Projects' }] }])
+        return
+      case '/v1/cloud/quota':
+        json(res, 200, { quota_bytes: 1000, physical_used_bytes: 400, logical_file_bytes: 300, trash_bytes: 50, history_bytes: 50, over_quota: false })
+        return
+      case '/v1/cloud/trash':
+        json(res, 200, [{ id: 4, name: 'old.txt', type: 'file', size: 5, revision: 3, deleted_at: new Date(0).toISOString(), created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }])
+        return
+      case '/v1/cloud/trash/restore':
+        json(res, 200, { id: 4, name: 'old.txt', type: 'file', size: 5, revision: 4, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() })
+        return
+      case '/v1/cloud/trash/delete':
+        json(res, 200, { ok: true })
+        return
+      case '/v1/cloud/versions':
+        json(res, 200, [{ id: 5, node_id: 3, revision: 1, size: 10, created_at: new Date(0).toISOString() }])
+        return
+      case '/v1/cloud/versions/restore':
+        json(res, 200, { id: 3, name: 'report.pdf', type: 'file', size: 10, revision: 3, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() })
+        return
+      case '/v1/cloud/shares':
+        if (req.method === 'POST') {
+          json(res, 201, { share: { id: 7, node_id: 3, token: 'share-token', has_password: false, max_downloads: 2, download_count: 0, status: 'active', created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }, url: 'https://drive.example/#/s/share-token' })
+        } else {
+          json(res, 200, [{ id: 6, node_id: 3, has_password: false, max_downloads: 0, download_count: 0, status: 'active', created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }])
+        }
+        return
+      case '/v1/cloud/shares/revoke':
+        json(res, 200, { ok: true })
+        return
+      default:
+        json(res, 404, { error: 'not_found', message: 'not found' })
+    }
+  })
+
+  assert.equal((await client.cloudRoot()).id, 1)
+  assert.equal((await client.cloudChildren(1))[0].name, 'Projects')
+  assert.equal((await client.cloudSearch('report'))[0].path, 'Projects/report.pdf')
+  assert.equal((await client.cloudQuota()).physical_used_bytes, 400)
+  assert.equal((await client.cloudTrash())[0].id, 4)
+  assert.equal((await client.cloudRestoreTrash(4, 3)).revision, 4)
+  assert.equal((await client.cloudDeleteTrash(4, 3)).ok, true)
+  assert.equal((await client.cloudVersions(3))[0].id, 5)
+  assert.equal((await client.cloudRestoreVersion(3, 2, 5)).revision, 3)
+  assert.equal((await client.cloudShares(3))[0].id, 6)
+  assert.match((await client.cloudCreateShare(3, { max_downloads: 2 })).url, /share-token/)
+  assert.equal((await client.cloudRevokeShare(6)).ok, true)
+
+  assert.deepEqual(seen.map((item) => [item.method, item.path]), [
+    ['GET', '/v1/cloud/root'],
+    ['GET', '/v1/cloud/children'],
+    ['GET', '/v1/cloud/search'],
+    ['GET', '/v1/cloud/quota'],
+    ['GET', '/v1/cloud/trash'],
+    ['POST', '/v1/cloud/trash/restore'],
+    ['POST', '/v1/cloud/trash/delete'],
+    ['GET', '/v1/cloud/versions'],
+    ['POST', '/v1/cloud/versions/restore'],
+    ['GET', '/v1/cloud/shares'],
+    ['POST', '/v1/cloud/shares'],
+    ['POST', '/v1/cloud/shares/revoke'],
+  ])
+  assert.equal(seen[1].query, '?parent_id=1')
+  assert.equal(seen[2].query, '?q=report')
+  assert.deepEqual(seen[5].body, { id: 4, revision: 3 })
+})
+
 test('file availability and selective sync use dedicated agent endpoints', async (t) => {
   const seen = []
   const { client } = await fixture(t, async (req, res) => {

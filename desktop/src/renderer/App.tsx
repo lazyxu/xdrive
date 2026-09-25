@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { formatBinarySize } from '@xdrive/shared'
 
-type View = 'overview' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+type View = 'overview' | 'cloud' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
 function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
@@ -52,6 +52,24 @@ export default function App() {
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
+  const [cloudRoot, setCloudRoot] = useState<AgentCloudNode | null>(null)
+  const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
+  const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
+  const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
+  const [cloudQuery, setCloudQuery] = useState('')
+  const [cloudSearchActive, setCloudSearchActive] = useState(false)
+  const [cloudResults, setCloudResults] = useState<AgentCloudSearchResult[]>([])
+  const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
+  const [cloudTrash, setCloudTrash] = useState<AgentCloudNode[]>([])
+  const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
+  const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
+  const [cloudVersions, setCloudVersions] = useState<AgentCloudVersion[]>([])
+  const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
+  const [cloudShares, setCloudShares] = useState<AgentCloudShare[]>([])
+  const [shareExpiresDays, setShareExpiresDays] = useState('7')
+  const [sharePassword, setSharePassword] = useState('')
+  const [shareMaxDownloads, setShareMaxDownloads] = useState('0')
+  const [createdShareURL, setCreatedShareURL] = useState('')
 
   const [server, setServer] = useState('')
   const [username, setUsername] = useState('')
@@ -106,6 +124,19 @@ export default function App() {
       setDiagnostics(null)
       setStorageTree(null)
       setCacheStats(null)
+      setCloudRoot(null)
+      setCloudItems([])
+      setCloudCrumbs([])
+      setCloudQuota(null)
+      setCloudSearchActive(false)
+      setCloudResults([])
+      setCloudTrash([])
+      setCloudHistoryNode(null)
+      setCloudHistoryCrumbs([])
+      setCloudVersions([])
+      setCloudShareNode(null)
+      setCloudShares([])
+      setCreatedShareURL('')
       return
     }
     if (view === 'settings') void loadSettings()
@@ -127,6 +158,14 @@ export default function App() {
     void loadStorage()
     // Storage tree and cache telemetry load once when entering the page or reconnecting.
     // Policy changes and the Refresh button perform explicit reloads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, agent.connected, configured])
+
+  useEffect(() => {
+    if (view !== 'cloud' || !agent.connected || !configured) return
+    void loadCloudHome()
+    // Cloud browser loads once when entering the page or reconnecting.
+    // Navigation, search, mutations and Refresh perform explicit reloads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured])
 
@@ -339,6 +378,225 @@ export default function App() {
     if (data) setTransfers(data)
   }
 
+  const refreshCloudQuota = async () => {
+    const result = await window.xdriveDesktop.agent.cloudQuota()
+    if (!result.ok) {
+      setError(result.error.message)
+      return null
+    }
+    setCloudQuota(result.data)
+    return result.data
+  }
+
+  const loadCloudDirectory = async (id: number, crumbs: AgentCloudCrumb[]) => {
+    setBusy('cloud-directory')
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudChildren(id)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setCloudItems(result.data)
+      setCloudCrumbs(crumbs)
+      setCloudSearchActive(false)
+      setCloudResults([])
+      setCloudQuery('')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const loadCloudHome = async () => {
+    setBusy('cloud-load')
+    setError('')
+    try {
+      const [rootResult, quotaResult] = await Promise.all([
+        window.xdriveDesktop.agent.cloudRoot(),
+        window.xdriveDesktop.agent.cloudQuota(),
+      ])
+      if (!rootResult.ok) {
+        setError(rootResult.error.message)
+        return
+      }
+      if (!quotaResult.ok) {
+        setError(quotaResult.error.message)
+        return
+      }
+      const childrenResult = await window.xdriveDesktop.agent.cloudChildren(rootResult.data.id)
+      if (!childrenResult.ok) {
+        setError(childrenResult.error.message)
+        return
+      }
+      setCloudRoot(rootResult.data)
+      setCloudItems(childrenResult.data)
+      setCloudCrumbs([{ id: rootResult.data.id, name: 'My files' }])
+      setCloudQuota(quotaResult.data)
+      setCloudSearchActive(false)
+      setCloudResults([])
+      setCloudQuery('')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const searchCloud = async () => {
+    const query = cloudQuery.trim()
+    if (query.length < 2) {
+      setError('Search requires at least 2 characters.')
+      return
+    }
+    setBusy('cloud-search')
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudSearch(query)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setCloudSearchActive(true)
+      setCloudResults(result.data)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const loadCloudTrash = async () => {
+    setBusy('cloud-trash')
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudTrash()
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setCloudTrash(result.data)
+      setCloudTrashOpen(true)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const restoreCloudTrash = async (node: AgentCloudNode) => {
+    const data = await run('cloud-trash-restore', () => window.xdriveDesktop.agent.cloudRestoreTrash(node.id, node.revision), 'Item restored.')
+    if (!data) return
+    await loadCloudTrash()
+    await refreshCloudQuota()
+    if (cloudCrumbs.length > 0) await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
+  }
+
+  const deleteCloudTrash = async (node: AgentCloudNode) => {
+    if (!window.confirm(`Permanently delete ${node.name}? This also removes stored history and cannot be undone.`)) return
+    const data = await run('cloud-trash-delete', () => window.xdriveDesktop.agent.cloudDeleteTrash(node.id, node.revision), 'Permanently deleted.')
+    if (!data) return
+    await loadCloudTrash()
+    await refreshCloudQuota()
+  }
+
+  const openCloudHistory = async (node: AgentCloudNode, crumbs = cloudCrumbs) => {
+    setBusy('cloud-history')
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudVersions(node.id)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setCloudHistoryNode(node)
+      setCloudHistoryCrumbs(crumbs)
+      setCloudVersions(result.data)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const restoreCloudVersion = async (version: AgentCloudVersion) => {
+    if (!cloudHistoryNode) return
+    if (!window.confirm(`Restore revision r${version.revision}? The current content will be preserved in history.`)) return
+    const restored = await run(
+      'cloud-version-restore',
+      () => window.xdriveDesktop.agent.cloudRestoreVersion(cloudHistoryNode.id, cloudHistoryNode.revision, version.id),
+      'Version restored.',
+    )
+    if (!restored) return
+    setCloudHistoryNode(restored)
+    const versions = await window.xdriveDesktop.agent.cloudVersions(restored.id)
+    if (versions.ok) setCloudVersions(versions.data)
+    await refreshCloudQuota()
+    if (cloudHistoryCrumbs.length > 0) {
+      await loadCloudDirectory(cloudHistoryCrumbs.at(-1)!.id, cloudHistoryCrumbs)
+    }
+  }
+
+  const openCloudShares = async (node: AgentCloudNode) => {
+    setBusy('cloud-shares')
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudShares(node.id)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setCloudShareNode(node)
+      setCloudShares(result.data)
+      setCreatedShareURL('')
+      setShareExpiresDays('7')
+      setSharePassword('')
+      setShareMaxDownloads('0')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const createCloudShare = async () => {
+    if (!cloudShareNode) return
+    const days = Number(shareExpiresDays)
+    const maxDownloads = Number(shareMaxDownloads)
+    if (!Number.isFinite(days) || days < 0 || days > 3650) {
+      setError('Share expiration must be between 0 and 3650 days.')
+      return
+    }
+    if (!Number.isSafeInteger(maxDownloads) || maxDownloads < 0) {
+      setError('Maximum downloads must be a non-negative integer.')
+      return
+    }
+    if (sharePassword && sharePassword.length < 8) {
+      setError('Share password must contain at least 8 characters.')
+      return
+    }
+    const expiresAt = days > 0 ? new Date(Date.now() + days * 86400_000).toISOString() : undefined
+    const created = await run(
+      'cloud-share-create',
+      () => window.xdriveDesktop.agent.cloudCreateShare(cloudShareNode.id, {
+        expires_at: expiresAt,
+        password: sharePassword,
+        max_downloads: maxDownloads,
+      }),
+      'Share link created. Copy it now; the token is shown only once.',
+    )
+    if (!created) return
+    setCreatedShareURL(created.url)
+    const shares = await window.xdriveDesktop.agent.cloudShares(cloudShareNode.id)
+    if (shares.ok) setCloudShares(shares.data)
+  }
+
+  const revokeCloudShare = async (share: AgentCloudShare) => {
+    const data = await run('cloud-share-revoke', () => window.xdriveDesktop.agent.cloudRevokeShare(share.id), 'Share revoked.')
+    if (!data || !cloudShareNode) return
+    const shares = await window.xdriveDesktop.agent.cloudShares(cloudShareNode.id)
+    if (shares.ok) setCloudShares(shares.data)
+  }
+
+  const copyShareURL = async () => {
+    if (!createdShareURL) return
+    try {
+      await navigator.clipboard.writeText(createdShareURL)
+      setNotice('Share link copied.')
+    } catch {
+      setError('Could not copy automatically. Select and copy the link manually.')
+    }
+  }
+
   const loadDiagnostics = async () => {
     setBusy('diagnostics')
     setError('')
@@ -452,6 +710,7 @@ export default function App() {
         <div className="brand"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>Desktop</span></div></div>
         <nav aria-label="Desktop sections">
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>Overview</button>
+          <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>Cloud files</button>
           <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>
             Transfers {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}
           </button>
@@ -511,6 +770,240 @@ export default function App() {
           </>
         )}
 
+
+
+        {view === 'cloud' && (
+          <section className="panel cloud-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">CLOUD FILES</p>
+                <h2>Browse and manage cloud content</h2>
+                <p className="cloud-note">Cloud operations run through xdrive-agent. The Renderer never receives server access or refresh tokens.</p>
+              </div>
+              <div className="cloud-heading-actions">
+                <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudTrash()}>
+                  Recycle bin
+                </button>
+                <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudHome()}>
+                  {busy === 'cloud-load' ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+            </div>
+
+            {cloudQuota?.over_quota && (
+              <div className="alert error">Storage is over quota. Permanently delete recycle-bin content or ask an administrator to increase the quota.</div>
+            )}
+            {cloudQuota && (
+              <div className="cloud-quota-grid">
+                <div><span>Physical usage</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `of ${formatBinarySize(cloudQuota.quota_bytes)}` : 'Unlimited quota'}</small></div>
+                <div><span>Current files</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>Active logical content</small></div>
+                <div><span>Recycle bin</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>Counts toward physical quota</small></div>
+                <div><span>History</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>Stored previous versions</small></div>
+              </div>
+            )}
+
+            <div className="cloud-search-row">
+              <div className="cloud-search-input">
+                <input
+                  value={cloudQuery}
+                  onChange={(event) => setCloudQuery(event.target.value)}
+                  placeholder="Search all cloud files and folders"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void searchCloud()
+                    }
+                  }}
+                />
+                <button className="primary" type="button" disabled={!!busy || cloudQuery.trim().length < 2} onClick={() => void searchCloud()}>
+                  {busy === 'cloud-search' ? 'Searching…' : 'Search'}
+                </button>
+              </div>
+              {cloudSearchActive && (
+                <button className="secondary" type="button" onClick={() => {
+                  setCloudSearchActive(false)
+                  setCloudResults([])
+                  setCloudQuery('')
+                }}>Clear results</button>
+              )}
+            </div>
+
+            {!cloudSearchActive && (
+              <div className="cloud-breadcrumbs">
+                {cloudCrumbs.map((crumb, index) => (
+                  <button
+                    type="button"
+                    key={crumb.id}
+                    disabled={index === cloudCrumbs.length - 1 || !!busy}
+                    onClick={() => void loadCloudDirectory(crumb.id, cloudCrumbs.slice(0, index + 1))}
+                  >
+                    {crumb.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="cloud-list">
+              <div className="cloud-list-header">
+                <span>Name</span><span>Size</span><span>Modified</span><span />
+              </div>
+              {cloudSearchActive ? (
+                cloudResults.length === 0 ? (
+                  <div className="cloud-empty">No cloud files or folders matched “{cloudQuery.trim()}”.</div>
+                ) : cloudResults.map((result) => (
+                  <div className="cloud-row" key={`search:${result.node.id}:${result.path}`}>
+                    <div className="cloud-name">
+                      <strong>{result.node.name}</strong>
+                      <span>{result.path}</span>
+                    </div>
+                    <span>{result.node.type === 'dir' ? '—' : formatBinarySize(result.node.size)}</span>
+                    <span>{new Date(result.node.updated_at).toLocaleString()}</span>
+                    <div className="cloud-row-actions">
+                      {result.node.type === 'dir' ? (
+                        <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudDirectory(result.node.id, result.crumbs)}>Open</button>
+                      ) : (
+                        <>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudHistory(result.node, result.crumbs)}>History</button>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudShares(result.node)}>Share</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : cloudItems.length === 0 ? (
+                <div className="cloud-empty">This cloud folder is empty.</div>
+              ) : (
+                cloudItems.map((node) => (
+                  <div className="cloud-row" key={node.id}>
+                    <div className="cloud-name">
+                      <strong>{node.name}</strong>
+                      <span>{node.type === 'dir' ? 'Folder' : 'File'}</span>
+                    </div>
+                    <span>{node.type === 'dir' ? '—' : formatBinarySize(node.size)}</span>
+                    <span>{new Date(node.updated_at).toLocaleString()}</span>
+                    <div className="cloud-row-actions">
+                      {node.type === 'dir' ? (
+                        <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudDirectory(
+                          node.id,
+                          [...cloudCrumbs, { id: node.id, name: node.name }],
+                        )}>Open</button>
+                      ) : (
+                        <>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudHistory(node, cloudCrumbs)}>History</button>
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void openCloudShares(node)}>Share</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {cloudTrashOpen && (
+              <div className="cloud-subpanel">
+                <div className="cloud-subpanel-heading">
+                  <div><strong>Recycle bin</strong><span>{cloudTrash.length} item{cloudTrash.length === 1 ? '' : 's'}</span></div>
+                  <button className="secondary" type="button" onClick={() => setCloudTrashOpen(false)}>Close</button>
+                </div>
+                {cloudTrash.length === 0 ? <div className="cloud-empty">Recycle bin is empty.</div> : (
+                  <div className="cloud-compact-list">
+                    {cloudTrash.map((node) => (
+                      <div className="cloud-compact-row" key={node.id}>
+                        <div><strong>{node.name}</strong><span>{node.type === 'dir' ? 'Folder' : formatBinarySize(node.size)} · deleted {node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</span></div>
+                        <div className="cloud-row-actions">
+                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>Restore</button>
+                          <button className="danger" type="button" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>Delete permanently</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {cloudHistoryNode && (
+              <div className="cloud-subpanel">
+                <div className="cloud-subpanel-heading">
+                  <div><strong>Version history — {cloudHistoryNode.name}</strong><span>Current revision r{cloudHistoryNode.revision}</span></div>
+                  <button className="secondary" type="button" onClick={() => {
+                    setCloudHistoryNode(null)
+                    setCloudHistoryCrumbs([])
+                    setCloudVersions([])
+                  }}>Close</button>
+                </div>
+                {cloudVersions.length === 0 ? <div className="cloud-empty">No previous versions yet.</div> : (
+                  <div className="cloud-compact-list">
+                    {cloudVersions.map((version) => (
+                      <div className="cloud-compact-row" key={version.id}>
+                        <div><strong>Revision r{version.revision}</strong><span>{formatBinarySize(version.size)} · {new Date(version.created_at).toLocaleString()}</span></div>
+                        <button className="primary" type="button" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>Restore</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {cloudShareNode && (
+              <div className="cloud-subpanel">
+                <div className="cloud-subpanel-heading">
+                  <div><strong>Share — {cloudShareNode.name}</strong><span>Share tokens are shown only once when created.</span></div>
+                  <button className="secondary" type="button" onClick={() => {
+                    setCloudShareNode(null)
+                    setCloudShares([])
+                    setCreatedShareURL('')
+                  }}>Close</button>
+                </div>
+
+                {createdShareURL && (
+                  <div className="share-created-row">
+                    <input value={createdShareURL} readOnly />
+                    <button className="primary" type="button" onClick={() => void copyShareURL()}>Copy link</button>
+                  </div>
+                )}
+
+                <div className="share-form">
+                  <label>
+                    Expires after
+                    <div className="input-with-unit">
+                      <input type="number" min="0" max="3650" step="1" value={shareExpiresDays} onChange={(event) => setShareExpiresDays(event.target.value)} />
+                      <span>days</span>
+                    </div>
+                    <small>0 means never expires.</small>
+                  </label>
+                  <label>
+                    Maximum downloads
+                    <input type="number" min="0" step="1" value={shareMaxDownloads} onChange={(event) => setShareMaxDownloads(event.target.value)} />
+                    <small>0 means unlimited.</small>
+                  </label>
+                  <label>
+                    Password (optional)
+                    <input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} placeholder="At least 8 characters" />
+                  </label>
+                  <button className="primary" type="button" disabled={!!busy} onClick={() => void createCloudShare()}>
+                    {busy === 'cloud-share-create' ? 'Creating…' : 'Create share link'}
+                  </button>
+                </div>
+
+                <div className="cloud-compact-list">
+                  {cloudShares.length === 0 ? <div className="cloud-empty">No share links for this file.</div> : cloudShares.map((share) => (
+                    <div className="cloud-compact-row" key={share.id}>
+                      <div>
+                        <strong>{share.status}</strong>
+                        <span>
+                          {share.has_password ? 'Password protected' : 'Link only'} ·
+                          {' '}{share.expires_at ? `expires ${new Date(share.expires_at).toLocaleString()}` : 'never expires'} ·
+                          {' '}{share.download_count}{share.max_downloads > 0 ? ` / ${share.max_downloads}` : ' / unlimited'} downloads
+                        </span>
+                      </div>
+                      <button className="danger" type="button" disabled={!!busy || share.status === 'revoked'} onClick={() => void revokeCloudShare(share)}>Revoke</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {view === 'transfers' && (
           <section className="panel transfer-panel">

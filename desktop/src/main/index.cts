@@ -23,6 +23,12 @@ import {
   type AgentStorageTreeNode,
   type AgentCacheStats,
   type AgentCacheReleaseResult,
+  type AgentCloudNode,
+  type AgentCloudQuota,
+  type AgentCloudVersion,
+  type AgentCloudShare,
+  type AgentCreatedCloudShare,
+  type AgentCloudSearchResult,
   type AgentFileAvailability,
   type AgentSettings,
   type AgentStatus,
@@ -467,6 +473,106 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cache-management')
     return requireAgentClient().releaseCache()
+  }, false))
+  ipcMain.handle('agent:cloud-root', () => runAgentAction<AgentCloudNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudRoot()
+  }, false))
+  ipcMain.handle('agent:cloud-children', (_event, parentID: unknown) => runAgentAction<AgentCloudNode[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
+    }
+    return requireAgentClient().cloudChildren(parentID)
+  }, false))
+  ipcMain.handle('agent:cloud-search', (_event, query: unknown) => runAgentAction<AgentCloudSearchResult[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof query !== 'string' || query.trim().length < 2) {
+      throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters.')
+    }
+    return requireAgentClient().cloudSearch(query.trim())
+  }, false))
+  ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudQuota()
+  }, false))
+  ipcMain.handle('agent:cloud-trash', () => runAgentAction<AgentCloudNode[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudTrash()
+  }, false))
+  ipcMain.handle('agent:cloud-restore-trash', (_event, id: unknown, revision: unknown) => runAgentAction<AgentCloudNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Trash id and revision are required.')
+    }
+    return requireAgentClient().cloudRestoreTrash(id, revision)
+  }, false))
+  ipcMain.handle('agent:cloud-delete-trash', (_event, id: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Trash id and revision are required.')
+    }
+    return requireAgentClient().cloudDeleteTrash(id, revision)
+  }, false))
+  ipcMain.handle('agent:cloud-versions', (_event, nodeID: unknown) => runAgentAction<AgentCloudVersion[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'File node id is required.')
+    }
+    return requireAgentClient().cloudVersions(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-restore-version', (_event, nodeID: unknown, revision: unknown, versionID: unknown) => runAgentAction<AgentCloudNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if ([nodeID, revision, versionID].some((value) => typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id, current revision, and version id are required.')
+    }
+    return requireAgentClient().cloudRestoreVersion(nodeID as number, revision as number, versionID as number)
+  }, false))
+  ipcMain.handle('agent:cloud-shares', (_event, nodeID: unknown) => runAgentAction<AgentCloudShare[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'File node id is required.')
+    }
+    return requireAgentClient().cloudShares(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-create-share', (_event, nodeID: unknown, input: unknown) => runAgentAction<AgentCreatedCloudShare>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0 || typeof input !== 'object' || input === null) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid share input is required.')
+    }
+    const value = input as { expires_at?: unknown; password?: unknown; max_downloads?: unknown }
+    const expiresAt = typeof value.expires_at === 'string' ? value.expires_at : undefined
+    const password = typeof value.password === 'string' ? value.password : undefined
+    const maxDownloads = value.max_downloads === undefined ? 0 : value.max_downloads
+    if (typeof maxDownloads !== 'number' || !Number.isSafeInteger(maxDownloads) || maxDownloads < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Maximum downloads must be a non-negative integer.')
+    }
+    return requireAgentClient().cloudCreateShare(nodeID, {
+      expires_at: expiresAt,
+      password,
+      max_downloads: maxDownloads,
+    })
+  }, false))
+  ipcMain.handle('agent:cloud-revoke-share', (_event, id: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Share id is required.')
+    }
+    return requireAgentClient().cloudRevokeShare(id)
   }, false))
   ipcMain.handle('agent:get-diagnostics', () => runAgentAction<AgentDiagnosticReport>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
