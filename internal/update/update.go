@@ -599,16 +599,33 @@ func DownloadVerifiedWithProgress(ctx context.Context, checker Checker, result R
 	}
 
 	part := dst + ".part"
-	if result.Asset.Size > 0 {
-		if info, err := os.Stat(part); err == nil {
-			switch {
-			case info.Size() > result.Asset.Size:
-				_ = os.Remove(part)
-			case info.Size() == result.Asset.Size:
-				if ok, verifyErr := verifyFileSHA256(part, expected); verifyErr != nil || !ok {
-					_ = os.Remove(part)
-				}
+	if info, err := os.Stat(part); err == nil && info.Size() > 0 {
+		if ok, verifyErr := verifyFileSHA256(part, expected); verifyErr == nil && ok {
+			reportProgress(progress, ProgressEvent{
+				Step: 3, Stage: "download " + result.Asset.Name,
+				Message: "verified partial cache is complete; reusing it",
+			})
+			_ = os.Remove(dst)
+			if err := os.Rename(part, dst); err != nil {
+				return "", err
 			}
+			return dst, nil
+		}
+		if result.Asset.Size > 0 && info.Size() == result.Asset.Size {
+			// A same-sized partial with the wrong digest cannot be a prefix of
+			// this asset, so restart it. Size differences are not enough to
+			// discard a partial because release metadata can lag the CDN.
+			_ = os.Remove(part)
+		} else {
+			message := fmt.Sprintf("reusing partial cache from previous run: %s", formatBytes(float64(info.Size())))
+			if result.Asset.Size > 0 && info.Size() > result.Asset.Size {
+				message += fmt.Sprintf("; release metadata reports %s, preserving partial until SHA-256 verification",
+					formatBytes(float64(result.Asset.Size)))
+			}
+			reportProgress(progress, ProgressEvent{
+				Step: 3, Stage: "download " + result.Asset.Name,
+				Message: message,
+			})
 		}
 	}
 	if err := downloadFileWithProgress(ctx, checker, result.Asset, part, result.Current, progress); err != nil {
@@ -819,13 +836,19 @@ func downloadFileAttempt(ctx context.Context, h *http.Client, source, apiURL, pa
 	}
 
 	appendMode := resp.StatusCode == http.StatusPartialContent && resumeFrom > 0
+	sourceTotal := int64(0)
 	if appendMode {
 		if start, total, ok := parseContentRange(resp.Header.Get("Content-Range")); ok {
 			if start != resumeFrom {
 				return fmt.Errorf("%s resumed at byte %d, expected %d", endpointHost(source), start, resumeFrom)
 			}
+			sourceTotal = total
 			if asset.Size > 0 && total > 0 && total != asset.Size {
-				return fmt.Errorf("%s reported total %d, release metadata says %d", endpointHost(source), total, asset.Size)
+				reportProgress(progress, ProgressEvent{
+					Step: 3, Stage: "download " + asset.Name,
+					Message: fmt.Sprintf("%s reports total %s while release metadata reports %s; continuing with source total and SHA-256 verification",
+						endpointHost(source), formatBytes(float64(total)), formatBytes(float64(asset.Size))),
+				})
 			}
 		}
 	} else {
@@ -843,16 +866,19 @@ func downloadFileAttempt(ctx context.Context, h *http.Client, source, apiURL, pa
 		return err
 	}
 
-	total := asset.Size
-	if total <= 0 {
+	total := sourceTotal
+	if total <= 0 && resp.ContentLength >= 0 {
 		if appendMode {
 			total = resumeFrom + resp.ContentLength
 		} else {
 			total = resp.ContentLength
 		}
-		if total < 0 {
-			total = 0
-		}
+	}
+	if total <= 0 {
+		total = asset.Size
+	}
+	if total < 0 {
+		total = 0
 	}
 	start := time.Now()
 	lastReport := start
