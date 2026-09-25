@@ -115,6 +115,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	windowsPathNormalizer := readFile(t, filepath.Join(root, "scripts", "ci", "windows-path-normalization.ps1"))
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
+	serverPipeTest := readFile(t, filepath.Join(root, "scripts", "test-server-installer-pipe.sh"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" + goVersionCheck + "\n" + artifactVersion + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
 	for _, command := range []string{
 		"npm install --no-audit --no-fund",
@@ -332,6 +333,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "Windows upgrade transaction test", windowsUpgradeTest,
 		"resolve-windows-uninstaller.ps1",
 		"transaction test uninstalling via",
+	)
+	requireRaw(t, "server pipe installer test", serverPipeTest,
+		"pipe_status=(\"${PIPESTATUS[@]}\")",
+		"producer_status=",
+		"installer_status=",
+		"\"$producer_status\" -ne 141",
+		"pipe installer consumer failed",
 	)
 	for label, content := range map[string]string{
 		"GitHub Windows CI":                githubRaw,
