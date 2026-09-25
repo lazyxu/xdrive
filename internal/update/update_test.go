@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -432,6 +433,192 @@ func TestDownloadVerifiedResumesPartialAsset(t *testing.T) {
 	}
 	if len(ranges) != 1 || ranges[0] != "bytes=10-" {
 		t.Fatalf("ranges=%v", ranges)
+	}
+}
+
+func TestDownloadVerifiedResumesAcrossInvocations(t *testing.T) {
+	payload := []byte("0123456789abcdefghijklmnopqrstuvwxyz")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	const assetName = "xDriveSetup-amd64.exe"
+
+	var calls int
+	var resumedRange string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		switch calls {
+		case 1:
+			if got := r.Header.Get("Range"); got != "" {
+				t.Fatalf("first request range=%q want empty", got)
+			}
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+			_, _ = w.Write(payload[:10])
+		case 2:
+			resumedRange = r.Header.Get("Range")
+			if resumedRange != "bytes=10-" {
+				t.Fatalf("second request range=%q want bytes=10-", resumedRange)
+			}
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes 10-%d/%d", len(payload)-1, len(payload)))
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)-10))
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write(payload[10:])
+		default:
+			t.Fatalf("unexpected request %d", calls)
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	dir := t.TempDir()
+	checker := Checker{HTTP: server.Client(), RetryAttempts: 1, RetryBase: time.Millisecond}
+	result := Result{
+		Current: "v0.1.0", Latest: "v0.2.0", UpdateAvailable: true,
+		Asset: Asset{Name: assetName, APIURL: server.URL + "/asset", Size: int64(len(payload)), Digest: digest},
+	}
+
+	if _, err := DownloadVerifiedWithProgress(context.Background(), checker, result, dir, nil); err == nil {
+		t.Fatal("first interrupted download unexpectedly succeeded")
+	}
+	part := filepath.Join(dir, assetName+".part")
+	info, err := os.Stat(part)
+	if err != nil {
+		t.Fatalf("partial cache missing after first invocation: %v", err)
+	}
+	if info.Size() != 10 {
+		t.Fatalf("partial size=%d want 10", info.Size())
+	}
+
+	var events []ProgressEvent
+	path, err := DownloadVerifiedWithProgress(context.Background(), checker, result, dir, func(event ProgressEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("resumed download=%q want=%q", got, payload)
+	}
+	if resumedRange != "bytes=10-" {
+		t.Fatalf("resumed range=%q", resumedRange)
+	}
+	foundReuse := false
+	for _, event := range events {
+		if strings.Contains(event.Message, "reusing partial cache from previous run") {
+			foundReuse = true
+			break
+		}
+	}
+	if !foundReuse {
+		t.Fatalf("missing cross-run partial reuse progress event: %+v", events)
+	}
+}
+
+func TestDownloadVerifiedAllowsSourceTotalToDifferFromReleaseMetadata(t *testing.T) {
+	payload := []byte("0123456789abcdefghijklmnopqrstuvwxyz")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	const assetName = "xDriveSetup-amd64.exe"
+	const metadataSize = 18
+	const partialSize = 20
+
+	var gotRange string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		if gotRange != "bytes=20-" {
+			t.Fatalf("range=%q want bytes=20-", gotRange)
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes 20-%d/%d", len(payload)-1, len(payload)))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)-partialSize))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(payload[partialSize:])
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	dir := t.TempDir()
+	part := filepath.Join(dir, assetName+".part")
+	if err := os.WriteFile(part, payload[:partialSize], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	checker := Checker{HTTP: server.Client(), RetryAttempts: 1, RetryBase: time.Millisecond}
+	result := Result{
+		Current: "v0.1.0", Latest: "v0.2.0", UpdateAvailable: true,
+		Asset: Asset{Name: assetName, APIURL: server.URL + "/asset", Size: metadataSize, Digest: digest},
+	}
+	var events []ProgressEvent
+	path, err := DownloadVerifiedWithProgress(context.Background(), checker, result, dir, func(event ProgressEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("download=%q want=%q", got, payload)
+	}
+	if gotRange != "bytes=20-" {
+		t.Fatalf("range=%q", gotRange)
+	}
+
+	foundMismatchNotice := false
+	for _, event := range events {
+		if strings.Contains(event.Message, "continuing with source total and SHA-256 verification") {
+			foundMismatchNotice = true
+			break
+		}
+	}
+	if !foundMismatchNotice {
+		t.Fatalf("missing source/metadata size mismatch notice: %+v", events)
+	}
+}
+
+func TestCompletePartialLargerThanMetadataIsReusedWithoutNetwork(t *testing.T) {
+	payload := []byte("0123456789abcdefghijklmnopqrstuvwxyz")
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	const assetName = "xDriveSetup-amd64.exe"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("network should not be used for a SHA-256 verified complete partial")
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	dir := t.TempDir()
+	part := filepath.Join(dir, assetName+".part")
+	if err := os.WriteFile(part, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	checker := Checker{HTTP: server.Client(), RetryAttempts: 1, RetryBase: time.Millisecond}
+	result := Result{
+		Current: "v0.1.0", Latest: "v0.2.0", UpdateAvailable: true,
+		Asset: Asset{Name: assetName, APIURL: server.URL + "/asset", Size: int64(len(payload) - 5), Digest: digest},
+	}
+	path, err := DownloadVerifiedWithProgress(context.Background(), checker, result, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("cached download=%q want=%q", got, payload)
+	}
+	if _, err := os.Stat(part); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial file should be promoted, stat err=%v", err)
 	}
 }
 
