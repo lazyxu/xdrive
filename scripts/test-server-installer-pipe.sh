@@ -153,11 +153,22 @@ set +e
     XD_NONINTERACTIVE=1 \
     XD_INSTALL_NO_START=1 \
     bash -s -- --channel master >"$TMP/out" 2>"$TMP/err"
-status=$?
+pipe_status=("${PIPESTATUS[@]}")
 set -e
 
-if [[ "$status" -ne 0 ]]; then
-  echo "pipe installer failed with $status" >&2
+producer_status="${pipe_status[0]:-1}"
+installer_status="${pipe_status[1]:-1}"
+
+if [[ "$installer_status" -ne 0 ]]; then
+  echo "pipe installer consumer failed with $installer_status" >&2
+  cat "$TMP/out" >&2 || true
+  cat "$TMP/err" >&2 || true
+  cat "$TMP/state/docker-calls" >&2 || true
+  exit 1
+fi
+
+if [[ "$producer_status" -ne 0 && "$producer_status" -ne 141 ]]; then
+  echo "pipe installer producer failed unexpectedly with $producer_status" >&2
   cat "$TMP/out" >&2 || true
   cat "$TMP/err" >&2 || true
   cat "$TMP/state/docker-calls" >&2 || true
