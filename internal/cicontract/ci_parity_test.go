@@ -130,6 +130,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
 		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked",
 		"bash scripts/test-server-doctor.sh",
+		"bash scripts/test-server-verify.sh",
 		"bash scripts/test-server-installer-bootstrap.sh",
 		"bash scripts/test-server-installer-transaction.sh",
 		"bash scripts/test-server-installer-pipe.sh",

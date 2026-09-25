@@ -28,7 +28,7 @@ Usage:
   xdrive-server status
   xdrive-server backup [server-backup.sh options...]
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
-  xdrive-server verify
+  xdrive-server verify [--online] [--repair [--dry-run]]
   xdrive-server admin list
   xdrive-server admin reset-password USER [--no-must-change]
   xdrive-server admin reset-password USER --password-stdin [--no-must-change]
@@ -189,12 +189,24 @@ restore_cmd() {
 }
 
 verify_cmd() {
-  local script="$CONFIG_DIR/server-verify.sh"
+  local script="$CONFIG_DIR/server-verify.sh" status repair=0 dry_run=0 arg
   [[ -x "$script" ]] || {
     echo "xdrive-server: verify tool is not installed at $script" >&2
     return 1
   }
-  XD_CONFIG_DIR="$CONFIG_DIR" exec "$script" "$@"
+  for arg in "$@"; do
+    [[ "$arg" == "--repair" ]] && repair=1
+    [[ "$arg" == "--dry-run" ]] && dry_run=1
+  done
+  if XD_CONFIG_DIR="$CONFIG_DIR" "$script" "$@"; then status=0; else status=$?; fi
+  if [[ "$repair" == "1" && "$dry_run" != "1" ]]; then
+    if [[ "$status" -eq 0 ]]; then
+      record_system_audit system.storage_repair success
+    else
+      record_system_audit system.storage_repair failure
+    fi
+  fi
+  return "$status"
 }
 
 admin_cmd() {
@@ -283,7 +295,7 @@ case "$cmd" in
   status) status_cmd "$@" ;;
   backup) backup_cmd "$@" ;;
   restore) restore_cmd "$@" ;;
-  verify) verify_cmd ;;
+  verify) verify_cmd "$@" ;;
   admin) admin_cmd "$@" ;;
   version) version_cmd ;;
   -h|--help|help) usage ;;

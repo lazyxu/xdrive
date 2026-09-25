@@ -220,6 +220,13 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 		report.BlobFiles++
 		report.BlobBytes += info.Size()
 		if _, ok := references[key]; !ok {
+			// A zero-reference CAS row in deleting state is a managed GC
+			// candidate, not an orphan. The upload janitor will finalize it
+			// once no temporary reused upload part still depends on it.
+			if blob, managed := blobByKey[key]; managed &&
+				blob.RefCount == 0 && blob.State == meta.ContentBlobStateDeleting {
+				return nil
+			}
 			report.Orphans = append(report.Orphans, OrphanBlob{StorageKey: key, Size: info.Size()})
 		}
 		return nil

@@ -5,14 +5,21 @@ CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
 COMPOSE_PATH=""
 ENV_PATH=""
 ONLINE=0
+REPAIR=0
+DRY_RUN=0
 
 usage() {
   cat <<'EOF'
-Usage: server-verify.sh [--config-dir DIR] [--online]
+Usage: server-verify.sh [--config-dir DIR] [--online] [--repair [--dry-run]]
 
 By default xDrive briefly stops the API service to produce a stable consistency
 check. --online avoids the maintenance window but can report transient results
 while files are being written.
+
+--repair runs the conservative CAS metadata repair while the API service is
+stopped, then runs the full physical/hash verification. --dry-run reports the
+deterministic repair plan without changing metadata. Repair never reconstructs
+missing/corrupt content or deletes legacy/orphan data.
 EOF
 }
 
@@ -20,10 +27,21 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --config-dir) CONFIG_DIR="$2"; shift 2 ;;
     --online) ONLINE=1; shift ;;
+    --repair) REPAIR=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ "$DRY_RUN" == "1" && "$REPAIR" != "1" ]]; then
+  echo "--dry-run requires --repair" >&2
+  exit 2
+fi
+if [[ "$ONLINE" == "1" && "$REPAIR" == "1" ]]; then
+  echo "--repair cannot be combined with --online; repair requires a stopped API service" >&2
+  exit 2
+fi
 
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 ENV_PATH="$CONFIG_DIR/.env"
@@ -67,4 +85,12 @@ trap restart_server EXIT INT TERM
 compose up -d postgres >/dev/null
 wait_postgres
 compose stop server >/dev/null 2>&1 || true
+if [[ "$REPAIR" == "1" ]]; then
+  repair_args=(storage repair --json)
+  [[ "$DRY_RUN" == "1" ]] && repair_args+=(--dry-run)
+  compose run -T --rm --no-deps server "${repair_args[@]}" </dev/null
+  if [[ "$DRY_RUN" == "1" ]]; then
+    exit $?
+  fi
+fi
 compose run -T --rm --no-deps server storage verify --json </dev/null

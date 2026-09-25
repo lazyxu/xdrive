@@ -13,7 +13,7 @@ cleanup() {
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
-      state/audit-calls state/restore-args; do
+      state/audit-calls state/restore-args state/verify-args; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -114,6 +114,14 @@ echo "mock doctor"
 SH
 chmod +x "$TMP/config/server-doctor.sh"
 
+cat > "$TMP/config/server-verify.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" > "$TEST_STATE/verify-args"
+echo "mock verify"
+SH
+chmod +x "$TMP/config/server-verify.sh"
+
 printf 'XD_DOMAIN=\n' > "$TMP/config/.env"
 printf 'name: xdrive\nservices: {}\n' > "$TMP/config/docker-compose.yml"
 
@@ -165,6 +173,20 @@ XD_CONFIG_DIR="$TMP/config" \
 bash "$HOST" doctor --strict >"$TMP/doctor.out"
 grep -q '^--strict$' "$TMP/state/doctor-args"
 grep -q 'mock doctor' "$TMP/doctor.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
+bash "$HOST" verify --repair --dry-run >"$TMP/verify.out"
+grep -q '^--repair --dry-run$' "$TMP/state/verify-args"
+grep -q 'mock verify' "$TMP/verify.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
+bash "$HOST" verify --repair >"$TMP/verify-repair.out"
+grep -q '^--repair$' "$TMP/state/verify-args"
+grep -q -- 'audit record --action system.storage_repair --result success' "$TMP/state/audit-calls"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

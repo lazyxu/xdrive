@@ -91,6 +91,21 @@ export interface StorageStats {
   generated_at: string
 }
 
+export interface StorageHealth {
+  status: 'ok' | 'warning' | 'fail'
+  healthy: boolean
+  ready_blobs: number
+  deleting_blobs: number
+  stale_deleting_blobs: number
+  missing_metadata: number
+  refcount_mismatches: number
+  state_mismatches: number
+  size_mismatches: number
+  key_hash_mismatches: number
+  invalid_states: number
+  generated_at: string
+}
+
 export interface AdminUser {
   id: number
   username: string

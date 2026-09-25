@@ -126,6 +126,8 @@ xdrive-server status
 xdrive-server backup
 xdrive-server restore BACKUP_DIR --yes
 xdrive-server verify
+xdrive-server verify --repair --dry-run
+xdrive-server verify --repair
 xdrive-server admin list
 xdrive-server admin reset-password admin
 xdrive-server admin enable admin
@@ -296,7 +298,7 @@ For support and troubleshooting, run:
 ~/.xd/server-doctor.sh
 ```
 
-It checks Docker/Compose, current release state, container health, PostgreSQL authentication, data mounts, disk space, upgrade-lock/rollback state, TLS/public reachability, GitHub/GHCR reachability, and appends the last 100 container log lines after automatic secret redaction. It is read-only by default. Use `--strict` when automation should fail on diagnostic errors.
+It checks Docker/Compose, current release state, container health, PostgreSQL authentication, lightweight CAS metadata health, data mounts, disk space, upgrade-lock/rollback state, TLS/public reachability, GitHub/GHCR reachability, and appends the last 100 container log lines after automatic secret redaction. It is read-only by default. Use `--strict` when automation should fail on diagnostic errors.
 
 By default, the installer registers a daily scheduled backup at 03:17 local server time and retains seven days. Override with `XD_BACKUP_SCHEDULE` and `XD_BACKUP_RETENTION_DAYS`. Scheduled runs skip rather than overlap if a previous backup is still running.
 
@@ -307,6 +309,15 @@ A normal verification briefly stops the API so the database and blob tree cannot
 ```bash
 ~/.xd/server-verify.sh
 ```
+
+For conservative CAS metadata repair, inspect the plan first and then apply it:
+
+```bash
+xdrive-server verify --repair --dry-run
+xdrive-server verify --repair
+```
+
+The repair path runs with the API stopped. It only rebuilds or reconciles CAS metadata when durable references agree and the physical object passes size/SHA-256 verification; unreferenced CAS metadata is moved to `deleting` for the normal janitor. Missing/corrupt content, key/hash identity conflicts, legacy duplicates, and orphan files remain visible for manual investigation rather than being guessed or deleted.
 
 It checks current `xd_files.storage_key` **and historical `xd_file_versions.storage_key`** references against `file-data` and reports:
 
@@ -323,6 +334,13 @@ The underlying server command is also available inside the container:
 ```bash
 docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
   exec -T server xdrive-server storage verify --json
+```
+
+For the lightweight DB-only invariant check used by Doctor and monitoring:
+
+```bash
+docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
+  exec -T server xdrive-server storage health --json
 ```
 
 #### Backup
@@ -671,6 +689,7 @@ POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
 GET    /api/v1/me
 GET    /api/v1/me/quota
+GET    /api/v1/me/storage
 POST   /api/v1/me/change-password
 GET    /api/v1/nodes/root
 GET    /api/v1/nodes/:id/children
@@ -704,6 +723,8 @@ POST   /api/v1/public/share/download
 
 GET    /api/v1/admin/users
 GET    /api/v1/admin/audit
+GET    /api/v1/admin/storage
+GET    /api/v1/admin/storage/health
 POST   /api/v1/admin/users
 PATCH  /api/v1/admin/users/:id
 DELETE /api/v1/admin/users/:id
@@ -771,6 +792,10 @@ This is intentionally not CDC: insertions near the beginning can still shift lat
 Phase 12 adds **Storage Intelligence** before changing the storage format again. Authenticated users can query `GET /api/v1/me/storage` for owner-scoped CAS statistics; administrators can query `GET /api/v1/admin/storage` for the global view. The same user view is exposed in Web and Desktop without exposing another user's storage profile. Statistics include CAS blob count, physical bytes, logical referenced bytes, dedup saved bytes/ratio, average size, p50/p90/p99, and these fixed non-overlapping buckets: `<16 KiB`, `16–64 KiB`, `64–256 KiB`, `256 KiB–1 MiB`, `1–4 MiB`, `4–16 MiB`, `16–64 MiB`, and `>=64 MiB`. Legacy pre-CAS objects are reported separately and are not mixed into CAS percentiles.
 
 The purpose of these measurements is to make the next storage-format decision data-driven: a high count/byte share of very small blobs supports small-file packing, while large-file workloads with meaningful cross-file internal redundancy support evaluating CDC. Percentiles are calculated by PostgreSQL rather than by loading all blob sizes into the API process.
+
+Phase 12B adds a separate **CAS health / verify / repair** layer. `GET /api/v1/admin/storage/health` and `xdrive-server storage health` perform a lightweight DB-only invariant check for missing CAS metadata, refcount/state/size drift, non-canonical key/hash mappings, invalid states, and stale deleting rows. Full `storage verify` remains the authoritative physical check: it walks retained objects, validates size and SHA-256, and reports missing/corrupt/orphan data.
+
+Safe repair is intentionally narrower than verification. `xdrive-server verify --repair` stops the API service, reconciles only CAS metadata that can be proven from durable references plus a size/hash-verified physical object, marks unreferenced metadata as `deleting`, and then runs the full verifier. It never fabricates missing file content, rewrites a corrupt blob, or automatically deletes legacy/orphan data. Use `xdrive-server verify --repair --dry-run` to inspect the repair plan without changing metadata.
 
 
 ## Conflict protection
@@ -932,7 +957,7 @@ deploy/
 
 ## Roadmap
 
-1. use Phase 12 Storage Intelligence production data as the decision gate for the next storage-format change;
+1. use Phase 12/12B Storage Intelligence and CAS health production data as the decision gate for the next storage-format change;
 2. optional content-defined chunking when large-file/internal-redundancy data justifies it;
 3. small-file packing when small-blob count/metadata pressure justifies it;
 4. macOS File Provider integration;

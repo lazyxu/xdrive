@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -20,15 +21,19 @@ const defaultStorageOwnerID = 65532
 
 func runStorageCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: xdrive-server storage <prepare|verify> [options]")
+		return fmt.Errorf("usage: xdrive-server storage <prepare|health|verify|repair> [options]")
 	}
 	switch args[0] {
 	case "prepare":
 		return runStoragePrepare(args[1:])
+	case "health":
+		return runStorageHealth(args[1:])
 	case "verify":
 		return runStorageVerify(args[1:])
+	case "repair":
+		return runStorageRepair(args[1:])
 	default:
-		return fmt.Errorf("usage: xdrive-server storage <prepare|verify> [options]")
+		return fmt.Errorf("usage: xdrive-server storage <prepare|health|verify|repair> [options]")
 	}
 }
 
@@ -98,6 +103,91 @@ func runStorageVerify(args []string) error {
 	}
 	if !report.OK() {
 		return fmt.Errorf("storage consistency check failed")
+	}
+	return nil
+}
+
+func runStorageHealth(args []string) error {
+	fs := flag.NewFlagSet("storage health", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "write machine-readable JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: xdrive-server storage health [--json]")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	report, err := maintenance.CASHealth(db, maintenance.CASDeletingStaleAfter)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("cas metadata health: status=%s ready=%d deleting=%d stale_deleting=%d missing_metadata=%d refcount_mismatch=%d state_mismatch=%d size_mismatch=%d key_hash_mismatch=%d invalid_state=%d\n",
+			report.Status, report.ReadyBlobs, report.DeletingBlobs, report.StaleDeletingBlobs,
+			report.MissingMetadata, report.RefCountMismatches, report.StateMismatches,
+			report.SizeMismatches, report.KeyHashMismatches, report.InvalidStates)
+	}
+	if !report.Healthy {
+		return fmt.Errorf("CAS metadata health check failed")
+	}
+	return nil
+}
+
+func runStorageRepair(args []string) error {
+	fs := flag.NewFlagSet("storage repair", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "write machine-readable JSON")
+	dryRun := fs.Bool("dry-run", false, "show deterministic repairs without changing metadata")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: xdrive-server storage repair [--json] [--dry-run]")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	report, err := maintenance.RepairCASMetadata(context.Background(), db, cfg.StorageRoot, *dryRun)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("CAS repair: dry_run=%t actions=%d skipped=%d before=%s after=%s\n",
+			report.DryRun, len(report.Actions), len(report.Skipped), report.Before.Status, report.After.Status)
+		for _, action := range report.Actions {
+			fmt.Printf("REPAIR kind=%s key=%q before_ref=%d after_ref=%d before_state=%s after_state=%s applied=%t\n",
+				action.Kind, action.StorageKey, action.BeforeRefCount, action.AfterRefCount,
+				action.BeforeState, action.AfterState, action.Applied)
+		}
+		for _, skipped := range report.Skipped {
+			fmt.Printf("SKIP key=%q reason=%s\n", skipped.StorageKey, skipped.Reason)
+		}
+	}
+	if !*dryRun && !report.After.Healthy {
+		return fmt.Errorf("CAS metadata remains inconsistent after repair")
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
@@ -56,6 +57,7 @@ type liveMetrics struct {
 	RetainedBlobObjects  int64
 	StagingBlobObjects   int64
 	Storage              storageStatsDTO
+	CASHealth            maintenance.CASHealthReport
 	DBOpenConnections    int
 	DBInUseConnections   int
 	DBIdleConnections    int
@@ -427,6 +429,38 @@ func (s *Server) metrics(c *gin.Context) {
 		fmt.Fprintln(&b, "# TYPE xdrive_legacy_blob_bytes gauge")
 		fmt.Fprintf(&b, "xdrive_legacy_blob_bytes %d\n", live.Storage.LegacyPhysicalBytes)
 
+		fmt.Fprintln(&b, "# HELP xdrive_cas_metadata_health Whether CAS metadata/reference invariants are healthy.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_metadata_health gauge")
+		if live.CASHealth.Healthy {
+			fmt.Fprintln(&b, "xdrive_cas_metadata_health 1")
+		} else {
+			fmt.Fprintln(&b, "xdrive_cas_metadata_health 0")
+		}
+		fmt.Fprintln(&b, "# HELP xdrive_cas_deleting_blobs CAS blobs awaiting garbage collection.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_deleting_blobs gauge")
+		fmt.Fprintf(&b, "xdrive_cas_deleting_blobs %d\n", live.CASHealth.DeletingBlobs)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_stale_deleting_blobs CAS deleting rows older than the stale threshold.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_stale_deleting_blobs gauge")
+		fmt.Fprintf(&b, "xdrive_cas_stale_deleting_blobs %d\n", live.CASHealth.StaleDeletingBlobs)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_missing_metadata Referenced CAS keys without xd_content_blobs metadata.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_missing_metadata gauge")
+		fmt.Fprintf(&b, "xdrive_cas_missing_metadata %d\n", live.CASHealth.MissingMetadata)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_refcount_mismatches CAS metadata refcounts that disagree with durable references.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_refcount_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_refcount_mismatches %d\n", live.CASHealth.RefCountMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_state_mismatches CAS metadata states inconsistent with durable references.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_state_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_state_mismatches %d\n", live.CASHealth.StateMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_size_mismatches CAS metadata sizes inconsistent with durable references.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_size_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_size_mismatches %d\n", live.CASHealth.SizeMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_key_hash_mismatches CAS metadata whose storage key is not canonical for its SHA-256.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_key_hash_mismatches gauge")
+		fmt.Fprintf(&b, "xdrive_cas_key_hash_mismatches %d\n", live.CASHealth.KeyHashMismatches)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_invalid_states CAS metadata rows with an unsupported state.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_invalid_states gauge")
+		fmt.Fprintf(&b, "xdrive_cas_invalid_states %d\n", live.CASHealth.InvalidStates)
+
 		fmt.Fprintln(&b, "# HELP xdrive_database_size_bytes PostgreSQL size of the current xDrive database.")
 		fmt.Fprintln(&b, "# TYPE xdrive_database_size_bytes gauge")
 		fmt.Fprintf(&b, "xdrive_database_size_bytes %d\n", live.DatabaseSizeBytes)
@@ -503,5 +537,10 @@ COALESCE((
 		return live, err
 	}
 	live.Storage = storageStats
+	health, err := maintenance.CASHealth(s.DB.WithContext(ctx), maintenance.CASDeletingStaleAfter)
+	if err != nil {
+		return live, err
+	}
+	live.CASHealth = health
 	return live, nil
 }
