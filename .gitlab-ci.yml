@@ -48,6 +48,12 @@ variables:
         rm -rf /var/lib/apt/lists/*
     - &install_node22 bash scripts/ci/install-node22.sh
     - &install_docker_cli bash scripts/ci/install-docker-cli.sh
+    - &install_postgres_client |
+        set -euo pipefail
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y --no-install-recommends postgresql-client
+        rm -rf /var/lib/apt/lists/*
 
 .electron-linux-cache:
   variables:
@@ -127,10 +133,19 @@ go-linux:
   resource_group: xdrive-go-linux-docker
   tags:
     - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
   before_script:
     - *ensure_linux_fetch_tools
     - *install_node22
     - *install_docker_cli
+    - *install_postgres_client
   script:
     - |
       set -euo pipefail
@@ -150,36 +165,23 @@ go-linux:
         exit 1
       fi
 
-      pg_container="xdrive-ci-postgres-$CI_JOB_ID"
-      cleanup_postgres() {
-        docker rm -f "$pg_container" >/dev/null 2>&1 || true
-      }
-      trap cleanup_postgres EXIT INT TERM
-      cleanup_postgres
-
-      docker run -d \
-        --name "$pg_container" \
-        -e POSTGRES_USER=xdrive \
-        -e POSTGRES_PASSWORD=xdrive \
-        -e POSTGRES_DB=xdrive_test \
-        -p 127.0.0.1::5432 \
-        postgres:17-alpine >/dev/null
-
       pg_ready=0
       for _ in $(seq 1 60); do
-        if docker exec "$pg_container" pg_isready -U xdrive -d xdrive_test >/dev/null 2>&1; then
+        if PGPASSWORD="$POSTGRES_PASSWORD" pg_isready \
+          -h postgres -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
           pg_ready=1
           break
         fi
         sleep 1
       done
       if [[ "$pg_ready" != "1" ]]; then
-        docker logs "$pg_container" >&2 || true
-        echo "PostgreSQL test service did not become ready." >&2
+        echo "GitLab PostgreSQL service did not become ready at postgres:5432." >&2
         exit 1
       fi
-      pg_port="$(docker port "$pg_container" 5432/tcp | head -n1 | awk -F: '{print $NF}')"
-      export XD_TEST_DATABASE_URL="postgres://xdrive:xdrive@127.0.0.1:$pg_port/xdrive_test?sslmode=disable"
+      PGPASSWORD="$POSTGRES_PASSWORD" psql \
+        -h postgres -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+        -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null
+      echo "PostgreSQL test service ready at postgres:5432."
 
       go mod tidy "-go=1.25"
       git diff --exit-code -- go.mod go.sum

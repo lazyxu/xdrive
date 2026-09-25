@@ -25,16 +25,20 @@ if [[ "$node_major" != "22" ]]; then
   exit 1
 fi
 
-go mod tidy "-go=1.25"
+# The self-hosted Windows runner may use Go newer than the module baseline.
+# Do not let a newer toolchain rewrite the dependency graph; canonical module
+# tidiness validation runs under Go 1.25 on Linux/GitHub.
+go mod download
+go mod verify
 git diff --exit-code -- go.mod go.sum
-go test ./internal/... ./cmd/xdrive-agent
-go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
+go test -mod=readonly ./internal/... ./cmd/xdrive-agent
+go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
 
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action ValidateScripts
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/test-windows-uninstaller-resolver.ps1
 
-go build -o xd.exe ./cmd/xd
-go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
+go build -mod=readonly -o xd.exe ./cmd/xd
+go build -mod=readonly -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
 
 "$choco_cmd" install innosetup --no-progress -y
 
