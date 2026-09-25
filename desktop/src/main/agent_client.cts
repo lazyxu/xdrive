@@ -93,6 +93,63 @@ export type AgentTransferEvent = {
   transfers: AgentTransfer[]
 }
 
+export type AgentCloudNode = {
+  id: number
+  parent_id?: number
+  name: string
+  type: 'dir' | 'file'
+  size: number
+  revision: number
+  sha256?: string
+  deleted_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export type AgentCloudQuota = {
+  quota_bytes: number
+  physical_used_bytes: number
+  logical_file_bytes: number
+  trash_bytes: number
+  history_bytes: number
+  over_quota: boolean
+}
+
+export type AgentCloudVersion = {
+  id: number
+  node_id: number
+  revision: number
+  size: number
+  sha256?: string
+  created_at: string
+}
+
+export type AgentCloudShare = {
+  id: number
+  node_id: number
+  has_password: boolean
+  expires_at?: string
+  max_downloads: number
+  download_count: number
+  revoked_at?: string
+  status: 'active' | 'expired' | 'exhausted' | 'revoked' | string
+  created_at: string
+  updated_at: string
+}
+
+export type AgentCreatedCloudShare = {
+  share: AgentCloudShare & { token: string }
+  url: string
+}
+
+export type AgentCloudCrumb = { id: number; name: string }
+
+export type AgentCloudSearchResult = {
+  node: AgentCloudNode
+  path: string
+  crumbs: AgentCloudCrumb[]
+}
+
 export type AgentDiagnosticCheck = {
   name: string
   status: 'PASS' | 'WARN' | 'FAIL'
@@ -257,6 +314,67 @@ export class AgentIPCClient {
 
   releaseCache() {
     return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
+  }
+
+  cloudRoot() {
+    return this.request<AgentCloudNode>('GET', '/v1/cloud/root')
+  }
+
+  cloudChildren(parentID: number) {
+    const query = new URLSearchParams({ parent_id: String(parentID) })
+    return this.request<AgentCloudNode[]>('GET', `/v1/cloud/children?${query.toString()}`)
+  }
+
+  cloudSearch(queryText: string) {
+    const query = new URLSearchParams({ q: queryText })
+    return this.request<AgentCloudSearchResult[]>('GET', `/v1/cloud/search?${query.toString()}`, undefined, 45_000)
+  }
+
+  cloudQuota() {
+    return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota')
+  }
+
+  cloudTrash() {
+    return this.request<AgentCloudNode[]>('GET', '/v1/cloud/trash')
+  }
+
+  cloudRestoreTrash(id: number, revision: number) {
+    return this.request<AgentCloudNode>('POST', '/v1/cloud/trash/restore', { id, revision }, 45_000)
+  }
+
+  cloudDeleteTrash(id: number, revision: number) {
+    return this.request<{ ok: boolean }>('POST', '/v1/cloud/trash/delete', { id, revision }, 45_000)
+  }
+
+  cloudVersions(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentCloudVersion[]>('GET', `/v1/cloud/versions?${query.toString()}`)
+  }
+
+  cloudRestoreVersion(nodeID: number, currentRevision: number, versionID: number) {
+    return this.request<AgentCloudNode>('POST', '/v1/cloud/versions/restore', {
+      node_id: nodeID,
+      current_revision: currentRevision,
+      version_id: versionID,
+    }, 45_000)
+  }
+
+  cloudShares(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
+  }
+
+  cloudCreateShare(nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) {
+    return this.request<AgentCreatedCloudShare>('POST', '/v1/cloud/shares', {
+      node_id: nodeID,
+      expires_at: input.expires_at || '',
+      password: input.password || '',
+      max_downloads: input.max_downloads ?? 0,
+    })
+  }
+
+  cloudRevokeShare(id: number) {
+    return this.request<{ ok: boolean }>('POST', '/v1/cloud/shares/revoke', { id })
   }
 
   fileAvailability(path: string) {

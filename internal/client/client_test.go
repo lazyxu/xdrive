@@ -271,3 +271,94 @@ func TestQuotaUsage(t *testing.T) {
 		t.Fatalf("unexpected quota response: %+v", quota)
 	}
 }
+
+func TestCloudManagementAPIs(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	var seen []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/trash":
+			_ = json.NewEncoder(w).Encode([]Node{{ID: 7, Name: "old.txt", Type: "file", Revision: 3, DeletedAt: &now}})
+		case "/api/v1/trash/7/restore":
+			if got := r.Header.Get("If-Match"); got != `"3"` {
+				t.Fatalf("restore If-Match=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode(Node{ID: 7, Name: "old.txt", Type: "file", Revision: 4})
+		case "/api/v1/trash/8":
+			if got := r.Header.Get("If-Match"); got != `"5"` {
+				t.Fatalf("delete If-Match=%q", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/v1/files/9/versions":
+			_ = json.NewEncoder(w).Encode([]FileVersion{{ID: 11, NodeID: 9, Revision: 2, Size: 99, CreatedAt: now}})
+		case "/api/v1/files/9/versions/11/restore":
+			if got := r.Header.Get("If-Match"); got != `"4"` {
+				t.Fatalf("version restore If-Match=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode(Node{ID: 9, Name: "report.pdf", Type: "file", Revision: 5})
+		case "/api/v1/files/9/shares":
+			if r.Method == http.MethodGet {
+				_ = json.NewEncoder(w).Encode([]FileShare{{ID: 21, NodeID: 9, Status: "active"}})
+				return
+			}
+			var input CreateShareInput
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				t.Fatal(err)
+			}
+			if input.Password != "password123" || input.MaxDownloads != 3 || input.ExpiresAt == nil {
+				t.Fatalf("share input=%+v", input)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(CreatedFileShare{
+				FileShare: FileShare{ID: 22, NodeID: 9, Status: "active"},
+				Token:     "share-token",
+			})
+		case "/api/v1/shares/22":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	cli := New(ts.URL, "token")
+	ctx := context.Background()
+	trash, err := cli.Trash(ctx)
+	if err != nil || len(trash) != 1 || trash[0].DeletedAt == nil {
+		t.Fatalf("trash=%+v err=%v", trash, err)
+	}
+	restored, err := cli.RestoreTrash(ctx, 7, 3)
+	if err != nil || restored.Revision != 4 {
+		t.Fatalf("restore=%+v err=%v", restored, err)
+	}
+	if err := cli.PermanentlyDeleteTrash(ctx, 8, 5); err != nil {
+		t.Fatal(err)
+	}
+	versions, err := cli.Versions(ctx, 9)
+	if err != nil || len(versions) != 1 || versions[0].ID != 11 {
+		t.Fatalf("versions=%+v err=%v", versions, err)
+	}
+	restoredVersion, err := cli.RestoreVersion(ctx, 9, 4, 11)
+	if err != nil || restoredVersion.Revision != 5 {
+		t.Fatalf("restored version=%+v err=%v", restoredVersion, err)
+	}
+	expires := now.Add(time.Hour)
+	created, err := cli.CreateShare(ctx, 9, CreateShareInput{
+		ExpiresAt: &expires, Password: "password123", MaxDownloads: 3,
+	})
+	if err != nil || created.Token != "share-token" {
+		t.Fatalf("created share=%+v err=%v", created, err)
+	}
+	shares, err := cli.Shares(ctx, 9)
+	if err != nil || len(shares) != 1 || shares[0].ID != 21 {
+		t.Fatalf("shares=%+v err=%v", shares, err)
+	}
+	if err := cli.RevokeShare(ctx, 22); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 8 {
+		t.Fatalf("requests=%v", seen)
+	}
+}

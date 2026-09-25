@@ -1,3 +1,5 @@
+import type { CreatedFileShare, FileShare, FileVersion, Node, QuotaUsage } from '@xdrive/shared'
+
 export {}
 
 declare global {
@@ -110,6 +112,21 @@ declare global {
     failed_files: number
   }
 
+  type AgentCloudNode = Node
+  type AgentCloudQuota = QuotaUsage
+  type AgentCloudVersion = FileVersion
+  type AgentCloudShare = FileShare
+  type AgentCreatedCloudShare = {
+    share: CreatedFileShare
+    url: string
+  }
+  type AgentCloudCrumb = { id: number; name: string }
+  type AgentCloudSearchResult = {
+    node: AgentCloudNode
+    path: string
+    crumbs: AgentCloudCrumb[]
+  }
+
   type AgentDiagnosticCheck = {
     name: string
     status: 'PASS' | 'WARN' | 'FAIL'
@@ -159,6 +176,18 @@ declare global {
         getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
         getCache: () => Promise<DesktopResult<AgentCacheStats>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
+        cloudRoot: () => Promise<DesktopResult<AgentCloudNode>>
+        cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
+        cloudSearch: (query: string) => Promise<DesktopResult<AgentCloudSearchResult[]>>
+        cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
+        cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
+        cloudRestoreTrash: (id: number, revision: number) => Promise<DesktopResult<AgentCloudNode>>
+        cloudDeleteTrash: (id: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
+        cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
+        cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
+        cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) => Promise<DesktopResult<AgentCreatedCloudShare>>
+        cloudRevokeShare: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         getDiagnostics: () => Promise<DesktopResult<AgentDiagnosticReport>>
         reconnect: () => Promise<DesktopResult<AgentStatus>>
         repairSyncRoot: () => Promise<DesktopResult<AgentStatus>>

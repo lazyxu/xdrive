@@ -66,6 +66,7 @@ var desktopIPCCapabilities = []string{
 	"file-availability",
 	"storage-tree",
 	"cache-management",
+	"cloud-files",
 	"conflicts",
 	"transfers",
 	"transfer-events",
@@ -129,6 +130,18 @@ type desktopIPCController interface {
 	StorageTree(context.Context) (agentStorageTreeNode, error)
 	CacheStats() (mount.CacheStats, error)
 	ReleaseReclaimableCache() (mount.CacheReleaseResult, error)
+	CloudRoot(context.Context) (client.Node, error)
+	CloudList(context.Context, uint64) ([]client.Node, error)
+	CloudSearch(context.Context, string) ([]agentCloudSearchResult, error)
+	CloudQuota(context.Context) (client.QuotaUsage, error)
+	CloudTrash(context.Context) ([]client.Node, error)
+	CloudRestoreTrash(context.Context, uint64, uint64) (client.Node, error)
+	CloudDeleteTrash(context.Context, uint64, uint64) error
+	CloudVersions(context.Context, uint64) ([]client.FileVersion, error)
+	CloudRestoreVersion(context.Context, uint64, uint64, uint64) (client.Node, error)
+	CloudShares(context.Context, uint64) ([]client.FileShare, error)
+	CloudCreateShare(context.Context, uint64, client.CreateShareInput) (agentCreatedShare, error)
+	CloudRevokeShare(context.Context, uint64) error
 	FileAvailability(path string) (mount.FileAvailability, error)
 	SetFileAvailability(path, action string) error
 	Transfers() (uint64, []transfer.Task)
@@ -304,6 +317,18 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/storage-tree", h.storageTree)
 	mux.HandleFunc("GET /v1/cache", h.cacheStats)
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
+	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
+	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
+	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
+	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
+	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)
+	mux.HandleFunc("POST /v1/cloud/trash/restore", h.cloudRestoreTrash)
+	mux.HandleFunc("POST /v1/cloud/trash/delete", h.cloudDeleteTrash)
+	mux.HandleFunc("GET /v1/cloud/versions", h.cloudVersions)
+	mux.HandleFunc("POST /v1/cloud/versions/restore", h.cloudRestoreVersion)
+	mux.HandleFunc("GET /v1/cloud/shares", h.cloudShares)
+	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
+	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
@@ -558,6 +583,207 @@ func (h *desktopIPCHandler) releaseCache(w http.ResponseWriter, _ *http.Request)
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudRoot(w http.ResponseWriter, r *http.Request) {
+	node, err := h.ctrl.CloudRoot(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request) {
+	parentID, ok := desktopIPCUint64Query(w, r, "parent_id")
+	if !ok {
+		return
+	}
+	items, err := h.ctrl.CloudList(r.Context(), parentID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(query)) < 2 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_query", "q must contain at least 2 characters")
+		return
+	}
+	items, err := h.ctrl.CloudSearch(r.Context(), query)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudQuota(w http.ResponseWriter, r *http.Request) {
+	quota, err := h.ctrl.CloudQuota(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, quota)
+}
+
+func (h *desktopIPCHandler) cloudTrash(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudTrash(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudRestoreTrash(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID       uint64 `json:"id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 || input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_trash_item", "id and revision are required")
+		return
+	}
+	node, err := h.ctrl.CloudRestoreTrash(r.Context(), input.ID, input.Revision)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudDeleteTrash(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID       uint64 `json:"id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 || input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_trash_item", "id and revision are required")
+		return
+	}
+	if err := h.ctrl.CloudDeleteTrash(r.Context(), input.ID, input.Revision); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudVersions(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	items, err := h.ctrl.CloudVersions(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudRestoreVersion(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeID          uint64 `json:"node_id"`
+		CurrentRevision uint64 `json:"current_revision"`
+		VersionID       uint64 `json:"version_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.NodeID == 0 || input.CurrentRevision == 0 || input.VersionID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_version_restore", "node_id, current_revision, and version_id are required")
+		return
+	}
+	node, err := h.ctrl.CloudRestoreVersion(r.Context(), input.NodeID, input.CurrentRevision, input.VersionID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudShares(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	items, err := h.ctrl.CloudShares(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudCreateShare(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeID       uint64 `json:"node_id"`
+		ExpiresAt    string `json:"expires_at,omitempty"`
+		Password     string `json:"password,omitempty"`
+		MaxDownloads int64  `json:"max_downloads,omitempty"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.NodeID == 0 || input.MaxDownloads < 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_share", "node_id is required and max_downloads must be non-negative")
+		return
+	}
+	var expiresAt *time.Time
+	if value := strings.TrimSpace(input.ExpiresAt); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil || !parsed.After(time.Now()) {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_share_expiry", "expires_at must be a future RFC3339 timestamp")
+			return
+		}
+		expiresAt = &parsed
+	}
+	created, err := h.ctrl.CloudCreateShare(r.Context(), input.NodeID, client.CreateShareInput{
+		ExpiresAt: expiresAt, Password: input.Password, MaxDownloads: input.MaxDownloads,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, created)
+}
+
+func (h *desktopIPCHandler) cloudRevokeShare(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID uint64 `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_share", "id is required")
+		return
+	}
+	if err := h.ctrl.CloudRevokeShare(r.Context(), input.ID); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func desktopIPCUint64Query(w http.ResponseWriter, r *http.Request, name string) (uint64, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_"+name, name+" must be a positive integer")
+		return 0, false
+	}
+	return value, true
 }
 
 func (h *desktopIPCHandler) fileAvailability(w http.ResponseWriter, r *http.Request) {

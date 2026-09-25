@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
@@ -57,6 +58,18 @@ type fakeDesktopIPCController struct {
 	storageTree      agentStorageTreeNode
 	cacheStats       mount.CacheStats
 	cacheRelease     mount.CacheReleaseResult
+	cloudRoot        client.Node
+	cloudChildren    []client.Node
+	cloudSearch      []agentCloudSearchResult
+	cloudQuota       client.QuotaUsage
+	cloudTrash       []client.Node
+	cloudVersions    []client.FileVersion
+	cloudShares      []client.FileShare
+	cloudCreated     agentCreatedShare
+	cloudRestored    client.Node
+	cloudRevokeID    uint64
+	cloudDeleteID    uint64
+	cloudDeleteRev   uint64
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -116,6 +129,56 @@ func (f *fakeDesktopIPCController) CacheStats() (mount.CacheStats, error) {
 
 func (f *fakeDesktopIPCController) ReleaseReclaimableCache() (mount.CacheReleaseResult, error) {
 	return f.cacheRelease, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRoot(context.Context) (client.Node, error) {
+	return f.cloudRoot, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudList(context.Context, uint64) ([]client.Node, error) {
+	return append([]client.Node(nil), f.cloudChildren...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSearch(context.Context, string) ([]agentCloudSearchResult, error) {
+	return append([]agentCloudSearchResult(nil), f.cloudSearch...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudQuota(context.Context) (client.QuotaUsage, error) {
+	return f.cloudQuota, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudTrash(context.Context) ([]client.Node, error) {
+	return append([]client.Node(nil), f.cloudTrash...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRestoreTrash(_ context.Context, _, _ uint64) (client.Node, error) {
+	return f.cloudRestored, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteTrash(_ context.Context, id, revision uint64) error {
+	f.cloudDeleteID, f.cloudDeleteRev = id, revision
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudVersions(context.Context, uint64) ([]client.FileVersion, error) {
+	return append([]client.FileVersion(nil), f.cloudVersions...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRestoreVersion(context.Context, uint64, uint64, uint64) (client.Node, error) {
+	return f.cloudRestored, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudShares(context.Context, uint64) ([]client.FileShare, error) {
+	return append([]client.FileShare(nil), f.cloudShares...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCreateShare(context.Context, uint64, client.CreateShareInput) (agentCreatedShare, error) {
+	return f.cloudCreated, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRevokeShare(_ context.Context, id uint64) error {
+	f.cloudRevokeID = id
+	return f.err
 }
 
 func (f *fakeDesktopIPCController) FileAvailability(path string) (mount.FileAvailability, error) {
@@ -403,6 +466,61 @@ func TestDesktopIPCStorageAndCache(t *testing.T) {
 		t.Fatalf("cache release status=%d body=%s", res.Code, res.Body.String())
 	}
 }
+
+func TestDesktopIPCCloudFiles(t *testing.T) {
+	now := time.Now().UTC()
+	ctrl := &fakeDesktopIPCController{
+		revision:      1,
+		cloudRoot:     client.Node{ID: 1, Name: "root", Type: "dir", Revision: 1},
+		cloudChildren: []client.Node{{ID: 2, ParentID: ptrUint64(1), Name: "Projects", Type: "dir", Revision: 1}},
+		cloudSearch: []agentCloudSearchResult{{
+			Node:   client.Node{ID: 3, Name: "report.pdf", Type: "file", Revision: 2},
+			Path:   "Projects/report.pdf",
+			Crumbs: []agentCloudCrumb{{ID: 1, Name: "My files"}, {ID: 2, Name: "Projects"}},
+		}},
+		cloudQuota:    client.QuotaUsage{QuotaBytes: 1000, PhysicalUsedBytes: 400, LogicalFileBytes: 300, TrashBytes: 50, HistoryBytes: 50},
+		cloudTrash:    []client.Node{{ID: 4, Name: "old.txt", Type: "file", Revision: 3, DeletedAt: &now}},
+		cloudVersions: []client.FileVersion{{ID: 5, NodeID: 3, Revision: 1, Size: 12, CreatedAt: now}},
+		cloudShares:   []client.FileShare{{ID: 6, NodeID: 3, Status: "active"}},
+		cloudCreated: agentCreatedShare{
+			Share: client.CreatedFileShare{FileShare: client.FileShare{ID: 7, NodeID: 3, Status: "active"}, Token: "token"},
+			URL:   "https://drive.example/#/s/token",
+		},
+		cloudRestored: client.Node{ID: 3, Name: "report.pdf", Type: "file", Revision: 4},
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	cases := []struct {
+		method string
+		path   string
+		body   string
+		want   string
+	}{
+		{http.MethodGet, "/v1/cloud/root", "", "\"id\":1"},
+		{http.MethodGet, "/v1/cloud/children?parent_id=1", "", "\"Projects\""},
+		{http.MethodGet, "/v1/cloud/search?q=report", "", "\"Projects/report.pdf\""},
+		{http.MethodGet, "/v1/cloud/quota", "", "\"physical_used_bytes\":400"},
+		{http.MethodGet, "/v1/cloud/trash", "", "\"old.txt\""},
+		{http.MethodPost, "/v1/cloud/trash/restore", `{"id":4,"revision":3}`, "\"revision\":4"},
+		{http.MethodPost, "/v1/cloud/trash/delete", `{"id":4,"revision":3}`, "\"ok\":true"},
+		{http.MethodGet, "/v1/cloud/versions?node_id=3", "", "\"revision\":1"},
+		{http.MethodPost, "/v1/cloud/versions/restore", `{"node_id":3,"current_revision":3,"version_id":5}`, "\"revision\":4"},
+		{http.MethodGet, "/v1/cloud/shares?node_id=3", "", "\"status\":\"active\""},
+		{http.MethodPost, "/v1/cloud/shares", `{"node_id":3,"password":"password123","max_downloads":2}`, "\"url\":\"https://drive.example/#/s/token\""},
+		{http.MethodPost, "/v1/cloud/shares/revoke", `{"id":6}`, "\"ok\":true"},
+	}
+	for _, tc := range cases {
+		res := desktopIPCRequest(t, handler, tc.method, tc.path, tc.body)
+		if res.Code < 200 || res.Code >= 300 || !strings.Contains(res.Body.String(), tc.want) {
+			t.Fatalf("%s %s status=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
+		}
+	}
+	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
+		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)
+	}
+}
+
+func ptrUint64(value uint64) *uint64 { return &value }
 
 func TestDesktopIPCTransfers(t *testing.T) {
 	manager := transfer.NewManager(10)
