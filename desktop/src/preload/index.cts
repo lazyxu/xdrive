@@ -3,6 +3,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
+  getStorageTree: () => ipcRenderer.invoke('agent:get-storage-tree'),
+  getCache: () => ipcRenderer.invoke('agent:get-cache'),
+  releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getDiagnostics: () => ipcRenderer.invoke('agent:get-diagnostics'),
   reconnect: () => ipcRenderer.invoke('agent:reconnect'),
   repairSyncRoot: () => ipcRenderer.invoke('agent:repair-sync-root'),

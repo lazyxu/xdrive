@@ -64,6 +64,8 @@ var desktopIPCCapabilities = []string{
 	"settings",
 	"selective-sync",
 	"file-availability",
+	"storage-tree",
+	"cache-management",
 	"conflicts",
 	"transfers",
 	"transfer-events",
@@ -124,6 +126,9 @@ type desktopIPCController interface {
 	Settings() (userconfig.Config, string, error)
 	UpdateSettings(mountPath *string, cacheLimitBytes *int64) error
 	SetSelectiveSyncRule(path, mode string) error
+	StorageTree(context.Context) (agentStorageTreeNode, error)
+	CacheStats() (mount.CacheStats, error)
+	ReleaseReclaimableCache() (mount.CacheReleaseResult, error)
 	FileAvailability(path string) (mount.FileAvailability, error)
 	SetFileAvailability(path, action string) error
 	Transfers() (uint64, []transfer.Task)
@@ -296,6 +301,9 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/settings", h.settings)
 	mux.HandleFunc("PATCH /v1/settings", h.updateSettings)
 	mux.HandleFunc("PUT /v1/settings/sync-rule", h.setSyncRule)
+	mux.HandleFunc("GET /v1/storage-tree", h.storageTree)
+	mux.HandleFunc("GET /v1/cache", h.cacheStats)
+	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
@@ -523,6 +531,33 @@ func (h *desktopIPCHandler) setSyncRule(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.settings(w, r)
+}
+
+func (h *desktopIPCHandler) storageTree(w http.ResponseWriter, r *http.Request) {
+	tree, err := h.ctrl.StorageTree(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, tree)
+}
+
+func (h *desktopIPCHandler) cacheStats(w http.ResponseWriter, _ *http.Request) {
+	stats, err := h.ctrl.CacheStats()
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, stats)
+}
+
+func (h *desktopIPCHandler) releaseCache(w http.ResponseWriter, _ *http.Request) {
+	result, err := h.ctrl.ReleaseReclaimableCache()
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) fileAvailability(w http.ResponseWriter, r *http.Request) {

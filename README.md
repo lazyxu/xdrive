@@ -391,7 +391,7 @@ xd.exe                       CLI / diagnostics / automation
 
 The installer adds `xd` to the user PATH, registers the headless Agent for current-user login startup, creates the visible **xDrive** Start-menu shortcut for Electron Desktop, and starts Desktop after an interactive install. Silent updates restart Desktop in background/Tray mode.
 
-Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, transfer center, diagnostics/self-repair, conflict center, file-availability controls, selective-sync settings, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
+Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, transfer center, diagnostics/self-repair, conflict center, storage-policy tree/cache controls, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
 
 The separate `xDriveDesktopSetup-amd64.exe` artifact is retained temporarily for transition/testing compatibility, but normal installation and `xd update` use `xDriveSetup-amd64.exe`.
 
@@ -631,6 +631,10 @@ POST  /v1/lifecycle/shutdown
 ```
 
 `/v1/events` is a bounded long-poll over monotonically increasing in-memory status revisions. It returns immediately when the revision changes and otherwise returns `204 No Content` at the requested timeout. `/v1/transfer-events` uses the same bounded long-poll pattern with an independent transfer revision so byte-progress updates do not churn the general account/sync status stream.
+
+The Agent exposes the cloud directory hierarchy as a storage-policy tree. Folder rows map directly to the existing selective-sync rules: **Default** removes an explicit rule and follows the nearest parent policy, **Not synced** maps to `exclude`, and **Always keep** maps to `always-local`. The old path-entry controls are no longer the primary Desktop UX.
+
+Windows additionally reports persistent CfAPI cache usage as used / configured limit / safely reclaimable / pinned bytes and can release all reclaimable cache in one action. Reclaimable means a synced, non-pinned, non-`always-local` Cloud File; pinned or Always keep content is never evicted by this action. Linux FUSE does not claim persistent cache telemetry because open files use temporary per-handle backing files.
 
 The Agent maintains an in-memory transfer model for uploads, downloads, Windows CfAPI hydration, and dehydration/cache release. Transfer entries expose filename/path, kind/direction, current and total bytes, percentage, instantaneous and average rate, elapsed time, error text, retry count, state, and whether retry is safe. Windows failed upload retries are serialized back through the active sync provider instead of running a second concurrent reconcile. Completed/failed history is bounded and is cleared when the login session changes.
 

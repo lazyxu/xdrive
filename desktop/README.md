@@ -10,8 +10,8 @@ xDrive Desktop is the graphical client for the headless Go `xdrive-agent`.
 - login, required password change, logout, live sync state, pause/resume, sync-now, open-folder, mount/cache settings, conflict resolution;
 - transfer center for active/completed/failed uploads, downloads, hydration and cache release, including progress/rates/errors and safe retry where the Agent marks a task retryable;
 - diagnostics page backed by the same Go checks as `xd doctor`, with redacted PASS/WARN/FAIL results, Agent restart, serialized reconnect, Windows sync-root repair, log-folder access, and report export;
-- Windows file availability controls: always-local, free-space, online-only, and manual sync;
-- selective-sync rule management;
+- cloud-folder storage tree with three policy states: Default, Not synced on this device, and Always keep;
+- Windows persistent-cache telemetry (used / limit / reclaimable / pinned) plus one-click safe cache release;
 - automatic Agent start/recovery plus an explicit Restart Agent action;
 - Windows NSIS and Linux DEB desktop packaging.
 

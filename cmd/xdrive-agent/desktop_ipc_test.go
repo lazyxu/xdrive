@@ -54,6 +54,9 @@ type fakeDesktopIPCController struct {
 	reconnectN       int
 	repairN          int
 	openLogsN        int
+	storageTree      agentStorageTreeNode
+	cacheStats       mount.CacheStats
+	cacheRelease     mount.CacheReleaseResult
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -101,6 +104,18 @@ func (f *fakeDesktopIPCController) UpdateSettings(mountPath *string, cacheLimitB
 func (f *fakeDesktopIPCController) SetSelectiveSyncRule(path, mode string) error {
 	f.rulePath, f.ruleMode = path, mode
 	return f.err
+}
+
+func (f *fakeDesktopIPCController) StorageTree(context.Context) (agentStorageTreeNode, error) {
+	return f.storageTree, f.err
+}
+
+func (f *fakeDesktopIPCController) CacheStats() (mount.CacheStats, error) {
+	return f.cacheStats, f.err
+}
+
+func (f *fakeDesktopIPCController) ReleaseReclaimableCache() (mount.CacheReleaseResult, error) {
+	return f.cacheRelease, f.err
 }
 
 func (f *fakeDesktopIPCController) FileAvailability(path string) (mount.FileAvailability, error) {
@@ -353,6 +368,39 @@ func TestDesktopIPCActions(t *testing.T) {
 	}
 	if ctrl.openID != "c1" || !ctrl.openBoth || ctrl.resolveID != "c1" || ctrl.resolveChoice != "server" || ctrl.openFolderN != 1 {
 		t.Fatalf("conflict/folder actions not forwarded")
+	}
+}
+
+func TestDesktopIPCStorageAndCache(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{
+		revision: 1,
+		storageTree: agentStorageTreeNode{
+			Name: "xDrive",
+			Children: []agentStorageTreeNode{{
+				Path: "Projects", Name: "Projects", Mode: "default", EffectiveMode: "default", FileCount: 2, TotalBytes: 30,
+			}},
+		},
+		cacheStats: mount.CacheStats{
+			Supported: true, UsedBytes: 100, LimitBytes: 200, ReclaimableBytes: 40, PinnedBytes: 60,
+		},
+		cacheRelease: mount.CacheReleaseResult{
+			Stats:         mount.CacheStats{Supported: true, UsedBytes: 60, LimitBytes: 200, PinnedBytes: 60},
+			ReleasedBytes: 40, ReleasedFiles: 2,
+		},
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/storage-tree", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"Projects\"") {
+		t.Fatalf("storage tree status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/cache", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"reclaimable_bytes\":40") {
+		t.Fatalf("cache status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/cache/release", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"released_bytes\":40") {
+		t.Fatalf("cache release status=%d body=%s", res.Code, res.Body.String())
 	}
 }
 
