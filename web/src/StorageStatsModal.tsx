@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Alert, Col, Modal, Row, Space, Statistic, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { StorageSizeBucket, StorageStats } from '../../ui/shared/src'
+import type { StorageHealth, StorageSizeBucket, StorageStats } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
@@ -23,6 +23,7 @@ export default function StorageStatsModal({
   onClose: () => void
 }) {
   const [stats, setStats] = useState<StorageStats | null>(null)
+  const [health, setHealth] = useState<StorageHealth | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -32,9 +33,17 @@ export default function StorageStatsModal({
     setLoading(true)
     setError('')
     setStats(null)
+    setHealth(null)
     const request = scope === 'global' ? api.adminStorageStats() : api.storageStats()
-    void request
-      .then((value) => { if (active) setStats(value) })
+    const healthRequest = scope === 'global'
+      ? api.adminStorageHealth().catch(() => null)
+      : Promise.resolve(null)
+    void Promise.all([request, healthRequest])
+      .then(([value, healthValue]) => {
+        if (!active) return
+        setStats(value)
+        setHealth(healthValue)
+      })
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -52,6 +61,16 @@ export default function StorageStatsModal({
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
       {stats && (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          {scope === 'global' && health && (
+            <Alert
+              type={health.status === 'fail' ? 'error' : health.status === 'warning' ? 'warning' : 'success'}
+              showIcon
+              message={health.status === 'fail' ? 'CAS 元数据存在一致性问题' : health.status === 'warning' ? 'CAS 元数据正常，但垃圾回收有积压' : 'CAS 元数据健康'}
+              description={
+                `ready ${health.ready_blobs.toLocaleString()} · deleting ${health.deleting_blobs.toLocaleString()} · stale ${health.stale_deleting_blobs.toLocaleString()} · missing metadata ${health.missing_metadata.toLocaleString()} · refcount drift ${health.refcount_mismatches.toLocaleString()} · state drift ${health.state_mismatches.toLocaleString()} · size drift ${health.size_mismatches.toLocaleString()} · key/hash drift ${health.key_hash_mismatches.toLocaleString()} · invalid state ${health.invalid_states.toLocaleString()}`
+              }
+            />
+          )}
           <Row gutter={[16, 16]}>
             <Col xs={12} md={6}><Statistic title="CAS Blob" value={stats.cas_blob_count} /></Col>
             <Col xs={12} md={6}><Statistic title="CAS 物理容量" value={formatSize(stats.cas_physical_bytes)} /></Col>

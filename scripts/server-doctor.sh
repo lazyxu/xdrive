@@ -212,6 +212,17 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
     record FAIL "PostgreSQL auth" "PostgreSQL container or configured password unavailable"
   fi
 
+  cas_health=""
+  if cas_health="$(compose exec -T server xdrive-server storage health 2>&1)"; then
+    if [[ "$cas_health" == *"status=warning"* ]]; then
+      record WARN "CAS metadata health" "$cas_health"
+    else
+      record PASS "CAS metadata health" "$cas_health"
+    fi
+  else
+    record FAIL "CAS metadata health" "${cas_health:-health command failed}"
+  fi
+
   volume_report postgres /var/lib/postgresql/data
   volume_report server /data
 fi

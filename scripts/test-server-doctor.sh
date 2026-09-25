@@ -53,6 +53,10 @@ if [[ "$1" == "compose" ]]; then
       esac
       exit 0
       ;;
+    exec)
+      echo 'cas metadata health: status=ok ready=3 deleting=0 stale_deleting=0 missing_metadata=0 refcount_mismatch=0 state_mismatch=0 size_mismatch=0 key_hash_mismatch=0 invalid_state=0'
+      exit 0
+      ;;
     logs)
       echo 'server | Authorization: Bearer token-should-not-leak'
       echo 'server | postgres://xdrive:db-password-should-not-leak@postgres:5432/xdrive'
@@ -94,6 +98,7 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG
 grep -q '^xDrive server diagnostic report' "$TMP/report"
 grep -q '\[PASS\] Docker' "$TMP/report"
 grep -q '\[PASS\] PostgreSQL auth' "$TMP/report"
+grep -q '\[PASS\] CAS metadata health' "$TMP/report"
 grep -q '\[PASS\] TLS/local HTTPS' "$TMP/report"
 grep -q '/api/v1/readyz' "$TMP/state/curl-args"
 grep -q 'https://api.github.com/' "$TMP/state/curl-args"

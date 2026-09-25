@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 )
@@ -90,6 +91,19 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
+}
+
+func (s *Server) adminStorageHealth(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	health, err := maintenance.CASHealth(s.DB.WithContext(ctx), maintenance.CASDeletingStaleAfter)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load storage health failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, health)
 }
 
 func (s *Server) loadUserStorageStats(ctx context.Context, uid uint64) (storageStatsDTO, error) {

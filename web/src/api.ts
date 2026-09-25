@@ -8,6 +8,7 @@ import type {
   Node,
   PublicShare,
   QuotaUsage,
+  StorageHealth,
   StorageStats,
 } from '../../ui/shared/src'
 
@@ -189,6 +190,10 @@ export class XDriveApi {
 
   adminStorageStats() {
     return this.request<StorageStats>('/api/v1/admin/storage')
+  }
+
+  adminStorageHealth() {
+    return this.request<StorageHealth>('/api/v1/admin/storage/health')
   }
 
   async changePassword(currentPassword: string, newPassword: string) {

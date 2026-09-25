@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	adminpkg "github.com/lazyxu/xdrive/internal/admin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
@@ -134,6 +135,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 
 	request(t, router, http.MethodGet, "/api/v1/admin/storage", tokenA, nil, http.StatusForbidden)
+	request(t, router, http.MethodGet, "/api/v1/admin/storage/health", tokenA, nil, http.StatusForbidden)
 	global := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
 	if global.Scope != "global" || global.CASBlobCount != 2 {
 		t.Fatalf("global stats=%#v", global)
@@ -143,12 +145,24 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 		t.Fatalf("global bytes physical=%d logical=%d saved=%d", global.CASPhysicalBytes, global.CASLogicalReferencedBytes, global.CASDedupSavedBytes)
 	}
 
+	healthRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/health", adminToken, nil, http.StatusOK)
+	var health maintenance.CASHealthReport
+	if err := json.Unmarshal(healthRes.Body.Bytes(), &health); err != nil {
+		t.Fatal(err)
+	}
+	if !health.Healthy || health.Status != "ok" || health.RefCountMismatches != 0 || health.MissingMetadata != 0 {
+		t.Fatalf("unexpected CAS health: %+v", health)
+	}
+
 	metrics := request(t, router, http.MethodGet, "/metrics", "", nil, http.StatusOK).Body.String()
 	for _, want := range []string{
 		"xdrive_cas_blobs 2",
 		fmt.Sprintf("xdrive_cas_physical_bytes %d", wantPhysical),
 		fmt.Sprintf("xdrive_cas_logical_referenced_bytes %d", wantGlobalLogical),
 		"xdrive_cas_dedup_saved_bytes 6",
+		"xdrive_cas_metadata_health 1",
+		"xdrive_cas_missing_metadata 0",
+		"xdrive_cas_refcount_mismatches 0",
 		`xdrive_cas_blob_count_by_size{range="lt_16_kib"} 1`,
 		`xdrive_cas_blob_count_by_size{range="16_64_kib"} 1`,
 	} {
