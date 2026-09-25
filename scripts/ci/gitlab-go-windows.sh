@@ -17,6 +17,8 @@ else
 fi
 
 bash scripts/ci/check-go-min-version.sh 1.25
+echo "GOPROXY=$(go env GOPROXY)"
+echo "GOSUMDB=$(go env GOSUMDB)"
 node_major="$(node -p 'process.versions.node.split(".")[0]')"
 if [[ "$node_major" != "22" ]]; then
   echo "Node.js 22 is required; found $(node --version)." >&2

@@ -69,6 +69,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"XDRIVE_CI_NODE_VERSION: \"22.23.3\"",
 		"XDRIVE_CI_DOCKER_VERSION: \"27.5.1\"",
 		"XDRIVE_CI_COMPOSE_VERSION: \"v2.32.4\"",
+		"GOPROXY: \"https://goproxy.cn|https://mirrors.aliyun.com/goproxy/|https://proxy.golang.org|direct\"",
+		"GOSUMDB: \"sum.golang.google.cn\"",
+		"NPM_CONFIG_REGISTRY: \"https://registry.npmmirror.com\"",
+		"XDRIVE_CI_NODE_MIRROR: \"https://mirrors.huaweicloud.com/nodejs\"",
+		"XDRIVE_CI_DOCKER_MIRROR: \"https://mirrors.aliyun.com/docker-ce\"",
+		"XDRIVE_CI_GITHUB_RELEASE_PROXY: \"\"",
+		"XDRIVE_CI_DOWNLOAD_ATTEMPTS: \"5\"",
 		"ELECTRON_MIRROR: \"https://cdn.npmmirror.com/binaries/electron/\"",
 		"ELECTRON_BUILDER_BINARIES_MIRROR: \"https://cdn.npmmirror.com/binaries/electron-builder-binaries/\"",
 	)
@@ -81,11 +88,14 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	githubText := collectYAMLStrings(github)
 	gitlabText := collectYAMLStrings(gitlab)
+	downloadHelper := readFile(t, filepath.Join(root, "scripts", "ci", "download-with-fallback.sh"))
+	nodeInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-node22.sh"))
+	dockerInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-docker-cli.sh"))
 	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
-	gitlabContractText := gitlabText + "\n" + goVersionCheck + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
+	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" + goVersionCheck + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
 	for _, command := range []string{
 		"npm install --no-audit --no-fund",
 		"npm run test:main",
@@ -105,6 +115,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/test-xdrive-server-host.sh",
 		"bash scripts/test-cleanup-merged-branches.sh",
 		"bash scripts/test-update-channels.sh",
+		"bash scripts/ci/test-download-with-fallback.sh",
 		"docker build -t xdrive/server:test .",
 		"bash scripts/test-server-chunk-storage.sh",
 		"docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
@@ -166,6 +177,14 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"$CI_PIPELINE_SOURCE == \"web\"",
 		"on_new_commit: interruptible",
 		"interruptible: true",
+		"GOMODCACHE: \"$CI_PROJECT_DIR/.cache/go-mod\"",
+		"NPM_CONFIG_CACHE: \"$CI_PROJECT_DIR/.cache/npm\"",
+		"bash scripts/ci/install-node22.sh",
+		"bash scripts/ci/install-docker-cli.sh",
+		".cache/ci-tools/",
+		"when: always",
+		"echo \"GOPROXY=$(go env GOPROXY)\"",
+		"echo \"GOSUMDB=$(go env GOSUMDB)\"",
 	)
 
 	if strings.Contains(gitlabRaw, "$ErrorActionPreference") ||
@@ -173,6 +192,22 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		strings.Contains(gitlabRaw, "$LASTEXITCODE") {
 		t.Errorf("GitLab Windows jobs must be Bash-compatible; raw PowerShell syntax found in .gitlab-ci.yml")
 	}
+	requireRaw(t, "CI resumable downloader", downloadHelper,
+		"--continue-at -",
+		"XDRIVE_CI_DOWNLOAD_ATTEMPTS",
+		"download failed from all configured sources",
+	)
+	requireRaw(t, "CI Node installer", nodeInstaller,
+		"XDRIVE_CI_NODE_MIRROR",
+		"https://nodejs.org/dist",
+		"sha256sum -c",
+	)
+	requireRaw(t, "CI Docker installer", dockerInstaller,
+		"XDRIVE_CI_DOCKER_MIRROR",
+		"https://download.docker.com",
+		"XDRIVE_CI_GITHUB_RELEASE_PROXY",
+		"https://github.com/docker/compose/releases/download",
+	)
 	requireRaw(t, "Go minimum-version check", goVersionCheck,
 		"Go >= $minimum is required",
 		"Go version OK:",
