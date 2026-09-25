@@ -265,6 +265,9 @@ go-linux:
       bash scripts/ci/test-gitlab-release-version.sh
       bash -n scripts/ci/gitlab-desktop-windows.sh
       bash -n scripts/ci/gitlab-go-windows.sh
+      bash -n scripts/ci/prepare-go-mod-cache.sh
+      bash -n scripts/ci/test-prepare-go-mod-cache.sh
+      bash scripts/ci/test-prepare-go-mod-cache.sh
 
       docker compose -f deploy/docker-compose.yml config >/dev/null
       XD_DOMAIN=drive.example.test \
@@ -337,9 +340,9 @@ go-windows:
   tags:
     - windows
   cache:
-    key: "xdrive-go-windows-$CI_RUNNER_EXECUTABLE_ARCH"
+    key: "xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
-      - .cache/go-mod/
+      - .cache/go-mod/cache/download/
       - .cache/npm/
     policy: pull-push
     when: always

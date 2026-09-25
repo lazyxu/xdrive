@@ -57,6 +57,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go-windows":      "",
 		"web":             "$XDRIVE_CI_NODE_IMAGE",
 	})
+	assertGitLabCache(t, gitlab, "go-windows",
+		"xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/cache/download/", ".cache/npm/"},
+	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
 	var imageConfig map[string]any
@@ -92,6 +96,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	nodeInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-node22.sh"))
 	dockerInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-docker-cli.sh"))
 	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
+	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	gitlabGoWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
 		gitlabGoWindows
@@ -120,6 +125,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/test-cleanup-merged-branches.sh",
 		"bash scripts/test-update-channels.sh",
 		"bash scripts/ci/test-download-with-fallback.sh",
+		"bash scripts/ci/test-prepare-go-mod-cache.sh",
 		"docker build -t xdrive/server:test .",
 		"bash scripts/test-server-chunk-storage.sh",
 		"docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
@@ -175,6 +181,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"extends: .electron-linux-cache",
 		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-go-windows.sh",
+		"xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		".cache/go-mod/cache/download/",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
 		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH == \"master\"",
@@ -211,9 +219,15 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		strings.Contains(gitlabRaw, "xdrive-ci-postgres-$CI_JOB_ID") {
 		t.Errorf("GitLab Docker-executor PostgreSQL tests must use the GitLab service network, not host-loopback Docker port publishing")
 	}
-	requireRaw(t, "GitLab Windows Go wrapper", gitlabGoWindows,
+	requireRaw(t, "Go module cache preparation", goCachePrep,
 		"go mod download",
 		"go mod verify",
+		"go clean -modcache",
+		"restored Go module cache failed verification; rebuilding it",
+		"Go module cache rebuilt and verified",
+	)
+	requireRaw(t, "GitLab Windows Go wrapper", gitlabGoWindows,
+		"bash scripts/ci/prepare-go-mod-cache.sh",
 		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
 		"go build -mod=readonly -o xd.exe ./cmd/xd",
@@ -221,6 +235,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	if strings.Contains(gitlabGoWindows, "go mod tidy") {
 		t.Errorf("GitLab Windows wrapper must not run go mod tidy under a newer self-hosted Go toolchain")
+	}
+
+	if strings.Contains(gitlabRaw, "key: \"xdrive-go-windows-$CI_RUNNER_EXECUTABLE_ARCH\"") {
+		t.Errorf("GitLab Windows Go cache key must be versioned so legacy full-module archives are not restored")
 	}
 	requireRaw(t, "CI resumable downloader", downloadHelper,
 		"--continue-at -",
@@ -289,6 +307,10 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(gitlabRelease), &gitlabReleaseConfig); err != nil {
 		t.Fatalf("parse GitLab release CI: %v", err)
 	}
+	assertGitLabCache(t, gitlabReleaseConfig, "package-windows-amd64",
+		"xdrive-release-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/cache/download/", ".cache/npm/"},
+	)
 	installerTemplate := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
 	gitlabReleaseScripts := strings.Join([]string{
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-version.sh")),
@@ -365,7 +387,13 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"GLAB_ENABLE_CI_AUTOLOGIN: \"true\"",
 		"image: $XDRIVE_CI_GLAB_IMAGE",
 	)
+
+	requireRaw(t, "GitLab Windows release cache", gitlabRelease,
+		"xdrive-release-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		".cache/go-mod/cache/download/",
+	)
 	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
+		"bash scripts/ci/prepare-go-mod-cache.sh",
 		"snapshot-$short_sha",
 		"0.0.0-snapshot.$short_sha",
 		"XDRIVE_PROMOTION_TAG=\"edge\"",
@@ -488,6 +516,32 @@ func assertGitLabJobImages(t *testing.T, gitlab map[string]any, expected map[str
 		if got := fmt.Sprint(imageValue); got != wantImage {
 			t.Errorf("GitLab job %s image=%q want=%q", jobName, got, wantImage)
 		}
+	}
+}
+
+func assertGitLabCache(t *testing.T, root map[string]any, jobName, wantKey string, wantPaths []string) {
+	t.Helper()
+	job, ok := root[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("GitLab job %q missing or invalid", jobName)
+	}
+	cache, ok := job["cache"].(map[string]any)
+	if !ok {
+		t.Fatalf("GitLab job %s cache=%v, want map", jobName, job["cache"])
+	}
+	if got := fmt.Sprint(cache["key"]); got != wantKey {
+		t.Errorf("GitLab job %s cache key=%q want=%q", jobName, got, wantKey)
+	}
+	rawPaths, ok := cache["paths"].([]any)
+	if !ok {
+		t.Fatalf("GitLab job %s cache paths=%v, want list", jobName, cache["paths"])
+	}
+	gotPaths := make([]string, 0, len(rawPaths))
+	for _, path := range rawPaths {
+		gotPaths = append(gotPaths, fmt.Sprint(path))
+	}
+	if !reflect.DeepEqual(gotPaths, wantPaths) {
+		t.Errorf("GitLab job %s cache paths=%v want=%v", jobName, gotPaths, wantPaths)
 	}
 }
 
