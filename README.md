@@ -759,7 +759,11 @@ File metadata can expose a server-verified content hash:
 
 Downloads expose the same value as `X-Content-SHA256`. Storage verification checks recorded SHA-256 values for both current files and historical versions. In-progress chunks live below `.xdrive-uploads/` and are intentionally excluded from orphan-blob reporting until their sessions expire, finalize, or are aborted.
 
-The transfer layer remains **fixed-block resumable transfer with same-file revision reuse**. For example, if a 10 GiB file keeps the same block alignment and only one 8 MiB block changes, the desktop client can upload roughly that changed block instead of retransmitting the other unchanged blocks. Final retained files now additionally use full-file SHA-256 content-addressed storage: identical complete files and historical versions share one physical blob globally, with reference-counted garbage collection. This is intentionally not CDC: insertions near the beginning can still shift later fixed blocks during upload, and partial/chunk-level content is not shared across unrelated files.
+The transfer layer remains **fixed-block resumable transfer with same-file revision reuse**. For example, if a 10 GiB file keeps the same block alignment and only one 8 MiB block changes, the desktop client can upload roughly that changed block instead of retransmitting the other unchanged blocks. Final retained files use full-file SHA-256 content-addressed storage: identical complete files and historical versions share one physical blob globally, with reference-counted garbage collection.
+
+When the client supplies the full SHA-256 during `POST /api/v1/uploads`, xDrive can now **instant-finalize** the upload without sending any file chunks if the same user already has a durable current/trash/history reference to that CAS blob. The target name/revision, quota, CAS metadata, and physical object are revalidated transactionally; overwrite instant-finalize still preserves the previous revision in history. This optimization is intentionally owner-scoped: merely knowing the SHA-256 of another user's blob is not proof of possession, so cross-user hash probes fall back to the normal upload path. Global physical deduplication still occurs after those bytes are actually uploaded.
+
+This is intentionally not CDC: insertions near the beginning can still shift later fixed blocks during upload, and partial/chunk-level content is not shared across unrelated files.
 
 ## Conflict protection
 
@@ -922,12 +926,11 @@ deploy/
 
 ## Roadmap
 
-1. instant-upload short-circuiting from the existing full-file CAS index, then optional content-defined chunking;
-2. richer version-history UI plus advanced cache telemetry and policy controls;
-3. small-file packing;
-4. macOS File Provider integration;
-5. thumbnails/EXIF/media processing;
-6. directory/upload sharing and richer retention/version policies.
+1. optional content-defined chunking after fixed-block/global-CAS behavior has enough production data;
+2. small-file packing;
+3. macOS File Provider integration;
+4. thumbnails/EXIF/media processing;
+5. directory/upload sharing and richer retention/version policies.
 
 ## License
 

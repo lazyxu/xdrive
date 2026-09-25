@@ -198,6 +198,35 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 	}
 
+	if req.SHA256 != "" {
+		session, currentRevision, instant, err := s.tryInstantUploadSession(
+			c.Request.Context(), uid, req, chunkCount,
+		)
+		if err != nil {
+			if writeQuotaError(c, err) {
+				return
+			}
+			switch {
+			case errors.Is(err, errRevisionConflict):
+				revisionConflict(c, req.ExpectedRevision, currentRevision)
+			case errors.Is(err, errUploadNameTaken) || isDuplicate(err):
+				fail(c, http.StatusConflict, "name already exists")
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				fail(c, http.StatusNotFound, "upload target not found")
+			default:
+				fail(c, http.StatusInternalServerError, "instant upload failed")
+			}
+			return
+		}
+		if instant {
+			s.ensureObservability()
+			s.obs.noteUpload("instant", "success")
+			c.Header("X-XDrive-Instant-Upload", "1")
+			s.writeUploadSession(c, session, http.StatusCreated)
+			return
+		}
+	}
+
 	quotaKey := ""
 	if req.SHA256 != "" {
 		quotaKey, _ = storage.ContentAddressedKey(req.SHA256)
