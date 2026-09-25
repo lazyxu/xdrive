@@ -93,6 +93,20 @@ export type AgentTransferEvent = {
   transfers: AgentTransfer[]
 }
 
+export type AgentDiagnosticCheck = {
+  name: string
+  status: 'PASS' | 'WARN' | 'FAIL'
+  detail: string
+}
+
+export type AgentDiagnosticReport = {
+  generated_at: string
+  platform: string
+  arch: string
+  checks: AgentDiagnosticCheck[]
+  summary: { pass: number; warn: number; fail: number }
+}
+
 type AgentDiscovery = {
   version: number
   base_url: string
@@ -233,6 +247,26 @@ export class AgentIPCClient {
 
   retryTransfer(id: string) {
     return this.request<AgentTransfers>('POST', '/v1/transfers/retry', { id }, 130_000)
+  }
+
+  diagnostics() {
+    return this.request<AgentDiagnosticReport>('GET', '/v1/diagnostics', undefined, 60_000)
+  }
+
+  diagnosticReport() {
+    return this.request<{ report: string }>('GET', '/v1/diagnostics/report', undefined, 60_000)
+  }
+
+  reconnect() {
+    return this.request<AgentStatus>('POST', '/v1/diagnostics/reconnect', undefined, 45_000)
+  }
+
+  repairSyncRoot() {
+    return this.request<AgentStatus>('POST', '/v1/diagnostics/repair-sync-root', undefined, 45_000)
+  }
+
+  openLogs() {
+    return this.request<{ ok: boolean }>('POST', '/v1/diagnostics/open-logs')
   }
 
   async conflicts() {

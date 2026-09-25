@@ -13,6 +13,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
+	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
@@ -35,10 +36,16 @@ type agentSnapshot struct {
 	Version            string
 }
 
+type agentRecoveryRequest struct {
+	repair bool
+	result chan error
+}
+
 type agentController struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	wake   chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wake     chan struct{}
+	recovery chan agentRecoveryRequest
 
 	mu               sync.RWMutex
 	snap             agentSnapshot
@@ -52,6 +59,7 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		ctx:              ctx,
 		cancel:           cancel,
 		wake:             make(chan struct{}, 1),
+		recovery:         make(chan agentRecoveryRequest, 1),
 		snapshotRevision: 1,
 		snapshotChanged:  make(chan struct{}),
 		transfers:        transfer.NewManager(transfer.DefaultHistoryLimit),
@@ -421,11 +429,54 @@ func (c *agentController) Run() {
 					s.LastError = err.Error()
 				})
 			}
+		case request := <-c.recovery:
+			d, loadErr := loadDesired()
+			if loadErr != nil {
+				request.result <- loadErr
+				continue
+			}
+			if running {
+				done := mountDone
+				stopMount()
+				if !waitMountStopped(done, 10*time.Second) {
+					request.result <- fmt.Errorf("sync engine did not stop cleanly; restart the Agent")
+					continue
+				}
+			}
+			running = false
+			currentKey = ""
+			mountCancel = nil
+			mountDone = nil
+			lastAuthCheck = time.Time{}
+			var recoveryErr error
+			if request.repair {
+				if err := os.MkdirAll(d.root, 0o755); err != nil {
+					recoveryErr = err
+				} else if err := mount.RepairSyncRoot(d.root); err != nil {
+					recoveryErr = err
+				}
+			}
+			reconcile()
+			request.result <- recoveryErr
 		case <-c.wake:
 			reconcile()
 		case <-ticker.C:
 			reconcile()
 		}
+	}
+}
+
+func waitMountStopped(ch <-chan error, timeout time.Duration) bool {
+	if ch == nil {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ch:
+		return true
+	case <-timer.C:
+		return false
 	}
 }
 
@@ -547,6 +598,62 @@ func (c *agentController) WaitTransfers(ctx context.Context, after uint64) (uint
 
 func (c *agentController) RetryTransfer(ctx context.Context, id string) error {
 	return c.transfers.Retry(ctx, id)
+}
+
+func (c *agentController) Diagnostics(ctx context.Context) diagnostics.Report {
+	report := diagnostics.Run(ctx)
+	return diagnostics.Redacted(diagnostics.WithChecks(report,
+		diagnostics.Check{Name: "agent process", Status: diagnostics.Pass, Detail: "xdrive-agent " + version.String() + " running"},
+		diagnostics.Check{Name: "desktop IPC", Status: diagnostics.Pass, Detail: "loopback IPC protocol 1-1 active"},
+	))
+}
+
+func (c *agentController) Reconnect(ctx context.Context) error {
+	return c.recoverSync(ctx, false)
+}
+
+func (c *agentController) RepairSyncRoot(ctx context.Context) error {
+	return c.recoverSync(ctx, true)
+}
+
+func (c *agentController) recoverSync(ctx context.Context, repair bool) error {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	if cfg.MustChangePassword {
+		return fmt.Errorf("password change is required before sync can start")
+	}
+	if cfg.Paused {
+		return fmt.Errorf("sync is paused; resume sync before reconnecting")
+	}
+	request := agentRecoveryRequest{repair: repair, result: make(chan error, 1)}
+	select {
+	case c.recovery <- request:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	}
+	select {
+	case err := <-request.result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	}
+}
+
+func (c *agentController) OpenLogs() error {
+	dir, err := agentLogDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return openFolderPlatform(dir)
 }
 
 func (c *agentController) Settings() (userconfig.Config, string, error) {

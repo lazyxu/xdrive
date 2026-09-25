@@ -2,6 +2,8 @@
 
 package main
 
-func platformDoctorChecks(string) []doctorCheck {
-	return []doctorCheck{{Name: "platform checks", Status: doctorWarn, Detail: "no platform-specific diagnostics for this OS"}}
+import "github.com/lazyxu/xdrive/internal/diagnostics"
+
+func platformDoctorChecks(mountPath string) []doctorCheck {
+	return diagnostics.PlatformChecks(mountPath)
 }

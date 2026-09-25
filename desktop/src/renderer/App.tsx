@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { formatBinarySize } from '@xdrive/shared'
 
-type View = 'overview' | 'transfers' | 'files' | 'conflicts' | 'settings'
+type View = 'overview' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
 function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
@@ -51,6 +51,7 @@ export default function App() {
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
+  const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
 
   const [server, setServer] = useState('')
   const [username, setUsername] = useState('')
@@ -102,14 +103,23 @@ export default function App() {
     if (!agent.connected || !configured) {
       setSettings(null)
       setConflicts([])
+      setDiagnostics(null)
       return
     }
     if (view === 'settings') void loadSettings()
     if (view === 'conflicts') void loadConflicts()
     if (view === 'files' && !filePath && status?.mount_path) setFilePath(status.mount_path)
-    // Refresh when the agent revision changes so settings/conflicts stay current.
+    // Refresh lightweight settings/conflict state when the Agent revision changes.
+    // Diagnostics are intentionally excluded because they perform network/system checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured, status?.revision])
+
+  useEffect(() => {
+    if (view !== 'diagnostics' || !agent.connected || !configured) return
+    void loadDiagnostics()
+    // Diagnostics run once when entering the page or reconnecting, not on every status revision.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, agent.connected, configured])
 
   const headline = useMemo(() => {
     if (!agent.connected) return 'xdrive-agent is not connected'
@@ -258,6 +268,36 @@ export default function App() {
     if (data) setTransfers(data)
   }
 
+  const loadDiagnostics = async () => {
+    setBusy('diagnostics')
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.getDiagnostics()
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setDiagnostics(result.data)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const runDiagnosticAction = async (
+    name: string,
+    action: () => Promise<DesktopResult<unknown>>,
+    success: string,
+  ) => {
+    const data = await run(name, action, success)
+    if (data) await loadDiagnostics()
+  }
+
+  const exportDiagnostics = async () => {
+    const data = await run('export-diagnostics', () => window.xdriveDesktop.agent.exportDiagnostics())
+    if (!data) return
+    if (data.saved) setNotice('Diagnostic report exported.')
+  }
+
   const loadConflicts = async () => {
     const result = await window.xdriveDesktop.agent.getConflicts()
     if (!result.ok) {
@@ -348,6 +388,7 @@ export default function App() {
           <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>
             Conflicts {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}
           </button>
+          <button className={`nav-item ${view === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setView('diagnostics')}>Diagnostics</button>
           <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} type="button" onClick={() => setView('settings')}>Settings</button>
         </nav>
         <div className="account">
@@ -540,6 +581,75 @@ export default function App() {
                   </article>
                 ))}
               </div>
+            )}
+          </section>
+        )}
+
+
+        {view === 'diagnostics' && (
+          <section className="panel diagnostics-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">DOCTOR + SELF REPAIR</p>
+                <h2>Client diagnostics</h2>
+                <p className="diagnostic-note">The Agent runs the same redacted checks used by <code>xd doctor</code>. Secrets, session IDs and home paths are not exposed to the renderer.</p>
+              </div>
+              <button className="primary" type="button" disabled={!!busy} onClick={() => void loadDiagnostics()}>
+                {busy === 'diagnostics' ? 'Checking…' : 'Run diagnostics'}
+              </button>
+            </div>
+
+            {diagnostics ? (
+              <>
+                <div className="diagnostic-summary">
+                  <div className="diagnostic-count pass"><strong>{diagnostics.summary.pass}</strong><span>Passed</span></div>
+                  <div className="diagnostic-count warn"><strong>{diagnostics.summary.warn}</strong><span>Warnings</span></div>
+                  <div className="diagnostic-count fail"><strong>{diagnostics.summary.fail}</strong><span>Failed</span></div>
+                  <div className="diagnostic-generated"><span>Last checked</span><strong>{new Date(diagnostics.generated_at).toLocaleString()}</strong></div>
+                </div>
+
+                <div className="diagnostic-actions">
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent().then(() => loadDiagnostics())}>
+                    {busy === 'restart-agent' ? 'Restarting…' : 'Restart Agent'}
+                  </button>
+                  <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void runDiagnosticAction(
+                    'reconnect',
+                    () => window.xdriveDesktop.agent.reconnect(),
+                    'Sync engine reconnected.',
+                  )}>
+                    {busy === 'reconnect' ? 'Reconnecting…' : 'Reconnect'}
+                  </button>
+                  <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void runDiagnosticAction(
+                    'repair-sync-root',
+                    () => window.xdriveDesktop.agent.repairSyncRoot(),
+                    'Sync root repaired and reconnected.',
+                  )}>
+                    {busy === 'repair-sync-root' ? 'Repairing…' : 'Repair Sync Root'}
+                  </button>
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void run(
+                    'open-logs',
+                    () => window.xdriveDesktop.agent.openLogs(),
+                    'Opened xDrive logs.',
+                  )}>Open logs</button>
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void exportDiagnostics()}>
+                    {busy === 'export-diagnostics' ? 'Exporting…' : 'Export report'}
+                  </button>
+                </div>
+
+                <div className="diagnostic-list">
+                  {diagnostics.checks.map((check, index) => (
+                    <article className="diagnostic-row" key={`${check.name}:${index}`}>
+                      <span className={`diagnostic-badge ${check.status.toLowerCase()}`}>{check.status}</span>
+                      <div>
+                        <strong>{check.name}</strong>
+                        <p>{check.detail}</p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">Run diagnostics to check Server/TLS, login and credential storage, Agent/IPC, sync root, CfAPI/FUSE, cache policy, version compatibility and disk space.</div>
             )}
           </section>
         )}

@@ -51,12 +51,19 @@ func main() {
 	<-done
 }
 
-func configureLogging() (*os.File, error) {
+func agentLogDir() (string, error) {
 	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "xdrive"), nil
+}
+
+func configureLogging() (*os.File, error) {
+	dir, err := agentLogDir()
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(base, "xdrive")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}

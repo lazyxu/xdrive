@@ -3,6 +3,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
+  getDiagnostics: () => ipcRenderer.invoke('agent:get-diagnostics'),
+  reconnect: () => ipcRenderer.invoke('agent:reconnect'),
+  repairSyncRoot: () => ipcRenderer.invoke('agent:repair-sync-root'),
+  openLogs: () => ipcRenderer.invoke('agent:open-logs'),
+  exportDiagnostics: () => ipcRenderer.invoke('agent:export-diagnostics'),
   retry: () => ipcRenderer.invoke('agent:retry'),
   restart: () => ipcRenderer.invoke('agent:restart'),
   login: (input: { server: string; username: string; password: string; mount_path?: string }) => ipcRenderer.invoke('agent:login', input),

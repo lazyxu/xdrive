@@ -81,6 +81,20 @@ declare global {
     transfers: AgentTransfer[]
   }
 
+  type AgentDiagnosticCheck = {
+    name: string
+    status: 'PASS' | 'WARN' | 'FAIL'
+    detail: string
+  }
+
+  type AgentDiagnosticReport = {
+    generated_at: string
+    platform: string
+    arch: string
+    checks: AgentDiagnosticCheck[]
+    summary: { pass: number; warn: number; fail: number }
+  }
+
   type AgentConflict = {
     id: string
     server?: string
@@ -113,6 +127,11 @@ declare global {
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
+        getDiagnostics: () => Promise<DesktopResult<AgentDiagnosticReport>>
+        reconnect: () => Promise<DesktopResult<AgentStatus>>
+        repairSyncRoot: () => Promise<DesktopResult<AgentStatus>>
+        openLogs: () => Promise<DesktopResult<{ ok: boolean }>>
+        exportDiagnostics: () => Promise<DesktopResult<{ saved: boolean }>>
         retry: () => Promise<AgentConnectionState>
         restart: () => Promise<DesktopResult<AgentConnectionState>>
         login: (input: { server: string; username: string; password: string; mount_path?: string }) => Promise<DesktopResult<AgentStatus>>

@@ -21,6 +21,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
+	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -67,6 +68,8 @@ var desktopIPCCapabilities = []string{
 	"transfers",
 	"transfer-events",
 	"transfer-retry",
+	"diagnostics",
+	"diagnostic-actions",
 	"open-folder",
 	"lifecycle-shutdown",
 }
@@ -126,6 +129,10 @@ type desktopIPCController interface {
 	Transfers() (uint64, []transfer.Task)
 	WaitTransfers(context.Context, uint64) (uint64, []transfer.Task, bool)
 	RetryTransfer(context.Context, string) error
+	Diagnostics(context.Context) diagnostics.Report
+	Reconnect(context.Context) error
+	RepairSyncRoot(context.Context) error
+	OpenLogs() error
 	Conflicts() []conflictstate.Record
 	OpenConflict(id string, both bool) error
 	ResolveConflict(id, choice string) error
@@ -294,6 +301,11 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
+	mux.HandleFunc("GET /v1/diagnostics", h.diagnostics)
+	mux.HandleFunc("GET /v1/diagnostics/report", h.diagnosticReport)
+	mux.HandleFunc("POST /v1/diagnostics/reconnect", h.reconnect)
+	mux.HandleFunc("POST /v1/diagnostics/repair-sync-root", h.repairSyncRoot)
+	mux.HandleFunc("POST /v1/diagnostics/open-logs", h.openLogs)
 	mux.HandleFunc("GET /v1/conflicts", h.conflicts)
 	mux.HandleFunc("POST /v1/conflicts/open", h.openConflict)
 	mux.HandleFunc("POST /v1/conflicts/resolve", h.resolveConflict)
@@ -618,6 +630,40 @@ func (h *desktopIPCHandler) retryTransfer(w http.ResponseWriter, r *http.Request
 	}
 	revision, items := h.ctrl.Transfers()
 	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
+}
+
+func (h *desktopIPCHandler) diagnostics(w http.ResponseWriter, r *http.Request) {
+	report := h.ctrl.Diagnostics(r.Context())
+	writeDesktopIPCJSON(w, http.StatusOK, report)
+}
+
+func (h *desktopIPCHandler) diagnosticReport(w http.ResponseWriter, r *http.Request) {
+	report := h.ctrl.Diagnostics(r.Context())
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]string{"report": diagnostics.FormatText(report)})
+}
+
+func (h *desktopIPCHandler) reconnect(w http.ResponseWriter, r *http.Request) {
+	if err := h.ctrl.Reconnect(r.Context()); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	h.writeStatus(w)
+}
+
+func (h *desktopIPCHandler) repairSyncRoot(w http.ResponseWriter, r *http.Request) {
+	if err := h.ctrl.RepairSyncRoot(r.Context()); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	h.writeStatus(w)
+}
+
+func (h *desktopIPCHandler) openLogs(w http.ResponseWriter, _ *http.Request) {
+	if err := h.ctrl.OpenLogs(); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *desktopIPCHandler) conflicts(w http.ResponseWriter, _ *http.Request) {
