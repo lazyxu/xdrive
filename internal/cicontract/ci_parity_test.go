@@ -36,8 +36,14 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	githubJobs := nestedMapKeys(t, github, "jobs")
 	gitlabJobs := gitlabJobKeys(gitlab)
-	if !reflect.DeepEqual(githubJobs, gitlabJobs) {
-		t.Fatalf("CI job drift: GitHub=%v GitLab=%v", githubJobs, gitlabJobs)
+	var githubCoreJobs []string
+	for _, name := range githubJobs {
+		if name != "publish" {
+			githubCoreJobs = append(githubCoreJobs, name)
+		}
+	}
+	if !reflect.DeepEqual(githubCoreJobs, gitlabJobs) {
+		t.Fatalf("CI core job drift: GitHub=%v GitLab=%v", githubCoreJobs, gitlabJobs)
 	}
 
 	expectedPlatforms := map[string]string{
@@ -86,9 +92,12 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	desktopPackageRaw := readFile(t, filepath.Join(root, "desktop", "package.json"))
 	requireRaw(t, "desktop package scripts", desktopPackageRaw,
-		"electron-builder --win nsis --x64 --publish never",
-		"electron-builder --linux deb --x64 --publish never",
+		"electron-builder --win --x64 --dir --publish never",
+		"electron-builder --linux --x64 --dir --publish never",
 	)
+	if strings.Contains(desktopPackageRaw, "dist:win") || strings.Contains(desktopPackageRaw, "dist:linux") {
+		t.Errorf("desktop package scripts must build unpacked runtimes only; standalone installer scripts returned")
+	}
 
 	githubText := collectYAMLStrings(github)
 	gitlabText := collectYAMLStrings(gitlab)
@@ -96,6 +105,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	nodeInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-node22.sh"))
 	dockerInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-docker-cli.sh"))
 	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
+	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	gitlabGoWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
@@ -104,19 +114,19 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	windowsUninstallerResolver := readFile(t, filepath.Join(root, "scripts", "ci", "resolve-windows-uninstaller.ps1"))
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
-	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" + goVersionCheck + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
+	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" + goVersionCheck + "\n" + artifactVersion + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
 	for _, command := range []string{
 		"npm install --no-audit --no-fund",
 		"npm run test:main",
-		"node scripts/set-version.mjs 0.0.0-ci",
-		"npm run dist:linux",
-		"npm run dist:win",
+		"source scripts/ci/client-artifact-version.sh",
+		"npm run runtime:linux",
+		"npm run runtime:win",
 		"go mod tidy \"-go=1.25\"",
 		"git diff --exit-code -- go.mod go.sum",
 		"go test -p 1 -race ./...",
 		"go vet ./...",
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
-		"bash scripts/build-linux-deb.sh 0.0.0+ci dist desktop/release/xdrive-desktop-linux-amd64.deb",
+		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked",
 		"bash scripts/test-server-doctor.sh",
 		"bash scripts/test-server-installer-bootstrap.sh",
 		"bash scripts/test-server-installer-transaction.sh",
@@ -126,15 +136,15 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/test-update-channels.sh",
 		"bash scripts/ci/test-download-with-fallback.sh",
 		"bash scripts/ci/test-prepare-go-mod-cache.sh",
+		"bash scripts/ci/test-client-artifact-version.sh",
 		"docker build -t xdrive/server:test .",
 		"bash scripts/test-server-chunk-storage.sh",
 		"docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
 		"bash scripts/test-server-backup-restore.sh",
 		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
-		"go build -mod=readonly -o xd.exe ./cmd/xd",
-		"go build -mod=readonly -ldflags=\"-H=windowsgui\" -o xdrive-agent.exe ./cmd/xdrive-agent",
-		"scripts/test-windows-client-upgrade.ps1 -Installer ./dist/xDriveSetup-amd64.exe -TargetVersion 0.0.0-ci",
+		"release/xDriveSetup-amd64.exe",
+		"XDRIVE_RELEASE_VERSION",
 		"[scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))",
 		"[scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))",
 		"npm ci --no-audit --no-fund",
@@ -166,10 +176,18 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"tags: [\"v*\"]",
 		"workflow_dispatch:",
 		"cancel-in-progress: true",
+		"name: desktop-runtime-linux-amd64",
+		"name: desktop-runtime-windows-amd64",
+		"name: xdrive-linux-amd64",
+		"name: xdrive-windows-amd64",
+		"uses: ./.github/workflows/release.yml",
+		"secrets: inherit",
 	)
 	requireRaw(t, "GitLab CI", gitlabRaw,
 		"- local: /infra/ci/images.yml",
 		"- local: /infra/ci/gitlab-release.yml",
+		"- gate",
+		"- build",
 		"- package",
 		"- promote",
 		"- release",
@@ -181,6 +199,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"extends: .electron-linux-cache",
 		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-go-windows.sh",
+		"desktop-runtime-linux-amd64.tar.gz",
+		"desktop/release/win-unpacked/",
+		"release/xdrive-linux-amd64.deb",
+		"release/xDriveSetup-amd64.exe",
 		"xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
 		".cache/go-mod/cache/download/",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
@@ -227,11 +249,12 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Go module cache rebuilt and verified",
 	)
 	requireRaw(t, "GitLab Windows Go wrapper", gitlabGoWindows,
+		"source scripts/ci/client-artifact-version.sh",
 		"bash scripts/ci/prepare-go-mod-cache.sh",
 		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
-		"go build -mod=readonly -o xd.exe ./cmd/xd",
-		"go build -mod=readonly -ldflags=\"-H=windowsgui\" -o xdrive-agent.exe ./cmd/xdrive-agent",
+		"desktop/release/win-unpacked/xdrive-desktop.exe",
+		"release/xDriveSetup-amd64.exe",
 	)
 	if strings.Contains(gitlabGoWindows, "go mod tidy") {
 		t.Errorf("GitLab Windows wrapper must not run go mod tidy under a newer self-hosted Go toolchain")
@@ -260,13 +283,22 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Go >= $minimum is required",
 		"Go version OK:",
 	)
+	requireRaw(t, "client artifact version resolver", artifactVersion,
+		"XDRIVE_RELEASE_VERSION=\"snapshot-$short_sha\"",
+		"XDRIVE_DESKTOP_VERSION=\"0.0.0-snapshot.$short_sha\"",
+		"XDRIVE_RELEASE_VERSION=\"$tag\"",
+		"XDRIVE_RELEASE_VERSION=\"0.0.0-ci\"",
+	)
 	requireRaw(t, "GitLab Windows Bash wrappers", gitlabWindowsBash,
 		"set -euo pipefail",
+		"source scripts/ci/client-artifact-version.sh",
 		"bash scripts/ci/check-go-min-version.sh 1.25",
 		"powershell.exe",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
+		"npm run runtime:win",
 		"install innosetup --no-progress -y",
 		"test-windows-uninstaller-resolver.ps1",
+		"release/xDriveSetup-amd64.exe",
 	)
 	requireRaw(t, "GitLab Windows native helper", gitlabWindowsNative,
 		"ValidateSet(\"ValidateScripts\", \"PrepareSigning\", \"BuildInstaller\", \"VerifySignatures\", \"SmokeInstall\")",
@@ -301,16 +333,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	root := repositoryRoot(t)
+	githubRaw := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	gitlabRaw := readFile(t, filepath.Join(root, ".gitlab-ci.yml"))
 	githubRelease := readFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
 	gitlabRelease := readFile(t, filepath.Join(root, "infra", "ci", "gitlab-release.yml"))
-	var gitlabReleaseConfig map[string]any
-	if err := yaml.Unmarshal([]byte(gitlabRelease), &gitlabReleaseConfig); err != nil {
-		t.Fatalf("parse GitLab release CI: %v", err)
-	}
-	assertGitLabCache(t, gitlabReleaseConfig, "package-windows-amd64",
-		"xdrive-release-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/go-mod/cache/download/", ".cache/npm/"},
-	)
 	installerTemplate := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
 	gitlabReleaseScripts := strings.Join([]string{
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-version.sh")),
@@ -323,10 +349,8 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	}, "\n")
 
 	releaseAssets := []string{
-		"xdrive-client-linux-amd64.deb",
+		"xdrive-linux-amd64.deb",
 		"xDriveSetup-amd64.exe",
-		"xdrive-desktop-linux-amd64.deb",
-		"xDriveDesktopSetup-amd64.exe",
 		"xdrive-server-install.sh",
 		"server-backup.sh",
 		"server-backup-scheduled.sh",
@@ -363,19 +387,34 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		`[[ -n "$IMAGE_REGISTRY" ]] || IMAGE_REGISTRY="ghcr.io/lazyxu"`,
 	)
 
-	requireRaw(t, "GitHub Build Packages", githubRelease,
-		"branches: [\"master\"]",
-		"tags: [\"v*\"]",
+	for _, forbidden := range []string{
+		"npm install --no-audit --no-fund",
+		"npm run runtime:linux",
+		"npm run runtime:win",
+		"build-linux-deb.sh",
+		"build-windows-installer.ps1",
+	} {
+		if strings.Contains(githubRelease, forbidden) {
+			t.Errorf("GitHub publish workflow must not rebuild client artifacts: %q", forbidden)
+		}
+		if strings.Contains(readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux.sh"))+"\n"+
+			readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows.sh")), forbidden) {
+			t.Errorf("GitLab package jobs must not rebuild client artifacts: %q", forbidden)
+		}
+	}
+
+	requireRaw(t, "GitHub Publish Packages", githubRelease,
+		"workflow_call:",
+		"name: xdrive-linux-amd64",
+		"name: xdrive-windows-amd64",
 		"snapshot-${GITHUB_SHA::12}",
-		"0.0.0-snapshot.${GITHUB_SHA::12}",
 		"target_tag=\"edge\"",
 		"target_tag=\"latest\"",
 		"retention-days: 14",
 		"s|@IMAGE_REGISTRY@|ghcr.io/$GITHUB_REPOSITORY_OWNER|g",
-		"actions: read",
-		"actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push",
-		"CI gate passed:",
-		"Build Packages blocked:",
+		"Download exact Linux installer tested by CI",
+		"Download exact Windows installer tested by CI",
+		"Verify single-installer distribution contract",
 	)
 	requireRaw(t, "GitLab Build Packages", gitlabRelease,
 		"package-linux-amd64:",
@@ -388,22 +427,26 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"image: $XDRIVE_CI_GLAB_IMAGE",
 	)
 
-	requireRaw(t, "GitLab Windows release cache", gitlabRelease,
-		"xdrive-release-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
-		".cache/go-mod/cache/download/",
-	)
 	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
-		"bash scripts/ci/prepare-go-mod-cache.sh",
 		"snapshot-$short_sha",
 		"0.0.0-snapshot.$short_sha",
 		"XDRIVE_PROMOTION_TAG=\"edge\"",
 		"XDRIVE_PROMOTION_TAG=\"latest\"",
 		"--use-package-registry",
 		"--package-name xdrive-build-packages",
-		"XD_WINDOWS_SIGN_PFX_B64",
-		"Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD",
+		"CI-tested Linux installer artifact is missing",
+		"CI-tested Windows installer artifact is missing",
 		"s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g",
 	)
+	for _, legacy := range []string{
+		"xdrive-client-linux-amd64.deb",
+		"xdrive-desktop-linux-amd64.deb",
+		"xDriveDesktopSetup-amd64.exe",
+	} {
+		if strings.Contains(githubRaw+"\n"+gitlabRaw+"\n"+githubRelease+"\n"+gitlabRelease+"\n"+gitlabReleaseScripts, legacy) {
+			t.Errorf("legacy standalone/duplicate installer name returned to CI or release contract: %s", legacy)
+		}
+	}
 }
 
 func repositoryRoot(t *testing.T) string {

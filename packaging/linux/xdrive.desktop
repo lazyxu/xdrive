@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=xDrive 桌面版
+Comment=xDrive 云盘桌面客户端
+Exec=/usr/bin/xdrive-desktop
+Terminal=false
+Type=Application
+Categories=Utility;Network;
+StartupNotify=true

@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func platformAssetName() string { return "xdrive-client-linux-amd64.deb" }
+func platformAssetName() string { return "xdrive-linux-amd64.deb" }
 
 func installDownloaded(ctx context.Context, path string, result Result) (string, error) {
 	if os.Geteuid() != 0 {
