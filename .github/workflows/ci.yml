@@ -199,6 +199,9 @@ jobs:
           fi
           bash -n scripts/ci/gitlab-desktop-windows.sh
           bash -n scripts/ci/gitlab-go-windows.sh
+          bash -n scripts/ci/prepare-go-mod-cache.sh
+          bash -n scripts/ci/test-prepare-go-mod-cache.sh
+          bash scripts/ci/test-prepare-go-mod-cache.sh
           docker compose -f deploy/docker-compose.yml config >/dev/null
           XD_DOMAIN=drive.example.test XD_HTTPS_PORT=8443 ALIYUN_ACCESS_KEY_ID=ci-key ALIYUN_ACCESS_KEY_SECRET=ci-secret docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
 

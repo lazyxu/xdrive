@@ -28,8 +28,7 @@ fi
 # The self-hosted Windows runner may use Go newer than the module baseline.
 # Do not let a newer toolchain rewrite the dependency graph; canonical module
 # tidiness validation runs under Go 1.25 on Linux/GitHub.
-go mod download
-go mod verify
+bash scripts/ci/prepare-go-mod-cache.sh
 git diff --exit-code -- go.mod go.sum
 go test -mod=readonly ./internal/... ./cmd/xdrive-agent
 go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1

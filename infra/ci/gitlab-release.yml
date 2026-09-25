@@ -87,9 +87,9 @@ package-windows-amd64:
     GOMODCACHE: "$CI_PROJECT_DIR/.cache/go-mod"
     NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
   cache:
-    key: "xdrive-release-windows-$CI_RUNNER_EXECUTABLE_ARCH"
+    key: "xdrive-release-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
-      - .cache/go-mod/
+      - .cache/go-mod/cache/download/
       - .cache/npm/
     policy: pull-push
     when: always

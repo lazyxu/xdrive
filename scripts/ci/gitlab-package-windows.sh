@@ -6,7 +6,7 @@ cd "$ROOT"
 source scripts/ci/gitlab-release-version.sh
 bash scripts/ci/check-go-min-version.sh 1.25
 
-for cmd in node npm powershell.exe; do
+for cmd in go node npm powershell.exe; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "required Windows release command is missing from PATH: $cmd" >&2
     exit 1
@@ -18,6 +18,9 @@ if [[ "$node_major" != "22" ]]; then
   echo "Node.js 22 is required; found $(node --version)." >&2
   exit 1
 fi
+
+bash scripts/ci/prepare-go-mod-cache.sh
+git diff --exit-code -- go.mod go.sum
 
 if command -v choco >/dev/null 2>&1; then
   choco_cmd="choco"
