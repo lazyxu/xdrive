@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
 )
 
@@ -36,6 +37,15 @@ type DuplicateReference struct {
 	References int    `json:"references"`
 }
 
+type ContentReferenceMismatch struct {
+	SHA256       string `json:"sha256"`
+	StorageKey   string `json:"storage_key"`
+	ExpectedRefs int64  `json:"expected_refs"`
+	RecordedRefs int64  `json:"recorded_refs"`
+	State        string `json:"state"`
+	Reason       string `json:"reason"`
+}
+
 type OrphanBlob struct {
 	StorageKey string `json:"storage_key"`
 	Size       int64  `json:"size"`
@@ -50,20 +60,35 @@ type HashMismatch struct {
 }
 
 type VerifyReport struct {
-	ReferencedFiles    int                  `json:"referenced_files"`
-	ReferencedVersions int                  `json:"referenced_versions"`
-	BlobFiles          int                  `json:"blob_files"`
-	BlobBytes          int64                `json:"blob_bytes"`
-	Missing            []MissingBlob        `json:"missing"`
-	SizeMismatches     []SizeMismatch       `json:"size_mismatches"`
-	DuplicateRefs      []DuplicateReference `json:"duplicate_references"`
-	Orphans            []OrphanBlob         `json:"orphans"`
-	HashMismatches     []HashMismatch       `json:"hash_mismatches"`
-	IgnoredTemps       int                  `json:"ignored_temporary_files"`
+	ReferencedFiles    int                        `json:"referenced_files"`
+	ReferencedVersions int                        `json:"referenced_versions"`
+	BlobFiles          int                        `json:"blob_files"`
+	BlobBytes          int64                      `json:"blob_bytes"`
+	Missing            []MissingBlob              `json:"missing"`
+	SizeMismatches     []SizeMismatch             `json:"size_mismatches"`
+	DuplicateRefs      []DuplicateReference       `json:"duplicate_references"`
+	SharedRefs         []DuplicateReference       `json:"shared_references"`
+	ContentRefMismatch []ContentReferenceMismatch `json:"content_reference_mismatches"`
+	Orphans            []OrphanBlob               `json:"orphans"`
+	HashMismatches     []HashMismatch             `json:"hash_mismatches"`
+	IgnoredTemps       int                        `json:"ignored_temporary_files"`
 }
 
 func (r VerifyReport) OK() bool {
-	return len(r.Missing) == 0 && len(r.SizeMismatches) == 0 && len(r.DuplicateRefs) == 0 && len(r.Orphans) == 0 && len(r.HashMismatches) == 0
+	return len(r.Missing) == 0 &&
+		len(r.SizeMismatches) == 0 &&
+		len(r.DuplicateRefs) == 0 &&
+		len(r.ContentRefMismatch) == 0 &&
+		len(r.Orphans) == 0 &&
+		len(r.HashMismatches) == 0
+}
+
+type blobInspection struct {
+	Size         int64
+	Hash         string
+	HashComputed bool
+	Err          error
+	Regular      bool
 }
 
 type blobReference struct {
@@ -95,20 +120,69 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 	report.ReferencedVersions = len(versions)
 
 	references := make(map[string][]blobReference, len(files)+len(versions))
+	inspections := make(map[string]*blobInspection, len(files)+len(versions))
 	for _, file := range files {
-		addReference(&report, references, root, file.StorageKey, blobReference{
+		addReference(&report, references, inspections, root, file.StorageKey, blobReference{
 			NodeID: file.NodeID, Size: file.Size, SHA256: file.SHA256,
 		})
 	}
 	for _, version := range versions {
-		addReference(&report, references, root, version.StorageKey, blobReference{
+		addReference(&report, references, inspections, root, version.StorageKey, blobReference{
 			NodeID: version.NodeID, VersionID: version.ID, Size: version.Size, SHA256: version.SHA256,
 		})
 	}
 	for key, refs := range references {
-		if len(refs) > 1 {
-			report.DuplicateRefs = append(report.DuplicateRefs, DuplicateReference{StorageKey: key, References: len(refs)})
+		if len(refs) <= 1 {
+			continue
 		}
+		ref := DuplicateReference{StorageKey: key, References: len(refs)}
+		if storage.IsContentAddressedKey(key) {
+			report.SharedRefs = append(report.SharedRefs, ref)
+		} else {
+			report.DuplicateRefs = append(report.DuplicateRefs, ref)
+		}
+	}
+
+	var blobs []meta.ContentBlob
+	if err := db.Order("sha256 ASC").Find(&blobs).Error; err != nil {
+		return report, fmt.Errorf("query content blob metadata: %w", err)
+	}
+	blobByKey := make(map[string]meta.ContentBlob, len(blobs))
+	for _, blob := range blobs {
+		blobByKey[blob.StorageKey] = blob
+		refs := int64(len(references[blob.StorageKey]))
+		expectedState := meta.ContentBlobStateReady
+		if refs == 0 {
+			expectedState = meta.ContentBlobStateDeleting
+		}
+		if refs != blob.RefCount || blob.State != expectedState {
+			report.ContentRefMismatch = append(report.ContentRefMismatch, ContentReferenceMismatch{
+				SHA256: blob.SHA256, StorageKey: blob.StorageKey,
+				ExpectedRefs: refs, RecordedRefs: blob.RefCount, State: blob.State,
+				Reason: "refcount_or_state_mismatch",
+			})
+		}
+		if hash, ok := storage.ContentHashFromKey(blob.StorageKey); !ok || hash != blob.SHA256 {
+			report.ContentRefMismatch = append(report.ContentRefMismatch, ContentReferenceMismatch{
+				SHA256: blob.SHA256, StorageKey: blob.StorageKey,
+				ExpectedRefs: refs, RecordedRefs: blob.RefCount, State: blob.State,
+				Reason: "content_key_hash_mismatch",
+			})
+		}
+	}
+	for key, refs := range references {
+		if !storage.IsContentAddressedKey(key) || len(refs) == 0 {
+			continue
+		}
+		if _, ok := blobByKey[key]; ok {
+			continue
+		}
+		hash, _ := storage.ContentHashFromKey(key)
+		report.ContentRefMismatch = append(report.ContentRefMismatch, ContentReferenceMismatch{
+			SHA256: hash, StorageKey: key,
+			ExpectedRefs: int64(len(refs)), RecordedRefs: 0, State: "",
+			Reason: "content_blob_metadata_missing",
+		})
 	}
 
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -157,12 +231,22 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 	sort.Slice(report.Missing, func(i, j int) bool { return report.Missing[i].StorageKey < report.Missing[j].StorageKey })
 	sort.Slice(report.SizeMismatches, func(i, j int) bool { return report.SizeMismatches[i].StorageKey < report.SizeMismatches[j].StorageKey })
 	sort.Slice(report.DuplicateRefs, func(i, j int) bool { return report.DuplicateRefs[i].StorageKey < report.DuplicateRefs[j].StorageKey })
+	sort.Slice(report.SharedRefs, func(i, j int) bool { return report.SharedRefs[i].StorageKey < report.SharedRefs[j].StorageKey })
+	sort.Slice(report.ContentRefMismatch, func(i, j int) bool {
+		return report.ContentRefMismatch[i].StorageKey < report.ContentRefMismatch[j].StorageKey
+	})
 	sort.Slice(report.Orphans, func(i, j int) bool { return report.Orphans[i].StorageKey < report.Orphans[j].StorageKey })
 	sort.Slice(report.HashMismatches, func(i, j int) bool { return report.HashMismatches[i].StorageKey < report.HashMismatches[j].StorageKey })
 	return report, nil
 }
 
-func addReference(report *VerifyReport, references map[string][]blobReference, root, rawKey string, ref blobReference) {
+func addReference(
+	report *VerifyReport,
+	references map[string][]blobReference,
+	inspections map[string]*blobInspection,
+	root, rawKey string,
+	ref blobReference,
+) {
 	key, err := cleanStorageKey(rawKey)
 	if err != nil {
 		report.Missing = append(report.Missing, MissingBlob{
@@ -171,58 +255,74 @@ func addReference(report *VerifyReport, references map[string][]blobReference, r
 		return
 	}
 	references[key] = append(references[key], ref)
-	full := filepath.Join(root, filepath.FromSlash(key))
-	info, statErr := os.Stat(full)
-	if statErr != nil {
+	inspection := inspections[key]
+	if inspection == nil {
+		inspection = &blobInspection{}
+		inspections[key] = inspection
+		full := filepath.Join(root, filepath.FromSlash(key))
+		info, statErr := os.Stat(full)
+		if statErr != nil {
+			inspection.Err = statErr
+		} else {
+			inspection.Size = info.Size()
+			inspection.Regular = info.Mode().IsRegular()
+		}
+	}
+	if inspection.Err != nil {
 		reason := "not_found"
-		if !os.IsNotExist(statErr) {
-			reason = statErr.Error()
+		if !os.IsNotExist(inspection.Err) {
+			reason = inspection.Err.Error()
 		}
 		report.Missing = append(report.Missing, MissingBlob{
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: reason,
 		})
 		return
 	}
-	if !info.Mode().IsRegular() {
+	if !inspection.Regular {
 		report.Missing = append(report.Missing, MissingBlob{
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: "not_regular_file",
 		})
 		return
 	}
-	if info.Size() != ref.Size {
+	if inspection.Size != ref.Size {
 		report.SizeMismatches = append(report.SizeMismatches, SizeMismatch{
-			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Actual: info.Size(),
+			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Actual: inspection.Size,
 		})
 	}
-	if ref.SHA256 != "" {
-		f, openErr := os.Open(full)
+	if ref.SHA256 == "" {
+		return
+	}
+	if !inspection.HashComputed {
+		full := filepath.Join(root, filepath.FromSlash(key))
+		file, openErr := os.Open(full)
 		if openErr != nil {
-			report.Missing = append(report.Missing, MissingBlob{
-				NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: openErr.Error(),
-			})
-			return
-		}
-		h := sha256.New()
-		_, copyErr := io.Copy(h, f)
-		closeErr := f.Close()
-		if copyErr != nil || closeErr != nil {
-			reason := "hash_read_failed"
+			inspection.Err = openErr
+		} else {
+			h := sha256.New()
+			_, copyErr := io.Copy(h, file)
+			closeErr := file.Close()
 			if copyErr != nil {
-				reason = copyErr.Error()
+				inspection.Err = copyErr
 			} else if closeErr != nil {
-				reason = closeErr.Error()
+				inspection.Err = closeErr
+			} else {
+				inspection.Hash = hex.EncodeToString(h.Sum(nil))
+				inspection.HashComputed = true
 			}
-			report.Missing = append(report.Missing, MissingBlob{
-				NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: reason,
-			})
-			return
 		}
-		actual := hex.EncodeToString(h.Sum(nil))
-		if !strings.EqualFold(actual, ref.SHA256) {
-			report.HashMismatches = append(report.HashMismatches, HashMismatch{
-				NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.SHA256, Actual: actual,
-			})
-		}
+	}
+	if inspection.Err != nil {
+		report.Missing = append(report.Missing, MissingBlob{
+			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key,
+			Expected: ref.Size, Reason: inspection.Err.Error(),
+		})
+		return
+	}
+	if !strings.EqualFold(inspection.Hash, ref.SHA256) {
+		report.HashMismatches = append(report.HashMismatches, HashMismatch{
+			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key,
+			Expected: ref.SHA256, Actual: inspection.Hash,
+		})
 	}
 }
 

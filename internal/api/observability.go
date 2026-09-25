@@ -369,16 +369,16 @@ func (s *Server) metrics(c *gin.Context) {
 		fmt.Fprintln(&b, "# TYPE xdrive_upload_sessions_active gauge")
 		fmt.Fprintf(&b, "xdrive_upload_sessions_active %d\n", live.ActiveUploadSessions)
 
-		fmt.Fprintln(&b, "# HELP xdrive_managed_blob_bytes Bytes referenced by retained file/version blobs plus non-reused upload staging chunks.")
+		fmt.Fprintln(&b, "# HELP xdrive_managed_blob_bytes Unique retained physical blob bytes plus non-reused upload staging chunks.")
 		fmt.Fprintln(&b, "# TYPE xdrive_managed_blob_bytes gauge")
 		fmt.Fprintf(&b, "xdrive_managed_blob_bytes %d\n", live.RetainedBlobBytes+live.StagingBlobBytes)
-		fmt.Fprintln(&b, "# HELP xdrive_retained_blob_bytes Bytes referenced by current files and historical versions.")
+		fmt.Fprintln(&b, "# HELP xdrive_retained_blob_bytes Unique physical blob bytes referenced by current files and historical versions.")
 		fmt.Fprintln(&b, "# TYPE xdrive_retained_blob_bytes gauge")
 		fmt.Fprintf(&b, "xdrive_retained_blob_bytes %d\n", live.RetainedBlobBytes)
 		fmt.Fprintln(&b, "# HELP xdrive_staging_blob_bytes Bytes stored by non-reused in-progress upload chunks.")
 		fmt.Fprintln(&b, "# TYPE xdrive_staging_blob_bytes gauge")
 		fmt.Fprintf(&b, "xdrive_staging_blob_bytes %d\n", live.StagingBlobBytes)
-		fmt.Fprintln(&b, "# HELP xdrive_managed_blob_objects Managed retained and staging blob object references.")
+		fmt.Fprintln(&b, "# HELP xdrive_managed_blob_objects Unique retained physical blob objects plus staging blob objects.")
 		fmt.Fprintln(&b, "# TYPE xdrive_managed_blob_objects gauge")
 		fmt.Fprintf(&b, "xdrive_managed_blob_objects %d\n", live.RetainedBlobObjects+live.StagingBlobObjects)
 
@@ -418,9 +418,29 @@ func (s *Server) collectLiveMetrics(ctx context.Context) (liveMetrics, error) {
 	row := s.DB.WithContext(ctx).Raw(`SELECT
 pg_database_size(current_database()) AS database_size_bytes,
 (SELECT COUNT(*) FROM xd_upload_sessions WHERE status = ? AND expires_at > NOW()) AS active_upload_sessions,
-COALESCE((SELECT SUM(size) FROM xd_files), 0) + COALESCE((SELECT SUM(size) FROM xd_file_versions), 0) AS retained_blob_bytes,
+COALESCE((
+  SELECT SUM(size) FROM (
+    SELECT storage_key, MAX(size) AS size
+    FROM (
+      SELECT storage_key, size FROM xd_files
+      UNION ALL
+      SELECT storage_key, size FROM xd_file_versions
+    ) retained_refs
+    GROUP BY storage_key
+  ) unique_retained
+), 0) AS retained_blob_bytes,
 COALESCE((SELECT SUM(size) FROM xd_upload_parts WHERE reused = false), 0) AS staging_blob_bytes,
-(SELECT COUNT(*) FROM xd_files) + (SELECT COUNT(*) FROM xd_file_versions) AS retained_blob_objects,
+COALESCE((
+  SELECT COUNT(*) FROM (
+    SELECT storage_key
+    FROM (
+      SELECT storage_key FROM xd_files
+      UNION ALL
+      SELECT storage_key FROM xd_file_versions
+    ) retained_refs
+    GROUP BY storage_key
+  ) unique_retained
+), 0) AS retained_blob_objects,
 (SELECT COUNT(*) FROM xd_upload_parts WHERE reused = false) AS staging_blob_objects`,
 		meta.UploadStatusActive).Row()
 	if err := row.Scan(

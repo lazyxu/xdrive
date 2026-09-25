@@ -62,7 +62,7 @@ func (Node) TableName() string { return "xd_nodes" }
 type File struct {
 	NodeID     uint64 `gorm:"primaryKey"`
 	Size       int64  `gorm:"not null"`
-	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
+	StorageKey string `gorm:"size:1024;not null;index"`
 	SHA256     string `gorm:"size:64;index"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
@@ -75,12 +75,29 @@ type FileVersion struct {
 	NodeID     uint64 `gorm:"not null;index;uniqueIndex:idx_xd_file_versions_node_revision"`
 	Revision   uint64 `gorm:"not null;uniqueIndex:idx_xd_file_versions_node_revision"`
 	Size       int64  `gorm:"not null"`
-	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
+	StorageKey string `gorm:"size:1024;not null;index"`
 	SHA256     string `gorm:"size:64;index"`
 	CreatedAt  time.Time
 }
 
 func (FileVersion) TableName() string { return "xd_file_versions" }
+
+const (
+	ContentBlobStateReady    = "ready"
+	ContentBlobStateDeleting = "deleting"
+)
+
+type ContentBlob struct {
+	SHA256     string `gorm:"size:64;primaryKey"`
+	Size       int64  `gorm:"not null"`
+	StorageKey string `gorm:"size:1024;not null;uniqueIndex"`
+	RefCount   int64  `gorm:"not null"`
+	State      string `gorm:"size:16;not null;default:ready;index"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (ContentBlob) TableName() string { return "xd_content_blobs" }
 
 type Share struct {
 	ID            uint64     `gorm:"primaryKey"`

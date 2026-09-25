@@ -388,6 +388,8 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 	var files []meta.File
 	var versions []meta.FileVersion
 	var uploadParts []meta.UploadPart
+	var contentDeletes []contentDeleteCandidate
+	var legacyKeys []string
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var target meta.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, id).Error; err != nil {
@@ -413,6 +415,11 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 			}
 			if err := tx.Where("node_id IN ?", nodeIDs).Find(&files).Error; err != nil {
 				return err
+			}
+			var releaseErr error
+			contentDeletes, legacyKeys, releaseErr = s.releaseContentReferencesTx(tx, files, versions)
+			if releaseErr != nil {
+				return releaseErr
 			}
 			if err := tx.Where("node_id IN ?", nodeIDs).Delete(&meta.Share{}).Error; err != nil {
 				return err
@@ -463,12 +470,8 @@ func (s *Server) adminDeleteUser(c *gin.Context) {
 		}
 		return
 	}
-	for _, file := range files {
-		_ = s.Store.Delete(c.Request.Context(), file.StorageKey)
-	}
-	for _, version := range versions {
-		_ = s.Store.Delete(c.Request.Context(), version.StorageKey)
-	}
+	s.finalizeContentBlobDeletes(c.Request.Context(), contentDeletes)
+	s.deleteLegacyStorageKeys(c.Request.Context(), legacyKeys)
 	for _, part := range uploadParts {
 		if !part.Reused {
 			_ = s.Store.Delete(c.Request.Context(), part.StorageKey)

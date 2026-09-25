@@ -16,7 +16,7 @@ xDrive is an Apache-2.0 open-source file service with a Docker-deployed server, 
 | Client delivery | Windows `.exe` installer; Linux `.deb` installer |
 | Multi-user | Administrator-provisioned accounts, roles, per-user isolation |
 
-Not in the MVP: global/cross-file deduplication, content-defined chunking (CDC), small-file packs, thumbnails/transcoding, directory/upload sharing, MinIO, macOS, or mobile clients.
+Not in the MVP: content-defined chunking (CDC), small-file packs, thumbnails/transcoding, directory/upload sharing, MinIO, macOS, or mobile clients. Full-file content-addressed deduplication is supported for new writes.
 
 ## Architecture
 
@@ -252,7 +252,7 @@ The first metric set includes:
 - retained blob bytes, in-progress non-reused staging bytes, and managed blob-object counts;
 - live metric-collection success/error counters.
 
-`xdrive_managed_blob_bytes` is application-managed blob accounting from PostgreSQL references (current files + history + non-reused staging chunks). It is not a filesystem crawler and therefore intentionally does not claim to include orphan files; use `server-verify.sh` and host disk monitoring for orphan/free-space diagnostics.
+`xdrive_managed_blob_bytes` counts unique retained physical blob objects referenced by current files/history plus non-reused staging chunks. Multiple metadata references to one content-addressed blob are counted once. It is not a filesystem crawler and therefore intentionally does not claim to include orphan files; use `server-verify.sh` and host disk monitoring for orphan/free-space diagnostics.
 
 
 Common operations:
@@ -310,7 +310,9 @@ It checks current `xd_files.storage_key` **and historical `xd_file_versions.stor
 - database references whose blob is missing;
 - blob size mismatches;
 - SHA-256 mismatches for current or historical blobs that have a recorded content hash;
-- duplicate metadata references to the same blob key;
+- unexpected duplicate references to legacy blob keys;
+- valid shared references to content-addressed blobs as informational `shared_references`;
+- CAS refcount/state/key drift between `xd_content_blobs` and current/history metadata;
 - orphan blobs that exist on disk but have no current or historical database reference.
 
 The underlying server command is also available inside the container:
@@ -535,13 +537,13 @@ Quota follows retained physical file content, not only the visible directory tre
 - `logical_file_bytes`: current blobs belonging to active files;
 - `trash_bytes`: current blobs whose nodes are in the recycle bin;
 - `history_bytes`: all retained historical-version blobs;
-- `physical_used_bytes = logical_file_bytes + trash_bytes + history_bytes`.
+- `physical_used_bytes`: the sum of **unique physical storage objects referenced by that user** across current files, recycle-bin files, and historical versions.
 
-Current files, recycle-bin content, and historical versions therefore all count. Moving a file into the recycle bin does **not** free quota; permanent deletion does. Restoring a historical version swaps which retained blob is current versus historical, so it does not change total physical usage. A successful overwrite consumes the full size of the new blob because the previous current blob becomes a retained historical version.
+Current files, recycle-bin content, and historical versions therefore all count, but repeated references to identical content count only once per user. Moving a file into the recycle bin does **not** free quota; permanent deletion frees bytes only when that user no longer references the corresponding physical blob. Restoring a historical version swaps which retained blob is current versus historical, so it does not change total physical usage. An overwrite consumes the new blob size only when that user does not already reference identical content. Cross-user deduplication does not reduce either user's quota charge; each account is charged independently for the unique content it references.
 
-Direct uploads and resumable-session creation perform an early capacity check. The authoritative publish/finalize transaction checks quota again while holding a per-user database lock, so concurrent uploads cannot each observe the same remaining capacity and collectively exceed it. A rejected write returns HTTP `507` with `error: quota_exceeded`, the configured quota, current physical usage, and required byte counts.
+Resumable uploads that provide the full-file SHA-256 can perform an early dedup-aware capacity check. Legacy multipart/direct writes must first stream and hash the body before the server can know whether the content is already referenced by that user; their authoritative quota check therefore occurs at publish time. All publish/finalize transactions hold a per-user database lock, so concurrent uploads cannot each observe the same remaining capacity and collectively exceed it. A rejected write returns HTTP `507` with `error: quota_exceeded`, the configured quota, current physical usage, and required byte counts.
 
-Administrators may lower a quota below current usage. Existing data is never deleted; the account is reported as over quota and positive-size uploads/overwrites remain blocked until usage falls below the limit or the quota is raised. In-progress resumable-upload chunks are temporary staging data and are not counted as retained user quota; they are deleted after finalize/abort or session expiry, so host-level free-space monitoring remains a separate concern.
+Administrators may lower a quota below current usage. Existing data is never deleted; the account is reported as over quota and writes that require a new unique retained blob remain blocked until usage falls below the limit or the quota is raised. Creating another reference to content the same user already retains remains allowed because it adds zero quota bytes. In-progress resumable-upload chunks are temporary staging data and are not counted as retained user quota; they are deleted after finalize/abort or session expiry, so host-level free-space monitoring remains a separate concern.
 
 ## Recycle bin and file version history
 
@@ -757,7 +759,7 @@ File metadata can expose a server-verified content hash:
 
 Downloads expose the same value as `X-Content-SHA256`. Storage verification checks recorded SHA-256 values for both current files and historical versions. In-progress chunks live below `.xdrive-uploads/` and are intentionally excluded from orphan-blob reporting until their sessions expire, finalize, or are aborted.
 
-This phase is **fixed-block resumable transfer with same-file revision reuse**. For example, if a 10 GiB file keeps the same block alignment and only one 8 MiB block changes, the desktop client can upload roughly that changed block instead of retransmitting the other unchanged blocks. It is still not content-defined chunking or global/cross-file deduplication: insertions near the beginning can shift later fixed blocks, and identical blocks belonging to unrelated files are not shared.
+The transfer layer remains **fixed-block resumable transfer with same-file revision reuse**. For example, if a 10 GiB file keeps the same block alignment and only one 8 MiB block changes, the desktop client can upload roughly that changed block instead of retransmitting the other unchanged blocks. Final retained files now additionally use full-file SHA-256 content-addressed storage: identical complete files and historical versions share one physical blob globally, with reference-counted garbage collection. This is intentionally not CDC: insertions near the beginning can still shift later fixed blocks during upload, and partial/chunk-level content is not shared across unrelated files.
 
 ## Conflict protection
 
@@ -920,7 +922,7 @@ deploy/
 
 ## Roadmap
 
-1. instant upload/global deduplication and optional content-defined chunking;
+1. instant-upload short-circuiting from the existing full-file CAS index, then optional content-defined chunking;
 2. richer version-history UI plus advanced cache telemetry and policy controls;
 3. small-file packing;
 4. macOS File Provider integration;
