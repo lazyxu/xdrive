@@ -275,9 +275,10 @@ jobs:
           node-version: "22"
       - run: go mod tidy "-go=1.25"
       - run: git diff --exit-code -- go.mod go.sum
-      - run: go test ./internal/... ./cmd/xdrive-agent
+      - run: go mod verify
+      - run: go test -mod=readonly ./internal/... ./cmd/xdrive-agent
       - name: Windows CfAPI E2E
-        run: go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
+        run: go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
       - name: Validate Windows PowerShell scripts
         shell: pwsh
         run: |
@@ -293,8 +294,8 @@ jobs:
       - name: Test Windows uninstaller resolver
         shell: pwsh
         run: ./scripts/ci/test-windows-uninstaller-resolver.ps1
-      - run: go build -o xd.exe ./cmd/xd
-      - run: go build -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
+      - run: go build -mod=readonly -o xd.exe ./cmd/xd
+      - run: go build -mod=readonly -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y

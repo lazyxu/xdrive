@@ -92,8 +92,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	nodeInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-node22.sh"))
 	dockerInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-docker-cli.sh"))
 	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
+	gitlabGoWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
-		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
+		gitlabGoWindows
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
 	windowsUninstallerResolver := readFile(t, filepath.Join(root, "scripts", "ci", "resolve-windows-uninstaller.ps1"))
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
@@ -123,10 +124,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/test-server-chunk-storage.sh",
 		"docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
 		"bash scripts/test-server-backup-restore.sh",
-		"go test ./internal/... ./cmd/xdrive-agent",
-		"go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
-		"go build -o xd.exe ./cmd/xd",
-		"go build -ldflags=\"-H=windowsgui\" -o xdrive-agent.exe ./cmd/xdrive-agent",
+		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
+		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
+		"go build -mod=readonly -o xd.exe ./cmd/xd",
+		"go build -mod=readonly -ldflags=\"-H=windowsgui\" -o xdrive-agent.exe ./cmd/xdrive-agent",
 		"scripts/test-windows-client-upgrade.ps1 -Installer ./dist/xDriveSetup-amd64.exe -TargetVersion 0.0.0-ci",
 		"[scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))",
 		"[scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))",
@@ -188,6 +189,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"NPM_CONFIG_CACHE: \"$CI_PROJECT_DIR/.cache/npm\"",
 		"bash scripts/ci/install-node22.sh",
 		"bash scripts/ci/install-docker-cli.sh",
+		"postgresql-client",
+		"alias: postgres",
+		"XD_TEST_DATABASE_URL: \"postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable\"",
+		"pg_isready",
+		"-h postgres -p 5432",
 		".cache/ci-tools/",
 		"when: always",
 		"echo \"GOPROXY=$(go env GOPROXY)\"",
@@ -198,6 +204,23 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		strings.Contains(gitlabRaw, "Set-Location desktop") ||
 		strings.Contains(gitlabRaw, "$LASTEXITCODE") {
 		t.Errorf("GitLab Windows jobs must be Bash-compatible; raw PowerShell syntax found in .gitlab-ci.yml")
+	}
+
+	if strings.Contains(gitlabRaw, "127.0.0.1::5432") ||
+		strings.Contains(gitlabRaw, "docker port \"$pg_container\"") ||
+		strings.Contains(gitlabRaw, "xdrive-ci-postgres-$CI_JOB_ID") {
+		t.Errorf("GitLab Docker-executor PostgreSQL tests must use the GitLab service network, not host-loopback Docker port publishing")
+	}
+	requireRaw(t, "GitLab Windows Go wrapper", gitlabGoWindows,
+		"go mod download",
+		"go mod verify",
+		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
+		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
+		"go build -mod=readonly -o xd.exe ./cmd/xd",
+		"go build -mod=readonly -ldflags=\"-H=windowsgui\" -o xdrive-agent.exe ./cmd/xdrive-agent",
+	)
+	if strings.Contains(gitlabGoWindows, "go mod tidy") {
+		t.Errorf("GitLab Windows wrapper must not run go mod tidy under a newer self-hosted Go toolchain")
 	}
 	requireRaw(t, "CI resumable downloader", downloadHelper,
 		"--continue-at -",
@@ -223,7 +246,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"set -euo pipefail",
 		"bash scripts/ci/check-go-min-version.sh 1.25",
 		"powershell.exe",
-		"go test -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
+		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1",
 		"install innosetup --no-progress -y",
 		"test-windows-uninstaller-resolver.ps1",
 	)
