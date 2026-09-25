@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -53,7 +54,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
-		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
+		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -68,13 +69,14 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := (&Server{
+	server := &Server{
 		DB: db, Store: store,
 		Auth:           auth.New("storage-intelligence-secret", time.Hour),
 		RefreshTTL:     24 * time.Hour,
 		AllowedOrigin:  "http://localhost",
 		MaxUploadBytes: 64 << 20,
-	}).Router()
+	}
+	router := server.Router()
 
 	adminUser, err := adminpkg.Bootstrap(db, "storage-admin", "admin-password")
 	if err != nil {
@@ -152,6 +154,40 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	if !health.Healthy || health.Status != "ok" || health.RefCountMismatches != 0 || health.MissingMetadata != 0 {
 		t.Fatalf("unexpected CAS health: %+v", health)
+	}
+
+	request(t, router, http.MethodGet, "/api/v1/admin/storage/history", tokenA, nil, http.StatusForbidden)
+	sampleNow := time.Date(2026, 9, 25, 12, 30, 0, 0, time.UTC)
+	if err := db.Create(&meta.StorageSample{
+		SlotAt:      sampleNow.Add(-181 * 24 * time.Hour).Truncate(storageSampleInterval),
+		CapturedAt:  sampleNow.Add(-181 * 24 * time.Hour),
+		BucketsJSON: "[]",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := server.captureStorageSampleIfDue(context.Background(), sampleNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.captureStorageSampleIfDue(context.Background(), sampleNow.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var sampleCount int64
+	if err := db.Model(&meta.StorageSample{}).Count(&sampleCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sampleCount != 1 {
+		t.Fatalf("storage sample count=%d want=1 for one six-hour slot", sampleCount)
+	}
+	historyRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/history?days=180", adminToken, nil, http.StatusOK)
+	var history storageHistoryDTO
+	if err := json.Unmarshal(historyRes.Body.Bytes(), &history); err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Samples) != 1 || history.Samples[0].CASBlobCount != 2 {
+		t.Fatalf("unexpected storage history: %+v", history)
+	}
+	if history.Decision.Priority != "collecting" || history.SamplingIntervalHours != 6 || history.RetentionDays != 180 {
+		t.Fatalf("unexpected storage history decision/config: %+v", history)
 	}
 
 	metrics := request(t, router, http.MethodGet, "/metrics", "", nil, http.StatusOK).Body.String()

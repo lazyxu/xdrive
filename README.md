@@ -725,6 +725,7 @@ GET    /api/v1/admin/users
 GET    /api/v1/admin/audit
 GET    /api/v1/admin/storage
 GET    /api/v1/admin/storage/health
+GET    /api/v1/admin/storage/history?days=30
 POST   /api/v1/admin/users
 PATCH  /api/v1/admin/users/:id
 DELETE /api/v1/admin/users/:id
@@ -796,6 +797,10 @@ The purpose of these measurements is to make the next storage-format decision da
 Phase 12B adds a separate **CAS health / verify / repair** layer. `GET /api/v1/admin/storage/health` and `xdrive-server storage health` perform a lightweight DB-only invariant check for missing CAS metadata, refcount/state/size drift, non-canonical key/hash mappings, invalid states, and stale deleting rows. Full `storage verify` remains the authoritative physical check: it walks retained objects, validates size and SHA-256, and reports missing/corrupt/orphan data.
 
 Safe repair is intentionally narrower than verification. `xdrive-server verify --repair` stops the API service, reconciles only CAS metadata that can be proven from durable references plus a size/hash-verified physical object, marks unreferenced metadata as `deleting`, and then runs the full verifier. It never fabricates missing file content, rewrites a corrupt blob, or automatically deletes legacy/orphan data. Use `xdrive-server verify --repair --dry-run` to inspect the repair plan without changing metadata.
+
+Phase 12C adds a small **Storage Decision Gate / Historical Sampling** layer. The server records one global CAS snapshot every six hours and retains 180 days. Each snapshot stores CAS blob count, physical/logical bytes, full-file dedup ratio, p50/p90/p99, and the complete Phase 12 size-bucket distribution. Administrators can query `GET /api/v1/admin/storage/history?days=30`; the Web global-storage panel shows recent trends and a transparent decision signal.
+
+The decision gate intentionally requires at least 24 hours of history before choosing a direction. Over the recent seven-day window, sustained small-object pressure (`<64 KiB` count share >=50% or `<256 KiB` count share >=75%) points to **Small-file Packing**. Otherwise, when blobs `>=16 MiB` dominate at least 60% of physical bytes, `<64 KiB` count share stays below 35%, and whole-file dedup remains below 1.15x, the gate points to **CDC evaluation**. That CDC signal describes workload shape only; it does not claim that block-level redundancy has already been proven. Ambiguous workloads remain in `observe` rather than forcing a storage-format change.
 
 
 ## Conflict protection
@@ -957,7 +962,7 @@ deploy/
 
 ## Roadmap
 
-1. use Phase 12/12B Storage Intelligence and CAS health production data as the decision gate for the next storage-format change;
+1. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
 2. optional content-defined chunking when large-file/internal-redundancy data justifies it;
 3. small-file packing when small-blob count/metadata pressure justifies it;
 4. macOS File Provider integration;
