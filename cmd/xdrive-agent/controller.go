@@ -656,6 +656,44 @@ func (c *agentController) OpenLogs() error {
 	return openFolderPlatform(dir)
 }
 
+func (c *agentController) StorageTree(ctx context.Context) (agentStorageTreeNode, error) {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return agentStorageTreeNode{}, err
+	}
+	cli, err := userconfig.NewClient(cfg)
+	if err != nil {
+		return agentStorageTreeNode{}, err
+	}
+	walkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	remote, err := cli.Walk(walkCtx)
+	if err != nil {
+		return agentStorageTreeNode{}, err
+	}
+	return buildStorageTree(remote, cfg.SyncRules), nil
+}
+
+func (c *agentController) CacheStats() (mount.CacheStats, error) {
+	cfg, root, err := c.Settings()
+	if err != nil {
+		return mount.CacheStats{}, err
+	}
+	return mount.CacheUsage(root, mountOptionsFromConfig(cfg, c.transfers))
+}
+
+func (c *agentController) ReleaseReclaimableCache() (mount.CacheReleaseResult, error) {
+	cfg, root, err := c.Settings()
+	if err != nil {
+		return mount.CacheReleaseResult{}, err
+	}
+	result, releaseErr := mount.ReleaseReclaimableCache(root, mountOptionsFromConfig(cfg, c.transfers))
+	if result.ReleasedFiles > 0 {
+		_ = mount.RequestSync(root)
+	}
+	return result, releaseErr
+}
+
 func (c *agentController) Settings() (userconfig.Config, string, error) {
 	cfg, err := userconfig.Load()
 	if err != nil {

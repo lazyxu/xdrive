@@ -62,9 +62,9 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [mountPath, setMountPath] = useState('')
   const [cacheLimit, setCacheLimit] = useState('0')
-  const [syncRulePath, setSyncRulePath] = useState('')
-  const [filePath, setFilePath] = useState('')
-  const [fileState, setFileState] = useState<AgentFileAvailability | null>(null)
+  const [storageTree, setStorageTree] = useState<AgentStorageTreeNode | null>(null)
+  const [cacheStats, setCacheStats] = useState<AgentCacheStats | null>(null)
+  const [expandedStorage, setExpandedStorage] = useState<Set<string>>(new Set())
 
   const status = agent.status
   const configured = !!status?.configured
@@ -104,11 +104,12 @@ export default function App() {
       setSettings(null)
       setConflicts([])
       setDiagnostics(null)
+      setStorageTree(null)
+      setCacheStats(null)
       return
     }
     if (view === 'settings') void loadSettings()
     if (view === 'conflicts') void loadConflicts()
-    if (view === 'files' && !filePath && status?.mount_path) setFilePath(status.mount_path)
     // Refresh lightweight settings/conflict state when the Agent revision changes.
     // Diagnostics are intentionally excluded because they perform network/system checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -118,6 +119,14 @@ export default function App() {
     if (view !== 'diagnostics' || !agent.connected || !configured) return
     void loadDiagnostics()
     // Diagnostics run once when entering the page or reconnecting, not on every status revision.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, agent.connected, configured])
+
+  useEffect(() => {
+    if (view !== 'files' || !agent.connected || !configured) return
+    void loadStorage()
+    // Storage tree and cache telemetry load once when entering the page or reconnecting.
+    // Policy changes and the Refresh button perform explicit reloads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured])
 
@@ -229,38 +238,100 @@ export default function App() {
     if (data) setSettings(data)
   }
 
-  const checkFileAvailability = async () => {
-    const path = filePath.trim()
-    if (!path) {
-      setError('Enter a file or directory inside the xDrive sync folder.')
-      return
+  const loadStorage = async () => {
+    setBusy('storage')
+    setError('')
+    try {
+      const [treeResult, cacheResult] = await Promise.all([
+        window.xdriveDesktop.agent.getStorageTree(),
+        window.xdriveDesktop.agent.getCache(),
+      ])
+      if (!treeResult.ok) {
+        setError(treeResult.error.message)
+        return
+      }
+      if (!cacheResult.ok) {
+        setError(cacheResult.error.message)
+        return
+      }
+      setStorageTree(treeResult.data)
+      setCacheStats(cacheResult.data)
+      setExpandedStorage((current) => {
+        if (current.size > 0) return current
+        return new Set((treeResult.data.children || []).map((child) => child.path))
+      })
+    } finally {
+      setBusy('')
     }
-    const data = await run('file-state', () => window.xdriveDesktop.agent.getFileAvailability(path))
-    if (data) setFileState(data)
   }
 
-  const setFileAvailability = async (action: 'keep' | 'release' | 'online' | 'sync') => {
-    const path = filePath.trim()
-    if (!path) {
-      setError('Enter a file or directory inside the xDrive sync folder.')
-      return
-    }
-    const data = await run(`file-${action}`, () => window.xdriveDesktop.agent.setFileAvailability(path, action), 'File availability updated.')
-    if (data && 'Mode' in data) setFileState(data)
-    else if (action !== 'sync') void checkFileAvailability()
+  const updateStorageMode = async (path: string, mode: 'exclude' | 'always-local' | 'default') => {
+    const data = await run(
+      `storage-rule-${path}-${mode}`,
+      () => window.xdriveDesktop.agent.setSyncRule(path, mode),
+      'Folder policy updated.',
+    )
+    if (!data) return
+    setSettings(data)
+    await loadStorage()
   }
 
-  const updateSyncRule = async (path: string, mode: 'exclude' | 'always-local' | 'default') => {
-    const rulePath = path.trim()
-    if (!rulePath) {
-      setError('Enter a directory path inside xDrive.')
+  const releaseReclaimableCache = async () => {
+    const data = await run('release-cache', () => window.xdriveDesktop.agent.releaseCache())
+    if (!data) return
+    setCacheStats(data.stats)
+    if (data.released_files === 0 && data.failed_files === 0) {
+      setNotice('No reclaimable cache is currently available.')
       return
     }
-    const data = await run(`rule-${mode}`, () => window.xdriveDesktop.agent.setSyncRule(rulePath, mode), 'Selective sync updated.')
-    if (data) {
-      setSettings(data)
-      setSyncRulePath('')
-    }
+    const failed = data.failed_files > 0 ? ` · ${data.failed_files} file(s) could not be released` : ''
+    setNotice(`Released ${formatBinarySize(data.released_bytes)} from ${data.released_files} file(s)${failed}.`)
+  }
+
+  const toggleStoragePath = (path: string) => {
+    setExpandedStorage((current) => {
+      const next = new Set(current)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  const renderStorageNode = (node: AgentStorageTreeNode, depth = 0) => {
+    const children = node.children || []
+    const expanded = expandedStorage.has(node.path)
+    const inherited = node.mode === 'default' && node.effective_mode !== 'default'
+    const effectiveLabel = node.effective_mode === 'exclude'
+      ? 'Not synced'
+      : node.effective_mode === 'always-local'
+        ? 'Always keep'
+        : 'Default'
+    return (
+      <div className="storage-node" key={node.path}>
+        <div className="storage-row" style={{ paddingLeft: `${12 + depth * 18}px` }}>
+          <button
+            className="tree-toggle"
+            type="button"
+            disabled={children.length === 0}
+            aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
+            onClick={() => toggleStoragePath(node.path)}
+          >
+            {children.length === 0 ? '·' : expanded ? '▾' : '▸'}
+          </button>
+          <div className="storage-folder">
+            <strong>{node.name}</strong>
+            <span>{node.file_count} file{node.file_count === 1 ? '' : 's'} · {formatBinarySize(node.total_bytes)}</span>
+            {inherited && <small>Inherited: {effectiveLabel}</small>}
+          </div>
+          <div className="storage-modes" role="group" aria-label={`Storage policy for ${node.name}`}>
+            <button className={node.mode === 'default' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'default')}>Default</button>
+            <button className={node.mode === 'exclude' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'exclude')}>Not synced</button>
+            <button className={node.mode === 'always-local' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'always-local')}>Always keep</button>
+          </div>
+        </div>
+        {expanded && children.map((child) => renderStorageNode(child, depth + 1))}
+      </div>
+    )
   }
 
   const retryTransfer = async (id: string) => {
@@ -384,7 +455,7 @@ export default function App() {
           <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>
             Transfers {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}
           </button>
-          <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>Files</button>
+          <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>Storage</button>
           <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>
             Conflicts {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}
           </button>
@@ -513,39 +584,49 @@ export default function App() {
         )}
 
         {view === 'files' && (
-          <section className="panel">
+          <section className="panel storage-panel">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">WINDOWS FILE AVAILABILITY</p>
-                <h2>Control local storage for a synced item</h2>
+                <p className="eyebrow">STORAGE POLICIES</p>
+                <h2>Choose what this device keeps</h2>
+                <p className="storage-note">Policies apply to cloud folders. Default follows the nearest parent policy; “Not synced” removes the folder from this device, while “Always keep” pins its synced content locally.</p>
               </div>
+              <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadStorage()}>
+                {busy === 'storage' ? 'Refreshing…' : 'Refresh'}
+              </button>
             </div>
-            {info?.platform !== 'win32' ? (
-              <div className="empty-state">File availability controls require Windows CfAPI. Linux continues to use FUSE sync behavior.</div>
-            ) : (
-              <>
-                <label className="field-label">
-                  File or directory path
-                  <div className="input-action">
-                    <input value={filePath} onChange={(e) => setFilePath(e.target.value)} placeholder={status?.mount_path || 'Path inside xDrive'} />
-                    <button className="secondary" type="button" disabled={!!busy} onClick={() => void checkFileAvailability()}>Check</button>
-                  </div>
-                </label>
-                {fileState && (
-                  <div className="file-state-grid">
-                    <div><span>Mode</span><strong>{fileState.Mode}</strong></div>
-                    <div><span>In sync</span><strong>{fileState.InSync ? 'Yes' : 'No'}</strong></div>
-                    <div><span>Available offline</span><strong>{fileState.AvailableOffline ? 'Yes' : 'No'}</strong></div>
-                    <div><span>Placeholder</span><strong>{fileState.Placeholder ? 'Yes' : 'No'}</strong></div>
-                  </div>
-                )}
-                <div className="form-actions">
-                  <button className="primary" type="button" disabled={!!busy} onClick={() => void setFileAvailability('keep')}>Always keep on this device</button>
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void setFileAvailability('release')}>Free up space</button>
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void setFileAvailability('online')}>Online only</button>
-                  <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void setFileAvailability('sync')}>Sync now</button>
+
+            {cacheStats ? (
+              <div className="cache-card">
+                <div className="cache-metrics">
+                  <div><span>Used</span><strong>{formatBinarySize(cacheStats.used_bytes)}</strong><small>{cacheStats.cached_files} cached files</small></div>
+                  <div><span>Limit</span><strong>{cacheStats.limit_bytes > 0 ? formatBinarySize(cacheStats.limit_bytes) : 'Unlimited'}</strong><small>Pinned content is protected</small></div>
+                  <div><span>Reclaimable</span><strong>{formatBinarySize(cacheStats.reclaimable_bytes)}</strong><small>{cacheStats.reclaimable_files} files</small></div>
+                  <div><span>Pinned</span><strong>{formatBinarySize(cacheStats.pinned_bytes)}</strong><small>{cacheStats.pinned_files} files</small></div>
                 </div>
-              </>
+                {cacheStats.supported ? (
+                  <div className="cache-actions">
+                    <p>Only fully synced, unpinned Cloud Files are released. “Always keep” content is never reclaimed.</p>
+                    <button className="secondary" type="button" disabled={!!busy || cacheStats.reclaimable_bytes <= 0} onClick={() => void releaseReclaimableCache()}>
+                      {busy === 'release-cache' ? 'Releasing…' : 'Release reclaimable cache'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="cache-unavailable">{cacheStats.reason || 'Persistent local cache management is unavailable on this platform.'}</div>
+                )}
+              </div>
+            ) : <div className="empty-state">Loading cache usage…</div>}
+
+            <div className="storage-tree-header">
+              <div><strong>Cloud folders</strong><span>Default / Not synced / Always keep</span></div>
+              {storageTree && <span>{storageTree.file_count} files · {formatBinarySize(storageTree.total_bytes)}</span>}
+            </div>
+            {!storageTree ? (
+              <div className="empty-state">Loading cloud folder tree…</div>
+            ) : (storageTree.children || []).length === 0 ? (
+              <div className="empty-state">No cloud folders yet.</div>
+            ) : (
+              <div className="storage-tree">{(storageTree.children || []).map((node) => renderStorageNode(node))}</div>
             )}
           </section>
         )}
@@ -678,33 +759,32 @@ export default function App() {
                 <label>
                   Cache limit
                   <div className="input-with-unit">
-                    <input type="number" min="0" max="16384" step="0.25" value={cacheLimit} onChange={(e) => setCacheLimit(e.target.value)} required />
+                    <input
+                      type="number"
+                      min="0"
+                      max="16384"
+                      step="0.25"
+                      value={cacheLimit}
+                      onChange={(e) => setCacheLimit(e.target.value)}
+                      disabled={info?.platform !== 'win32'}
+                      required
+                    />
                     <span>GiB</span>
                   </div>
-                  <small>0 means unlimited. Current value: {formatBinarySize(settings.cache_limit_bytes)}.</small>
+                  <small>
+                    {info?.platform === 'win32'
+                      ? `0 means unlimited. Current value: ${formatBinarySize(settings.cache_limit_bytes)}. Pinned / Always keep content is protected from eviction.`
+                      : 'Persistent hydration cache limits apply to Windows CfAPI. Linux FUSE uses per-open temporary files.'}
+                  </small>
                 </label>
                 <div className="settings-divider" />
-                <label>
-                  Selective sync directory
-                  <div className="input-action">
-                    <input value={syncRulePath} onChange={(e) => setSyncRulePath(e.target.value)} placeholder="Projects/Archive" />
+                <div className="setting-link-row">
+                  <div>
+                    <strong>Folder storage policies</strong>
+                    <span>Use the Storage page to choose Default, Not synced, or Always keep from the cloud directory tree.</span>
                   </div>
-                  <small>Use a path relative to the xDrive root, or a full path inside the sync folder.</small>
-                </label>
-                <div className="form-actions compact">
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void updateSyncRule(syncRulePath, 'exclude')}>Do not sync on this device</button>
-                  <button className="primary" type="button" disabled={!!busy} onClick={() => void updateSyncRule(syncRulePath, 'always-local')}>Always keep locally</button>
+                  <button className="secondary" type="button" onClick={() => setView('files')}>Manage storage</button>
                 </div>
-                {settings.sync_rules.length > 0 ? (
-                  <div className="rule-list">
-                    {settings.sync_rules.map((rule) => (
-                      <div className="rule-row" key={`${rule.path}:${rule.mode}`}>
-                        <div><strong>{rule.path}</strong><span>{rule.mode === 'exclude' ? 'Not synced on this device' : 'Always local'}</span></div>
-                        <button className="secondary" type="button" disabled={!!busy} onClick={() => void updateSyncRule(rule.path, 'default')}>Remove rule</button>
-                      </div>
-                    ))}
-                  </div>
-                ) : <div className="setting-meta">No selective sync rules configured.</div>}
                 <div className="settings-divider" />
                 <div className="form-actions">
                   <button className="primary" type="submit" disabled={busy === 'settings'}>{busy === 'settings' ? 'Saving…' : 'Save settings'}</button>

@@ -20,6 +20,9 @@ import {
   type AgentHello,
   type AgentConflict,
   type AgentDiagnosticReport,
+  type AgentStorageTreeNode,
+  type AgentCacheStats,
+  type AgentCacheReleaseResult,
   type AgentFileAvailability,
   type AgentSettings,
   type AgentStatus,
@@ -450,6 +453,21 @@ function registerIPCHandlers() {
 
   ipcMain.handle('agent:get-state', () => agentState)
   ipcMain.handle('agent:get-transfers', () => agentTransfers)
+  ipcMain.handle('agent:get-storage-tree', () => runAgentAction<AgentStorageTreeNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'storage-tree')
+    return requireAgentClient().storageTree()
+  }, false))
+  ipcMain.handle('agent:get-cache', () => runAgentAction<AgentCacheStats>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cache-management')
+    return requireAgentClient().cacheStats()
+  }, false))
+  ipcMain.handle('agent:release-cache', () => runAgentAction<AgentCacheReleaseResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cache-management')
+    return requireAgentClient().releaseCache()
+  }, false))
   ipcMain.handle('agent:get-diagnostics', () => runAgentAction<AgentDiagnosticReport>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'diagnostics')

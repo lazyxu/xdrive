@@ -81,6 +81,35 @@ declare global {
     transfers: AgentTransfer[]
   }
 
+  type AgentStorageTreeNode = {
+    path: string
+    name: string
+    mode: 'default' | 'exclude' | 'always-local'
+    effective_mode: 'default' | 'exclude' | 'always-local'
+    file_count: number
+    total_bytes: number
+    children?: AgentStorageTreeNode[]
+  }
+
+  type AgentCacheStats = {
+    supported: boolean
+    reason?: string
+    used_bytes: number
+    limit_bytes: number
+    reclaimable_bytes: number
+    pinned_bytes: number
+    cached_files: number
+    reclaimable_files: number
+    pinned_files: number
+  }
+
+  type AgentCacheReleaseResult = {
+    stats: AgentCacheStats
+    released_bytes: number
+    released_files: number
+    failed_files: number
+  }
+
   type AgentDiagnosticCheck = {
     name: string
     status: 'PASS' | 'WARN' | 'FAIL'
@@ -127,6 +156,9 @@ declare global {
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
+        getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
+        getCache: () => Promise<DesktopResult<AgentCacheStats>>
+        releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getDiagnostics: () => Promise<DesktopResult<AgentDiagnosticReport>>
         reconnect: () => Promise<DesktopResult<AgentStatus>>
         repairSyncRoot: () => Promise<DesktopResult<AgentStatus>>

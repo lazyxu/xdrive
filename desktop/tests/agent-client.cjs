@@ -214,6 +214,54 @@ test('discovery rejects non-loopback endpoints', async (t) => {
   })
 })
 
+
+test('storage tree and cache use dedicated agent endpoints', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    seen.push(`${req.method} ${req.url}`)
+    if (req.url === '/v1/storage-tree') {
+      json(res, 200, {
+        path: '', name: 'xDrive', mode: 'default', effective_mode: 'default',
+        file_count: 3, total_bytes: 60,
+        children: [{ path: 'Projects', name: 'Projects', mode: 'always-local', effective_mode: 'always-local', file_count: 2, total_bytes: 30 }],
+      })
+      return
+    }
+    if (req.url === '/v1/cache') {
+      json(res, 200, {
+        supported: true, used_bytes: 100, limit_bytes: 200,
+        reclaimable_bytes: 40, pinned_bytes: 60,
+        cached_files: 4, reclaimable_files: 2, pinned_files: 2,
+      })
+      return
+    }
+    if (req.url === '/v1/cache/release') {
+      json(res, 200, {
+        stats: {
+          supported: true, used_bytes: 60, limit_bytes: 200,
+          reclaimable_bytes: 0, pinned_bytes: 60,
+          cached_files: 2, reclaimable_files: 0, pinned_files: 2,
+        },
+        released_bytes: 40, released_files: 2, failed_files: 0,
+      })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  const tree = await client.storageTree()
+  assert.equal(tree.children[0].mode, 'always-local')
+  const cache = await client.cacheStats()
+  assert.equal(cache.reclaimable_bytes, 40)
+  const released = await client.releaseCache()
+  assert.equal(released.released_files, 2)
+  assert.deepEqual(seen, [
+    'GET /v1/storage-tree',
+    'GET /v1/cache',
+    'POST /v1/cache/release',
+  ])
+})
+
 test('file availability and selective sync use dedicated agent endpoints', async (t) => {
   const seen = []
   const { client } = await fixture(t, async (req, res) => {

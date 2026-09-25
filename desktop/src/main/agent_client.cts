@@ -107,6 +107,35 @@ export type AgentDiagnosticReport = {
   summary: { pass: number; warn: number; fail: number }
 }
 
+export type AgentStorageTreeNode = {
+  path: string
+  name: string
+  mode: 'default' | 'exclude' | 'always-local'
+  effective_mode: 'default' | 'exclude' | 'always-local'
+  file_count: number
+  total_bytes: number
+  children?: AgentStorageTreeNode[]
+}
+
+export type AgentCacheStats = {
+  supported: boolean
+  reason?: string
+  used_bytes: number
+  limit_bytes: number
+  reclaimable_bytes: number
+  pinned_bytes: number
+  cached_files: number
+  reclaimable_files: number
+  pinned_files: number
+}
+
+export type AgentCacheReleaseResult = {
+  stats: AgentCacheStats
+  released_bytes: number
+  released_files: number
+  failed_files: number
+}
+
 type AgentDiscovery = {
   version: number
   base_url: string
@@ -216,6 +245,18 @@ export class AgentIPCClient {
 
   setSyncRule(path: string, mode: 'exclude' | 'always-local' | 'default') {
     return this.request<AgentSettings>('PUT', '/v1/settings/sync-rule', { path, mode })
+  }
+
+  storageTree() {
+    return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000)
+  }
+
+  cacheStats() {
+    return this.request<AgentCacheStats>('GET', '/v1/cache')
+  }
+
+  releaseCache() {
+    return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
   }
 
   fileAvailability(path: string) {
