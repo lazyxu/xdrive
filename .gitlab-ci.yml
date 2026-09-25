@@ -20,6 +20,18 @@ workflow:
 
 default:
   interruptible: true
+  hooks:
+    pre_get_sources_script:
+      - |
+        set -euo pipefail
+        if command -v powershell.exe >/dev/null 2>&1; then
+          cache_path="$CI_PROJECT_DIR/.cache/go-mod"
+          echo "[ci] clearing stale Windows Go module cache before Git source cleanup: $cache_path"
+          if command -v go >/dev/null 2>&1; then
+            GOMODCACHE="$cache_path" GOFLAGS= go clean -modcache || true
+          fi
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command '$path = Join-Path $env:CI_PROJECT_DIR ".cache\go-mod"; if (Test-Path -LiteralPath $path) { Write-Host "[ci] forcing removal of stale Go module cache: $path"; Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop }'
+        fi
 
 variables:
   GIT_DEPTH: "0"
