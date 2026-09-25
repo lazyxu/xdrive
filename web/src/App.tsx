@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AuditOutlined,
+  DatabaseOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -42,6 +43,7 @@ import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
+import StorageStatsModal from './StorageStatsModal'
 
 const { Header, Content } = Layout
 const ACCESS_KEY = 'xdrive.access_token'
@@ -173,6 +175,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
   const [renameNode, setRenameNode] = useState<Node | null>(null)
   const [adminOpen, setAdminOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
+  const [storageStatsScope, setStorageStatsScope] = useState<'self' | 'global' | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
@@ -420,13 +423,16 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                 <Button type="text" icon={<AuditOutlined />} onClick={() => setAuditOpen(true)} className="logout-button">
                   审计日志
                 </Button>
+                <Button type="text" icon={<DatabaseOutlined />} onClick={() => setStorageStatsScope('global')} className="logout-button">
+                  全局存储
+                </Button>
               </>
             )}
             {quota && (
-              <Tooltip title={`当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)}`}>
-                <Typography.Text className="username">
+              <Tooltip title={`当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)} · 点击查看 CAS 统计`}>
+                <Button type="text" icon={<DatabaseOutlined />} onClick={() => setStorageStatsScope('self')} className="logout-button">
                   存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}
-                </Typography.Text>
+                </Button>
               </Tooltip>
             )}
             <Typography.Text className="username">{username}</Typography.Text>
@@ -634,6 +640,13 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
           node={shareNode}
           onClose={() => setShareNode(null)}
           onError={handleError}
+        />
+
+        <StorageStatsModal
+          api={api}
+          scope={storageStatsScope ?? 'self'}
+          open={storageStatsScope !== null}
+          onClose={() => setStorageStatsScope(null)}
         />
 
         {profile?.role === 'admin' && (

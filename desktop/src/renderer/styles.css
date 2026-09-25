@@ -55,6 +55,7 @@ button.primary, button.secondary, button.danger { border-radius: 10px; padding: 
 .alert { margin-top: 18px; border-radius: 11px; padding: 11px 14px; font-size: 13px; }
 .alert.error { background: #fff0f2; border: 1px solid #f0c5ca; color: #a13b49; }
 .alert.success { background: #edf9f4; border: 1px solid #c7eadb; color: #237b5b; }
+.alert.warning { background: #fff7e8; border: 1px solid #f1d5a4; color: #8a5a16; }
 
 .status-grid { margin-top: 28px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
 .status-card { min-height: 112px; border: 1px solid #e0e6ef; border-radius: 16px; padding: 20px; background: white; display: flex; gap: 14px; box-shadow: 0 8px 24px rgba(21,37,63,.05); }

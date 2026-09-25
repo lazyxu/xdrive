@@ -8,6 +8,7 @@ import type {
   Node,
   PublicShare,
   QuotaUsage,
+  StorageStats,
 } from '../../ui/shared/src'
 
 export interface AuthResult {
@@ -180,6 +181,14 @@ export class XDriveApi {
 
   quota() {
     return this.request<QuotaUsage>('/api/v1/me/quota')
+  }
+
+  storageStats() {
+    return this.request<StorageStats>('/api/v1/me/storage')
+  }
+
+  adminStorageStats() {
+    return this.request<StorageStats>('/api/v1/admin/storage')
   }
 
   async changePassword(currentPassword: string, newPassword: string) {

@@ -1,4 +1,4 @@
-import type { CreatedFileShare, FileShare, FileVersion, Node, QuotaUsage } from '@xdrive/shared'
+import type { CreatedFileShare, FileShare, FileVersion, Node, QuotaUsage, StorageStats } from '@xdrive/shared'
 
 export {}
 
@@ -114,6 +114,7 @@ declare global {
 
   type AgentCloudNode = Node
   type AgentCloudQuota = QuotaUsage
+  type AgentCloudStorageStats = StorageStats
   type AgentCloudVersion = FileVersion
   type AgentCloudShare = FileShare
   type AgentCreatedCloudShare = {
@@ -180,6 +181,7 @@ declare global {
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
         cloudSearch: (query: string) => Promise<DesktopResult<AgentCloudSearchResult[]>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
+        cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
         cloudRestoreTrash: (id: number, revision: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudDeleteTrash: (id: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>

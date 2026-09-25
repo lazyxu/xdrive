@@ -55,6 +55,7 @@ type liveMetrics struct {
 	StagingBlobBytes     int64
 	RetainedBlobObjects  int64
 	StagingBlobObjects   int64
+	Storage              storageStatsDTO
 	DBOpenConnections    int
 	DBInUseConnections   int
 	DBIdleConnections    int
@@ -388,6 +389,44 @@ func (s *Server) metrics(c *gin.Context) {
 		fmt.Fprintln(&b, "# TYPE xdrive_managed_blob_objects gauge")
 		fmt.Fprintf(&b, "xdrive_managed_blob_objects %d\n", live.RetainedBlobObjects+live.StagingBlobObjects)
 
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blobs Ready content-addressed blobs with at least one durable reference.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blobs gauge")
+		fmt.Fprintf(&b, "xdrive_cas_blobs %d\n", live.Storage.CASBlobCount)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_physical_bytes Physical bytes occupied by ready content-addressed blobs.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_physical_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_physical_bytes %d\n", live.Storage.CASPhysicalBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_logical_referenced_bytes Logical bytes referenced by current files, recycle-bin files, and history that use CAS.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_logical_referenced_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_logical_referenced_bytes %d\n", live.Storage.CASLogicalReferencedBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_dedup_saved_bytes Logical CAS bytes avoided by physical content deduplication.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_dedup_saved_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_dedup_saved_bytes %d\n", live.Storage.CASDedupSavedBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_dedup_ratio Logical CAS referenced bytes divided by CAS physical bytes.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_dedup_ratio gauge")
+		fmt.Fprintf(&b, "xdrive_cas_dedup_ratio %.6f\n", live.Storage.CASDedupRatio)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_average_size_bytes Average ready CAS blob size in bytes.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_average_size_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_blob_average_size_bytes %.3f\n", live.Storage.AverageBlobSizeBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_size_quantile_bytes CAS blob size percentile in bytes.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_size_quantile_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_cas_blob_size_quantile_bytes{quantile=%q} %d\n", "0.50", live.Storage.P50BlobSizeBytes)
+		fmt.Fprintf(&b, "xdrive_cas_blob_size_quantile_bytes{quantile=%q} %d\n", "0.90", live.Storage.P90BlobSizeBytes)
+		fmt.Fprintf(&b, "xdrive_cas_blob_size_quantile_bytes{quantile=%q} %d\n", "0.99", live.Storage.P99BlobSizeBytes)
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_count_by_size Ready CAS blob count by non-overlapping size range.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_count_by_size gauge")
+		fmt.Fprintln(&b, "# HELP xdrive_cas_blob_bytes_by_size Ready CAS physical bytes by non-overlapping size range.")
+		fmt.Fprintln(&b, "# TYPE xdrive_cas_blob_bytes_by_size gauge")
+		for _, bucket := range live.Storage.Buckets {
+			fmt.Fprintf(&b, "xdrive_cas_blob_count_by_size{range=%q} %d\n", bucket.Key, bucket.Count)
+			fmt.Fprintf(&b, "xdrive_cas_blob_bytes_by_size{range=%q} %d\n", bucket.Key, bucket.Bytes)
+		}
+		fmt.Fprintln(&b, "# HELP xdrive_legacy_blob_objects Distinct retained pre-CAS storage objects still referenced by metadata.")
+		fmt.Fprintln(&b, "# TYPE xdrive_legacy_blob_objects gauge")
+		fmt.Fprintf(&b, "xdrive_legacy_blob_objects %d\n", live.Storage.LegacyBlobCount)
+		fmt.Fprintln(&b, "# HELP xdrive_legacy_blob_bytes Distinct retained pre-CAS physical bytes still referenced by metadata.")
+		fmt.Fprintln(&b, "# TYPE xdrive_legacy_blob_bytes gauge")
+		fmt.Fprintf(&b, "xdrive_legacy_blob_bytes %d\n", live.Storage.LegacyPhysicalBytes)
+
 		fmt.Fprintln(&b, "# HELP xdrive_database_size_bytes PostgreSQL size of the current xDrive database.")
 		fmt.Fprintln(&b, "# TYPE xdrive_database_size_bytes gauge")
 		fmt.Fprintf(&b, "xdrive_database_size_bytes %d\n", live.DatabaseSizeBytes)
@@ -459,5 +498,10 @@ COALESCE((
 	); err != nil {
 		return live, err
 	}
+	storageStats, err := s.loadGlobalStorageStats(ctx)
+	if err != nil {
+		return live, err
+	}
+	live.Storage = storageStats
 	return live, nil
 }

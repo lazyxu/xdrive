@@ -53,6 +53,31 @@ type QuotaUsage struct {
 	OverQuota         bool  `json:"over_quota"`
 }
 
+type StorageSizeBucket struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+	Bytes int64  `json:"bytes"`
+}
+
+type StorageStats struct {
+	Scope                     string              `json:"scope"`
+	CASBlobCount              int64               `json:"cas_blob_count"`
+	CASPhysicalBytes          int64               `json:"cas_physical_bytes"`
+	CASLogicalReferencedBytes int64               `json:"cas_logical_referenced_bytes"`
+	CASDedupSavedBytes        int64               `json:"cas_dedup_saved_bytes"`
+	CASDedupRatio             float64             `json:"cas_dedup_ratio"`
+	CASSavingsRatio           float64             `json:"cas_savings_ratio"`
+	AverageBlobSizeBytes      float64             `json:"average_blob_size_bytes"`
+	P50BlobSizeBytes          int64               `json:"p50_blob_size_bytes"`
+	P90BlobSizeBytes          int64               `json:"p90_blob_size_bytes"`
+	P99BlobSizeBytes          int64               `json:"p99_blob_size_bytes"`
+	LegacyBlobCount           int64               `json:"legacy_blob_count"`
+	LegacyPhysicalBytes       int64               `json:"legacy_physical_bytes"`
+	Buckets                   []StorageSizeBucket `json:"buckets"`
+	GeneratedAt               time.Time           `json:"generated_at"`
+}
+
 type AuthResponse struct {
 	Token              string `json:"token"`
 	AccessToken        string `json:"access_token"`
@@ -107,6 +132,12 @@ func (c *Client) authenticate(ctx context.Context, path, username, password stri
 func (c *Client) Quota(ctx context.Context) (QuotaUsage, error) {
 	var out QuotaUsage
 	err := c.json(ctx, http.MethodGet, "/api/v1/me/quota", nil, &out)
+	return out, err
+}
+
+func (c *Client) StorageStats(ctx context.Context) (StorageStats, error) {
+	var out StorageStats
+	err := c.json(ctx, http.MethodGet, "/api/v1/me/storage", nil, &out)
 	return out, err
 }
 

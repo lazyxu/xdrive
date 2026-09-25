@@ -77,6 +77,7 @@ export default function App() {
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
+  const [cloudStorageStats, setCloudStorageStats] = useState<AgentCloudStorageStats | null>(null)
   const [cloudQuery, setCloudQuery] = useState('')
   const [cloudSearchActive, setCloudSearchActive] = useState(false)
   const [cloudResults, setCloudResults] = useState<AgentCloudSearchResult[]>([])
@@ -432,9 +433,11 @@ export default function App() {
     setBusy('cloud-load')
     setError('')
     try {
-      const [rootResult, quotaResult] = await Promise.all([
+      const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
+      const [rootResult, quotaResult, storageStatsResult] = await Promise.all([
         window.xdriveDesktop.agent.cloudRoot(),
         window.xdriveDesktop.agent.cloudQuota(),
+        storageStatsSupported ? window.xdriveDesktop.agent.cloudStorageStats() : Promise.resolve(null),
       ])
       if (!rootResult.ok) {
         setError(rootResult.error.message)
@@ -443,6 +446,9 @@ export default function App() {
       if (!quotaResult.ok) {
         setError(quotaResult.error.message)
         return
+      }
+      if (storageStatsResult && !storageStatsResult.ok) {
+        setCloudStorageStats(null)
       }
       const childrenResult = await window.xdriveDesktop.agent.cloudChildren(rootResult.data.id)
       if (!childrenResult.ok) {
@@ -453,6 +459,7 @@ export default function App() {
       setCloudItems(childrenResult.data)
       setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
       setCloudQuota(quotaResult.data)
+      setCloudStorageStats(storageStatsResult?.ok ? storageStatsResult.data : null)
       setCloudSearchActive(false)
       setCloudResults([])
       setCloudQuery('')
@@ -820,6 +827,40 @@ export default function App() {
                 <div><span>当前文件</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>有效逻辑内容</small></div>
                 <div><span>回收站</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>计入物理配额</small></div>
                 <div><span>历史版本</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>已保存的历史内容</small></div>
+              </div>
+            )}
+
+            {cloudStorageStats && (
+              <div className="cloud-subpanel storage-intelligence">
+                <div className="cloud-subpanel-heading">
+                  <div>
+                    <strong>CAS 存储情报</strong>
+                    <span>用于评估 CDC 与 small-file packing 的真实收益</span>
+                  </div>
+                </div>
+                <div className="cloud-quota-grid">
+                  <div><span>CAS Blob</span><strong>{cloudStorageStats.cas_blob_count.toLocaleString()}</strong><small>唯一物理对象</small></div>
+                  <div><span>CAS 物理容量</span><strong>{formatBinarySize(cloudStorageStats.cas_physical_bytes)}</strong><small>实际占用</small></div>
+                  <div><span>逻辑引用容量</span><strong>{formatBinarySize(cloudStorageStats.cas_logical_referenced_bytes)}</strong><small>含重复引用</small></div>
+                  <div><span>去重节省</span><strong>{formatBinarySize(cloudStorageStats.cas_dedup_saved_bytes)}</strong><small>{cloudStorageStats.cas_dedup_ratio.toFixed(2)}× · {(cloudStorageStats.cas_savings_ratio * 100).toFixed(1)}%</small></div>
+                  <div><span>平均 Blob</span><strong>{formatBinarySize(cloudStorageStats.average_blob_size_bytes)}</strong><small>算术平均</small></div>
+                  <div><span>P50</span><strong>{formatBinarySize(cloudStorageStats.p50_blob_size_bytes)}</strong><small>中位尺寸</small></div>
+                  <div><span>P90</span><strong>{formatBinarySize(cloudStorageStats.p90_blob_size_bytes)}</strong><small>90% Blob 不超过</small></div>
+                  <div><span>P99</span><strong>{formatBinarySize(cloudStorageStats.p99_blob_size_bytes)}</strong><small>99% Blob 不超过</small></div>
+                </div>
+                <div className="cloud-compact-list">
+                  {cloudStorageStats.buckets.map((bucket) => (
+                    <div className="cloud-compact-row" key={bucket.key}>
+                      <div><strong>{bucket.label}</strong><span>{bucket.count.toLocaleString()} 个 Blob</span></div>
+                      <strong>{formatBinarySize(bucket.bytes)}</strong>
+                    </div>
+                  ))}
+                </div>
+                {cloudStorageStats.legacy_blob_count > 0 && (
+                  <div className="alert warning">
+                    仍有 {cloudStorageStats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBinarySize(cloudStorageStats.legacy_physical_bytes)}），未计入 CAS 分布。
+                  </div>
+                )}
               </div>
             )}
 

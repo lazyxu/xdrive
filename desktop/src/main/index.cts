@@ -25,6 +25,7 @@ import {
   type AgentCacheReleaseResult,
   type AgentCloudNode,
   type AgentCloudQuota,
+  type AgentCloudStorageStats,
   type AgentCloudVersion,
   type AgentCloudShare,
   type AgentCreatedCloudShare,
@@ -499,6 +500,11 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudQuota()
+  }, false))
+  ipcMain.handle('agent:cloud-storage-stats', () => runAgentAction<AgentCloudStorageStats>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'storage-intelligence')
+    return requireAgentClient().cloudStorageStats()
   }, false))
   ipcMain.handle('agent:cloud-trash', () => runAgentAction<AgentCloudNode[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
