@@ -23,6 +23,8 @@ default:
 
 variables:
   GIT_DEPTH: "0"
+  GOMODCACHE: "$CI_PROJECT_DIR/.cache/go-mod"
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
 
 .ci-linux-helpers:
   before_script:
@@ -32,36 +34,8 @@ variables:
         apt-get update
         apt-get install -y --no-install-recommends ca-certificates curl xz-utils
         rm -rf /var/lib/apt/lists/*
-    - &install_node22 |
-        set -euo pipefail
-        case "$(uname -m)" in
-          x86_64) node_arch="x64" ;;
-          *) echo "unsupported GitLab Linux CI architecture: $(uname -m)" >&2; exit 1 ;;
-        esac
-        tmp="$(mktemp -d)"
-        node_file="node-v${XDRIVE_CI_NODE_VERSION}-linux-${node_arch}.tar.xz"
-        curl -fsSL "https://nodejs.org/dist/v${XDRIVE_CI_NODE_VERSION}/${node_file}" -o "$tmp/$node_file"
-        curl -fsSL "https://nodejs.org/dist/v${XDRIVE_CI_NODE_VERSION}/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt"
-        (cd "$tmp" && grep " ${node_file}$" SHASUMS256.txt | sha256sum -c -)
-        tar -xJf "$tmp/$node_file" -C /usr/local --strip-components=1
-        rm -rf "$tmp"
-        test "$(node -p 'process.versions.node')" = "$XDRIVE_CI_NODE_VERSION"
-    - &install_docker_cli |
-        set -euo pipefail
-        case "$(uname -m)" in
-          x86_64) docker_arch="x86_64"; compose_arch="x86_64" ;;
-          *) echo "unsupported GitLab Linux CI architecture: $(uname -m)" >&2; exit 1 ;;
-        esac
-        tmp="$(mktemp -d)"
-        curl -fsSL "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${XDRIVE_CI_DOCKER_VERSION}.tgz" -o "$tmp/docker.tgz"
-        tar -xzf "$tmp/docker.tgz" -C "$tmp"
-        install -m 0755 "$tmp/docker/docker" /usr/local/bin/docker
-        install -d /usr/local/lib/docker/cli-plugins
-        curl -fsSL "https://github.com/docker/compose/releases/download/${XDRIVE_CI_COMPOSE_VERSION}/docker-compose-linux-${compose_arch}" -o /usr/local/lib/docker/cli-plugins/docker-compose
-        chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
-        rm -rf "$tmp"
-        docker --version
-        docker compose version
+    - &install_node22 bash scripts/ci/install-node22.sh
+    - &install_docker_cli bash scripts/ci/install-docker-cli.sh
 
 .electron-linux-cache:
   variables:
@@ -72,7 +46,11 @@ variables:
     paths:
       - .cache/electron/
       - .cache/electron-builder/
+      - .cache/ci-tools/
+      - .cache/go-mod/
+      - .cache/npm/
     policy: pull-push
+    when: always
 
 single-commit:
   image: $XDRIVE_CI_GO_IMAGE
@@ -121,6 +99,12 @@ desktop-windows:
   stage: test
   tags:
     - windows
+  cache:
+    key: "xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/npm/
+    policy: pull-push
+    when: always
   script:
     - bash scripts/ci/gitlab-desktop-windows.sh
 
@@ -140,6 +124,8 @@ go-linux:
       set -euo pipefail
 
       bash scripts/ci/check-go-min-version.sh 1.25
+      echo "GOPROXY=$(go env GOPROXY)"
+      echo "GOSUMDB=$(go env GOSUMDB)"
       command -v docker >/dev/null
       docker compose version >/dev/null
       docker info >/dev/null
@@ -249,6 +235,11 @@ go-linux:
       bash scripts/test-cleanup-merged-branches.sh
       bash -n scripts/test-update-channels.sh
       bash scripts/test-update-channels.sh
+      bash -n scripts/ci/download-with-fallback.sh
+      bash -n scripts/ci/install-node22.sh
+      bash -n scripts/ci/install-docker-cli.sh
+      bash -n scripts/ci/test-download-with-fallback.sh
+      bash scripts/ci/test-download-with-fallback.sh
       bash -n scripts/ci/check-go-min-version.sh
       bash -n scripts/ci/gitlab-release-version.sh
       bash -n scripts/ci/gitlab-package-linux.sh
@@ -331,12 +322,26 @@ go-windows:
   resource_group: xdrive-go-windows
   tags:
     - windows
+  cache:
+    key: "xdrive-go-windows-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/go-mod/
+      - .cache/npm/
+    policy: pull-push
+    when: always
   script:
     - bash scripts/ci/gitlab-go-windows.sh
 
 web:
   image: $XDRIVE_CI_NODE_IMAGE
   stage: test
+  cache:
+    key: "xdrive-ci-tools-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/ci-tools/
+      - .cache/npm/
+    policy: pull-push
+    when: always
   tags:
     - linux
   before_script:
