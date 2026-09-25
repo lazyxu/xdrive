@@ -19,6 +19,7 @@ import (
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -342,12 +343,6 @@ func (s *Server) uploadFile(c *gin.Context) {
 		fail(c, http.StatusConflict, "name already exists")
 		return
 	}
-	if _, err := s.ensureQuota(s.DB, userID(c), fh.Size, false); err != nil {
-		if !writeQuotaError(c, err) {
-			fail(c, http.StatusInternalServerError, "quota check failed")
-		}
-		return
-	}
 	s.uploadMultipart(c, parent, fh)
 }
 
@@ -371,19 +366,36 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 		return
 	}
 	contentHash := hex.EncodeToString(h.Sum(nil))
-	var n meta.Node
+	casKey, _ := storage.ContentAddressedKey(contentHash)
+	if err := s.ensureContentBlobObject(c.Request.Context(), key, casKey, size); err != nil {
+		_ = s.Store.Delete(c.Request.Context(), key)
+		fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		return
+	}
+	var (
+		n           meta.Node
+		retainedKey string
+	)
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
-		if _, err := s.ensureQuota(tx, userID(c), size, true); err != nil {
+		if _, err := s.ensureQuotaForStorageKey(tx, userID(c), size, casKey, true); err != nil {
 			return err
+		}
+		var retainErr error
+		retainedKey, _, retainErr = s.retainContentBlobTx(
+			c.Request.Context(), tx, key, contentHash, size,
+		)
+		if retainErr != nil {
+			return retainErr
 		}
 		n = meta.Node{ParentID: &parent.ID, Name: fh.Filename, Type: meta.NodeTypeFile, OwnerID: userID(c)}
 		if err := tx.Create(&n).Error; err != nil {
 			return err
 		}
-		return tx.Create(&meta.File{NodeID: n.ID, Size: size, StorageKey: key, SHA256: contentHash}).Error
+		return tx.Create(&meta.File{NodeID: n.ID, Size: size, StorageKey: retainedKey, SHA256: contentHash}).Error
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
+		s.cleanupUncommittedContentBlob(c.Request.Context(), contentHash, casKey)
 		if writeQuotaError(c, err) {
 			return
 		}
@@ -394,6 +406,7 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 		}
 		return
 	}
+	_ = s.Store.Delete(c.Request.Context(), key)
 	_ = s.DB.Preload("File").First(&n, n.ID).Error
 	c.JSON(http.StatusCreated, toNodeDTO(n))
 }
@@ -443,15 +456,6 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		revisionConflict(c, expected, n.Revision)
 		return
 	}
-	if c.Request.ContentLength >= 0 {
-		if _, err := s.ensureQuota(s.DB, userID(c), c.Request.ContentLength, false); err != nil {
-			if !writeQuotaError(c, err) {
-				fail(c, http.StatusInternalServerError, "quota check failed")
-			}
-			return
-		}
-	}
-
 	logical, err := s.logicalPath(n)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "cannot resolve path")
@@ -467,10 +471,26 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	}
 
 	contentHash := hex.EncodeToString(h.Sum(nil))
-	var currentRevision uint64
+	casKey, _ := storage.ContentAddressedKey(contentHash)
+	if err := s.ensureContentBlobObject(c.Request.Context(), newKey, casKey, size); err != nil {
+		_ = s.Store.Delete(c.Request.Context(), newKey)
+		fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		return
+	}
+	var (
+		currentRevision uint64
+		retainedKey     string
+	)
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
-		if _, err := s.ensureQuota(tx, userID(c), size, true); err != nil {
+		if _, err := s.ensureQuotaForStorageKey(tx, userID(c), size, casKey, true); err != nil {
 			return err
+		}
+		var retainErr error
+		retainedKey, _, retainErr = s.retainContentBlobTx(
+			c.Request.Context(), tx, newKey, contentHash, size,
+		)
+		if retainErr != nil {
+			return retainErr
 		}
 		var current meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -492,7 +512,7 @@ func (s *Server) overwriteFile(c *gin.Context) {
 			return err
 		}
 		if err := tx.Model(&meta.File{}).Where("node_id = ?", id).Updates(map[string]any{
-			"size": size, "storage_key": newKey, "sha256": contentHash, "updated_at": now,
+			"size": size, "storage_key": retainedKey, "sha256": contentHash, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
@@ -502,6 +522,7 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.cleanupUncommittedContentBlob(c.Request.Context(), contentHash, casKey)
 		if writeQuotaError(c, err) {
 			return
 		}
@@ -516,6 +537,7 @@ func (s *Server) overwriteFile(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "metadata update failed")
 		return
 	}
+	_ = s.Store.Delete(c.Request.Context(), newKey)
 	n, err = s.ownedNode(userID(c), id, true)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "metadata reload failed")

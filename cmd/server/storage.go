@@ -67,6 +67,8 @@ func runStorageVerify(args []string) error {
 		fmt.Printf("missing blobs:    %d\n", len(report.Missing))
 		fmt.Printf("size mismatches:  %d\n", len(report.SizeMismatches))
 		fmt.Printf("duplicate refs:   %d\n", len(report.DuplicateRefs))
+		fmt.Printf("shared refs:      %d\n", len(report.SharedRefs))
+		fmt.Printf("content ref drift:%d\n", len(report.ContentRefMismatch))
 		fmt.Printf("orphan blobs:     %d\n", len(report.Orphans))
 		fmt.Printf("hash mismatches:  %d\n", len(report.HashMismatches))
 		fmt.Printf("ignored temp:     %d\n", report.IgnoredTemps)
@@ -78,6 +80,13 @@ func runStorageVerify(args []string) error {
 		}
 		for _, issue := range report.DuplicateRefs {
 			fmt.Printf("DUPLICATE_REFERENCE key=%q references=%d\n", issue.StorageKey, issue.References)
+		}
+		for _, issue := range report.SharedRefs {
+			fmt.Printf("SHARED_REFERENCE key=%q references=%d\n", issue.StorageKey, issue.References)
+		}
+		for _, issue := range report.ContentRefMismatch {
+			fmt.Printf("CONTENT_REF_MISMATCH sha256=%s key=%q expected=%d recorded=%d state=%s reason=%s\n",
+				issue.SHA256, issue.StorageKey, issue.ExpectedRefs, issue.RecordedRefs, issue.State, issue.Reason)
 		}
 		for _, issue := range report.Orphans {
 			fmt.Printf("ORPHAN key=%q size=%d\n", issue.StorageKey, issue.Size)

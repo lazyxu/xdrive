@@ -171,6 +171,36 @@ with open(sys.argv[1], encoding="utf-8") as f:
 PY
 )"
 
+storage_key="$(
+  compose exec -T postgres psql -U xdrive -d xdrive -Atc     "SELECT storage_key FROM xd_files WHERE node_id=$node_id"
+)"
+expected_key=".xdrive-blobs/sha256/${hash:0:2}/$hash"
+if [[ "$storage_key" != "$expected_key" ]]; then
+  echo "finalized upload did not use CAS key: got=$storage_key want=$expected_key" >&2
+  exit 1
+fi
+
+duplicate_file="$TMP/duplicate.bin"
+printf 'test' > "$duplicate_file"
+duplicate_json="$TMP/duplicate.json"
+curl -fsS   -o "$duplicate_json"   -H "Authorization: Bearer $token"   -F "file=@$duplicate_file;filename=probe-copy.bin"   "http://127.0.0.1:$PORT/api/v1/nodes/$root_id/files"
+duplicate_id="$(python3 - "$duplicate_json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    print(json.load(f)["id"])
+PY
+)"
+duplicate_key="$(
+  compose exec -T postgres psql -U xdrive -d xdrive -Atc     "SELECT storage_key FROM xd_files WHERE node_id=$duplicate_id"
+)"
+ref_count="$(
+  compose exec -T postgres psql -U xdrive -d xdrive -Atc     "SELECT ref_count FROM xd_content_blobs WHERE sha256='$hash'"
+)"
+if [[ "$duplicate_key" != "$storage_key" || "$ref_count" != "2" ]]; then
+  echo "global dedup failed: first=$storage_key second=$duplicate_key ref_count=$ref_count" >&2
+  exit 1
+fi
+
 download_file="$TMP/download.bin"
 curl -fsS \
   -o "$download_file" \

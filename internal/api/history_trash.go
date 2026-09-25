@@ -133,6 +133,8 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 	var currentRevision uint64
 	var files []meta.File
 	var versions []meta.FileVersion
+	var contentDeletes []contentDeleteCandidate
+	var legacyKeys []string
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var root meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -153,6 +155,11 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		}
 		if err := tx.Where("node_id IN ?", ids).Find(&files).Error; err != nil {
 			return err
+		}
+		var releaseErr error
+		contentDeletes, legacyKeys, releaseErr = s.releaseContentReferencesTx(tx, files, versions)
+		if releaseErr != nil {
+			return releaseErr
 		}
 		if err := tx.Where("node_id IN ?", ids).Delete(&meta.Share{}).Error; err != nil {
 			return err
@@ -182,12 +189,8 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		}
 		return
 	}
-	for _, f := range files {
-		_ = s.Store.Delete(c.Request.Context(), f.StorageKey)
-	}
-	for _, v := range versions {
-		_ = s.Store.Delete(c.Request.Context(), v.StorageKey)
-	}
+	s.finalizeContentBlobDeletes(c.Request.Context(), contentDeletes)
+	s.deleteLegacyStorageKeys(c.Request.Context(), legacyKeys)
 	c.Status(http.StatusNoContent)
 }
 

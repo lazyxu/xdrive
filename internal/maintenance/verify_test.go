@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -45,7 +46,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}); err != nil {
 		t.Fatal(err)
 	}
 	user := meta.User{Username: "verify-user", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
@@ -165,4 +166,102 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 func verifyTestHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
+}
+
+func TestVerifyAcceptsSharedCASReferences(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaName := "maintenance_shared_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schemaName)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schemaName)).Error
+	}()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schemaName)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}); err != nil {
+		t.Fatal(err)
+	}
+
+	user := meta.User{Username: "verify-shared", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	rootNode := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	if err := db.Create(&rootNode).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	const content = "shared-cas-content"
+	hash := verifyTestHash(content)
+	key, err := storage.ContentAddressedKey(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "b.txt"} {
+		node := meta.Node{ParentID: &rootNode.ID, Name: name, Type: meta.NodeTypeFile, OwnerID: user.ID, Revision: 1}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.File{NodeID: node.ID, StorageKey: key, Size: int64(len(content)), SHA256: hash}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Create(&meta.ContentBlob{
+		SHA256: hash, StorageKey: key, Size: int64(len(content)),
+		RefCount: 2, State: meta.ContentBlobStateReady,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	full := filepath.Join(root, filepath.FromSlash(key))
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Verify(db, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK() {
+		t.Fatalf("shared CAS references reported inconsistent: %+v", report)
+	}
+	if len(report.SharedRefs) != 1 || report.SharedRefs[0].References != 2 {
+		t.Fatalf("shared refs=%+v", report.SharedRefs)
+	}
+	if len(report.DuplicateRefs) != 0 || len(report.ContentRefMismatch) != 0 {
+		t.Fatalf("unexpected duplicate/drift: duplicates=%+v drift=%+v", report.DuplicateRefs, report.ContentRefMismatch)
+	}
+
+	if err := db.Model(&meta.ContentBlob{}).Where("sha256 = ?", hash).Update("ref_count", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	report, err = Verify(db, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OK() || len(report.ContentRefMismatch) == 0 {
+		t.Fatalf("refcount drift was not detected: %+v", report)
+	}
 }

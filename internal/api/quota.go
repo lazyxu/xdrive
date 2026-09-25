@@ -65,18 +65,67 @@ WHERE n.owner_id = ?`, user.ID).Row()
 	if err := row.Scan(&usage.HistoryBytes); err != nil {
 		return quotaUsageDTO{}, err
 	}
-	usage.PhysicalUsedBytes = usage.LogicalFileBytes + usage.TrashBytes + usage.HistoryBytes
+	row = db.Raw(`SELECT COALESCE(SUM(size), 0)
+FROM (
+  SELECT storage_key, MAX(size) AS size
+  FROM (
+    SELECT f.storage_key, f.size
+    FROM xd_files f
+    JOIN xd_nodes n ON n.id = f.node_id
+    WHERE n.owner_id = ?
+    UNION ALL
+    SELECT v.storage_key, v.size
+    FROM xd_file_versions v
+    JOIN xd_nodes n ON n.id = v.node_id
+    WHERE n.owner_id = ?
+  ) refs
+  GROUP BY storage_key
+) unique_refs`, user.ID, user.ID).Row()
+	if err := row.Scan(&usage.PhysicalUsedBytes); err != nil {
+		return quotaUsageDTO{}, err
+	}
 	usage.OverQuota = usage.QuotaBytes > 0 && usage.PhysicalUsedBytes > usage.QuotaBytes
 	return usage, nil
 }
 
 func (s *Server) ensureQuota(db *gorm.DB, uid uint64, additional int64, lockUser bool) (quotaUsageDTO, error) {
+	return s.ensureQuotaForStorageKey(db, uid, additional, "", lockUser)
+}
+
+func (s *Server) ensureQuotaForStorageKey(
+	db *gorm.DB,
+	uid uint64,
+	additional int64,
+	storageKey string,
+	lockUser bool,
+) (quotaUsageDTO, error) {
 	if additional < 0 {
 		additional = 0
 	}
 	usage, err := s.loadQuotaUsage(db, uid, lockUser)
 	if err != nil {
 		return quotaUsageDTO{}, err
+	}
+	if storageKey != "" && additional > 0 {
+		var references int64
+		row := db.Raw(`SELECT COUNT(*)
+FROM (
+  SELECT f.storage_key
+  FROM xd_files f
+  JOIN xd_nodes n ON n.id = f.node_id
+  WHERE n.owner_id = ? AND f.storage_key = ?
+  UNION ALL
+  SELECT v.storage_key
+  FROM xd_file_versions v
+  JOIN xd_nodes n ON n.id = v.node_id
+  WHERE n.owner_id = ? AND v.storage_key = ?
+) refs`, uid, storageKey, uid, storageKey).Row()
+		if err := row.Scan(&references); err != nil {
+			return quotaUsageDTO{}, err
+		}
+		if references > 0 {
+			additional = 0
+		}
 	}
 	if usage.QuotaBytes == 0 || additional == 0 {
 		return usage, nil

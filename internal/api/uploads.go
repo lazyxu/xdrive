@@ -143,7 +143,13 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				return
 			}
 			if time.Now().Before(existing.ExpiresAt) {
-				if _, err := s.ensureQuota(s.DB, uid, existing.TotalSize, false); err != nil {
+				quotaKey := ""
+				if existing.SHA256 != "" {
+					quotaKey, _ = storage.ContentAddressedKey(existing.SHA256)
+				} else if req.SHA256 != "" {
+					quotaKey, _ = storage.ContentAddressedKey(req.SHA256)
+				}
+				if _, err := s.ensureQuotaForStorageKey(s.DB, uid, existing.TotalSize, quotaKey, false); err != nil {
 					if !writeQuotaError(c, err) {
 						fail(c, http.StatusInternalServerError, "quota check failed")
 					}
@@ -192,7 +198,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 	}
 
-	if _, err := s.ensureQuota(s.DB, uid, req.Size, false); err != nil {
+	quotaKey := ""
+	if req.SHA256 != "" {
+		quotaKey, _ = storage.ContentAddressedKey(req.SHA256)
+	}
+	if _, err := s.ensureQuotaForStorageKey(s.DB, uid, req.Size, quotaKey, false); err != nil {
 		if !writeQuotaError(c, err) {
 			fail(c, http.StatusInternalServerError, "quota check failed")
 		}
@@ -391,7 +401,11 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	// Fail before assembling a new retained blob when the quota is already
 	// exhausted. The transaction below repeats this check while holding the
 	// user row lock so concurrent finalizes cannot jointly oversubscribe quota.
-	if _, err := s.ensureQuota(s.DB, session.OwnerID, session.TotalSize, false); err != nil {
+	preflightKey := ""
+	if session.SHA256 != "" {
+		preflightKey, _ = storage.ContentAddressedKey(session.SHA256)
+	}
+	if _, err := s.ensureQuotaForStorageKey(s.DB, session.OwnerID, session.TotalSize, preflightKey, false); err != nil {
 		if !writeQuotaError(c, err) {
 			fail(c, http.StatusInternalServerError, "quota check failed")
 		}
@@ -470,9 +484,16 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 
+	casKey, _ := storage.ContentAddressedKey(actualHash)
+	if err := s.ensureContentBlobObject(c.Request.Context(), newKey, casKey, size); err != nil {
+		_ = s.Store.Delete(c.Request.Context(), newKey)
+		fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		return
+	}
 	var (
 		result          meta.Node
 		currentRevision uint64
+		retainedKey     string
 	)
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		var currentSession meta.UploadSession
@@ -486,8 +507,17 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
 		}
-		if _, err := s.ensureQuota(tx, currentSession.OwnerID, currentSession.TotalSize, true); err != nil {
+		if _, err := s.ensureQuotaForStorageKey(
+			tx, currentSession.OwnerID, currentSession.TotalSize, casKey, true,
+		); err != nil {
 			return err
+		}
+		var retainErr error
+		retainedKey, _, retainErr = s.retainContentBlobTx(
+			c.Request.Context(), tx, newKey, actualHash, size,
+		)
+		if retainErr != nil {
+			return retainErr
 		}
 
 		now := time.Now()
@@ -503,7 +533,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 				return err
 			}
 			if err := tx.Create(&meta.File{
-				NodeID: result.ID, Size: size, StorageKey: newKey, SHA256: actualHash,
+				NodeID: result.ID, Size: size, StorageKey: retainedKey, SHA256: actualHash,
 			}).Error; err != nil {
 				return err
 			}
@@ -529,7 +559,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 				return err
 			}
 			if err := tx.Model(&meta.File{}).Where("node_id = ?", current.ID).Updates(map[string]any{
-				"size": size, "storage_key": newKey, "sha256": actualHash, "updated_at": now,
+				"size": size, "storage_key": retainedKey, "sha256": actualHash, "updated_at": now,
 			}).Error; err != nil {
 				return err
 			}
@@ -552,6 +582,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.cleanupUncommittedContentBlob(c.Request.Context(), actualHash, casKey)
 		if writeQuotaError(c, err) {
 			return
 		}
@@ -574,6 +605,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 		return
 	}
+	_ = s.Store.Delete(c.Request.Context(), newKey)
 	for _, part := range parts {
 		if !part.Reused {
 			_ = s.Store.Delete(c.Request.Context(), part.StorageKey)
@@ -701,7 +733,7 @@ func validSHA256(v string) bool {
 
 func (s *Server) StartUploadJanitor(ctx context.Context) {
 	go func() {
-		_ = s.cleanupExpiredUploads(ctx, 0)
+		s.runStorageJanitorPass(ctx)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -709,10 +741,21 @@ func (s *Server) StartUploadJanitor(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = s.cleanupExpiredUploads(ctx, 0)
+				s.runStorageJanitorPass(ctx)
 			}
 		}
 	}()
+}
+
+func (s *Server) runStorageJanitorPass(ctx context.Context) {
+	if err := s.cleanupExpiredUploads(ctx, 0); err != nil {
+		s.ensureObservability()
+		s.obs.logger.Warn("upload_janitor_failed", "error", err)
+	}
+	if err := s.reapDeletingContentBlobs(ctx); err != nil {
+		s.ensureObservability()
+		s.obs.logger.Warn("content_blob_gc_failed", "error", err)
+	}
 }
 
 func (s *Server) cleanupExpiredUploads(ctx context.Context, uid uint64) error {
