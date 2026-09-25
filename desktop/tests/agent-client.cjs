@@ -66,6 +66,65 @@ test('events support 204 and changed status', async (t) => {
   assert.equal(event.status.paused, true)
 })
 
+
+test('transfers support list events and retry', async (t) => {
+  const seen = []
+  const task = {
+    id: 'transfer-1',
+    file_name: 'movie.bin',
+    path: 'Media/movie.bin',
+    kind: 'upload',
+    direction: 'upload',
+    state: 'failed',
+    bytes_done: 10,
+    bytes_total: 100,
+    percent: 10,
+    instant_bytes_per_second: 0,
+    average_bytes_per_second: 20,
+    elapsed_ms: 500,
+    error: 'network down',
+    retry_count: 0,
+    retryable: true,
+    started_at: new Date(0).toISOString(),
+    updated_at: new Date(500).toISOString(),
+  }
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (url.pathname === '/v1/transfers') {
+      seen.push('list')
+      json(res, 200, { revision: 4, transfers: [task] })
+      return
+    }
+    if (url.pathname === '/v1/transfer-events') {
+      seen.push(`event:${url.searchParams.get('after_revision')}`)
+      json(res, 200, { type: 'transfers.changed', revision: 5, transfers: [{ ...task, state: 'running' }] })
+      return
+    }
+    if (url.pathname === '/v1/transfers/retry') {
+      const chunks = []
+      for await (const chunk of req) chunks.push(chunk)
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      seen.push(`retry:${body.id}`)
+      json(res, 200, { revision: 6, transfers: [{ ...task, state: 'completed', retry_count: 1, error: undefined }] })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  const snapshot = await client.transfers()
+  assert.equal(snapshot.revision, 4)
+  assert.equal(snapshot.transfers[0].file_name, 'movie.bin')
+
+  const event = await client.transferEvents(4, 10)
+  assert.equal(event.revision, 5)
+  assert.equal(event.transfers[0].state, 'running')
+
+  const retried = await client.retryTransfer('transfer-1')
+  assert.equal(retried.revision, 6)
+  assert.equal(retried.transfers[0].retry_count, 1)
+  assert.deepEqual(seen, ['list', 'event:4', 'retry:transfer-1'])
+})
+
 test('login sends credentials through main transport', async (t) => {
   let body
   const { client } = await fixture(t, async (req, res) => {

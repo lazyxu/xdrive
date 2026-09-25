@@ -98,9 +98,15 @@ func makeOnlineOnly(path string) error {
 			firstErr = err
 			return nil
 		}
-		if err := dehydratePath(file); err != nil && firstErr == nil {
-			firstErr = err
+		task := startDehydrationTransfer(file)
+		if err := dehydratePath(file); err != nil {
+			finishTransfer(task, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			return nil
 		}
+		finishTransfer(task, nil)
 		return nil
 	})
 	if err != nil {

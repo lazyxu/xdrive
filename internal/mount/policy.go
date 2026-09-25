@@ -1,11 +1,16 @@
 package mount
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/lazyxu/xdrive/internal/transfer"
+)
 
 type Options struct {
 	ExcludedPaths    []string
 	AlwaysLocalPaths []string
 	CacheLimitBytes  int64
+	Transfers        *transfer.Manager
 }
 
 type syncPolicy struct {

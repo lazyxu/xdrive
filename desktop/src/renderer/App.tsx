@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { formatBinarySize } from '@xdrive/shared'
 
-type View = 'overview' | 'files' | 'conflicts' | 'settings'
+type View = 'overview' | 'transfers' | 'files' | 'conflicts' | 'settings'
 
 function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
@@ -16,6 +16,30 @@ function cacheGiB(bytes: number) {
   return String(Number((bytes / 1024 ** 3).toFixed(3)))
 }
 
+function formatTransferSpeed(bytesPerSecond: number) {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '—'
+  return `${formatBinarySize(Math.round(bytesPerSecond))}/s`
+}
+
+function formatElapsed(milliseconds: number) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '0s'
+  const seconds = Math.floor(milliseconds / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remain = seconds % 60
+  if (minutes < 60) return `${minutes}m ${remain}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m`
+}
+
+function transferKindLabel(kind: string) {
+  if (kind === 'upload') return 'Upload'
+  if (kind === 'download') return 'Download'
+  if (kind === 'hydration') return 'Hydration'
+  if (kind === 'dehydration') return 'Free space'
+  return kind
+}
+
 export default function App() {
   const [info, setInfo] = useState<DesktopInfo | null>(null)
   const [startAtLogin, setStartAtLogin] = useState(true)
@@ -26,6 +50,7 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
+  const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
 
   const [server, setServer] = useState('')
   const [username, setUsername] = useState('')
@@ -42,6 +67,9 @@ export default function App() {
 
   const status = agent.status
   const configured = !!status?.configured
+  const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
+  const completedTransfers = transfers.transfers.filter((item) => item.state === 'completed')
+  const failedTransfers = transfers.transfers.filter((item) => item.state === 'failed')
 
   useEffect(() => {
     let active = true
@@ -54,12 +82,19 @@ export default function App() {
     void window.xdriveDesktop.agent.getState().then((value) => {
       if (active) setAgent(value)
     })
+    void window.xdriveDesktop.agent.getTransfers().then((value) => {
+      if (active) setTransfers(value)
+    })
     const unsubscribe = window.xdriveDesktop.agent.onState((value) => {
       if (active) setAgent(value)
+    })
+    const unsubscribeTransfers = window.xdriveDesktop.agent.onTransfers((value) => {
+      if (active) setTransfers(value)
     })
     return () => {
       active = false
       unsubscribe()
+      unsubscribeTransfers()
     }
   }, [])
 
@@ -218,6 +253,11 @@ export default function App() {
     }
   }
 
+  const retryTransfer = async (id: string) => {
+    const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), 'Transfer retry completed.')
+    if (data) setTransfers(data)
+  }
+
   const loadConflicts = async () => {
     const result = await window.xdriveDesktop.agent.getConflicts()
     if (!result.ok) {
@@ -301,6 +341,9 @@ export default function App() {
         <div className="brand"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>Desktop</span></div></div>
         <nav aria-label="Desktop sections">
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>Overview</button>
+          <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>
+            Transfers {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}
+          </button>
           <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>Files</button>
           <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>
             Conflicts {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}
@@ -354,6 +397,78 @@ export default function App() {
               </dl>
             </section>
           </>
+        )}
+
+
+        {view === 'transfers' && (
+          <section className="panel transfer-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">TRANSFER CENTER</p>
+                <h2>Uploads, downloads and local availability</h2>
+              </div>
+              <div className="transfer-summary">
+                <span><strong>{activeTransfers.length}</strong> active</span>
+                <span><strong>{completedTransfers.length}</strong> completed</span>
+                <span><strong>{failedTransfers.length}</strong> failed</span>
+              </div>
+            </div>
+
+            {([
+              ['In progress', activeTransfers],
+              ['Completed', completedTransfers],
+              ['Failed', failedTransfers],
+            ] as Array<[string, AgentTransfer[]]>).map(([label, items]) => (
+              <div className="transfer-section" key={label}>
+                <div className="transfer-section-title"><h3>{label}</h3><span>{items.length}</span></div>
+                {items.length === 0 ? <div className="transfer-empty">No {label.toLowerCase()} transfers.</div> : (
+                  <div className="transfer-list">
+                    {items.map((item) => {
+                      const percent = Math.max(0, Math.min(100, item.percent || 0))
+                      const byteProgress = item.bytes_total > 0
+                        ? `${formatBinarySize(item.bytes_done)} / ${formatBinarySize(item.bytes_total)}`
+                        : item.bytes_done > 0 ? formatBinarySize(item.bytes_done) : 'No byte stream'
+                      return (
+                        <article className="transfer-row" key={item.id}>
+                          <div className="transfer-main">
+                            <div className="transfer-title">
+                              <strong title={item.path || item.file_name}>{item.file_name || item.path || item.id}</strong>
+                              <span className={`transfer-kind ${item.kind}`}>{transferKindLabel(item.kind)}</span>
+                            </div>
+                            {(item.state === 'running' || item.state === 'retrying') && (
+                              <div className="transfer-progress">
+                                <div className="transfer-progress-track"><span style={{ width: `${percent}%` }} /></div>
+                                <span>{item.bytes_total > 0 ? `${percent.toFixed(1)}%` : item.state === 'retrying' ? 'Retrying' : 'Working'}</span>
+                              </div>
+                            )}
+                            {item.error && <div className="transfer-error">{item.error}</div>}
+                            <div className="transfer-meta">
+                              <span>{item.direction}</span>
+                              <span>{byteProgress}</span>
+                              <span>Now {formatTransferSpeed(item.instant_bytes_per_second)}</span>
+                              <span>Avg {formatTransferSpeed(item.average_bytes_per_second)}</span>
+                              <span>{formatElapsed(item.elapsed_ms)}</span>
+                              {item.retry_count > 0 && <span>{item.retry_count} retr{item.retry_count === 1 ? 'y' : 'ies'}</span>}
+                            </div>
+                          </div>
+                          {item.state === 'failed' && item.retryable && (
+                            <button
+                              className="secondary"
+                              type="button"
+                              disabled={!!busy}
+                              onClick={() => void retryTransfer(item.id)}
+                            >
+                              {busy === `retry-transfer-${item.id}` ? 'Retrying…' : 'Retry'}
+                            </button>
+                          )}
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </section>
         )}
 
         {view === 'files' && (

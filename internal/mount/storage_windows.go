@@ -268,9 +268,12 @@ func (p *winProvider) enforceCache(baseline map[string]winState) error {
 		if err := setPinPath(candidate.path, cfPinStateUnpinned, false); err != nil {
 			continue
 		}
+		task := startDehydrationTransfer(candidate.path)
 		if err := dehydratePath(candidate.path); err != nil {
+			finishTransfer(task, err)
 			continue
 		}
+		finishTransfer(task, nil)
 		total -= candidate.allocated
 	}
 	return nil

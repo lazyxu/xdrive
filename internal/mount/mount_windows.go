@@ -17,6 +17,7 @@ import (
 	"unsafe"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/transfer"
 )
 
 type winState struct {
@@ -37,6 +38,8 @@ type winProvider struct {
 	cacheLimit int64
 	cacheGrace time.Duration
 	manualSync chan struct{}
+	retrySync  chan chan error
+	transfers  *transfer.Manager
 }
 
 var activeWinProvider struct {
@@ -65,6 +68,8 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 		cacheLimit: opts.CacheLimitBytes,
 		cacheGrace: 30 * time.Second,
 		manualSync: make(chan struct{}, 1),
+		retrySync:  make(chan chan error),
+		transfers:  opts.Transfers,
 	}
 	activeWinProvider.Lock()
 	activeWinProvider.p = p
@@ -247,6 +252,20 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 				continue
 			}
 			emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
+		case result := <-p.retrySync:
+			if !flushLocal() {
+				result <- errors.New("local changes are still pending")
+				continue
+			}
+			emitEvent(Event{Kind: EventSyncStarted})
+			err := p.reconcile(ctx)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "xd: Windows transfer retry:", err)
+				emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+			} else {
+				emitEvent(Event{Kind: EventSyncCompleted, Notify: true})
+			}
+			result <- err
 		}
 	}
 }
@@ -270,6 +289,12 @@ func fetchData(info *cfCallbackInfo, params *cfCallbackParametersFetchData) {
 	p.accessed[id] = now
 	p.mu.Unlock()
 	offset, remaining := params.RequiredFileOffset, params.RequiredLength
+	transferPath := utf16PtrString(info.NormalizedPath)
+	task := p.startTransfer(transfer.KindHydration, "download", transferPath, params.RequiredLength, nil)
+	if task != nil {
+		task.Progress(0, params.RequiredLength)
+	}
+	var transferred int64
 	const chunkSize int64 = 4 << 20
 	for remaining > 0 {
 		want := remaining
@@ -278,15 +303,25 @@ func fetchData(info *cfCallbackInfo, params *cfCallbackParametersFetchData) {
 		}
 		data, err := p.cli.DownloadRange(context.Background(), id, offset, want)
 		if err != nil || int64(len(data)) == 0 {
+			if err == nil {
+				err = io.ErrUnexpectedEOF
+			}
+			finishTransfer(task, err)
 			cfTransferFailure(info, offset, remaining)
 			return
 		}
 		if err := cfTransfer(info, data, offset); err != nil {
+			finishTransfer(task, err)
 			return
+		}
+		transferred += int64(len(data))
+		if task != nil {
+			task.Progress(transferred, params.RequiredLength)
 		}
 		offset += int64(len(data))
 		remaining -= int64(len(data))
 	}
+	finishTransfer(task, nil)
 }
 
 func copyIdentity(ptr unsafe.Pointer, n uint32) []byte {
@@ -397,7 +432,9 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			}
 			baseline[rel] = stateFromLocal(n, entry)
 		} else {
-			n, err := p.cli.UploadFile(ctx, parent.node.ID, absPath, slashBase(rel))
+			task, progress := p.uploadTransfer(rel, entry.size)
+			n, err := p.cli.UploadFileResumable(ctx, parent.node.ID, absPath, slashBase(rel), progress)
+			finishTransfer(task, err)
 			if err != nil {
 				return err
 			}
@@ -422,9 +459,14 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			continue
 		}
 		absPath := filepath.Join(p.root, filepath.FromSlash(rel))
-		n, upErr := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, nil)
+		task, progress := p.uploadTransfer(rel, entry.size)
+		n, upErr := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, progress)
+		if upErr == nil {
+			finishTransfer(task, nil)
+		}
 		if upErr != nil {
 			if !client.IsRevisionConflict(upErr) || base.node.ParentID == nil {
+				finishTransfer(task, upErr)
 				return upErr
 			}
 			abs := filepath.Join(p.root, filepath.FromSlash(rel))
@@ -433,13 +475,17 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			if err := copyLocalFile(abs, conflictAbs); err != nil {
 				return err
 			}
-			conflictNode, err := p.cli.UploadFile(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel))
+			conflictTask, conflictProgress := p.uploadTransfer(conflictRel, entry.size)
+			conflictNode, err := p.cli.UploadFileResumable(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel), conflictProgress)
+			finishTransfer(conflictTask, err)
 			if err != nil {
 				return err
 			}
 			if err := cfConvertPathToPlaceholder(conflictAbs, conflictNode.ID); err != nil {
+				finishTransfer(task, err)
 				return err
 			}
+			finishTransfer(task, nil)
 			emitEvent(Event{
 				Kind:           EventConflict,
 				Path:           conflictRel,

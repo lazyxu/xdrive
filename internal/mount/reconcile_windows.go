@@ -240,7 +240,9 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 			baseline[childRel] = stateFromLocal(node, localEntry{isDir: true, modTime: info.ModTime()})
 			return nil
 		}
-		node, err := p.cli.UploadFileResumable(ctx, parent.node.ID, path, slashBase(childRel), nil)
+		task, progress := p.uploadTransfer(childRel, info.Size())
+		node, err := p.cli.UploadFileResumable(ctx, parent.node.ID, path, slashBase(childRel), progress)
+		finishTransfer(task, err)
 		if err != nil {
 			return err
 		}
@@ -288,7 +290,9 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 			return err
 		}
 		parent := baseline[slashDir(rel)]
-		node, err := p.cli.UploadFileResumable(ctx, parent.node.ID, absPath, slashBase(rel), nil)
+		task, progress := p.uploadTransfer(rel, entry.size)
+		node, err := p.cli.UploadFileResumable(ctx, parent.node.ID, absPath, slashBase(rel), progress)
+		finishTransfer(task, err)
 		if err != nil {
 			return err
 		}
@@ -308,8 +312,10 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		return errWindowsHydrationSettling
 	}
 
-	node, err := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, nil)
+	task, progress := p.uploadTransfer(rel, entry.size)
+	node, err := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, progress)
 	if err == nil {
+		finishTransfer(task, nil)
 		if syncErr := cfMarkPathInSync(absPath); syncErr != nil {
 			return syncErr
 		}
@@ -317,6 +323,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		return nil
 	}
 	if !client.IsRevisionConflict(err) || base.node.ParentID == nil {
+		finishTransfer(task, err)
 		return err
 	}
 
@@ -325,13 +332,17 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 	if err := copyLocalFile(absPath, conflictAbs); err != nil {
 		return err
 	}
-	conflictNode, err := p.cli.UploadFileResumable(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel), nil)
+	conflictTask, conflictProgress := p.uploadTransfer(conflictRel, entry.size)
+	conflictNode, err := p.cli.UploadFileResumable(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel), conflictProgress)
+	finishTransfer(conflictTask, err)
 	if err != nil {
 		return err
 	}
 	if err := cfConvertPathToPlaceholder(conflictAbs, conflictNode.ID); err != nil {
+		finishTransfer(task, err)
 		return err
 	}
+	finishTransfer(task, nil)
 	emitEvent(Event{
 		Kind:           EventConflict,
 		Path:           conflictRel,

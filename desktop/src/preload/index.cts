@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
+  getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
   retry: () => ipcRenderer.invoke('agent:retry'),
   restart: () => ipcRenderer.invoke('agent:restart'),
   login: (input: { server: string; username: string; password: string; mount_path?: string }) => ipcRenderer.invoke('agent:login', input),
@@ -18,11 +19,17 @@ const agent = Object.freeze({
   getConflicts: () => ipcRenderer.invoke('agent:get-conflicts'),
   openConflict: (id: string, both = false) => ipcRenderer.invoke('agent:open-conflict', id, both),
   resolveConflict: (id: string, choice: 'server' | 'local') => ipcRenderer.invoke('agent:resolve-conflict', id, choice),
+  retryTransfer: (id: string) => ipcRenderer.invoke('agent:retry-transfer', id),
   openFolder: () => ipcRenderer.invoke('agent:open-folder'),
   onState: (callback: (state: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
     ipcRenderer.on('agent:state', handler)
     return () => ipcRenderer.removeListener('agent:state', handler)
+  },
+  onTransfers: (callback: (state: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
+    ipcRenderer.on('agent:transfers', handler)
+    return () => ipcRenderer.removeListener('agent:transfers', handler)
   },
 })
 

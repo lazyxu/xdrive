@@ -391,7 +391,7 @@ xd.exe                       CLI / diagnostics / automation
 
 The installer adds `xd` to the user PATH, registers the headless Agent for current-user login startup, creates the visible **xDrive** Start-menu shortcut for Electron Desktop, and starts Desktop after an interactive install. Silent updates restart Desktop in background/Tray mode.
 
-Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, conflict center, file-availability controls, selective-sync settings, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
+Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, transfer center, conflict center, file-availability controls, selective-sync settings, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
 
 The separate `xDriveDesktopSetup-amd64.exe` artifact is retained temporarily for transition/testing compatibility, but normal installation and `xd update` use `xDriveSetup-amd64.exe`.
 
@@ -612,6 +612,10 @@ PUT   /v1/settings/sync-rule
 GET   /v1/file-availability?path=<path>
 POST  /v1/file-availability
 
+GET   /v1/transfers
+GET   /v1/transfer-events?after_revision=N&timeout_ms=25000
+POST  /v1/transfers/retry
+
 GET   /v1/conflicts
 POST  /v1/conflicts/open
 POST  /v1/conflicts/resolve
@@ -620,9 +624,11 @@ POST  /v1/open-folder
 POST  /v1/lifecycle/shutdown
 ```
 
-`/v1/events` is a bounded long-poll over monotonically increasing in-memory status revisions. It returns immediately when the revision changes and otherwise returns `204 No Content` at the requested timeout. This avoids fixed-interval renderer polling without introducing a second persistent event protocol.
+`/v1/events` is a bounded long-poll over monotonically increasing in-memory status revisions. It returns immediately when the revision changes and otherwise returns `204 No Content` at the requested timeout. `/v1/transfer-events` uses the same bounded long-poll pattern with an independent transfer revision so byte-progress updates do not churn the general account/sync status stream.
 
-The Electron desktop client consumes this IPC from its **main process**. The renderer sees only typed business operations through the preload bridge; the discovery URL and bearer token never cross into renderer state. Electron is now the sole graphical client: it covers sign-in, required password changes, live sync state, pause/resume, sync-now, opening the sync folder, Windows file-availability controls, selective-sync rules, mount/cache settings, logout, conflict review/resolution, tray actions, and desktop notifications. The Go `xdrive-agent` is headless and owns only sync/system capabilities plus Desktop IPC. The `xd` CLI remains fully supported.
+The Agent maintains an in-memory transfer model for uploads, downloads, Windows CfAPI hydration, and dehydration/cache release. Transfer entries expose filename/path, kind/direction, current and total bytes, percentage, instantaneous and average rate, elapsed time, error text, retry count, state, and whether retry is safe. Windows failed upload retries are serialized back through the active sync provider instead of running a second concurrent reconcile. Completed/failed history is bounded and is cleared when the login session changes.
+
+The Electron desktop client consumes this IPC from its **main process**. The renderer sees only typed business operations through the preload bridge; the discovery URL and bearer token never cross into renderer state. Electron is now the sole graphical client: it covers sign-in, required password changes, live sync state, pause/resume, sync-now, transfer-center views for active/completed/failed work, safe retry of retryable failures, opening the sync folder, Windows file-availability controls, selective-sync rules, mount/cache settings, logout, conflict review/resolution, tray actions, and desktop notifications. The Go `xdrive-agent` is headless and owns only sync/system capabilities plus Desktop IPC. The `xd` CLI remains fully supported.
 
 Desktop lifecycle negotiation starts with `GET /v1/hello`. The response advertises the Agent version, PID, platform/architecture, supported Desktop IPC protocol range, and named capabilities. Desktop refuses an incompatible protocol instead of silently calling endpoints with mismatched semantics. The current protocol range is `1..1`.
 

@@ -127,3 +127,30 @@ dd { margin: 7px 0 0; color: #24324a; font-weight: 700; font-size: 14px; overflo
 .toggle-row span { display: grid; gap: 3px; }
 .toggle-row strong { color: #2c3950; font-size: 13px; }
 .toggle-row small { color: #7d899b; font-size: 11px; font-weight: 500; line-height: 1.4; }
+
+
+.transfer-panel { display: grid; gap: 22px; }
+.transfer-summary { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.transfer-summary span { border-radius: 999px; padding: 7px 10px; background: #f3f6fa; color: #6f7d92; font-size: 12px; }
+.transfer-summary strong { color: #24324a; }
+.transfer-section { display: grid; gap: 10px; }
+.transfer-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.transfer-section-title h3 { margin: 0; font-size: 14px; color: #2b3850; }
+.transfer-section-title span { min-width: 24px; height: 24px; padding: 0 7px; border-radius: 999px; display: grid; place-items: center; background: #f2f5f9; color: #758198; font-size: 11px; }
+.transfer-list { display: grid; gap: 9px; }
+.transfer-empty { border: 1px dashed #dce3ed; border-radius: 12px; padding: 18px; color: #8a95a7; font-size: 13px; text-align: center; }
+.transfer-row { border: 1px solid #e4e9f0; border-radius: 13px; padding: 14px; display: flex; align-items: center; gap: 16px; justify-content: space-between; }
+.transfer-main { min-width: 0; flex: 1; display: grid; gap: 9px; }
+.transfer-title { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.transfer-title strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #26334d; }
+.transfer-kind { flex: 0 0 auto; border-radius: 999px; padding: 4px 8px; background: #eef2f7; color: #6b7890; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.transfer-progress { display: grid; grid-template-columns: minmax(0,1fr) 56px; align-items: center; gap: 10px; color: #718097; font-size: 11px; }
+.transfer-progress-track { overflow: hidden; height: 6px; border-radius: 999px; background: #edf1f6; }
+.transfer-progress-track span { display: block; height: 100%; border-radius: inherit; background: currentColor; color: #4f75d8; transition: width .18s ease; }
+.transfer-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; color: #8490a3; font-size: 11px; }
+.transfer-error { color: #b94c4c; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .transfer-row { align-items: flex-start; flex-direction: column; }
+  .transfer-summary { justify-content: flex-start; }
+}

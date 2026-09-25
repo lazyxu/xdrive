@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/mount"
+	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
@@ -46,6 +48,7 @@ type fakeDesktopIPCController struct {
 	resolveID     string
 	resolveChoice string
 	err           error
+	transfers     *transfer.Manager
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -107,6 +110,27 @@ func (f *fakeDesktopIPCController) FileAvailability(path string) (mount.FileAvai
 func (f *fakeDesktopIPCController) SetFileAvailability(path, action string) error {
 	f.filePath, f.fileAction = path, action
 	return f.err
+}
+
+func (f *fakeDesktopIPCController) Transfers() (uint64, []transfer.Task) {
+	if f.transfers == nil {
+		return 1, nil
+	}
+	return f.transfers.Snapshot()
+}
+
+func (f *fakeDesktopIPCController) WaitTransfers(ctx context.Context, after uint64) (uint64, []transfer.Task, bool) {
+	if f.transfers == nil {
+		return 1, nil, after != 1
+	}
+	return f.transfers.Wait(ctx, after)
+}
+
+func (f *fakeDesktopIPCController) RetryTransfer(ctx context.Context, id string) error {
+	if f.transfers == nil {
+		return errors.New("transfer manager unavailable")
+	}
+	return f.transfers.Retry(ctx, id)
 }
 
 func (f *fakeDesktopIPCController) Conflicts() []conflictstate.Record {
@@ -302,6 +326,49 @@ func TestDesktopIPCActions(t *testing.T) {
 	}
 	if ctrl.openID != "c1" || !ctrl.openBoth || ctrl.resolveID != "c1" || ctrl.resolveChoice != "server" || ctrl.openFolderN != 1 {
 		t.Fatalf("conflict/folder actions not forwarded")
+	}
+}
+
+func TestDesktopIPCTransfers(t *testing.T) {
+	manager := transfer.NewManager(10)
+	task := manager.Start(transfer.Spec{
+		FileName:   "demo.bin",
+		Path:       "docs/demo.bin",
+		Kind:       transfer.KindUpload,
+		Direction:  "upload",
+		TotalBytes: 100,
+		Retry:      func(context.Context) error { return nil },
+	})
+	task.Progress(40, 100)
+	task.Fail(errors.New("network down"))
+
+	ctrl := &fakeDesktopIPCController{revision: 1, transfers: manager}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/transfers", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"file_name\":\"demo.bin\"") {
+		t.Fatalf("transfers status=%d body=%s", res.Code, res.Body.String())
+	}
+	var snapshot desktopIPCTransfers
+	if err := json.NewDecoder(res.Body).Decode(&snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Transfers) != 1 || snapshot.Transfers[0].State != transfer.StateFailed {
+		t.Fatalf("unexpected transfer snapshot: %+v", snapshot)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/transfer-events?after_revision=1&timeout_ms=10", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"type\":\"transfers.changed\"") {
+		t.Fatalf("transfer event status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/transfers/retry", `{"id":"`+task.ID()+`"}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("retry status=%d body=%s", res.Code, res.Body.String())
+	}
+	_, items := manager.Snapshot()
+	if len(items) != 1 || items[0].State != transfer.StateCompleted || items[0].RetryCount != 1 {
+		t.Fatalf("unexpected retried transfer: %+v", items)
 	}
 }
 
