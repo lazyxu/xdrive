@@ -391,7 +391,7 @@ xd.exe                       CLI / diagnostics / automation
 
 The installer adds `xd` to the user PATH, registers the headless Agent for current-user login startup, creates the visible **xDrive** Start-menu shortcut for Electron Desktop, and starts Desktop after an interactive install. Silent updates restart Desktop in background/Tray mode.
 
-Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, transfer center, conflict center, file-availability controls, selective-sync settings, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
+Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, transfer center, diagnostics/self-repair, conflict center, file-availability controls, selective-sync settings, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
 
 The separate `xDriveDesktopSetup-amd64.exe` artifact is retained temporarily for transition/testing compatibility, but normal installation and `xd update` use `xDriveSetup-amd64.exe`.
 
@@ -446,7 +446,7 @@ xd update --status
 xd doctor
 ```
 
-`xd doctor` produces a copy/paste-safe client report with version/update channel, GitHub update metadata reachability, local config, credential backend, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks the most recent client-upgrade transaction state, CfAPI sync-root registration, and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
+`xd doctor` and Electron Diagnostics share the same Go diagnostic engine. It produces a copy/paste-safe report with version/update channel, GitHub update metadata reachability, local config, credential backend, cache policy, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks the most recent client-upgrade transaction state, CfAPI sync-root registration, and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
 
 `xd update --status` shows the full local transaction record on platforms that support detached update transactions, including the local log path. Use `xd doctor` when a redacted, copy/paste-safe summary is needed.
 
@@ -616,6 +616,12 @@ GET   /v1/transfers
 GET   /v1/transfer-events?after_revision=N&timeout_ms=25000
 POST  /v1/transfers/retry
 
+GET   /v1/diagnostics
+GET   /v1/diagnostics/report
+POST  /v1/diagnostics/reconnect
+POST  /v1/diagnostics/repair-sync-root
+POST  /v1/diagnostics/open-logs
+
 GET   /v1/conflicts
 POST  /v1/conflicts/open
 POST  /v1/conflicts/resolve
@@ -628,7 +634,9 @@ POST  /v1/lifecycle/shutdown
 
 The Agent maintains an in-memory transfer model for uploads, downloads, Windows CfAPI hydration, and dehydration/cache release. Transfer entries expose filename/path, kind/direction, current and total bytes, percentage, instantaneous and average rate, elapsed time, error text, retry count, state, and whether retry is safe. Windows failed upload retries are serialized back through the active sync provider instead of running a second concurrent reconcile. Completed/failed history is bounded and is cleared when the login session changes.
 
-The Electron desktop client consumes this IPC from its **main process**. The renderer sees only typed business operations through the preload bridge; the discovery URL and bearer token never cross into renderer state. Electron is now the sole graphical client: it covers sign-in, required password changes, live sync state, pause/resume, sync-now, transfer-center views for active/completed/failed work, safe retry of retryable failures, opening the sync folder, Windows file-availability controls, selective-sync rules, mount/cache settings, logout, conflict review/resolution, tray actions, and desktop notifications. The Go `xdrive-agent` is headless and owns only sync/system capabilities plus Desktop IPC. The `xd` CLI remains fully supported.
+Diagnostics are generated inside the Go Agent from the same `internal/diagnostics` package used by `xd doctor`, then redacted before crossing Desktop IPC. Electron Main adds the already-negotiated Desktop/Agent protocol compatibility result, owns diagnostic report export, and capability-gates diagnostics/actions so an older Agent receives an explicit upgrade-required error instead of an endpoint 404. **Reconnect** serializes a mount restart through the Agent controller; **Repair Sync Root** additionally re-registers Windows CfAPI before reconnecting. **Open logs** opens the per-user Agent log directory. Repair operations never execute shell commands in the renderer.
+
+The Electron desktop client consumes this IPC from its **main process**. The renderer sees only typed business operations through the preload bridge; the discovery URL and bearer token never cross into renderer state. Electron is now the sole graphical client: it covers sign-in, required password changes, live sync state, pause/resume, sync-now, transfer-center views for active/completed/failed work, safe retry of retryable failures, a Doctor-backed diagnostics/self-repair page, opening the sync folder, Windows file-availability controls, selective-sync rules, mount/cache settings, logout, conflict review/resolution, tray actions, and desktop notifications. The Go `xdrive-agent` is headless and owns only sync/system capabilities plus Desktop IPC. The `xd` CLI remains fully supported.
 
 Desktop lifecycle negotiation starts with `GET /v1/hello`. The response advertises the Agent version, PID, platform/architecture, supported Desktop IPC protocol range, and named capabilities. Desktop refuses an incompatible protocol instead of silently calling endpoints with mismatched semantics. The current protocol range is `1..1`.
 

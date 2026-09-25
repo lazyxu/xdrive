@@ -154,3 +154,30 @@ dd { margin: 7px 0 0; color: #24324a; font-weight: 700; font-size: 14px; overflo
   .transfer-row { align-items: flex-start; flex-direction: column; }
   .transfer-summary { justify-content: flex-start; }
 }
+
+
+.diagnostics-panel { display: grid; gap: 20px; }
+.diagnostic-note { max-width: 720px; margin: 7px 0 0; color: #7a879a; font-size: 12px; line-height: 1.55; }
+.diagnostic-note code { padding: 2px 5px; border-radius: 5px; background: #f1f4f8; color: #42516a; }
+.diagnostic-summary { display: grid; grid-template-columns: repeat(3,minmax(110px,150px)) minmax(220px,1fr); gap: 10px; }
+.diagnostic-count, .diagnostic-generated { border-radius: 12px; padding: 14px; background: #f7f9fc; display: grid; gap: 4px; }
+.diagnostic-count strong { font-size: 22px; line-height: 1; }
+.diagnostic-count span, .diagnostic-generated span { color: #7b879b; font-size: 11px; }
+.diagnostic-count.pass strong { color: #23845e; }
+.diagnostic-count.warn strong { color: #a66a25; }
+.diagnostic-count.fail strong { color: #b64a4a; }
+.diagnostic-generated strong { color: #34435b; font-size: 12px; font-weight: 700; }
+.diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.diagnostic-list { display: grid; gap: 8px; }
+.diagnostic-row { display: grid; grid-template-columns: 54px minmax(0,1fr); align-items: start; gap: 12px; border: 1px solid #e4e9f0; border-radius: 12px; padding: 12px 14px; }
+.diagnostic-row strong { color: #2b3850; font-size: 13px; }
+.diagnostic-row p { margin: 5px 0 0; color: #78859a; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.diagnostic-badge { margin-top: 1px; border-radius: 999px; padding: 4px 7px; text-align: center; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.diagnostic-badge.pass { background: #e7f6f0; color: #23845e; }
+.diagnostic-badge.warn { background: #fff2df; color: #a66a25; }
+.diagnostic-badge.fail { background: #fbe8e8; color: #b64a4a; }
+
+@media (max-width: 800px) {
+  .diagnostic-summary { grid-template-columns: repeat(3,1fr); }
+  .diagnostic-generated { grid-column: 1 / -1; }
+}

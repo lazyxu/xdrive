@@ -125,6 +125,54 @@ test('transfers support list events and retry', async (t) => {
   assert.deepEqual(seen, ['list', 'event:4', 'retry:transfer-1'])
 })
 
+
+test('diagnostics use dedicated agent endpoints', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    seen.push(`${req.method} ${req.url}`)
+    if (req.url === '/v1/diagnostics') {
+      json(res, 200, {
+        generated_at: new Date(0).toISOString(),
+        platform: 'linux',
+        arch: 'amd64',
+        checks: [{ name: 'server health', status: 'PASS', detail: 'HTTP 200' }],
+        summary: { pass: 1, warn: 0, fail: 0 },
+      })
+      return
+    }
+    if (req.url === '/v1/diagnostics/report') {
+      json(res, 200, { report: 'xDrive diagnostic report\n' })
+      return
+    }
+    if (req.url === '/v1/diagnostics/reconnect' || req.url === '/v1/diagnostics/repair-sync-root') {
+      json(res, 200, {
+        revision: 9, configured: true, auth_status: '已登录', sync_status: '正在启动同步',
+        paused: false, must_change_password: false, has_conflict: false, conflict_count: 0, version: 'test',
+      })
+      return
+    }
+    if (req.url === '/v1/diagnostics/open-logs') {
+      json(res, 200, { ok: true })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  const report = await client.diagnostics()
+  assert.equal(report.checks[0].name, 'server health')
+  assert.match((await client.diagnosticReport()).report, /diagnostic report/)
+  assert.equal((await client.reconnect()).revision, 9)
+  assert.equal((await client.repairSyncRoot()).revision, 9)
+  assert.deepEqual(await client.openLogs(), { ok: true })
+  assert.deepEqual(seen, [
+    'GET /v1/diagnostics',
+    'GET /v1/diagnostics/report',
+    'POST /v1/diagnostics/reconnect',
+    'POST /v1/diagnostics/repair-sync-root',
+    'POST /v1/diagnostics/open-logs',
+  ])
+})
+
 test('login sends credentials through main transport', async (t) => {
   let body
   const { client } = await fixture(t, async (req, res) => {

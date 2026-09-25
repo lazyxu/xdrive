@@ -19,6 +19,7 @@ import {
   AgentIPCError,
   type AgentHello,
   type AgentConflict,
+  type AgentDiagnosticReport,
   type AgentFileAvailability,
   type AgentSettings,
   type AgentStatus,
@@ -263,6 +264,40 @@ function publishAgentTransfers(next: AgentTransfers) {
   }
 }
 
+function withDesktopCompatibility(report: AgentDiagnosticReport, hello: AgentHello): AgentDiagnosticReport {
+  const compatibility = {
+    name: 'Desktop / Agent compatibility',
+    status: 'PASS' as const,
+    detail: `Desktop ${app.getVersion()} · Agent ${hello.agent_version} · IPC desktop ${AgentIPCClient.protocolMin}-${AgentIPCClient.protocolMax} / agent ${hello.protocol_min}-${hello.protocol_max}`,
+  }
+  const checks = [...report.checks, compatibility]
+  return {
+    ...report,
+    checks,
+    summary: {
+      pass: checks.filter((check) => check.status === 'PASS').length,
+      warn: checks.filter((check) => check.status === 'WARN').length,
+      fail: checks.filter((check) => check.status === 'FAIL').length,
+    },
+  }
+}
+
+function formatDesktopDiagnosticReport(report: AgentDiagnosticReport) {
+  const lines = [
+    'xDrive diagnostic report',
+    `generated: ${report.generated_at}`,
+    `platform: ${report.platform}/${report.arch}`,
+    'redaction: secrets/tokens/session IDs are never printed; home paths are shortened',
+    '',
+    ...report.checks.map((check) => `[${check.status}] ${check.name.padEnd(20)} ${check.detail}`),
+    '',
+    `summary: ${report.summary.pass} pass, ${report.summary.warn} warn, ${report.summary.fail} fail`,
+    report.summary.fail === 0 ? 'doctor result: usable; review warnings if present' : 'doctor result: attention required',
+    '',
+  ]
+  return lines.join('\n')
+}
+
 function agentError(error: unknown) {
   if (error instanceof AgentIPCError) {
     return { code: error.code, message: error.message, ...(error.status ? { status: error.status } : {}) }
@@ -283,6 +318,16 @@ function requireAgentClient() {
 function requireAgentLifecycle() {
   if (!agentLifecycle) throw new AgentIPCError('agent_unavailable', 0, 'xdrive-agent lifecycle is not initialized.')
   return agentLifecycle
+}
+
+function requireAgentCapability(hello: AgentHello, capability: string) {
+  if (!hello.capabilities.includes(capability)) {
+    throw new AgentIPCError(
+      'unsupported_capability',
+      0,
+      `xdrive-agent ${hello.agent_version} does not support ${capability}. Update the unified xDrive client.`,
+    )
+  }
 }
 
 async function refreshAgentState() {
@@ -405,6 +450,12 @@ function registerIPCHandlers() {
 
   ipcMain.handle('agent:get-state', () => agentState)
   ipcMain.handle('agent:get-transfers', () => agentTransfers)
+  ipcMain.handle('agent:get-diagnostics', () => runAgentAction<AgentDiagnosticReport>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'diagnostics')
+    const report = await requireAgentClient().diagnostics()
+    return withDesktopCompatibility(report, hello)
+  }, false))
   ipcMain.handle('agent:retry', () => refreshAgentState())
   ipcMain.handle('agent:restart', async () => {
     try {
@@ -483,6 +534,40 @@ function registerIPCHandlers() {
       return { ok: false, error: { code: 'invalid_input', message: 'A path and valid file-availability action are required.' } }
     }
     return runAgentAction(() => requireAgentClient().setFileAvailability(path, action), action === 'sync')
+  })
+  ipcMain.handle('agent:reconnect', () => runAgentAction(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'diagnostic-actions')
+    return requireAgentClient().reconnect()
+  }))
+  ipcMain.handle('agent:repair-sync-root', () => runAgentAction(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'diagnostic-actions')
+    return requireAgentClient().repairSyncRoot()
+  }))
+  ipcMain.handle('agent:open-logs', () => runAgentAction(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'diagnostic-actions')
+    return requireAgentClient().openLogs()
+  }, false))
+  ipcMain.handle('agent:export-diagnostics', async () => {
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'diagnostics')
+      const report = withDesktopCompatibility(await requireAgentClient().diagnostics(), hello)
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const options = {
+        title: 'Export xDrive diagnostic report',
+        defaultPath: path.join(app.getPath('documents'), `xdrive-diagnostics-${stamp}.txt`),
+        filters: [{ name: 'Text report', extensions: ['txt'] }],
+      }
+      const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+      if (result.canceled || !result.filePath) return { ok: true, data: { saved: false } }
+      await writeFile(result.filePath, formatDesktopDiagnosticReport(report), { encoding: 'utf8', mode: 0o600 })
+      return { ok: true, data: { saved: true } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
   })
   ipcMain.handle('agent:retry-transfer', (_event, id: unknown) => {
     if (typeof id !== 'string' || !id.trim()) {

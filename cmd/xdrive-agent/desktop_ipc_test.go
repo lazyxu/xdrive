@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/conflictstate"
+	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -26,29 +27,33 @@ type fakeDesktopIPCController struct {
 	root     string
 	items    []conflictstate.Record
 
-	loginServer   string
-	loginUsername string
-	loginPassword string
-	loginMount    string
-	currentPass   string
-	newPass       string
-	logouts       int
-	paused        *bool
-	syncs         int
-	updateMount   *string
-	updateCache   *int64
-	rulePath      string
-	ruleMode      string
-	filePath      string
-	fileAction    string
-	fileState     mount.FileAvailability
-	openFolderN   int
-	openID        string
-	openBoth      bool
-	resolveID     string
-	resolveChoice string
-	err           error
-	transfers     *transfer.Manager
+	loginServer      string
+	loginUsername    string
+	loginPassword    string
+	loginMount       string
+	currentPass      string
+	newPass          string
+	logouts          int
+	paused           *bool
+	syncs            int
+	updateMount      *string
+	updateCache      *int64
+	rulePath         string
+	ruleMode         string
+	filePath         string
+	fileAction       string
+	fileState        mount.FileAvailability
+	openFolderN      int
+	openID           string
+	openBoth         bool
+	resolveID        string
+	resolveChoice    string
+	err              error
+	transfers        *transfer.Manager
+	diagnosticReport diagnostics.Report
+	reconnectN       int
+	repairN          int
+	openLogsN        int
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -131,6 +136,28 @@ func (f *fakeDesktopIPCController) RetryTransfer(ctx context.Context, id string)
 		return errors.New("transfer manager unavailable")
 	}
 	return f.transfers.Retry(ctx, id)
+}
+
+func (f *fakeDesktopIPCController) Diagnostics(context.Context) diagnostics.Report {
+	if len(f.diagnosticReport.Checks) == 0 {
+		return diagnostics.NewReport([]diagnostics.Check{{Name: "agent process", Status: diagnostics.Pass, Detail: "test"}})
+	}
+	return f.diagnosticReport
+}
+
+func (f *fakeDesktopIPCController) Reconnect(context.Context) error {
+	f.reconnectN++
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) RepairSyncRoot(context.Context) error {
+	f.repairN++
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) OpenLogs() error {
+	f.openLogsN++
+	return f.err
 }
 
 func (f *fakeDesktopIPCController) Conflicts() []conflictstate.Record {
@@ -369,6 +396,40 @@ func TestDesktopIPCTransfers(t *testing.T) {
 	_, items := manager.Snapshot()
 	if len(items) != 1 || items[0].State != transfer.StateCompleted || items[0].RetryCount != 1 {
 		t.Fatalf("unexpected retried transfer: %+v", items)
+	}
+}
+
+func TestDesktopIPCDiagnostics(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{
+		revision: 1,
+		diagnosticReport: diagnostics.NewReport([]diagnostics.Check{
+			{Name: "server health", Status: diagnostics.Pass, Detail: "HTTP 200"},
+		}),
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/diagnostics", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"server health\"") {
+		t.Fatalf("diagnostics status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/diagnostics/report", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "xDrive diagnostic report") {
+		t.Fatalf("diagnostic report status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	for _, path := range []string{
+		"/v1/diagnostics/reconnect",
+		"/v1/diagnostics/repair-sync-root",
+		"/v1/diagnostics/open-logs",
+	} {
+		res = desktopIPCRequest(t, handler, http.MethodPost, path, "")
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", path, res.Code, res.Body.String())
+		}
+	}
+	if ctrl.reconnectN != 1 || ctrl.repairN != 1 || ctrl.openLogsN != 1 {
+		t.Fatalf("diagnostic actions not forwarded: reconnect=%d repair=%d logs=%d", ctrl.reconnectN, ctrl.repairN, ctrl.openLogsN)
 	}
 }
 
