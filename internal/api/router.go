@@ -74,6 +74,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/audit", s.adminAuditEvents)
 	admin.GET("/storage", s.adminStorageStats)
 	admin.GET("/storage/health", s.adminStorageHealth)
+	admin.GET("/storage/history", s.adminStorageHistory)
 	admin.POST("/users", s.adminCreateUser)
 	admin.PATCH("/users/:id", s.adminUpdateUser)
 	admin.DELETE("/users/:id", s.adminDeleteUser)

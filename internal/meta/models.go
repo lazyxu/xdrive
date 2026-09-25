@@ -99,6 +99,24 @@ type ContentBlob struct {
 
 func (ContentBlob) TableName() string { return "xd_content_blobs" }
 
+type StorageSample struct {
+	ID                        uint64    `gorm:"primaryKey"`
+	SlotAt                    time.Time `gorm:"not null;uniqueIndex"`
+	CapturedAt                time.Time `gorm:"not null;index"`
+	CASBlobCount              int64     `gorm:"not null"`
+	CASPhysicalBytes          int64     `gorm:"not null"`
+	CASLogicalReferencedBytes int64     `gorm:"not null"`
+	CASDedupRatio             float64   `gorm:"not null"`
+	CASSavingsRatio           float64   `gorm:"not null"`
+	P50BlobSizeBytes          int64     `gorm:"not null"`
+	P90BlobSizeBytes          int64     `gorm:"not null"`
+	P99BlobSizeBytes          int64     `gorm:"not null"`
+	BucketsJSON               string    `gorm:"type:text;not null"`
+	CreatedAt                 time.Time
+}
+
+func (StorageSample) TableName() string { return "xd_storage_samples" }
+
 type Share struct {
 	ID            uint64     `gorm:"primaryKey"`
 	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`

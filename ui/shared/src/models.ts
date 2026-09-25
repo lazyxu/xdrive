@@ -106,6 +106,43 @@ export interface StorageHealth {
   generated_at: string
 }
 
+export interface StorageHistoryPoint {
+  slot_at: string
+  captured_at: string
+  cas_blob_count: number
+  cas_physical_bytes: number
+  cas_logical_referenced_bytes: number
+  cas_dedup_ratio: number
+  cas_savings_ratio: number
+  p50_blob_size_bytes: number
+  p90_blob_size_bytes: number
+  p99_blob_size_bytes: number
+  small_lt64_kib_count_share: number
+  small_lt256_kib_count_share: number
+  large_ge16_mib_byte_share: number
+  buckets: StorageSizeBucket[]
+}
+
+export interface StorageDecision {
+  priority: 'collecting' | 'small_file_packing' | 'cdc' | 'observe'
+  confidence: 'low' | 'medium' | 'high'
+  sample_count: number
+  span_hours: number
+  window_hours: number
+  average_small_lt64_kib_count_share: number
+  average_small_lt256_kib_count_share: number
+  average_large_ge16_mib_byte_share: number
+  average_dedup_ratio: number
+  reason_codes: string[]
+}
+
+export interface StorageHistory {
+  samples: StorageHistoryPoint[]
+  decision: StorageDecision
+  sampling_interval_hours: number
+  retention_days: number
+}
+
 export interface AdminUser {
   id: number
   username: string
