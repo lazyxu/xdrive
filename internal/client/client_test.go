@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -11,6 +12,37 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDownloadToProgress(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/files/7/content" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Length", "6")
+		_, _ = io.WriteString(w, "abcdef")
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	var progress [][2]int64
+	err := New(ts.URL, "").DownloadToProgress(context.Background(), 7, &out, func(done, total int64) {
+		progress = append(progress, [2]int64{done, total})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "abcdef" {
+		t.Fatalf("download=%q", out.String())
+	}
+	if len(progress) < 2 {
+		t.Fatalf("progress callbacks=%v", progress)
+	}
+	last := progress[len(progress)-1]
+	if last != [2]int64{6, 6} {
+		t.Fatalf("final progress=%v", last)
+	}
+}
 
 func TestDownloadRangeSendsRangeAndAuth(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

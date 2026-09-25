@@ -55,6 +55,32 @@ declare global {
     Syncing: boolean
   }
 
+  type AgentTransfer = {
+    id: string
+    file_name: string
+    path?: string
+    kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
+    direction: 'upload' | 'download' | 'local' | string
+    state: 'running' | 'completed' | 'failed' | 'retrying' | string
+    bytes_done: number
+    bytes_total: number
+    percent: number
+    instant_bytes_per_second: number
+    average_bytes_per_second: number
+    elapsed_ms: number
+    error?: string
+    retry_count: number
+    retryable: boolean
+    started_at: string
+    updated_at: string
+    completed_at?: string
+  }
+
+  type AgentTransfers = {
+    revision: number
+    transfers: AgentTransfer[]
+  }
+
   type AgentConflict = {
     id: string
     server?: string
@@ -86,6 +112,7 @@ declare global {
       quit: () => void
       agent: {
         getState: () => Promise<AgentConnectionState>
+        getTransfers: () => Promise<AgentTransfers>
         retry: () => Promise<AgentConnectionState>
         restart: () => Promise<DesktopResult<AgentConnectionState>>
         login: (input: { server: string; username: string; password: string; mount_path?: string }) => Promise<DesktopResult<AgentStatus>>
@@ -101,8 +128,10 @@ declare global {
         getConflicts: () => Promise<DesktopResult<AgentConflict[]>>
         openConflict: (id: string, both?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
         resolveConflict: (id: string, choice: 'server' | 'local') => Promise<DesktopResult<{ ok: boolean }>>
+        retryTransfer: (id: string) => Promise<DesktopResult<AgentTransfers>>
         openFolder: () => Promise<DesktopResult<{ ok: boolean }>>
         onState: (callback: (state: AgentConnectionState) => void) => () => void
+        onTransfers: (callback: (state: AgentTransfers) => void) => () => void
       }
     }
   }

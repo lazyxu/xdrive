@@ -22,6 +22,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/mount"
+	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
 )
@@ -63,6 +64,9 @@ var desktopIPCCapabilities = []string{
 	"selective-sync",
 	"file-availability",
 	"conflicts",
+	"transfers",
+	"transfer-events",
+	"transfer-retry",
 	"open-folder",
 	"lifecycle-shutdown",
 }
@@ -89,6 +93,17 @@ type desktopIPCEvent struct {
 	Status   desktopIPCStatus `json:"status"`
 }
 
+type desktopIPCTransfers struct {
+	Revision  uint64          `json:"revision"`
+	Transfers []transfer.Task `json:"transfers"`
+}
+
+type desktopIPCTransferEvent struct {
+	Type      string          `json:"type"`
+	Revision  uint64          `json:"revision"`
+	Transfers []transfer.Task `json:"transfers"`
+}
+
 type desktopIPCSettings struct {
 	MountPath       string                `json:"mount_path"`
 	CacheLimitBytes int64                 `json:"cache_limit_bytes"`
@@ -108,6 +123,9 @@ type desktopIPCController interface {
 	SetSelectiveSyncRule(path, mode string) error
 	FileAvailability(path string) (mount.FileAvailability, error)
 	SetFileAvailability(path, action string) error
+	Transfers() (uint64, []transfer.Task)
+	WaitTransfers(context.Context, uint64) (uint64, []transfer.Task, bool)
+	RetryTransfer(context.Context, string) error
 	Conflicts() []conflictstate.Record
 	OpenConflict(id string, both bool) error
 	ResolveConflict(id, choice string) error
@@ -273,6 +291,9 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("PUT /v1/settings/sync-rule", h.setSyncRule)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
+	mux.HandleFunc("GET /v1/transfers", h.transfers)
+	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
+	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
 	mux.HandleFunc("GET /v1/conflicts", h.conflicts)
 	mux.HandleFunc("POST /v1/conflicts/open", h.openConflict)
 	mux.HandleFunc("POST /v1/conflicts/resolve", h.resolveConflict)
@@ -538,6 +559,65 @@ func (h *desktopIPCHandler) setFileAvailability(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, state)
+}
+
+func (h *desktopIPCHandler) transfers(w http.ResponseWriter, _ *http.Request) {
+	revision, items := h.ctrl.Transfers()
+	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
+}
+
+func (h *desktopIPCHandler) transferEvents(w http.ResponseWriter, r *http.Request) {
+	after := uint64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("after_revision")); raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_after_revision", "after_revision must be an unsigned integer")
+			return
+		}
+		after = value
+	}
+	wait := desktopIPCDefaultEventWait
+	if raw := strings.TrimSpace(r.URL.Query().Get("timeout_ms")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || time.Duration(value)*time.Millisecond > desktopIPCMaxEventWait {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_timeout", "timeout_ms must be between 1 and 30000")
+			return
+		}
+		wait = time.Duration(value) * time.Millisecond
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), wait)
+	defer cancel()
+	revision, items, changed := h.ctrl.WaitTransfers(ctx, after)
+	w.Header().Set("X-XDrive-Transfer-Revision", strconv.FormatUint(revision, 10))
+	if !changed {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransferEvent{
+		Type:      "transfers.changed",
+		Revision:  revision,
+		Transfers: items,
+	})
+}
+
+func (h *desktopIPCHandler) retryTransfer(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
+		return
+	}
+	if err := h.ctrl.RetryTransfer(r.Context(), input.ID); err != nil {
+		writeDesktopIPCError(w, http.StatusConflict, "transfer_retry_failed", err.Error())
+		return
+	}
+	revision, items := h.ctrl.Transfers()
+	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
 }
 
 func (h *desktopIPCHandler) conflicts(w http.ResponseWriter, _ *http.Request) {

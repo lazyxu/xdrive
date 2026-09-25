@@ -22,6 +22,7 @@ import {
   type AgentFileAvailability,
   type AgentSettings,
   type AgentStatus,
+  type AgentTransfers,
 } from './agent_client.cjs'
 
 const TRAY_ICON_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA20lEQVR42uWX4RGDIAyFNTPYDdrJ2rHsZHYD3UF/9Y6zCbxAQrwrfw35Hgk8ZBj+fYy5j/fnuluBPu/bCAuwBJeEUE84l596wjkORW9C6r36M09dgWWeTGKqWvBNnAMgMWoByzz9JOQAXExJCCTg8dqKpZZA0lx1C0qJaudQa0KpzKjg6/iAZVk17aqqQA6g3StVAhAfcBMQ6oThm1A6btLxNBWg7S06h1oSpStH7LrpLjgDOCAXY3YXpADEB9ys2M0Jpf9279/za/lAryqkHEKfUF4vo/C3Yfg4ANVHcjg82WLtAAAAAElFTkSuQmCC'
@@ -43,7 +44,9 @@ let quitting = false
 let agentClient: AgentIPCClient | null = null
 let agentLifecycle: AgentLifecycle | null = null
 let agentState: AgentConnectionState = { connected: false, error: 'Connecting to xdrive-agent…' }
+let agentTransfers: AgentTransfers = { revision: 0, transfers: [] }
 let agentMonitor: AbortController | null = null
+let transferMonitor: AbortController | null = null
 const backgroundLaunch = process.argv.includes('--background')
 const desktopPreferencesName = 'desktop-settings.json'
 
@@ -252,6 +255,14 @@ function publishAgentState(next: AgentConnectionState) {
   if (changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent:state', next)
 }
 
+function publishAgentTransfers(next: AgentTransfers) {
+  const changed = JSON.stringify(agentTransfers) !== JSON.stringify(next)
+  agentTransfers = next
+  if (changed && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('agent:transfers', next)
+  }
+}
+
 function agentError(error: unknown) {
   if (error instanceof AgentIPCError) {
     return { code: error.code, message: error.message, ...(error.status ? { status: error.status } : {}) }
@@ -341,6 +352,37 @@ function startAgentMonitor() {
   })()
 }
 
+function startTransferMonitor() {
+  transferMonitor?.abort()
+  const monitor = new AbortController()
+  transferMonitor = monitor
+  void (async () => {
+    while (!monitor.signal.aborted) {
+      try {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        if (!hello.capabilities.includes('transfers') || !hello.capabilities.includes('transfer-events')) {
+          publishAgentTransfers({ revision: 0, transfers: [] })
+          await wait(5_000, monitor.signal)
+          continue
+        }
+        const snapshot = await requireAgentClient().transfers()
+        publishAgentTransfers(snapshot)
+        let revision = snapshot.revision
+        while (!monitor.signal.aborted) {
+          const event = await requireAgentClient().transferEvents(revision, 25_000, monitor.signal)
+          if (!event) continue
+          revision = event.revision
+          publishAgentTransfers({ revision: event.revision, transfers: event.transfers })
+        }
+      } catch {
+        if (monitor.signal.aborted) return
+        requireAgentClient().invalidate()
+        await wait(1_000, monitor.signal)
+      }
+    }
+  })()
+}
+
 function registerIPCHandlers() {
   ipcMain.handle('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch }))
   ipcMain.handle('desktop:get-startup', () => loadDesktopPreferences())
@@ -362,6 +404,7 @@ function registerIPCHandlers() {
   })
 
   ipcMain.handle('agent:get-state', () => agentState)
+  ipcMain.handle('agent:get-transfers', () => agentTransfers)
   ipcMain.handle('agent:retry', () => refreshAgentState())
   ipcMain.handle('agent:restart', async () => {
     try {
@@ -441,6 +484,16 @@ function registerIPCHandlers() {
     }
     return runAgentAction(() => requireAgentClient().setFileAvailability(path, action), action === 'sync')
   })
+  ipcMain.handle('agent:retry-transfer', (_event, id: unknown) => {
+    if (typeof id !== 'string' || !id.trim()) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Transfer id is required.' } }
+    }
+    return runAgentAction<AgentTransfers>(async () => {
+      const next = await requireAgentClient().retryTransfer(id)
+      publishAgentTransfers(next)
+      return next
+    }, false)
+  })
   ipcMain.handle('agent:get-conflicts', () => runAgentAction<AgentConflict[]>(() => requireAgentClient().conflicts(), false))
   ipcMain.handle('agent:open-conflict', (_event, id: unknown, both: unknown) => {
     if (typeof id !== 'string' || !id.trim() || typeof both !== 'boolean') {
@@ -473,6 +526,7 @@ if (!primaryInstance) {
   app.on('before-quit', () => {
     quitting = true
     agentMonitor?.abort()
+    transferMonitor?.abort()
   })
   void app.whenReady().then(async () => {
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
@@ -490,6 +544,7 @@ if (!primaryInstance) {
     createMainWindow(!backgroundLaunch)
     createTray()
     startAgentMonitor()
+    startTransferMonitor()
   })
   app.on('activate', () => {
     if (mainWindow) showMainWindow()

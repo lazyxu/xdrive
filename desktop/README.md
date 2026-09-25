@@ -8,6 +8,7 @@ xDrive Desktop is the graphical client for the headless Go `xdrive-agent`.
 - Electron Main reads `desktop-ipc.json`, owns the local bearer token, performs the Agent protocol handshake, and performs all Agent HTTP requests;
 - the sandboxed renderer receives only narrow business operations through preload/`contextBridge`;
 - login, required password change, logout, live sync state, pause/resume, sync-now, open-folder, mount/cache settings, conflict resolution;
+- transfer center for active/completed/failed uploads, downloads, hydration and cache release, including progress/rates/errors and safe retry where the Agent marks a task retryable;
 - Windows file availability controls: always-local, free-space, online-only, and manual sync;
 - selective-sync rule management;
 - automatic Agent start/recovery plus an explicit Restart Agent action;
@@ -32,6 +33,6 @@ npm start
 
 Packaged Desktop builds default to **Start xDrive Desktop at login**. Windows uses the per-user login item with `--background`; Linux writes a per-user XDG autostart entry. The preference is editable in Desktop Settings.
 
-A background launch keeps the main window hidden while the Tray and Agent monitor run. Desktop first negotiates `GET /v1/hello` and validates the protocol range. If no Agent is available, Desktop starts the installed Core Agent and waits for it to publish Desktop IPC. Unexpected Agent exits are recovered automatically.
+A background launch keeps the main window hidden while the Tray and Agent monitor run. Transfer progress uses a separate Agent long-poll revision stream, so high-frequency byte progress does not churn the general sync/account status monitor. Desktop first negotiates `GET /v1/hello` and validates the protocol range. If no Agent is available, Desktop starts the installed Core Agent and waits for it to publish Desktop IPC. Unexpected Agent exits are recovered automatically.
 
 The Core Agent remains independent from Electron: quitting Electron does not stop synchronization. The lifecycle shutdown endpoint exists for explicit Agent restart and future atomic upgrade orchestration.

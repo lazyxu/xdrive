@@ -13,26 +13,28 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/transfer"
 )
 
 type linuxNode struct {
 	fs.Inode
-	cli  *client.Client
-	node client.Node
+	cli       *client.Client
+	node      client.Node
+	transfers *transfer.Manager
 }
 
 func runPlatform(ctx context.Context, cli *client.Client, mountpoint string) error {
 	return runPlatformWithOptions(ctx, cli, mountpoint, Options{})
 }
 
-func runPlatformWithOptions(ctx context.Context, cli *client.Client, mountpoint string, _ Options) error {
+func runPlatformWithOptions(ctx context.Context, cli *client.Client, mountpoint string, opts Options) error {
 	emitEvent(Event{Kind: EventSyncStarted})
 	root, err := cli.Root(ctx)
 	if err != nil {
 		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 		return err
 	}
-	rootNode := &linuxNode{cli: cli, node: root}
+	rootNode := &linuxNode{cli: cli, node: root, transfers: opts.Transfers}
 	server, err := fs.Mount(mountpoint, rootNode, &fs.Options{MountOptions: fuse.MountOptions{FsName: "xdrive", Name: "xDrive"}})
 	if err != nil {
 		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
@@ -80,7 +82,7 @@ func (n *linuxNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		if child.Name != name {
 			continue
 		}
-		cn := &linuxNode{cli: n.cli, node: child}
+		cn := &linuxNode{cli: n.cli, node: child, transfers: n.transfers}
 		inode := n.NewInode(ctx, cn, cn.stableAttr())
 		fillEntry(out, child)
 		return inode, 0
@@ -109,7 +111,7 @@ func (n *linuxNode) Mkdir(ctx context.Context, name string, mode uint32, out *fu
 	if err != nil {
 		return nil, errno(err)
 	}
-	cn := &linuxNode{cli: n.cli, node: created}
+	cn := &linuxNode{cli: n.cli, node: created, transfers: n.transfers}
 	fillEntry(out, created)
 	return n.NewInode(ctx, cn, cn.stableAttr()), 0
 }
@@ -119,8 +121,8 @@ func (n *linuxNode) Create(ctx context.Context, name string, flags uint32, mode 
 	if err != nil {
 		return nil, nil, 0, errno(err)
 	}
-	cn := &linuxNode{cli: n.cli, node: created}
-	h, err := newLinuxHandle(ctx, n.cli, created, flags, true)
+	cn := &linuxNode{cli: n.cli, node: created, transfers: n.transfers}
+	h, err := newLinuxHandle(ctx, n.cli, created, flags, true, n.transfers)
 	if err != nil {
 		return nil, nil, 0, errno(err)
 	}
@@ -132,7 +134,7 @@ func (n *linuxNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 	if n.node.Type != "file" {
 		return nil, 0, syscall.EISDIR
 	}
-	h, err := newLinuxHandle(ctx, n.cli, n.node, flags, false)
+	h, err := newLinuxHandle(ctx, n.cli, n.node, flags, false, n.transfers)
 	if err != nil {
 		return nil, 0, errno(err)
 	}
@@ -192,7 +194,7 @@ func (n *linuxNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 		return n.Getattr(ctx, fh, out)
 	}
 	if size, ok := in.GetSize(); ok {
-		h, err := newLinuxHandle(ctx, n.cli, n.node, uint32(os.O_RDWR), false)
+		h, err := newLinuxHandle(ctx, n.cli, n.node, uint32(os.O_RDWR), false, n.transfers)
 		if err != nil {
 			return errno(err)
 		}
@@ -224,26 +226,45 @@ func (n *linuxNode) findChild(ctx context.Context, name string) (client.Node, er
 }
 
 type linuxHandle struct {
-	mu       sync.Mutex
-	cli      *client.Client
-	node     client.Node
-	file     *os.File
-	path     string
-	dirty    bool
-	released bool
+	mu        sync.Mutex
+	cli       *client.Client
+	node      client.Node
+	file      *os.File
+	path      string
+	dirty     bool
+	released  bool
+	transfers *transfer.Manager
 }
 
-func newLinuxHandle(ctx context.Context, cli *client.Client, node client.Node, flags uint32, created bool) (*linuxHandle, error) {
+func newLinuxHandle(ctx context.Context, cli *client.Client, node client.Node, flags uint32, created bool, transfers *transfer.Manager) (*linuxHandle, error) {
 	f, err := os.CreateTemp("", "xdrive-fuse-*")
 	if err != nil {
 		return nil, err
 	}
-	h := &linuxHandle{cli: cli, node: node, file: f, path: f.Name(), dirty: created}
+	h := &linuxHandle{cli: cli, node: node, file: f, path: f.Name(), dirty: created, transfers: transfers}
 	if !created && node.Size > 0 {
-		if err := cli.DownloadTo(ctx, node.ID, f); err != nil {
+		var task *transfer.Handle
+		if transfers != nil {
+			task = transfers.Start(transfer.Spec{FileName: node.Name, Path: node.Name, Kind: transfer.KindDownload, Direction: "download", TotalBytes: node.Size})
+		}
+		err := cli.DownloadToProgress(ctx, node.ID, f, func(done, total int64) {
+			if task != nil {
+				if total <= 0 {
+					total = node.Size
+				}
+				task.Progress(done, total)
+			}
+		})
+		if err != nil {
+			if task != nil {
+				task.Fail(err)
+			}
 			f.Close()
 			os.Remove(f.Name())
 			return nil, err
+		}
+		if task != nil {
+			task.Complete()
 		}
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			f.Close()
@@ -332,14 +353,66 @@ func (h *linuxHandle) sync(ctx context.Context) error {
 	if err := h.file.Sync(); err != nil {
 		return err
 	}
-	updated, err := h.cli.OverwriteFileResumable(ctx, h.node.ID, h.node.Revision, h.path, nil)
+	info, statErr := h.file.Stat()
+	if statErr != nil {
+		return statErr
+	}
+	var task *transfer.Handle
+	var progress client.UploadProgress
+	if h.transfers != nil {
+		task = h.transfers.Start(transfer.Spec{FileName: h.node.Name, Path: h.node.Name, Kind: transfer.KindUpload, Direction: "upload", TotalBytes: info.Size()})
+		firstProgress := true
+		progress = func(done, total int64) {
+			if firstProgress {
+				firstProgress = false
+				task.Baseline(done, total)
+				return
+			}
+			task.Progress(done, total)
+		}
+	}
+	updated, err := h.cli.OverwriteFileResumable(ctx, h.node.ID, h.node.Revision, h.path, progress)
+	if err == nil && task != nil {
+		task.Complete()
+	}
 	if err != nil {
 		if !client.IsRevisionConflict(err) || h.node.ParentID == nil {
+			if task != nil {
+				task.Fail(err)
+			}
 			return err
 		}
-		conflict, uploadErr := h.cli.UploadFileResumable(ctx, *h.node.ParentID, h.path, conflictName(h.node.Name), nil)
+		conflictFileName := conflictName(h.node.Name)
+		var conflictTask *transfer.Handle
+		var conflictProgress client.UploadProgress
+		if h.transfers != nil {
+			conflictTask = h.transfers.Start(transfer.Spec{FileName: conflictFileName, Path: conflictFileName, Kind: transfer.KindUpload, Direction: "upload", TotalBytes: info.Size()})
+			firstConflictProgress := true
+			conflictProgress = func(done, total int64) {
+				if firstConflictProgress {
+					firstConflictProgress = false
+					conflictTask.Baseline(done, total)
+					return
+				}
+				conflictTask.Progress(done, total)
+			}
+		}
+		conflict, uploadErr := h.cli.UploadFileResumable(ctx, *h.node.ParentID, h.path, conflictFileName, conflictProgress)
+		if conflictTask != nil {
+			if uploadErr != nil {
+				conflictTask.Fail(uploadErr)
+			} else {
+				conflictTask.Complete()
+			}
+		}
 		if uploadErr != nil {
+			if task != nil {
+				task.Fail(uploadErr)
+			}
 			return uploadErr
+		}
+		if task != nil {
+			task.Complete()
 		}
 		h.node = conflict
 		h.dirty = false

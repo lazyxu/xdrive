@@ -14,6 +14,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/mount"
+	"github.com/lazyxu/xdrive/internal/transfer"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -43,6 +44,7 @@ type agentController struct {
 	snap             agentSnapshot
 	snapshotRevision uint64
 	snapshotChanged  chan struct{}
+	transfers        *transfer.Manager
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
@@ -52,6 +54,7 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		wake:             make(chan struct{}, 1),
 		snapshotRevision: 1,
 		snapshotChanged:  make(chan struct{}),
+		transfers:        transfer.NewManager(transfer.DefaultHistoryLimit),
 		snap: agentSnapshot{
 			AuthStatus: "未登录",
 			SyncStatus: "等待登录",
@@ -212,7 +215,7 @@ func (c *agentController) Run() {
 			s.LastError = ""
 		})
 		go func() {
-			done <- mount.RunWithOptions(mctx, cli, d.root, mountOptionsFromConfig(d.cfg))
+			done <- mount.RunWithOptions(mctx, cli, d.root, mountOptionsFromConfig(d.cfg, c.transfers))
 		}()
 	}
 
@@ -222,6 +225,7 @@ func (c *agentController) Run() {
 			if running {
 				stopMount()
 			}
+			c.transfers.Clear()
 			c.setSnapshot(func(s *agentSnapshot) {
 				*s = agentSnapshot{
 					AuthStatus: "未登录",
@@ -282,6 +286,7 @@ func (c *agentController) Run() {
 
 		if running && d.key != currentKey {
 			stopMount()
+			c.transfers.Clear()
 			return
 		}
 
@@ -476,6 +481,7 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
+	c.transfers.Clear()
 	c.setSnapshot(func(s *agentSnapshot) {
 		s.Configured = true
 		s.Username = resp.Username
@@ -531,6 +537,18 @@ func (c *agentController) ChangePassword(currentPassword, newPassword string) er
 	return nil
 }
 
+func (c *agentController) Transfers() (uint64, []transfer.Task) {
+	return c.transfers.Snapshot()
+}
+
+func (c *agentController) WaitTransfers(ctx context.Context, after uint64) (uint64, []transfer.Task, bool) {
+	return c.transfers.Wait(ctx, after)
+}
+
+func (c *agentController) RetryTransfer(ctx context.Context, id string) error {
+	return c.transfers.Retry(ctx, id)
+}
+
 func (c *agentController) Settings() (userconfig.Config, string, error) {
 	cfg, err := userconfig.Load()
 	if err != nil {
@@ -576,8 +594,12 @@ func (c *agentController) SaveMountPath(path string) error {
 	return c.UpdateSettings(&path, nil)
 }
 
-func mountOptionsFromConfig(cfg userconfig.Config) mount.Options {
-	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes}
+func mountOptionsFromConfig(cfg userconfig.Config, managers ...*transfer.Manager) mount.Options {
+	var transfers *transfer.Manager
+	if len(managers) > 0 {
+		transfers = managers[0]
+	}
+	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes, Transfers: transfers}
 	for _, rule := range cfg.SyncRules {
 		switch rule.Mode {
 		case userconfig.SyncModeExclude:
@@ -753,6 +775,7 @@ func (c *agentController) Logout() error {
 	if err := userconfig.Remove(); err != nil {
 		return err
 	}
+	c.transfers.Clear()
 	c.setSnapshot(func(s *agentSnapshot) {
 		*s = agentSnapshot{
 			AuthStatus: "未登录",

@@ -210,7 +210,13 @@ func (c *Client) Overwrite(ctx context.Context, id, revision uint64, r io.Reader
 	return out, nil
 }
 
+type DownloadProgress func(done, total int64)
+
 func (c *Client) DownloadTo(ctx context.Context, id uint64, w io.Writer) error {
+	return c.DownloadToProgress(ctx, id, w, nil)
+}
+
+func (c *Client) DownloadToProgress(ctx context.Context, id uint64, w io.Writer, progress DownloadProgress) error {
 	req, err := c.request(ctx, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", id), nil)
 	if err != nil {
 		return err
@@ -223,8 +229,37 @@ func (c *Client) DownloadTo(ctx context.Context, id uint64, w io.Writer) error {
 	if resp.StatusCode/100 != 2 {
 		return responseError(resp)
 	}
-	_, err = io.Copy(w, resp.Body)
+	total := resp.ContentLength
+	if total < 0 {
+		total = 0
+	}
+	if progress != nil {
+		progress(0, total)
+	}
+	writer := &progressWriter{writer: w, total: total, progress: progress}
+	_, err = io.Copy(writer, resp.Body)
 	return err
+}
+
+type progressWriter struct {
+	writer     io.Writer
+	total      int64
+	done       int64
+	progress   DownloadProgress
+	lastReport time.Time
+}
+
+func (w *progressWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if n > 0 {
+		w.done += int64(n)
+		if w.progress != nil &&
+			(w.lastReport.IsZero() || time.Since(w.lastReport) >= 100*time.Millisecond || (w.total > 0 && w.done >= w.total)) {
+			w.progress(w.done, w.total)
+			w.lastReport = time.Now()
+		}
+	}
+	return n, err
 }
 
 func (c *Client) DownloadRange(ctx context.Context, id uint64, offset, length int64) ([]byte, error) {

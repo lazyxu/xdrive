@@ -61,6 +61,38 @@ export type AgentStatusEvent = {
   status: AgentStatus
 }
 
+export type AgentTransfer = {
+  id: string
+  file_name: string
+  path?: string
+  kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
+  direction: 'upload' | 'download' | 'local' | string
+  state: 'running' | 'completed' | 'failed' | 'retrying' | string
+  bytes_done: number
+  bytes_total: number
+  percent: number
+  instant_bytes_per_second: number
+  average_bytes_per_second: number
+  elapsed_ms: number
+  error?: string
+  retry_count: number
+  retryable: boolean
+  started_at: string
+  updated_at: string
+  completed_at?: string
+}
+
+export type AgentTransfers = {
+  revision: number
+  transfers: AgentTransfer[]
+}
+
+export type AgentTransferEvent = {
+  type: 'transfers.changed'
+  revision: number
+  transfers: AgentTransfer[]
+}
+
 type AgentDiscovery = {
   version: number
   base_url: string
@@ -179,6 +211,28 @@ export class AgentIPCClient {
 
   setFileAvailability(path: string, action: 'keep' | 'release' | 'online' | 'sync') {
     return this.request<AgentFileAvailability | { ok: boolean }>('POST', '/v1/file-availability', { path, action }, 130_000)
+  }
+
+  transfers() {
+    return this.request<AgentTransfers>('GET', '/v1/transfers')
+  }
+
+  transferEvents(afterRevision: number, timeoutMs = 25_000, signal?: AbortSignal) {
+    const query = new URLSearchParams({
+      after_revision: String(afterRevision),
+      timeout_ms: String(timeoutMs),
+    })
+    return this.request<AgentTransferEvent | null>(
+      'GET',
+      `/v1/transfer-events?${query.toString()}`,
+      undefined,
+      Math.min(timeoutMs + 5_000, 35_000),
+      signal,
+    )
+  }
+
+  retryTransfer(id: string) {
+    return this.request<AgentTransfers>('POST', '/v1/transfers/retry', { id }, 130_000)
   }
 
   async conflicts() {
