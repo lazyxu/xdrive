@@ -3,7 +3,7 @@ set -euo pipefail
 
 VERSION="${1:-0.0.0+dev}"
 OUT_DIR="${2:-dist}"
-DESKTOP_DEB="${3:-}"
+DESKTOP_RUNTIME="${3:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 case "$VERSION" in
@@ -15,39 +15,34 @@ esac
 PKG_ROOT="$(mktemp -d)"
 trap 'rm -rf "$PKG_ROOT"' EXIT
 
-if [[ -z "$DESKTOP_DEB" ]]; then
-  DESKTOP_DEB="$ROOT/desktop/release/xdrive-desktop-linux-amd64.deb"
-elif [[ "$DESKTOP_DEB" != /* ]]; then
-  DESKTOP_DEB="$ROOT/$DESKTOP_DEB"
+if [[ -z "$DESKTOP_RUNTIME" ]]; then
+  DESKTOP_RUNTIME="$ROOT/desktop/release/linux-unpacked"
+elif [[ "$DESKTOP_RUNTIME" != /* ]]; then
+  DESKTOP_RUNTIME="$ROOT/$DESKTOP_RUNTIME"
 fi
-if [[ ! -f "$DESKTOP_DEB" ]]; then
-  echo "Electron desktop package is required: $DESKTOP_DEB" >&2
-  echo "Build desktop/release/xdrive-desktop-linux-amd64.deb first or pass it as the third argument." >&2
+desktop_exe="$DESKTOP_RUNTIME/xdrive-desktop"
+if [[ ! -x "$desktop_exe" ]]; then
+  echo "Electron desktop runtime is required: $desktop_exe" >&2
+  echo "Build desktop/release/linux-unpacked first or pass the runtime directory as the third argument." >&2
   exit 1
 fi
 
-DESKTOP_DEPENDS="$(dpkg-deb -f "$DESKTOP_DEB" Depends 2>/dev/null || true)"
-dpkg-deb -x "$DESKTOP_DEB" "$PKG_ROOT"
+mkdir -p \
+  "$PKG_ROOT/DEBIAN" \
+  "$PKG_ROOT/opt/xdrive-desktop" \
+  "$PKG_ROOT/usr/bin" \
+  "$PKG_ROOT/usr/lib/systemd/user" \
+  "$PKG_ROOT/usr/lib/systemd/system" \
+  "$PKG_ROOT/usr/share/applications" \
+  "$PKG_ROOT/usr/share/doc/xdrive-client"
 
-desktop_launcher="$PKG_ROOT/usr/bin/xdrive-desktop"
-if [[ ! -x "$desktop_launcher" ]]; then
-  desktop_payload="$(find "$PKG_ROOT" -type f -name xdrive-desktop -perm -u+x -print -quit)"
-  if [[ -z "$desktop_payload" ]]; then
-    echo "Electron desktop payload does not contain an executable named xdrive-desktop" >&2
-    exit 1
-  fi
-  desktop_payload_rel="${desktop_payload#"$PKG_ROOT/"}"
-  desktop_target="../../$desktop_payload_rel"
-  mkdir -p "$PKG_ROOT/usr/bin"
-  ln -sfn "$desktop_target" "$desktop_launcher"
-fi
+cp -a "$DESKTOP_RUNTIME/." "$PKG_ROOT/opt/xdrive-desktop/"
+ln -sfn ../../opt/xdrive-desktop/xdrive-desktop "$PKG_ROOT/usr/bin/xdrive-desktop"
 
-if [[ ! -x "$desktop_launcher" ]]; then
-  echo "Electron desktop launcher is not executable after package merge: /usr/bin/xdrive-desktop" >&2
+if [[ ! -x "$PKG_ROOT/usr/bin/xdrive-desktop" ]]; then
+  echo "Electron desktop launcher is not executable after runtime merge: /usr/bin/xdrive-desktop" >&2
   exit 1
 fi
-
-mkdir -p   "$PKG_ROOT/DEBIAN"   "$PKG_ROOT/usr/bin"   "$PKG_ROOT/usr/lib/systemd/user"   "$PKG_ROOT/usr/lib/systemd/system"   "$PKG_ROOT/usr/share/doc/xdrive-client"
 
 VERSION_LDFLAG="-X github.com/lazyxu/xdrive/internal/version.Version=$VERSION"
 
@@ -60,6 +55,7 @@ popd >/dev/null
 install -m 0644 "$ROOT/packaging/linux/xdrive-agent.service" "$PKG_ROOT/usr/lib/systemd/user/xdrive-agent.service"
 install -m 0644 "$ROOT/packaging/linux/xdrive-update.service" "$PKG_ROOT/usr/lib/systemd/system/xdrive-update.service"
 install -m 0644 "$ROOT/packaging/linux/xdrive-update.timer" "$PKG_ROOT/usr/lib/systemd/system/xdrive-update.timer"
+install -m 0644 "$ROOT/packaging/linux/xdrive.desktop" "$PKG_ROOT/usr/share/applications/xdrive.desktop"
 install -m 0644 "$ROOT/README.md" "$PKG_ROOT/usr/share/doc/xdrive-client/README.md"
 install -m 0644 "$ROOT/LICENSE" "$PKG_ROOT/usr/share/doc/xdrive-client/LICENSE"
 printf '%s\n' "$VERSION" > "$PKG_ROOT/usr/share/doc/xdrive-client/client-version"
@@ -71,8 +67,8 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: xDrive Project <noreply@github.com>
-Depends: fuse3, ca-certificates${DESKTOP_DEPENDS:+, $DESKTOP_DEPENDS}
-Recommends: libsecret-tools
+Depends: fuse3, ca-certificates, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0
+Recommends: libsecret-tools, libappindicator3-1
 Conflicts: xdrive-desktop
 Replaces: xdrive-desktop
 Provides: xdrive-desktop
@@ -135,7 +131,7 @@ POSTRM
 chmod 0755 "$PKG_ROOT/DEBIAN/postrm"
 
 mkdir -p "$OUT_DIR"
-OUTPUT="$OUT_DIR/xdrive-client-linux-amd64.deb"
+OUTPUT="$OUT_DIR/xdrive-linux-amd64.deb"
 dpkg-deb --root-owner-group --build "$PKG_ROOT" "$OUTPUT"
 dpkg-deb --info "$OUTPUT" >/dev/null
 dpkg-deb --contents "$OUTPUT" >/dev/null

@@ -1,10 +1,12 @@
-name: Build Packages
+name: Publish Packages
 
 on:
-  push:
-    branches: ["master"]
-    tags: ["v*"]
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      publish:
+        description: Publish server images and release assets after exact client artifacts are verified.
+        required: true
+        type: boolean
 
 permissions:
   contents: read
@@ -13,254 +15,35 @@ permissions:
 env:
   DOCKER_BUILD_RECORD_UPLOAD: "false"
 
-concurrency:
-  group: build-packages-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/master' }}
-
 jobs:
-  validate-publishing-ref:
+  verify-client-artifacts:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate publishing ref and wait for CI
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Download exact Linux installer tested by CI
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-linux-amd64
+          path: exact
+      - name: Download exact Windows installer tested by CI
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: exact
+      - name: Verify exact client artifact contract
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" != "refs/heads/master" && "$GITHUB_REF" != refs/tags/v* ]]; then
-            echo "Build Packages may publish only master snapshots or v* version tags." >&2
+          test -f exact/xdrive-linux-amd64.deb
+          test -f exact/xDriveSetup-amd64.exe
+          count="$(find exact -maxdepth 1 -type f | wc -l)"
+          [[ "$count" == "2" ]] || {
+            echo "expected exactly two user-facing client installers; found $count" >&2
+            find exact -maxdepth 1 -type f -print >&2
             exit 1
-          fi
-
-          ci_run_id=""
-          ci_status=""
-          ci_conclusion=""
-          for _ in $(seq 1 360); do
-            ci_state="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=20" \
-              --jq '.workflow_runs | sort_by(.created_at) | last | if . == null then "" else "\(.id)|\(.status)|\(.conclusion // "")" end')"
-            if [[ -n "$ci_state" ]]; then
-              IFS="|" read -r ci_run_id ci_status ci_conclusion <<< "$ci_state"
-              case "$ci_status" in
-                completed)
-                  if [[ "$ci_conclusion" == "success" ]]; then
-                    echo "CI gate passed: run $ci_run_id for $GITHUB_SHA"
-                    break
-                  fi
-                  echo "Build Packages blocked: CI run $ci_run_id concluded $ci_conclusion for $GITHUB_SHA." >&2
-                  exit 1
-                  ;;
-                queued|in_progress|pending|requested|waiting)
-                  ;;
-              esac
-            fi
-            sleep 10
-          done
-
-          if [[ -z "$ci_run_id" || "$ci_status" != "completed" || "$ci_conclusion" != "success" ]]; then
-            echo "Build Packages timed out waiting for successful CI for $GITHUB_SHA." >&2
-            exit 1
-          fi
-  client-linux-amd64:
-    needs: validate-publishing-ref
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Build Linux unified client installer
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            version="$GITHUB_REF_NAME"
-          else
-            version="snapshot-${GITHUB_SHA::12}"
-          fi
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            desktop_version="${GITHUB_REF_NAME#v}"
-          else
-            desktop_version="0.0.0-snapshot.${GITHUB_SHA::12}"
-          fi
-          pushd desktop >/dev/null
-          npm install --no-audit --no-fund
-          node scripts/set-version.mjs "$desktop_version"
-          npm run dist:linux
-          popd >/dev/null
-          bash scripts/build-linux-deb.sh "$version" release desktop/release/xdrive-desktop-linux-amd64.deb
-      - uses: actions/upload-artifact@v4
-        with:
-          name: client-linux-amd64
-          path: release/xdrive-client-linux-amd64.deb
-          if-no-files-found: error
-          retention-days: 14
-
-  client-windows-amd64:
-    needs: validate-publishing-ref
-    runs-on: windows-latest
-    env:
-      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
-      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup --no-progress -y
-      - name: Prepare Windows code-signing certificate
-        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
-        shell: pwsh
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "xdrive-codesign.pfx"
-          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
-          "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CSC_KEY_PASSWORD=$env:XD_WINDOWS_SIGN_PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Build embedded Windows desktop runtime
-        shell: pwsh
-        working-directory: desktop
-        run: |
-          if ($env:GITHUB_REF_TYPE -eq "tag") {
-            $version = $env:GITHUB_REF_NAME.Substring(1)
-          } else {
-            $version = "0.0.0-snapshot." + $env:GITHUB_SHA.Substring(0, 12)
           }
-          npm install --no-audit --no-fund
-          node scripts/set-version.mjs $version
-          npm run dist:win
-      - name: Build Windows unified client installer
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF_TYPE -eq "tag") {
-            $version = $env:GITHUB_REF_NAME
-          } else {
-            $version = "snapshot-" + $env:GITHUB_SHA.Substring(0, 12)
-          }
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PATH)) {
-            throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
-          }
-          ./scripts/build-windows-installer.ps1 -Version $version -OutputDir release -DesktopSourceDir desktop/release/win-unpacked
-      - name: Verify Windows Authenticode signatures
-        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
-        shell: pwsh
-        run: |
-          $targets = @(
-            "./release/windows-build/xd.exe",
-            "./release/windows-build/xdrive-agent.exe",
-            "./release/windows-build/desktop/xdrive-desktop.exe",
-            "./release/xDriveSetup-amd64.exe"
-          )
-          foreach ($target in $targets) {
-            $sig = Get-AuthenticodeSignature $target
-            if ($sig.Status -ne "Valid") { throw "invalid Authenticode signature for $target: $($sig.Status)" }
-          }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: client-windows-amd64
-          path: release/xDriveSetup-amd64.exe
-          if-no-files-found: error
-          retention-days: 14
-
-  desktop-linux-amd64:
-    needs: validate-publishing-ref
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: desktop
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Install desktop dependencies
-        run: npm install --no-audit --no-fund
-      - name: Build Linux desktop installer
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="0.0.0-snapshot.${GITHUB_SHA::12}"
-          fi
-          node scripts/set-version.mjs "$version"
-          npm run dist:linux
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-linux-amd64
-          path: desktop/release/xdrive-desktop-linux-amd64.deb
-          if-no-files-found: error
-          retention-days: 14
-
-  desktop-windows-amd64:
-    needs: validate-publishing-ref
-    runs-on: windows-latest
-    env:
-      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
-      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
-    defaults:
-      run:
-        working-directory: desktop
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Install desktop dependencies
-        run: npm install --no-audit --no-fund
-      - name: Prepare Windows desktop signing certificate
-        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
-        shell: pwsh
-        working-directory: .
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-codesign.pfx"
-          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
-          "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CSC_KEY_PASSWORD=$env:XD_WINDOWS_SIGN_PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Build Windows desktop installer
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF_TYPE -eq "tag") {
-            $version = $env:GITHUB_REF_NAME.Substring(1)
-          } else {
-            $version = "0.0.0-snapshot." + $env:GITHUB_SHA.Substring(0, 12)
-          }
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
-            throw "Stable Windows desktop releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
-          }
-          node scripts/set-version.mjs $version
-          npm run dist:win
-      - name: Verify Windows desktop signatures
-        if: env.XD_WINDOWS_SIGN_PFX_B64 != ''
-        shell: pwsh
-        run: |
-          $targets = @(
-            "./release/win-unpacked/xdrive-desktop.exe",
-            "./release/xDriveDesktopSetup-amd64.exe"
-          )
-          foreach ($target in $targets) {
-            $sig = Get-AuthenticodeSignature $target
-            if ($sig.Status -ne "Valid") { throw "invalid Authenticode signature for ${target}: $($sig.Status)" }
-          }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-windows-amd64
-          path: desktop/release/xDriveDesktopSetup-amd64.exe
-          if-no-files-found: error
-          retention-days: 14
 
   server-images:
-    needs: validate-publishing-ref
+    if: inputs.publish
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -291,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${{ matrix.image }}"
+          image="ghcr.io/$GITHUB_REPOSITORY_OWNER/${{ matrix.image }}"
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="$GITHUB_REF_NAME"
             tags="$image:$GITHUB_REF_NAME"
@@ -314,7 +97,7 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
 
   server-deploy:
-    needs: validate-publishing-ref
+    if: inputs.publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -356,47 +139,46 @@ jobs:
           retention-days: 14
 
   bundle:
-    needs: [client-linux-amd64, client-windows-amd64, desktop-linux-amd64, desktop-windows-amd64, server-images, server-deploy]
+    if: inputs.publish
+    needs: [verify-client-artifacts, server-images, server-deploy]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
     steps:
-      - name: Download Linux client installer
+      - name: Download exact Linux installer tested by CI
         uses: actions/download-artifact@v4
         with:
-          name: client-linux-amd64
+          name: xdrive-linux-amd64
           path: release
-      - name: Download Windows client installer
+      - name: Download exact Windows installer tested by CI
         uses: actions/download-artifact@v4
         with:
-          name: client-windows-amd64
-          path: release
-      - name: Download Linux desktop installer
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-linux-amd64
-          path: release
-      - name: Download Windows desktop installer
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-windows-amd64
+          name: xdrive-windows-amd64
           path: release
       - name: Download server deployment assets
         uses: actions/download-artifact@v4
         with:
           name: server-deploy
           path: release
+      - name: Verify single-installer distribution contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f release/xdrive-linux-amd64.deb
+          test -f release/xDriveSetup-amd64.exe
+          if find release -maxdepth 1 -type f \( -name '*DesktopSetup*' -o -name 'xdrive-desktop-*' \) | grep -q .; then
+            echo "standalone Desktop installer must not be published" >&2
+            exit 1
+          fi
       - name: Generate checksums
         shell: bash
         run: |
           set -euo pipefail
           cd release
           sha256sum \
-            xdrive-client-linux-amd64.deb \
+            xdrive-linux-amd64.deb \
             xDriveSetup-amd64.exe \
-            xdrive-desktop-linux-amd64.deb \
-            xDriveDesktopSetup-amd64.exe \
             xdrive-server-install.sh \
             server-backup.sh \
             server-backup-scheduled.sh \
@@ -431,7 +213,6 @@ jobs:
               --tag "ghcr.io/$owner/$image:$target_tag" \
               "ghcr.io/$owner/$image:$source_tag"
           done
-
       - name: Publish immutable master snapshot
         if: github.ref == 'refs/heads/master'
         env:
@@ -464,8 +245,7 @@ jobs:
               --title "xDrive snapshot ${GITHUB_SHA::12}" \
               --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
           fi
-
-      - name: Publish rolling snapshot prerelease as direct files
+      - name: Publish rolling snapshot prerelease
         if: github.ref == 'refs/heads/master'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -484,12 +264,13 @@ jobs:
               [[ -n "$asset" ]] && gh release delete-asset snapshot "$asset" --repo "$repo" -y
             done < <(gh release view snapshot --repo "$repo" --json assets --jq '.assets[].name')
             gh release upload snapshot release/* --repo "$repo"
-            gh release edit snapshot --repo "$repo" --prerelease --title "xDrive snapshot ${GITHUB_SHA::12}" \
-              --notes "Rolling development snapshot from master at $GITHUB_SHA. Assets are published directly; no extra zip/tar wrapper is used."
+            gh release edit snapshot --repo "$repo" --prerelease \
+              --title "xDrive snapshot ${GITHUB_SHA::12}" \
+              --notes "Rolling development snapshot from master at `$GITHUB_SHA`. The exact CI-tested installers are published without rebuilding."
           else
             gh release create snapshot release/* --repo "$repo" --prerelease \
               --title "xDrive snapshot ${GITHUB_SHA::12}" \
-              --notes "Rolling development snapshot from master at `$GITHUB_SHA`. Assets are published directly; no extra zip/tar wrapper is used."
+              --notes "Rolling development snapshot from master at `$GITHUB_SHA`. The exact CI-tested installers are published without rebuilding."
           fi
       - name: Assert distribution assets are not archive-wrapped
         shell: bash

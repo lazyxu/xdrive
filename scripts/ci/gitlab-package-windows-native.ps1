@@ -25,9 +25,7 @@ try {
                 "./release/windows-build/xd.exe",
                 "./release/windows-build/xdrive-agent.exe",
                 "./release/windows-build/desktop/xdrive-desktop.exe",
-                "./release/xDriveSetup-amd64.exe",
-                "./desktop/release/win-unpacked/xdrive-desktop.exe",
-                "./release/xDriveDesktopSetup-amd64.exe"
+                "./release/xDriveSetup-amd64.exe"
             )
             foreach ($target in $targets) {
                 if (-not (Test-Path $target)) { throw "signed release target missing: $target" }

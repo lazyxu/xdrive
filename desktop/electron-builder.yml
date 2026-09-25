@@ -8,28 +8,9 @@ files:
   - dist/**/*
   - package.json
 win:
-  target:
-    - target: nsis
-      arch:
-        - x64
   executableName: xdrive-desktop
-  artifactName: xDriveDesktopSetup-amd64.${ext}
-nsis:
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-  deleteAppDataOnUninstall: false
 linux:
-  target:
-    - target: deb
-      arch:
-        - x64
   executableName: xdrive-desktop
-  artifactName: xdrive-desktop-linux-amd64.${ext}
   category: Utility
   synopsis: xDrive desktop client
   description: xDrive Electron desktop client with secure local integration to the Go xdrive-agent.
-deb:
-  packageName: xdrive-desktop
-  priority: optional
-  maintainer: xDrive Project <noreply@github.com>

@@ -33,52 +33,113 @@ jobs:
 
   desktop-linux:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: desktop
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_DESKTOP_VERSION=$XDRIVE_DESKTOP_VERSION" >> "$GITHUB_ENV"
       - name: Install desktop dependencies
+        working-directory: desktop
         run: npm install --no-audit --no-fund
       - name: Test desktop main IPC client
+        working-directory: desktop
         run: npm run test:main
-      - name: Set CI desktop version
-        run: node scripts/set-version.mjs 0.0.0-ci
-      - name: Build Linux desktop package
-        run: npm run dist:linux
-      - name: Verify Linux desktop package
+      - name: Build Linux desktop runtime once
+        working-directory: desktop
         run: |
-          test -f release/xdrive-desktop-linux-amd64.deb
-          dpkg-deb --info release/xdrive-desktop-linux-amd64.deb >/dev/null
+          node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
+          npm run runtime:linux
+          test -x release/linux-unpacked/xdrive-desktop
+      - name: Pack Linux desktop runtime
+        shell: bash
+        run: |
+          mkdir -p dist
+          tar -C desktop/release -czf dist/desktop-runtime-linux-amd64.tar.gz linux-unpacked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-runtime-linux-amd64
+          path: dist/desktop-runtime-linux-amd64.tar.gz
+          if-no-files-found: error
+          retention-days: 2
 
   desktop-windows:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: desktop
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_DESKTOP_VERSION=$XDRIVE_DESKTOP_VERSION" >> "$GITHUB_ENV"
       - name: Install desktop dependencies
+        working-directory: desktop
         run: npm install --no-audit --no-fund
       - name: Test desktop main IPC client
+        working-directory: desktop
         run: npm run test:main
-      - name: Set CI desktop version
-        run: node scripts/set-version.mjs 0.0.0-ci
-      - name: Build Windows desktop package
-        run: npm run dist:win
-      - name: Verify Windows desktop package
+      - name: Prepare desktop runtime signing
         shell: pwsh
         run: |
-          if (-not (Test-Path ./release/xDriveDesktopSetup-amd64.exe)) { throw "desktop installer missing" }
-          if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop executable missing" }
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PASSWORD)) {
+              throw "XD_WINDOWS_SIGN_PFX_PASSWORD is required when XD_WINDOWS_SIGN_PFX_B64 is set."
+            }
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-signing.pfx"
+            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
+            "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "CSC_KEY_PASSWORD=$env:XD_WINDOWS_SIGN_PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $password = "xdrive-ci-signing"
+            $secure = ConvertTo-SecureString $password -AsPlainText -Force
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" `
+              -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-ci-signing.pfx"
+            Export-PfxCertificate -Cert $cert -FilePath $path -Password $secure | Out-Null
+            "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "CSC_KEY_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+      - name: Build Windows desktop runtime once
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          node scripts/set-version.mjs $env:XDRIVE_DESKTOP_VERSION
+          npm run runtime:win
+      - name: Verify Windows desktop runtime
+        shell: pwsh
+        run: |
+          $exe = "./desktop/release/win-unpacked/xdrive-desktop.exe"
+          if (-not (Test-Path $exe)) { throw "desktop runtime missing" }
+          if (-not [string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            $sig = Get-AuthenticodeSignature $exe
+            if ($null -eq $sig.SignerCertificate -or $sig.Status -eq "NotSigned") {
+              throw "desktop runtime signature missing"
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-runtime-windows-amd64
+          path: desktop/release/win-unpacked
+          if-no-files-found: error
+          retention-days: 2
 
   go-linux:
+    needs: desktop-linux
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -105,6 +166,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-runtime-linux-amd64
+          path: dist
+      - name: Restore exact Linux desktop runtime
+        shell: bash
+        run: |
+          mkdir -p desktop/release
+          tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
+          test -x desktop/release/linux-unpacked/xdrive-desktop
       - run: go mod tidy "-go=1.25"
       - run: git diff --exit-code -- go.mod go.sum
       - name: Check formatting
@@ -122,29 +199,34 @@ jobs:
       - run: go test -p 1 -race ./...
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
-      - name: Build Linux unified client installer
+      - name: Build and verify Linux unified installer once
+        shell: bash
         run: |
-          pushd desktop >/dev/null
-          npm install --no-audit --no-fund
-          node scripts/set-version.mjs 0.0.0-ci
-          npm run dist:linux
-          popd >/dev/null
-          bash scripts/build-linux-deb.sh 0.0.0+ci dist desktop/release/xdrive-desktop-linux-amd64.deb
+          bash scripts/build-linux-deb.sh "$XDRIVE_RELEASE_VERSION" release desktop/release/linux-unpacked
           pkg_root="$(mktemp -d)"
-          dpkg-deb -x dist/xdrive-client-linux-amd64.deb "$pkg_root"
+          dpkg-deb -x release/xdrive-linux-amd64.deb "$pkg_root"
           test -x "$pkg_root/usr/bin/xdrive-updater" || { echo "unified package missing xdrive-updater" >&2; exit 1; }
           test -f "$pkg_root/usr/lib/systemd/system/xdrive-update.timer" || { echo "unified package missing update timer" >&2; exit 1; }
+          test -f "$pkg_root/usr/share/applications/xdrive.desktop" || { echo "unified package missing desktop menu entry" >&2; exit 1; }
+          dpkg-deb --field release/xdrive-linux-amd64.deb Depends | grep -q 'libgtk-3-0'
+          dpkg-deb --field release/xdrive-linux-amd64.deb Recommends | grep -q 'libappindicator3-1'
           test -L "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package missing xdrive-desktop link" >&2; exit 1; }
           test -x "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package xdrive-desktop link is broken" >&2; exit 1; }
-          test -f "$pkg_root/usr/share/doc/xdrive-client/client-version" || { echo "unified package missing client-version marker" >&2; exit 1; }
+          test "$(cat "$pkg_root/usr/share/doc/xdrive-client/client-version")" = "$XDRIVE_RELEASE_VERSION"
           rm -rf "$pkg_root"
-          dpkg-deb --field dist/xdrive-client-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
-          dpkg-deb --field dist/xdrive-client-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
+          dpkg-deb --field release/xdrive-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
+          dpkg-deb --field release/xdrive-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
           pkg_meta="$(mktemp -d)"
-          dpkg-deb -e dist/xdrive-client-linux-amd64.deb "$pkg_meta"
+          dpkg-deb -e release/xdrive-linux-amd64.deb "$pkg_meta"
           grep -q 'xDrive client health check failed' "$pkg_meta/postinst"
           grep -q '/usr/bin/xdrive-desktop' "$pkg_meta/postinst"
           rm -rf "$pkg_meta"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-linux-amd64
+          path: release/xdrive-linux-amd64.deb
+          if-no-files-found: error
+          retention-days: 14
       - name: Validate server deployment files
         env:
           POSTGRES_PASSWORD: ci-postgres-password
@@ -183,6 +265,9 @@ jobs:
           bash -n scripts/ci/test-download-with-fallback.sh
           bash scripts/ci/test-download-with-fallback.sh
           bash -n scripts/ci/check-go-min-version.sh
+          bash -n scripts/ci/client-artifact-version.sh
+          bash -n scripts/ci/test-client-artifact-version.sh
+          bash scripts/ci/test-client-artifact-version.sh
           bash -n scripts/ci/gitlab-release-version.sh
           bash -n scripts/ci/gitlab-package-linux.sh
           bash -n scripts/ci/gitlab-package-windows.sh
@@ -266,7 +351,11 @@ jobs:
         run: bash scripts/test-server-backup-restore.sh
 
   go-windows:
+    needs: desktop-windows
     runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -276,6 +365,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-runtime-windows-amd64
+          path: desktop/release/win-unpacked
+      - name: Verify exact Windows desktop runtime
+        shell: pwsh
+        run: if (-not (Test-Path ./desktop/release/win-unpacked/xdrive-desktop.exe)) { throw "desktop runtime artifact missing" }
       - run: go mod tidy "-go=1.25"
       - run: git diff --exit-code -- go.mod go.sum
       - run: go mod verify
@@ -297,63 +399,70 @@ jobs:
       - name: Test Windows uninstaller resolver
         shell: pwsh
         run: ./scripts/ci/test-windows-uninstaller-resolver.ps1
-      - run: go build -mod=readonly -o xd.exe ./cmd/xd
-      - run: go build -mod=readonly -ldflags="-H=windowsgui" -o xdrive-agent.exe ./cmd/xdrive-agent
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
-      - name: Prepare CI Authenticode certificate
+      - name: Prepare unified installer signing
         shell: pwsh
         run: |
-          $password = "xdrive-ci-signing"
-          $secure = ConvertTo-SecureString $password -AsPlainText -Force
-          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" `
-            -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
-          $pfx = Join-Path $env:RUNNER_TEMP "xdrive-ci-signing.pfx"
-          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
-          "XD_WINDOWS_SIGN_PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CSC_LINK=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CSC_KEY_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Build embedded Windows desktop runtime
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PASSWORD)) {
+              throw "XD_WINDOWS_SIGN_PFX_PASSWORD is required when XD_WINDOWS_SIGN_PFX_B64 is set."
+            }
+            $pfx = Join-Path $env:RUNNER_TEMP "xdrive-unified-signing.pfx"
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
+            "XD_WINDOWS_SIGN_PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $password = "xdrive-ci-signing"
+            $secure = ConvertTo-SecureString $password -AsPlainText -Force
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" `
+              -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
+            $pfx = Join-Path $env:RUNNER_TEMP "xdrive-unified-ci-signing.pfx"
+            Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
+            "XD_WINDOWS_SIGN_PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+      - name: Build unified Windows installer once
         shell: pwsh
-        working-directory: desktop
         run: |
-          npm install --no-audit --no-fund
-          node scripts/set-version.mjs 0.0.0-ci
-          npm run dist:win
-      - name: Build and sign Windows unified client installer
-        shell: pwsh
-        run: ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
-      - name: Verify Windows Authenticode signatures
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
+          } else {
+            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked
+          }
+      - name: Verify Windows Authenticode signatures when signing is enabled
         shell: pwsh
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PATH)) {
+            Write-Host "Windows installer is intentionally unsigned for this snapshot."
+            exit 0
+          }
           $targets = @(
-            "./dist/windows-build/xd.exe",
-            "./dist/windows-build/xdrive-agent.exe",
-            "./dist/windows-build/desktop/xdrive-desktop.exe",
-            "./dist/xDriveSetup-amd64.exe"
+            "./release/windows-build/xd.exe",
+            "./release/windows-build/xdrive-agent.exe",
+            "./release/windows-build/desktop/xdrive-desktop.exe",
+            "./release/xDriveSetup-amd64.exe"
           )
           foreach ($target in $targets) {
             $signature = Get-AuthenticodeSignature $target
             if ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
               throw "missing Authenticode signature for $target"
             }
-            if ($signature.SignerCertificate.Subject -ne "CN=xDrive CI Test") {
-              throw "unexpected signer for ${target}: $($signature.SignerCertificate.Subject)"
-            }
           }
       - name: Verify Windows installer
         shell: pwsh
-        run: if (-not (Test-Path ./dist/xDriveSetup-amd64.exe)) { throw "installer missing" }
+        run: if (-not (Test-Path ./release/xDriveSetup-amd64.exe)) { throw "installer missing" }
       - name: Validate Windows update transaction and rollback
         shell: pwsh
-        run: ./scripts/test-windows-client-upgrade.ps1 -Installer ./dist/xDriveSetup-amd64.exe -TargetVersion 0.0.0-ci
+        run: ./scripts/test-windows-client-upgrade.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION
       - name: Smoke install and uninstall Windows client
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
+          $installer = (Resolve-Path ./release/xDriveSetup-amd64.exe).Path
           $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
           $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
@@ -373,7 +482,7 @@ jobs:
             Select-Object -First 1
           if ($null -eq $shortcut) { throw "unified client must install the xDrive Desktop shortcut" }
           $reported = & (Join-Path $app "xd.exe") version
-          if ($reported.Trim() -ne "0.0.0-ci") { throw "embedded version mismatch: $reported" }
+          if ($reported.Trim() -ne $env:XDRIVE_RELEASE_VERSION) { throw "embedded version mismatch: $reported" }
 
           $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
           $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
@@ -387,6 +496,12 @@ jobs:
           if (Test-Path (Join-Path $app "xd.exe")) { throw "xd.exe remains after uninstall" }
           $left = Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
           if ($null -ne $left) { throw "xDriveAgent autorun remains after uninstall" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release/xDriveSetup-amd64.exe
+          if-no-files-found: error
+          retention-days: 14
 
   web:
     runs-on: ubuntu-latest
@@ -405,3 +520,15 @@ jobs:
       - run: npm run build
       - name: Validate web image
         run: docker build -f Dockerfile -t xdrive/web:test ..
+
+
+  publish:
+    needs: [go-linux, go-windows, web]
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    uses: ./.github/workflows/release.yml
+    with:
+      publish: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) }}
+    secrets: inherit

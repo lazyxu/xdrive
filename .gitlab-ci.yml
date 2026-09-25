@@ -3,6 +3,8 @@ include:
   - local: /infra/ci/gitlab-release.yml
 
 stages:
+  - gate
+  - build
   - test
   - package
   - promote
@@ -72,7 +74,7 @@ variables:
 
 single-commit:
   image: $XDRIVE_CI_GO_IMAGE
-  stage: test
+  stage: gate
   tags:
     - linux
   rules:
@@ -94,7 +96,7 @@ single-commit:
 desktop-linux:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache
-  stage: test
+  stage: build
   tags:
     - linux
   script:
@@ -105,16 +107,25 @@ desktop-linux:
         echo "Node.js 22 is required; found $(node --version)." >&2
         exit 1
       fi
+      source scripts/ci/client-artifact-version.sh
       cd desktop
       npm install --no-audit --no-fund
       npm run test:main
-      node scripts/set-version.mjs 0.0.0-ci
-      npm run dist:linux
-      test -f release/xdrive-desktop-linux-amd64.deb
-      dpkg-deb --info release/xdrive-desktop-linux-amd64.deb >/dev/null
+      node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
+      npm run runtime:linux
+      test -x release/linux-unpacked/xdrive-desktop
+      cd ..
+      mkdir -p dist
+      tar -C desktop/release -czf dist/desktop-runtime-linux-amd64.tar.gz linux-unpacked
+  artifacts:
+    name: "xdrive-desktop-runtime-linux-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - dist/desktop-runtime-linux-amd64.tar.gz
 
 desktop-windows:
-  stage: test
+  stage: build
   tags:
     - windows
   cache:
@@ -125,11 +136,20 @@ desktop-windows:
     when: always
   script:
     - bash scripts/ci/gitlab-desktop-windows.sh
+  artifacts:
+    name: "xdrive-desktop-runtime-windows-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - desktop/release/win-unpacked/
 
 go-linux:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .electron-linux-cache
   stage: test
+  needs:
+    - job: desktop-linux
+      artifacts: true
   resource_group: xdrive-go-linux-docker
   tags:
     - linux
@@ -197,24 +217,27 @@ go-linux:
       go vet ./...
       go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
 
-      pushd desktop >/dev/null
-      npm install --no-audit --no-fund
-      node scripts/set-version.mjs 0.0.0-ci
-      npm run dist:linux
-      popd >/dev/null
-      bash scripts/build-linux-deb.sh 0.0.0+ci dist desktop/release/xdrive-desktop-linux-amd64.deb
+      source scripts/ci/client-artifact-version.sh
+      mkdir -p desktop/release
+      tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
+      test -x desktop/release/linux-unpacked/xdrive-desktop
+
+      bash scripts/build-linux-deb.sh "$XDRIVE_RELEASE_VERSION" release desktop/release/linux-unpacked
       pkg_root="$(mktemp -d)"
-      dpkg-deb -x dist/xdrive-client-linux-amd64.deb "$pkg_root"
+      dpkg-deb -x release/xdrive-linux-amd64.deb "$pkg_root"
       test -x "$pkg_root/usr/bin/xdrive-updater" || { echo "unified package missing xdrive-updater" >&2; exit 1; }
       test -f "$pkg_root/usr/lib/systemd/system/xdrive-update.timer" || { echo "unified package missing update timer" >&2; exit 1; }
+      test -f "$pkg_root/usr/share/applications/xdrive.desktop" || { echo "unified package missing desktop menu entry" >&2; exit 1; }
+      dpkg-deb --field release/xdrive-linux-amd64.deb Depends | grep -q 'libgtk-3-0'
+      dpkg-deb --field release/xdrive-linux-amd64.deb Recommends | grep -q 'libappindicator3-1'
       test -L "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package missing xdrive-desktop link" >&2; exit 1; }
       test -x "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package xdrive-desktop link is broken" >&2; exit 1; }
-      test -f "$pkg_root/usr/share/doc/xdrive-client/client-version" || { echo "unified package missing client-version marker" >&2; exit 1; }
+      test "$(cat "$pkg_root/usr/share/doc/xdrive-client/client-version")" = "$XDRIVE_RELEASE_VERSION"
       rm -rf "$pkg_root"
-      dpkg-deb --field dist/xdrive-client-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
-      dpkg-deb --field dist/xdrive-client-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
+      dpkg-deb --field release/xdrive-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
+      dpkg-deb --field release/xdrive-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
       pkg_meta="$(mktemp -d)"
-      dpkg-deb -e dist/xdrive-client-linux-amd64.deb "$pkg_meta"
+      dpkg-deb -e release/xdrive-linux-amd64.deb "$pkg_meta"
       grep -q 'xDrive client health check failed' "$pkg_meta/postinst"
       grep -q '/usr/bin/xdrive-desktop' "$pkg_meta/postinst"
       rm -rf "$pkg_meta"
@@ -255,6 +278,9 @@ go-linux:
       bash -n scripts/ci/test-download-with-fallback.sh
       bash scripts/ci/test-download-with-fallback.sh
       bash -n scripts/ci/check-go-min-version.sh
+      bash -n scripts/ci/client-artifact-version.sh
+      bash -n scripts/ci/test-client-artifact-version.sh
+      bash scripts/ci/test-client-artifact-version.sh
       bash -n scripts/ci/gitlab-release-version.sh
       bash -n scripts/ci/gitlab-package-linux.sh
       bash -n scripts/ci/gitlab-package-windows.sh
@@ -334,8 +360,18 @@ go-linux:
 
       bash scripts/test-server-backup-restore.sh
 
+  artifacts:
+    name: "xdrive-linux-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    when: on_success
+    paths:
+      - release/xdrive-linux-amd64.deb
+
 go-windows:
   stage: test
+  needs:
+    - job: desktop-windows
+      artifacts: true
   resource_group: xdrive-go-windows
   tags:
     - windows
@@ -348,6 +384,12 @@ go-windows:
     when: always
   script:
     - bash scripts/ci/gitlab-go-windows.sh
+  artifacts:
+    name: "xdrive-windows-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    when: on_success
+    paths:
+      - release/xDriveSetup-amd64.exe
 
 web:
   image: $XDRIVE_CI_NODE_IMAGE

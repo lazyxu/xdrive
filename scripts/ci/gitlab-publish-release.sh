@@ -16,10 +16,8 @@ else
 fi
 
 files="
-xdrive-client-linux-amd64.deb
+xdrive-linux-amd64.deb
 xDriveSetup-amd64.exe
-xdrive-desktop-linux-amd64.deb
-xDriveDesktopSetup-amd64.exe
 xdrive-server-install.sh
 server-backup.sh
 server-backup-scheduled.sh

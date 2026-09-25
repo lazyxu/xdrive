@@ -3,7 +3,8 @@ param(
     [ValidateSet("ValidateScripts", "PrepareSigning", "BuildInstaller", "VerifySignatures", "SmokeInstall")]
     [string]$Action,
     [string]$PfxPath = "",
-    [string]$Password = "xdrive-ci-signing"
+    [string]$Password = "xdrive-ci-signing",
+    [string]$Version = "0.0.0-ci"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,16 +35,20 @@ try {
         }
 
         "BuildInstaller" {
-            & ./scripts/build-windows-installer.ps1 -Version 0.0.0-ci -OutputDir dist -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
+            if ($env:CI_PIPELINE_SOURCE -eq "merge_request_event") {
+                & ./scripts/build-windows-installer.ps1 -Version $Version -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
+            } else {
+                & ./scripts/build-windows-installer.ps1 -Version $Version -OutputDir release -DesktopSourceDir desktop/release/win-unpacked
+            }
             if ($LASTEXITCODE -ne 0) { throw "Windows unified installer build failed with exit code $LASTEXITCODE" }
         }
 
         "VerifySignatures" {
             $targets = @(
-                "./dist/windows-build/xd.exe",
-                "./dist/windows-build/xdrive-agent.exe",
-                "./dist/windows-build/desktop/xdrive-desktop.exe",
-                "./dist/xDriveSetup-amd64.exe"
+                "./release/windows-build/xd.exe",
+                "./release/windows-build/xdrive-agent.exe",
+                "./release/windows-build/desktop/xdrive-desktop.exe",
+                "./release/xDriveSetup-amd64.exe"
             )
             foreach ($target in $targets) {
                 $signature = Get-AuthenticodeSignature $target
@@ -53,7 +58,7 @@ try {
         }
 
         "SmokeInstall" {
-            $installer = (Resolve-Path ./dist/xDriveSetup-amd64.exe).Path
+            $installer = (Resolve-Path ./release/xDriveSetup-amd64.exe).Path
             $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
             $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
@@ -70,7 +75,7 @@ try {
 
             $reported = & (Join-Path $app "xd.exe") version
             if ($LASTEXITCODE -ne 0) { throw "installed xd.exe version command failed" }
-            if ($reported.Trim() -ne "0.0.0-ci") { throw "embedded version mismatch: $reported" }
+            if ($reported.Trim() -ne $Version) { throw "embedded version mismatch: $reported" }
 
             $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
             $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent

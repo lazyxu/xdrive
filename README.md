@@ -395,7 +395,7 @@ The installer adds `xd` to the user PATH, registers the headless Agent for curre
 
 Electron is the only graphical client. It owns the window, Tray, notifications, login/password UI, sync controls, cloud-file management, transfer center, diagnostics/self-repair, conflict center, storage-policy tree/cache controls, and Agent lifecycle monitoring. `xdrive-agent.exe` remains a hidden user-session process because the CfAPI sync root belongs to the interactive user/Explorer session; it is not a Windows service. Quitting Electron does not stop synchronization.
 
-The separate `xDriveDesktopSetup-amd64.exe` artifact is retained temporarily for transition/testing compatibility, but normal installation and `xd update` use `xDriveSetup-amd64.exe`.
+Windows publishes only the unified `xDriveSetup-amd64.exe` installer.
 
 Stable tagged Windows releases Authenticode-sign `xd.exe`, `xdrive-agent.exe`, the embedded `xdrive-desktop.exe`, and the final unified `xDriveSetup-amd64.exe`. Stable publishing is refused when the signing certificate secrets are absent.
 
@@ -404,20 +404,20 @@ Stable tagged Windows releases Authenticode-sign `xd.exe`, `xdrive-agent.exe`, t
 Download:
 
 ```text
-xdrive-client-linux-amd64.deb
+xdrive-linux-amd64.deb
 ```
 
 Install on Debian/Ubuntu:
 
 ```bash
-sudo apt install ./xdrive-client-linux-amd64.deb
+sudo apt install ./xdrive-linux-amd64.deb
 ```
 
 This is the **unified Linux client package**. It contains Electron Desktop together with `xd`, `xdrive-agent`, the FUSE client, updater, and systemd unit definitions. The package absorbs/replaces the earlier standalone `xdrive-desktop` package during migration, so users do not need to install two packages.
 
 Electron Desktop starts at user login by default and keeps the Agent healthy. The background Agent can still run independently, and `xd` remains available for terminal workflows. `fuse3` and the Electron runtime dependencies are declared by the unified package.
 
-The separate `xdrive-desktop-linux-amd64.deb` release asset is retained temporarily for transition/testing compatibility; normal installation and automatic updates use `xdrive-client-linux-amd64.deb`.
+Linux publishes only the unified `xdrive-linux-amd64.deb` installer.
 
 Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folder**. It presents the remote tree as a mounted filesystem. Opening an existing file downloads it into a temporary local cache; reads/writes operate there, and dirty content is uploaded through the same resumable 8 MiB chunk protocol on flush/release.
 
@@ -433,7 +433,7 @@ Stable builds default to `stable`. Builds whose embedded version is `snapshot-<s
 
 **Windows:** the background updater resolves and verifies `xDriveSetup-amd64.exe`. That single asset contains Electron Desktop, Agent, and `xd`, so `xd update --install` upgrades the complete client rather than only the Go Core. The updater now hands installation to a detached transaction: it stops Desktop/Agent, creates a last-known-good copy of the installed client, installs with automatic starts suppressed, verifies the new `xd` version and Agent Desktop-IPC handshake, then starts the new Desktop. Only after those checks pass does it remove an older standalone `xDrive Desktop` installation from Phase 2–5. If installation or health verification fails, the previous client directory is restored and the old Agent/Desktop are restarted. Transaction state is written under the user cache directory. Run `xd update --status` to inspect the latest state (`preparing`, `installing`, `verifying`, `success`, `rolled_back`, or `failed`) together with the target version and local transaction log path. `xd doctor` reports only the state, target version, and timestamp; local paths and transaction error text are intentionally omitted from the diagnostic report.
 
-**Linux:** `xdrive-update.timer` installs a verified `xdrive-client-linux-amd64.deb` through `apt-get`. That package contains Desktop, Agent, `xd`, FUSE integration, and updater files, so the same package transaction advances the complete client. The package post-install hook verifies that all three client executables exist and that `xd version` matches the package's embedded target version before reporting success.
+**Linux:** `xdrive-update.timer` installs a verified `xdrive-linux-amd64.deb` through `apt-get`. That package contains Desktop, Agent, `xd`, FUSE integration, and updater files, so the same package transaction advances the complete client. The package post-install hook verifies that all three client executables exist and that `xd version` matches the package's embedded target version before reporting success.
 
 Useful commands:
 
@@ -831,9 +831,9 @@ Every push runs cross-platform CI. The test matrix covers:
 - server/Web Docker builds;
 - Docker Compose validation.
 
-Every push to `master` first runs CI. **Build Packages waits for that exact master SHA to pass CI** before publishing anything. It builds immutable `sha-<sha12>` server images and `snapshot-<sha12>` client/deployment assets; only after the complete bundle succeeds are those server images promoted to `edge` and the rolling **snapshot prerelease** advanced. This makes `master` mean the most recent fully successful published master build, not merely the newest commit that started building.
+Every push to `master` first runs CI. The Desktop jobs build one unpacked Electron runtime per platform, and the Go jobs embed that exact runtime into the single unified installer (`xdrive-linux-amd64.deb` / `xDriveSetup-amd64.exe`), then run package, upgrade, install, and smoke validation against those exact files. Only after the complete CI gate succeeds does the publish sub-workflow consume the same installer artifacts, build immutable `sha-<sha12>` server images and deployment assets, promote server images to `edge`, and advance the rolling **snapshot prerelease**. No client installer is rebuilt during publishing.
 
-Each successful master build also keeps an immutable prerelease named `snapshot-<sha12>`. The `commit` channel resolves a requested SHA to that prerelease; if no such successful build exists, installation is refused. Snapshot releases expose `.exe`, `.deb`, and shell/config assets directly; single-file deliverables are not wrapped in an extra ZIP/TAR archive. GitHub Actions artifacts are CI plumbing and are not used as the update distribution source.
+Each successful master build also keeps an immutable prerelease named `snapshot-<sha12>`. The `commit` channel resolves a requested SHA to that prerelease; if no such successful build exists, installation is refused. Snapshot releases expose `.exe`, `.deb`, and shell/config assets directly; single-file deliverables are not wrapped in an extra ZIP/TAR archive. GitHub Actions artifacts are immutable staging inputs to the publish sub-workflow; end users still download from GitHub Releases.
 
 A `v*` tag creates a GitHub Release and publishes versioned server images plus `latest`:
 
@@ -846,9 +846,7 @@ Release assets are client/deployment deliverables rather than raw application ar
 
 ```text
 xDriveSetup-amd64.exe
-xdrive-client-linux-amd64.deb
-xDriveDesktopSetup-amd64.exe
-xdrive-desktop-linux-amd64.deb
+xdrive-linux-amd64.deb
 xdrive-server-install.sh
 server-backup.sh
 server-backup-scheduled.sh

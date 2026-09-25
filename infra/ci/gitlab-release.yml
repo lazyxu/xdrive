@@ -4,34 +4,6 @@
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"'
     - when: never
 
-.release-linux-go-node:
-  image: $XDRIVE_CI_GO_IMAGE
-  tags:
-    - linux
-  variables:
-    XDG_CACHE_HOME: "$CI_PROJECT_DIR/.cache"
-    ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
-    GOMODCACHE: "$CI_PROJECT_DIR/.cache/go-mod"
-    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
-  cache:
-    key: "xdrive-release-electron-linux-$CI_RUNNER_EXECUTABLE_ARCH"
-    paths:
-      - .cache/electron/
-      - .cache/electron-builder/
-      - .cache/ci-tools/
-      - .cache/go-mod/
-      - .cache/npm/
-    policy: pull-push
-    when: always
-  before_script:
-    - |
-      set -euo pipefail
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update
-      apt-get install -y --no-install-recommends ca-certificates curl xz-utils
-      rm -rf /var/lib/apt/lists/*
-    - bash scripts/ci/install-node22.sh
-
 .release-linux-docker:
   image: $XDRIVE_CI_GO_IMAGE
   tags:
@@ -53,10 +25,14 @@
     - docker info >/dev/null
 
 package-linux-amd64:
-  extends:
-    - .publish-only
-    - .release-linux-go-node
+  extends: .publish-only
+  image: $XDRIVE_CI_GO_IMAGE
+  tags:
+    - linux
   stage: package
+  needs:
+    - job: go-linux
+      artifacts: true
   script:
     - bash scripts/ci/gitlab-package-linux.sh
   artifacts:
@@ -64,8 +40,7 @@ package-linux-amd64:
     expire_in: 14 days
     when: on_success
     paths:
-      - release/xdrive-client-linux-amd64.deb
-      - release/xdrive-desktop-linux-amd64.deb
+      - release/xdrive-linux-amd64.deb
       - release/xdrive-server-install.sh
       - release/server-backup.sh
       - release/server-backup-scheduled.sh
@@ -80,19 +55,12 @@ package-linux-amd64:
 package-windows-amd64:
   extends: .publish-only
   stage: package
+  needs:
+    - job: go-windows
+      artifacts: true
   resource_group: xdrive-package-windows
   tags:
     - windows
-  variables:
-    GOMODCACHE: "$CI_PROJECT_DIR/.cache/go-mod"
-    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
-  cache:
-    key: "xdrive-release-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH"
-    paths:
-      - .cache/go-mod/cache/download/
-      - .cache/npm/
-    policy: pull-push
-    when: always
   script:
     - bash scripts/ci/gitlab-package-windows.sh
   artifacts:
@@ -101,7 +69,6 @@ package-windows-amd64:
     when: on_success
     paths:
       - release/xDriveSetup-amd64.exe
-      - release/xDriveDesktopSetup-amd64.exe
 
 package-server-images:
   extends:
