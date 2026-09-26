@@ -332,6 +332,31 @@ export class XDriveApi {
     return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`)
   }
 
+  updateSource(sourceID: number, revision: number, input: {
+    name?: string
+    run_mode?: 'scan' | 'sync'
+    status?: 'active' | 'paused'
+    target_node_id?: number
+    ignore_rules?: string
+  }) {
+    return this.request<ExternalSource>(`/api/v1/sources/${sourceID}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': `"${revision}"` },
+      body: JSON.stringify(input),
+    })
+  }
+
+  setSourceCredential(sourceID: number, payload: Record<string, unknown>) {
+    return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`, {
+      method: 'PUT',
+      body: JSON.stringify({ payload }),
+    })
+  }
+
+  deleteSourceCredential(sourceID: number) {
+    return this.request<void>(`/api/v1/sources/${sourceID}/credential`, { method: 'DELETE' })
+  }
+
   root() {
     return this.request<Node>('/api/v1/nodes/root')
   }
