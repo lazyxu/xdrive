@@ -418,12 +418,13 @@ jobs:
           grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
           rm -f "$generated"
 
-          grep -q 'remote="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
-          grep -q 'artifact: xdrive-server-image' .github/workflows/release.yml
-          grep -q 'artifact: xdrive-web-image' .github/workflows/release.yml
-          grep -q 'artifact: xdrive-caddy-image' .github/workflows/release.yml
-          grep -q 'Load and verify exact image tested by CI' .github/workflows/release.yml
-          grep -q 'Push exact tested image' .github/workflows/release.yml
+          grep -q 'pattern: xdrive-\*-image' .github/workflows/release.yml
+          grep -q 'load_exact xdrive-server-image xdrive/server:test' .github/workflows/release.yml
+          grep -q 'load_exact xdrive-web-image xdrive/web:test' .github/workflows/release.yml
+          grep -q 'load_exact xdrive-caddy-image xdrive/caddy:test' .github/workflows/release.yml
+          grep -q 'Load and verify exact images tested by CI' .github/workflows/release.yml
+          grep -q 'Push exact tested images in parallel' .github/workflows/release.yml
+          grep -q 'docker push "$remote" &' .github/workflows/release.yml
           grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
           grep -q 'target_tag="edge"' .github/workflows/release.yml
           grep -q 'xdrive-caddy' .github/workflows/release.yml

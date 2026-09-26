@@ -733,13 +733,18 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"Download exact Linux installer tested by CI",
 		"Download exact Windows installer tested by CI",
 		"Verify single-installer distribution contract",
-		"artifact: xdrive-server-image",
-		"artifact: xdrive-web-image",
-		"artifact: xdrive-caddy-image",
-		"Load and verify exact image tested by CI",
-		"Push exact tested image",
+		"pattern: xdrive-*-image",
+		"load_exact xdrive-server-image xdrive/server:test",
+		"load_exact xdrive-web-image xdrive/web:test",
+		"load_exact xdrive-caddy-image xdrive/caddy:test",
+		"Load and verify exact images tested by CI",
+		"Push exact tested images in parallel",
+		"docker push \"$remote\" &",
 		"scripts/ci/import-docker-image.sh",
 	)
+	if strings.Contains(githubRelease, "${{ matrix.") {
+		t.Errorf("GitHub release server image publication must use one runner instead of a matrix")
+	}
 	for _, forbidden := range []string{"docker/build-push-action", "docker build --build-arg", "docker build -f"} {
 		if strings.Contains(githubRelease, forbidden) {
 			t.Errorf("GitHub release workflow must publish exact tested server images without rebuilding: %q", forbidden)
@@ -780,6 +785,8 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"CI-tested source-agent artifact is missing",
 		"s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g",
 		"scripts/ci/import-docker-image.sh",
+		"docker push \"$image\" &",
+		"pids=(",
 		"Published exact CI-tested GitLab server images",
 	)
 	for _, legacy := range []string{
