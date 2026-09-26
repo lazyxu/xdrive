@@ -418,7 +418,8 @@ jobs:
           grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
           rm -f "$generated"
 
-          grep -q 'remote="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+          grep -q 'tag="sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+          grep -q 'remote="ghcr.io/$GITHUB_REPOSITORY_OWNER/$image_name:$tag"' .github/workflows/release.yml
           grep -q 'name: xdrive-server-image' .github/workflows/release.yml
           grep -q 'name: xdrive-web-image' .github/workflows/release.yml
           grep -q 'name: xdrive-caddy-image' .github/workflows/release.yml
