@@ -50,8 +50,7 @@ bash -n scripts/ci/client-artifact-version.sh
 bash -n scripts/ci/test-client-artifact-version.sh
 bash scripts/ci/test-client-artifact-version.sh
 bash -n scripts/ci/gitlab-release-version.sh
-bash -n scripts/ci/gitlab-package-linux.sh
-bash -n scripts/ci/gitlab-package-windows.sh
+bash -n scripts/ci/gitlab-release-assets.sh
 bash -n scripts/ci/gitlab-server-images.sh
 bash -n scripts/ci/gitlab-promote-images.sh
 sh -n scripts/ci/gitlab-publish-release.sh

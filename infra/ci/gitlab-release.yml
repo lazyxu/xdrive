@@ -24,27 +24,24 @@
     - bash scripts/ci/install-docker-cli.sh
     - docker info >/dev/null
 
-package-linux-amd64:
+release-assets:
   extends: .publish-only
   image: $XDRIVE_CI_GO_IMAGE
   tags:
     - linux
-  stage: package
+  stage: release-build
   needs:
-    - job: build-linux-client
-      artifacts: true
     - job: build-source-agent
       artifacts: true
     - job: final-gate
       artifacts: false
   script:
-    - bash scripts/ci/gitlab-package-linux.sh
+    - bash scripts/ci/gitlab-release-assets.sh
   artifacts:
-    name: "xdrive-linux-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    name: "xdrive-release-assets-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     expire_in: 14 days
     when: on_success
     paths:
-      - release/xdrive-linux-amd64.deb
       - release/xdrive-source-agent-linux-amd64
       - release/xdrive-source-agent-linux-arm64
       - release/xdrive-server-install.sh
@@ -58,31 +55,11 @@ package-linux-amd64:
       - release/Caddyfile
       - release/xdrive.env.example
 
-package-windows-amd64:
-  extends: .publish-only
-  stage: package
-  needs:
-    - job: build-windows-client
-      artifacts: true
-    - job: final-gate
-      artifacts: false
-  resource_group: xdrive-package-windows
-  tags:
-    - windows
-  script:
-    - bash scripts/ci/gitlab-package-windows.sh
-  artifacts:
-    name: "xdrive-windows-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
-    expire_in: 14 days
-    when: on_success
-    paths:
-      - release/xDriveSetup-amd64.exe
-
-package-server-images:
+build-server-images:
   extends:
     - .publish-only
     - .release-linux-docker
-  stage: package
+  stage: release-build
   resource_group: xdrive-gitlab-server-images
   needs:
     - job: final-gate
@@ -97,11 +74,9 @@ promote-server-images:
   stage: promote
   resource_group: xdrive-gitlab-server-images
   needs:
-    - job: package-linux-amd64
+    - job: release-assets
       artifacts: false
-    - job: package-windows-amd64
-      artifacts: false
-    - job: package-server-images
+    - job: build-server-images
       artifacts: false
   script:
     - bash scripts/ci/gitlab-promote-images.sh
@@ -115,9 +90,11 @@ publish-release:
   variables:
     GLAB_ENABLE_CI_AUTOLOGIN: "true"
   needs:
-    - job: package-linux-amd64
+    - job: package-linux-client
       artifacts: true
-    - job: package-windows-amd64
+    - job: package-windows-client
+      artifacts: true
+    - job: release-assets
       artifacts: true
     - job: promote-server-images
       artifacts: false
