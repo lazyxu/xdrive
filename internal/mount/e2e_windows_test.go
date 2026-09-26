@@ -483,6 +483,7 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 	api := newE2EAPI()
 	server := httptest.NewServer(api)
 	defer server.Close()
+	web := client.New(server.URL, "web-token")
 
 	root := filepath.Join(t.TempDir(), "xDrive")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -549,6 +550,129 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		t.Fatalf("rehydrated content=%q", content)
 	}
 
+	webDir, err := web.CreateDir(ctx, 1, "web-created")
+	if err != nil {
+		t.Fatal(err)
+	}
+	webFile, err := web.Upload(ctx, webDir.ID, "web.txt", strings.NewReader("web-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web create")
+	}
+	webLocalPath := filepath.Join(root, "web-created", "web.txt")
+	waitE2E(t, 15*time.Second, "Web-created file on client", func() bool {
+		got, readErr := os.ReadFile(webLocalPath)
+		return readErr == nil && string(got) == "web-v1"
+	})
+	webEmpty, err := web.Upload(ctx, webDir.ID, "web-empty.txt", strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if webEmpty.Size != 0 {
+		t.Fatalf("Web empty file size=%d", webEmpty.Size)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web empty-file create")
+	}
+	waitE2E(t, 15*time.Second, "Web empty file on client", func() bool {
+		info, statErr := os.Stat(filepath.Join(root, "web-created", "web-empty.txt"))
+		return statErr == nil && info.Size() == 0
+	})
+
+	webFile, err = web.Overwrite(ctx, webFile.ID, webFile.Revision, strings.NewReader("web-v2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web overwrite")
+	}
+	waitE2E(t, 15*time.Second, "Web overwrite on client", func() bool {
+		got, readErr := os.ReadFile(webLocalPath)
+		return readErr == nil && string(got) == "web-v2"
+	})
+
+	webTarget, err := web.CreateDir(ctx, 1, "web-target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	webMovedName := "web-moved.txt"
+	webMoved, err := web.RenameMove(ctx, webFile.ID, webFile.Revision, &webMovedName, &webTarget.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if webMoved.ID != webFile.ID {
+		t.Fatalf("Web move recreated node: before=%d after=%d", webFile.ID, webMoved.ID)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web move")
+	}
+	webMovedPath := filepath.Join(root, "web-target", webMovedName)
+	waitE2E(t, 15*time.Second, "Web move/rename on client", func() bool {
+		_, oldErr := os.Lstat(webLocalPath)
+		got, newErr := os.ReadFile(webMovedPath)
+		return os.IsNotExist(oldErr) && newErr == nil && string(got) == "web-v2"
+	})
+	if err := web.Delete(ctx, webMoved.ID, webMoved.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web delete")
+	}
+	waitE2E(t, 15*time.Second, "Web delete on client", func() bool {
+		_, statErr := os.Lstat(webMovedPath)
+		return os.IsNotExist(statErr)
+	})
+
+	webTree, err := web.CreateDir(ctx, 1, "web-tree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	webNested, err := web.CreateDir(ctx, webTree.ID, "nested")
+	if err != nil {
+		t.Fatal(err)
+	}
+	webLeaf, err := web.Upload(ctx, webNested.ID, "leaf.txt", strings.NewReader("leaf-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web tree create")
+	}
+	webTreeOldPath := filepath.Join(root, "web-tree")
+	waitE2E(t, 15*time.Second, "Web directory tree on client", func() bool {
+		got, readErr := os.ReadFile(filepath.Join(webTreeOldPath, "nested", "leaf.txt"))
+		return readErr == nil && string(got) == "leaf-v1"
+	})
+	webTreeName := "web-tree-moved"
+	webTreeMoved, err := web.RenameMove(ctx, webTree.ID, webTree.Revision, &webTreeName, &webTarget.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if webTreeMoved.ID != webTree.ID || webLeaf.ID == 0 {
+		t.Fatalf("Web directory move changed identity: before=%d after=%d leaf=%d", webTree.ID, webTreeMoved.ID, webLeaf.ID)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web tree move")
+	}
+	webTreeNewPath := filepath.Join(root, "web-target", webTreeName)
+	waitE2E(t, 15*time.Second, "Web directory tree move on client", func() bool {
+		_, oldErr := os.Lstat(webTreeOldPath)
+		got, newErr := os.ReadFile(filepath.Join(webTreeNewPath, "nested", "leaf.txt"))
+		return os.IsNotExist(oldErr) && newErr == nil && string(got) == "leaf-v1"
+	})
+	if err := web.Delete(ctx, webTreeMoved.ID, webTreeMoved.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if !RequestSync(root) {
+		t.Fatal("manual sync request was not accepted after Web tree delete")
+	}
+	waitE2E(t, 15*time.Second, "Web directory tree delete on client", func() bool {
+		_, statErr := os.Lstat(webTreeNewPath)
+		return os.IsNotExist(statErr)
+	})
+
 	localPath := filepath.Join(root, "local.txt")
 	if err := os.WriteFile(localPath, []byte("local-v1"), 0o644); err != nil {
 		t.Fatal(err)
@@ -584,6 +708,47 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		t.Fatal("local rename created a second remote node instead of moving the existing node")
 	}
 
+	localMovedPath := filepath.Join(root, "web-target", "moved.txt")
+	if err := os.Rename(renamedPath, localMovedPath); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "event-driven local move", func() bool {
+		n, data, ok := api.byName("moved.txt")
+		return ok && n.ID == uploaded.ID && n.ParentID != nil && *n.ParentID == webTarget.ID && string(data) == "local-v1"
+	})
+	if err := os.Remove(localMovedPath); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "event-driven local delete", func() bool {
+		_, _, ok := api.byName("moved.txt")
+		return !ok
+	})
+
+	emptyLocalPath := filepath.Join(root, "local-empty.txt")
+	if err := os.WriteFile(emptyLocalPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "local empty file upload", func() bool {
+		n, data, ok := api.byName("local-empty.txt")
+		return ok && n.Size == 0 && len(data) == 0
+	})
+
+	truncatePath := filepath.Join(root, "truncate.txt")
+	if err := os.WriteFile(truncatePath, []byte("truncate-me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "local truncate source upload", func() bool {
+		n, data, ok := api.byName("truncate.txt")
+		return ok && n.Size == int64(len("truncate-me")) && string(data) == "truncate-me"
+	})
+	if err := os.Truncate(truncatePath, 0); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "local truncate to zero", func() bool {
+		n, data, ok := api.byName("truncate.txt")
+		return ok && n.Size == 0 && len(data) == 0
+	})
+
 	bulkRoot := filepath.Join(root, "bulk")
 	bulkNested := filepath.Join(bulkRoot, "nested")
 	if err := os.MkdirAll(bulkNested, 0o755); err != nil {
@@ -611,8 +776,40 @@ func TestWindowsCfAPIE2E(t *testing.T) {
 		return ok && n.ID == bulkNode.ID
 	})
 	if _, _, ok := api.byName("bulk"); ok {
-		t.Fatal("directory rename recreated the remote directory instead of moving it")
+		t.Fatal("directory rename recreated the remote directory instead of moving the existing node")
 	}
+	bulkMoved := filepath.Join(root, "web-target", "bulk-moved")
+	if err := os.Rename(bulkRenamed, bulkMoved); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "event-driven directory move", func() bool {
+		n, _, ok := api.byName("bulk-moved")
+		return ok && n.ID == bulkNode.ID && n.ParentID != nil && *n.ParentID == webTarget.ID
+	})
+	if _, _, ok := api.byName("bulk-renamed"); ok {
+		t.Fatal("directory move recreated the remote directory instead of moving the existing node")
+	}
+	if err := os.RemoveAll(bulkMoved); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 10*time.Second, "event-driven directory delete", func() bool {
+		remote, walkErr := web.Walk(ctx)
+		if walkErr != nil {
+			return false
+		}
+		_, exists := remote["web-target/bulk-moved"]
+		return !exists
+	})
+
+	largeContent := bytes.Repeat([]byte("L"), int(client.DefaultUploadChunkSize)+257)
+	largePath := filepath.Join(root, "large.bin")
+	if err := os.WriteFile(largePath, largeContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitE2E(t, 30*time.Second, "resumable large local upload", func() bool {
+		n, data, ok := api.byName("large.bin")
+		return ok && n.Size == int64(len(largeContent)) && bytes.Equal(data, largeContent)
+	})
 
 	if err := os.WriteFile(remotePath, []byte("local-v2"), 0o644); err != nil {
 		t.Fatal(err)

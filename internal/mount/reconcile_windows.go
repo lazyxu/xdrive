@@ -90,6 +90,18 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 			}
 			return err
 		}
+		if _, exists := baseline[rel]; !exists {
+			handled, err := p.reconcileMovedPlaceholder(ctx, rel, info, baseline)
+			if err != nil {
+				return err
+			}
+			if handled {
+				if info.IsDir() {
+					processedSubtrees = append(processedSubtrees, rel)
+				}
+				continue
+			}
+		}
 		if info.IsDir() {
 			if _, exists := baseline[rel]; !exists {
 				if err := p.syncNewDirectoryTree(ctx, rel, baseline); err != nil {
@@ -182,6 +194,56 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 		return false, err
 	}
 	return true, nil
+}
+
+func (p *winProvider) reconcileMovedPlaceholder(ctx context.Context, rel string, info os.FileInfo, baseline map[string]winState) (bool, error) {
+	absPath := filepath.Join(p.root, filepath.FromSlash(rel))
+	nodeID, placeholder, err := cfPlaceholderNodeID(absPath)
+	if err != nil {
+		return false, err
+	}
+	if !placeholder {
+		return false, nil
+	}
+
+	oldRel, base, ok := findBaselinePathByNodeID(baseline, nodeID)
+	if !ok || oldRel == rel {
+		return false, nil
+	}
+	if err := p.ensureRemoteParent(ctx, rel, baseline); err != nil {
+		return false, err
+	}
+	parent, ok := baseline[slashDir(rel)]
+	if !ok {
+		return false, fmt.Errorf("Windows sync baseline is missing target parent %q", slashDir(rel))
+	}
+	name := slashBase(rel)
+	parentID := parent.node.ID
+	updated, err := p.cli.RenameMove(ctx, base.node.ID, base.node.Revision, &name, &parentID)
+	if err != nil {
+		return false, err
+	}
+
+	deletePrefix(baseline, rel)
+	moveBaselinePrefix(baseline, oldRel, rel)
+	state := baseline[rel]
+	state.node = updated
+	state.localModTime = info.ModTime()
+	state.localSize = info.Size()
+	baseline[rel] = state
+	if err := cfMarkPathInSync(absPath); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func findBaselinePathByNodeID(baseline map[string]winState, nodeID uint64) (string, winState, bool) {
+	for rel, state := range baseline {
+		if rel != "" && state.node.ID == nodeID {
+			return rel, state, true
+		}
+	}
+	return "", winState{}, false
 }
 
 func moveBaselinePrefix(baseline map[string]winState, oldPrefix, newPrefix string) {

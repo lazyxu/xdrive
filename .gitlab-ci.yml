@@ -385,6 +385,7 @@ go-windows:
     policy: pull-push
     when: always
   script:
+    # Wrapper runs the full TestWindowsCfAPI* bidirectional/selective-sync E2E gate.
     - bash scripts/ci/gitlab-go-windows.sh
   artifacts:
     name: "xdrive-windows-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
