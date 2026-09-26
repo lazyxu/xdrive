@@ -300,3 +300,21 @@ dd { margin: 7px 0 0; color: #24324a; font-weight: 700; font-size: 14px; overflo
   .cloud-row { grid-template-columns: 1fr; }
   .cloud-row-actions { grid-column: 1; grid-row: auto; justify-content: flex-start; }
 }
+
+
+.source-panel { display: grid; gap: 18px; }
+.source-note { max-width: 760px; margin: 7px 0 0; color: #7a879a; font-size: 12px; line-height: 1.55; }
+.source-list { display: grid; gap: 12px; }
+.source-card { border: 1px solid #e0e6ef; border-radius: 15px; padding: 18px 20px; background: #fff; box-shadow: 0 7px 20px rgba(21,37,63,.04); }
+.source-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.source-title { min-width: 0; display: grid; gap: 5px; }
+.source-title strong { color: #26344c; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-title span { color: #7d899b; font-size: 12px; }
+.source-state { flex: 0 0 auto; display: flex; align-items: center; gap: 9px; color: #495770; font-size: 12px; }
+.source-state .status-dot { margin-top: 0; }
+.source-card-meta { margin-top: 16px; display: flex; justify-content: space-between; gap: 16px; color: #7b879a; font-size: 12px; }
+.source-error { margin-top: 13px; border-radius: 10px; padding: 9px 11px; background: #fff2f3; color: #a13b49; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .source-card-header, .source-card-meta { align-items: flex-start; flex-direction: column; }
+}
