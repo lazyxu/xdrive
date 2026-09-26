@@ -18,8 +18,8 @@ Creates an xDrive backup directory containing:
   manifest.json   backup metadata
   SHA256SUMS.txt  SHA-256 checksums
 
-The API service is stopped for the consistency check and snapshot so metadata
-and blobs represent one maintenance-window backup point.
+The API and pull-worker services are stopped for the consistency check and
+snapshot so metadata and blobs represent one maintenance-window backup point.
 EOF
 }
 
@@ -63,17 +63,40 @@ wait_postgres() {
   return 1
 }
 
+wait_server() {
+  local i
+  for i in $(seq 1 60); do
+    if compose exec -T server xdrive-server healthcheck >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "xDrive API did not become ready after backup" >&2
+  return 1
+}
+
 server_was_running=0
+worker_was_running=0
 if compose ps --status running --services | grep -qx server; then
   server_was_running=1
 fi
+if compose ps --status running --services | grep -qx worker; then
+  worker_was_running=1
+fi
 
-restart_server() {
-  if [[ "$server_was_running" == "1" && "$LEAVE_SERVER_STOPPED" != "1" ]]; then
-    compose start server >/dev/null 2>&1 || true
+restart_services() {
+  if [[ "$LEAVE_SERVER_STOPPED" == "1" ]]; then
+    return
+  fi
+  if [[ "$server_was_running" == "1" ]]; then
+    compose start server >/dev/null 2>&1 || return
+    wait_server || return
+  fi
+  if [[ "$worker_was_running" == "1" && "$server_was_running" == "1" ]]; then
+    compose start worker >/dev/null 2>&1 || true
   fi
 }
-trap restart_server EXIT INT TERM
+trap restart_services EXIT INT TERM
 
 compose up -d postgres >/dev/null
 wait_postgres
@@ -108,6 +131,9 @@ partial_dir="$final_dir.partial"
 [[ ! -e "$final_dir" && ! -e "$partial_dir" ]] || { echo "backup path already exists: $final_dir" >&2; exit 1; }
 mkdir -p "$partial_dir"
 
+if [[ "$worker_was_running" == "1" ]]; then
+  compose stop worker >/dev/null 2>&1 || true
+fi
 compose stop server >/dev/null 2>&1 || true
 
 verify_status=0

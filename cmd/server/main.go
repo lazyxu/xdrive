@@ -49,6 +49,11 @@ func main() {
 				log.Fatal(err)
 			}
 			return
+		case "worker":
+			if err := runWorker(os.Args[2:]); err != nil {
+				log.Fatal(err)
+			}
+			return
 		}
 	}
 

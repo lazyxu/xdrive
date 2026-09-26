@@ -12,9 +12,9 @@ usage() {
 Usage: server-restore.sh BACKUP_DIR [--config-dir DIR] [--yes] [--no-safety-backup]
 
 Restore is destructive. By default xDrive first creates a pre-restore safety
-backup of the current state, then stops the API, verifies SHA-256 checksums,
-recreates the PostgreSQL database, replaces file-data, runs an offline
-consistency verification, and only then reopens the API.
+backup of the current state, then stops the API and pull worker, verifies
+SHA-256 checksums, recreates the PostgreSQL database, replaces file-data, runs
+an offline consistency verification, and only then reopens the services.
 EOF
 }
 
@@ -98,15 +98,31 @@ wait_postgres() {
   return 1
 }
 
+wait_server() {
+  local i
+  for i in $(seq 1 60); do
+    if compose exec -T server xdrive-server healthcheck >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "xDrive API did not become ready after restore" >&2
+  return 1
+}
+
 server_was_running=0
+worker_was_running=0
 if compose ps --status running --services | grep -qx server; then
   server_was_running=1
+fi
+if compose ps --status running --services | grep -qx worker; then
+  worker_was_running=1
 fi
 
 restore_ok=0
 on_exit() {
   if [[ "$restore_ok" != "1" ]]; then
-    echo "Restore did not complete successfully; xDrive API remains stopped." >&2
+    echo "Restore did not complete successfully; xDrive API and pull worker remain stopped." >&2
     echo "Inspect the error, then retry restore or recover from the pre-restore backup." >&2
   fi
 }
@@ -114,6 +130,9 @@ trap on_exit EXIT INT TERM
 
 compose up -d postgres >/dev/null
 wait_postgres
+if [[ "$worker_was_running" == "1" ]]; then
+  compose stop worker >/dev/null 2>&1 || true
+fi
 compose stop server >/dev/null 2>&1 || true
 
 server_id="$(compose ps -aq server | head -n1 || true)"
@@ -159,6 +178,10 @@ compose run -T --rm --no-deps server storage verify --json </dev/null
 
 if [[ "$server_was_running" == "1" ]]; then
   compose start server >/dev/null
+  wait_server
+fi
+if [[ "$worker_was_running" == "1" && "$server_was_running" == "1" ]]; then
+  compose start worker >/dev/null
 fi
 restore_ok=1
 trap - EXIT INT TERM

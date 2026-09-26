@@ -74,6 +74,28 @@ services:
     cpus: ${XD_SERVER_CPU_LIMIT:-1.0}
     pids_limit: ${XD_SERVER_PIDS_LIMIT:-256}
 
+  worker:
+    image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
+    command: ["worker"]
+    environment:
+      XD_DATABASE_URL: postgres://xdrive:${POSTGRES_PASSWORD}@postgres:5432/xdrive?sslmode=disable
+      XD_JWT_SECRET: ${XD_JWT_SECRET:?set XD_JWT_SECRET in ~/.xd/.env}
+      XD_CONNECTOR_SECRET_ACTIVE_VERSION: ${XD_CONNECTOR_SECRET_ACTIVE_VERSION:-}
+      XD_CONNECTOR_SECRET_KEYS: ${XD_CONNECTOR_SECRET_KEYS:-}
+      XD_CONNECTOR_SECRET_KEY: ${XD_CONNECTOR_SECRET_KEY:-}
+      XD_INTERNAL_SERVER_URL: ${XD_INTERNAL_SERVER_URL:-http://server:8080}
+      XD_SOURCE_PULL_INTERVAL: ${XD_SOURCE_PULL_INTERVAL:-6h}
+      XD_SOURCE_WORKER_POLL_INTERVAL: ${XD_SOURCE_WORKER_POLL_INTERVAL:-1m}
+      XD_HEALTHCHECK_URL: http://server:8080/api/v1/readyz
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_WORKER_MEMORY_LIMIT:-512m}
+    cpus: ${XD_WORKER_CPU_LIMIT:-0.50}
+    pids_limit: ${XD_WORKER_PIDS_LIMIT:-128}
+
   web:
     image: ${XD_WEB_IMAGE:-ghcr.io/lazyxu/xdrive-web:latest}
     ports:
