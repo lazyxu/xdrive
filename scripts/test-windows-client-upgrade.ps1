@@ -85,6 +85,35 @@ if ($baselineVersion -ne $TargetVersion) {
     throw "baseline version mismatch: $baselineVersion != $TargetVersion"
 }
 
+$AgentExe = Join-Path $AppDir "xdrive-agent.exe"
+$DesktopExe = Join-Path $AppDir "desktop\xdrive-desktop.exe"
+if (-not (Test-Path -LiteralPath $AgentExe)) {
+    throw "baseline xdrive-agent.exe missing"
+}
+if (-not (Test-Path -LiteralPath $DesktopExe)) {
+    throw "baseline Electron desktop missing"
+}
+if (Test-Path -LiteralPath (Join-Path $AppDir "icons")) {
+    throw "runtime tray icons must not be installed"
+}
+
+$shortcutRoots = @(
+    (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
+    (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
+)
+$shortcut = $shortcutRoots |
+    Where-Object { Test-Path $_ } |
+    ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
+    Select-Object -First 1
+if ($null -eq $shortcut) {
+    throw "unified client must install the xDrive Desktop shortcut"
+}
+
+$initialRunValue = (Get-ItemProperty -Path $RunKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
+if ($initialRunValue -notlike "*xdrive-agent.exe*") {
+    throw "xDriveAgent autorun registration missing after baseline install"
+}
+
 $marker = Join-Path $AppDir "rollback-marker.txt"
 Set-Content -LiteralPath $marker -Value "last-known-good"
 
@@ -164,6 +193,34 @@ if ($statusText -notmatch "(?m)^rolled back:\s+false\s*$") {
     throw "xd update --status reported rollback after success: $statusText"
 }
 
+if (-not (Test-Path -LiteralPath $Xd)) {
+    throw "xd.exe missing after committed transaction"
+}
+if (-not (Test-Path -LiteralPath $AgentExe)) {
+    throw "xdrive-agent.exe missing after committed transaction"
+}
+if (-not (Test-Path -LiteralPath $DesktopExe)) {
+    throw "Electron desktop missing after committed transaction"
+}
+if (Test-Path -LiteralPath (Join-Path $AppDir "icons")) {
+    throw "runtime tray icons were installed after committed transaction"
+}
+$postVersion = (& $Xd version | Out-String).Trim()
+if ($postVersion -ne $TargetVersion) {
+    throw "committed version mismatch: $postVersion != $TargetVersion"
+}
+$postShortcut = $shortcutRoots |
+    Where-Object { Test-Path $_ } |
+    ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
+    Select-Object -First 1
+if ($null -eq $postShortcut) {
+    throw "xDrive Desktop shortcut missing after committed transaction"
+}
+$postRunValue = (Get-ItemProperty -Path $RunKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
+if ($postRunValue -notlike "*xdrive-agent.exe*") {
+    throw "xDriveAgent autorun registration missing after committed transaction"
+}
+
 $agent = Get-Process -Name "xdrive-agent" -ErrorAction SilentlyContinue
 if ($null -eq $agent) {
     throw "committed transaction did not restart xdrive-agent"
@@ -202,6 +259,16 @@ if ($uninstall.ExitCode -ne 0) {
 }
 if (Test-Path -LiteralPath (Join-Path $AppDir "xd.exe")) {
     throw "xd.exe remains after transaction test uninstall"
+}
+if (Test-Path -LiteralPath (Join-Path $AppDir "xdrive-agent.exe")) {
+    throw "xdrive-agent.exe remains after transaction test uninstall"
+}
+if (Test-Path -LiteralPath (Join-Path $AppDir "desktop\xdrive-desktop.exe")) {
+    throw "xdrive-desktop.exe remains after transaction test uninstall"
+}
+$remainingRun = Get-ItemProperty -Path $RunKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
+if ($null -ne $remainingRun) {
+    throw "xDriveAgent autorun remains after transaction test uninstall"
 }
 
 Remove-Item -LiteralPath $TransactionRoot -Recurse -Force -ErrorAction SilentlyContinue

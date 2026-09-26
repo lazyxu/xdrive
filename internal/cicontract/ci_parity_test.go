@@ -374,7 +374,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"test-windows-client-package.ps1",
 		"test-windows-uninstaller-resolver.ps1",
 		"test-windows-client-upgrade.ps1",
-		"SmokeInstall",
 	)
 	if strings.Contains(gitlabGoWindows, "go mod tidy") {
 		t.Errorf("GitLab Windows wrapper must not run go mod tidy under a newer self-hosted Go toolchain")
@@ -453,7 +452,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "Windows upgrade transaction test", windowsUpgradeTest,
 		"resolve-windows-uninstaller.ps1",
+		"unified client must install the xDrive Desktop shortcut",
+		"xDriveAgent autorun registration missing after baseline install",
 		"transaction test uninstalling via",
+		"xDriveAgent autorun remains after transaction test uninstall",
 	)
 	requireRaw(t, "server pipe installer test", serverPipeTest,
 		"pipe_status=(\"${PIPESTATUS[@]}\")",

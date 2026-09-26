@@ -25,15 +25,6 @@ try {
         throw "Windows upgrade/rollback test failed with exit code $LASTEXITCODE"
     }
 
-    $smokeInstaller = [System.IO.Path]::GetFullPath((Join-Path $Root "release\xDriveSetup-amd64.exe"))
-    if (-not [string]::Equals($Installer, $smokeInstaller, [System.StringComparison]::OrdinalIgnoreCase)) {
-        Copy-Item $Installer $smokeInstaller -Force
-    }
-    & ./scripts/ci/gitlab-windows-native.ps1 -Action SmokeInstall -Version $TargetVersion
-    if ($LASTEXITCODE -ne 0) {
-        throw "Windows exact-package smoke test failed with exit code $LASTEXITCODE"
-    }
-
     Write-Host "Windows exact release package passed artifact tests: $Installer"
 } finally {
     Pop-Location
