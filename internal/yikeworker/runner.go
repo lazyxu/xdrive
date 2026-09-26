@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	internalTokenTTL   = 10 * time.Minute
+	internalTokenTTL   = 12 * time.Hour
 	DefaultRunInterval = 6 * time.Hour
 )
 
@@ -72,9 +72,7 @@ func (r *Runner) loadSources(ctx context.Context, dueOnly bool, now time.Time, i
 		Where("xd_sources.kind = ? AND xd_sources.direction = ? AND xd_sources.status = ? AND xd_sources.sync_mode = ?",
 			yikesync.SourceKind, meta.SourceDirectionPull, meta.SourceStatusActive, meta.SourceSyncModeBackup)
 	if dueOnly {
-		query = query.
-			Where("xd_sources.run_mode = ?", meta.SourceRunModeScan).
-			Where("xd_sources.last_run_at IS NULL OR xd_sources.last_run_at <= ?", now.Add(-interval))
+		query = query.Where("xd_sources.last_run_at IS NULL OR xd_sources.last_run_at <= ?", now.Add(-interval))
 	}
 	var sources []meta.Source
 	if err := query.Order("xd_sources.id ASC").Find(&sources).Error; err != nil {
@@ -89,16 +87,6 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 	for _, source := range sources {
 		if err := ctx.Err(); err != nil {
 			return report, err
-		}
-		if source.RunMode != meta.SourceRunModeScan {
-			report.Skipped++
-			r.logger().Warn("yike_source_skipped",
-				"source_id", source.ID,
-				"source_name", source.Name,
-				"reason", "scan-only worker does not execute sync mode",
-				"run_mode", source.RunMode,
-			)
-			continue
 		}
 		run, result, err := r.RunSource(ctx, source)
 		if err != nil {
@@ -117,7 +105,7 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			}
 			report.Failed++
 			errs = append(errs, fmt.Errorf("source %d (%s): %w", source.ID, source.Name, err))
-			r.logger().Error("yike_source_scan_failed",
+			r.logger().Error("yike_source_pull_failed",
 				"source_id", source.ID,
 				"source_name", source.Name,
 				"error", err,
@@ -125,7 +113,7 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			continue
 		}
 		report.Completed++
-		r.logger().Info("yike_source_scan_completed",
+		r.logger().Info("yike_source_pull_completed",
 			"source_id", source.ID,
 			"source_name", source.Name,
 			"run_id", run.ID,
@@ -133,6 +121,8 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			"scanned_items", run.ScannedItems,
 			"planned_transfer_items", run.PlannedTransferItems,
 			"planned_transfer_bytes", run.PlannedTransferBytes,
+			"transferred_items", run.TransferredItems,
+			"transferred_bytes", run.TransferredBytes,
 			"missing_items", run.MissingItems,
 			"albums", result.Albums,
 			"root_items", result.RootItems,
@@ -164,8 +154,8 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		source.Direction != meta.SourceDirectionPull ||
 		source.SyncMode != meta.SourceSyncModeBackup ||
 		source.Status != meta.SourceStatusActive ||
-		source.RunMode != meta.SourceRunModeScan {
-		return client.SyncRun{}, result, fmt.Errorf("source %d is not an active Yike scan source", source.ID)
+		!meta.ValidSourceRunMode(source.RunMode) {
+		return client.SyncRun{}, result, fmt.Errorf("source %d is not an active Yike pull source", source.ID)
 	}
 
 	var owner meta.User
@@ -212,10 +202,6 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		return finished, result, cause
 	}
 
-	if run.Mode != meta.SourceRunModeScan {
-		return finishFailure(fmt.Errorf("Yike sync execution is not enabled by the scan-only worker"), true)
-	}
-
 	credentialPlaintext, err := sourcecredential.Get(ctx, r.DB, r.Keyring, source)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -241,12 +227,30 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		return finishFailure(fmt.Errorf("initialize Yike client: %w", err), true)
 	}
 
+	var executor yikesync.PlanExecutor
+	if run.Mode == meta.SourceRunModeSync {
+		if run.TargetNodeID == nil || *run.TargetNodeID == 0 {
+			return finishFailure(fmt.Errorf("Yike sync target is unavailable"), true)
+		}
+		transferRemote, ok := remote.(yikesync.DownloadRemote)
+		if !ok {
+			return finishFailure(fmt.Errorf("Yike remote does not support media streaming"), true)
+		}
+		yikeExecutor := yikesync.NewExecutor(transferRemote, &ownerExecutionAPI{sourceAPI: api}, *run.TargetNodeID)
+		yikeExecutor.Heartbeat = func(heartbeatCtx context.Context) error {
+			return api.HeartbeatSourceRun(heartbeatCtx, source.ID, run.ID)
+		}
+		executor = yikeExecutor
+	}
+
 	result, err = (yikesync.Scanner{
 		Remote:      remote,
 		API:         api,
 		SourceID:    source.ID,
 		RunID:       run.ID,
 		IgnoreRules: run.IgnoreRules,
+		Mode:        run.Mode,
+		Executor:    executor,
 	}).Scan(ctx)
 	if err != nil {
 		return finishFailure(err, true)
@@ -256,12 +260,13 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		Status:            meta.SyncRunStatusCompleted,
 		CompleteInventory: true,
 		Summary:           result.Summary,
+		Error:             strings.Join(result.Errors, "\n"),
 	})
 	if err != nil {
 		return client.SyncRun{}, result, err
 	}
 	if finished.Status != meta.SyncRunStatusCompleted {
-		return finished, result, fmt.Errorf("Yike scan run finished %s with %d failed items", finished.Status, finished.FailedItems)
+		return finished, result, fmt.Errorf("Yike pull run finished %s with %d failed items", finished.Status, finished.FailedItems)
 	}
 	return finished, result, nil
 }
@@ -326,6 +331,65 @@ func (a *ownerSourceAPI) client() (*client.Client, error) {
 	return out, nil
 }
 
+type ownerExecutionAPI struct {
+	sourceAPI *ownerSourceAPI
+}
+
+func (a *ownerExecutionAPI) List(ctx context.Context, parentID uint64) ([]client.Node, error) {
+	c, err := a.sourceAPI.client()
+	if err != nil {
+		return nil, err
+	}
+	return c.List(ctx, parentID)
+}
+
+func (a *ownerExecutionAPI) CreateDir(ctx context.Context, parentID uint64, name string) (client.Node, error) {
+	c, err := a.sourceAPI.client()
+	if err != nil {
+		return client.Node{}, err
+	}
+	return c.CreateDir(ctx, parentID, name)
+}
+
+func (a *ownerExecutionAPI) RenameMove(ctx context.Context, id, revision uint64, name *string, parentID *uint64) (client.Node, error) {
+	c, err := a.sourceAPI.client()
+	if err != nil {
+		return client.Node{}, err
+	}
+	return c.RenameMove(ctx, id, revision, name, parentID)
+}
+
+func (a *ownerExecutionAPI) UploadStreamResumableResult(
+	ctx context.Context,
+	parentID uint64,
+	name string,
+	size int64,
+	resumeKey string,
+	open client.UploadStreamOpen,
+	progress client.UploadProgress,
+) (client.UploadResult, error) {
+	c, err := a.sourceAPI.client()
+	if err != nil {
+		return client.UploadResult{}, err
+	}
+	return c.UploadStreamResumableResult(ctx, parentID, name, size, resumeKey, open, progress)
+}
+
+func (a *ownerExecutionAPI) OverwriteStreamResumableResult(
+	ctx context.Context,
+	nodeID, revision uint64,
+	size int64,
+	resumeKey string,
+	open client.UploadStreamOpen,
+	progress client.UploadProgress,
+) (client.UploadResult, error) {
+	c, err := a.sourceAPI.client()
+	if err != nil {
+		return client.UploadResult{}, err
+	}
+	return c.OverwriteStreamResumableResult(ctx, nodeID, revision, size, resumeKey, open, progress)
+}
+
 func (a *ownerSourceAPI) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (client.SyncRun, error) {
 	c, err := a.client()
 	if err != nil {
@@ -340,6 +404,14 @@ func (a *ownerSourceAPI) ObserveSourceItems(ctx context.Context, sourceID uint64
 		return nil, err
 	}
 	return c.ObserveSourceItems(ctx, sourceID, runID, items)
+}
+
+func (a *ownerSourceAPI) CommitSourceItems(ctx context.Context, sourceID uint64, runID string, items []client.SourceCommit) error {
+	c, err := a.client()
+	if err != nil {
+		return err
+	}
+	return c.CommitSourceItems(ctx, sourceID, runID, items)
 }
 
 func (a *ownerSourceAPI) HeartbeatSourceRun(ctx context.Context, sourceID uint64, runID string) error {

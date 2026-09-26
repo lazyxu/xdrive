@@ -336,4 +336,88 @@ func TestUploadFileResumableInstantFinalizeSkipsChunks(t *testing.T) {
 	}
 }
 
+func TestUploadStreamResumableUsesOffsetAndSkipsReceivedChunks(t *testing.T) {
+	data := []byte("abcdefghijkl")
+	chunkSize := int64(4)
+	hashChunk := func(chunk []byte) string {
+		sum := sha256.Sum256(chunk)
+		return hex.EncodeToString(sum[:])
+	}
+	full := sha256.Sum256(data)
+	fullHash := hex.EncodeToString(full[:])
+
+	var (
+		openOffsets []int64
+		putIndices  []int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads":
+			var init UploadInit
+			if err := json.NewDecoder(r.Body).Decode(&init); err != nil {
+				t.Fatal(err)
+			}
+			if init.Size != int64(len(data)) || init.ChunkSize != chunkSize || init.ResumeKey != "remote-revision" {
+				t.Fatalf("unexpected stream init: %+v", init)
+			}
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID: "stream-1", ParentID: init.ParentID, Name: init.Name,
+				Size: init.Size, ChunkSize: chunkSize, ChunkCount: 3,
+				ResumeKey: init.ResumeKey, Status: "active", ExpiresAt: time.Now().Add(time.Hour),
+				Received: []UploadPart{
+					{Index: 0, Size: 4, SHA256: hashChunk(data[0:4])},
+					{Index: 2, Size: 4, SHA256: hashChunk(data[8:12])},
+				},
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/uploads/stream-1/chunks/1":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != "efgh" {
+				t.Fatalf("stream chunk=%q", body)
+			}
+			wantHash := hashChunk(body)
+			if r.Header.Get("X-Chunk-SHA256") != wantHash {
+				t.Fatalf("chunk hash header=%q want=%q", r.Header.Get("X-Chunk-SHA256"), wantHash)
+			}
+			putIndices = append(putIndices, 1)
+			_ = json.NewEncoder(w).Encode(UploadPart{Index: 1, Size: 4, SHA256: wantHash})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads/stream-1/finalize":
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID: "stream-1", Status: "finalized",
+				Result: &Node{
+					ID: 333, ParentID: uint64Ptr(1), Name: "remote.bin", Type: "file",
+					Size: int64(len(data)), Revision: 1, SHA256: fullHash,
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	parentID := uint64(1)
+	result, err := cli.uploadStreamResult(context.Background(), UploadInit{
+		ParentID: &parentID, Name: "remote.bin", Size: int64(len(data)),
+		ChunkSize: chunkSize, ResumeKey: "remote-revision",
+	}, func(_ context.Context, offset int64) (io.ReadCloser, error) {
+		openOffsets = append(openOffsets, offset)
+		return io.NopCloser(strings.NewReader(string(data[offset:]))), nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(openOffsets) != 1 || openOffsets[0] != 4 {
+		t.Fatalf("open offsets=%v want=[4]", openOffsets)
+	}
+	if len(putIndices) != 1 || putIndices[0] != 1 {
+		t.Fatalf("put indices=%v want=[1]", putIndices)
+	}
+	if result.Node.ID != 333 || result.SHA256 != fullHash || result.TransferredBytes != 4 {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
 func uint64Ptr(v uint64) *uint64 { return &v }

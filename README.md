@@ -835,7 +835,9 @@ xdrive-server source-credentials status
 
 Only after the old key version reports zero credential rows should that historical key be removed from `XD_CONNECTOR_SECRET_KEYS`. Existing deployments using the legacy single `XD_CONNECTOR_SECRET_KEY` are migrated to keyring version 1 without changing the key bytes.
 
-Phase 13D3 adds the experimental **Yike Photos Scan Worker**. A separate Docker Compose `worker` service checks active `yike_photos + pull + backup + scan` Sources every minute and scans each Source only when its `LastRunAt` is at least six hours old by default. It decrypts the Source Cookie inside the trusted worker, discovers the root library plus own/joined albums, deduplicates media as `yike:<owner_uk>:<fsid>`, applies the shared ignore/planner pipeline, and finishes the normal Source run API with scan statistics. Root media wins over duplicate album memberships; shared media is namespaced by owner UK. No Yike media download or source mutation occurs in this phase. See `docs/yike-source-worker.md`.
+Phase 13D3 adds the experimental **Yike Photos Pull Worker**. A separate Docker Compose `worker` service checks active `yike_photos + pull + backup` Sources every minute and runs each Source only when its `LastRunAt` is at least six hours old by default. It decrypts the Source Cookie inside the trusted worker, discovers the root library plus own/joined albums, deduplicates media as `yike:<owner_uk>:<fsid>`, and applies the shared ignore/planner pipeline. `run_mode=scan` remains statistics-only and never opens media downloads.
+
+Phase 13D4 adds the **Yike streaming Pull executor**. `run_mode=sync` executes create/update/move/move_update plans through the existing Source execution-commit protocol. Media is streamed directly from a fresh Yike download link into xDrive resumable upload chunks without staging the full remote file on worker disk; restart/resume reuses chunks already accepted by xDrive. Pure moves do not download content. Shared-album items use only the read-only direct download endpoint: if a direct link is unavailable, that item remains pending and the run becomes partial, while xDrive never calls Yike copy/add/delete APIs as a workaround. See `docs/yike-source-worker.md`.
 
 The shared `internal/source` planner normalizes discovered items and classifies them as `ignore`, `unchanged`, `create`, `update`, `move`, or `move_update`. Ignore rules use a gitignore-like ordered syntax with `*`, `**`, `?`, comments, rooted/directory patterns, and `!` negation; rules are evaluated identically for scan and sync planning. Fast scan planning does not hash every source file: it uses stable external identity plus size/mtime, or a connector-provided remote revision/hash when available. SyncRun statistics separately record scanned, ignored, new, changed, moved, unchanged, missing, planned-transfer, actual-transfer, and failure counts/bytes. `LastSeenRunID` provides deterministic missing detection for future executors without relying on wall-clock cutoffs.
 
@@ -1025,7 +1027,7 @@ deploy/
 ## Roadmap
 
 1. Phase 13C: add operational polish for the completed Synology Push path (health/status UX, install/update ergonomics, and optional Synology Photos metadata enrichment);
-2. Phase 13D: add the Yike Pull executor on top of the completed scan-only worker, using read-only download links and the Source execution-commit protocol;
+2. Phase 13D: add album/collection metadata and optional Live Photo grouping on top of the completed Yike scan/sync Pull path;
 3. Phase 13E: add optional photo metadata/collection adapters such as Live Photo grouping and album semantics without coupling them to the source schema;
 4. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
 5. optional content-defined chunking when large-file/internal-redundancy data justifies it;

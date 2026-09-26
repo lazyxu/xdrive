@@ -2,12 +2,14 @@ package yikesync
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
+	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/yike"
 )
 
@@ -36,8 +38,10 @@ func (f *fakeRemote) ListAlbumFilesPage(_ context.Context, albumID, cursor strin
 
 type fakeSourceAPI struct {
 	observed   [][]client.SourceObservation
+	commits    [][]client.SourceCommit
 	heartbeats int
 	action     string
+	commitErr  error
 }
 
 func (f *fakeSourceAPI) ObserveSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceObservation) ([]client.SourcePlan, error) {
@@ -52,6 +56,12 @@ func (f *fakeSourceAPI) ObserveSourceItems(_ context.Context, _ uint64, _ string
 		out = append(out, client.SourcePlan{ExternalID: item.ExternalID, Action: action})
 	}
 	return out, nil
+}
+
+func (f *fakeSourceAPI) CommitSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceCommit) error {
+	copyItems := append([]client.SourceCommit(nil), items...)
+	f.commits = append(f.commits, copyItems)
+	return f.commitErr
 }
 
 func (f *fakeSourceAPI) HeartbeatSourceRun(context.Context, uint64, string) error {
@@ -192,5 +202,89 @@ func TestScannerRejectsInvalidUserIdentity(t *testing.T) {
 	}
 	if _, err := scanner.Scan(context.Background()); err == nil {
 		t.Fatal("invalid youa_id was accepted")
+	}
+}
+
+type fakePlanExecutor struct {
+	commits []client.SourceCommit
+	failID  string
+}
+
+func (f *fakePlanExecutor) Execute(_ context.Context, plan client.SourcePlan, item sourcepkg.DiscoveredItem, _ TransferRef) (client.SourceCommit, error) {
+	if item.ExternalID == f.failID {
+		return client.SourceCommit{}, fmt.Errorf("download unavailable")
+	}
+	commit := client.SourceCommit{
+		ExternalID: item.ExternalID, Action: plan.Action, NodeID: 100, NodeRevision: 1,
+		Kind: item.Kind, Path: item.Path, Size: item.Size, ModifiedAt: item.ModifiedAt,
+		SHA256: strings.Repeat("a", 64), RemoteRevision: item.RemoteRevision,
+		Transferred: true, TransferredBytes: item.Size,
+	}
+	f.commits = append(f.commits, commit)
+	return commit, nil
+}
+
+func TestScannerSyncExecutesAndCommitsPlans(t *testing.T) {
+	remote := &fakeRemote{
+		user: yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.File{{FSID: 1, Path: "/a.jpg", Size: 10, MTime: 100}},
+			},
+		},
+		albums:     map[string]yike.AlbumList{"": {Page: yike.Page{HasMore: 0}}},
+		albumFiles: map[string]map[string]yike.AlbumFileList{},
+	}
+	api := &fakeSourceAPI{action: string(sourcepkg.ActionCreate)}
+	executor := &fakePlanExecutor{}
+	result, err := (Scanner{
+		Remote: remote, API: api, SourceID: 1, RunID: "run-sync",
+		Mode: meta.SourceRunModeSync, Executor: executor,
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Summary.NewItems != 1 || result.Summary.FailedItems != 0 {
+		t.Fatalf("summary=%+v", result.Summary)
+	}
+	if len(executor.commits) != 1 || len(api.commits) != 1 || len(api.commits[0]) != 1 {
+		t.Fatalf("executor commits=%+v api commits=%+v", executor.commits, api.commits)
+	}
+	if api.commits[0][0].ExternalID != "yike:123:1" {
+		t.Fatalf("commit=%+v", api.commits[0][0])
+	}
+}
+
+func TestScannerSyncKeepsFailedItemPendingAndContinues(t *testing.T) {
+	remote := &fakeRemote{
+		user: yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.File{
+					{FSID: 1, Path: "/ok.jpg", Size: 10, MTime: 100},
+					{FSID: 2, Path: "/fail.jpg", Size: 20, MTime: 200},
+				},
+			},
+		},
+		albums:     map[string]yike.AlbumList{"": {Page: yike.Page{HasMore: 0}}},
+		albumFiles: map[string]map[string]yike.AlbumFileList{},
+	}
+	api := &fakeSourceAPI{action: string(sourcepkg.ActionCreate)}
+	executor := &fakePlanExecutor{failID: "yike:123:2"}
+	result, err := (Scanner{
+		Remote: remote, API: api, SourceID: 1, RunID: "run-partial",
+		Mode: meta.SourceRunModeSync, Executor: executor,
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Summary.NewItems != 2 || result.Summary.FailedItems != 1 || len(result.Errors) != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+	if len(api.commits) != 1 || len(api.commits[0]) != 1 ||
+		api.commits[0][0].ExternalID != "yike:123:1" {
+		t.Fatalf("api commits=%+v", api.commits)
 	}
 }

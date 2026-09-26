@@ -4,7 +4,7 @@ Yike Photos support is experimental because it relies on the current private Web
 
 ## Scope
 
-Phase 13D3 is **scan-only**. The worker discovers and plans Yike content but does not download media.
+The worker supports both **scan** and **sync** Source modes.
 
 It covers:
 
@@ -14,14 +14,15 @@ It covers:
 - gitignore-style Source ignore rules;
 - deterministic SourceItem identity;
 - scan statistics and missing detection;
-- encrypted Cookie storage through the Source Credential Keyring.
+- encrypted Cookie storage through the Source Credential Keyring;
+- streaming media Pull into xDrive for `run_mode=sync`;
+- resumable xDrive upload sessions without staging the whole remote file on worker disk.
 
 It intentionally does **not**:
 
 - upload, copy, delete, rename, join, or otherwise mutate Yike;
-- call media download/link endpoints during a scan;
-- create duplicate xDrive files for album memberships;
-- execute Source `run_mode=sync`.
+- copy shared-album media into the signed-in account as a download workaround;
+- create duplicate xDrive files for album memberships.
 
 ## Source identity and deduplication
 
@@ -106,15 +107,16 @@ This prevents container restarts from triggering repeated full-library scans aga
 
 The minimum accepted interval is one minute. The default is intentionally conservative because Yike discovery uses a private API and each run performs a full reconciliation scan.
 
-The worker only schedules active, credentialed:
+The worker schedules active, credentialed:
 
 ```text
 kind=yike_photos
 direction=pull
 sync_mode=backup
+run_mode=scan|sync
 ```
 
-Sources. A Yike Source already switched to `run_mode=sync` is skipped until the Pull executor is implemented.
+Sources. `scan` never opens media download streams. `sync` executes the same planner output through the Source execution-commit protocol.
 
 For a manual one-shot scan inside the worker container:
 
@@ -129,4 +131,24 @@ The worker is a trusted internal service. It reads encrypted connector credentia
 
 This means Synology Push and Yike Pull share the same planner, ignore, missing, stale-run, target-snapshot, and statistics semantics.
 
-If any part of the remote inventory cannot be completed, the run finishes failed/cancelled with `complete_inventory=false`. Missing inference therefore never runs on a partial Yike traversal.
+If any part of the remote inventory cannot be completed, the run finishes failed/cancelled with `complete_inventory=false`. Missing inference therefore never runs on an incomplete Yike traversal.
+
+## Pull execution
+
+For `run_mode=sync`, create/update candidates are streamed directly:
+
+```text
+Yike dlink
+  -> HTTP Range stream
+  -> 8 MiB xDrive upload chunks
+  -> CAS/finalize
+  -> Source /commit
+```
+
+The worker does not download the complete media object to a temporary file. The upload resume key is derived from the stable external ID plus size, modified time, and remote revision, so a restarted worker can reuse chunks already accepted by xDrive. Each remote stream re-acquires a fresh Yike download link before opening, which avoids depending on an expired dlink.
+
+Pure `move` plans rename/move the existing xDrive Node without downloading content. `move_update` moves the Node first and then overwrites it through the resumable stream path.
+
+Shared media uses the read-only direct album download endpoint. If that direct link is unavailable, only that item remains pending and the run becomes `partial`; other media continue. xDrive never calls Yike `copyfile`, `addfile`, delete, or other mutation endpoints to make a shared item downloadable.
+
+Actual `TransferredBytes` counts only chunks newly accepted by xDrive. Scan mode reports planned transfer bytes only.
