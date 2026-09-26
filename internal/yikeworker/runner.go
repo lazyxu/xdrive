@@ -17,6 +17,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
+	"github.com/lazyxu/xdrive/internal/sourcemetadata"
 	"github.com/lazyxu/xdrive/internal/yike"
 	"github.com/lazyxu/xdrive/internal/yikesync"
 	"gorm.io/gorm"
@@ -257,6 +258,9 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		return finishFailure(err, true)
 	}
 
+	if _, err := sourcemetadata.ApplySnapshot(ctx, r.DB, source.ID, run.ID, result.Metadata); err != nil {
+		return finishFailure(fmt.Errorf("apply Yike media metadata snapshot: %w", err), true)
+	}
 	if _, err := sourcecollection.ApplySnapshot(ctx, r.DB, source.ID, run.ID, result.Collections); err != nil {
 		return finishFailure(fmt.Errorf("apply Yike collection snapshot: %w", err), true)
 	}

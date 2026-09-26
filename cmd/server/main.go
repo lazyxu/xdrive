@@ -99,7 +99,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceCredential{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceCredential{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`UPDATE xd_nodes SET revision = 1 WHERE revision = 0`).Error; err != nil {
