@@ -4,10 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/mount"
@@ -69,67 +66,28 @@ func (c *agentController) CloudSearch(ctx context.Context, query string) ([]agen
 	if err != nil {
 		return nil, err
 	}
-	walkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	remote, err := cli.Walk(walkCtx)
+	page, err := cli.Search(ctx, client.SearchOptions{Query: query, Limit: cloudSearchLimit})
 	if err != nil {
 		return nil, err
 	}
 
-	lowerQuery := strings.ToLower(query)
-	paths := make([]string, 0)
-	for rel := range remote {
-		if rel == "" {
-			continue
-		}
-		if strings.Contains(strings.ToLower(rel), lowerQuery) {
-			paths = append(paths, rel)
-		}
-	}
-	sort.Slice(paths, func(i, j int) bool {
-		ni, nj := remote[paths[i]], remote[paths[j]]
-		if ni.Type != nj.Type {
-			return ni.Type == "dir"
-		}
-		return strings.ToLower(paths[i]) < strings.ToLower(paths[j])
-	})
-	if len(paths) > cloudSearchLimit {
-		paths = paths[:cloudSearchLimit]
-	}
-
-	root := remote[""]
-	out := make([]agentCloudSearchResult, 0, len(paths))
-	for _, rel := range paths {
-		node := remote[rel]
-		crumbs := []agentCloudCrumb{{ID: root.ID, Name: "My files"}}
-		if node.Type == "dir" {
-			crumbs = appendCloudCrumbs(crumbs, remote, rel)
-		} else {
-			parent := path.Dir(rel)
-			if parent != "." && parent != "" {
-				crumbs = appendCloudCrumbs(crumbs, remote, parent)
-			}
-		}
-		out = append(out, agentCloudSearchResult{Node: node, Path: rel, Crumbs: crumbs})
+	out := make([]agentCloudSearchResult, 0, len(page.Items))
+	for _, item := range page.Items {
+		out = append(out, agentCloudSearchResult{
+			Node: item.Node, Path: item.Path, Crumbs: agentCloudCrumbs(item.Breadcrumbs),
+		})
 	}
 	return out, nil
 }
 
-func appendCloudCrumbs(out []agentCloudCrumb, remote map[string]client.Node, rel string) []agentCloudCrumb {
-	parts := strings.Split(strings.Trim(rel, "/"), "/")
-	current := ""
-	for _, part := range parts {
-		if part == "" {
-			continue
+func agentCloudCrumbs(items []client.SearchBreadcrumb) []agentCloudCrumb {
+	out := make([]agentCloudCrumb, 0, len(items))
+	for index, crumb := range items {
+		name := crumb.Name
+		if index == 0 && name == "" {
+			name = "My files"
 		}
-		if current == "" {
-			current = part
-		} else {
-			current += "/" + part
-		}
-		if node, ok := remote[current]; ok && node.Type == "dir" {
-			out = append(out, agentCloudCrumb{ID: node.ID, Name: node.Name})
-		}
+		out = append(out, agentCloudCrumb{ID: crumb.ID, Name: name})
 	}
 	return out
 }

@@ -44,6 +44,29 @@ type Node struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
+type SearchBreadcrumb struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+}
+
+type SearchResult struct {
+	Node        Node               `json:"node"`
+	Path        string             `json:"path"`
+	Breadcrumbs []SearchBreadcrumb `json:"breadcrumbs"`
+}
+
+type SearchPage struct {
+	Items      []SearchResult `json:"items"`
+	NextCursor string         `json:"next_cursor,omitempty"`
+}
+
+type SearchOptions struct {
+	Query  string
+	Type   string
+	Limit  int
+	Cursor string
+}
+
 type QuotaUsage struct {
 	QuotaBytes        int64 `json:"quota_bytes"`
 	PhysicalUsedBytes int64 `json:"physical_used_bytes"`
@@ -150,6 +173,23 @@ func (c *Client) Root(ctx context.Context) (Node, error) {
 func (c *Client) List(ctx context.Context, parentID uint64) ([]Node, error) {
 	var out []Node
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", parentID), nil, &out)
+	return out, err
+}
+
+func (c *Client) Search(ctx context.Context, options SearchOptions) (SearchPage, error) {
+	values := url.Values{}
+	values.Set("q", options.Query)
+	if strings.TrimSpace(options.Type) != "" {
+		values.Set("type", options.Type)
+	}
+	if options.Limit > 0 {
+		values.Set("limit", strconv.Itoa(options.Limit))
+	}
+	if strings.TrimSpace(options.Cursor) != "" {
+		values.Set("cursor", options.Cursor)
+	}
+	var out SearchPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/search?"+values.Encode(), nil, &out)
 	return out, err
 }
 

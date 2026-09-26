@@ -45,6 +45,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/me/quota", s.quotaUsage)
 	authed.GET("/me/storage", s.storageStats)
 	authed.POST("/me/change-password", s.changePassword)
+	authed.GET("/search", s.searchNodes)
 	authed.GET("/nodes/root", s.root)
 	authed.GET("/nodes/:id/children", s.children)
 	authed.POST("/nodes/:id/directories", s.createDirectory)

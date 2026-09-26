@@ -655,7 +655,7 @@ POST  /v1/lifecycle/shutdown
 
 `/v1/events` is a bounded long-poll over monotonically increasing in-memory status revisions. It returns immediately when the revision changes and otherwise returns `204 No Content` at the requested timeout. `/v1/transfer-events` uses the same bounded long-poll pattern with an independent transfer revision so byte-progress updates do not churn the general account/sync status stream.
 
-The Desktop Cloud Files page also reuses the Server's existing node/quota/trash/version/share APIs through the Go Agent. Directory browsing calls the existing node children endpoints; full-cloud search performs an Agent-side `Walk()` and filters paths locally, so no separate Server search API is introduced. Quota shows current logical files, recycle-bin bytes, version-history bytes, and total physical usage. Trash restore/permanent delete and historical-version restore preserve the existing revision/If-Match semantics. Share creation returns the one-time public share token/link only for the creation response; existing share tokens remain non-recoverable and can only be inspected/revoked.
+The Desktop Cloud Files page also reuses the Server's existing node/quota/trash/version/share APIs through the Go Agent. Directory browsing calls the existing node children endpoints. Full-cloud search now calls the owner-scoped Server `GET /api/v1/search` endpoint instead of downloading the entire tree with Agent-side `Walk()`; the Server returns matched nodes together with relative paths and directory breadcrumbs. Quota shows current logical files, recycle-bin bytes, version-history bytes, and total physical usage. Trash restore/permanent delete and historical-version restore preserve the existing revision/If-Match semantics. Share creation returns the one-time public share token/link only for the creation response; existing share tokens remain non-recoverable and can only be inspected/revoked.
 
 The Agent exposes the cloud directory hierarchy as a storage-policy tree. Folder rows map directly to the existing selective-sync rules: **Default** removes an explicit rule and follows the nearest parent policy, **Not synced** maps to `exclude`, and **Always keep** maps to `always-local`. The old path-entry controls are no longer the primary Desktop UX.
 
@@ -691,6 +691,7 @@ GET    /api/v1/me
 GET    /api/v1/me/quota
 GET    /api/v1/me/storage
 POST   /api/v1/me/change-password
+GET    /api/v1/search?q=report&type=file&limit=50&cursor=...
 GET    /api/v1/nodes/root
 GET    /api/v1/nodes/:id/children
 POST   /api/v1/nodes/:id/directories
@@ -805,6 +806,8 @@ The decision gate intentionally requires at least 24 hours of history before cho
 Phase 13A adds a vendor-neutral **External Source Foundation** for future import/sync connectors. `xd_sources` records connector kind, push/pull direction, backup/mirror policy, lifecycle state, revision, and an opaque checkpoint without storing connector credentials. `xd_source_items` preserves stable external identity with `(source_id, external_id)` and optionally maps that identity to an xDrive node while retaining source-side path, revision, hash, and sync state. `xd_sync_runs` records each synchronization attempt, trigger, checkpoints, counters, transferred bytes, terminal state, and error summary.
 
 The mapping deliberately targets `xd_nodes`, not `xd_content_blobs`: a source item describes an external file/directory identity, while CAS describes bytes. Renames and moves can therefore keep the same source identity and node without manufacturing new content. Deleting a mapped xDrive node sets the mapping to NULL for later reconciliation; deleting a source cascades its item/run history. Phase 13A contains no Synology-specific fields, no source credentials, no scheduler, and no file transfer implementation.
+
+Phase 14A adds **Server-side Search** for active files and directories. `GET /api/v1/search` is owner-scoped, accepts a UTF-8 query of at least two characters, optional `type=file|dir`, `limit` from 1–200, and an opaque keyset `cursor`. Matching is case-insensitive against each active node's relative path, preserving the previous Desktop full-path search behavior without transferring the entire namespace to the Agent. Results include the normal node payload, relative `path`, directory `breadcrumbs`, and `next_cursor`; cursors are bound to the original query/type so they cannot be reused across different searches. Deleted/trash nodes and other users' nodes are never included.
 
 
 ## Conflict protection
