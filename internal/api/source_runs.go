@@ -51,6 +51,25 @@ type observeSourceRunResponse struct {
 	Plans []sourcePlanDTO `json:"plans"`
 }
 
+type sourceCommitDTO struct {
+	ExternalID       string     `json:"external_id"`
+	Action           string     `json:"action"`
+	NodeID           uint64     `json:"node_id"`
+	NodeRevision     uint64     `json:"node_revision"`
+	Kind             string     `json:"kind"`
+	Path             string     `json:"path"`
+	Size             int64      `json:"size"`
+	ModifiedAt       *time.Time `json:"modified_at,omitempty"`
+	SHA256           string     `json:"sha256,omitempty"`
+	RemoteRevision   string     `json:"remote_revision,omitempty"`
+	Transferred      bool       `json:"transferred,omitempty"`
+	TransferredBytes int64      `json:"transferred_bytes,omitempty"`
+}
+
+type commitSourceRunRequest struct {
+	Items []sourceCommitDTO `json:"items"`
+}
+
 type finishSourceRunRequest struct {
 	Status            string            `json:"status"`
 	CompleteInventory bool              `json:"complete_inventory"`
@@ -277,10 +296,11 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 				if current.NodeID != nil {
 					if _, active := nodesByID[*current.NodeID]; !active {
 						if err := tx.Model(&meta.SourceItem{}).Where("id = ?", current.ID).
-							Update("node_id", nil).Error; err != nil {
+							Updates(map[string]any{"node_id": nil, "node_revision": 0}).Error; err != nil {
 							return err
 						}
 						current.NodeID = nil
+						current.NodeRevision = 0
 					}
 				}
 				copy := current
@@ -291,7 +311,17 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			if err != nil {
 				return err
 			}
-			if err := persistObservedSourceItem(tx, sourceID, runID, now, current, exists, plan); err != nil {
+			var nodeRevision uint64
+			if currentPtr != nil && currentPtr.NodeID != nil {
+				if node, active := nodesByID[*currentPtr.NodeID]; active {
+					nodeRevision = node.Revision
+					if currentPtr.NodeRevision != 0 && node.Revision != currentPtr.NodeRevision &&
+						plan.Action != sourcepkg.ActionIgnore && plan.Action != sourcepkg.ActionCreate {
+						plan.Action = sourcepkg.ActionMoveUpdate
+					}
+				}
+			}
+			if err := persistObservedSourceItem(tx, sourceID, runID, now, current, exists, plan, nodeRevision); err != nil {
 				return err
 			}
 
@@ -312,6 +342,214 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, observeSourceRunResponse{Plans: plans})
+}
+
+func (s *Server) commitSourceRun(c *gin.Context) {
+	sourceID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+	runID, ok := canonicalRunID(c.Param("runID"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	var req commitSourceRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if len(req.Items) == 0 || len(req.Items) > sourceObservationBatchLimit {
+		fail(c, http.StatusBadRequest, fmt.Sprintf("items must contain 1-%d entries", sourceObservationBatchLimit))
+		return
+	}
+
+	type normalizedCommit struct {
+		raw  sourceCommitDTO
+		item sourcepkg.DiscoveredItem
+	}
+	commits := make([]normalizedCommit, 0, len(req.Items))
+	seen := make(map[string]struct{}, len(req.Items))
+	for _, raw := range req.Items {
+		raw.Action = strings.TrimSpace(raw.Action)
+		if !validSourceCommitAction(sourcepkg.PlanAction(raw.Action)) {
+			fail(c, http.StatusBadRequest, "invalid source execution action")
+			return
+		}
+		if raw.NodeID == 0 || raw.NodeRevision == 0 || raw.TransferredBytes < 0 ||
+			(!raw.Transferred && raw.TransferredBytes != 0) {
+			fail(c, http.StatusBadRequest, "invalid source execution result")
+			return
+		}
+		item := sourcepkg.DiscoveredItem{
+			ExternalID: raw.ExternalID, Kind: raw.Kind, Path: raw.Path, Size: raw.Size,
+			ModifiedAt: raw.ModifiedAt, SHA256: raw.SHA256, RemoteRevision: raw.RemoteRevision,
+		}
+		if err := sourcepkg.ValidateDiscoveredItem(&item); err != nil {
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		if item.Kind == meta.SourceItemKindDirectory && raw.Transferred {
+			fail(c, http.StatusBadRequest, "directories cannot report transferred bytes")
+			return
+		}
+		action := sourcepkg.PlanAction(raw.Action)
+		if item.Kind == meta.SourceItemKindFile && action != sourcepkg.ActionMove && item.SHA256 == "" {
+			fail(c, http.StatusBadRequest, "file execution result requires sha256")
+			return
+		}
+		if _, exists := seen[item.ExternalID]; exists {
+			fail(c, http.StatusBadRequest, "duplicate external_id in execution batch")
+			return
+		}
+		seen[item.ExternalID] = struct{}{}
+		commits = append(commits, normalizedCommit{raw: raw, item: item})
+	}
+
+	now := time.Now().UTC()
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var source meta.Source
+		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+			return err
+		}
+		if source.Status != meta.SourceStatusActive {
+			return errSourcePaused
+		}
+		var run meta.SyncRun
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
+			return err
+		}
+		if run.Status != meta.SyncRunStatusRunning {
+			return errSourceRunNotRunning
+		}
+		if run.Mode != meta.SourceRunModeSync || run.TargetNodeID == nil {
+			return errInvalidSourceConfig
+		}
+		var target meta.Node
+		if err := tx.Where("id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			*run.TargetNodeID, source.OwnerID, meta.NodeTypeDir).First(&target).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errSourceTargetUnavailable
+			}
+			return err
+		}
+
+		var created, updated, transferredItems, transferredBytes int64
+		for _, commit := range commits {
+			item := commit.item
+			raw := commit.raw
+			action := sourcepkg.PlanAction(raw.Action)
+
+			var current meta.SourceItem
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("source_id = ? AND external_id = ?", sourceID, item.ExternalID).
+				First(&current).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errSourceExecutionConflict
+				}
+				return err
+			}
+			if current.LastSeenRunID != runID {
+				return errSourceExecutionConflict
+			}
+
+			effectiveSHA := item.SHA256
+			if effectiveSHA == "" {
+				effectiveSHA = current.SHA256
+				item.SHA256 = effectiveSHA
+			}
+			if current.LastSyncedRunID == runID {
+				if !sourceCommitMatches(current, item, raw.NodeID, raw.NodeRevision) {
+					return errSourceExecutionConflict
+				}
+				continue
+			}
+			if current.State != meta.SourceItemStatePending {
+				return errSourceExecutionConflict
+			}
+			switch action {
+			case sourcepkg.ActionCreate:
+				if current.NodeID != nil {
+					return errSourceExecutionConflict
+				}
+			case sourcepkg.ActionUpdate, sourcepkg.ActionMove, sourcepkg.ActionMoveUpdate:
+				if current.NodeID == nil || *current.NodeID != raw.NodeID {
+					return errSourceExecutionConflict
+				}
+			default:
+				return errSourceExecutionConflict
+			}
+
+			var node meta.Node
+			if err := tx.Preload("File").
+				Where("id = ? AND owner_id = ? AND deleted_at IS NULL", raw.NodeID, source.OwnerID).
+				First(&node).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errSourceExecutionConflict
+				}
+				return err
+			}
+			if node.Revision != raw.NodeRevision || !sourceKindMatchesNodeType(item.Kind, node.Type) {
+				return errSourceExecutionConflict
+			}
+			relativePath, inside, err := sourceNodePathWithinTarget(tx, source.OwnerID, node.ID, *run.TargetNodeID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errSourceExecutionConflict
+				}
+				return err
+			}
+			if !inside || relativePath != item.Path {
+				return errSourceExecutionConflict
+			}
+			if item.Kind == meta.SourceItemKindFile {
+				if node.File == nil || node.File.Size != item.Size {
+					return errSourceExecutionConflict
+				}
+				if item.SHA256 != "" && !strings.EqualFold(node.File.SHA256, item.SHA256) {
+					return errSourceExecutionConflict
+				}
+			}
+
+			nodeID := node.ID
+			if err := tx.Model(&meta.SourceItem{}).Where("id = ?", current.ID).Updates(map[string]any{
+				"node_id": nodeID, "node_revision": node.Revision,
+				"kind": item.Kind, "path": item.Path, "size": item.Size,
+				"modified_at": item.ModifiedAt, "sha256": effectiveSHA,
+				"remote_revision": item.RemoteRevision, "state": meta.SourceItemStateSynced,
+				"last_seen_run_id": runID, "last_seen_at": now,
+				"last_synced_run_id": runID, "last_synced_at": now,
+				"last_error": "", "updated_at": now,
+			}).Error; err != nil {
+				return err
+			}
+
+			if action == sourcepkg.ActionCreate {
+				created++
+			} else {
+				updated++
+			}
+			if raw.Transferred {
+				transferredItems++
+				transferredBytes += raw.TransferredBytes
+			}
+		}
+
+		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Updates(map[string]any{
+			"created_items":     gorm.Expr("created_items + ?", created),
+			"updated_items":     gorm.Expr("updated_items + ?", updated),
+			"transferred_items": gorm.Expr("transferred_items + ?", transferredItems),
+			"transferred_bytes": gorm.Expr("transferred_bytes + ?", transferredBytes),
+			"updated_at":        now,
+		}).Error
+	})
+	if err != nil {
+		writeSourceRunError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (s *Server) heartbeatSourceRun(c *gin.Context) {
@@ -439,6 +677,18 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			}
 		}
 
+		if run.Mode == meta.SourceRunModeSync {
+			var pendingItems int64
+			if err := tx.Model(&meta.SourceItem{}).
+				Where("source_id = ? AND last_seen_run_id = ? AND state = ?", sourceID, runID, meta.SourceItemStatePending).
+				Count(&pendingItems).Error; err != nil {
+				return err
+			}
+			if pendingItems > summary.FailedItems {
+				summary.FailedItems = pendingItems
+			}
+		}
+
 		status := req.Status
 		if status == meta.SyncRunStatusCompleted && summary.FailedItems > 0 {
 			status = meta.SyncRunStatusPartial
@@ -492,6 +742,7 @@ func persistObservedSourceItem(
 	current meta.SourceItem,
 	exists bool,
 	plan sourcepkg.PlanResult,
+	nodeRevision uint64,
 ) error {
 	item := plan.Item
 	switch plan.Action {
@@ -515,7 +766,7 @@ func persistObservedSourceItem(
 		}
 		return tx.Model(&meta.SourceItem{}).Where("id = ?", current.ID).Updates(map[string]any{
 			"kind": item.Kind, "path": item.Path, "size": item.Size, "modified_at": item.ModifiedAt,
-			"sha256": item.SHA256, "remote_revision": item.RemoteRevision,
+			"sha256": item.SHA256, "remote_revision": item.RemoteRevision, "node_revision": 0,
 			"state": meta.SourceItemStatePending, "last_seen_run_id": runID,
 			"last_seen_at": now, "last_error": "", "updated_at": now,
 		}).Error
@@ -524,7 +775,8 @@ func persistObservedSourceItem(
 		return tx.Model(&meta.SourceItem{}).Where("id = ?", current.ID).Updates(map[string]any{
 			"kind": item.Kind, "path": item.Path, "size": item.Size, "modified_at": item.ModifiedAt,
 			"sha256": item.SHA256, "remote_revision": item.RemoteRevision,
-			"state": meta.SourceItemStateSynced, "last_seen_run_id": runID,
+			"node_revision": nodeRevision,
+			"state":         meta.SourceItemStateSynced, "last_seen_run_id": runID,
 			"last_seen_at": now, "last_error": "", "updated_at": now,
 		}).Error
 
@@ -537,6 +789,67 @@ func persistObservedSourceItem(
 	default:
 		return fmt.Errorf("unsupported source plan action %q", plan.Action)
 	}
+}
+
+func validSourceCommitAction(action sourcepkg.PlanAction) bool {
+	switch action {
+	case sourcepkg.ActionCreate, sourcepkg.ActionUpdate, sourcepkg.ActionMove, sourcepkg.ActionMoveUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+func sourceKindMatchesNodeType(kind, nodeType string) bool {
+	switch kind {
+	case meta.SourceItemKindFile:
+		return nodeType == meta.NodeTypeFile
+	case meta.SourceItemKindDirectory:
+		return nodeType == meta.NodeTypeDir
+	default:
+		return false
+	}
+}
+
+func sourceCommitMatches(current meta.SourceItem, item sourcepkg.DiscoveredItem, nodeID, nodeRevision uint64) bool {
+	if current.NodeID == nil || *current.NodeID != nodeID || current.NodeRevision != nodeRevision ||
+		current.Kind != item.Kind || current.Path != item.Path || current.Size != item.Size ||
+		!strings.EqualFold(current.SHA256, item.SHA256) || current.RemoteRevision != item.RemoteRevision ||
+		current.State != meta.SourceItemStateSynced {
+		return false
+	}
+	if current.ModifiedAt == nil || item.ModifiedAt == nil {
+		return current.ModifiedAt == nil && item.ModifiedAt == nil
+	}
+	return current.ModifiedAt.Equal(*item.ModifiedAt)
+}
+
+func sourceNodePathWithinTarget(tx *gorm.DB, ownerID, nodeID, targetID uint64) (string, bool, error) {
+	if nodeID == targetID {
+		return "", false, nil
+	}
+	current := nodeID
+	parts := make([]string, 0, 8)
+	for depth := 0; depth < 10000; depth++ {
+		var node meta.Node
+		if err := tx.Select("id", "parent_id", "name").
+			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", current, ownerID).
+			First(&node).Error; err != nil {
+			return "", false, err
+		}
+		parts = append(parts, node.Name)
+		if node.ParentID == nil {
+			return "", false, nil
+		}
+		if *node.ParentID == targetID {
+			for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+				parts[i], parts[j] = parts[j], parts[i]
+			}
+			return strings.Join(parts, "/"), true, nil
+		}
+		current = *node.ParentID
+	}
+	return "", false, fmt.Errorf("source target ancestry exceeds limit")
 }
 
 func validateSourceSummary(summary sourcepkg.Summary) error {
@@ -577,6 +890,8 @@ func writeSourceRunError(c *gin.Context, err error) {
 		fail(c, http.StatusConflict, "source run is not running")
 	case errors.Is(err, errSourceRunIDConflict):
 		fail(c, http.StatusConflict, "run_id already belongs to another source")
+	case errors.Is(err, errSourceExecutionConflict):
+		fail(c, http.StatusConflict, "source execution result conflicts with current state")
 	case errors.Is(err, errInvalidSourceConfig):
 		fail(c, http.StatusConflict, "source configuration is not executable")
 	default:
@@ -590,4 +905,5 @@ var (
 	errSourceRunActive         = errors.New("source run already active")
 	errSourceRunNotRunning     = errors.New("source run not running")
 	errSourceRunIDConflict     = errors.New("source run id conflict")
+	errSourceExecutionConflict = errors.New("source execution conflict")
 )

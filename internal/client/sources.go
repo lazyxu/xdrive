@@ -154,6 +154,21 @@ type FinishSourceRunInput struct {
 	Error             string            `json:"error,omitempty"`
 }
 
+type SourceCommit struct {
+	ExternalID       string     `json:"external_id"`
+	Action           string     `json:"action"`
+	NodeID           uint64     `json:"node_id"`
+	NodeRevision     uint64     `json:"node_revision"`
+	Kind             string     `json:"kind"`
+	Path             string     `json:"path"`
+	Size             int64      `json:"size"`
+	ModifiedAt       *time.Time `json:"modified_at,omitempty"`
+	SHA256           string     `json:"sha256,omitempty"`
+	RemoteRevision   string     `json:"remote_revision,omitempty"`
+	Transferred      bool       `json:"transferred,omitempty"`
+	TransferredBytes int64      `json:"transferred_bytes,omitempty"`
+}
+
 func (c *Client) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (SyncRun, error) {
 	var out SyncRun
 	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", sourceID), map[string]any{
@@ -171,6 +186,12 @@ func (c *Client) ObserveSourceItems(ctx context.Context, sourceID uint64, runID 
 		"items": items,
 	}, &out)
 	return out.Plans, err
+}
+
+func (c *Client) CommitSourceItems(ctx context.Context, sourceID uint64, runID string, items []SourceCommit) error {
+	return c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/commit", sourceID, url.PathEscape(runID)), map[string]any{
+		"items": items,
+	}, nil)
 }
 
 func (c *Client) HeartbeatSourceRun(ctx context.Context, sourceID uint64, runID string) error {

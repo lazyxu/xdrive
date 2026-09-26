@@ -71,23 +71,25 @@ func (Source) TableName() string { return "xd_sources" }
 // from its path or content. NodeID is deliberately nullable: deleting an xDrive
 // node must not erase the external identity needed for a later reconciliation.
 type SourceItem struct {
-	ID             uint64     `gorm:"primaryKey"`
-	SourceID       uint64     `gorm:"not null;index;uniqueIndex:idx_xd_source_items_source_external"`
-	ExternalID     string     `gorm:"size:512;not null;uniqueIndex:idx_xd_source_items_source_external"`
-	NodeID         *uint64    `gorm:"index"`
-	Kind           string     `gorm:"size:16;not null;default:file;index"`
-	Path           string     `gorm:"size:2048"`
-	Size           int64      `gorm:"not null;default:0"`
-	ModifiedAt     *time.Time `gorm:"index"`
-	SHA256         string     `gorm:"size:64;index"`
-	RemoteRevision string     `gorm:"size:255"`
-	State          string     `gorm:"size:16;not null;default:pending;index"`
-	LastSeenRunID  string     `gorm:"size:36;index"`
-	LastSeenAt     time.Time  `gorm:"not null;index"`
-	LastSyncedAt   *time.Time `gorm:"index"`
-	LastError      string     `gorm:"type:text"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID              uint64     `gorm:"primaryKey"`
+	SourceID        uint64     `gorm:"not null;index;uniqueIndex:idx_xd_source_items_source_external"`
+	ExternalID      string     `gorm:"size:512;not null;uniqueIndex:idx_xd_source_items_source_external"`
+	NodeID          *uint64    `gorm:"index"`
+	NodeRevision    uint64     `gorm:"not null;default:0"`
+	Kind            string     `gorm:"size:16;not null;default:file;index"`
+	Path            string     `gorm:"size:2048"`
+	Size            int64      `gorm:"not null;default:0"`
+	ModifiedAt      *time.Time `gorm:"index"`
+	SHA256          string     `gorm:"size:64;index"`
+	RemoteRevision  string     `gorm:"size:255"`
+	State           string     `gorm:"size:16;not null;default:pending;index"`
+	LastSeenRunID   string     `gorm:"size:36;index"`
+	LastSeenAt      time.Time  `gorm:"not null;index"`
+	LastSyncedRunID string     `gorm:"size:36;index"`
+	LastSyncedAt    *time.Time `gorm:"index"`
+	LastError       string     `gorm:"type:text"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 
 	Source Source `gorm:"foreignKey:SourceID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	Node   *Node  `gorm:"foreignKey:NodeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
