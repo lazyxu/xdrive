@@ -5,6 +5,7 @@ package mount
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"syscall"
 	"unsafe"
 
@@ -25,6 +26,7 @@ var (
 	procConvertToPlaceholder = cldapi.NewProc("CfConvertToPlaceholder")
 	procSetInSyncState       = cldapi.NewProc("CfSetInSyncState")
 	procGetPlaceholderState  = cldapi.NewProc("CfGetPlaceholderStateFromAttributeTag")
+	procGetPlaceholderInfo   = cldapi.NewProc("CfGetPlaceholderInfo")
 )
 
 const (
@@ -45,6 +47,9 @@ const (
 	cfPlaceholderStateSyncRoot                = 0x00000002
 	cfPlaceholderStateInSync                  = 0x00000008
 	cfPlaceholderStatePartiallyOnDisk         = 0x00000020
+	cfPlaceholderInfoBasic                    = 0
+	cfPlaceholderIdentityMaxBytes             = 4096
+	fileReadAttributes                        = 0x00000080
 )
 
 type cfHydrationPolicy struct{ Primary, Modifier uint16 }
@@ -101,6 +106,15 @@ type cfPlaceholderCreateInfo struct {
 	Result             int32
 	_                  uint32
 	CreateUsn          int64
+}
+
+type cfPlaceholderBasicInfo struct {
+	PinState           uint32
+	InSyncState        uint32
+	FileID             int64
+	SyncRootFileID     int64
+	FileIdentityLength uint32
+	FileIdentity       [1]byte
 }
 
 type cfCallbackInfo struct {
@@ -354,6 +368,66 @@ func cfConvertPathToPlaceholder(path string, nodeID uint64) error {
 	)
 	runtime.KeepAlive(identity)
 	return hresult("CfConvertToPlaceholder", hr)
+}
+
+func cfPlaceholderNodeID(path string) (uint64, bool, error) {
+	state, attrs, err := placeholderState(path)
+	if err != nil {
+		return 0, false, err
+	}
+	if state&cfPlaceholderStatePlaceholder == 0 {
+		return 0, false, nil
+	}
+
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, false, err
+	}
+	flags := uint32(0)
+	if attrs&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+		flags |= windows.FILE_FLAG_BACKUP_SEMANTICS
+	}
+	h, err := windows.CreateFile(
+		p,
+		fileReadAttributes,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		flags,
+		0,
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	defer windows.CloseHandle(h)
+
+	var layout cfPlaceholderBasicInfo
+	identityOffset := int(unsafe.Offsetof(layout.FileIdentity))
+	buffer := make([]byte, identityOffset+cfPlaceholderIdentityMaxBytes)
+	var returned uint32
+	hr, _, _ := procGetPlaceholderInfo.Call(
+		uintptr(h),
+		cfPlaceholderInfoBasic,
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(len(buffer)),
+		uintptr(unsafe.Pointer(&returned)),
+	)
+	if err := hresult("CfGetPlaceholderInfo", hr); err != nil {
+		return 0, false, err
+	}
+	info := (*cfPlaceholderBasicInfo)(unsafe.Pointer(&buffer[0]))
+	identityLength := int(info.FileIdentityLength)
+	if identityLength <= 0 ||
+		identityLength > cfPlaceholderIdentityMaxBytes ||
+		identityOffset+identityLength > int(returned) ||
+		identityOffset+identityLength > len(buffer) {
+		return 0, false, fmt.Errorf("invalid Cloud Files placeholder identity length %d", identityLength)
+	}
+	nodeID, err := strconv.ParseUint(string(buffer[identityOffset:identityOffset+identityLength]), 10, 64)
+	if err != nil || nodeID == 0 {
+		return 0, false, fmt.Errorf("invalid xDrive placeholder identity")
+	}
+	return nodeID, true, nil
 }
 
 func cfMarkPathInSync(path string) error {

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/lazyxu/xdrive/internal/client"
 	"golang.org/x/sys/windows"
 )
 
@@ -46,6 +47,21 @@ func TestCollapseWindowsChangesPairsRenameAndKeepsLaterModify(t *testing.T) {
 	}
 	if len(set.Paths) != 1 || set.Paths[0] != "new.txt" {
 		t.Fatalf("paths=%v", set.Paths)
+	}
+}
+
+func TestFindBaselinePathByNodeID(t *testing.T) {
+	baseline := map[string]winState{
+		"":                  {node: client.Node{ID: 1, Type: "dir"}},
+		"source.txt":        {node: client.Node{ID: 7, Type: "file", Revision: 3}},
+		"folder/nested.txt": {node: client.Node{ID: 8, Type: "file", Revision: 2}},
+	}
+	rel, state, ok := findBaselinePathByNodeID(baseline, 7)
+	if !ok || rel != "source.txt" || state.node.ID != 7 || state.node.Revision != 3 {
+		t.Fatalf("baseline lookup rel=%q state=%+v ok=%t", rel, state, ok)
+	}
+	if _, _, ok := findBaselinePathByNodeID(baseline, 99); ok {
+		t.Fatal("unknown node id unexpectedly matched baseline")
 	}
 }
 

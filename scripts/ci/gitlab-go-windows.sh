@@ -36,7 +36,7 @@ test -f desktop/release/win-unpacked/xdrive-desktop.exe || {
 bash scripts/ci/prepare-go-mod-cache.sh
 git diff --exit-code -- go.mod go.sum
 go test -mod=readonly ./internal/... ./cmd/xdrive-agent
-go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run TestWindowsCfAPIE2E -v -count=1
+go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1
 
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/gitlab-windows-native.ps1 -Action ValidateScripts
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/ci/test-windows-uninstaller-resolver.ps1
