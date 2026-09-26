@@ -24,6 +24,7 @@ try {
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/resolve-windows-uninstaller.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-uninstaller-resolver.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-client-package.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-smoke-package.ps1))
         }
 
         "PrepareSigning" {

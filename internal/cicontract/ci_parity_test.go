@@ -47,41 +47,49 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	}
 
 	expectedPlatforms := map[string]string{
-		"single-commit":              "linux",
-		"desktop-tests":              "linux",
-		"desktop-linux":              "linux",
-		"desktop-windows":            "windows",
-		"build-client-core":          "linux",
-		"go-linux":                   "linux",
-		"go-windows":                 "windows",
-		"build-source-agent":         "linux",
-		"build-linux-client":         "linux",
-		"build-windows-client":       "windows",
-		"server-validation":          "linux",
-		"test-linux-artifact":        "linux",
-		"test-source-agent-artifact": "linux",
-		"test-windows-artifact":      "windows",
-		"web":                        "linux",
-		"final-gate":                 "linux",
+		"single-commit":                 "linux",
+		"desktop-tests":                 "linux",
+		"desktop-linux":                 "linux",
+		"desktop-windows":               "windows",
+		"build-client-core":             "linux",
+		"go-linux":                      "linux",
+		"go-windows":                    "windows",
+		"build-source-agent":            "linux",
+		"build-linux-client":            "linux",
+		"build-windows-client":          "windows",
+		"server-validation":             "linux",
+		"server-image":                  "linux",
+		"caddy-image":                   "linux",
+		"server-backup":                 "linux",
+		"test-linux-artifact":           "linux",
+		"test-source-agent-artifact":    "linux",
+		"test-windows-upgrade-artifact": "windows",
+		"test-windows-smoke-artifact":   "windows",
+		"web":                           "linux",
+		"final-gate":                    "linux",
 	}
 	assertRunnerParity(t, github, gitlab, expectedPlatforms)
 	assertGitLabJobImages(t, gitlab, map[string]string{
-		"single-commit":              "$XDRIVE_CI_GO_IMAGE",
-		"desktop-tests":              "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-linux":              "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-windows":            "",
-		"build-client-core":          "$XDRIVE_CI_GO_IMAGE",
-		"go-linux":                   "$XDRIVE_CI_GO_IMAGE",
-		"go-windows":                 "",
-		"build-source-agent":         "$XDRIVE_CI_GO_IMAGE",
-		"build-linux-client":         "$XDRIVE_CI_GO_IMAGE",
-		"build-windows-client":       "",
-		"server-validation":          "$XDRIVE_CI_GO_IMAGE",
-		"test-linux-artifact":        "$XDRIVE_CI_GO_IMAGE",
-		"test-source-agent-artifact": "$XDRIVE_CI_GO_IMAGE",
-		"test-windows-artifact":      "",
-		"web":                        "$XDRIVE_CI_NODE_IMAGE",
-		"final-gate":                 "$XDRIVE_CI_GO_IMAGE",
+		"single-commit":                 "$XDRIVE_CI_GO_IMAGE",
+		"desktop-tests":                 "$XDRIVE_CI_NODE_IMAGE",
+		"desktop-linux":                 "$XDRIVE_CI_NODE_IMAGE",
+		"desktop-windows":               "",
+		"build-client-core":             "$XDRIVE_CI_GO_IMAGE",
+		"go-linux":                      "$XDRIVE_CI_GO_IMAGE",
+		"go-windows":                    "",
+		"build-source-agent":            "$XDRIVE_CI_GO_IMAGE",
+		"build-linux-client":            "$XDRIVE_CI_GO_IMAGE",
+		"build-windows-client":          "",
+		"server-validation":             "$XDRIVE_CI_GO_IMAGE",
+		"server-image":                  "$XDRIVE_CI_GO_IMAGE",
+		"caddy-image":                   "$XDRIVE_CI_GO_IMAGE",
+		"server-backup":                 "$XDRIVE_CI_GO_IMAGE",
+		"test-linux-artifact":           "$XDRIVE_CI_GO_IMAGE",
+		"test-source-agent-artifact":    "$XDRIVE_CI_GO_IMAGE",
+		"test-windows-upgrade-artifact": "",
+		"test-windows-smoke-artifact":   "",
+		"web":                           "$XDRIVE_CI_NODE_IMAGE",
+		"final-gate":                    "$XDRIVE_CI_GO_IMAGE",
 	})
 	assertGitLabCache(t, gitlab, "go-windows",
 		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
@@ -136,18 +144,24 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	gitlabPackageLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux-client.sh"))
 	gitlabSourceAgent := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-source-agent.sh"))
 	gitlabServerValidation := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-validation.sh"))
+	gitlabServerImage := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-image.sh"))
+	gitlabCaddyImage := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-caddy-image.sh"))
+	gitlabServerBackup := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-backup.sh"))
 	gitlabGoWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabPackageWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows-client.sh"))
 	gitlabTestLinuxArtifact := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-linux-artifact.sh"))
 	gitlabTestSourceArtifact := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-source-agent-artifact.sh"))
 	gitlabTestWindowsArtifact := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-windows-artifact.sh"))
+	gitlabTestWindowsSmoke := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-windows-smoke-artifact.sh"))
 	testLinuxPackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-linux-client-package.sh"))
 	testSourcePackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-source-agent-package.sh"))
 	testWindowsPackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-client-package.ps1"))
+	testWindowsSmokePackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-smoke-package.ps1"))
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
-		gitlabGoWindows + "\n" + gitlabPackageWindows + "\n" + gitlabTestWindowsArtifact
+		gitlabGoWindows + "\n" + gitlabPackageWindows + "\n" + gitlabTestWindowsArtifact + "\n" + gitlabTestWindowsSmoke
 	gitlabLinuxBash := clientCoreBuild + "\n" + gitlabGoLinux + "\n" + gitlabPackageLinux + "\n" + gitlabSourceAgent + "\n" +
-		gitlabServerValidation + "\n" + gitlabTestLinuxArtifact + "\n" + gitlabTestSourceArtifact
+		gitlabServerValidation + "\n" + gitlabServerImage + "\n" + gitlabCaddyImage + "\n" + gitlabServerBackup + "\n" +
+		gitlabTestLinuxArtifact + "\n" + gitlabTestSourceArtifact
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
 	windowsUninstallerResolver := readFile(t, filepath.Join(root, "scripts", "ci", "resolve-windows-uninstaller.ps1"))
 	windowsPathNormalizer := readFile(t, filepath.Join(root, "scripts", "ci", "windows-path-normalization.ps1"))
@@ -156,7 +170,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	serverPipeTest := readFile(t, filepath.Join(root, "scripts", "test-server-installer-pipe.sh"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" +
 		goVersionCheck + "\n" + artifactVersion + "\n" + clientCoreBuild + "\n" + gitlabLinuxBash + "\n" + gitlabWindowsBash + "\n" +
-		gitlabWindowsNative + "\n" + testLinuxPackage + "\n" + testSourcePackage + "\n" + testWindowsPackage
+		gitlabWindowsNative + "\n" + testLinuxPackage + "\n" + testSourcePackage + "\n" + testWindowsPackage + "\n" +
+		testWindowsSmokePackage
 	for _, command := range []string{
 		"npm run test:main",
 		"source scripts/ci/client-artifact-version.sh",
@@ -172,6 +187,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/ci/test-linux-client-package.sh \"$XDRIVE_RELEASE_VERSION\" release/xdrive-linux-amd64.deb",
 		"bash scripts/ci/test-source-agent-package.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
 		"test-windows-client-package.ps1",
+		"test-windows-smoke-package.ps1",
 		"bash scripts/test-server-doctor.sh",
 		"bash scripts/test-server-verify.sh",
 		"bash scripts/test-server-installer-bootstrap.sh",
@@ -251,18 +267,23 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"build-windows-client:",
 		"test-linux-artifact:",
 		"test-source-agent-artifact:",
-		"test-windows-artifact:",
+		"test-windows-upgrade-artifact:",
+		"test-windows-smoke-artifact:",
 		"final-gate:",
 		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-go-linux.sh",
 		"bash scripts/ci/gitlab-package-linux-client.sh",
 		"bash scripts/ci/gitlab-source-agent.sh",
 		"bash scripts/ci/gitlab-server-validation.sh",
+		"bash scripts/ci/gitlab-server-image.sh",
+		"bash scripts/ci/gitlab-caddy-image.sh",
+		"bash scripts/ci/gitlab-server-backup.sh",
 		"bash scripts/ci/gitlab-go-windows.sh",
 		"bash scripts/ci/gitlab-package-windows-client.sh",
 		"bash scripts/ci/gitlab-test-linux-artifact.sh",
 		"bash scripts/ci/gitlab-test-source-agent-artifact.sh",
 		"bash scripts/ci/gitlab-test-windows-artifact.sh",
+		"bash scripts/ci/gitlab-test-windows-smoke-artifact.sh",
 		"desktop-runtime-linux-amd64.tar.gz",
 		"desktop/release/win-unpacked/",
 		"release/core/",
@@ -324,7 +345,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"build-client-core:",
 		"build-source-agent:",
 		"test-linux-artifact:",
-		"test-windows-artifact:",
+		"test-windows-upgrade-artifact:",
+		"test-windows-smoke-artifact:",
 		"test-source-agent-artifact:",
 		"final-gate:",
 		"needs: [final-gate]",
@@ -334,10 +356,24 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"build-windows-client:",
 		"build-source-agent:",
 		"test-linux-artifact:",
-		"test-windows-artifact:",
+		"test-windows-upgrade-artifact:",
+		"test-windows-smoke-artifact:",
 		"test-source-agent-artifact:",
 		"final-gate:",
 		"stage: verify",
+	)
+
+	requireRaw(t, "GitHub parallel server validation contract", githubRaw,
+		"server-validation:",
+		"server-image:",
+		"caddy-image:",
+		"server-backup:",
+	)
+	requireRaw(t, "GitLab parallel server validation contract", gitlabRaw,
+		"server-validation:",
+		"server-image:",
+		"caddy-image:",
+		"server-backup:",
 	)
 
 	if strings.Contains(gitlabRaw, "$ErrorActionPreference") ||
@@ -435,6 +471,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"npm run runtime:win",
 		"install innosetup --no-progress -y",
 		"test-windows-client-package.ps1",
+		"test-windows-smoke-package.ps1",
 		"release/xDriveSetup-amd64.exe",
 	)
 	requireRaw(t, "GitLab Windows native helper", gitlabWindowsNative,
@@ -444,6 +481,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Get-AuthenticodeSignature",
 		"Start-Process -FilePath $installer",
 		"test-windows-client-package.ps1",
+		"test-windows-smoke-package.ps1",
 	)
 	requireRaw(t, "Windows uninstaller resolver", windowsUninstallerResolver,
 		"UninstallString",
