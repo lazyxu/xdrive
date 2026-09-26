@@ -34,6 +34,9 @@ func TestExternalSourceValidation(t *testing.T) {
 	if !ValidSourceSyncMode(SourceSyncModeBackup) || !ValidSourceSyncMode(SourceSyncModeMirror) || ValidSourceSyncMode("delete") {
 		t.Fatal("unexpected source sync mode validation")
 	}
+	if !ValidSourceRunMode(SourceRunModeSync) || !ValidSourceRunMode(SourceRunModeScan) || ValidSourceRunMode("deep") {
+		t.Fatal("unexpected source run mode validation")
+	}
 	if !ValidSourceStatus(SourceStatusActive) || !ValidSourceStatus(SourceStatusPaused) || ValidSourceStatus("error") {
 		t.Fatal("unexpected source status validation")
 	}
@@ -49,6 +52,7 @@ func TestExternalSourceItemAndRunStates(t *testing.T) {
 		SourceItemStatePending,
 		SourceItemStateSynced,
 		SourceItemStateMissing,
+		SourceItemStateIgnored,
 		SourceItemStateError,
 	} {
 		if !ValidSourceItemState(state) {

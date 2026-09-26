@@ -718,6 +718,14 @@ POST   /api/v1/files/:id/shares
 GET    /api/v1/files/:id/shares
 DELETE /api/v1/shares/:id
 
+GET    /api/v1/sources
+POST   /api/v1/sources
+GET    /api/v1/sources/:id
+PATCH  /api/v1/sources/:id
+DELETE /api/v1/sources/:id
+GET    /api/v1/sources/:id/runs
+GET    /api/v1/sources/:id/runs/:runID
+
 GET    /api/v1/public/share
 POST   /api/v1/public/share/download
        X-XDrive-Share-Token: <raw-share-token>
@@ -806,6 +814,10 @@ The decision gate intentionally requires at least 24 hours of history before cho
 Phase 13A adds a vendor-neutral **External Source Foundation** for future import/sync connectors. `xd_sources` records connector kind, push/pull direction, backup/mirror policy, lifecycle state, revision, and an opaque checkpoint without storing connector credentials. `xd_source_items` preserves stable external identity with `(source_id, external_id)` and optionally maps that identity to an xDrive node while retaining source-side path, revision, hash, and sync state. `xd_sync_runs` records each synchronization attempt, trigger, checkpoints, counters, transferred bytes, terminal state, and error summary.
 
 The mapping deliberately targets `xd_nodes`, not `xd_content_blobs`: a source item describes an external file/directory identity, while CAS describes bytes. Renames and moves can therefore keep the same source identity and node without manufacturing new content. Deleting a mapped xDrive node sets the mapping to NULL for later reconciliation; deleting a source cascades its item/run history. Phase 13A contains no Synology-specific fields, no source credentials, no scheduler, and no file transfer implementation.
+
+Phase 13B adds the **Source Execution Foundation** without introducing a vendor connector yet. A source now binds to one active owner-scoped xDrive target directory, has a default `sync` or `scan` run mode, and stores a bounded ignore-rule set. Source configuration uses optimistic revisions and is exposed through owner-scoped Source CRUD plus read-only run-history APIs. Only `backup` behavior is exposed: a source-side disappearance is represented as `missing` and never deletes or trashes the xDrive node.
+
+The shared `internal/source` planner normalizes discovered items and classifies them as `ignore`, `unchanged`, `create`, `update`, `move`, or `move_update`. Ignore rules use a gitignore-like ordered syntax with `*`, `**`, `?`, comments, rooted/directory patterns, and `!` negation; rules are evaluated identically for scan and sync planning. Fast scan planning does not hash every source file: it uses stable external identity plus size/mtime, or a connector-provided remote revision/hash when available. SyncRun statistics separately record scanned, ignored, new, changed, moved, unchanged, missing, planned-transfer, actual-transfer, and failure counts/bytes. `LastSeenRunID` provides deterministic missing detection for future executors without relying on wall-clock cutoffs.
 
 Phase 14A adds **Server-side Search** for active files and directories. `GET /api/v1/search` is owner-scoped, accepts a UTF-8 query of at least two characters, optional `type=file|dir`, `limit` from 1–200, and an opaque keyset `cursor`. Matching is case-insensitive against each active node's relative path, preserving the previous Desktop full-path search behavior without transferring the entire namespace to the Agent. Results include the normal node payload, relative `path`, directory `breadcrumbs`, and `next_cursor`; cursors are bound to the original query/type so they cannot be reused across different searches. Deleted/trash nodes and other users' nodes are never included.
 
@@ -922,6 +934,7 @@ internal/
   meta/                   GORM models + filename validation
   mount/                  Linux FUSE + Windows CfAPI
   secretstore/            DPAPI / Secret Service credential storage
+  source/                 external-source ignore rules and fast planner
   storage/                Local storage backend
   userconfig/             per-user non-secret client configuration
   update/                 release check/download/checksum/update logic
@@ -969,14 +982,15 @@ deploy/
 
 ## Roadmap
 
-1. Phase 13B: build the Synology push agent on `Source / SourceItem / SyncRun`, using current CAS, instant-upload, and resumable-upload paths;
-2. Phase 13D/13E: add Synology pull plus the optional Photos metadata adapter without coupling those APIs to the source schema;
-3. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
-4. optional content-defined chunking when large-file/internal-redundancy data justifies it;
-5. small-file packing when small-blob count/metadata pressure justifies it;
-6. macOS File Provider integration;
-7. thumbnails/EXIF/media processing;
-8. directory/upload sharing and richer retention/version policies.
+1. Phase 13C: build the native Synology source agent for Personal + Shared Photos push, fast scan-only, ignore rules, local incremental state, and resumable/instant upload execution;
+2. Phase 13D: add the experimental Yike Photos pull worker for the own library, own albums, and shared albums without mutating the source account;
+3. Phase 13E: add optional photo metadata/collection adapters such as Live Photo grouping and album semantics without coupling them to the source schema;
+4. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
+5. optional content-defined chunking when large-file/internal-redundancy data justifies it;
+6. small-file packing when small-blob count/metadata pressure justifies it;
+7. macOS File Provider integration;
+8. thumbnails/EXIF/media processing;
+9. directory/upload sharing and richer retention/version policies.
 
 ## License
 
