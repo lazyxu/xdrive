@@ -67,6 +67,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"external-sources",
 	"storage-intelligence",
 	"conflicts",
 	"transfers",
@@ -144,6 +145,9 @@ type desktopIPCController interface {
 	CloudShares(context.Context, uint64) ([]client.FileShare, error)
 	CloudCreateShare(context.Context, uint64, client.CreateShareInput) (agentCreatedShare, error)
 	CloudRevokeShare(context.Context, uint64) error
+	CloudSources(context.Context) ([]client.Source, error)
+	CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error)
+	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
 	FileAvailability(path string) (mount.FileAvailability, error)
 	SetFileAvailability(path, action string) error
 	Transfers() (uint64, []transfer.Task)
@@ -332,6 +336,9 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/cloud/shares", h.cloudShares)
 	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
+	mux.HandleFunc("GET /v1/sources", h.sources)
+	mux.HandleFunc("GET /v1/sources/runs", h.sourceRuns)
+	mux.HandleFunc("GET /v1/sources/credential", h.sourceCredentialStatus)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
@@ -796,6 +803,52 @@ func desktopIPCUint64Query(w http.ResponseWriter, r *http.Request, name string) 
 		return 0, false
 	}
 	return value, true
+}
+
+func (h *desktopIPCHandler) sources(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudSources(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) sourceRuns(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	limit := 1
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 200 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 200")
+			return
+		}
+		limit = value
+	}
+	items, err := h.ctrl.CloudSourceRuns(r.Context(), sourceID, limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) sourceCredentialStatus(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	status, err := h.ctrl.CloudSourceCredentialStatus(r.Context(), sourceID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, status)
 }
 
 func (h *desktopIPCHandler) fileAvailability(w http.ResponseWriter, r *http.Request) {

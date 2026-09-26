@@ -30,6 +30,9 @@ import {
   type AgentCloudShare,
   type AgentCreatedCloudShare,
   type AgentCloudSearchResult,
+  type AgentSource,
+  type AgentSourceRun,
+  type AgentSourceCredentialStatus,
   type AgentFileAvailability,
   type AgentSettings,
   type AgentStatus,
@@ -475,6 +478,32 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'cache-management')
     return requireAgentClient().releaseCache()
   }, false))
+  ipcMain.handle('agent:get-sources', () => runAgentAction<AgentSource[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    return requireAgentClient().sources()
+  }, false))
+  ipcMain.handle('agent:get-source-runs', (_event, sourceID: unknown, limit: unknown) => runAgentAction<AgentSourceRun[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
+    }
+    const requestedLimit = limit === undefined ? 1 : limit
+    if (typeof requestedLimit !== 'number' || !Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 200) {
+      throw new AgentIPCError('invalid_input', 0, 'Source run limit must be between 1 and 200.')
+    }
+    return requireAgentClient().sourceRuns(sourceID, requestedLimit)
+  }, false))
+  ipcMain.handle('agent:get-source-credential', (_event, sourceID: unknown) => runAgentAction<AgentSourceCredentialStatus>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
+    }
+    return requireAgentClient().sourceCredentialStatus(sourceID)
+  }, false))
+
   ipcMain.handle('agent:cloud-root', () => runAgentAction<AgentCloudNode>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
