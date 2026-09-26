@@ -64,6 +64,27 @@ GET /api/v1/sources/<source-id>/collections/<collection-id>/items?limit=200&offs
 
 Use `?state=active` or `?state=missing` on the collection list when needed. Collection-item reads default to 200 rows and accept `limit=1..1000` plus a non-negative `offset`; the parent collection's `item_count` reports the total membership size.
 
+## Read media metadata
+
+Read all persisted SourceItems for this Yike Source through:
+
+```http
+GET /api/v1/sources/<source-id>/items?state=active&limit=200&offset=0
+```
+
+The endpoint is owner-scoped. `state` is optional and accepts `active` or `missing`; pagination defaults to 200 rows, accepts `limit=1..1000`, and requires a non-negative `offset`.
+
+Each item returns the normal Source identity/state fields plus connector-neutral `metadata` when available:
+
+- `original_path`: original remote path reported by Yike;
+- `owner_external_id`: Yike owner UK for the media;
+- `remote_created_at`: remote creation time;
+- `content_md5`: validated remote MD5 when exposed by Yike;
+- `thumbnail_url`: refreshable preview hint from the latest scan;
+- `pair_group_id` / `pair_role`: reserved explicit paired-media fields.
+
+The same metadata object is included in collection-item reads. Missing media keeps its persisted metadata so history and album reconciliation remain inspectable. Current Yike list/album APIs do not expose a reliable Live Photo pair identifier, so pair fields stay empty instead of inferring relationships from filenames, timestamps, or neighboring JPG/MOV files.
+
 ## Configure a Source
 
 Create one xDrive target directory first, then create a Source using the existing Source API:
