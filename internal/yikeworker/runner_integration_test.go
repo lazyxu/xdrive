@@ -302,6 +302,32 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		t.Fatalf("recent source was unexpectedly due: %+v", notDue)
 	}
 
+	requestedAt := time.Now().UTC()
+	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).
+		Update("run_requested_at", requestedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	forced, err := runner.RunDue(context.Background(), requestedAt, 6*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forced.Eligible != 1 || forced.Completed != 1 {
+		t.Fatalf("manual request was not run immediately: %+v", forced)
+	}
+	var forcedRun meta.SyncRun
+	if err := db.Where("source_id = ?", source.ID).Order("started_at DESC").First(&forcedRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	if forcedRun.Trigger != meta.SyncRunTriggerManual {
+		t.Fatalf("forced run trigger=%q want=%q", forcedRun.Trigger, meta.SyncRunTriggerManual)
+	}
+	if err := db.First(&refreshedSource, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshedSource.RunRequestedAt != nil {
+		t.Fatalf("manual request was not consumed: %+v", refreshedSource.RunRequestedAt)
+	}
+
 	// Phase 2: switch to sync. A shared direct-link failure must produce a
 	// partial run without blocking the account-owned root item.
 	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).

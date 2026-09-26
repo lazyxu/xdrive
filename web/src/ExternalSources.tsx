@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Typography, message } from 'antd'
+import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
 import type {
   ExternalSource,
@@ -121,6 +121,7 @@ export default function ExternalSourcesPanel({
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
   const [createForm] = Form.useForm<CreateSourceValues>()
   const createKind = Form.useWatch('kind', createForm)
 
@@ -244,6 +245,19 @@ export default function ExternalSourcesPanel({
   }
 
 
+  const triggerNow = async (row: SourceRow) => {
+    setTriggeringSourceID(row.source.id)
+    try {
+      await api.triggerSource(row.source.id)
+      message.success('已请求立即扫描，Pull worker 将在下一次轮询时开始')
+      await load()
+    } catch (error) {
+      onError(error)
+    } finally {
+      setTriggeringSourceID(null)
+    }
+  }
+
   const openSettings = (row: SourceRow) => {
     setSetting(row)
     settingsForm.setFieldsValue({
@@ -320,6 +334,13 @@ export default function ExternalSourcesPanel({
               const stats = row.latestRun
                 ? `${row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · ${formatSize(row.latestRun.scanned_bytes)}`
                 : '尚无扫描统计'
+              const running = row.latestRun?.status === 'running'
+              const yikeTriggerReady = row.source.kind === 'yike_photos' &&
+                row.source.direction === 'pull' &&
+                row.source.status === 'active' &&
+                row.credential?.configured === true &&
+                !running &&
+                !row.source.run_requested_at
 
               return (
                 <Card key={row.source.id} size="small" className="external-source-card">
@@ -344,6 +365,28 @@ export default function ExternalSourcesPanel({
                   <div className="external-source-actions">
                     <Space size="small">
                       <Button size="small" onClick={() => setSelected(row)}>查看</Button>
+                      {row.source.kind === 'yike_photos' ? (
+                        <Tooltip title={
+                          row.source.run_requested_at ? '已提交扫描请求' :
+                          !row.credential?.configured ? '请先配置 Cookie' :
+                          row.source.status !== 'active' ? '来源已暂停' :
+                          running ? '来源正在运行' :
+                          '立即请求 Pull worker 扫描此来源'
+                        }>
+                          <Button
+                            size="small"
+                            disabled={!yikeTriggerReady}
+                            loading={triggeringSourceID === row.source.id}
+                            onClick={() => void triggerNow(row)}
+                          >
+                            {row.source.run_requested_at ? '已请求' : '立即扫描'}
+                          </Button>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="群晖即时触发将在下一步接入 NAS source-agent">
+                          <Button size="small" disabled>立即扫描</Button>
+                        </Tooltip>
+                      )}
                       <Button size="small" onClick={() => openSettings(row)}>设置</Button>
                     </Space>
                   </div>
