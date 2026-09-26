@@ -52,7 +52,6 @@ fi
 
 pushd desktop >/dev/null
 npm install --no-audit --no-fund
-npm run test:main
 node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
 npm run runtime:win
 test -f release/win-unpacked/xdrive-desktop.exe

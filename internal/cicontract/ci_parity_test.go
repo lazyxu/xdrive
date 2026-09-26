@@ -47,25 +47,47 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	}
 
 	expectedPlatforms := map[string]string{
-		"single-commit":   "linux",
-		"desktop-linux":   "linux",
-		"desktop-windows": "windows",
-		"go-linux":        "linux",
-		"go-windows":      "windows",
-		"web":             "linux",
+		"single-commit":              "linux",
+		"desktop-tests":              "linux",
+		"desktop-linux":              "linux",
+		"desktop-windows":            "windows",
+		"go-linux":                   "linux",
+		"go-windows":                 "windows",
+		"build-source-agent":         "linux",
+		"build-linux-client":         "linux",
+		"build-windows-client":       "windows",
+		"server-validation":          "linux",
+		"test-linux-artifact":        "linux",
+		"test-source-agent-artifact": "linux",
+		"test-windows-artifact":      "windows",
+		"web":                        "linux",
+		"final-gate":                 "linux",
 	}
 	assertRunnerParity(t, github, gitlab, expectedPlatforms)
 	assertGitLabJobImages(t, gitlab, map[string]string{
-		"single-commit":   "$XDRIVE_CI_GO_IMAGE",
-		"desktop-linux":   "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-windows": "",
-		"go-linux":        "$XDRIVE_CI_GO_IMAGE",
-		"go-windows":      "",
-		"web":             "$XDRIVE_CI_NODE_IMAGE",
+		"single-commit":              "$XDRIVE_CI_GO_IMAGE",
+		"desktop-tests":              "$XDRIVE_CI_NODE_IMAGE",
+		"desktop-linux":              "$XDRIVE_CI_NODE_IMAGE",
+		"desktop-windows":            "",
+		"go-linux":                   "$XDRIVE_CI_GO_IMAGE",
+		"go-windows":                 "",
+		"build-source-agent":         "$XDRIVE_CI_GO_IMAGE",
+		"build-linux-client":         "$XDRIVE_CI_GO_IMAGE",
+		"build-windows-client":       "",
+		"server-validation":          "$XDRIVE_CI_GO_IMAGE",
+		"test-linux-artifact":        "$XDRIVE_CI_GO_IMAGE",
+		"test-source-agent-artifact": "$XDRIVE_CI_GO_IMAGE",
+		"test-windows-artifact":      "",
+		"web":                        "$XDRIVE_CI_NODE_IMAGE",
+		"final-gate":                 "$XDRIVE_CI_GO_IMAGE",
 	})
 	assertGitLabCache(t, gitlab, "go-windows",
-		"xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/go-mod/cache/download/", ".cache/npm/"},
+		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/cache/download/"},
+	)
+	assertGitLabCache(t, gitlab, "build-windows-client",
+		"xdrive-package-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/cache/download/"},
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -107,18 +129,32 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
 	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
+	gitlabGoLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux.sh"))
+	gitlabPackageLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux-client.sh"))
+	gitlabSourceAgent := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-source-agent.sh"))
+	gitlabServerValidation := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-validation.sh"))
 	gitlabGoWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
+	gitlabPackageWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows-client.sh"))
+	gitlabTestLinuxArtifact := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-linux-artifact.sh"))
+	gitlabTestSourceArtifact := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-source-agent-artifact.sh"))
+	gitlabTestWindowsArtifact := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-windows-artifact.sh"))
+	testLinuxPackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-linux-client-package.sh"))
+	testSourcePackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-source-agent-package.sh"))
+	testWindowsPackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-client-package.ps1"))
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
-		gitlabGoWindows
+		gitlabGoWindows + "\n" + gitlabPackageWindows + "\n" + gitlabTestWindowsArtifact
+	gitlabLinuxBash := gitlabGoLinux + "\n" + gitlabPackageLinux + "\n" + gitlabSourceAgent + "\n" +
+		gitlabServerValidation + "\n" + gitlabTestLinuxArtifact + "\n" + gitlabTestSourceArtifact
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
 	windowsUninstallerResolver := readFile(t, filepath.Join(root, "scripts", "ci", "resolve-windows-uninstaller.ps1"))
 	windowsPathNormalizer := readFile(t, filepath.Join(root, "scripts", "ci", "windows-path-normalization.ps1"))
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
 	serverPipeTest := readFile(t, filepath.Join(root, "scripts", "test-server-installer-pipe.sh"))
-	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" + goVersionCheck + "\n" + artifactVersion + "\n" + gitlabWindowsBash + "\n" + gitlabWindowsNative
+	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" +
+		goVersionCheck + "\n" + artifactVersion + "\n" + gitlabLinuxBash + "\n" + gitlabWindowsBash + "\n" +
+		gitlabWindowsNative + "\n" + testLinuxPackage + "\n" + testSourcePackage + "\n" + testWindowsPackage
 	for _, command := range []string{
-		"npm install --no-audit --no-fund",
 		"npm run test:main",
 		"source scripts/ci/client-artifact-version.sh",
 		"npm run runtime:linux",
@@ -130,6 +166,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
 		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked",
+		"bash scripts/ci/test-linux-client-package.sh \"$XDRIVE_RELEASE_VERSION\" release/xdrive-linux-amd64.deb",
+		"bash scripts/ci/test-source-agent-package.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
+		"test-windows-client-package.ps1",
 		"bash scripts/test-server-doctor.sh",
 		"bash scripts/test-server-verify.sh",
 		"bash scripts/test-server-installer-bootstrap.sh",
@@ -149,8 +188,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1",
 		"release/xDriveSetup-amd64.exe",
 		"XDRIVE_RELEASE_VERSION",
-		"[scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))",
-		"[scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))",
 		"npm ci --no-audit --no-fund",
 		"npm run lint",
 		"npm run build",
@@ -168,8 +205,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		if !strings.Contains(githubRaw, token) {
 			t.Errorf("GitHub CI is missing toolchain token %q", token)
 		}
-		if !strings.Contains(gitlabRaw, token) {
-			t.Errorf("GitLab CI is missing toolchain token %q", token)
+		if !strings.Contains(gitlabRaw+"\n"+gitlabContractText, token) {
+			t.Errorf("GitLab CI contract is missing toolchain token %q", token)
 		}
 	}
 
@@ -193,24 +230,43 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"- local: /infra/ci/gitlab-release.yml",
 		"- gate",
 		"- build",
+		"- artifact",
+		"- test",
+		"- verify",
 		"- package",
 		"- promote",
 		"- release",
 		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_TAG =~ /^v.+/",
-		"bash scripts/ci/check-go-min-version.sh 1.25",
 		".electron-linux-cache:",
 		"XDG_CACHE_HOME: \"$CI_PROJECT_DIR/.cache\"",
 		"ELECTRON_BUILDER_CACHE: \"$CI_PROJECT_DIR/.cache/electron-builder\"",
 		"extends: .electron-linux-cache",
+		"desktop-tests:",
+		"build-source-agent:",
+		"build-linux-client:",
+		"build-windows-client:",
+		"test-linux-artifact:",
+		"test-source-agent-artifact:",
+		"test-windows-artifact:",
+		"final-gate:",
 		"bash scripts/ci/gitlab-desktop-windows.sh",
+		"bash scripts/ci/gitlab-go-linux.sh",
+		"bash scripts/ci/gitlab-package-linux-client.sh",
+		"bash scripts/ci/gitlab-source-agent.sh",
+		"bash scripts/ci/gitlab-server-validation.sh",
 		"bash scripts/ci/gitlab-go-windows.sh",
+		"bash scripts/ci/gitlab-package-windows-client.sh",
+		"bash scripts/ci/gitlab-test-linux-artifact.sh",
+		"bash scripts/ci/gitlab-test-source-agent-artifact.sh",
+		"bash scripts/ci/gitlab-test-windows-artifact.sh",
 		"desktop-runtime-linux-amd64.tar.gz",
 		"desktop/release/win-unpacked/",
 		"release/xdrive-linux-amd64.deb",
 		"release/source-agent/xdrive-source-agent-linux-amd64",
 		"release/source-agent/xdrive-source-agent-linux-arm64",
 		"release/xDriveSetup-amd64.exe",
-		"xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
+		"xdrive-package-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
 		".cache/go-mod/cache/download/",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
@@ -224,17 +280,39 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop",
 		"GOMODCACHE: \"$CI_PROJECT_DIR/.cache/go-mod\"",
 		"NPM_CONFIG_CACHE: \"$CI_PROJECT_DIR/.cache/npm\"",
-		"bash scripts/ci/install-node22.sh",
-		"bash scripts/ci/install-docker-cli.sh",
 		"postgresql-client",
 		"alias: postgres",
 		"XD_TEST_DATABASE_URL: \"postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable\"",
-		"pg_isready",
-		"-h postgres -p 5432",
 		".cache/ci-tools/",
 		"when: always",
+	)
+	requireRaw(t, "GitLab CI wrappers", gitlabContractText,
+		"bash scripts/ci/check-go-min-version.sh 1.25",
+		"pg_isready",
+		"-h postgres -p 5432",
 		"echo \"GOPROXY=$(go env GOPROXY)\"",
 		"echo \"GOSUMDB=$(go env GOSUMDB)\"",
+	)
+
+	requireRaw(t, "GitHub build-once contract", githubRaw,
+		"build-linux-client:",
+		"build-windows-client:",
+		"build-source-agent:",
+		"test-linux-artifact:",
+		"test-windows-artifact:",
+		"test-source-agent-artifact:",
+		"final-gate:",
+		"needs: [final-gate]",
+	)
+	requireRaw(t, "GitLab build-once contract", gitlabRaw,
+		"build-linux-client:",
+		"build-windows-client:",
+		"build-source-agent:",
+		"test-linux-artifact:",
+		"test-windows-artifact:",
+		"test-source-agent-artifact:",
+		"final-gate:",
+		"stage: verify",
 	)
 
 	if strings.Contains(gitlabRaw, "$ErrorActionPreference") ||
@@ -255,20 +333,46 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"restored Go module cache failed verification; rebuilding it",
 		"Go module cache rebuilt and verified",
 	)
+	requireRaw(t, "GitLab Linux split wrappers", gitlabLinuxBash,
+		"go test -p 1 -race ./...",
+		"go vet ./...",
+		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
+		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked",
+		"bash scripts/ci/test-linux-client-package.sh \"$XDRIVE_RELEASE_VERSION\" release/xdrive-linux-amd64.deb",
+		"bash scripts/ci/test-source-agent-package.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
+		"docker build -t xdrive/server:test .",
+		"docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
+		"bash scripts/test-server-backup-restore.sh",
+	)
 	requireRaw(t, "GitLab Windows Go wrapper", gitlabGoWindows,
-		"source scripts/ci/client-artifact-version.sh",
 		"bash scripts/ci/prepare-go-mod-cache.sh",
 		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1",
+	)
+	requireRaw(t, "GitLab Windows package builder", gitlabPackageWindows,
+		"source scripts/ci/client-artifact-version.sh",
 		"desktop/release/win-unpacked/xdrive-desktop.exe",
+		"install innosetup --no-progress -y",
+		"BuildInstaller",
 		"release/xDriveSetup-amd64.exe",
+	)
+	if strings.Contains(gitlabPackageWindows, "test-windows-client-upgrade.ps1") ||
+		strings.Contains(gitlabPackageWindows, "SmokeInstall") {
+		t.Errorf("GitLab Windows build job must not run exact-artifact tests")
+	}
+	requireRaw(t, "GitLab Windows exact-artifact test wrapper", gitlabTestWindowsArtifact+"\n"+testWindowsPackage,
+		"test-windows-client-package.ps1",
+		"test-windows-uninstaller-resolver.ps1",
+		"test-windows-client-upgrade.ps1",
+		"SmokeInstall",
 	)
 	if strings.Contains(gitlabGoWindows, "go mod tidy") {
 		t.Errorf("GitLab Windows wrapper must not run go mod tidy under a newer self-hosted Go toolchain")
 	}
 
-	if strings.Contains(gitlabRaw, "key: \"xdrive-go-windows-$CI_RUNNER_EXECUTABLE_ARCH\"") {
-		t.Errorf("GitLab Windows Go cache key must be versioned so legacy full-module archives are not restored")
+	if strings.Contains(gitlabRaw, "key: \"xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH\"") ||
+		strings.Contains(gitlabRaw, "key: \"xdrive-go-windows-$CI_RUNNER_EXECUTABLE_ARCH\"") {
+		t.Errorf("GitLab Windows Go cache key must not restore the legacy combined test/package cache")
 	}
 	requireRaw(t, "CI resumable downloader", downloadHelper,
 		"--continue-at -",
@@ -304,7 +408,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1",
 		"npm run runtime:win",
 		"install innosetup --no-progress -y",
-		"test-windows-uninstaller-resolver.ps1",
+		"test-windows-client-package.ps1",
 		"release/xDriveSetup-amd64.exe",
 	)
 	requireRaw(t, "GitLab Windows native helper", gitlabWindowsNative,
@@ -313,6 +417,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"./scripts/build-windows-installer.ps1",
 		"Get-AuthenticodeSignature",
 		"Start-Process -FilePath $installer",
+		"test-windows-client-package.ps1",
 	)
 	requireRaw(t, "Windows uninstaller resolver", windowsUninstallerResolver,
 		"UninstallString",

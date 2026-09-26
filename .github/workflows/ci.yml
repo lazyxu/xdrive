@@ -31,6 +31,20 @@ jobs:
             exit 1
           fi
 
+  desktop-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Test desktop main IPC client
+        working-directory: desktop
+        run: npm run test:main
+
   desktop-linux:
     runs-on: ubuntu-latest
     steps:
@@ -47,9 +61,6 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
-      - name: Test desktop main IPC client
-        working-directory: desktop
-        run: npm run test:main
       - name: Build Linux desktop runtime once
         working-directory: desktop
         run: |
@@ -87,9 +98,6 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
-      - name: Test desktop main IPC client
-        working-directory: desktop
-        run: npm run test:main
       - name: Prepare desktop runtime signing
         shell: pwsh
         run: |
@@ -139,7 +147,6 @@ jobs:
           retention-days: 2
 
   go-linux:
-    needs: desktop-linux
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -163,25 +170,6 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Resolve client artifact version
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/ci/client-artifact-version.sh
-          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v4
-        with:
-          name: desktop-runtime-linux-amd64
-          path: dist
-      - name: Restore exact Linux desktop runtime
-        shell: bash
-        run: |
-          mkdir -p desktop/release
-          tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
-          test -x desktop/release/linux-unpacked/xdrive-desktop
       - run: go mod tidy "-go=1.25"
       - run: git diff --exit-code -- go.mod go.sum
       - name: Check formatting
@@ -199,7 +187,21 @@ jobs:
       - run: go test -p 1 -race ./...
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
-      - run: go build ./cmd/xdrive-source-agent
+
+  build-source-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
       - name: Build Synology source-agent binaries
         shell: bash
         run: bash scripts/build-source-agent.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
@@ -211,34 +213,50 @@ jobs:
             release/source-agent/xdrive-source-agent-linux-arm64
           if-no-files-found: error
           retention-days: 14
-      - name: Build and verify Linux unified installer once
+
+  build-linux-client:
+    needs: desktop-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Resolve client artifact version
         shell: bash
         run: |
-          bash scripts/build-linux-deb.sh "$XDRIVE_RELEASE_VERSION" release desktop/release/linux-unpacked
-          pkg_root="$(mktemp -d)"
-          dpkg-deb -x release/xdrive-linux-amd64.deb "$pkg_root"
-          test -x "$pkg_root/usr/bin/xdrive-updater" || { echo "unified package missing xdrive-updater" >&2; exit 1; }
-          test -f "$pkg_root/usr/lib/systemd/system/xdrive-update.timer" || { echo "unified package missing update timer" >&2; exit 1; }
-          test -f "$pkg_root/usr/share/applications/xdrive.desktop" || { echo "unified package missing desktop menu entry" >&2; exit 1; }
-          dpkg-deb --field release/xdrive-linux-amd64.deb Depends | grep -q 'libgtk-3-0'
-          dpkg-deb --field release/xdrive-linux-amd64.deb Recommends | grep -q 'libappindicator3-1'
-          test -L "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package missing xdrive-desktop link" >&2; exit 1; }
-          test -x "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package xdrive-desktop link is broken" >&2; exit 1; }
-          test "$(cat "$pkg_root/usr/share/doc/xdrive-client/client-version")" = "$XDRIVE_RELEASE_VERSION"
-          rm -rf "$pkg_root"
-          dpkg-deb --field release/xdrive-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
-          dpkg-deb --field release/xdrive-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
-          pkg_meta="$(mktemp -d)"
-          dpkg-deb -e release/xdrive-linux-amd64.deb "$pkg_meta"
-          grep -q 'xDrive client health check failed' "$pkg_meta/postinst"
-          grep -q '/usr/bin/xdrive-desktop' "$pkg_meta/postinst"
-          rm -rf "$pkg_meta"
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-runtime-linux-amd64
+          path: dist
+      - name: Restore exact Linux desktop runtime
+        shell: bash
+        run: |
+          mkdir -p desktop/release
+          tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
+          test -x desktop/release/linux-unpacked/xdrive-desktop
+      - name: Build Linux release package once
+        shell: bash
+        run: bash scripts/build-linux-deb.sh "$XDRIVE_RELEASE_VERSION" release desktop/release/linux-unpacked
       - uses: actions/upload-artifact@v4
         with:
           name: xdrive-linux-amd64
           path: release/xdrive-linux-amd64.deb
           if-no-files-found: error
           retention-days: 14
+
+  server-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
       - name: Validate server deployment files
         env:
           POSTGRES_PASSWORD: ci-postgres-password
@@ -297,7 +315,17 @@ jobs:
             exit 1
           fi
           bash -n scripts/ci/gitlab-desktop-windows.sh
+          bash -n scripts/ci/gitlab-go-linux.sh
+          bash -n scripts/ci/gitlab-package-linux-client.sh
+          bash -n scripts/ci/gitlab-source-agent.sh
+          bash -n scripts/ci/gitlab-server-validation.sh
           bash -n scripts/ci/gitlab-go-windows.sh
+          bash -n scripts/ci/gitlab-package-windows-client.sh
+          bash -n scripts/ci/gitlab-test-linux-artifact.sh
+          bash -n scripts/ci/gitlab-test-source-agent-artifact.sh
+          bash -n scripts/ci/gitlab-test-windows-artifact.sh
+          bash -n scripts/ci/test-linux-client-package.sh
+          bash -n scripts/ci/test-source-agent-package.sh
           bash -n scripts/ci/prepare-go-mod-cache.sh
           bash -n scripts/ci/test-prepare-go-mod-cache.sh
           bash scripts/ci/test-prepare-go-mod-cache.sh
@@ -364,7 +392,21 @@ jobs:
       - name: Backup, corruption detection, and restore drill
         run: bash scripts/test-server-backup-restore.sh
 
+
   go-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - run: go mod verify
+      - run: go test -mod=readonly ./internal/... ./cmd/xdrive-agent
+      - name: Windows CfAPI E2E suite
+        run: go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1
+
+  build-windows-client:
     needs: desktop-windows
     runs-on: windows-latest
     env:
@@ -376,9 +418,6 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
       - name: Resolve client artifact version
         shell: bash
         run: |
@@ -392,27 +431,6 @@ jobs:
       - name: Verify exact Windows desktop runtime
         shell: pwsh
         run: if (-not (Test-Path ./desktop/release/win-unpacked/xdrive-desktop.exe)) { throw "desktop runtime artifact missing" }
-      - run: go mod tidy "-go=1.25"
-      - run: git diff --exit-code -- go.mod go.sum
-      - run: go mod verify
-      - run: go test -mod=readonly ./internal/... ./cmd/xdrive-agent
-      - name: Windows CfAPI E2E suite
-        run: go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1
-      - name: Validate Windows PowerShell scripts
-        shell: pwsh
-        run: |
-          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/windows-e2e.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/build-windows-installer.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/test-windows-client-upgrade.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-windows-native.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-package-windows-native.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/resolve-windows-uninstaller.ps1))
-          $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-uninstaller-resolver.ps1))
-      - name: Test Windows uninstaller resolver
-        shell: pwsh
-        run: ./scripts/ci/test-windows-uninstaller-resolver.ps1
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -447,75 +465,81 @@ jobs:
           } else {
             ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked
           }
-      - name: Verify Windows Authenticode signatures when signing is enabled
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PATH)) {
-            Write-Host "Windows installer is intentionally unsigned for this snapshot."
-            exit 0
-          }
-          $targets = @(
-            "./release/windows-build/xd.exe",
-            "./release/windows-build/xdrive-agent.exe",
-            "./release/windows-build/desktop/xdrive-desktop.exe",
-            "./release/xDriveSetup-amd64.exe"
-          )
-          foreach ($target in $targets) {
-            $signature = Get-AuthenticodeSignature $target
-            if ($null -eq $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
-              throw "missing Authenticode signature for $target"
-            }
-          }
       - name: Verify Windows installer
         shell: pwsh
         run: if (-not (Test-Path ./release/xDriveSetup-amd64.exe)) { throw "installer missing" }
-      - name: Validate Windows update transaction and rollback
-        shell: pwsh
-        run: ./scripts/test-windows-client-upgrade.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION
-      - name: Smoke install and uninstall Windows client
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $installer = (Resolve-Path ./release/xDriveSetup-amd64.exe).Path
-          $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
-          $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
-
-          $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
-          if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
-          if (-not (Test-Path (Join-Path $app "xdrive-agent.exe"))) { throw "installed agent missing" }
-          if (-not (Test-Path (Join-Path $app "desktop\xdrive-desktop.exe"))) { throw "installed Electron desktop missing" }
-          if (Test-Path (Join-Path $app "icons")) { throw "runtime tray icons must not be installed" }
-          $shortcutRoots = @(
-            (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
-            (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
-          )
-          $shortcut = $shortcutRoots |
-            Where-Object { Test-Path $_ } |
-            ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
-            Select-Object -First 1
-          if ($null -eq $shortcut) { throw "unified client must install the xDrive Desktop shortcut" }
-          $reported = & (Join-Path $app "xd.exe") version
-          if ($reported.Trim() -ne $env:XDRIVE_RELEASE_VERSION) { throw "embedded version mismatch: $reported" }
-
-          $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-          $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
-          if ($runValue -notlike "*xdrive-agent.exe*") { throw "xDriveAgent autorun registration missing" }
-
-          $uninstaller = (& ./scripts/ci/resolve-windows-uninstaller.ps1 -AppDir $app | Out-String).Trim()
-          if ([string]::IsNullOrWhiteSpace($uninstaller)) { throw "uninstaller resolver returned an empty path" }
-          $u = Start-Process -FilePath $uninstaller -ArgumentList $args -Wait -PassThru
-          if ($u.ExitCode -ne 0) { throw "uninstaller exit code $($u.ExitCode)" }
-
-          if (Test-Path (Join-Path $app "xd.exe")) { throw "xd.exe remains after uninstall" }
-          $left = Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
-          if ($null -ne $left) { throw "xDriveAgent autorun remains after uninstall" }
       - uses: actions/upload-artifact@v4
         with:
           name: xdrive-windows-amd64
           path: release/xDriveSetup-amd64.exe
           if-no-files-found: error
           retention-days: 14
+
+  test-linux-artifact:
+    needs: build-linux-client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-linux-amd64
+          path: release
+      - name: Test exact Linux release package
+        run: bash scripts/ci/test-linux-client-package.sh "$XDRIVE_RELEASE_VERSION" release/xdrive-linux-amd64.deb
+
+  test-source-agent-artifact:
+    needs: build-source-agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-source-agent-linux
+          path: release/source-agent
+      - name: Test exact source-agent binaries
+        run: bash scripts/ci/test-source-agent-package.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
+
+  test-windows-artifact:
+    needs: build-windows-client
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release
+      - name: Test exact Windows release package
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -ExpectSigned
+          } else {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION
+          }
 
   web:
     runs-on: ubuntu-latest
@@ -536,8 +560,29 @@ jobs:
         run: docker build -f Dockerfile -t xdrive/web:test ..
 
 
+  final-gate:
+    if: always()
+    needs:
+      - desktop-tests
+      - go-linux
+      - go-windows
+      - server-validation
+      - web
+      - test-linux-artifact
+      - test-source-agent-artifact
+      - test-windows-artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI gate to succeed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS_JSON" | jq -e 'all(.[]; .result == "success")' >/dev/null
+          echo "All source, server, web, and exact-artifact tests passed."
+
   publish:
-    needs: [go-linux, go-windows, web]
+    needs: [final-gate]
     permissions:
       contents: write
       packages: write
