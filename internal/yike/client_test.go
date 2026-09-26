@@ -3,6 +3,7 @@ package yike
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -232,6 +233,71 @@ func TestExternalIDDeduplicatesAlbumMembership(t *testing.T) {
 	}
 	if _, err := ExternalID(0, 22); err == nil {
 		t.Fatal("zero owner UK was accepted")
+	}
+}
+
+func TestOpenDownloadUsesRangeWithoutForwardingCookie(t *testing.T) {
+	data := []byte("0123456789")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Cookie"); got != "" {
+			t.Fatalf("download forwarded Cookie=%q", got)
+		}
+		if got := r.Header.Get("Range"); got != "bytes=4-" {
+			t.Fatalf("Range=%q", got)
+		}
+		w.Header().Set("Content-Range", "bytes 4-9/10")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(data[4:])
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "BDUSS=secret", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := client.OpenDownload(context.Background(), DownloadLink{
+		URL: server.URL + "/media",
+		Headers: map[string]string{
+			"User-Agent": "test-agent",
+			"Cookie":     "must-not-forward",
+		},
+	}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	got, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "456789" {
+		t.Fatalf("download=%q", got)
+	}
+}
+
+func TestOpenDownloadFallsBackWhenRangeIgnored(t *testing.T) {
+	data := []byte("abcdefghij")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := client.OpenDownload(context.Background(), DownloadLink{URL: server.URL + "/media"}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	got, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "defghij" {
+		t.Fatalf("download=%q", got)
 	}
 }
 

@@ -772,9 +772,13 @@ func persistObservedSourceItem(
 		}).Error
 
 	case sourcepkg.ActionUnchanged:
+		observedSHA := item.SHA256
+		if observedSHA == "" {
+			observedSHA = current.SHA256
+		}
 		return tx.Model(&meta.SourceItem{}).Where("id = ?", current.ID).Updates(map[string]any{
 			"kind": item.Kind, "path": item.Path, "size": item.Size, "modified_at": item.ModifiedAt,
-			"sha256": item.SHA256, "remote_revision": item.RemoteRevision,
+			"sha256": observedSHA, "remote_revision": item.RemoteRevision,
 			"node_revision": nodeRevision,
 			"state":         meta.SourceItemStateSynced, "last_seen_run_id": runID,
 			"last_seen_at": now, "last_error": "", "updated_at": now,

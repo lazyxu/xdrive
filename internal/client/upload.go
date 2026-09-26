@@ -18,6 +18,8 @@ const DefaultUploadChunkSize int64 = 8 << 20
 
 type UploadProgress func(done, total int64)
 
+type UploadStreamOpen func(context.Context, int64) (io.ReadCloser, error)
+
 type UploadResult struct {
 	Node             Node
 	SHA256           string
@@ -134,6 +136,158 @@ func (c *Client) OverwriteFileResumableResult(ctx context.Context, nodeID, revis
 		ExpectedRevision: revision,
 		ChunkSize:        DefaultUploadChunkSize,
 	}, progress)
+}
+
+func (c *Client) UploadStreamResumableResult(
+	ctx context.Context,
+	parentID uint64,
+	name string,
+	size int64,
+	resumeKey string,
+	open UploadStreamOpen,
+	progress UploadProgress,
+) (UploadResult, error) {
+	return c.uploadStreamResult(ctx, UploadInit{
+		ParentID:  &parentID,
+		Name:      name,
+		Size:      size,
+		ChunkSize: DefaultUploadChunkSize,
+		ResumeKey: strings.TrimSpace(resumeKey),
+	}, open, progress)
+}
+
+func (c *Client) OverwriteStreamResumableResult(
+	ctx context.Context,
+	nodeID, revision uint64,
+	size int64,
+	resumeKey string,
+	open UploadStreamOpen,
+	progress UploadProgress,
+) (UploadResult, error) {
+	return c.uploadStreamResult(ctx, UploadInit{
+		NodeID:           &nodeID,
+		ExpectedRevision: revision,
+		Size:             size,
+		ChunkSize:        DefaultUploadChunkSize,
+		ResumeKey:        strings.TrimSpace(resumeKey),
+	}, open, progress)
+}
+
+func (c *Client) uploadStreamResult(
+	ctx context.Context,
+	init UploadInit,
+	open UploadStreamOpen,
+	progress UploadProgress,
+) (UploadResult, error) {
+	if init.Size < 0 {
+		return UploadResult{}, fmt.Errorf("upload stream size must be zero or greater")
+	}
+	if init.ChunkSize <= 0 {
+		init.ChunkSize = DefaultUploadChunkSize
+	}
+	if init.Size > 0 && open == nil {
+		return UploadResult{}, fmt.Errorf("upload stream opener is required")
+	}
+
+	session, err := c.StartUpload(ctx, init)
+	if err != nil {
+		return UploadResult{}, err
+	}
+	result := UploadResult{}
+	if session.Status == "finalized" && session.Result != nil {
+		result.Node = *session.Result
+		result.SHA256 = session.Result.SHA256
+		if progress != nil {
+			progress(init.Size, init.Size)
+		}
+		return result, nil
+	}
+
+	received := make(map[int]UploadPart, len(session.Received))
+	var done int64
+	for _, part := range session.Received {
+		if part.Index < 0 || part.Index >= session.ChunkCount {
+			continue
+		}
+		expectedSize := uploadChunkSize(session.Size, session.ChunkSize, part.Index)
+		if part.Size != expectedSize || len(part.SHA256) != 64 {
+			continue
+		}
+		if _, err := hex.DecodeString(part.SHA256); err != nil {
+			continue
+		}
+		received[part.Index] = part
+		done += part.Size
+	}
+	if progress != nil {
+		progress(done, init.Size)
+	}
+
+	firstMissing := session.ChunkCount
+	for index := 0; index < session.ChunkCount; index++ {
+		if _, ok := received[index]; !ok {
+			firstMissing = index
+			break
+		}
+	}
+
+	var stream io.ReadCloser
+	if firstMissing < session.ChunkCount {
+		offset := int64(firstMissing) * session.ChunkSize
+		stream, err = open(ctx, offset)
+		if err != nil {
+			return UploadResult{}, err
+		}
+		defer stream.Close()
+	}
+
+	var transferredBytes int64
+	for index := firstMissing; index < session.ChunkCount; index++ {
+		partSize := uploadChunkSize(session.Size, session.ChunkSize, index)
+		buf := make([]byte, int(partSize))
+		if _, err := io.ReadFull(stream, buf); err != nil {
+			return UploadResult{}, fmt.Errorf("read upload stream chunk %d: %w", index, err)
+		}
+		if _, ok := received[index]; ok {
+			continue
+		}
+		sum := sha256.Sum256(buf)
+		partHash := hex.EncodeToString(sum[:])
+		part, err := c.putChunkRetry(ctx, session.ID, index, partHash, buf)
+		if err != nil {
+			return UploadResult{}, err
+		}
+		done += part.Size
+		transferredBytes += part.Size
+		if progress != nil {
+			progress(done, init.Size)
+		}
+	}
+	if stream != nil {
+		var extra [1]byte
+		n, readErr := stream.Read(extra[:])
+		if n != 0 {
+			return UploadResult{}, fmt.Errorf("upload stream is larger than declared size")
+		}
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return UploadResult{}, fmt.Errorf("verify upload stream length: %w", readErr)
+		}
+	}
+
+	final, err := c.finalizeRetry(ctx, session.ID)
+	if err != nil {
+		return UploadResult{}, err
+	}
+	if final.Result == nil {
+		return UploadResult{}, fmt.Errorf("finalize upload returned no file")
+	}
+	result.Node = *final.Result
+	result.SHA256 = final.Result.SHA256
+	result.TransferredBytes = transferredBytes
+	if progress != nil {
+		progress(init.Size, init.Size)
+	}
+	return result, nil
 }
 
 func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadInit, progress UploadProgress) (UploadResult, error) {

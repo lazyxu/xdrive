@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -188,6 +189,83 @@ func (c *Client) DownloadFileLink(ctx context.Context, fsid int64) (DownloadLink
 			"Referer":    "https://photo.baidu.com/",
 		},
 	}, nil
+}
+
+func (c *Client) OpenDownload(ctx context.Context, link DownloadLink, offset int64) (io.ReadCloser, error) {
+	if offset < 0 {
+		return nil, fmt.Errorf("download offset must be zero or greater")
+	}
+	parsed, err := url.Parse(strings.TrimSpace(link.URL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return nil, fmt.Errorf("invalid Yike download URL")
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return nil, fmt.Errorf("unsupported Yike download URL scheme %q", parsed.Scheme)
+	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("Yike download URL must not contain userinfo")
+	}
+	if ip := net.ParseIP(parsed.Hostname()); ip != nil &&
+		(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) &&
+		!c.baseURLUsesPrivateHost() {
+		return nil, fmt.Errorf("Yike download URL resolves to a private literal address")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range link.Headers {
+		if strings.EqualFold(key, "Cookie") || strings.EqualFold(key, "Authorization") {
+			continue
+		}
+		req.Header.Set(key, value)
+	}
+	req.Header.Set("Accept-Encoding", "identity")
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
+
+	downloadClient := *c.httpClient
+	downloadClient.Timeout = 0
+	resp, err := downloadClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("Yike media download returned HTTP %d", resp.StatusCode)
+	}
+	if offset == 0 {
+		return resp.Body, nil
+	}
+	if resp.StatusCode == http.StatusPartialContent {
+		wantPrefix := fmt.Sprintf("bytes %d-", offset)
+		if !strings.HasPrefix(strings.TrimSpace(resp.Header.Get("Content-Range")), wantPrefix) {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("Yike media range response starts at the wrong offset")
+		}
+		return resp.Body, nil
+	}
+	if _, err := io.CopyN(io.Discard, resp.Body, offset); err != nil {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("skip Yike media download to offset %d: %w", offset, err)
+	}
+	return resp.Body, nil
+}
+
+func (c *Client) baseURLUsesPrivateHost() bool {
+	parsed, err := url.Parse(c.baseURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast())
 }
 
 func (c *Client) DownloadAlbumFileLink(ctx context.Context, ownUK int64, file AlbumFile) (DownloadLink, error) {
