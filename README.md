@@ -802,6 +802,10 @@ Phase 12C adds a small **Storage Decision Gate / Historical Sampling** layer. Th
 
 The decision gate intentionally requires at least 24 hours of history before choosing a direction. Over the recent seven-day window, sustained small-object pressure (`<64 KiB` count share >=50% or `<256 KiB` count share >=75%) points to **Small-file Packing**. Otherwise, when blobs `>=16 MiB` dominate at least 60% of physical bytes, `<64 KiB` count share stays below 35%, and whole-file dedup remains below 1.15x, the gate points to **CDC evaluation**. That CDC signal describes workload shape only; it does not claim that block-level redundancy has already been proven. Ambiguous workloads remain in `observe` rather than forcing a storage-format change.
 
+Phase 13A adds a vendor-neutral **External Source Foundation** for future import/sync connectors. `xd_sources` records connector kind, push/pull direction, backup/mirror policy, lifecycle state, revision, and an opaque checkpoint without storing connector credentials. `xd_source_items` preserves stable external identity with `(source_id, external_id)` and optionally maps that identity to an xDrive node while retaining source-side path, revision, hash, and sync state. `xd_sync_runs` records each synchronization attempt, trigger, checkpoints, counters, transferred bytes, terminal state, and error summary.
+
+The mapping deliberately targets `xd_nodes`, not `xd_content_blobs`: a source item describes an external file/directory identity, while CAS describes bytes. Renames and moves can therefore keep the same source identity and node without manufacturing new content. Deleting a mapped xDrive node sets the mapping to NULL for later reconciliation; deleting a source cascades its item/run history. Phase 13A contains no Synology-specific fields, no source credentials, no scheduler, and no file transfer implementation.
+
 
 ## Conflict protection
 
@@ -962,12 +966,14 @@ deploy/
 
 ## Roadmap
 
-1. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
-2. optional content-defined chunking when large-file/internal-redundancy data justifies it;
-3. small-file packing when small-blob count/metadata pressure justifies it;
-4. macOS File Provider integration;
-5. thumbnails/EXIF/media processing;
-6. directory/upload sharing and richer retention/version policies.
+1. Phase 13B: build the Synology push agent on `Source / SourceItem / SyncRun`, using current CAS, instant-upload, and resumable-upload paths;
+2. Phase 13D/13E: add Synology pull plus the optional Photos metadata adapter without coupling those APIs to the source schema;
+3. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
+4. optional content-defined chunking when large-file/internal-redundancy data justifies it;
+5. small-file packing when small-blob count/metadata pressure justifies it;
+6. macOS File Provider integration;
+7. thumbnails/EXIF/media processing;
+8. directory/upload sharing and richer retention/version policies.
 
 ## License
 
