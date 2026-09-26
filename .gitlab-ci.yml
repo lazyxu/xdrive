@@ -114,11 +114,7 @@ desktop-tests:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   tags:
     - linux
   script:
@@ -202,11 +198,7 @@ go-linux:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   tags:
     - linux
   services:
@@ -228,11 +220,7 @@ go-linux-api:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   tags:
     - linux
   services:
@@ -290,11 +278,7 @@ server-validation:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   resource_group: xdrive-server-validation-contracts
   tags:
     - linux
@@ -308,11 +292,7 @@ server-image:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   resource_group: xdrive-server-image
   tags:
     - linux
@@ -326,11 +306,7 @@ caddy-image:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   resource_group: xdrive-caddy-image
   tags:
     - linux
@@ -344,11 +320,7 @@ server-backup:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   resource_group: xdrive-server-backup
   tags:
     - linux
@@ -360,11 +332,7 @@ server-backup:
 
 go-windows:
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   resource_group: xdrive-go-windows-tests
   tags:
     - windows
@@ -402,8 +370,6 @@ test-linux-artifact:
   needs:
     - job: package-linux-client
       artifacts: true
-    - job: package-windows-client
-      artifacts: false
   tags:
     - linux
   script:
@@ -415,10 +381,6 @@ test-source-agent-artifact:
   needs:
     - job: build-source-agent
       artifacts: true
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
   tags:
     - linux
   script:
@@ -427,8 +389,6 @@ test-source-agent-artifact:
 test-windows-rollback-artifact:
   stage: test
   needs:
-    - job: package-linux-client
-      artifacts: false
     - job: package-windows-client
       artifacts: true
   resource_group: xdrive-test-windows-rollback-artifact
@@ -442,8 +402,6 @@ test-windows-rollback-artifact:
 test-windows-upgrade-artifact:
   stage: test
   needs:
-    - job: package-linux-client
-      artifacts: false
     - job: package-windows-client
       artifacts: true
   resource_group: xdrive-test-windows-upgrade-artifact
@@ -457,8 +415,6 @@ test-windows-upgrade-artifact:
 test-windows-smoke-artifact:
   stage: test
   needs:
-    - job: package-linux-client
-      artifacts: false
     - job: package-windows-client
       artifacts: true
   resource_group: xdrive-test-windows-smoke-artifact
@@ -470,11 +426,7 @@ test-windows-smoke-artifact:
 web:
   image: $XDRIVE_CI_NODE_IMAGE
   stage: test
-  needs:
-    - job: package-linux-client
-      artifacts: false
-    - job: package-windows-client
-      artifacts: false
+  needs: []
   cache:
     key: "xdrive-ci-tools-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:

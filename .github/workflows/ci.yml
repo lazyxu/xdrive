@@ -32,7 +32,6 @@ jobs:
           fi
 
   desktop-tests:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -186,7 +185,6 @@ jobs:
           retention-days: 2
 
   go-linux:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -233,7 +231,6 @@ jobs:
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
 
   go-linux-api:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -320,7 +317,6 @@ jobs:
           retention-days: 14
 
   server-validation:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -457,7 +453,6 @@ jobs:
           grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
           grep -q 'detailed Docker output is captured in' deploy/install-server.sh
   server-image:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -467,7 +462,6 @@ jobs:
           bash scripts/test-server-chunk-storage.sh
 
   caddy-image:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -477,7 +471,6 @@ jobs:
           docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
 
   server-backup:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -487,7 +480,6 @@ jobs:
         run: bash scripts/test-server-backup-restore.sh
 
   go-windows:
-    needs: [package-linux-client, package-windows-client]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -571,7 +563,7 @@ jobs:
           retention-days: 14
 
   test-linux-artifact:
-    needs: [package-linux-client, package-windows-client]
+    needs: package-linux-client
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -589,7 +581,7 @@ jobs:
         run: bash scripts/ci/test-linux-client-package.sh "$XDRIVE_RELEASE_VERSION" release/xdrive-linux-amd64.deb
 
   test-source-agent-artifact:
-    needs: [build-source-agent, package-linux-client, package-windows-client]
+    needs: build-source-agent
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -611,7 +603,7 @@ jobs:
         run: bash scripts/ci/test-source-agent-package.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
 
   test-windows-rollback-artifact:
-    needs: [package-linux-client, package-windows-client]
+    needs: package-windows-client
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -637,7 +629,7 @@ jobs:
           }
 
   test-windows-upgrade-artifact:
-    needs: [package-linux-client, package-windows-client]
+    needs: package-windows-client
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -663,7 +655,7 @@ jobs:
           }
 
   test-windows-smoke-artifact:
-    needs: [package-linux-client, package-windows-client]
+    needs: package-windows-client
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -689,7 +681,6 @@ jobs:
           }
 
   web:
-    needs: [package-linux-client, package-windows-client]
     runs-on: ubuntu-latest
     defaults:
       run:
