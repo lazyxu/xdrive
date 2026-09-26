@@ -426,6 +426,17 @@ export class AgentIPCClient {
     return this.request<AgentSourceCredentialStatus>('GET', `/v1/sources/credential?${query.toString()}`)
   }
 
+  setSourceCredential(sourceID: number, cookie: string) {
+    return this.request<AgentSourceCredentialStatus>('PUT', '/v1/sources/credential', {
+      source_id: sourceID,
+      cookie,
+    })
+  }
+
+  deleteSourceCredential(sourceID: number) {
+    return this.request<{ ok: boolean }>('DELETE', '/v1/sources/credential', { source_id: sourceID })
+  }
+
   createSource(input: AgentCreateSourceInput) {
     return this.request<AgentSource>('POST', '/v1/sources', input)
   }

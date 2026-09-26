@@ -74,6 +74,10 @@ type fakeDesktopIPCController struct {
 	cloudSources          []client.Source
 	cloudSourceRuns       []client.SyncRun
 	cloudSourceCredential client.SourceCredentialStatus
+	cloudPutCredential    client.SourceCredentialStatus
+	cloudPutCredentialID  uint64
+	cloudPutCookie        string
+	cloudDeleteCredential uint64
 	cloudCreatedSource    client.Source
 	cloudUpdatedSource    client.Source
 	cloudTriggeredSource  client.Source
@@ -207,6 +211,16 @@ func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int)
 
 func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error) {
 	return f.cloudSourceCredential, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudPutSourceCredential(_ context.Context, sourceID uint64, cookie string) (client.SourceCredentialStatus, error) {
+	f.cloudPutCredentialID, f.cloudPutCookie = sourceID, cookie
+	return f.cloudPutCredential, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteSourceCredential(_ context.Context, sourceID uint64) error {
+	f.cloudDeleteCredential = sourceID
+	return f.err
 }
 
 func (f *fakeDesktopIPCController) CloudCreateSource(_ context.Context, input client.CreateSourceInput) (client.Source, error) {
@@ -578,6 +592,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			Status: "completed", ScannedItems: 12, ScannedBytes: 34, StartedAt: now,
 		}},
 		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
+		cloudPutCredential:    client.SourceCredentialStatus{Configured: true, KeyVersion: 3, UpdatedAt: &now},
 		cloudCreatedSource:    client.Source{ID: 10, Name: "群晖 Photos", Kind: "synology_photos", Direction: "push", SyncMode: "backup", RunMode: "scan", Status: "active", Revision: 1},
 		cloudUpdatedSource:    client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4},
 		cloudTriggeredSource:  client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4, RunRequestedAt: &now},
@@ -610,7 +625,34 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		}
 	}
 
-	res := desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources",
+	res := desktopIPCRequest(t, handler, http.MethodPut, "/v1/sources/credential", `{"source_id":9,"cookie":"  BDUSS=secret; STOKEN=secret  "}`)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"key_version\":3") {
+		t.Fatalf("put credential status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudPutCredentialID != 9 || ctrl.cloudPutCookie != "BDUSS=secret; STOKEN=secret" {
+		t.Fatalf("credential not forwarded safely: id=%d cookie=%q", ctrl.cloudPutCredentialID, ctrl.cloudPutCookie)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodDelete, "/v1/sources/credential", `{"source_id":9}`)
+	if res.Code != http.StatusOK || ctrl.cloudDeleteCredential != 9 || !strings.Contains(res.Body.String(), "\"ok\":true") {
+		t.Fatalf("delete credential status=%d body=%s id=%d", res.Code, res.Body.String(), ctrl.cloudDeleteCredential)
+	}
+
+	for _, tc := range []struct {
+		method string
+		body   string
+	}{
+		{http.MethodPut, `{"source_id":0,"cookie":"x"}`},
+		{http.MethodPut, `{"source_id":9,"cookie":"   "}`},
+		{http.MethodDelete, `{"source_id":0}`},
+	} {
+		res = desktopIPCRequest(t, handler, tc.method, "/v1/sources/credential", tc.body)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("%s invalid credential status=%d body=%s", tc.method, res.Code, res.Body.String())
+		}
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources",
 		`{"name":"群晖 Photos","kind":"synology_photos","direction":"push","sync_mode":"backup","run_mode":"scan","target_node_id":7}`)
 	if res.Code != http.StatusCreated || !strings.Contains(res.Body.String(), "\"id\":10") {
 		t.Fatalf("create source status=%d body=%s", res.Code, res.Body.String())

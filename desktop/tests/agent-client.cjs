@@ -400,6 +400,46 @@ test('external sources use dedicated agent endpoints', async (t) => {
   ])
 })
 
+test('external source credentials never expose stored Cookie through read IPC', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null
+    seen.push({ method: req.method, path: url.pathname, body })
+
+    if (req.method === 'PUT' && url.pathname === '/v1/sources/credential') {
+      json(res, 200, { configured: true, key_version: 3, updated_at: new Date(0).toISOString() })
+      return
+    }
+    if (req.method === 'DELETE' && url.pathname === '/v1/sources/credential') {
+      json(res, 200, { ok: true })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  const status = await client.setSourceCredential(9, 'BDUSS=secret; STOKEN=secret')
+  assert.equal(status.configured, true)
+  assert.equal(status.key_version, 3)
+  assert.equal('cookie' in status, false)
+
+  assert.equal((await client.deleteSourceCredential(9)).ok, true)
+  assert.deepEqual(seen, [
+    {
+      method: 'PUT',
+      path: '/v1/sources/credential',
+      body: { source_id: 9, cookie: 'BDUSS=secret; STOKEN=secret' },
+    },
+    {
+      method: 'DELETE',
+      path: '/v1/sources/credential',
+      body: { source_id: 9 },
+    },
+  ])
+})
+
 test('external source mutations use dedicated agent endpoints', async (t) => {
   const seen = []
   const { client } = await fixture(t, async (req, res) => {
