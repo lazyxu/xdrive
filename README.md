@@ -846,6 +846,8 @@ Phase 13D4 adds the **Yike streaming Pull executor**. `run_mode=sync` executes c
 
 Phase 13D5 adds vendor-neutral **Source Collections**. Logical albums are stored in `xd_source_collections` and their ordered many-to-many membership in `xd_source_collection_items`, pointing back to stable SourceItems rather than duplicating xDrive Nodes. Yike own/joined albums are persisted as `yike:album:<album_id>` collections after a complete remote traversal; disappeared albums become `missing` and lose only their membership metadata. The same collection model is available for future Synology Photos metadata adapters.
 
+Phase 13D6 adds vendor-neutral **Source Media Metadata** in `xd_source_item_metadata`. Yike scans persist the remote creation time, original remote path, owner identity, validated content MD5, and the first remote thumbnail URL as a refreshable preview hint. The schema also reserves explicit `pair_group_id + pair_role` fields for paired media such as Live Photos, but the current read-only Yike list/album APIs do not expose a reliable pair identifier. xDrive therefore leaves those fields empty rather than guessing from filenames, extensions, timestamps, or neighboring JPG/MOV objects.
+
 The shared `internal/source` planner normalizes discovered items and classifies them as `ignore`, `unchanged`, `create`, `update`, `move`, or `move_update`. Ignore rules use a gitignore-like ordered syntax with `*`, `**`, `?`, comments, rooted/directory patterns, and `!` negation; rules are evaluated identically for scan and sync planning. Fast scan planning does not hash every source file: it uses stable external identity plus size/mtime, or a connector-provided remote revision/hash when available. SyncRun statistics separately record scanned, ignored, new, changed, moved, unchanged, missing, planned-transfer, actual-transfer, and failure counts/bytes. `LastSeenRunID` provides deterministic missing detection for future executors without relying on wall-clock cutoffs.
 
 Phase 13C begins with a connector-neutral **Source Scan Protocol**. A source agent creates an idempotent run with a client-generated UUID, posts normalized observations in bounded batches, receives stable planner actions, and finishes the run with its scan summary. Observation retries are safe because managed baselines are not advanced for pending update/move work. Run startup snapshots the source revision, target directory, ignore rules, mode, and checkpoint so configuration changes cannot alter planning halfway through a scan. Only one live run is accepted per source; stale runs can be superseded after their heartbeat expires.
@@ -981,6 +983,7 @@ internal/
   source/                 external-source ignore rules and fast planner
   sourceagent/            native source scanning engine
   sourceagentconfig/      headless source-agent config and credentials
+  sourcemetadata/         connector-neutral media metadata snapshots
   yike/                   read-only Yike Photos private-API client
   yikesync/               Yike discovery, dedup, ignore, and scan planning
   yikeworker/             scheduled server-side Yike scan orchestration
@@ -1034,7 +1037,7 @@ deploy/
 ## Roadmap
 
 1. Phase 13C: add operational polish for the completed Synology Push path (health/status UX, install/update ergonomics, and optional Synology Photos metadata enrichment);
-2. Phase 13D: add optional Live Photo grouping and richer Yike photo metadata on top of the completed scan/sync Pull + collection path;
+2. Phase 13D: add explicit Live Photo grouping when a reliable remote pair identifier is available; base Yike media metadata persistence is complete and intentionally does not guess pairings;
 3. Phase 13E: add optional Synology Photos metadata adapters and shared photo metadata semantics without coupling vendor APIs to the source schema;
 4. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
 5. optional content-defined chunking when large-file/internal-redundancy data justifies it;

@@ -231,6 +231,16 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Create(&membership).Error; err != nil {
 		t.Fatal(err)
 	}
+	remoteCreated := now.Add(-time.Hour)
+	mediaMetadata := meta.SourceItemMetadata{
+		SourceItemID: item.ID, SourceID: source.ID,
+		OriginalPath: "/photo.jpg", OwnerExternalID: "123",
+		RemoteCreatedAt: &remoteCreated, ContentMD5: strings.Repeat("a", 32),
+		ThumbnailURL: "https://thumb.example/photo.jpg",
+	}
+	if err := db.Create(&mediaMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	if err := db.Delete(&node).Error; err != nil {
 		t.Fatal(err)
@@ -244,6 +254,13 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	}
 	if detached.LastSeenRunID != run.ID {
 		t.Fatalf("source item run identity=%q want=%q", detached.LastSeenRunID, run.ID)
+	}
+	var retainedMetadata meta.SourceItemMetadata
+	if err := db.First(&retainedMetadata, "source_item_id = ?", item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retainedMetadata.ContentMD5 != strings.Repeat("a", 32) {
+		t.Fatalf("source metadata changed after node deletion: %+v", retainedMetadata)
 	}
 
 	if err := db.Delete(&target).Error; err != nil {
@@ -260,7 +277,7 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Delete(&source).Error; err != nil {
 		t.Fatal(err)
 	}
-	var itemCount, runCount, credentialCount, collectionCount, membershipCount int64
+	var itemCount, runCount, credentialCount, collectionCount, membershipCount, metadataCount int64
 	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&itemCount).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -276,8 +293,11 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Model(&meta.SourceCollectionItem{}).Where("collection_id = ?", collection.ID).Count(&membershipCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if itemCount != 0 || runCount != 0 || credentialCount != 0 || collectionCount != 0 || membershipCount != 0 {
-		t.Fatalf("source cascade cleanup failed: items=%d runs=%d credentials=%d collections=%d memberships=%d",
-			itemCount, runCount, credentialCount, collectionCount, membershipCount)
+	if err := db.Model(&meta.SourceItemMetadata{}).Where("source_id = ?", source.ID).Count(&metadataCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if itemCount != 0 || runCount != 0 || credentialCount != 0 || collectionCount != 0 || membershipCount != 0 || metadataCount != 0 {
+		t.Fatalf("source cascade cleanup failed: items=%d runs=%d credentials=%d collections=%d memberships=%d metadata=%d",
+			itemCount, runCount, credentialCount, collectionCount, membershipCount, metadataCount)
 	}
 }

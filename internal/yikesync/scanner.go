@@ -2,16 +2,19 @@ package yikesync
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"path"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/sourcecollection"
+	"github.com/lazyxu/xdrive/internal/sourcemetadata"
 	"github.com/lazyxu/xdrive/internal/yike"
 )
 
@@ -51,6 +54,7 @@ type Scanner struct {
 type Result struct {
 	Summary              sourcepkg.Summary
 	Collections          []sourcecollection.Snapshot
+	Metadata             []sourcemetadata.Snapshot
 	Albums               int64
 	RootItems            int64
 	AlbumMemberships     int64
@@ -176,6 +180,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			return externalID, false, nil
 		}
 		seen[externalID] = true
+		result.Metadata = append(result.Metadata, metadataSnapshot(ownerUK, file))
 		if ownerUK == ownUK {
 			result.OwnItems++
 		} else {
@@ -304,6 +309,41 @@ func appendResultError(result *Result, externalID, itemPath string, err error) {
 		message = message[:1024]
 	}
 	result.Errors = append(result.Errors, message)
+}
+
+func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {
+	var createdAt *time.Time
+	if file.CTime > 0 {
+		value := time.Unix(file.CTime, 0).UTC()
+		createdAt = &value
+	}
+	thumbnailURL := ""
+	for _, candidate := range file.ThumbURL {
+		if candidate = strings.TrimSpace(candidate); candidate != "" {
+			thumbnailURL = candidate
+			break
+		}
+	}
+	externalID, _ := yike.ExternalID(ownerUK, file.FSID)
+	return sourcemetadata.Snapshot{
+		ItemExternalID:  externalID,
+		OriginalPath:    strings.TrimSpace(file.Path),
+		OwnerExternalID: strconv.FormatInt(ownerUK, 10),
+		RemoteCreatedAt: createdAt,
+		ContentMD5:      metadataMD5(file.MD5),
+		ThumbnailURL:    thumbnailURL,
+	}
+}
+
+func metadataMD5(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) != 32 {
+		return ""
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		return ""
+	}
+	return value
 }
 
 func collectionExternalID(album yike.Album) (string, error) {

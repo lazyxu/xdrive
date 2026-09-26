@@ -13,6 +13,9 @@ For every code change in this repository, use this workflow by default:
    - keep a branch only when there is a concrete reason it cannot yet be merged or deleted, and state that reason.
    Do not start a fresh implementation while an older viable half-finished branch for the same or related work is still unresolved.
 3. After branch reconciliation, create a new short-lived branch from the latest `origin/master` only when no existing branch should be continued.
+   - For closely related dependent phases, do **not** wait for an upstream PR/MR to merge before continuing. Pull/reuse the active work branch directly, or create a short-lived stacked branch from its current tested head when that is the fastest safe path.
+   - A stacked/dependent branch is temporary. Before it becomes merge-ready, reconcile it against the latest `origin/master`, preserve unrelated work that landed meanwhile, and squash it to exactly one commit relative to `origin/master`.
+   - Do not block implementation merely because a related PR is waiting on CI/review when the dependency branch is available and its current tree is suitable for continued work.
 4. Make the requested change only on that branch.
 5. Add or update relevant tests.
 6. Run the applicable local tests and require them to pass before opening or updating the PR/MR.
@@ -73,6 +76,6 @@ For every code change in this repository, use this workflow by default:
 
 Do not merge known failing or untested changes into `master`.
 
-When multiple unmerged branches exist, process them sequentially. Prefer dependency order when one branch depends on another; otherwise use the oldest appropriate branch first. For each branch, update it from the latest `master` only when needed, keep it at exactly one commit, require its PR CI to pass, merge it, delete it, then continue with the next branch. Avoid rebasing an already-green PR solely to create another CI run.
+When multiple unmerged branches exist, prefer dependency order. Independent branches should still be merged sequentially, but dependent follow-on work may continue directly from the upstream work branch without waiting for its PR/MR to merge. Before each dependent branch is made merge-ready, rebase/reconstruct it onto the latest `master`, keep only its own delta, squash it to exactly one commit, and require its own PR/MR CI to pass. Avoid rebasing an already-green PR solely to create another CI run.
 
 Prefer small, focused branches and a single final commit to minimize conflicts and keep `master` history reviewable.

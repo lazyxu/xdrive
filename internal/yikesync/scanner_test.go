@@ -11,6 +11,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/sourcecollection"
+	"github.com/lazyxu/xdrive/internal/sourcemetadata"
 	"github.com/lazyxu/xdrive/internal/yike"
 )
 
@@ -100,7 +101,10 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 						// The same stable media identity was ignored from the root
 						// library. A different album path must not re-include it.
 						{File: yike.File{FSID: 2, Path: "/visible-in-album.jpg", Size: 200, MTime: 2000}, AlbumID: "own", UK: 123},
-						{File: yike.File{FSID: 3, Path: "/album-only.jpg", Size: 300, MTime: 3000}, AlbumID: "own", UK: 123},
+						{File: yike.File{
+							FSID: 3, Path: "/album-only.jpg", Size: 300, CTime: 2500, MTime: 3000,
+							MD5: strings.Repeat("a", 32), ThumbURL: []string{"", " https://thumb.example/3 "},
+						}, AlbumID: "own", UK: 123},
 					},
 				},
 			},
@@ -169,6 +173,29 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	}
 	if _, exists := items["yike:123:2"]; exists {
 		t.Fatal("ignored root item was sent to source API")
+	}
+
+	if len(result.Metadata) != 3 {
+		t.Fatalf("metadata snapshots=%d want=3: %+v", len(result.Metadata), result.Metadata)
+	}
+	metadata := make(map[string]sourcemetadata.Snapshot, len(result.Metadata))
+	for i := range result.Metadata {
+		metadata[result.Metadata[i].ItemExternalID] = result.Metadata[i]
+	}
+	albumOnly, ok := metadata["yike:123:3"]
+	if !ok {
+		t.Fatalf("album-only metadata missing: %+v", result.Metadata)
+	}
+	if albumOnly.OriginalPath != "/album-only.jpg" ||
+		albumOnly.OwnerExternalID != "123" ||
+		albumOnly.RemoteCreatedAt == nil || albumOnly.RemoteCreatedAt.Unix() != 2500 ||
+		albumOnly.ContentMD5 != strings.Repeat("a", 32) ||
+		albumOnly.ThumbnailURL != "https://thumb.example/3" ||
+		albumOnly.PairGroupID != "" || albumOnly.PairRole != "" {
+		t.Fatalf("album-only metadata=%+v", albumOnly)
+	}
+	if _, exists := metadata["yike:123:2"]; exists {
+		t.Fatal("ignored item produced metadata snapshot")
 	}
 
 	if len(result.Collections) != 2 {
@@ -370,5 +397,17 @@ func TestScannerSyncKeepsFailedItemPendingAndContinues(t *testing.T) {
 	if len(api.commits) != 1 || len(api.commits[0]) != 1 ||
 		api.commits[0][0].ExternalID != "yike:123:1" {
 		t.Fatalf("api commits=%+v", api.commits)
+	}
+}
+
+func TestMetadataMD5OnlyAcceptsCanonicalDigest(t *testing.T) {
+	valid := strings.Repeat("AB", 16)
+	if got := metadataMD5("  " + valid + "  "); got != strings.ToLower(valid) {
+		t.Fatalf("metadataMD5(valid)=%q", got)
+	}
+	for _, value := range []string{"", "aaaa", strings.Repeat("z", 32), strings.Repeat("a", 31)} {
+		if got := metadataMD5(value); got != "" {
+			t.Fatalf("metadataMD5(%q)=%q want empty", value, got)
+		}
 	}
 }
