@@ -15,6 +15,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"github.com/lazyxu/xdrive/internal/yike"
 	"github.com/lazyxu/xdrive/internal/yikesync"
@@ -254,6 +255,10 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 	}).Scan(ctx)
 	if err != nil {
 		return finishFailure(err, true)
+	}
+
+	if _, err := sourcecollection.ApplySnapshot(ctx, r.DB, source.ID, run.ID, result.Collections); err != nil {
+		return finishFailure(fmt.Errorf("apply Yike collection snapshot: %w", err), true)
 	}
 
 	finished, err := api.FinishSourceRun(ctx, source.ID, run.ID, client.FinishSourceRunInput{
