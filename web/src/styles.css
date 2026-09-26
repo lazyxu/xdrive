@@ -44,3 +44,54 @@ a { user-select: none; }
   .file-toolbar { align-items: flex-start; flex-direction: column; }
   .ant-table-cell:nth-child(2), .ant-table-cell:nth-child(3) { display: none; }
 }
+
+
+.external-sources-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.external-source-list {
+  display: grid;
+  gap: 14px;
+}
+
+.external-source-card .ant-card-body {
+  padding: 18px 20px;
+}
+
+.external-source-card-header,
+.external-source-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.external-source-card-meta {
+  margin-top: 14px;
+  align-items: flex-end;
+}
+
+.external-source-subtitle,
+.external-source-time,
+.external-source-stats {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.external-source-time {
+  margin-top: 8px;
+}
+
+.external-source-empty {
+  padding: 36px 0 18px;
+}
+
+@media (max-width: 720px) {
+  .external-source-card-header,
+  .external-source-card-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
