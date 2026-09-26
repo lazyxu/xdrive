@@ -1224,7 +1224,7 @@ fi
 
 # Keep data rollback armed through all stage-8 validation. Public services are
 # still considered inside the maintenance transaction until Web/TLS are proven.
-compose up -d web
+compose up -d worker web
 web_healthy=0
 for _ in $(seq 1 30); do
   if compose exec -T web wget -q -O /dev/null http://127.0.0.1/api/v1/readyz >/dev/null 2>&1; then

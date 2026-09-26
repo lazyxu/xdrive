@@ -835,6 +835,8 @@ xdrive-server source-credentials status
 
 Only after the old key version reports zero credential rows should that historical key be removed from `XD_CONNECTOR_SECRET_KEYS`. Existing deployments using the legacy single `XD_CONNECTOR_SECRET_KEY` are migrated to keyring version 1 without changing the key bytes.
 
+Phase 13D3 adds the experimental **Yike Photos Scan Worker**. A separate Docker Compose `worker` service checks active `yike_photos + pull + backup + scan` Sources every minute and scans each Source only when its `LastRunAt` is at least six hours old by default. It decrypts the Source Cookie inside the trusted worker, discovers the root library plus own/joined albums, deduplicates media as `yike:<owner_uk>:<fsid>`, applies the shared ignore/planner pipeline, and finishes the normal Source run API with scan statistics. Root media wins over duplicate album memberships; shared media is namespaced by owner UK. No Yike media download or source mutation occurs in this phase. See `docs/yike-source-worker.md`.
+
 The shared `internal/source` planner normalizes discovered items and classifies them as `ignore`, `unchanged`, `create`, `update`, `move`, or `move_update`. Ignore rules use a gitignore-like ordered syntax with `*`, `**`, `?`, comments, rooted/directory patterns, and `!` negation; rules are evaluated identically for scan and sync planning. Fast scan planning does not hash every source file: it uses stable external identity plus size/mtime, or a connector-provided remote revision/hash when available. SyncRun statistics separately record scanned, ignored, new, changed, moved, unchanged, missing, planned-transfer, actual-transfer, and failure counts/bytes. `LastSeenRunID` provides deterministic missing detection for future executors without relying on wall-clock cutoffs.
 
 Phase 13C begins with a connector-neutral **Source Scan Protocol**. A source agent creates an idempotent run with a client-generated UUID, posts normalized observations in bounded batches, receives stable planner actions, and finishes the run with its scan summary. Observation retries are safe because managed baselines are not advanced for pending update/move work. Run startup snapshots the source revision, target directory, ignore rules, mode, and checkpoint so configuration changes cannot alter planning halfway through a scan. Only one live run is accepted per source; stale runs can be superseded after their heartbeat expires.
@@ -970,6 +972,9 @@ internal/
   source/                 external-source ignore rules and fast planner
   sourceagent/            native source scanning engine
   sourceagentconfig/      headless source-agent config and credentials
+  yike/                   read-only Yike Photos private-API client
+  yikesync/               Yike discovery, dedup, ignore, and scan planning
+  yikeworker/             scheduled server-side Yike scan orchestration
   storage/                Local storage backend
   userconfig/             per-user non-secret client configuration
   update/                 release check/download/checksum/update logic
@@ -1020,7 +1025,7 @@ deploy/
 ## Roadmap
 
 1. Phase 13C: add operational polish for the completed Synology Push path (health/status UX, install/update ergonomics, and optional Synology Photos metadata enrichment);
-2. Phase 13D: add the experimental Yike Photos pull worker for the own library, own albums, and shared albums without mutating the source account;
+2. Phase 13D: add the Yike Pull executor on top of the completed scan-only worker, using read-only download links and the Source execution-commit protocol;
 3. Phase 13E: add optional photo metadata/collection adapters such as Live Photo grouping and album semantics without coupling them to the source schema;
 4. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;
 5. optional content-defined chunking when large-file/internal-redundancy data justifies it;
