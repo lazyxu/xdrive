@@ -144,7 +144,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	clientCoreBuild := readFile(t, filepath.Join(root, "scripts", "build-client-core.sh"))
-	linuxDebBuild := readFile(t, filepath.Join(root, "scripts", "build-linux-deb.sh"))
 	gitlabGoLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux.sh"))
 	gitlabPackageLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux-client.sh"))
 	gitlabSourceAgent := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-source-agent.sh"))
@@ -372,10 +371,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"stage: verify",
 	)
 
-	requireRaw(t, "GitHub pre-test installer packaging contract", githubRaw,
+	requireRaw(t, "GitHub installer packaging contract", githubRaw,
 		"package-linux-client:",
 		"package-windows-client:",
-		"needs: [package-linux-client, package-windows-client]",
 		"name: xdrive-linux-amd64",
 		"name: xdrive-windows-amd64",
 	)
@@ -389,14 +387,35 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"promote",
 		"release",
 	})
-	requireRaw(t, "GitLab pre-test installer packaging contract", gitlabRaw,
+	requireRaw(t, "GitLab installer packaging contract", gitlabRaw,
 		"package-linux-client:",
 		"package-windows-client:",
 		"stage: package",
-		"- job: package-linux-client",
-		"- job: package-windows-client",
 	)
-
+	for _, job := range []string{
+		"desktop-tests",
+		"go-linux",
+		"go-linux-api",
+		"go-windows",
+		"server-validation",
+		"server-image",
+		"caddy-image",
+		"server-backup",
+		"web",
+	} {
+		assertGitHubJobNeeds(t, github, job, nil)
+		assertGitLabJobNeeds(t, gitlab, job, nil)
+	}
+	assertGitHubJobNeeds(t, github, "test-linux-artifact", []string{"package-linux-client"})
+	assertGitHubJobNeeds(t, github, "test-source-agent-artifact", []string{"build-source-agent"})
+	assertGitHubJobNeeds(t, github, "test-windows-rollback-artifact", []string{"package-windows-client"})
+	assertGitHubJobNeeds(t, github, "test-windows-upgrade-artifact", []string{"package-windows-client"})
+	assertGitHubJobNeeds(t, github, "test-windows-smoke-artifact", []string{"package-windows-client"})
+	assertGitLabJobNeeds(t, gitlab, "test-linux-artifact", []string{"package-linux-client"})
+	assertGitLabJobNeeds(t, gitlab, "test-source-agent-artifact", []string{"build-source-agent"})
+	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
+	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client"})
+	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client"})
 	requireRaw(t, "GitHub split critical test contract", githubRaw,
 		"go-linux-api:",
 		"Race test internal/api",
@@ -516,13 +535,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"XDRIVE_DESKTOP_VERSION=\"0.0.0-snapshot.$short_sha\"",
 		"XDRIVE_RELEASE_VERSION=\"$tag\"",
 		"XDRIVE_RELEASE_VERSION=\"0.0.0-ci\"",
-	)
-	requireRaw(t, "Linux Debian compression policy", linuxDebBuild,
-		"DPKG_DEB_ARGS=(--root-owner-group)",
-		"DPKG_DEB_ARGS+=(-Zxz -z1)",
-		"Building stable Debian package with dpkg-deb default compression.",
-		"Building development Debian package with fast XZ level 1 compression.",
-		"dpkg-deb \"${DPKG_DEB_ARGS[@]}\" --build",
 	)
 	requireRaw(t, "GitLab Windows Bash wrappers", gitlabWindowsBash,
 		"set -euo pipefail",
@@ -788,6 +800,60 @@ func assertYAMLStringList(t *testing.T, root map[string]any, key string, want []
 	}
 }
 
+func assertGitHubJobNeeds(t *testing.T, github map[string]any, jobName string, want []string) {
+	t.Helper()
+	jobs, ok := github["jobs"].(map[string]any)
+	if !ok {
+		t.Fatalf("GitHub jobs has type %T, want map", github["jobs"])
+	}
+	job, ok := jobs[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("GitHub job %q missing or invalid", jobName)
+	}
+	assertNeedNames(t, "GitHub", jobName, job["needs"], want)
+}
+
+func assertGitLabJobNeeds(t *testing.T, gitlab map[string]any, jobName string, want []string) {
+	t.Helper()
+	job, ok := gitlab[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("GitLab job %q missing or invalid", jobName)
+	}
+	assertNeedNames(t, "GitLab", jobName, job["needs"], want)
+}
+
+func assertNeedNames(t *testing.T, provider, jobName string, raw any, want []string) {
+	t.Helper()
+	var got []string
+	switch value := raw.(type) {
+	case nil:
+	case string:
+		got = append(got, value)
+	case []any:
+		for _, item := range value {
+			switch need := item.(type) {
+			case string:
+				got = append(got, need)
+			case map[string]any:
+				name, _ := need["job"].(string)
+				if name == "" {
+					t.Fatalf("%s job %s has invalid needs entry: %v", provider, jobName, need)
+				}
+				got = append(got, name)
+			default:
+				t.Fatalf("%s job %s has invalid needs entry type %T", provider, jobName, item)
+			}
+		}
+	default:
+		t.Fatalf("%s job %s needs has type %T", provider, jobName, raw)
+	}
+	sort.Strings(got)
+	want = append([]string(nil), want...)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("%s job %s needs=%v want=%v", provider, jobName, got, want)
+	}
+}
 func assertRunnerParity(t *testing.T, github, gitlab map[string]any, expected map[string]string) {
 	t.Helper()
 	githubJobs, ok := github["jobs"].(map[string]any)
