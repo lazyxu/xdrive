@@ -31,6 +31,65 @@ export interface AuthSession {
   accessExpiresAt: number
 }
 
+export interface ExternalSource {
+  id: number
+  name: string
+  kind: string
+  direction: 'push' | 'pull'
+  sync_mode: 'backup' | 'mirror'
+  run_mode: 'scan' | 'sync'
+  status: 'active' | 'paused'
+  revision: number
+  target_node_id?: number
+  ignore_rules?: string
+  checkpoint?: string
+  last_run_at?: string
+  last_success_at?: string
+  last_error?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ExternalSourceRun {
+  id: string
+  source_id: number
+  source_revision: number
+  target_node_id?: number
+  mode: 'scan' | 'sync'
+  trigger: string
+  status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
+  scanned_items: number
+  scanned_bytes: number
+  ignored_items: number
+  ignored_bytes: number
+  new_items: number
+  new_bytes: number
+  changed_items: number
+  changed_bytes: number
+  moved_items: number
+  unchanged_items: number
+  unchanged_bytes: number
+  missing_items: number
+  missing_bytes: number
+  planned_transfer_items: number
+  planned_transfer_bytes: number
+  created_items: number
+  updated_items: number
+  skipped_items: number
+  transferred_items: number
+  transferred_bytes: number
+  failed_items: number
+  error?: string
+  started_at: string
+  finished_at?: string
+}
+
+export interface ExternalSourceCredentialStatus {
+  configured: boolean
+  key_version?: number
+  updated_at?: string
+}
+
 export interface UploadChunkState {
   index: number
   size: number
@@ -258,6 +317,19 @@ export class XDriveApi {
 
   adminDeleteUser(id: number) {
     return this.request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' })
+  }
+
+  sources() {
+    return this.request<ExternalSource[]>('/api/v1/sources')
+  }
+
+  sourceRuns(sourceID: number, limit = 1) {
+    const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
+    return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?limit=${bounded}`)
+  }
+
+  sourceCredentialStatus(sourceID: number) {
+    return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`)
   }
 
   root() {

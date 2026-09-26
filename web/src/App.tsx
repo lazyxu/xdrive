@@ -15,6 +15,7 @@ import {
   ShareAltOutlined,
   UploadOutlined,
   UserOutlined,
+  CloudSyncOutlined,
 } from '@ant-design/icons'
 import {
   Alert,
@@ -44,6 +45,7 @@ import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
 import StorageStatsModal from './StorageStatsModal'
+import ExternalSourcesPanel from './ExternalSources'
 
 const { Header, Content } = Layout
 const ACCESS_KEY = 'xdrive.access_token'
@@ -176,6 +178,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
   const [adminOpen, setAdminOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
   const [storageStatsScope, setStorageStatsScope] = useState<'self' | 'global' | null>(null)
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
@@ -435,6 +438,9 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
                 </Button>
               </Tooltip>
             )}
+            <Button type="text" icon={<CloudSyncOutlined />} onClick={() => setSourcesOpen(true)} className="logout-button">
+              外部来源
+            </Button>
             <Typography.Text className="username">{username}</Typography.Text>
             <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">退出登录</Button>
           </Space>
@@ -488,6 +494,13 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             />
           </Card>
         </Content>
+
+        <ExternalSourcesPanel
+          open={sourcesOpen}
+          api={api}
+          onClose={() => setSourcesOpen(false)}
+          onError={handleError}
+        />
 
         <Modal title="新建文件夹" open={folderOpen} onCancel={() => setFolderOpen(false)} footer={null} destroyOnClose>
           <Form form={folderForm} layout="vertical" onFinish={createFolder}>
