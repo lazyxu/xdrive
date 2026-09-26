@@ -51,6 +51,7 @@ func TestSourceCollectionReadAPIAndOwnerIsolation(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{},
+		&meta.SourceItemMetadata{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -132,6 +133,30 @@ func TestSourceCollectionReadAPIAndOwnerIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	createdA1 := now.Add(-2 * time.Hour)
+	createdA2 := now.Add(-time.Hour)
+	if err := db.Create(&[]meta.SourceItemMetadata{
+		{
+			SourceItemID: itemA1.ID, SourceID: sourceA.ID,
+			OriginalPath: "/DCIM/photo.jpg", OwnerExternalID: "123",
+			RemoteCreatedAt: &createdA1, ContentMD5: strings.Repeat("a", 32),
+			ThumbnailURL: "https://thumb.example/photo",
+		},
+		{
+			SourceItemID: itemA2.ID, SourceID: sourceA.ID,
+			OriginalPath: "/shared.jpg", OwnerExternalID: "999",
+			RemoteCreatedAt: &createdA2, ContentMD5: strings.Repeat("b", 32),
+			ThumbnailURL: "https://thumb.example/shared",
+		},
+		{
+			SourceItemID: itemB.ID, SourceID: sourceB.ID,
+			OriginalPath: "/private.jpg", OwnerExternalID: "555",
+			ContentMD5: strings.Repeat("c", 32),
+		},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	active := meta.SourceCollection{
 		SourceID: sourceA.ID, ExternalID: "yike:album:active", Kind: "album", Name: "Active Album",
 		State: meta.SourceCollectionStateActive, RemoteRevision: "r2",
@@ -163,8 +188,58 @@ func TestSourceCollectionReadAPIAndOwnerIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	itemsListPath := fmt.Sprintf("/api/v1/sources/%d/items", sourceA.ID)
+	res := request(t, router, http.MethodGet, itemsListPath, tokenA, nil, http.StatusOK)
+	var sourceItems []sourceItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &sourceItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceItems) != 2 ||
+		sourceItems[0].ExternalID != itemA1.ExternalID ||
+		sourceItems[1].ExternalID != itemA2.ExternalID {
+		t.Fatalf("source items=%+v", sourceItems)
+	}
+	if sourceItems[0].Metadata == nil ||
+		sourceItems[0].Metadata.OriginalPath != "/DCIM/photo.jpg" ||
+		sourceItems[0].Metadata.OwnerExternalID != "123" ||
+		sourceItems[0].Metadata.RemoteCreatedAt == nil ||
+		sourceItems[0].Metadata.RemoteCreatedAt.Unix() != createdA1.Unix() ||
+		sourceItems[0].Metadata.ContentMD5 != strings.Repeat("a", 32) ||
+		sourceItems[0].Metadata.ThumbnailURL != "https://thumb.example/photo" {
+		t.Fatalf("synced source metadata=%+v", sourceItems[0].Metadata)
+	}
+	if sourceItems[1].State != meta.SourceItemStateMissing ||
+		sourceItems[1].Metadata == nil ||
+		sourceItems[1].Metadata.OwnerExternalID != "999" ||
+		sourceItems[1].Metadata.ContentMD5 != strings.Repeat("b", 32) {
+		t.Fatalf("missing source metadata=%+v", sourceItems[1])
+	}
+
+	res = request(t, router, http.MethodGet,
+		itemsListPath+"?state="+meta.SourceItemStateMissing, tokenA, nil, http.StatusOK)
+	sourceItems = nil
+	if err := json.Unmarshal(res.Body.Bytes(), &sourceItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceItems) != 1 || sourceItems[0].ExternalID != itemA2.ExternalID {
+		t.Fatalf("missing-filter source items=%+v", sourceItems)
+	}
+
+	res = request(t, router, http.MethodGet, itemsListPath+"?limit=1&offset=1", tokenA, nil, http.StatusOK)
+	sourceItems = nil
+	if err := json.Unmarshal(res.Body.Bytes(), &sourceItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceItems) != 1 || sourceItems[0].ExternalID != itemA2.ExternalID {
+		t.Fatalf("paginated source items=%+v", sourceItems)
+	}
+	request(t, router, http.MethodGet, itemsListPath+"?state=invalid", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, itemsListPath+"?limit=1001", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, itemsListPath+"?offset=-1", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, itemsListPath, tokenB, nil, http.StatusNotFound)
+
 	listPath := fmt.Sprintf("/api/v1/sources/%d/collections", sourceA.ID)
-	res := request(t, router, http.MethodGet, listPath, tokenA, nil, http.StatusOK)
+	res = request(t, router, http.MethodGet, listPath, tokenA, nil, http.StatusOK)
 	var collections []sourceCollectionDTO
 	if err := json.Unmarshal(res.Body.Bytes(), &collections); err != nil {
 		t.Fatal(err)
@@ -202,8 +277,12 @@ func TestSourceCollectionReadAPIAndOwnerIsolation(t *testing.T) {
 	}
 	if len(members) != 2 || members[0].Position != 0 || members[0].ExternalID != itemA1.ExternalID ||
 		members[0].NodeID == nil || *members[0].NodeID != nodeA.ID ||
+		members[0].Metadata == nil || members[0].Metadata.OwnerExternalID != "123" ||
+		members[0].Metadata.ContentMD5 != strings.Repeat("a", 32) ||
 		members[1].Position != 1 || members[1].ExternalID != itemA2.ExternalID ||
-		members[1].State != meta.SourceItemStateMissing {
+		members[1].State != meta.SourceItemStateMissing ||
+		members[1].Metadata == nil || members[1].Metadata.OwnerExternalID != "999" ||
+		members[1].Metadata.ContentMD5 != strings.Repeat("b", 32) {
 		t.Fatalf("collection members=%+v", members)
 	}
 

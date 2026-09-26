@@ -26,16 +26,18 @@ type sourceCollectionDTO struct {
 }
 
 type sourceCollectionItemDTO struct {
-	Position       int64      `json:"position"`
-	SourceItemID   uint64     `json:"source_item_id"`
-	ExternalID     string     `json:"external_id"`
-	NodeID         *uint64    `json:"node_id,omitempty"`
-	Kind           string     `json:"kind"`
-	Path           string     `json:"path"`
-	Size           int64      `json:"size"`
-	ModifiedAt     *time.Time `json:"modified_at,omitempty"`
-	RemoteRevision string     `json:"remote_revision,omitempty"`
-	State          string     `json:"state"`
+	Position       int64                  `json:"position"`
+	SourceItemID   uint64                 `json:"source_item_id"`
+	ExternalID     string                 `json:"external_id"`
+	NodeID         *uint64                `json:"node_id,omitempty"`
+	Kind           string                 `json:"kind"`
+	Path           string                 `json:"path"`
+	Size           int64                  `json:"size"`
+	ModifiedAt     *time.Time             `json:"modified_at,omitempty"`
+	SHA256         string                 `json:"sha256,omitempty"`
+	RemoteRevision string                 `json:"remote_revision,omitempty"`
+	State          string                 `json:"state"`
+	Metadata       *sourceItemMetadataDTO `json:"metadata,omitempty"`
 }
 
 func (s *Server) listSourceCollections(c *gin.Context) {
@@ -110,31 +112,16 @@ func (s *Server) listSourceCollectionItems(c *gin.Context) {
 		return
 	}
 
-	limit := 200
-	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
-		value, err := strconv.Atoi(raw)
-		if err != nil || value < 1 || value > 1000 {
-			fail(c, http.StatusBadRequest, "limit must be between 1 and 1000")
-			return
-		}
-		limit = value
-	}
-	offset := 0
-	if raw := strings.TrimSpace(c.Query("offset")); raw != "" {
-		value, err := strconv.Atoi(raw)
-		if err != nil || value < 0 {
-			fail(c, http.StatusBadRequest, "offset must be zero or greater")
-			return
-		}
-		offset = value
+	limit, offset, ok := sourceListWindow(c)
+	if !ok {
+		return
 	}
 
-	var rows []sourceCollectionItemDTO
+	var rows []sourceItemRow
 	if err := s.DB.Table("xd_source_collection_items AS ci").
-		Select(`ci.position,
-			si.id AS source_item_id, si.external_id, si.node_id, si.kind, si.path,
-			si.size, si.modified_at, si.remote_revision, si.state`).
+		Select("ci.position, "+sourceItemSelect).
 		Joins("JOIN xd_source_items AS si ON si.id = ci.source_item_id").
+		Joins("LEFT JOIN xd_source_item_metadata AS sm ON sm.source_item_id = si.id").
 		Where("ci.collection_id = ? AND si.source_id = ?", collection.ID, sourceID).
 		Order("ci.position ASC, ci.id ASC").
 		Limit(limit).Offset(offset).
@@ -142,6 +129,24 @@ func (s *Server) listSourceCollectionItems(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "list source collection items failed")
 		return
 	}
+	out := make([]sourceCollectionItemDTO, 0, len(rows))
+	for _, row := range rows {
+		item := row.dto()
+		out = append(out, sourceCollectionItemDTO{
+			Position:       row.Position,
+			SourceItemID:   item.SourceItemID,
+			ExternalID:     item.ExternalID,
+			NodeID:         item.NodeID,
+			Kind:           item.Kind,
+			Path:           item.Path,
+			Size:           item.Size,
+			ModifiedAt:     item.ModifiedAt,
+			SHA256:         item.SHA256,
+			RemoteRevision: item.RemoteRevision,
+			State:          item.State,
+			Metadata:       item.Metadata,
+		})
+	}
 	c.Header("X-XDrive-Collection-ID", strconv.FormatUint(collection.ID, 10))
-	c.JSON(http.StatusOK, rows)
+	c.JSON(http.StatusOK, out)
 }
