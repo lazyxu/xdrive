@@ -13,6 +13,7 @@ test('desktop GUI defaults to Chinese', () => {
     '概览',
     '云端文件',
     '外部来源',
+    '立即扫描',
     '传输中心',
     '存储策略',
     '冲突副本',

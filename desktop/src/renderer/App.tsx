@@ -381,6 +381,19 @@ export default function App() {
     }
   }
 
+  const triggerSourceNow = async (row: SourceRow) => {
+    const sourceID = row.source.id
+    const success = row.source.kind === 'synology_photos'
+      ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查。'
+      : '已请求立即扫描，Pull worker 将在下一次轮询时开始。'
+    const data = await run(
+      `source-trigger-${sourceID}`,
+      () => window.xdriveDesktop.agent.triggerSource(sourceID),
+      success,
+    )
+    if (data) await loadSources()
+  }
+
   const loadSettings = async () => {
     const result = await window.xdriveDesktop.agent.getSettings()
     if (!result.ok) {
@@ -929,6 +942,19 @@ export default function App() {
                   const state = sourceState(row)
                   const timeLabel = row.source.run_mode === 'scan' ? '上次扫描' : '上次成功'
                   const timeValue = row.source.run_mode === 'scan' ? row.source.last_run_at : row.source.last_success_at
+                  const running = row.latestRun?.status === 'running'
+                  const credentialReady = row.source.kind !== 'yike_photos' || row.credential?.configured === true
+                  const triggerReady = row.source.status === 'active' &&
+                    credentialReady &&
+                    !running &&
+                    !row.source.run_requested_at
+                  const triggerTitle = row.source.run_requested_at ? '已提交扫描请求' :
+                    row.source.kind === 'yike_photos' && !row.credential?.configured ? '请先配置 Cookie' :
+                    row.source.status !== 'active' ? '来源已暂停' :
+                    running ? '来源正在运行' :
+                    row.source.kind === 'synology_photos'
+                      ? '提交请求，由群晖 source-agent 下一次任务检查执行'
+                      : '立即请求 Pull worker 扫描此来源'
                   return (
                     <article className="source-card" key={row.source.id}>
                       <div className="source-card-header">
@@ -957,6 +983,19 @@ export default function App() {
                           onClick={() => setSelectedSourceID((current) => current === row.source.id ? null : row.source.id)}
                         >
                           {selectedSourceID === row.source.id ? '收起' : '查看'}
+                        </button>
+                        <button
+                          className="secondary"
+                          type="button"
+                          title={triggerTitle}
+                          disabled={!!busy || !triggerReady}
+                          onClick={() => void triggerSourceNow(row)}
+                        >
+                          {row.source.run_requested_at
+                            ? '已请求'
+                            : busy === `source-trigger-${row.source.id}`
+                              ? '正在请求…'
+                              : '立即扫描'}
                         </button>
                       </div>
                       {selectedSourceID === row.source.id && (
