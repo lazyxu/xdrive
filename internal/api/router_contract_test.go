@@ -55,6 +55,13 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/files/:id/shares", suite: "shares"},
 		{method: "GET", path: "/api/v1/files/:id/shares", suite: "shares"},
 		{method: "DELETE", path: "/api/v1/shares/:id", suite: "shares"},
+		{method: "GET", path: "/api/v1/sources", suite: "sources"},
+		{method: "POST", path: "/api/v1/sources", suite: "sources"},
+		{method: "GET", path: "/api/v1/sources/:id", suite: "sources"},
+		{method: "PATCH", path: "/api/v1/sources/:id", suite: "sources"},
+		{method: "DELETE", path: "/api/v1/sources/:id", suite: "sources"},
+		{method: "GET", path: "/api/v1/sources/:id/runs", suite: "sources"},
+		{method: "GET", path: "/api/v1/sources/:id/runs/:runID", suite: "sources"},
 		{method: "GET", path: "/api/v1/admin/users", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/audit", suite: "audit"},
 		{method: "GET", path: "/api/v1/admin/storage", suite: "storage-intelligence"},
@@ -102,8 +109,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 	if len(missing) != 0 || len(unexpected) != 0 {
 		t.Fatalf("API coverage manifest drift: missing registered routes=%v unexpected registered routes=%v", missing, unexpected)
 	}
-	if len(manifest) != 45 {
-		t.Fatalf("coverage manifest has %d endpoints, want 45", len(manifest))
+	if len(manifest) != 52 {
+		t.Fatalf("coverage manifest has %d endpoints, want 52", len(manifest))
 	}
 }
 
@@ -120,7 +127,7 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		"GET /api/v1/public/share":           {},
 		"POST /api/v1/public/share/download": {},
 	}
-	replacer := strings.NewReplacer(":versionID", "1", ":index", "0", ":id", "1")
+	replacer := strings.NewReplacer(":versionID", "1", ":runID", "run-1", ":index", "0", ":id", "1")
 	router := (&Server{}).Router()
 
 	for _, route := range router.Routes() {

@@ -69,6 +69,14 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/files/:id/shares", s.listFileShares)
 	authed.DELETE("/shares/:id", s.revokeShare)
 
+	authed.GET("/sources", s.listSources)
+	authed.POST("/sources", s.createSource)
+	authed.GET("/sources/:id", s.getSource)
+	authed.PATCH("/sources/:id", s.updateSource)
+	authed.DELETE("/sources/:id", s.deleteSource)
+	authed.GET("/sources/:id/runs", s.listSourceRuns)
+	authed.GET("/sources/:id/runs/:runID", s.getSourceRun)
+
 	admin := authed.Group("/admin")
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)

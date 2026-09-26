@@ -137,8 +137,15 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Create(&root).Error; err != nil {
 		t.Fatal(err)
 	}
+	target := meta.Node{
+		ParentID: &root.ID, Name: "imports", Type: meta.NodeTypeDir,
+		OwnerID: user.ID, Revision: 1,
+	}
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatal(err)
+	}
 	node := meta.Node{
-		ParentID: &root.ID, Name: "photo.jpg", Type: meta.NodeTypeFile,
+		ParentID: &target.ID, Name: "photo.jpg", Type: meta.NodeTypeFile,
 		OwnerID: user.ID, Revision: 1,
 	}
 	if err := db.Create(&node).Error; err != nil {
@@ -148,7 +155,8 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	source := meta.Source{
 		OwnerID: user.ID, Name: "Family NAS", Kind: "test_connector",
 		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
-		Status: meta.SourceStatusActive, Revision: 1,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive, Revision: 1,
+		TargetNodeID: &target.ID, IgnoreRules: "@eaDir/\n*.tmp\n",
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
@@ -163,10 +171,11 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	}
 
 	now := time.Now().UTC()
+	runID := uuid.NewString()
 	item := meta.SourceItem{
 		SourceID: source.ID, ExternalID: "asset-123", NodeID: &node.ID,
-		Kind: meta.SourceItemKindFile, Path: "/photos/photo.jpg", Size: 123,
-		State: meta.SourceItemStateSynced, LastSeenAt: now, LastSyncedAt: &now,
+		Kind: meta.SourceItemKindFile, Path: "photos/photo.jpg", Size: 123,
+		State: meta.SourceItemStateSynced, LastSeenRunID: runID, LastSeenAt: now, LastSyncedAt: &now,
 	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
@@ -179,8 +188,9 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	}
 
 	run := meta.SyncRun{
-		ID: uuid.NewString(), SourceID: source.ID,
+		ID: runID, SourceID: source.ID, Mode: meta.SourceRunModeScan,
 		Trigger: meta.SyncRunTriggerScheduled, Status: meta.SyncRunStatusRunning,
+		ScannedItems: 1, ScannedBytes: 123, PlannedTransferItems: 1, PlannedTransferBytes: 123,
 		StartedAt: now,
 	}
 	if err := db.Create(&run).Error; err != nil {
@@ -196,6 +206,20 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	}
 	if detached.NodeID != nil {
 		t.Fatalf("source item node mapping survived node deletion: %v", *detached.NodeID)
+	}
+	if detached.LastSeenRunID != run.ID {
+		t.Fatalf("source item run identity=%q want=%q", detached.LastSeenRunID, run.ID)
+	}
+
+	if err := db.Delete(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+	var detachedSource meta.Source
+	if err := db.First(&detachedSource, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if detachedSource.TargetNodeID != nil {
+		t.Fatalf("source target mapping survived target deletion: %v", *detachedSource.TargetNodeID)
 	}
 
 	if err := db.Delete(&source).Error; err != nil {
