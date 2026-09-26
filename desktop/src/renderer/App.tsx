@@ -84,6 +84,21 @@ function sourceMode(source: AgentSource) {
   return `${source.direction === 'push' ? 'Push' : 'Pull'} · ${source.run_mode === 'scan' ? '仅扫描' : '同步'}`
 }
 
+function sourceKind(kind: string) {
+  if (kind === 'synology_photos') return '群晖 Photos'
+  if (kind === 'yike_photos') return '一刻相册'
+  return kind
+}
+
+function sourceRunStatus(status: AgentSourceRun['status']) {
+  if (status === 'running') return '运行中'
+  if (status === 'completed') return '已完成'
+  if (status === 'partial') return '部分完成'
+  if (status === 'failed') return '失败'
+  if (status === 'cancelled') return '已取消'
+  return status
+}
+
 function sourceState(row: SourceRow) {
   if (row.source.status === 'paused') return { tone: 'waiting', label: '已暂停' }
   if (row.latestRun?.status === 'running') return { tone: 'ready', label: '运行中' }
@@ -120,6 +135,7 @@ export default function App() {
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [sources, setSources] = useState<SourceRow[]>([])
+  const [selectedSourceID, setSelectedSourceID] = useState<number | null>(null)
   const [cloudRoot, setCloudRoot] = useState<AgentCloudNode | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -192,6 +208,7 @@ export default function App() {
       setConflicts([])
       setDiagnostics(null)
       setSources([])
+      setSelectedSourceID(null)
       setStorageTree(null)
       setCacheStats(null)
       setCloudRoot(null)
@@ -933,6 +950,56 @@ export default function App() {
                         </span>
                       </div>
                       {row.source.last_error && <div className="source-error">{row.source.last_error}</div>}
+                      <div className="source-card-actions">
+                        <button
+                          className="secondary"
+                          type="button"
+                          onClick={() => setSelectedSourceID((current) => current === row.source.id ? null : row.source.id)}
+                        >
+                          {selectedSourceID === row.source.id ? '收起' : '查看'}
+                        </button>
+                      </div>
+                      {selectedSourceID === row.source.id && (
+                        <div className="source-detail">
+                          <div className="source-detail-grid">
+                            <div><span>来源类型</span><strong>{sourceKind(row.source.kind)}</strong></div>
+                            <div><span>工作方式</span><strong>{sourceMode(row.source)}</strong></div>
+                            <div><span>状态</span><strong>{state.label}</strong></div>
+                            <div><span>目标节点</span><strong>{row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}</strong></div>
+                            <div><span>上次运行</span><strong>{formatSourceTime(row.source.last_run_at)}</strong></div>
+                            <div><span>上次成功</span><strong>{formatSourceTime(row.source.last_success_at)}</strong></div>
+                            {row.source.kind === 'yike_photos' && (
+                              <div><span>Cookie</span><strong>{row.credential?.configured ? '已配置' : '未配置'}</strong></div>
+                            )}
+                            <div><span>配置修订号</span><strong>{row.source.revision}</strong></div>
+                          </div>
+                          {row.source.ignore_rules && (
+                            <div className="source-ignore">
+                              <span>忽略规则</span>
+                              <pre>{row.source.ignore_rules}</pre>
+                            </div>
+                          )}
+                          <div className="source-run-detail">
+                            <div className="source-run-heading">
+                              <strong>最近一次运行</strong>
+                              <span>{row.latestRun ? sourceRunStatus(row.latestRun.status) : '尚无运行记录'}</span>
+                            </div>
+                            {row.latestRun && (
+                              <div className="source-run-grid">
+                                <div><span>开始时间</span><strong>{formatSourceTime(row.latestRun.started_at)}</strong></div>
+                                <div><span>扫描</span><strong>{row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.scanned_bytes)}</strong></div>
+                                <div><span>计划传输</span><strong>{row.latestRun.planned_transfer_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.planned_transfer_bytes)}</strong></div>
+                                <div><span>实际传输</span><strong>{row.latestRun.transferred_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.transferred_bytes)}</strong></div>
+                                <div><span>新增</span><strong>{row.latestRun.new_items.toLocaleString('zh-CN')} 项</strong></div>
+                                <div><span>变更</span><strong>{row.latestRun.changed_items.toLocaleString('zh-CN')} 项</strong></div>
+                                <div><span>移动</span><strong>{row.latestRun.moved_items.toLocaleString('zh-CN')} 项</strong></div>
+                                <div><span>缺失</span><strong>{row.latestRun.missing_items.toLocaleString('zh-CN')} 项</strong></div>
+                                <div><span>失败</span><strong>{row.latestRun.failed_items.toLocaleString('zh-CN')} 项</strong></div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </article>
                   )
                 })}
