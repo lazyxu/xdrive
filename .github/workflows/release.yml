@@ -62,57 +62,69 @@ jobs:
       contents: read
       actions: read
       packages: write
-    strategy:
-      matrix:
-        include:
-          - image: xdrive-server
-            artifact: xdrive-server-image
-            artifact_dir: server-image
-            local_image: xdrive/server:test
-          - image: xdrive-web
-            artifact: xdrive-web-image
-            artifact_dir: web-image
-            local_image: xdrive/web:test
-          - image: xdrive-caddy
-            artifact: xdrive-caddy-image
-            artifact_dir: caddy-image
-            local_image: xdrive/caddy:test
     steps:
       - uses: actions/checkout@v4
-      - name: Download exact image tested by CI
+      - name: Download exact images tested by CI
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact_dir }}
-      - name: Load and verify exact image tested by CI
+          pattern: xdrive-*-image
+          path: dist
+      - name: Load and verify exact images tested by CI
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/ci/import-docker-image.sh "dist/${{ matrix.artifact_dir }}" "${{ matrix.local_image }}"
           source scripts/ci/client-artifact-version.sh
-          image_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "${{ matrix.local_image }}")"
-          [[ "$image_version" == "$XDRIVE_RELEASE_VERSION" ]] || {
-            echo "exact image version label mismatch: got $image_version want $XDRIVE_RELEASE_VERSION" >&2
-            exit 1
+
+          load_exact() {
+            local artifact="$1"
+            local image="$2"
+            bash scripts/ci/import-docker-image.sh "dist/$artifact" "$image"
+            local image_version
+            image_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")"
+            [[ "$image_version" == "$XDRIVE_RELEASE_VERSION" ]] || {
+              echo "exact image version label mismatch: got $image_version want $XDRIVE_RELEASE_VERSION for $image" >&2
+              exit 1
+            }
           }
+
+          load_exact xdrive-server-image xdrive/server:test
+          load_exact xdrive-web-image xdrive/web:test
+          load_exact xdrive-caddy-image xdrive/caddy:test
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push exact tested image
+      - name: Push exact tested images in parallel
         shell: bash
         run: |
           set -euo pipefail
-          image="ghcr.io/$GITHUB_REPOSITORY_OWNER/${{ matrix.image }}"
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            remote="$image:$GITHUB_REF_NAME"
+            remote_tag="$GITHUB_REF_NAME"
           else
-            remote="$image:sha-${GITHUB_SHA::12}"
+            remote_tag="sha-${GITHUB_SHA::12}"
           fi
-          docker tag "${{ matrix.local_image }}" "$remote"
-          docker push "$remote"
+
+          names=(xdrive-server xdrive-web xdrive-caddy)
+          locals=(xdrive/server:test xdrive/web:test xdrive/caddy:test)
+          pids=()
+
+          for i in "${!names[@]}"; do
+            remote="ghcr.io/$GITHUB_REPOSITORY_OWNER/${names[$i]}:$remote_tag"
+            docker tag "${locals[$i]}" "$remote"
+            docker push "$remote" &
+            pids+=("$!")
+          done
+
+          status=0
+          for i in "${!pids[@]}"; do
+            if ! wait "${pids[$i]}"; then
+              echo "failed to push ${names[$i]}:$remote_tag" >&2
+              status=1
+            fi
+          done
+          exit "$status"
 
   server-deploy:
     if: inputs.publish
