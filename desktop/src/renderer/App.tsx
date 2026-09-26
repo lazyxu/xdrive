@@ -142,6 +142,15 @@ export default function App() {
   const [sourceEditStatus, setSourceEditStatus] = useState<'active' | 'paused'>('active')
   const [sourceEditIgnoreRules, setSourceEditIgnoreRules] = useState('')
   const [sourceEditCookie, setSourceEditCookie] = useState('')
+  const [sourceCreateOpen, setSourceCreateOpen] = useState(false)
+  const [sourceCreateKind, setSourceCreateKind] = useState<'synology_photos' | 'yike_photos'>('synology_photos')
+  const [sourceCreateName, setSourceCreateName] = useState('群晖 Photos')
+  const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>('scan')
+  const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState('@eaDir/\n\\#recycle/\n')
+  const [sourceCreateCookie, setSourceCreateCookie] = useState('')
+  const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
+  const [sourceTargetDirectories, setSourceTargetDirectories] = useState<AgentCloudNode[]>([])
+  const [sourceTargetLoading, setSourceTargetLoading] = useState(false)
   const [cloudRoot, setCloudRoot] = useState<AgentCloudNode | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -217,6 +226,10 @@ export default function App() {
       setSelectedSourceID(null)
       setEditingSourceID(null)
       setSourceEditCookie('')
+      setSourceCreateOpen(false)
+      setSourceCreateCookie('')
+      setSourceTargetCrumbs([])
+      setSourceTargetDirectories([])
       setStorageTree(null)
       setCacheStats(null)
       setCloudRoot(null)
@@ -400,6 +413,114 @@ export default function App() {
       success,
     )
     if (data) await loadSources()
+  }
+
+  const loadSourceTargetDirectory = async (nodeID: number, crumbs: AgentCloudCrumb[]) => {
+    setSourceTargetLoading(true)
+    setError('')
+    try {
+      const children = await window.xdriveDesktop.agent.cloudChildren(nodeID)
+      if (!children.ok) {
+        setError(children.error.message)
+        return false
+      }
+      setSourceTargetCrumbs(crumbs)
+      setSourceTargetDirectories(children.data.filter((item) => item.type === 'dir'))
+      return true
+    } finally {
+      setSourceTargetLoading(false)
+    }
+  }
+
+  const openSourceCreate = async () => {
+    setSourceCreateKind('synology_photos')
+    setSourceCreateName('群晖 Photos')
+    setSourceCreateRunMode('scan')
+    setSourceCreateIgnoreRules('@eaDir/\n\\#recycle/\n')
+    setSourceCreateCookie('')
+    setSourceCreateOpen(true)
+    setSourceTargetLoading(true)
+    setError('')
+    try {
+      const root = await window.xdriveDesktop.agent.cloudRoot()
+      if (!root.ok) {
+        setError(root.error.message)
+        return
+      }
+      await loadSourceTargetDirectory(root.data.id, [{ id: root.data.id, name: '我的文件' }])
+    } finally {
+      setSourceTargetLoading(false)
+    }
+  }
+
+  const changeSourceCreateKind = (kind: 'synology_photos' | 'yike_photos') => {
+    setSourceCreateKind(kind)
+    if (kind === 'synology_photos') {
+      setSourceCreateName('群晖 Photos')
+      setSourceCreateIgnoreRules('@eaDir/\n\\#recycle/\n')
+      setSourceCreateCookie('')
+    } else {
+      setSourceCreateName('一刻相册')
+      setSourceCreateIgnoreRules('')
+    }
+  }
+
+  const createExternalSource = async (event: FormEvent) => {
+    event.preventDefault()
+    const name = sourceCreateName.trim()
+    const target = sourceTargetCrumbs.at(-1)
+    if (!name) {
+      setError('来源名称不能为空。')
+      return
+    }
+    if (!target) {
+      setError('请选择目标文件夹。')
+      return
+    }
+    const cookie = sourceCreateCookie.trim()
+    if (sourceCreateKind === 'yike_photos' && !cookie) {
+      setError('请填写一刻相册 Cookie。')
+      return
+    }
+
+    setBusy('source-create')
+    setError('')
+    setNotice('')
+    try {
+      const created = await window.xdriveDesktop.agent.createSource({
+        name,
+        kind: sourceCreateKind,
+        direction: sourceCreateKind === 'synology_photos' ? 'push' : 'pull',
+        sync_mode: 'backup',
+        run_mode: sourceCreateRunMode,
+        target_node_id: target.id,
+        ignore_rules: sourceCreateIgnoreRules,
+      })
+      if (!created.ok) {
+        setError(created.error.message)
+        return
+      }
+
+      if (sourceCreateKind === 'yike_photos') {
+        const credential = await window.xdriveDesktop.agent.setSourceCredential(created.data.id, cookie)
+        if (!credential.ok) {
+          setSourceCreateOpen(false)
+          setSourceCreateCookie('')
+          setError(`来源已创建，但 Cookie 保存失败：${credential.error.message}。请在该来源的“设置”中重新配置 Cookie。`)
+          await loadSources()
+          return
+        }
+      }
+
+      setSourceCreateOpen(false)
+      setSourceCreateCookie('')
+      setNotice(sourceCreateKind === 'synology_photos'
+        ? '群晖来源已添加。下一步请在 NAS 上配置 xdrive-source-agent，并使用相同来源名称复用该 Source。'
+        : '一刻相册来源已添加，Cookie 已安全保存。')
+      await loadSources()
+    } finally {
+      setBusy('')
+    }
   }
 
   const openSourceSettings = (row: SourceRow) => {
@@ -1001,10 +1122,121 @@ export default function App() {
                 <h2>管理照片与媒体来源</h2>
                 <p className="source-note">来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的 Cookie 明文。</p>
               </div>
-              <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadSources()}>
-                {busy === 'sources' ? '正在刷新…' : '刷新'}
-              </button>
+              <div className="source-heading-actions">
+                <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadSources()}>
+                  {busy === 'sources' ? '正在刷新…' : '刷新'}
+                </button>
+                <button className="primary" type="button" disabled={!!busy} onClick={() => void openSourceCreate()}>
+                  + 添加来源
+                </button>
+              </div>
             </div>
+
+            {sourceCreateOpen && (
+              <form className="source-create" onSubmit={(event) => void createExternalSource(event)}>
+                <div className="source-create-heading">
+                  <div>
+                    <strong>添加外部来源</strong>
+                    <span>选择来源类型、运行方式与 xDrive 目标文件夹。</span>
+                  </div>
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>关闭</button>
+                </div>
+                <div className="source-create-grid">
+                  <label>
+                    <span>来源类型</span>
+                    <select value={sourceCreateKind} onChange={(event) => changeSourceCreateKind(event.target.value as 'synology_photos' | 'yike_photos')}>
+                      <option value="synology_photos">群晖 Photos · Push</option>
+                      <option value="yike_photos">一刻相册 · Pull</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>名称</span>
+                    <input value={sourceCreateName} onChange={(event) => setSourceCreateName(event.target.value)} maxLength={128} required />
+                  </label>
+                  <label>
+                    <span>运行模式</span>
+                    <select value={sourceCreateRunMode} onChange={(event) => setSourceCreateRunMode(event.target.value as 'scan' | 'sync')}>
+                      <option value="scan">仅扫描</option>
+                      <option value="sync">同步</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="source-target">
+                  <div className="source-target-heading">
+                    <div>
+                      <strong>目标文件夹</strong>
+                      <span>当前选择：{sourceTargetCrumbs.map((crumb) => crumb.name).join(' / ') || '正在加载…'}</span>
+                    </div>
+                    {sourceTargetLoading && <span>正在加载…</span>}
+                  </div>
+                  <div className="source-target-crumbs">
+                    {sourceTargetCrumbs.map((crumb, index) => (
+                      <button
+                        key={crumb.id}
+                        type="button"
+                        disabled={sourceTargetLoading || index === sourceTargetCrumbs.length - 1}
+                        onClick={() => void loadSourceTargetDirectory(crumb.id, sourceTargetCrumbs.slice(0, index + 1))}
+                      >
+                        {crumb.name}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="source-target-list">
+                    {sourceTargetDirectories.length === 0 ? (
+                      <span className="source-target-empty">当前目录下没有子文件夹，可直接使用当前目录。</span>
+                    ) : sourceTargetDirectories.map((directory) => (
+                      <button
+                        className="source-target-folder"
+                        key={directory.id}
+                        type="button"
+                        disabled={sourceTargetLoading}
+                        onClick={() => void loadSourceTargetDirectory(directory.id, [...sourceTargetCrumbs, { id: directory.id, name: directory.name }])}
+                      >
+                        <strong>{directory.name}</strong>
+                        <span>进入文件夹 ›</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="source-create-wide">
+                  <span>忽略规则</span>
+                  <textarea
+                    value={sourceCreateIgnoreRules}
+                    onChange={(event) => setSourceCreateIgnoreRules(event.target.value)}
+                    rows={5}
+                    spellCheck={false}
+                    placeholder="每行一条 gitignore 风格规则"
+                  />
+                </label>
+                {sourceCreateKind === 'yike_photos' && (
+                  <label className="source-create-wide">
+                    <span>一刻相册 Cookie</span>
+                    <input
+                      type="password"
+                      value={sourceCreateCookie}
+                      onChange={(event) => setSourceCreateCookie(event.target.value)}
+                      autoComplete="off"
+                      placeholder="粘贴已登录的一刻相册 Web Cookie"
+                      required
+                    />
+                    <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
+                  </label>
+                )}
+                {sourceCreateKind === 'synology_photos' && (
+                  <div className="alert warning source-create-note">
+                    创建 Source 后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
+                  </div>
+                )}
+                <div className="source-create-actions">
+                  <button className="primary" type="submit" disabled={!!busy || sourceTargetLoading}>
+                    {busy === 'source-create' ? '正在添加…' : '添加来源'}
+                  </button>
+                  <button className="secondary" type="button" disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</button>
+                </div>
+              </form>
+            )}
 
             {sources.length === 0 && busy !== 'sources' ? (
               <div className="empty-state">尚未添加外部来源。</div>
