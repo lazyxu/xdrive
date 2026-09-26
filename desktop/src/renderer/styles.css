@@ -320,7 +320,7 @@ dd { margin: 7px 0 0; color: #24324a; font-weight: 700; font-size: 14px; overflo
 }
 
 
-.source-card-actions { margin-top: 13px; display: flex; justify-content: flex-end; }
+.source-card-actions { margin-top: 13px; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .source-card-actions button { padding: 6px 10px; font-size: 11px; }
 .source-detail { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e9edf3; display: grid; gap: 14px; }
 .source-detail-grid, .source-run-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
@@ -342,4 +342,29 @@ dd { margin: 7px 0 0; color: #24324a; font-weight: 700; font-size: 14px; overflo
 @media (max-width: 640px) {
   .source-detail-grid, .source-run-grid { grid-template-columns: 1fr; }
   .source-card-actions { justify-content: flex-start; }
+}
+
+
+.source-settings { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e9edf3; display: grid; gap: 13px; }
+.source-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.source-settings-heading > div { min-width: 0; display: grid; gap: 4px; }
+.source-settings-heading strong { color: #2c3951; font-size: 13px; }
+.source-settings-heading span { color: #8792a4; font-size: 10px; }
+.source-settings-grid { display: grid; grid-template-columns: minmax(0,1.5fr) repeat(2,minmax(130px,.75fr)); gap: 10px; }
+.source-settings label { min-width: 0; display: grid; gap: 6px; color: #40506a; font-size: 11px; font-weight: 700; }
+.source-settings input,
+.source-settings select,
+.source-settings textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #cfd8e6; border-radius: 9px; padding: 9px 10px; background: white; color: #172033; font: inherit; outline: none; }
+.source-settings textarea { resize: vertical; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; line-height: 1.5; }
+.source-settings input:focus,
+.source-settings select:focus,
+.source-settings textarea:focus { border-color: #6f94eb; box-shadow: 0 0 0 3px rgba(91,140,255,.13); }
+.source-settings-wide { display: grid !important; }
+.source-settings-wide small { color: #8a96a7; font-size: 10px; font-weight: 500; line-height: 1.45; }
+.source-settings-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.source-settings-actions button { padding: 7px 11px; font-size: 11px; }
+
+@media (max-width: 760px) {
+  .source-settings-grid { grid-template-columns: 1fr; }
+  .source-settings-actions { justify-content: flex-start; }
 }

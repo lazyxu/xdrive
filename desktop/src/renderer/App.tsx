@@ -136,6 +136,12 @@ export default function App() {
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [sources, setSources] = useState<SourceRow[]>([])
   const [selectedSourceID, setSelectedSourceID] = useState<number | null>(null)
+  const [editingSourceID, setEditingSourceID] = useState<number | null>(null)
+  const [sourceEditName, setSourceEditName] = useState('')
+  const [sourceEditRunMode, setSourceEditRunMode] = useState<'scan' | 'sync'>('scan')
+  const [sourceEditStatus, setSourceEditStatus] = useState<'active' | 'paused'>('active')
+  const [sourceEditIgnoreRules, setSourceEditIgnoreRules] = useState('')
+  const [sourceEditCookie, setSourceEditCookie] = useState('')
   const [cloudRoot, setCloudRoot] = useState<AgentCloudNode | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -209,6 +215,8 @@ export default function App() {
       setDiagnostics(null)
       setSources([])
       setSelectedSourceID(null)
+      setEditingSourceID(null)
+      setSourceEditCookie('')
       setStorageTree(null)
       setCacheStats(null)
       setCloudRoot(null)
@@ -392,6 +400,70 @@ export default function App() {
       success,
     )
     if (data) await loadSources()
+  }
+
+  const openSourceSettings = (row: SourceRow) => {
+    setEditingSourceID(row.source.id)
+    setSourceEditName(row.source.name)
+    setSourceEditRunMode(row.source.run_mode)
+    setSourceEditStatus(row.source.status)
+    setSourceEditIgnoreRules(row.source.ignore_rules || '')
+    setSourceEditCookie('')
+  }
+
+  const saveSourceSettings = async (event: FormEvent, row: SourceRow) => {
+    event.preventDefault()
+    const name = sourceEditName.trim()
+    if (!name) {
+      setError('来源名称不能为空。')
+      return
+    }
+    const busyKey = `source-settings-${row.source.id}`
+    setBusy(busyKey)
+    setError('')
+    setNotice('')
+    try {
+      const updated = await window.xdriveDesktop.agent.updateSource(row.source.id, row.source.revision, {
+        name,
+        run_mode: sourceEditRunMode,
+        status: sourceEditStatus,
+        ignore_rules: sourceEditIgnoreRules,
+      })
+      if (!updated.ok) {
+        setError(updated.error.message)
+        return
+      }
+
+      const cookie = sourceEditCookie.trim()
+      if (row.source.kind === 'yike_photos' && cookie) {
+        const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, cookie)
+        if (!credential.ok) {
+          setError(`来源设置已保存，但 Cookie 更新失败：${credential.error.message}`)
+          await loadSources()
+          return
+        }
+      }
+
+      setEditingSourceID(null)
+      setSourceEditCookie('')
+      setNotice('来源设置已保存。')
+      await loadSources()
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const clearSourceCookie = async (row: SourceRow) => {
+    if (!window.confirm(`确定清除“${row.source.name}”保存的 Cookie？清除后 Pull 扫描将暂停，直到重新配置 Cookie。`)) return
+    const data = await run(
+      `source-cookie-delete-${row.source.id}`,
+      () => window.xdriveDesktop.agent.deleteSourceCredential(row.source.id),
+      'Cookie 已清除。',
+    )
+    if (data) {
+      setSourceEditCookie('')
+      await loadSources()
+    }
   }
 
   const loadSettings = async () => {
@@ -997,7 +1069,79 @@ export default function App() {
                               ? '正在请求…'
                               : '立即扫描'}
                         </button>
+                        <button
+                          className="secondary"
+                          type="button"
+                          disabled={!!busy}
+                          onClick={() => editingSourceID === row.source.id
+                            ? setEditingSourceID(null)
+                            : openSourceSettings(row)}
+                        >
+                          {editingSourceID === row.source.id ? '取消设置' : '设置'}
+                        </button>
                       </div>
+                      {editingSourceID === row.source.id && (
+                        <form className="source-settings" onSubmit={(event) => void saveSourceSettings(event, row)}>
+                          <div className="source-settings-heading">
+                            <div>
+                              <strong>来源设置</strong>
+                              <span>目标节点保持不变：{row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}</span>
+                            </div>
+                          </div>
+                          <div className="source-settings-grid">
+                            <label>
+                              <span>名称</span>
+                              <input value={sourceEditName} onChange={(event) => setSourceEditName(event.target.value)} maxLength={128} required />
+                            </label>
+                            <label>
+                              <span>运行模式</span>
+                              <select value={sourceEditRunMode} onChange={(event) => setSourceEditRunMode(event.target.value as 'scan' | 'sync')}>
+                                <option value="scan">仅扫描</option>
+                                <option value="sync">同步</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>状态</span>
+                              <select value={sourceEditStatus} onChange={(event) => setSourceEditStatus(event.target.value as 'active' | 'paused')}>
+                                <option value="active">启用</option>
+                                <option value="paused">暂停</option>
+                              </select>
+                            </label>
+                          </div>
+                          <label className="source-settings-wide">
+                            <span>忽略规则</span>
+                            <textarea
+                              value={sourceEditIgnoreRules}
+                              onChange={(event) => setSourceEditIgnoreRules(event.target.value)}
+                              rows={5}
+                              spellCheck={false}
+                              placeholder="每行一条 gitignore 风格规则"
+                            />
+                          </label>
+                          {row.source.kind === 'yike_photos' && (
+                            <label className="source-settings-wide">
+                              <span>一刻相册 Cookie</span>
+                              <input
+                                type="password"
+                                value={sourceEditCookie}
+                                onChange={(event) => setSourceEditCookie(event.target.value)}
+                                autoComplete="off"
+                                placeholder={row.credential?.configured ? '留空则保持当前 Cookie' : '当前未配置，请粘贴 Cookie'}
+                              />
+                              <small>已保存的 Cookie 不会回读到桌面渲染进程。</small>
+                            </label>
+                          )}
+                          <div className="source-settings-actions">
+                            <button className="primary" type="submit" disabled={!!busy}>
+                              {busy === `source-settings-${row.source.id}` ? '正在保存…' : '保存设置'}
+                            </button>
+                            <button className="secondary" type="button" disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</button>
+                            {row.source.kind === 'yike_photos' && row.credential?.configured && (
+                              <button className="danger" type="button" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>清除 Cookie</button>
+                            )}
+                          </div>
+                        </form>
+                      )}
                       {selectedSourceID === row.source.id && (
                         <div className="source-detail">
                           <div className="source-detail-grid">
