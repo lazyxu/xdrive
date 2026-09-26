@@ -13,6 +13,7 @@ This phase is intentionally **scan-only**:
 - A complete scan may mark previously managed source items as `missing`.
 - Source-side deletion never deletes or trashes xDrive content.
 - File upload/update execution is not enabled yet. A Source configured with `run_mode=sync` is rejected safely and the run is recorded as failed.
+- The server-side execution commit/ack protocol is already present: future sync executors must acknowledge the final node/revision/path only after each create/update/move succeeds. Unacknowledged pending work prevents a sync run from being recorded as successful.
 
 ## Install/build
 

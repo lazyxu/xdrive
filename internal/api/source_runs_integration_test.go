@@ -85,7 +85,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 			t.Fatal(err)
 		}
 		item := meta.SourceItem{
-			SourceID: source.ID, ExternalID: externalID, NodeID: &n.ID,
+			SourceID: source.ID, ExternalID: externalID, NodeID: &n.ID, NodeRevision: n.Revision,
 			Kind: meta.SourceItemKindFile, Path: path, Size: size, ModifiedAt: &base,
 			State: meta.SourceItemStateSynced, LastSeenAt: base, LastSyncedAt: &base,
 		}
@@ -255,5 +255,260 @@ func assertSourceItemState(t *testing.T, db *gorm.DB, id uint64, state, path str
 	if item.State != state || item.Path != path || item.Size != size {
 		t.Fatalf("source item %d = state=%q path=%q size=%d; want %q %q %d",
 			id, item.State, item.Path, item.Size, state, path, size)
+	}
+}
+
+func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(
+		&meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
+		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name ON xd_sources(owner_id, lower(name))`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	router := (&Server{
+		DB: db, Auth: auth.New("source-commit-test-secret", time.Hour),
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost",
+	}).Router()
+	token := createTestUser(t, db, router, "source-commit-user", "password-a")
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
+	target := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID),
+		token, strings.NewReader(`{"name":"Synology"}`), http.StatusCreated)
+
+	createBody := fmt.Sprintf(`{
+		"name":"Synology Photos",
+		"kind":"synology_photos",
+		"direction":"push",
+		"sync_mode":"backup",
+		"run_mode":"sync",
+		"target_node_id":%d
+	}`, target.ID)
+	createdRes := request(t, router, http.MethodPost, "/api/v1/sources", token, strings.NewReader(createBody), http.StatusCreated)
+	var source sourceDTO
+	if err := json.Unmarshal(createdRes.Body.Bytes(), &source); err != nil {
+		t.Fatal(err)
+	}
+
+	var owner meta.User
+	if err := db.Where("username = ?", "source-commit-user").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 9, 26, 3, 0, 0, 0, time.UTC)
+	const sourceHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const changedHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	photoNode := meta.Node{
+		ParentID: &target.ID, Name: "photo.jpg", Type: meta.NodeTypeFile,
+		OwnerID: owner.ID, Revision: 1,
+	}
+	if err := db.Create(&photoNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.File{
+		NodeID: photoNode.ID, Size: 10, StorageKey: "test/photo", SHA256: sourceHash,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	photoItem := meta.SourceItem{
+		SourceID: source.ID, ExternalID: "photo", NodeID: &photoNode.ID, NodeRevision: 1,
+		Kind: meta.SourceItemKindFile, Path: "photo.jpg", Size: 10, ModifiedAt: &base,
+		SHA256: sourceHash, State: meta.SourceItemStateSynced,
+		LastSeenAt: base, LastSyncedAt: &base,
+	}
+	if err := db.Create(&photoItem).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate an xDrive-side edit after the previous source sync.
+	if err := db.Model(&meta.File{}).Where("node_id = ?", photoNode.ID).
+		Updates(map[string]any{"size": 11, "sha256": changedHash}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.Node{}).Where("id = ?", photoNode.ID).
+		Update("revision", 2).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	runID := uuid.NewString()
+	beginBody := fmt.Sprintf(`{"run_id":%q,"trigger":"scheduled"}`, runID)
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
+		token, strings.NewReader(beginBody), http.StatusCreated)
+
+	observeBody := fmt.Sprintf(`{"items":[
+		{"external_id":"photo","kind":"file","path":"photo.jpg","size":10,"modified_at":%q},
+		{"external_id":"newdir","kind":"directory","path":"newdir","size":0},
+		{"external_id":"leftpending","kind":"directory","path":"leftpending","size":0}
+	]}`, base.Format(time.RFC3339Nano))
+	observePath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/observe", source.ID, runID)
+	observed := request(t, router, http.MethodPost, observePath, token, strings.NewReader(observeBody), http.StatusOK)
+	var plans observeSourceRunResponse
+	if err := json.Unmarshal(observed.Body.Bytes(), &plans); err != nil {
+		t.Fatal(err)
+	}
+	assertSourcePlans(t, plans.Plans, map[string]string{
+		"photo":       "move_update",
+		"newdir":      "create",
+		"leftpending": "create",
+	})
+
+	// Simulate the executor restoring source content. Generic node/file mutation
+	// already uses revision preconditions; commit records only the final state.
+	if err := db.Model(&meta.File{}).Where("node_id = ?", photoNode.ID).
+		Updates(map[string]any{"size": 10, "sha256": sourceHash}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.Node{}).Where("id = ?", photoNode.ID).
+		Update("revision", 3).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	commitPath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/commit", source.ID, runID)
+	photoCommit := fmt.Sprintf(`{"items":[{
+		"external_id":"photo",
+		"action":"move_update",
+		"node_id":%d,
+		"node_revision":3,
+		"kind":"file",
+		"path":"photo.jpg",
+		"size":10,
+		"modified_at":%q,
+		"sha256":"%s",
+		"transferred":true,
+		"transferred_bytes":10
+	}]}`, photoNode.ID, base.Format(time.RFC3339Nano), sourceHash)
+	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(photoCommit), http.StatusNoContent)
+
+	var synced meta.SourceItem
+	if err := db.First(&synced, photoItem.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if synced.State != meta.SourceItemStateSynced || synced.NodeRevision != 3 ||
+		synced.LastSyncedRunID != runID || synced.SHA256 != sourceHash {
+		t.Fatalf("unexpected committed source item: %+v", synced)
+	}
+	var run meta.SyncRun
+	if err := db.First(&run, "id = ?", runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if run.UpdatedItems != 1 || run.TransferredItems != 1 || run.TransferredBytes != 10 {
+		t.Fatalf("unexpected execution counters: %+v", run)
+	}
+
+	// A lost commit response can be retried without double-counting.
+	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(photoCommit), http.StatusNoContent)
+	if err := db.First(&run, "id = ?", runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if run.UpdatedItems != 1 || run.TransferredItems != 1 || run.TransferredBytes != 10 {
+		t.Fatalf("idempotent commit changed counters: %+v", run)
+	}
+
+	wrongDir := meta.Node{
+		ParentID: &target.ID, Name: "wrongdir", Type: meta.NodeTypeDir,
+		OwnerID: owner.ID, Revision: 1,
+	}
+	if err := db.Create(&wrongDir).Error; err != nil {
+		t.Fatal(err)
+	}
+	wrongCommit := fmt.Sprintf(`{"items":[{
+		"external_id":"newdir",
+		"action":"create",
+		"node_id":%d,
+		"node_revision":1,
+		"kind":"directory",
+		"path":"newdir",
+		"size":0
+	}]}`, wrongDir.ID)
+	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(wrongCommit), http.StatusConflict)
+
+	if err := db.Model(&meta.Node{}).Where("id = ?", wrongDir.ID).
+		Updates(map[string]any{"name": "newdir", "revision": 2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	goodCommit := fmt.Sprintf(`{"items":[{
+		"external_id":"newdir",
+		"action":"create",
+		"node_id":%d,
+		"node_revision":2,
+		"kind":"directory",
+		"path":"newdir",
+		"size":0
+	}]}`, wrongDir.ID)
+	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(goodCommit), http.StatusNoContent)
+
+	var newDirItem meta.SourceItem
+	if err := db.Where("source_id = ? AND external_id = ?", source.ID, "newdir").First(&newDirItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	if newDirItem.NodeID == nil || *newDirItem.NodeID != wrongDir.ID ||
+		newDirItem.NodeRevision != 2 || newDirItem.State != meta.SourceItemStateSynced {
+		t.Fatalf("unexpected created source mapping: %+v", newDirItem)
+	}
+	if err := db.First(&run, "id = ?", runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if run.CreatedItems != 1 || run.UpdatedItems != 1 {
+		t.Fatalf("unexpected create/update counters: %+v", run)
+	}
+
+	// A buggy executor cannot report a successful sync while planned work remains
+	// pending. The server derives this from persisted SourceItem state.
+	finishBody := `{
+		"status":"completed",
+		"complete_inventory":true,
+		"summary":{
+			"scanned_items":3,
+			"scanned_bytes":10,
+			"new_items":2,
+			"new_bytes":0,
+			"changed_items":1,
+			"changed_bytes":10,
+			"moved_items":1,
+			"planned_transfer_items":1,
+			"planned_transfer_bytes":10,
+			"failed_items":0
+		}
+	}`
+	finishPath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", source.ID, runID)
+	finishRes := request(t, router, http.MethodPost, finishPath, token, strings.NewReader(finishBody), http.StatusOK)
+	var finished syncRunDTO
+	if err := json.Unmarshal(finishRes.Body.Bytes(), &finished); err != nil {
+		t.Fatal(err)
+	}
+	if finished.Status != meta.SyncRunStatusPartial || finished.FailedItems != 1 {
+		t.Fatalf("pending execution did not downgrade run: %+v", finished)
+	}
+
+	var latestSource meta.Source
+	if err := db.First(&latestSource, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if latestSource.LastSuccessAt != nil {
+		t.Fatalf("partial sync unexpectedly advanced last_success_at: %+v", latestSource)
 	}
 }
