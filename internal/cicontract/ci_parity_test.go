@@ -49,9 +49,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	expectedPlatforms := map[string]string{
 		"single-commit":                  "linux",
 		"desktop-tests":                  "linux",
-		"desktop-linux":                  "linux",
-		"desktop-windows":                "windows",
-		"build-client-core":              "linux",
 		"go-linux":                       "linux",
 		"go-linux-api":                   "linux",
 		"go-windows":                     "windows",
@@ -74,9 +71,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobImages(t, gitlab, map[string]string{
 		"single-commit":                  "$XDRIVE_CI_GO_IMAGE",
 		"desktop-tests":                  "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-linux":                  "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-windows":                "",
-		"build-client-core":              "$XDRIVE_CI_GO_IMAGE",
 		"go-linux":                       "$XDRIVE_CI_GO_IMAGE",
 		"go-linux-api":                   "$XDRIVE_CI_GO_IMAGE",
 		"go-windows":                     "",
@@ -99,9 +93,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/go-mod/cache/download/"},
 	)
-	assertGitLabCache(t, gitlab, "desktop-windows",
-		"xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
+	assertGitLabCache(t, gitlab, "build-windows-client",
+		"xdrive-build-windows-client-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/cache/download/", ".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -161,8 +155,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	testSourcePackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-source-agent-package.sh"))
 	testWindowsPackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-client-package.ps1"))
 	testWindowsSmokePackage := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-smoke-package.ps1"))
-	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
-		gitlabGoWindows + "\n" + gitlabPackageWindows + "\n" + gitlabTestWindowsArtifact + "\n" + gitlabTestWindowsSmoke
+	gitlabWindowsBash := gitlabGoWindows + "\n" + gitlabPackageWindows + "\n" +
+		gitlabTestWindowsArtifact + "\n" + gitlabTestWindowsSmoke
 	gitlabLinuxBash := clientCoreBuild + "\n" + gitlabGoLinux + "\n" + gitlabPackageLinux + "\n" + gitlabSourceAgent + "\n" +
 		gitlabServerValidation + "\n" + gitlabServerImage + "\n" + gitlabCaddyImage + "\n" + gitlabServerBackup + "\n" +
 		gitlabTestLinuxArtifact + "\n" + gitlabTestSourceArtifact
@@ -188,6 +182,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go vet ./...",
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
+		"bash scripts/build-client-core.sh \"$XDRIVE_RELEASE_VERSION\" release/core linux",
 		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked release/core/linux-amd64",
 		"bash scripts/ci/test-linux-client-package.sh \"$XDRIVE_RELEASE_VERSION\" release/xdrive-linux-amd64.deb",
 		"bash scripts/ci/test-source-agent-package.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
@@ -264,9 +259,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"ELECTRON_BUILDER_CACHE: \"$CI_PROJECT_DIR/.cache/electron-builder\"",
 		"extends: .electron-linux-cache",
 		"desktop-tests:",
-		"desktop-linux:",
-		"desktop-windows:",
-		"build-client-core:",
 		"build-source-agent:",
 		"build-linux-client:",
 		"build-windows-client:",
@@ -276,7 +268,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"test-windows-upgrade-artifact:",
 		"test-windows-smoke-artifact:",
 		"final-gate:",
-		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-go-linux.sh",
 		"bash scripts/ci/gitlab-package-linux-client.sh",
 		"bash scripts/ci/gitlab-source-agent.sh",
@@ -290,15 +281,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/ci/gitlab-test-source-agent-artifact.sh",
 		"bash scripts/ci/gitlab-test-windows-artifact.sh",
 		"bash scripts/ci/gitlab-test-windows-smoke-artifact.sh",
-		"desktop-runtime-linux-amd64.tar.gz",
-		"desktop/release/win-unpacked/",
-		"release/core/",
 		"release/xdrive-linux-amd64.deb",
 		"release/source-agent/xdrive-source-agent-linux-amd64",
 		"release/source-agent/xdrive-source-agent-linux-arm64",
 		"release/xDriveSetup-amd64.exe",
 		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
-		"xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH",
 		".cache/go-mod/cache/download/",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
@@ -326,29 +313,31 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"echo \"GOSUMDB=$(go env GOSUMDB)\"",
 	)
 
-	requireRaw(t, "GitHub parallel client build contract", githubRaw,
-		"desktop-linux:",
-		"desktop-windows:",
-		"build-client-core:",
-		"name: desktop-runtime-linux-amd64",
-		"name: desktop-runtime-windows-amd64",
-		"name: xdrive-client-core",
-		"needs: [desktop-linux, build-client-core]",
-		"needs: [desktop-windows, build-client-core]",
+	requireRaw(t, "GitHub direct final client build contract", githubRaw,
+		"build-linux-client:",
+		"build-windows-client:",
+		"Build Linux core and Desktop runtime in parallel",
+		"Build Windows core and Desktop runtime in parallel",
+		"bash scripts/build-client-core.sh \"$XDRIVE_RELEASE_VERSION\" release/core linux",
+		"bash scripts/build-client-core.sh \"$XDRIVE_RELEASE_VERSION\" release/core windows",
+		"name: xdrive-linux-amd64",
+		"name: xdrive-windows-amd64",
 	)
-	requireRaw(t, "GitLab parallel client build contract", gitlabRaw,
-		"desktop-linux:",
-		"desktop-windows:",
-		"build-client-core:",
-		"desktop-runtime-linux-amd64.tar.gz",
-		"desktop/release/win-unpacked/",
-		"release/core/",
+	requireRaw(t, "GitLab direct final client build contract", gitlabRaw,
+		"build-linux-client:",
+		"build-windows-client:",
+		"xdrive-build-linux-client-$CI_RUNNER_EXECUTABLE_ARCH",
+		"xdrive-build-windows-client-v2-$CI_RUNNER_EXECUTABLE_ARCH",
 	)
+	for _, intermediate := range []string{"desktop-runtime-linux-amd64", "desktop-runtime-windows-amd64", "xdrive-client-core"} {
+		if strings.Contains(githubRaw+"\n"+gitlabRaw, intermediate) {
+			t.Errorf("intermediate client artifact returned to CI graph: %s", intermediate)
+		}
+	}
 
 	requireRaw(t, "GitHub build-once contract", githubRaw,
 		"build-linux-client:",
 		"build-windows-client:",
-		"build-client-core:",
 		"build-source-agent:",
 		"test-linux-artifact:",
 		"test-windows-rollback-artifact:",
@@ -498,6 +487,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"powershell.exe",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1",
 		"npm run runtime:win",
+		"bash scripts/build-client-core.sh \"$XDRIVE_RELEASE_VERSION\" release/core windows",
 		"install innosetup --no-progress -y",
 		"test-windows-client-package.ps1",
 		"test-windows-smoke-package.ps1",

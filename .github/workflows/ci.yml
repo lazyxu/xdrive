@@ -45,145 +45,6 @@ jobs:
         working-directory: desktop
         run: npm run test:main
 
-  desktop-linux:
-    runs-on: ubuntu-latest
-    env:
-      NPM_CONFIG_CACHE: ${{ github.workspace }}/.cache/npm
-      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
-      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/npm
-            .cache/electron
-            .cache/electron-builder
-          key: desktop-linux-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
-      - name: Resolve desktop artifact version
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/ci/client-artifact-version.sh
-          echo "XDRIVE_DESKTOP_VERSION=$XDRIVE_DESKTOP_VERSION" >> "$GITHUB_ENV"
-      - name: Build Linux desktop runtime
-        working-directory: desktop
-        run: |
-          npm install --no-audit --no-fund
-          node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
-          npm run runtime:linux
-          test -x release/linux-unpacked/xdrive-desktop
-      - name: Pack Linux desktop runtime
-        shell: bash
-        run: |
-          mkdir -p dist
-          tar -C desktop/release -czf dist/desktop-runtime-linux-amd64.tar.gz linux-unpacked
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-runtime-linux-amd64
-          path: dist/desktop-runtime-linux-amd64.tar.gz
-          if-no-files-found: error
-          retention-days: 2
-
-  desktop-windows:
-    runs-on: windows-latest
-    env:
-      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
-      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
-      NPM_CONFIG_CACHE: ${{ github.workspace }}\.cache\npm
-      ELECTRON_CACHE: ${{ github.workspace }}\.cache\electron
-      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}\.cache\electron-builder
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/npm
-            .cache/electron
-            .cache/electron-builder
-          key: desktop-windows-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
-      - name: Resolve desktop artifact version
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/ci/client-artifact-version.sh
-          echo "XDRIVE_DESKTOP_VERSION=$XDRIVE_DESKTOP_VERSION" >> "$GITHUB_ENV"
-      - name: Prepare Desktop runtime signing
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
-            throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
-          }
-          if (-not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
-            if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PASSWORD)) {
-              throw "XD_WINDOWS_SIGN_PFX_PASSWORD is required when XD_WINDOWS_SIGN_PFX_B64 is set."
-            }
-            $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-signing.pfx"
-            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
-            "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "CSC_KEY_PASSWORD=$env:XD_WINDOWS_SIGN_PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } elseif ($env:GITHUB_EVENT_NAME -eq "pull_request") {
-            $password = "xdrive-ci-signing"
-            $secure = ConvertTo-SecureString $password -AsPlainText -Force
-            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
-            $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-ci-signing.pfx"
-            Export-PfxCertificate -Cert $cert -FilePath $path -Password $secure | Out-Null
-            "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "CSC_KEY_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
-      - name: Build Windows desktop runtime
-        working-directory: desktop
-        shell: pwsh
-        run: |
-          npm install --no-audit --no-fund
-          node scripts/set-version.mjs $env:XDRIVE_DESKTOP_VERSION
-          npm run runtime:win
-          if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop runtime missing" }
-      - name: Verify Windows desktop runtime signature
-        shell: pwsh
-        run: |
-          if (-not [string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
-            $sig = Get-AuthenticodeSignature ./desktop/release/win-unpacked/xdrive-desktop.exe
-            if ($null -eq $sig.SignerCertificate -or $sig.Status -eq "NotSigned") {
-              throw "desktop runtime signature missing"
-            }
-          }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-runtime-windows-amd64
-          path: desktop/release/win-unpacked
-          if-no-files-found: error
-          retention-days: 2
-
-  build-client-core:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
-      - name: Resolve client artifact version
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/ci/client-artifact-version.sh
-          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
-      - name: Build Linux and Windows client core binaries
-        run: bash scripts/build-client-core.sh "$XDRIVE_RELEASE_VERSION" release/core
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xdrive-client-core
-          path: release/core
-          if-no-files-found: error
-          retention-days: 2
-
   go-linux:
     runs-on: ubuntu-latest
     services:
@@ -284,28 +145,60 @@ jobs:
           retention-days: 14
 
   build-linux-client:
-    needs: [desktop-linux, build-client-core]
     runs-on: ubuntu-latest
+    env:
+      NPM_CONFIG_CACHE: ${{ github.workspace }}/.cache/npm
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve client artifact version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/npm
+            .cache/electron
+            .cache/electron-builder
+          key: build-linux-client-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
+      - name: Resolve client artifact versions
         shell: bash
         run: |
           set -euo pipefail
           source scripts/ci/client-artifact-version.sh
           echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v4
-        with:
-          name: desktop-runtime-linux-amd64
-          path: dist
-      - uses: actions/download-artifact@v4
-        with:
-          name: xdrive-client-core
-          path: release/core
-      - name: Restore Linux desktop runtime
+          echo "XDRIVE_DESKTOP_VERSION=$XDRIVE_DESKTOP_VERSION" >> "$GITHUB_ENV"
+      - name: Build Linux core and Desktop runtime in parallel
+        shell: bash
         run: |
-          mkdir -p desktop/release
-          tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
+          set -euo pipefail
+          bash scripts/build-client-core.sh "$XDRIVE_RELEASE_VERSION" release/core linux &
+          core_pid=$!
+          (
+            cd desktop
+            npm install --no-audit --no-fund
+            node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
+            npm run runtime:linux
+          ) &
+          desktop_pid=$!
+
+          core_status=0
+          desktop_status=0
+          wait "$core_pid" || core_status=$?
+          wait "$desktop_pid" || desktop_status=$?
+          if [[ "$core_status" != "0" ]]; then
+            echo "Linux client core build failed: $core_status" >&2
+            exit "$core_status"
+          fi
+          if [[ "$desktop_status" != "0" ]]; then
+            echo "Linux Desktop runtime build failed: $desktop_status" >&2
+            exit "$desktop_status"
+          fi
           test -x desktop/release/linux-unpacked/xdrive-desktop
       - name: Build Linux release package once
         run: bash scripts/build-linux-deb.sh "$XDRIVE_RELEASE_VERSION" release desktop/release/linux-unpacked release/core/linux-amd64
@@ -494,38 +387,37 @@ jobs:
         run: go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1
 
   build-windows-client:
-    needs: [desktop-windows, build-client-core]
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
       XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
+      NPM_CONFIG_CACHE: ${{ github.workspace }}\.cache\npm
+      ELECTRON_CACHE: ${{ github.workspace }}\.cache\electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}\.cache\electron-builder
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve client artifact version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/npm
+            .cache/electron
+            .cache/electron-builder
+          key: build-windows-client-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
+      - name: Resolve client artifact versions
         shell: bash
         run: |
           set -euo pipefail
           source scripts/ci/client-artifact-version.sh
           echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v4
-        with:
-          name: desktop-runtime-windows-amd64
-          path: desktop/release/win-unpacked
-      - uses: actions/download-artifact@v4
-        with:
-          name: xdrive-client-core
-          path: release/core
-      - name: Ensure Inno Setup
-        shell: pwsh
-        run: |
-          $candidate = @(
-            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-          ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-          if ($null -eq $candidate -and $null -eq (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
-            choco install innosetup --no-progress -y
-          }
-      - name: Prepare unified installer signing
+          echo "XDRIVE_DESKTOP_VERSION=$XDRIVE_DESKTOP_VERSION" >> "$GITHUB_ENV"
+      - name: Prepare Windows signing
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
@@ -535,17 +427,70 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PASSWORD)) {
               throw "XD_WINDOWS_SIGN_PFX_PASSWORD is required when XD_WINDOWS_SIGN_PFX_B64 is set."
             }
-            $path = Join-Path $env:RUNNER_TEMP "xdrive-unified-signing.pfx"
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-client-signing.pfx"
             [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
-            "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            $password = $env:XD_WINDOWS_SIGN_PFX_PASSWORD
           } elseif ($env:GITHUB_EVENT_NAME -eq "pull_request") {
             $password = "xdrive-ci-signing"
             $secure = ConvertTo-SecureString $password -AsPlainText -Force
             $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
-            $path = Join-Path $env:RUNNER_TEMP "xdrive-unified-ci-signing.pfx"
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-client-ci-signing.pfx"
             Export-PfxCertificate -Cert $cert -FilePath $path -Password $secure | Out-Null
+          } else {
+            $path = ""
+            $password = ""
+          }
+          if (-not [string]::IsNullOrWhiteSpace($path)) {
+            "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "CSC_KEY_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+      - name: Build Windows core and Desktop runtime in parallel
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/build-client-core.sh "$XDRIVE_RELEASE_VERSION" release/core windows &
+          core_pid=$!
+          (
+            cd desktop
+            npm install --no-audit --no-fund
+            node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
+            npm run runtime:win
+          ) &
+          desktop_pid=$!
+
+          core_status=0
+          desktop_status=0
+          wait "$core_pid" || core_status=$?
+          wait "$desktop_pid" || desktop_status=$?
+          if [[ "$core_status" != "0" ]]; then
+            echo "Windows client core build failed: $core_status" >&2
+            exit "$core_status"
+          fi
+          if [[ "$desktop_status" != "0" ]]; then
+            echo "Windows Desktop runtime build failed: $desktop_status" >&2
+            exit "$desktop_status"
+          fi
+          test -f desktop/release/win-unpacked/xdrive-desktop.exe
+      - name: Verify Windows Desktop runtime signature
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            $sig = Get-AuthenticodeSignature ./desktop/release/win-unpacked/xdrive-desktop.exe
+            if ($null -eq $sig.SignerCertificate -or $sig.Status -eq "NotSigned") {
+              throw "desktop runtime signature missing"
+            }
+          }
+      - name: Ensure Inno Setup
+        shell: pwsh
+        run: |
+          $candidate = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if ($null -eq $candidate -and $null -eq (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress -y
           }
       - name: Build unified Windows installer once
         shell: pwsh
