@@ -220,3 +220,27 @@ func (c *agentController) CloudSourceCredentialStatus(ctx context.Context, sourc
 	}
 	return cli.SourceCredentialStatus(ctx, sourceID)
 }
+
+func (c *agentController) CloudCreateSource(ctx context.Context, input client.CreateSourceInput) (client.Source, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.Source{}, err
+	}
+	return cli.CreateSource(ctx, input)
+}
+
+func (c *agentController) CloudUpdateSource(ctx context.Context, sourceID, revision uint64, input client.UpdateSourceInput) (client.Source, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.Source{}, err
+	}
+	return cli.UpdateSource(ctx, sourceID, revision, input)
+}
+
+func (c *agentController) CloudTriggerSource(ctx context.Context, sourceID uint64) (client.Source, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.Source{}, err
+	}
+	return cli.TriggerSource(ctx, sourceID)
+}

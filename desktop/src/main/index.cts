@@ -31,6 +31,8 @@ import {
   type AgentCreatedCloudShare,
   type AgentCloudSearchResult,
   type AgentSource,
+  type AgentCreateSourceInput,
+  type AgentUpdateSourceInput,
   type AgentSourceRun,
   type AgentSourceCredentialStatus,
   type AgentFileAvailability,
@@ -502,6 +504,67 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
     }
     return requireAgentClient().sourceCredentialStatus(sourceID)
+  }, false))
+  ipcMain.handle('agent:create-source', (_event, input: unknown) => runAgentAction<AgentSource>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof input !== 'object' || input === null) {
+      throw new AgentIPCError('invalid_input', 0, 'Source input is required.')
+    }
+    const value = input as Partial<AgentCreateSourceInput>
+    if (
+      typeof value.name !== 'string' || !value.name.trim() ||
+      typeof value.kind !== 'string' || !value.kind.trim() ||
+      (value.direction !== 'push' && value.direction !== 'pull') ||
+      value.sync_mode !== 'backup' ||
+      (value.run_mode !== 'scan' && value.run_mode !== 'sync') ||
+      typeof value.target_node_id !== 'number' || !Number.isSafeInteger(value.target_node_id) || value.target_node_id <= 0 ||
+      (value.ignore_rules !== undefined && typeof value.ignore_rules !== 'string')
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid Source configuration is required.')
+    }
+    return requireAgentClient().createSource({
+      name: value.name.trim(),
+      kind: value.kind.trim(),
+      direction: value.direction,
+      sync_mode: value.sync_mode,
+      run_mode: value.run_mode,
+      target_node_id: value.target_node_id,
+      ...(value.ignore_rules === undefined ? {} : { ignore_rules: value.ignore_rules }),
+    })
+  }, false))
+  ipcMain.handle('agent:update-source', (_event, sourceID: unknown, revision: unknown, input: unknown) => runAgentAction<AgentSource>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      typeof input !== 'object' || input === null
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id, revision, and update are required.')
+    }
+    const value = input as AgentUpdateSourceInput
+    if (
+      (value.name !== undefined && (typeof value.name !== 'string' || !value.name.trim())) ||
+      (value.run_mode !== undefined && value.run_mode !== 'scan' && value.run_mode !== 'sync') ||
+      (value.status !== undefined && value.status !== 'active' && value.status !== 'paused') ||
+      (value.target_node_id !== undefined && (typeof value.target_node_id !== 'number' || !Number.isSafeInteger(value.target_node_id) || value.target_node_id <= 0)) ||
+      (value.ignore_rules !== undefined && typeof value.ignore_rules !== 'string')
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Source update contains invalid values.')
+    }
+    return requireAgentClient().updateSource(sourceID, revision, {
+      ...value,
+      ...(value.name === undefined ? {} : { name: value.name.trim() }),
+    })
+  }, false))
+  ipcMain.handle('agent:trigger-source', (_event, sourceID: unknown) => runAgentAction<AgentSource>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
+    }
+    return requireAgentClient().triggerSource(sourceID)
   }, false))
 
   ipcMain.handle('agent:cloud-root', () => runAgentAction<AgentCloudNode>(async () => {

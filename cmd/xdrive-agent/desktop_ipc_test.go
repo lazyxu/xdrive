@@ -74,6 +74,14 @@ type fakeDesktopIPCController struct {
 	cloudSources          []client.Source
 	cloudSourceRuns       []client.SyncRun
 	cloudSourceCredential client.SourceCredentialStatus
+	cloudCreatedSource    client.Source
+	cloudUpdatedSource    client.Source
+	cloudTriggeredSource  client.Source
+	cloudCreateInput      client.CreateSourceInput
+	cloudUpdateID         uint64
+	cloudUpdateRevision   uint64
+	cloudUpdateInput      client.UpdateSourceInput
+	cloudTriggerID        uint64
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -199,6 +207,21 @@ func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int)
 
 func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error) {
 	return f.cloudSourceCredential, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCreateSource(_ context.Context, input client.CreateSourceInput) (client.Source, error) {
+	f.cloudCreateInput = input
+	return f.cloudCreatedSource, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpdateSource(_ context.Context, sourceID, revision uint64, input client.UpdateSourceInput) (client.Source, error) {
+	f.cloudUpdateID, f.cloudUpdateRevision, f.cloudUpdateInput = sourceID, revision, input
+	return f.cloudUpdatedSource, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudTriggerSource(_ context.Context, sourceID uint64) (client.Source, error) {
+	f.cloudTriggerID = sourceID
+	return f.cloudTriggeredSource, f.err
 }
 
 func (f *fakeDesktopIPCController) FileAvailability(path string) (mount.FileAvailability, error) {
@@ -555,6 +578,9 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			Status: "completed", ScannedItems: 12, ScannedBytes: 34, StartedAt: now,
 		}},
 		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
+		cloudCreatedSource:    client.Source{ID: 10, Name: "群晖 Photos", Kind: "synology_photos", Direction: "push", SyncMode: "backup", RunMode: "scan", Status: "active", Revision: 1},
+		cloudUpdatedSource:    client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4},
+		cloudTriggeredSource:  client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4, RunRequestedAt: &now},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
@@ -581,6 +607,44 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		res := desktopIPCRequest(t, handler, http.MethodGet, path, "")
 		if res.Code != http.StatusBadRequest {
 			t.Fatalf("GET %s status=%d body=%s", path, res.Code, res.Body.String())
+		}
+	}
+
+	res := desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources",
+		`{"name":"群晖 Photos","kind":"synology_photos","direction":"push","sync_mode":"backup","run_mode":"scan","target_node_id":7}`)
+	if res.Code != http.StatusCreated || !strings.Contains(res.Body.String(), "\"id\":10") {
+		t.Fatalf("create source status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudCreateInput.Name != "群晖 Photos" || ctrl.cloudCreateInput.TargetNodeID != 7 {
+		t.Fatalf("create input not forwarded: %+v", ctrl.cloudCreateInput)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPatch, "/v1/sources",
+		`{"source_id":9,"revision":3,"update":{"run_mode":"sync","status":"active"}}`)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"revision\":4") {
+		t.Fatalf("update source status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudUpdateID != 9 || ctrl.cloudUpdateRevision != 3 || ctrl.cloudUpdateInput.RunMode == nil || *ctrl.cloudUpdateInput.RunMode != "sync" {
+		t.Fatalf("update input not forwarded: id=%d revision=%d input=%+v", ctrl.cloudUpdateID, ctrl.cloudUpdateRevision, ctrl.cloudUpdateInput)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/trigger", `{"source_id":9}`)
+	if res.Code != http.StatusAccepted || ctrl.cloudTriggerID != 9 || !strings.Contains(res.Body.String(), "run_requested_at") {
+		t.Fatalf("trigger source status=%d body=%s id=%d", res.Code, res.Body.String(), ctrl.cloudTriggerID)
+	}
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPatch, "/v1/sources", `{"source_id":0,"revision":1,"update":{}}`},
+		{http.MethodPatch, "/v1/sources", `{"source_id":9,"revision":0,"update":{}}`},
+		{http.MethodPost, "/v1/sources/trigger", `{"source_id":0}`},
+	} {
+		res = desktopIPCRequest(t, handler, tc.method, tc.path, tc.body)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("%s %s status=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
 		}
 	}
 }

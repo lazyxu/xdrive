@@ -400,6 +400,75 @@ test('external sources use dedicated agent endpoints', async (t) => {
   ])
 })
 
+test('external source mutations use dedicated agent endpoints', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null
+    seen.push({ method: req.method, path: url.pathname, body })
+
+    if (req.method === 'POST' && url.pathname === '/v1/sources') {
+      json(res, 201, { id: 10, name: '群晖 Photos', kind: 'synology_photos', direction: 'push', sync_mode: 'backup', run_mode: 'scan', status: 'active', revision: 1, target_node_id: 7, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() })
+      return
+    }
+    if (req.method === 'PATCH' && url.pathname === '/v1/sources') {
+      json(res, 200, { id: 9, name: '一刻相册', kind: 'yike_photos', direction: 'pull', sync_mode: 'backup', run_mode: 'sync', status: 'active', revision: 4, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() })
+      return
+    }
+    if (req.method === 'POST' && url.pathname === '/v1/sources/trigger') {
+      json(res, 202, { id: 9, name: '一刻相册', kind: 'yike_photos', direction: 'pull', sync_mode: 'backup', run_mode: 'sync', status: 'active', revision: 4, run_requested_at: new Date(0).toISOString(), created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  const created = await client.createSource({
+    name: '群晖 Photos',
+    kind: 'synology_photos',
+    direction: 'push',
+    sync_mode: 'backup',
+    run_mode: 'scan',
+    target_node_id: 7,
+    ignore_rules: '@eaDir/\n',
+  })
+  assert.equal(created.id, 10)
+
+  const updated = await client.updateSource(9, 3, { run_mode: 'sync', status: 'active' })
+  assert.equal(updated.revision, 4)
+
+  const triggered = await client.triggerSource(9)
+  assert.equal(triggered.id, 9)
+  assert.ok(triggered.run_requested_at)
+
+  assert.deepEqual(seen, [
+    {
+      method: 'POST',
+      path: '/v1/sources',
+      body: {
+        name: '群晖 Photos',
+        kind: 'synology_photos',
+        direction: 'push',
+        sync_mode: 'backup',
+        run_mode: 'scan',
+        target_node_id: 7,
+        ignore_rules: '@eaDir/\n',
+      },
+    },
+    {
+      method: 'PATCH',
+      path: '/v1/sources',
+      body: { source_id: 9, revision: 3, update: { run_mode: 'sync', status: 'active' } },
+    },
+    {
+      method: 'POST',
+      path: '/v1/sources/trigger',
+      body: { source_id: 9 },
+    },
+  ])
+})
+
 test('file availability and selective sync use dedicated agent endpoints', async (t) => {
   const seen = []
   const { client } = await fixture(t, async (req, res) => {

@@ -9,6 +9,23 @@ const agent = Object.freeze({
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
   getSourceRuns: (sourceID: number, limit = 1) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit),
   getSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:get-source-credential', sourceID),
+  createSource: (input: {
+    name: string
+    kind: string
+    direction: 'push' | 'pull'
+    sync_mode: 'backup'
+    run_mode: 'scan' | 'sync'
+    target_node_id: number
+    ignore_rules?: string
+  }) => ipcRenderer.invoke('agent:create-source', input),
+  updateSource: (sourceID: number, revision: number, input: {
+    name?: string
+    run_mode?: 'scan' | 'sync'
+    status?: 'active' | 'paused'
+    target_node_id?: number
+    ignore_rules?: string
+  }) => ipcRenderer.invoke('agent:update-source', sourceID, revision, input),
+  triggerSource: (sourceID: number) => ipcRenderer.invoke('agent:trigger-source', sourceID),
   cloudRoot: () => ipcRenderer.invoke('agent:cloud-root'),
   cloudChildren: (parentID: number) => ipcRenderer.invoke('agent:cloud-children', parentID),
   cloudSearch: (query: string) => ipcRenderer.invoke('agent:cloud-search', query),
