@@ -724,7 +724,10 @@ GET    /api/v1/sources/:id
 PATCH  /api/v1/sources/:id
 DELETE /api/v1/sources/:id
 GET    /api/v1/sources/:id/runs
+POST   /api/v1/sources/:id/runs
 GET    /api/v1/sources/:id/runs/:runID
+POST   /api/v1/sources/:id/runs/:runID/observe
+POST   /api/v1/sources/:id/runs/:runID/finish
 
 GET    /api/v1/public/share
 POST   /api/v1/public/share/download
@@ -818,6 +821,10 @@ The mapping deliberately targets `xd_nodes`, not `xd_content_blobs`: a source it
 Phase 13B adds the **Source Execution Foundation** without introducing a vendor connector yet. A source now binds to one active owner-scoped xDrive target directory, has a default `sync` or `scan` run mode, and stores a bounded ignore-rule set. Source configuration uses optimistic revisions and is exposed through owner-scoped Source CRUD plus read-only run-history APIs. Only `backup` behavior is exposed: a source-side disappearance is represented as `missing` and never deletes or trashes the xDrive node.
 
 The shared `internal/source` planner normalizes discovered items and classifies them as `ignore`, `unchanged`, `create`, `update`, `move`, or `move_update`. Ignore rules use a gitignore-like ordered syntax with `*`, `**`, `?`, comments, rooted/directory patterns, and `!` negation; rules are evaluated identically for scan and sync planning. Fast scan planning does not hash every source file: it uses stable external identity plus size/mtime, or a connector-provided remote revision/hash when available. SyncRun statistics separately record scanned, ignored, new, changed, moved, unchanged, missing, planned-transfer, actual-transfer, and failure counts/bytes. `LastSeenRunID` provides deterministic missing detection for future executors without relying on wall-clock cutoffs.
+
+Phase 13C begins with a connector-neutral **Source Scan Protocol**. A source agent creates an idempotent run with a client-generated UUID, posts normalized observations in bounded batches, receives stable planner actions, and finishes the run with its scan summary. Observation retries are safe because managed baselines are not advanced for pending update/move work. Run startup snapshots the source revision, target directory, ignore rules, mode, and checkpoint so configuration changes cannot alter planning halfway through a scan. Only one live run is accepted per source; stale runs can be superseded after their heartbeat expires.
+
+Missing detection runs only when the agent explicitly marks the inventory complete. The server compares `LastSeenRunID` against the finished run and applies the same snapshotted ignore rules before marking unseen items `missing`; incomplete or interrupted scans therefore never infer deletion. First-seen ignored objects are not persisted, while previously managed objects that become ignored retain their last synchronized baseline for correct reconciliation if the rule is later removed.
 
 Phase 14A adds **Server-side Search** for active files and directories. `GET /api/v1/search` is owner-scoped, accepts a UTF-8 query of at least two characters, optional `type=file|dir`, `limit` from 1–200, and an opaque keyset `cursor`. Matching is case-insensitive against each active node's relative path, preserving the previous Desktop full-path search behavior without transferring the entire namespace to the Agent. Results include the normal node payload, relative `path`, directory `breadcrumbs`, and `next_cursor`; cursors are bound to the original query/type so they cannot be reused across different searches. Deleted/trash nodes and other users' nodes are never included.
 

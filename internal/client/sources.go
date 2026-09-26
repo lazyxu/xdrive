@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 )
 
 type Source struct {
@@ -49,6 +51,9 @@ type UpdateSourceInput struct {
 type SyncRun struct {
 	ID                   string     `json:"id"`
 	SourceID             uint64     `json:"source_id"`
+	SourceRevision       uint64     `json:"source_revision"`
+	TargetNodeID         *uint64    `json:"target_node_id,omitempty"`
+	IgnoreRules          string     `json:"ignore_rules,omitempty"`
 	Mode                 string     `json:"mode"`
 	Trigger              string     `json:"trigger"`
 	Status               string     `json:"status"`
@@ -121,5 +126,55 @@ func (c *Client) SourceRuns(ctx context.Context, id uint64, limit int) ([]SyncRu
 func (c *Client) SourceRun(ctx context.Context, id uint64, runID string) (SyncRun, error) {
 	var out SyncRun
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/runs/%s", id, url.PathEscape(runID)), nil, &out)
+	return out, err
+}
+
+type SourceObservation struct {
+	ExternalID     string     `json:"external_id"`
+	Kind           string     `json:"kind"`
+	Path           string     `json:"path"`
+	Size           int64      `json:"size"`
+	ModifiedAt     *time.Time `json:"modified_at,omitempty"`
+	SHA256         string     `json:"sha256,omitempty"`
+	RemoteRevision string     `json:"remote_revision,omitempty"`
+}
+
+type SourcePlan struct {
+	ExternalID   string  `json:"external_id"`
+	Action       string  `json:"action"`
+	NodeID       *uint64 `json:"node_id,omitempty"`
+	NodeRevision uint64  `json:"node_revision,omitempty"`
+}
+
+type FinishSourceRunInput struct {
+	Status            string            `json:"status"`
+	CompleteInventory bool              `json:"complete_inventory"`
+	Checkpoint        string            `json:"checkpoint,omitempty"`
+	Summary           sourcepkg.Summary `json:"summary"`
+	Error             string            `json:"error,omitempty"`
+}
+
+func (c *Client) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (SyncRun, error) {
+	var out SyncRun
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", sourceID), map[string]any{
+		"run_id":  runID,
+		"trigger": trigger,
+	}, &out)
+	return out, err
+}
+
+func (c *Client) ObserveSourceItems(ctx context.Context, sourceID uint64, runID string, items []SourceObservation) ([]SourcePlan, error) {
+	var out struct {
+		Plans []SourcePlan `json:"plans"`
+	}
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/observe", sourceID, url.PathEscape(runID)), map[string]any{
+		"items": items,
+	}, &out)
+	return out.Plans, err
+}
+
+func (c *Client) FinishSourceRun(ctx context.Context, sourceID uint64, runID string, input FinishSourceRunInput) (SyncRun, error) {
+	var out SyncRun
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", sourceID, url.PathEscape(runID)), input, &out)
 	return out, err
 }

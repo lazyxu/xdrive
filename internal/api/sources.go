@@ -36,6 +36,9 @@ type sourceDTO struct {
 type syncRunDTO struct {
 	ID                   string     `json:"id"`
 	SourceID             uint64     `json:"source_id"`
+	SourceRevision       uint64     `json:"source_revision"`
+	TargetNodeID         *uint64    `json:"target_node_id,omitempty"`
+	IgnoreRules          string     `json:"ignore_rules,omitempty"`
 	Mode                 string     `json:"mode"`
 	Trigger              string     `json:"trigger"`
 	Status               string     `json:"status"`
@@ -79,7 +82,9 @@ func toSourceDTO(source meta.Source) sourceDTO {
 
 func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 	return syncRunDTO{
-		ID: run.ID, SourceID: run.SourceID, Mode: run.Mode, Trigger: run.Trigger, Status: run.Status,
+		ID: run.ID, SourceID: run.SourceID, SourceRevision: run.SourceRevision,
+		TargetNodeID: run.TargetNodeID, IgnoreRules: run.IgnoreRules,
+		Mode: run.Mode, Trigger: run.Trigger, Status: run.Status,
 		CheckpointBefore: run.CheckpointBefore, CheckpointAfter: run.CheckpointAfter,
 		ScannedItems: run.ScannedItems, ScannedBytes: run.ScannedBytes,
 		IgnoredItems: run.IgnoredItems, IgnoredBytes: run.IgnoredBytes,
