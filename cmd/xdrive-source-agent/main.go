@@ -59,13 +59,13 @@ func usage() {
 Usage:
   xdrive-source-agent login --server https://drive.example.com --username USER [--password PASS]
   xdrive-source-agent password --current CURRENT --new NEW
-  xdrive-source-agent setup --personal /volume1/homes/USER/Photos --shared /volume1/photo [--target Photos/Synology] [--ignore-file FILE]
+  xdrive-source-agent setup --personal /volume1/homes/USER/Photos --shared /volume1/photo [--mode scan|sync] [--target Photos/Synology] [--ignore-file FILE]
   xdrive-source-agent status
   xdrive-source-agent run [--trigger scheduled|manual|reconcile]
   xdrive-source-agent logout
   xdrive-source-agent version
 
-The setup command creates or reuses a Synology Photos push Source in scan-only mode.
+The setup command creates or reuses a Synology Photos push Source. The default mode is scan-only; use --mode sync to enable transfers.
 DSM Task Scheduler should invoke "xdrive-source-agent run". Source-side deletion is never propagated to xDrive.`)
 }
 
@@ -157,8 +157,13 @@ func setup(args []string) error {
 	personal := fs.String("personal", "", "Synology Photos Personal Space filesystem root")
 	shared := fs.String("shared", "", "Synology Photos Shared Space filesystem root")
 	ignoreFile := fs.String("ignore-file", "", "gitignore-style source ignore rules file")
+	runMode := fs.String("mode", "", "source run mode: scan or sync (new sources default to scan)")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	*runMode = strings.TrimSpace(*runMode)
+	if *runMode != "" && !meta.ValidSourceRunMode(*runMode) {
+		return fmt.Errorf("--mode must be scan or sync")
 	}
 	if strings.TrimSpace(*personal) == "" && strings.TrimSpace(*shared) == "" {
 		return fmt.Errorf("at least one of --personal or --shared is required")
@@ -216,11 +221,22 @@ func setup(args []string) error {
 			}
 		}
 	}
+	if remote.ID != 0 && strings.TrimSpace(*ignoreFile) == "" {
+		rules = remote.IgnoreRules
+	}
+	effectiveMode := *runMode
+	if effectiveMode == "" {
+		effectiveMode = meta.SourceRunModeScan
+		if remote.ID != 0 && meta.ValidSourceRunMode(remote.RunMode) {
+			effectiveMode = remote.RunMode
+		}
+	}
+
 	if remote.ID == 0 {
 		remote, err = cli.CreateSource(ctx, client.CreateSourceInput{
 			Name: strings.TrimSpace(*name), Kind: sourceagent.SynologyKind,
 			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
-			RunMode: meta.SourceRunModeScan, TargetNodeID: target.ID, IgnoreRules: rules,
+			RunMode: effectiveMode, TargetNodeID: target.ID, IgnoreRules: rules,
 		})
 		if err != nil {
 			return err
@@ -229,12 +245,12 @@ func setup(args []string) error {
 		if remote.Kind != sourceagent.SynologyKind || remote.Direction != meta.SourceDirectionPush {
 			return fmt.Errorf("source %d is not a Synology Photos push source", remote.ID)
 		}
-		runMode := meta.SourceRunModeScan
+		mode := effectiveMode
 		active := meta.SourceStatusActive
 		sourceName := strings.TrimSpace(*name)
 		targetID := target.ID
 		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
-			Name: &sourceName, RunMode: &runMode, Status: &active,
+			Name: &sourceName, RunMode: &mode, Status: &active,
 			TargetNodeID: &targetID, IgnoreRules: &rules,
 		})
 		if err != nil {
@@ -326,7 +342,7 @@ func run(args []string) error {
 	defer cancel()
 
 	scanner := sourceagent.Scanner{
-		API: cli, SourceID: cfg.SourceID,
+		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID,
 		Roots: sourceagent.RootsWithIdentities(
 			cfg.PersonalRoot, cfg.PersonalRootID,
 			cfg.SharedRoot, cfg.SharedRootID,
@@ -445,6 +461,8 @@ func printRun(run client.SyncRun) {
 	fmt.Printf("unchanged: %d (%s)\n", run.UnchangedItems, formatBytes(run.UnchangedBytes))
 	fmt.Printf("missing: %d (%s)\n", run.MissingItems, formatBytes(run.MissingBytes))
 	fmt.Printf("planned transfer: %d (%s)\n", run.PlannedTransferItems, formatBytes(run.PlannedTransferBytes))
+	fmt.Printf("committed: created %d, updated %d\n", run.CreatedItems, run.UpdatedItems)
+	fmt.Printf("transferred: %d (%s)\n", run.TransferredItems, formatBytes(run.TransferredBytes))
 	if run.Error != "" {
 		fmt.Printf("error: %s\n", run.Error)
 	}

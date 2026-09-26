@@ -25,6 +25,7 @@ type API interface {
 	Source(context.Context, uint64) (client.Source, error)
 	BeginSourceRun(context.Context, uint64, string, string) (client.SyncRun, error)
 	ObserveSourceItems(context.Context, uint64, string, []client.SourceObservation) ([]client.SourcePlan, error)
+	CommitSourceItems(context.Context, uint64, string, []client.SourceCommit) error
 	HeartbeatSourceRun(context.Context, uint64, string) error
 	FinishSourceRun(context.Context, uint64, string, client.FinishSourceRunInput) (client.SyncRun, error)
 }
@@ -38,6 +39,7 @@ type Root struct {
 
 type Scanner struct {
 	API               API
+	ExecutionAPI      ExecutionAPI
 	SourceID          uint64
 	Roots             []Root
 	BatchSize         int
@@ -106,6 +108,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 		return client.SyncRun{}, err
 	}
 	var summary sourcepkg.Summary
+	var itemErrors []string
 	failRun := func(cause error) (client.SyncRun, error) {
 		summary.AddFailure()
 		status := meta.SyncRunStatusFailed
@@ -124,8 +127,16 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 		return finished, cause
 	}
 
-	if run.Mode != meta.SourceRunModeScan {
-		return failRun(fmt.Errorf("source run_mode=%q requires the sync executor, which is not available in this scanner build", run.Mode))
+	var executor *Executor
+	switch run.Mode {
+	case meta.SourceRunModeScan:
+	case meta.SourceRunModeSync:
+		if s.ExecutionAPI == nil || run.TargetNodeID == nil || *run.TargetNodeID == 0 {
+			return failRun(fmt.Errorf("source sync executor is not configured"))
+		}
+		executor = NewExecutor(s.ExecutionAPI, *run.TargetNodeID)
+	default:
+		return failRun(fmt.Errorf("unsupported source run_mode=%q", run.Mode))
 	}
 
 	for _, root := range s.Roots {
@@ -168,6 +179,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	}
 	batch := make([]client.SourceObservation, 0, batchSize)
 	localItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
+	localPaths := make(map[string]string, batchSize)
 	seenIdentities := make(map[string]string)
 
 	flush := func() error {
@@ -182,6 +194,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			return fmt.Errorf("source plan count mismatch: got %d want %d", len(plans), len(batch))
 		}
 		seen := make(map[string]struct{}, len(plans))
+		commits := make([]client.SourceCommit, 0, len(plans))
 		for _, plan := range plans {
 			item, ok := localItems[plan.ExternalID]
 			if !ok {
@@ -196,13 +209,32 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 				return fmt.Errorf("server returned unsupported source action %q", plan.Action)
 			}
 			summary.Add(sourcepkg.PlanResult{Action: action, Item: item})
+			if executor == nil || !executionAction(action) {
+				continue
+			}
+			commit, err := executor.Execute(ctx, plan, item, localPaths[plan.ExternalID])
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				summary.AddFailure()
+				appendSourceRunError(&itemErrors, item.ExternalID, item.Path, err)
+				continue
+			}
+			commits = append(commits, commit)
+		}
+		if len(commits) != 0 {
+			if err := s.commitExecutionResults(ctx, run.ID, commits, &summary, &itemErrors); err != nil {
+				return err
+			}
 		}
 		batch = batch[:0]
 		clear(localItems)
+		clear(localPaths)
 		return nil
 	}
 
-	addItem := func(item sourcepkg.DiscoveredItem) error {
+	addItem := func(item sourcepkg.DiscoveredItem, localPath string) error {
 		if err := heartbeatIfDue(); err != nil {
 			return fmt.Errorf("heartbeat source run: %w", err)
 		}
@@ -218,6 +250,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			return fmt.Errorf("duplicate source identity %q in one batch", item.ExternalID)
 		}
 		localItems[item.ExternalID] = item
+		localPaths[item.ExternalID] = localPath
 		batch = append(batch, client.SourceObservation{
 			ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
 			ModifiedAt: item.ModifiedAt, SHA256: item.SHA256, RemoteRevision: item.RemoteRevision,
@@ -234,7 +267,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			Kind:       meta.SourceItemKindDirectory,
 			Path:       root.Prefix,
 		}
-		if err := addItem(virtual); err != nil {
+		if err := addItem(virtual, root.Path); err != nil {
 			return failRun(err)
 		}
 
@@ -278,7 +311,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 				Path:       targetPath,
 				Size:       size,
 				ModifiedAt: &modified,
-			})
+			}, current)
 		})
 		if err != nil {
 			return failRun(fmt.Errorf("scan %s root %s: %w", root.Key, root.Path, err))
@@ -292,11 +325,54 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 		Status:            meta.SyncRunStatusCompleted,
 		CompleteInventory: true,
 		Summary:           summary,
+		Error:             strings.Join(itemErrors, "\n"),
 	})
 	if err != nil {
 		return client.SyncRun{}, err
 	}
+	if finished.Status == meta.SyncRunStatusPartial || finished.Status == meta.SyncRunStatusFailed {
+		return finished, fmt.Errorf("source run %s finished %s with %d failed items", finished.ID, finished.Status, finished.FailedItems)
+	}
 	return finished, nil
+}
+
+func (s Scanner) commitExecutionResults(
+	ctx context.Context,
+	runID string,
+	commits []client.SourceCommit,
+	summary *sourcepkg.Summary,
+	itemErrors *[]string,
+) error {
+	if len(commits) == 0 {
+		return nil
+	}
+	if err := s.API.CommitSourceItems(ctx, s.SourceID, runID, commits); err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	for _, commit := range commits {
+		if err := s.API.CommitSourceItems(ctx, s.SourceID, runID, []client.SourceCommit{commit}); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			summary.AddFailure()
+			appendSourceRunError(itemErrors, commit.ExternalID, commit.Path, err)
+		}
+	}
+	return nil
+}
+
+func appendSourceRunError(dst *[]string, externalID, itemPath string, err error) {
+	if dst == nil || err == nil || len(*dst) >= 5 {
+		return
+	}
+	message := fmt.Sprintf("%s (%s): %v", externalID, itemPath, err)
+	if len(message) > 1024 {
+		message = message[:1024]
+	}
+	*dst = append(*dst, message)
 }
 
 func validateRoots(roots []Root) error {

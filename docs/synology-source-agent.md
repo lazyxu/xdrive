@@ -4,16 +4,19 @@ The native `xdrive-source-agent` is intended for Synology DSM Task Scheduler. It
 
 ## Current scope
 
-This phase is intentionally **scan-only**:
+The agent supports both **scan** and **sync** modes:
 
 - Personal Space and Shared Space can both be enabled.
-- Scans are fast metadata scans using stable Linux filesystem identity plus size and mtime.
-- Gitignore-style Source ignore rules are honored.
+- Discovery is a fast metadata scan using stable Linux filesystem identity plus size and mtime.
+- Gitignore-style Source ignore rules are honored identically in both modes.
+- `scan` reports create/update/move/missing and estimated transfer bytes without changing xDrive content.
+- `sync` materializes directories and executes create/update/move/move-update plans.
+- SHA-256 is calculated only for files that actually need create/update transfer; pure moves do not read the file contents.
+- Uploads reuse the existing resumable/instant-upload path. Already received chunks, server-reused ranges, and instant-finalized files consume no new transfer bytes.
+- Every successful mutation is acknowledged through the Source execution commit protocol before the SourceItem baseline advances.
 - First-seen ignored objects are not persisted by the server.
 - A complete scan may mark previously managed source items as `missing`.
 - Source-side deletion never deletes or trashes xDrive content.
-- File upload/update execution is not enabled yet. A Source configured with `run_mode=sync` is rejected safely and the run is recorded as failed.
-- The server-side execution commit/ack protocol is already present: future sync executors must acknowledge the final node/revision/path only after each create/update/move succeeds. Unacknowledged pending work prevents a sync run from being recorded as successful.
 
 ## Install/build
 
@@ -58,6 +61,7 @@ Example with both Synology Photos spaces:
 ./xdrive-source-agent setup \
   --personal /volume1/homes/alice/Photos \
   --shared /volume1/photo \
+  --mode scan \
   --target Photos/Synology
 ```
 
@@ -68,9 +72,19 @@ Setup creates or reuses an xDrive Source with:
 - `kind=synology_photos`
 - `direction=push`
 - `sync_mode=backup`
-- `run_mode=scan`
+- `run_mode=scan` by default, or `run_mode=sync` with `--mode sync`
 
-The target path is created in xDrive when needed.
+The target path is created in xDrive when needed. New Sources default to `scan` when `--mode` is omitted; re-running setup for an existing Source preserves its current mode unless `--mode` is explicitly supplied. Existing ignore rules are likewise preserved unless `--ignore-file` is supplied.
+
+A recommended first deployment is to run in `scan` mode, review the planned counts/bytes, and then repeat setup with `--mode sync`:
+
+```bash
+./xdrive-source-agent setup \
+  --personal /volume1/homes/alice/Photos \
+  --shared /volume1/photo \
+  --mode sync \
+  --target Photos/Synology
+```
 
 The default ignore rules are:
 
@@ -101,11 +115,12 @@ A run:
 3. scans Personal and Shared roots;
 4. batches up to 500 non-ignored observations per request;
 5. heartbeats the server run lease during long scans;
-6. receives `create/update/move/unchanged` planner actions;
-7. records scan statistics;
-8. marks the inventory complete only if the entire traversal and all observation batches succeed.
+6. receives `create/update/move/move_update/unchanged` planner actions;
+7. in `sync` mode, executes planned directory/file mutations and commits the verified final node state;
+8. records planned and actual transfer statistics;
+9. marks the inventory complete only if the entire traversal and all observation batches succeed.
 
-If traversal is interrupted, unavailable, or permission-denied, the run is finished as failed/cancelled with `complete_inventory=false`. The server therefore does not infer source-side deletion.
+If traversal is interrupted, unavailable, or permission-denied, the run is finished as failed/cancelled with `complete_inventory=false`. The server therefore does not infer source-side deletion. Individual execution conflicts leave only those SourceItems pending and make the run `partial`; other items continue syncing.
 
 ## DSM Task Scheduler
 
