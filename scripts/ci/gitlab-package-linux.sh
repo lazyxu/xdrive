@@ -10,6 +10,16 @@ test -f release/xdrive-linux-amd64.deb || {
   exit 1
 }
 
+for arch in amd64 arm64; do
+  source_agent="release/source-agent/xdrive-source-agent-linux-$arch"
+  test -f "$source_agent" || {
+    echo "CI-tested source-agent artifact is missing: $source_agent" >&2
+    exit 1
+  }
+  cp "$source_agent" "release/xdrive-source-agent-linux-$arch"
+  chmod +x "release/xdrive-source-agent-linux-$arch"
+done
+
 sed   -e "s|@SOURCE_REF@|$XDRIVE_SOURCE_REF|g"   -e "s|@IMAGE_TAG@|$XDRIVE_IMAGE_TAG|g"   -e "s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g"   -e "s|@RELEASE_CHANNEL@|$XDRIVE_RELEASE_CHANNEL|g"   -e "s|@RELEASE_COMMIT@|$XDRIVE_RELEASE_COMMIT|g"   deploy/install-server.sh > release/xdrive-server-install.sh
 chmod +x release/xdrive-server-install.sh
 

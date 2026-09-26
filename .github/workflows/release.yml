@@ -29,6 +29,11 @@ jobs:
         with:
           name: xdrive-windows-amd64
           path: exact
+      - name: Download exact Synology source-agent binaries tested by CI
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-source-agent-linux
+          path: source-agent
       - name: Verify exact client artifact contract
         shell: bash
         run: |
@@ -39,6 +44,14 @@ jobs:
           [[ "$count" == "2" ]] || {
             echo "expected exactly two user-facing client installers; found $count" >&2
             find exact -maxdepth 1 -type f -print >&2
+            exit 1
+          }
+          test -f source-agent/xdrive-source-agent-linux-amd64
+          test -f source-agent/xdrive-source-agent-linux-arm64
+          source_count="$(find source-agent -maxdepth 1 -type f | wc -l)"
+          [[ "$source_count" == "2" ]] || {
+            echo "expected exactly two source-agent binaries; found $source_count" >&2
+            find source-agent -maxdepth 1 -type f -print >&2
             exit 1
           }
 
@@ -156,6 +169,11 @@ jobs:
         with:
           name: xdrive-windows-amd64
           path: release
+      - name: Download exact Synology source-agent binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-source-agent-linux
+          path: release
       - name: Download server deployment assets
         uses: actions/download-artifact@v4
         with:
@@ -167,6 +185,8 @@ jobs:
           set -euo pipefail
           test -f release/xdrive-linux-amd64.deb
           test -f release/xDriveSetup-amd64.exe
+          test -f release/xdrive-source-agent-linux-amd64
+          test -f release/xdrive-source-agent-linux-arm64
           if find release -maxdepth 1 -type f \( -name '*DesktopSetup*' -o -name 'xdrive-desktop-*' \) | grep -q .; then
             echo "standalone Desktop installer must not be published" >&2
             exit 1
@@ -179,6 +199,8 @@ jobs:
           sha256sum \
             xdrive-linux-amd64.deb \
             xDriveSetup-amd64.exe \
+            xdrive-source-agent-linux-amd64 \
+            xdrive-source-agent-linux-arm64 \
             xdrive-server-install.sh \
             server-backup.sh \
             server-backup-scheduled.sh \

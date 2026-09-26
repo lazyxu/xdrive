@@ -18,6 +18,8 @@ fi
 files="
 xdrive-linux-amd64.deb
 xDriveSetup-amd64.exe
+xdrive-source-agent-linux-amd64
+xdrive-source-agent-linux-arm64
 xdrive-server-install.sh
 server-backup.sh
 server-backup-scheduled.sh
