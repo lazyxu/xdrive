@@ -370,6 +370,36 @@ test('cloud management uses dedicated agent endpoints', async (t) => {
   assert.deepEqual(seen[6].body, { id: 4, revision: 3 })
 })
 
+test('external sources use dedicated agent endpoints', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    seen.push(url.pathname + url.search)
+    if (url.pathname === '/v1/sources') {
+      json(res, 200, [{ id: 9, name: '一刻相册', kind: 'yike_photos', direction: 'pull', sync_mode: 'backup', run_mode: 'scan', status: 'active', revision: 1, created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }])
+      return
+    }
+    if (url.pathname === '/v1/sources/runs') {
+      json(res, 200, [{ id: 'run-1', source_id: 9, source_revision: 1, mode: 'scan', trigger: 'manual', status: 'completed', scanned_items: 12, scanned_bytes: 34, ignored_items: 0, ignored_bytes: 0, new_items: 0, new_bytes: 0, changed_items: 0, changed_bytes: 0, moved_items: 0, unchanged_items: 12, unchanged_bytes: 34, missing_items: 0, missing_bytes: 0, planned_transfer_items: 0, planned_transfer_bytes: 0, created_items: 0, updated_items: 0, skipped_items: 0, transferred_items: 0, transferred_bytes: 0, failed_items: 0, started_at: new Date(0).toISOString(), finished_at: new Date(0).toISOString() }])
+      return
+    }
+    if (url.pathname === '/v1/sources/credential') {
+      json(res, 200, { configured: true, key_version: 2 })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  assert.equal((await client.sources())[0].name, '一刻相册')
+  assert.equal((await client.sourceRuns(9, 5))[0].scanned_items, 12)
+  assert.equal((await client.sourceCredentialStatus(9)).key_version, 2)
+  assert.deepEqual(seen, [
+    '/v1/sources',
+    '/v1/sources/runs?source_id=9&limit=5',
+    '/v1/sources/credential?source_id=9',
+  ])
+})
+
 test('file availability and selective sync use dedicated agent endpoints', async (t) => {
   const seen = []
   const { client } = await fixture(t, async (req, res) => {

@@ -28,49 +28,52 @@ type fakeDesktopIPCController struct {
 	root     string
 	items    []conflictstate.Record
 
-	loginServer      string
-	loginUsername    string
-	loginPassword    string
-	loginMount       string
-	currentPass      string
-	newPass          string
-	logouts          int
-	paused           *bool
-	syncs            int
-	updateMount      *string
-	updateCache      *int64
-	rulePath         string
-	ruleMode         string
-	filePath         string
-	fileAction       string
-	fileState        mount.FileAvailability
-	openFolderN      int
-	openID           string
-	openBoth         bool
-	resolveID        string
-	resolveChoice    string
-	err              error
-	transfers        *transfer.Manager
-	diagnosticReport diagnostics.Report
-	reconnectN       int
-	repairN          int
-	openLogsN        int
-	storageTree      agentStorageTreeNode
-	cacheStats       mount.CacheStats
-	cacheRelease     mount.CacheReleaseResult
-	cloudRoot        client.Node
-	cloudChildren    []client.Node
-	cloudSearch      []agentCloudSearchResult
-	cloudQuota       client.QuotaUsage
-	cloudStorage     client.StorageStats
-	cloudTrash       []client.Node
-	cloudVersions    []client.FileVersion
-	cloudShares      []client.FileShare
-	cloudCreated     agentCreatedShare
-	cloudRestored    client.Node
-	cloudRevokeID    uint64
-	cloudDeleteID    uint64
-	cloudDeleteRev   uint64
+	loginServer           string
+	loginUsername         string
+	loginPassword         string
+	loginMount            string
+	currentPass           string
+	newPass               string
+	logouts               int
+	paused                *bool
+	syncs                 int
+	updateMount           *string
+	updateCache           *int64
+	rulePath              string
+	ruleMode              string
+	filePath              string
+	fileAction            string
+	fileState             mount.FileAvailability
+	openFolderN           int
+	openID                string
+	openBoth              bool
+	resolveID             string
+	resolveChoice         string
+	err                   error
+	transfers             *transfer.Manager
+	diagnosticReport      diagnostics.Report
+	reconnectN            int
+	repairN               int
+	openLogsN             int
+	storageTree           agentStorageTreeNode
+	cacheStats            mount.CacheStats
+	cacheRelease          mount.CacheReleaseResult
+	cloudRoot             client.Node
+	cloudChildren         []client.Node
+	cloudSearch           []agentCloudSearchResult
+	cloudQuota            client.QuotaUsage
+	cloudStorage          client.StorageStats
+	cloudTrash            []client.Node
+	cloudVersions         []client.FileVersion
+	cloudShares           []client.FileShare
+	cloudCreated          agentCreatedShare
+	cloudRestored         client.Node
+	cloudRevokeID         uint64
+	cloudDeleteID         uint64
+	cloudDeleteRev        uint64
+	cloudSources          []client.Source
+	cloudSourceRuns       []client.SyncRun
+	cloudSourceCredential client.SourceCredentialStatus
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -184,6 +187,18 @@ func (f *fakeDesktopIPCController) CloudCreateShare(context.Context, uint64, cli
 func (f *fakeDesktopIPCController) CloudRevokeShare(_ context.Context, id uint64) error {
 	f.cloudRevokeID = id
 	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Source, error) {
+	return append([]client.Source(nil), f.cloudSources...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error) {
+	return append([]client.SyncRun(nil), f.cloudSourceRuns...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error) {
+	return f.cloudSourceCredential, f.err
 }
 
 func (f *fakeDesktopIPCController) FileAvailability(path string) (mount.FileAvailability, error) {
@@ -524,6 +539,49 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)
+	}
+}
+
+func TestDesktopIPCExternalSources(t *testing.T) {
+	now := time.Now().UTC()
+	ctrl := &fakeDesktopIPCController{
+		revision: 1,
+		cloudSources: []client.Source{{
+			ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull",
+			SyncMode: "backup", RunMode: "scan", Status: "active", Revision: 3,
+		}},
+		cloudSourceRuns: []client.SyncRun{{
+			ID: "run-1", SourceID: 9, Mode: "scan", Trigger: "manual",
+			Status: "completed", ScannedItems: 12, ScannedBytes: 34, StartedAt: now,
+		}},
+		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"/v1/sources", "\"一刻相册\""},
+		{"/v1/sources/runs?source_id=9&limit=5", "\"scanned_items\":12"},
+		{"/v1/sources/credential?source_id=9", "\"configured\":true"},
+	}
+	for _, tc := range cases {
+		res := desktopIPCRequest(t, handler, http.MethodGet, tc.path, "")
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), tc.want) {
+			t.Fatalf("GET %s status=%d body=%s", tc.path, res.Code, res.Body.String())
+		}
+	}
+
+	for _, path := range []string{
+		"/v1/sources/runs?source_id=0",
+		"/v1/sources/runs?source_id=9&limit=201",
+		"/v1/sources/credential?source_id=bad",
+	} {
+		res := desktopIPCRequest(t, handler, http.MethodGet, path, "")
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("GET %s status=%d body=%s", path, res.Code, res.Body.String())
+		}
 	}
 }
 

@@ -93,6 +93,66 @@ export type AgentTransferEvent = {
   transfers: AgentTransfer[]
 }
 
+export type AgentSource = {
+  id: number
+  name: string
+  kind: string
+  direction: 'push' | 'pull'
+  sync_mode: 'backup' | 'mirror'
+  run_mode: 'scan' | 'sync'
+  status: 'active' | 'paused'
+  revision: number
+  target_node_id?: number
+  ignore_rules?: string
+  checkpoint?: string
+  last_run_at?: string
+  last_success_at?: string
+  last_error?: string
+  run_requested_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export type AgentSourceRun = {
+  id: string
+  source_id: number
+  source_revision: number
+  target_node_id?: number
+  mode: 'scan' | 'sync'
+  trigger: string
+  status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
+  scanned_items: number
+  scanned_bytes: number
+  ignored_items: number
+  ignored_bytes: number
+  new_items: number
+  new_bytes: number
+  changed_items: number
+  changed_bytes: number
+  moved_items: number
+  unchanged_items: number
+  unchanged_bytes: number
+  missing_items: number
+  missing_bytes: number
+  planned_transfer_items: number
+  planned_transfer_bytes: number
+  created_items: number
+  updated_items: number
+  skipped_items: number
+  transferred_items: number
+  transferred_bytes: number
+  failed_items: number
+  error?: string
+  started_at: string
+  finished_at?: string
+}
+
+export type AgentSourceCredentialStatus = {
+  configured: boolean
+  key_version?: number
+  updated_at?: string
+}
+
 export type AgentCloudNode = {
   id: number
   parent_id?: number
@@ -332,6 +392,20 @@ export class AgentIPCClient {
 
   releaseCache() {
     return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
+  }
+
+  sources() {
+    return this.request<AgentSource[]>('GET', '/v1/sources')
+  }
+
+  sourceRuns(sourceID: number, limit = 1) {
+    const query = new URLSearchParams({ source_id: String(sourceID), limit: String(limit) })
+    return this.request<AgentSourceRun[]>('GET', `/v1/sources/runs?${query.toString()}`)
+  }
+
+  sourceCredentialStatus(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentSourceCredentialStatus>('GET', `/v1/sources/credential?${query.toString()}`)
   }
 
   cloudRoot() {

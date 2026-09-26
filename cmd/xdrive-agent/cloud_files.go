@@ -196,3 +196,27 @@ func (c *agentController) requestCloudSync(cfg userconfig.Config) {
 	default:
 	}
 }
+
+func (c *agentController) CloudSources(ctx context.Context) ([]client.Source, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.Sources(ctx)
+}
+
+func (c *agentController) CloudSourceRuns(ctx context.Context, sourceID uint64, limit int) ([]client.SyncRun, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.SourceRuns(ctx, sourceID, limit)
+}
+
+func (c *agentController) CloudSourceCredentialStatus(ctx context.Context, sourceID uint64) (client.SourceCredentialStatus, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.SourceCredentialStatus{}, err
+	}
+	return cli.SourceCredentialStatus(ctx, sourceID)
+}
