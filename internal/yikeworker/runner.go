@@ -74,7 +74,10 @@ func (r *Runner) loadSources(ctx context.Context, dueOnly bool, now time.Time, i
 		Where("xd_sources.kind = ? AND xd_sources.direction = ? AND xd_sources.status = ? AND xd_sources.sync_mode = ?",
 			yikesync.SourceKind, meta.SourceDirectionPull, meta.SourceStatusActive, meta.SourceSyncModeBackup)
 	if dueOnly {
-		query = query.Where("xd_sources.last_run_at IS NULL OR xd_sources.last_run_at <= ?", now.Add(-interval))
+		query = query.Where(
+			"xd_sources.run_requested_at IS NOT NULL OR xd_sources.last_run_at IS NULL OR xd_sources.last_run_at <= ?",
+			now.Add(-interval),
+		)
 	}
 	var sources []meta.Source
 	if err := query.Order("xd_sources.id ASC").Find(&sources).Error; err != nil {
@@ -141,9 +144,10 @@ func (r *Runner) recordPreflightFailure(ctx context.Context, sourceID uint64, no
 		return nil
 	}
 	return r.DB.WithContext(ctx).Model(&meta.Source{}).Where("id = ?", sourceID).Updates(map[string]any{
-		"last_run_at": now,
-		"last_error":  truncateError(cause),
-		"updated_at":  now,
+		"last_run_at":      now,
+		"last_error":       truncateError(cause),
+		"run_requested_at": nil,
+		"updated_at":       now,
 	}).Error
 }
 
@@ -176,8 +180,12 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		auth:      auth.New(r.JWTSecret, internalTokenTTL),
 		owner:     owner,
 	}
+	trigger := meta.SyncRunTriggerScheduled
+	if source.RunRequestedAt != nil {
+		trigger = meta.SyncRunTriggerManual
+	}
 	runID := uuid.NewString()
-	run, err := api.BeginSourceRun(ctx, source.ID, runID, meta.SyncRunTriggerScheduled)
+	run, err := api.BeginSourceRun(ctx, source.ID, runID, trigger)
 	if err != nil {
 		return client.SyncRun{}, result, err
 	}

@@ -12,22 +12,23 @@ import (
 )
 
 type Source struct {
-	ID            uint64     `json:"id"`
-	Name          string     `json:"name"`
-	Kind          string     `json:"kind"`
-	Direction     string     `json:"direction"`
-	SyncMode      string     `json:"sync_mode"`
-	RunMode       string     `json:"run_mode"`
-	Status        string     `json:"status"`
-	Revision      uint64     `json:"revision"`
-	TargetNodeID  *uint64    `json:"target_node_id,omitempty"`
-	IgnoreRules   string     `json:"ignore_rules,omitempty"`
-	Checkpoint    string     `json:"checkpoint,omitempty"`
-	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
-	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
-	LastError     string     `json:"last_error,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID             uint64     `json:"id"`
+	Name           string     `json:"name"`
+	Kind           string     `json:"kind"`
+	Direction      string     `json:"direction"`
+	SyncMode       string     `json:"sync_mode"`
+	RunMode        string     `json:"run_mode"`
+	Status         string     `json:"status"`
+	Revision       uint64     `json:"revision"`
+	TargetNodeID   *uint64    `json:"target_node_id,omitempty"`
+	IgnoreRules    string     `json:"ignore_rules,omitempty"`
+	Checkpoint     string     `json:"checkpoint,omitempty"`
+	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
+	LastSuccessAt  *time.Time `json:"last_success_at,omitempty"`
+	LastError      string     `json:"last_error,omitempty"`
+	RunRequestedAt *time.Time `json:"run_requested_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 type CreateSourceInput struct {
@@ -111,6 +112,12 @@ func (c *Client) UpdateSource(ctx context.Context, id, revision uint64, input Up
 
 func (c *Client) DeleteSource(ctx context.Context, id, revision uint64) error {
 	return c.jsonRevision(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", id), revision, nil, nil)
+}
+
+func (c *Client) TriggerSource(ctx context.Context, id uint64) (Source, error) {
+	var out Source
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/trigger", id), nil, &out)
+	return out, err
 }
 
 type SourceCollection struct {

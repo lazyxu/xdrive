@@ -43,23 +43,24 @@ const (
 // Source is a vendor-neutral external ingestion source. Connector-specific
 // credentials and configuration intentionally live outside this foundation.
 type Source struct {
-	ID            uint64     `gorm:"primaryKey"`
-	OwnerID       uint64     `gorm:"not null;index"`
-	Name          string     `gorm:"size:128;not null"`
-	Kind          string     `gorm:"size:64;not null;index"`
-	Direction     string     `gorm:"size:16;not null;index"`
-	SyncMode      string     `gorm:"size:16;not null;index"`
-	RunMode       string     `gorm:"size:16;not null;default:sync;index"`
-	Status        string     `gorm:"size:16;not null;default:active;index"`
-	Revision      uint64     `gorm:"not null;default:1"`
-	TargetNodeID  *uint64    `gorm:"index"`
-	IgnoreRules   string     `gorm:"type:text"`
-	Checkpoint    string     `gorm:"type:text"`
-	LastRunAt     *time.Time `gorm:"index"`
-	LastSuccessAt *time.Time `gorm:"index"`
-	LastError     string     `gorm:"type:text"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             uint64     `gorm:"primaryKey"`
+	OwnerID        uint64     `gorm:"not null;index"`
+	Name           string     `gorm:"size:128;not null"`
+	Kind           string     `gorm:"size:64;not null;index"`
+	Direction      string     `gorm:"size:16;not null;index"`
+	SyncMode       string     `gorm:"size:16;not null;index"`
+	RunMode        string     `gorm:"size:16;not null;default:sync;index"`
+	Status         string     `gorm:"size:16;not null;default:active;index"`
+	Revision       uint64     `gorm:"not null;default:1"`
+	TargetNodeID   *uint64    `gorm:"index"`
+	IgnoreRules    string     `gorm:"type:text"`
+	Checkpoint     string     `gorm:"type:text"`
+	LastRunAt      *time.Time `gorm:"index"`
+	LastSuccessAt  *time.Time `gorm:"index"`
+	LastError      string     `gorm:"type:text"`
+	RunRequestedAt *time.Time `gorm:"index"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 
 	Owner      User  `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	TargetNode *Node `gorm:"foreignKey:TargetNodeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`

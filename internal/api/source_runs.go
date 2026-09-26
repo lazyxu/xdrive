@@ -178,7 +178,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			return err
 		}
 		if err := tx.Model(&meta.Source{}).Where("id = ?", source.ID).
-			Updates(map[string]any{"last_run_at": now, "updated_at": now}).Error; err != nil {
+			Updates(map[string]any{"last_run_at": now, "run_requested_at": nil, "updated_at": now}).Error; err != nil {
 			return err
 		}
 		created = true

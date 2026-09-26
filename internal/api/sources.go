@@ -15,22 +15,23 @@ import (
 )
 
 type sourceDTO struct {
-	ID            uint64     `json:"id"`
-	Name          string     `json:"name"`
-	Kind          string     `json:"kind"`
-	Direction     string     `json:"direction"`
-	SyncMode      string     `json:"sync_mode"`
-	RunMode       string     `json:"run_mode"`
-	Status        string     `json:"status"`
-	Revision      uint64     `json:"revision"`
-	TargetNodeID  *uint64    `json:"target_node_id,omitempty"`
-	IgnoreRules   string     `json:"ignore_rules,omitempty"`
-	Checkpoint    string     `json:"checkpoint,omitempty"`
-	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
-	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
-	LastError     string     `json:"last_error,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID             uint64     `json:"id"`
+	Name           string     `json:"name"`
+	Kind           string     `json:"kind"`
+	Direction      string     `json:"direction"`
+	SyncMode       string     `json:"sync_mode"`
+	RunMode        string     `json:"run_mode"`
+	Status         string     `json:"status"`
+	Revision       uint64     `json:"revision"`
+	TargetNodeID   *uint64    `json:"target_node_id,omitempty"`
+	IgnoreRules    string     `json:"ignore_rules,omitempty"`
+	Checkpoint     string     `json:"checkpoint,omitempty"`
+	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
+	LastSuccessAt  *time.Time `json:"last_success_at,omitempty"`
+	LastError      string     `json:"last_error,omitempty"`
+	RunRequestedAt *time.Time `json:"run_requested_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 type syncRunDTO struct {
@@ -76,7 +77,8 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		SyncMode: source.SyncMode, RunMode: source.RunMode, Status: source.Status,
 		Revision: source.Revision, TargetNodeID: source.TargetNodeID, IgnoreRules: source.IgnoreRules,
 		Checkpoint: source.Checkpoint, LastRunAt: source.LastRunAt, LastSuccessAt: source.LastSuccessAt,
-		LastError: source.LastError, CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
+		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
+		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
 	}
 }
 
@@ -310,6 +312,40 @@ func (s *Server) updateSource(c *gin.Context) {
 	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(updated.Revision, 10)))
 	c.JSON(http.StatusOK, toSourceDTO(updated))
+}
+
+func (s *Server) triggerSource(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+
+	now := time.Now().UTC()
+	var source meta.Source
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
+			return err
+		}
+		if source.Status != meta.SourceStatusActive {
+			return errSourcePaused
+		}
+		if err := tx.Model(&meta.Source{}).Where("id = ?", source.ID).Updates(map[string]any{
+			"run_requested_at": now,
+			"updated_at":       now,
+		}).Error; err != nil {
+			return err
+		}
+		source.RunRequestedAt = &now
+		source.UpdatedAt = now
+		return nil
+	})
+	if err != nil {
+		writeSourceRunError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, toSourceDTO(source))
 }
 
 func (s *Server) deleteSource(c *gin.Context) {

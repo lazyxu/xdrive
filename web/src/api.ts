@@ -46,6 +46,7 @@ export interface ExternalSource {
   last_run_at?: string
   last_success_at?: string
   last_error?: string
+  run_requested_at?: string
   created_at: string
   updated_at: string
 }
@@ -336,6 +337,10 @@ export class XDriveApi {
       method: 'POST',
       body: JSON.stringify(input),
     })
+  }
+
+  triggerSource(sourceID: number) {
+    return this.request<ExternalSource>(`/api/v1/sources/${sourceID}/trigger`, { method: 'POST' })
   }
 
   sourceRuns(sourceID: number, limit = 1) {

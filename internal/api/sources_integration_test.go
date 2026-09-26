@@ -113,6 +113,25 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenB, nil, http.StatusNotFound)
 
+	triggeredRes := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/trigger", created.ID),
+		tokenA, nil, http.StatusAccepted)
+	var triggered sourceDTO
+	if err := json.Unmarshal(triggeredRes.Body.Bytes(), &triggered); err != nil {
+		t.Fatal(err)
+	}
+	if triggered.RunRequestedAt == nil || triggered.Revision != created.Revision {
+		t.Fatalf("unexpected triggered source: %+v", triggered)
+	}
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/trigger", created.ID),
+		tokenB, nil, http.StatusNotFound)
+	var triggeredStored meta.Source
+	if err := db.First(&triggeredStored, created.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if triggeredStored.RunRequestedAt == nil {
+		t.Fatal("manual run request was not persisted")
+	}
+
 	// Source mutations use the same optimistic revision contract as node mutations.
 	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
 		strings.NewReader(`{"run_mode":"sync"}`), http.StatusPreconditionRequired)
