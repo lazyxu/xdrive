@@ -122,6 +122,157 @@ func TestUploadFileResumableSkipsCompletedChunkAndRetries(t *testing.T) {
 	}
 }
 
+func TestUploadFileResumableResumesAfterInterruptedCallAndClientRestart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "restart.bin")
+	data := make([]byte, int(DefaultUploadChunkSize)+321)
+	for i := range data {
+		data[i] = byte((i*29 + 7) % 251)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	full := sha256.Sum256(data)
+	fullHash := hex.EncodeToString(full[:])
+	first := sha256.Sum256(data[:DefaultUploadChunkSize])
+	firstHash := hex.EncodeToString(first[:])
+	second := sha256.Sum256(data[DefaultUploadChunkSize:])
+	secondHash := hex.EncodeToString(second[:])
+
+	var (
+		mu            sync.Mutex
+		recovered     bool
+		received      = map[int]UploadPart{}
+		chunkAttempts = map[int]int{}
+		finalizeCalls int
+		startCalls    int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads":
+			var init UploadInit
+			if err := json.NewDecoder(r.Body).Decode(&init); err != nil {
+				t.Fatal(err)
+			}
+			if init.Size != int64(len(data)) || init.SHA256 != fullHash || init.ResumeKey != fullHash {
+				t.Fatalf("unexpected restart init: %+v", init)
+			}
+			mu.Lock()
+			startCalls++
+			parts := make([]UploadPart, 0, len(received))
+			for _, part := range received {
+				parts = append(parts, part)
+			}
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID: "upload-restart", ParentID: init.ParentID, Name: init.Name,
+				Size: init.Size, ChunkSize: DefaultUploadChunkSize, ChunkCount: 2,
+				SHA256: init.SHA256, ResumeKey: init.ResumeKey, Status: "active",
+				ExpiresAt: time.Now().Add(time.Hour), Received: parts,
+			})
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/uploads/upload-restart/chunks/"):
+			indexText := strings.TrimPrefix(r.URL.Path, "/api/v1/uploads/upload-restart/chunks/")
+			index, err := strconv.Atoi(indexText)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(body)
+			hash := hex.EncodeToString(sum[:])
+			wantHash := firstHash
+			if index == 1 {
+				wantHash = secondHash
+			}
+			if hash != wantHash || r.Header.Get("X-Chunk-SHA256") != wantHash {
+				t.Fatalf("chunk %d hash=%q header=%q want=%q", index, hash, r.Header.Get("X-Chunk-SHA256"), wantHash)
+			}
+			mu.Lock()
+			chunkAttempts[index]++
+			ready := recovered
+			if index == 0 || ready {
+				received[index] = UploadPart{Index: index, Size: int64(len(body)), SHA256: hash}
+			}
+			mu.Unlock()
+			if index == 1 && !ready {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = io.WriteString(w, `{"error":"network_unavailable"}`)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(UploadPart{Index: index, Size: int64(len(body)), SHA256: hash})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads/upload-restart/finalize":
+			mu.Lock()
+			finalizeCalls++
+			haveFirst := received[0].SHA256 == firstHash
+			haveSecond := received[1].SHA256 == secondHash
+			mu.Unlock()
+			if !haveFirst || !haveSecond {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = io.WriteString(w, `{"error":"missing_chunks"}`)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID: "upload-restart", Status: "finalized", SHA256: fullHash,
+				Result: &Node{
+					ID: 101, ParentID: uint64Ptr(1), Name: "restart.bin", Type: "file",
+					Size: int64(len(data)), Revision: 1, SHA256: fullHash,
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	firstClient := New(server.URL, "token")
+	if _, err := firstClient.UploadFileResumable(context.Background(), 1, path, "restart.bin", nil); err == nil {
+		t.Fatal("interrupted upload unexpectedly succeeded")
+	}
+
+	mu.Lock()
+	if chunkAttempts[0] != 1 || chunkAttempts[1] != 3 {
+		t.Fatalf("first process chunk attempts=%v want chunk0=1 chunk1=3", chunkAttempts)
+	}
+	if len(received) != 1 || received[0].SHA256 != firstHash {
+		t.Fatalf("server resume state after interruption=%+v", received)
+	}
+	recovered = true
+	mu.Unlock()
+
+	var progress [][2]int64
+	secondClient := New(server.URL, "token")
+	node, err := secondClient.UploadFileResumable(context.Background(), 1, path, "restart.bin", func(done, total int64) {
+		progress = append(progress, [2]int64{done, total})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.ID != 101 || node.SHA256 != fullHash {
+		t.Fatalf("resumed node=%+v", node)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if startCalls != 2 {
+		t.Fatalf("upload session starts=%d want=2", startCalls)
+	}
+	if chunkAttempts[0] != 1 {
+		t.Fatalf("completed first chunk was re-uploaded after restart: attempts=%v", chunkAttempts)
+	}
+	if chunkAttempts[1] != 4 {
+		t.Fatalf("second chunk attempts=%d want=4 (3 interrupted + 1 resumed)", chunkAttempts[1])
+	}
+	if finalizeCalls != 1 {
+		t.Fatalf("finalize calls=%d want=1", finalizeCalls)
+	}
+	if len(progress) == 0 || progress[0][0] != DefaultUploadChunkSize || progress[0][1] != int64(len(data)) {
+		t.Fatalf("restart progress did not resume from persisted chunk: %v", progress)
+	}
+}
+
 func TestUploadFileResumableInstantFinalizeSkipsChunks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "instant.bin")

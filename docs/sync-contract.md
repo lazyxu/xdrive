@@ -35,21 +35,25 @@ This document defines the synchronization behaviors that xDrive must preserve be
 | Windows CfAPI | Policy | exclude, always-local, pin/dehydrate and cache policy | `TestWindowsCfAPISelectiveSyncAndCachePolicy` |
 | Linux FUSE operation layer | Web -> Client | newly created file lookup, content refresh, rename visibility | `TestLinuxFUSEBidirectionalMutationContract` |
 | Linux FUSE operation layer | Client -> Web | rename+move, content write/truncate, unlink | `TestLinuxFUSEBidirectionalMutationContract` |
+| Shared resumable-upload client | Client -> Server | interrupted multi-chunk call, new Client instance resumes received chunks and finalizes once | `TestUploadFileResumableResumesAfterInterruptedCallAndClientRestart` |
+| Windows CfAPI | Restart / offline | persisted baseline resumes local-only offline edits after provider restart | `TestWindowsCfAPIRestartAndOfflineConflict` |
+| Windows CfAPI | Restart / conflict | local offline edit + Web edit converges to server winner plus conflict copy after restart | `TestWindowsCfAPIRestartAndOfflineConflict` |
+| Windows state | Persistence | baseline round-trip, policy filtering and corrupt-state rejection | `TestWindowsBaselineStateRoundTripAndPolicyFilter` / `TestWindowsBaselineStateRejectsCorruption` |
 
 The Windows CI E2E gate runs every test whose name begins with `TestWindowsCfAPI`, so both the general bidirectional E2E and selective-sync/cache-policy E2E are required for every PR.
 
-Linux CI does not require a privileged FUSE mount. Instead, the Linux contract exercises the same `linuxNode__ / `linuxHandle__ operations that back FUSE callbacks against a mutable HTTP server. This keeps Linux CI portable while still verifying Web-visible and client-visible mutation semantics.
+Linux CI does not require a privileged FUSE mount. Instead, the Linux contract exercises the same `linuxNode` / `linuxHandle` operations that back FUSE callbacks against a mutable HTTP server. This keeps Linux CI portable while still verifying Web-visible and client-visible mutation semantics.
 
 ## Scenarios kept as separate subsystem tests
 
 The following behaviors are intentionally verified by their dedicated test suites rather than duplicated in every sync contract:
 
 - upload-session chunk hashing, resume and finalize semantics;
-- optimistic revision / `If-Match__ enforcement;
+- optimistic revision / `If-Match` enforcement;
 - file-version retention and restore mechanics;
 - trash permanent deletion and CAS reference release;
 - transfer retry bookkeeping;
-- Agent restart/reconnect and repair lifecycle;
+- controller reconnect/repair status transitions;
 - storage policy normalization and cache accounting.
 
 ## Future expansion
@@ -57,7 +61,6 @@ The following behaviors are intentionally verified by their dedicated test suite
 When CI infrastructure permits, add:
 
 1. a privileged Linux FUSE mount E2E using real filesystem syscalls;
-2. injected network interruption during a multi-chunk Windows upload followed by automatic resume;
-3. restart during an in-flight upload and convergence after Agent restart;
-4. a 1,000-file / 100-directory convergence workload in normal CI and a larger nightly workload;
-5. multi-device concurrent rename/move conflict scenarios.
+2. a full Windows filesystem E2E that kills the provider during an actively transferring chunk (the shared upload client already verifies cross-process resume);
+3. a 1,000-file / 100-directory convergence workload in normal CI and a larger nightly workload;
+4. multi-device concurrent rename/move conflict scenarios.

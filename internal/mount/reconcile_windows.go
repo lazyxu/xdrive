@@ -559,6 +559,10 @@ func (p *winProvider) storeBaseline(baseline map[string]winState) {
 	p.mu.Lock()
 	p.baseline = baseline
 	p.mu.Unlock()
+	if err := p.persistBaseline(baseline); err != nil {
+		fmt.Fprintln(os.Stderr, "xd: persist Windows sync baseline:", err)
+		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+	}
 }
 
 func (p *winProvider) pruneTransientState() {

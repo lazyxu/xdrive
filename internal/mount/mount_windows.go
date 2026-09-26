@@ -37,6 +37,7 @@ type winProvider struct {
 	policy     syncPolicy
 	cacheLimit int64
 	cacheGrace time.Duration
+	statePath  string
 	manualSync chan struct{}
 	retrySync  chan chan error
 	transfers  *transfer.Manager
@@ -67,6 +68,7 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 		policy:     newSyncPolicy(opts),
 		cacheLimit: opts.CacheLimitBytes,
 		cacheGrace: 30 * time.Second,
+		statePath:  strings.TrimSpace(opts.StatePath),
 		manualSync: make(chan struct{}, 1),
 		retrySync:  make(chan chan error),
 		transfers:  opts.Transfers,
@@ -343,6 +345,24 @@ func (p *winProvider) initialSync(ctx context.Context) error {
 		return err
 	}
 	remote := p.filterRemote(remoteAll)
+
+	persisted, resumed, err := p.loadPersistedBaseline()
+	if err != nil {
+		return err
+	}
+	if resumed {
+		currentRoot, currentOK := remote[""]
+		previousRoot, previousOK := persisted[""]
+		if !currentOK || !previousOK || currentRoot.ID != previousRoot.node.ID {
+			return fmt.Errorf("Windows sync baseline does not match the current account root")
+		}
+		p.storeBaseline(persisted)
+		if err := p.reconcile(ctx); err != nil {
+			return err
+		}
+		return p.applyStoragePolicySnapshot()
+	}
+
 	paths := sortedPaths(remote, true)
 	for _, rel := range paths {
 		if rel == "" {
@@ -382,9 +402,7 @@ func (p *winProvider) captureBaseline(remote map[string]client.Node) error {
 		}
 		base[rel] = winState{node: n, localModTime: st.ModTime(), localSize: st.Size()}
 	}
-	p.mu.Lock()
-	p.baseline = base
-	p.mu.Unlock()
+	p.storeBaseline(base)
 	return nil
 }
 
@@ -422,6 +440,17 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			continue
 		}
 		absPath := filepath.Join(p.root, filepath.FromSlash(rel))
+		if info, statErr := os.Lstat(absPath); statErr == nil {
+			handled, moveErr := p.reconcileMovedPlaceholder(ctx, rel, info, baseline)
+			if moveErr != nil {
+				return moveErr
+			}
+			if handled {
+				continue
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
 		if entry.isDir {
 			n, err := p.cli.CreateDir(ctx, parent.node.ID, slashBase(rel))
 			if err != nil {
@@ -635,13 +664,13 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		return err
 	}
 	p.mu.Lock()
-	p.baseline = baseline
 	for id, t := range p.hydrated {
 		if time.Since(t) > 30*time.Second {
 			delete(p.hydrated, id)
 		}
 	}
 	p.mu.Unlock()
+	p.storeBaseline(baseline)
 	return nil
 }
 
