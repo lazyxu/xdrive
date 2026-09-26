@@ -64,11 +64,15 @@ bash -n scripts/ci/gitlab-go-linux.sh
 bash -n scripts/ci/gitlab-package-linux-client.sh
 bash -n scripts/ci/gitlab-source-agent.sh
 bash -n scripts/ci/gitlab-server-validation.sh
+bash -n scripts/ci/gitlab-server-image.sh
+bash -n scripts/ci/gitlab-caddy-image.sh
+bash -n scripts/ci/gitlab-server-backup.sh
 bash -n scripts/ci/gitlab-go-windows.sh
 bash -n scripts/ci/gitlab-package-windows-client.sh
 bash -n scripts/ci/gitlab-test-linux-artifact.sh
 bash -n scripts/ci/gitlab-test-source-agent-artifact.sh
 bash -n scripts/ci/gitlab-test-windows-artifact.sh
+bash -n scripts/ci/gitlab-test-windows-smoke-artifact.sh
 bash -n scripts/ci/test-linux-client-package.sh
 bash -n scripts/ci/test-source-agent-package.sh
 bash -n scripts/ci/prepare-go-mod-cache.sh
@@ -131,11 +135,3 @@ grep -q 'flock -n 9' deploy/install-server.sh
 grep -q -- '--leave-server-stopped' deploy/install-server.sh
 grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
 grep -q 'detailed Docker output is captured in' deploy/install-server.sh
-
-docker build -t xdrive/server:test .
-bash scripts/test-server-chunk-storage.sh
-
-docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
-docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
-
-bash scripts/test-server-backup-restore.sh

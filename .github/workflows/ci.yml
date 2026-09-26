@@ -356,11 +356,15 @@ jobs:
           bash -n scripts/ci/gitlab-package-linux-client.sh
           bash -n scripts/ci/gitlab-source-agent.sh
           bash -n scripts/ci/gitlab-server-validation.sh
+          bash -n scripts/ci/gitlab-server-image.sh
+          bash -n scripts/ci/gitlab-caddy-image.sh
+          bash -n scripts/ci/gitlab-server-backup.sh
           bash -n scripts/ci/gitlab-go-windows.sh
           bash -n scripts/ci/gitlab-package-windows-client.sh
           bash -n scripts/ci/gitlab-test-linux-artifact.sh
           bash -n scripts/ci/gitlab-test-source-agent-artifact.sh
           bash -n scripts/ci/gitlab-test-windows-artifact.sh
+          bash -n scripts/ci/gitlab-test-windows-smoke-artifact.sh
           bash -n scripts/ci/test-linux-client-package.sh
           bash -n scripts/ci/test-source-agent-package.sh
           bash -n scripts/ci/prepare-go-mod-cache.sh
@@ -418,17 +422,32 @@ jobs:
           grep -q -- '--leave-server-stopped' deploy/install-server.sh
           grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
           grep -q 'detailed Docker output is captured in' deploy/install-server.sh
+  server-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Validate server image
         run: |
           docker build -t xdrive/server:test .
           bash scripts/test-server-chunk-storage.sh
+
+  caddy-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Validate Caddy AliDNS image
         run: |
           docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
           docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
+
+  server-backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server image for backup drill
+        run: docker build -t xdrive/server:test .
       - name: Backup, corruption detection, and restore drill
         run: bash scripts/test-server-backup-restore.sh
-
 
   go-windows:
     runs-on: windows-latest
@@ -553,7 +572,7 @@ jobs:
       - name: Test exact source-agent binaries
         run: bash scripts/ci/test-source-agent-package.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
 
-  test-windows-artifact:
+  test-windows-upgrade-artifact:
     needs: build-windows-client
     runs-on: windows-latest
     env:
@@ -570,13 +589,39 @@ jobs:
         with:
           name: xdrive-windows-amd64
           path: release
-      - name: Test exact Windows release package
+      - name: Test exact Windows upgrade and rollback
         shell: pwsh
         run: |
           if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
             & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -ExpectSigned
           } else {
             & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION
+          }
+
+  test-windows-smoke-artifact:
+    needs: build-windows-client
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release
+      - name: Smoke install and uninstall exact Windows release package
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            & ./scripts/ci/test-windows-smoke-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -ExpectSigned
+          } else {
+            & ./scripts/ci/test-windows-smoke-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION
           }
 
   web:
@@ -605,10 +650,14 @@ jobs:
       - go-linux
       - go-windows
       - server-validation
+      - server-image
+      - caddy-image
+      - server-backup
       - web
       - test-linux-artifact
       - test-source-agent-artifact
-      - test-windows-artifact
+      - test-windows-upgrade-artifact
+      - test-windows-smoke-artifact
     runs-on: ubuntu-latest
     steps:
       - name: Require every CI gate to succeed

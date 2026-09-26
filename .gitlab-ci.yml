@@ -256,7 +256,7 @@ server-validation:
   extends: .ci-tools-cache
   stage: test
   needs: []
-  resource_group: xdrive-go-linux-docker
+  resource_group: xdrive-server-validation-contracts
   tags:
     - linux
   before_script:
@@ -264,6 +264,48 @@ server-validation:
     - *install_docker_cli
   script:
     - bash scripts/ci/gitlab-server-validation.sh
+
+server-image:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .ci-tools-cache
+  stage: test
+  needs: []
+  resource_group: xdrive-server-image
+  tags:
+    - linux
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_docker_cli
+  script:
+    - bash scripts/ci/gitlab-server-image.sh
+
+caddy-image:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .ci-tools-cache
+  stage: test
+  needs: []
+  resource_group: xdrive-caddy-image
+  tags:
+    - linux
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_docker_cli
+  script:
+    - bash scripts/ci/gitlab-caddy-image.sh
+
+server-backup:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .ci-tools-cache
+  stage: test
+  needs: []
+  resource_group: xdrive-server-backup
+  tags:
+    - linux
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_docker_cli
+  script:
+    - bash scripts/ci/gitlab-server-backup.sh
 
 go-windows:
   stage: test
@@ -321,16 +363,27 @@ test-source-agent-artifact:
   script:
     - bash scripts/ci/gitlab-test-source-agent-artifact.sh
 
-test-windows-artifact:
+test-windows-upgrade-artifact:
   stage: test
   needs:
     - job: build-windows-client
       artifacts: true
-  resource_group: xdrive-test-windows-artifact
+  resource_group: xdrive-test-windows-upgrade-artifact
   tags:
     - windows
   script:
     - bash scripts/ci/gitlab-test-windows-artifact.sh
+
+test-windows-smoke-artifact:
+  stage: test
+  needs:
+    - job: build-windows-client
+      artifacts: true
+  resource_group: xdrive-test-windows-smoke-artifact
+  tags:
+    - windows
+  script:
+    - bash scripts/ci/gitlab-test-windows-smoke-artifact.sh
 
 web:
   image: $XDRIVE_CI_NODE_IMAGE
@@ -376,13 +429,21 @@ final-gate:
       artifacts: false
     - job: server-validation
       artifacts: false
+    - job: server-image
+      artifacts: false
+    - job: caddy-image
+      artifacts: false
+    - job: server-backup
+      artifacts: false
     - job: web
       artifacts: false
     - job: test-linux-artifact
       artifacts: false
     - job: test-source-agent-artifact
       artifacts: false
-    - job: test-windows-artifact
+    - job: test-windows-upgrade-artifact
+      artifacts: false
+    - job: test-windows-smoke-artifact
       artifacts: false
   tags:
     - linux
