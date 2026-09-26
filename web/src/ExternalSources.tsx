@@ -36,6 +36,7 @@ function sourceStatus(row: SourceRow): { status: BadgeProps['status']; text: str
   const { source, latestRun, credential } = row
   if (source.status === 'paused') return { status: 'default', text: '已暂停' }
   if (latestRun?.status === 'running') return { status: 'processing', text: '运行中' }
+  if (source.run_requested_at) return { status: 'processing', text: '等待执行' }
   if (source.last_error) return { status: 'error', text: '异常' }
   if (source.kind === 'yike_photos') {
     return credential?.configured
@@ -238,6 +239,10 @@ export default function ExternalSourcesPanel({
             <Typography.Paragraph type="secondary">
               如需同时扫描共享空间，在命令后追加 <Typography.Text code>--shared /volume1/photo</Typography.Text>。
             </Typography.Paragraph>
+            <Typography.Paragraph type="secondary">
+              建议 DSM Task Scheduler 每分钟执行 <Typography.Text code>xdrive-source-agent run --due --interval 6h</Typography.Text>。
+              平时仍按 6 小时间隔扫描；Web 点击“立即扫描”后，下一次任务检查会立即执行，不会每分钟全盘扫描。
+            </Typography.Paragraph>
           </div>
         ),
       })
@@ -249,7 +254,9 @@ export default function ExternalSourcesPanel({
     setTriggeringSourceID(row.source.id)
     try {
       await api.triggerSource(row.source.id)
-      message.success('已请求立即扫描，Pull worker 将在下一次轮询时开始')
+      message.success(row.source.kind === 'synology_photos'
+        ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查'
+        : '已请求立即扫描，Pull worker 将在下一次轮询时开始')
       await load()
     } catch (error) {
       onError(error)
@@ -335,10 +342,9 @@ export default function ExternalSourcesPanel({
                 ? `${row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · ${formatSize(row.latestRun.scanned_bytes)}`
                 : '尚无扫描统计'
               const running = row.latestRun?.status === 'running'
-              const yikeTriggerReady = row.source.kind === 'yike_photos' &&
-                row.source.direction === 'pull' &&
-                row.source.status === 'active' &&
-                row.credential?.configured === true &&
+              const credentialReady = row.source.kind !== 'yike_photos' || row.credential?.configured === true
+              const triggerReady = row.source.status === 'active' &&
+                credentialReady &&
                 !running &&
                 !row.source.run_requested_at
 
@@ -365,28 +371,24 @@ export default function ExternalSourcesPanel({
                   <div className="external-source-actions">
                     <Space size="small">
                       <Button size="small" onClick={() => setSelected(row)}>查看</Button>
-                      {row.source.kind === 'yike_photos' ? (
-                        <Tooltip title={
-                          row.source.run_requested_at ? '已提交扫描请求' :
-                          !row.credential?.configured ? '请先配置 Cookie' :
-                          row.source.status !== 'active' ? '来源已暂停' :
-                          running ? '来源正在运行' :
-                          '立即请求 Pull worker 扫描此来源'
-                        }>
-                          <Button
-                            size="small"
-                            disabled={!yikeTriggerReady}
-                            loading={triggeringSourceID === row.source.id}
-                            onClick={() => void triggerNow(row)}
-                          >
-                            {row.source.run_requested_at ? '已请求' : '立即扫描'}
-                          </Button>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip title="群晖即时触发将在下一步接入 NAS source-agent">
-                          <Button size="small" disabled>立即扫描</Button>
-                        </Tooltip>
-                      )}
+                      <Tooltip title={
+                        row.source.run_requested_at ? '已提交扫描请求' :
+                        row.source.kind === 'yike_photos' && !row.credential?.configured ? '请先配置 Cookie' :
+                        row.source.status !== 'active' ? '来源已暂停' :
+                        running ? '来源正在运行' :
+                        row.source.kind === 'synology_photos'
+                          ? '提交请求，由群晖 source-agent 下一次任务检查执行'
+                          : '立即请求 Pull worker 扫描此来源'
+                      }>
+                        <Button
+                          size="small"
+                          disabled={!triggerReady}
+                          loading={triggeringSourceID === row.source.id}
+                          onClick={() => void triggerNow(row)}
+                        >
+                          {row.source.run_requested_at ? '已请求' : '立即扫描'}
+                        </Button>
+                      </Tooltip>
                       <Button size="small" onClick={() => openSettings(row)}>设置</Button>
                     </Space>
                   </div>

@@ -62,7 +62,7 @@ Usage:
   xdrive-source-agent password --current CURRENT --new NEW
   xdrive-source-agent setup --personal /volume1/homes/USER/Photos --shared /volume1/photo [--mode scan|sync] [--target Photos/Synology] [--ignore-file FILE]
   xdrive-source-agent status
-  xdrive-source-agent run [--trigger scheduled|manual|reconcile]
+  xdrive-source-agent run [--trigger scheduled|manual|reconcile] [--due] [--interval 6h]
   xdrive-source-agent logout
   xdrive-source-agent version
 
@@ -302,6 +302,9 @@ func status() error {
 	}
 	fmt.Printf("source: %s (%d)\nstatus: %s\nrun mode: %s\ntarget node: %s\n",
 		source.Name, source.ID, source.Status, source.RunMode, optionalID(source.TargetNodeID))
+	if source.RunRequestedAt != nil {
+		fmt.Printf("manual scan requested: %s\n", source.RunRequestedAt.Format(time.RFC3339))
+	}
 	if cfg.PersonalRoot != "" {
 		fmt.Printf("personal: %s\n", cfg.PersonalRoot)
 	}
@@ -321,11 +324,16 @@ func status() error {
 func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	trigger := fs.String("trigger", meta.SyncRunTriggerScheduled, "run trigger: scheduled, manual, or reconcile")
+	dueOnly := fs.Bool("due", false, "run only when the source is due or has a pending manual request")
+	interval := fs.Duration("interval", 6*time.Hour, "scheduled scan interval used with --due")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if !meta.ValidSyncRunTrigger(strings.TrimSpace(*trigger)) {
 		return fmt.Errorf("invalid --trigger")
+	}
+	if *interval <= 0 {
+		return fmt.Errorf("--interval must be greater than zero")
 	}
 	cfg, err := sourceagentconfig.Load()
 	if err != nil {
@@ -359,6 +367,21 @@ func run(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	remoteSource, err := cli.Source(ctx, cfg.SourceID)
+	if err != nil {
+		return err
+	}
+	effectiveTrigger, shouldRun, err := resolveRunTrigger(
+		remoteSource, strings.TrimSpace(*trigger), *dueOnly, *interval, time.Now().UTC(),
+	)
+	if err != nil {
+		return err
+	}
+	if !shouldRun {
+		fmt.Println("source not due; no scan started")
+		return nil
+	}
+
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID,
 		Roots: sourceagent.RootsWithIdentityState(
@@ -367,9 +390,32 @@ func run(args []string) error {
 		),
 		IdentityStore: identityStore,
 	}
-	result, err := scanner.Run(ctx, strings.TrimSpace(*trigger))
+	result, err := scanner.Run(ctx, effectiveTrigger)
 	printRun(result)
 	return err
+}
+
+func resolveRunTrigger(source client.Source, requested string, dueOnly bool, interval time.Duration, now time.Time) (string, bool, error) {
+	requested = strings.TrimSpace(requested)
+	if !meta.ValidSyncRunTrigger(requested) {
+		return "", false, fmt.Errorf("invalid run trigger")
+	}
+	if interval <= 0 {
+		return "", false, fmt.Errorf("run interval must be greater than zero")
+	}
+	if dueOnly && source.Status != meta.SourceStatusActive {
+		return requested, false, nil
+	}
+	if requested == meta.SyncRunTriggerScheduled && source.RunRequestedAt != nil {
+		return meta.SyncRunTriggerManual, true, nil
+	}
+	if !dueOnly || requested != meta.SyncRunTriggerScheduled {
+		return requested, true, nil
+	}
+	if source.LastRunAt == nil || !source.LastRunAt.After(now.Add(-interval)) {
+		return requested, true, nil
+	}
+	return requested, false, nil
 }
 
 func logout() error {
