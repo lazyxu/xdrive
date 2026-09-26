@@ -144,6 +144,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	clientCoreBuild := readFile(t, filepath.Join(root, "scripts", "build-client-core.sh"))
+	linuxDebBuild := readFile(t, filepath.Join(root, "scripts", "build-linux-deb.sh"))
 	gitlabGoLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux.sh"))
 	gitlabPackageLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux-client.sh"))
 	gitlabSourceAgent := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-source-agent.sh"))
@@ -515,6 +516,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"XDRIVE_DESKTOP_VERSION=\"0.0.0-snapshot.$short_sha\"",
 		"XDRIVE_RELEASE_VERSION=\"$tag\"",
 		"XDRIVE_RELEASE_VERSION=\"0.0.0-ci\"",
+	)
+	requireRaw(t, "Linux Debian compression policy", linuxDebBuild,
+		"DPKG_DEB_ARGS=(--root-owner-group)",
+		"DPKG_DEB_ARGS+=(-Zxz -z1)",
+		"Building stable Debian package with dpkg-deb default compression.",
+		"Building development Debian package with fast XZ level 1 compression.",
+		"dpkg-deb \"${DPKG_DEB_ARGS[@]}\" --build",
 	)
 	requireRaw(t, "GitLab Windows Bash wrappers", gitlabWindowsBash,
 		"set -euo pipefail",
