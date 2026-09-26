@@ -75,7 +75,10 @@ func (s *Server) Router() *gin.Engine {
 	authed.PATCH("/sources/:id", s.updateSource)
 	authed.DELETE("/sources/:id", s.deleteSource)
 	authed.GET("/sources/:id/runs", s.listSourceRuns)
+	authed.POST("/sources/:id/runs", s.beginSourceRun)
 	authed.GET("/sources/:id/runs/:runID", s.getSourceRun)
+	authed.POST("/sources/:id/runs/:runID/observe", s.observeSourceRun)
+	authed.POST("/sources/:id/runs/:runID/finish", s.finishSourceRun)
 
 	admin := authed.Group("/admin")
 	admin.Use(s.requireAdmin())

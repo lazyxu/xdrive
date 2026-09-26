@@ -101,6 +101,9 @@ func (SourceItem) TableName() string { return "xd_source_items" }
 type SyncRun struct {
 	ID                   string     `gorm:"size:36;primaryKey"`
 	SourceID             uint64     `gorm:"not null;index;index:idx_xd_sync_runs_source_started"`
+	SourceRevision       uint64     `gorm:"not null;default:1"`
+	TargetNodeID         *uint64    `gorm:"index"`
+	IgnoreRules          string     `gorm:"type:text"`
 	Mode                 string     `gorm:"size:16;not null;default:sync;index"`
 	Trigger              string     `gorm:"size:16;not null;index"`
 	Status               string     `gorm:"size:16;not null;default:running;index"`
