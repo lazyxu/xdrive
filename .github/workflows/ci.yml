@@ -219,12 +219,43 @@ jobs:
             gofmt -d $files
             exit 1
           fi
-      # Packages share XD_TEST_DATABASE_URL and some integration tests recreate
-      # tables, so package-level parallelism makes the suite nondeterministic.
-      # -race still checks goroutines inside each package while -p 1 isolates DB schema work.
-      - run: go test -p 1 -race ./...
+      # internal/api is the dominant race-test package and gets its own
+      # PostgreSQL service/job. The remaining packages stay serial here because
+      # some integration tests recreate shared schemas inside this job.
+      - name: Race test Go packages except internal/api
+        shell: bash
+        run: |
+          mapfile -t packages < <(go list ./... | grep -v '^github.com/lazyxu/xdrive/internal/api$')
+          go test -p 1 -race "${packages[@]}"
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
+
+  go-linux-api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Race test internal/api
+        run: go test -race ./internal/api
 
   build-source-agent:
     runs-on: ubuntu-latest
@@ -572,6 +603,32 @@ jobs:
       - name: Test exact source-agent binaries
         run: bash scripts/ci/test-source-agent-package.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
 
+  test-windows-rollback-artifact:
+    needs: build-windows-client
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release
+      - name: Test exact Windows rollback
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario rollback -ExpectSigned
+          } else {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario rollback
+          }
+
   test-windows-upgrade-artifact:
     needs: build-windows-client
     runs-on: windows-latest
@@ -589,13 +646,13 @@ jobs:
         with:
           name: xdrive-windows-amd64
           path: release
-      - name: Test exact Windows upgrade and rollback
+      - name: Test exact Windows successful upgrade
         shell: pwsh
         run: |
           if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
-            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -ExpectSigned
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario upgrade -ExpectSigned
           } else {
-            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario upgrade
           }
 
   test-windows-smoke-artifact:
@@ -648,6 +705,7 @@ jobs:
     needs:
       - desktop-tests
       - go-linux
+      - go-linux-api
       - go-windows
       - server-validation
       - server-image
@@ -656,6 +714,7 @@ jobs:
       - web
       - test-linux-artifact
       - test-source-agent-artifact
+      - test-windows-rollback-artifact
       - test-windows-upgrade-artifact
       - test-windows-smoke-artifact
     runs-on: ubuntu-latest

@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Installer,
     [Parameter(Mandatory = $true)][string]$TargetVersion,
+    [ValidateSet("all", "rollback", "upgrade")][string]$Scenario = "all",
     [switch]$ExpectSigned
 )
 
@@ -20,12 +21,12 @@ try {
         }
     }
 
-    & ./scripts/test-windows-client-upgrade.ps1 -Installer $Installer -TargetVersion $TargetVersion
+    & ./scripts/test-windows-client-upgrade.ps1 -Installer $Installer -TargetVersion $TargetVersion -Scenario $Scenario
     if ($LASTEXITCODE -ne 0) {
         throw "Windows upgrade/rollback test failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "Windows exact release package passed artifact tests: $Installer"
+    Write-Host "Windows exact release package passed $Scenario transaction test: $Installer"
 } finally {
     Pop-Location
 }

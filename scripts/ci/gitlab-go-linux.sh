@@ -19,17 +19,30 @@ if [[ "$pg_ready" != "1" ]]; then
 fi
 PGPASSWORD="$POSTGRES_PASSWORD" psql   -h postgres -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"   -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null
 
-go mod tidy "-go=1.25"
-git diff --exit-code -- go.mod go.sum
+scope="${XDRIVE_GO_TEST_SCOPE:-rest}"
+case "$scope" in
+  api)
+    go test -race ./internal/api
+    ;;
+  rest)
+    go mod tidy "-go=1.25"
+    git diff --exit-code -- go.mod go.sum
 
-files="$(gofmt -l $(find cmd internal -name '*.go' -type f))"
-if [[ -n "$files" ]]; then
-  echo "$files"
-  gofmt -d $files
-  exit 1
-fi
+    files="$(gofmt -l $(find cmd internal -name '*.go' -type f))"
+    if [[ -n "$files" ]]; then
+      echo "$files"
+      gofmt -d $files
+      exit 1
+    fi
 
-go test -p 1 -race ./...
-go vet ./...
-go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
-go build ./cmd/xdrive-source-agent
+    mapfile -t packages < <(go list ./... | grep -v '^github.com/lazyxu/xdrive/internal/api$')
+    go test -p 1 -race "${packages[@]}"
+    go vet ./...
+    go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
+    go build ./cmd/xdrive-source-agent
+    ;;
+  *)
+    echo "unsupported XDRIVE_GO_TEST_SCOPE: $scope" >&2
+    exit 2
+    ;;
+esac
