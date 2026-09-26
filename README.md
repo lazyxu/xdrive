@@ -727,6 +727,7 @@ GET    /api/v1/sources/:id/runs
 POST   /api/v1/sources/:id/runs
 GET    /api/v1/sources/:id/runs/:runID
 POST   /api/v1/sources/:id/runs/:runID/observe
+POST   /api/v1/sources/:id/runs/:runID/heartbeat
 POST   /api/v1/sources/:id/runs/:runID/finish
 
 GET    /api/v1/public/share
@@ -825,6 +826,8 @@ The shared `internal/source` planner normalizes discovered items and classifies 
 Phase 13C begins with a connector-neutral **Source Scan Protocol**. A source agent creates an idempotent run with a client-generated UUID, posts normalized observations in bounded batches, receives stable planner actions, and finishes the run with its scan summary. Observation retries are safe because managed baselines are not advanced for pending update/move work. Run startup snapshots the source revision, target directory, ignore rules, mode, and checkpoint so configuration changes cannot alter planning halfway through a scan. Only one live run is accepted per source; stale runs can be superseded after their heartbeat expires.
 
 Missing detection runs only when the agent explicitly marks the inventory complete. The server compares `LastSeenRunID` against the finished run and applies the same snapshotted ignore rules before marking unseen items `missing`; incomplete or interrupted scans therefore never infer deletion. First-seen ignored objects are not persisted, while previously managed objects that become ignored retain their last synchronized baseline for correct reconciliation if the rule is later removed.
+
+The first native **Synology Photos Fast Scanner** now consumes that protocol through `xdrive-source-agent`. It is designed for DSM Task Scheduler, supports Personal Space and Shared Space simultaneously, batches observations, uses Linux device/inode identity so ordinary renames/moves keep the same external identity, and stores xDrive credentials through the existing Secret Service / private-file backend. `setup` creates or reuses the xDrive target path and forces the Source into `backup + scan` mode. The scanner intentionally refuses `run_mode=sync` until the upload executor is implemented, so this phase can never report an unperformed transfer as successful. See `docs/synology-source-agent.md`. Setup also pins the filesystem identity of each configured Photos root; every run revalidates it before declaring a complete inventory, preventing an unmounted/replaced root or final symlink from turning into a false whole-library `missing` result. Long scans heartbeat the server run lease even when most discovered objects are locally ignored.
 
 Phase 14A adds **Server-side Search** for active files and directories. `GET /api/v1/search` is owner-scoped, accepts a UTF-8 query of at least two characters, optional `type=file|dir`, `limit` from 1–200, and an opaque keyset `cursor`. Matching is case-insensitive against each active node's relative path, preserving the previous Desktop full-path search behavior without transferring the entire namespace to the Agent. Results include the normal node payload, relative `path`, directory `breadcrumbs`, and `next_cursor`; cursors are bound to the original query/type so they cannot be reused across different searches. Deleted/trash nodes and other users' nodes are never included.
 
@@ -931,6 +934,7 @@ cmd/
   server/                 HTTP server
   xd/                     CLI
   xdrive-agent/           background client agent
+  xdrive-source-agent/    Synology Photos native source scanner
   xdrive-updater/         stable-release updater
 internal/
   admin/                  first-administrator bootstrap
@@ -942,6 +946,8 @@ internal/
   mount/                  Linux FUSE + Windows CfAPI
   secretstore/            DPAPI / Secret Service credential storage
   source/                 external-source ignore rules and fast planner
+  sourceagent/            native source scanning engine
+  sourceagentconfig/      headless source-agent config and credentials
   storage/                Local storage backend
   userconfig/             per-user non-secret client configuration
   update/                 release check/download/checksum/update logic
@@ -989,7 +995,7 @@ deploy/
 
 ## Roadmap
 
-1. Phase 13C: build the native Synology source agent for Personal + Shared Photos push, fast scan-only, ignore rules, local incremental state, and resumable/instant upload execution;
+1. Phase 13C: add the Synology sync executor (directory materialization, SHA-256 only for transfer candidates, resumable/instant upload, overwrite/move commit) and DSM amd64/arm64 packaging on top of the native Fast Scanner;
 2. Phase 13D: add the experimental Yike Photos pull worker for the own library, own albums, and shared albums without mutating the source account;
 3. Phase 13E: add optional photo metadata/collection adapters such as Live Photo grouping and album semantics without coupling them to the source schema;
 4. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;

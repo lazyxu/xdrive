@@ -216,6 +216,7 @@ go-linux:
       go test -p 1 -race ./...
       go vet ./...
       go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
+      go build ./cmd/xdrive-source-agent
 
       source scripts/ci/client-artifact-version.sh
       mkdir -p desktop/release
