@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { formatBinarySize } from '@xdrive/shared'
 
-type View = 'overview' | 'cloud' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+type View = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+
+type SourceRow = {
+  source: AgentSource
+  latestRun?: AgentSourceRun
+  credential?: AgentSourceCredentialStatus
+}
 
 function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
@@ -44,6 +50,7 @@ function viewLabel(view: View) {
   const labels: Record<View, string> = {
     overview: '概览',
     cloud: '云端文件',
+    sources: '外部来源',
     transfers: '传输',
     files: '存储',
     conflicts: '冲突',
@@ -51,6 +58,45 @@ function viewLabel(view: View) {
     settings: '设置',
   }
   return labels[view]
+}
+
+function formatSourceTime(value?: string) {
+  if (!value) return '尚无记录'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '尚无记录'
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const days = Math.round((today.getTime() - target.getTime()) / 86_400_000)
+  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  if (days === 0) return `今天 ${time}`
+  if (days === 1) return `昨天 ${time}`
+  return date.toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+function sourceMode(source: AgentSource) {
+  return `${source.direction === 'push' ? 'Push' : 'Pull'} · ${source.run_mode === 'scan' ? '仅扫描' : '同步'}`
+}
+
+function sourceState(row: SourceRow) {
+  if (row.source.status === 'paused') return { tone: 'waiting', label: '已暂停' }
+  if (row.latestRun?.status === 'running') return { tone: 'ready', label: '运行中' }
+  if (row.source.run_requested_at) return { tone: 'warning', label: '等待执行' }
+  if (row.source.last_error) return { tone: 'warning', label: '异常' }
+  if (row.source.kind === 'yike_photos') {
+    return row.credential?.configured
+      ? { tone: 'ready', label: 'Cookie 已配置' }
+      : { tone: 'warning', label: 'Cookie 未配置' }
+  }
+  if (row.source.last_success_at) return { tone: 'ready', label: '正常' }
+  if (row.latestRun?.status === 'partial') return { tone: 'warning', label: '部分完成' }
+  return { tone: 'waiting', label: '尚未运行' }
 }
 
 function shareStatusLabel(status: string) {
@@ -73,6 +119,7 @@ export default function App() {
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
+  const [sources, setSources] = useState<SourceRow[]>([])
   const [cloudRoot, setCloudRoot] = useState<AgentCloudNode | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -144,6 +191,7 @@ export default function App() {
       setSettings(null)
       setConflicts([])
       setDiagnostics(null)
+      setSources([])
       setStorageTree(null)
       setCacheStats(null)
       setCloudRoot(null)
@@ -167,6 +215,13 @@ export default function App() {
     // Diagnostics are intentionally excluded because they perform network/system checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured, status?.revision])
+
+  useEffect(() => {
+    if (view !== 'sources' || !agent.connected || !configured) return
+    void loadSources()
+    // External Sources load when entering the page or reconnecting. Refresh is explicit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, agent.connected, configured])
 
   useEffect(() => {
     if (view !== 'diagnostics' || !agent.connected || !configured) return
@@ -271,6 +326,41 @@ export default function App() {
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
+    }
+  }
+
+  const loadSources = async () => {
+    setBusy('sources')
+    setError('')
+    try {
+      if (!(agent.hello?.capabilities.includes('external-sources') ?? false)) {
+        setSources([])
+        setError('当前 xdrive-agent 不支持外部来源，请更新客户端核心组件。')
+        return
+      }
+      const sourceResult = await window.xdriveDesktop.agent.getSources()
+      if (!sourceResult.ok) {
+        setError(sourceResult.error.message)
+        return
+      }
+      const rows = await Promise.all(sourceResult.data.map(async (source) => {
+        const [runsResult, credentialResult] = await Promise.all([
+          window.xdriveDesktop.agent.getSourceRuns(source.id, 1),
+          source.kind === 'yike_photos'
+            ? window.xdriveDesktop.agent.getSourceCredential(source.id)
+            : Promise.resolve(null),
+        ])
+        if (!runsResult.ok) setError(runsResult.error.message)
+        if (credentialResult && !credentialResult.ok) setError(credentialResult.error.message)
+        return {
+          source,
+          latestRun: runsResult.ok ? runsResult.data[0] : undefined,
+          credential: credentialResult && credentialResult.ok ? credentialResult.data : undefined,
+        }
+      }))
+      setSources(rows)
+    } finally {
+      setBusy('')
     }
   }
 
@@ -739,6 +829,7 @@ export default function App() {
         <nav aria-label="桌面版功能区">
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>概览</button>
           <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>云端文件</button>
+          <button className={`nav-item ${view === 'sources' ? 'active' : ''}`} type="button" onClick={() => setView('sources')}>外部来源</button>
           <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>
             传输 {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}
           </button>
@@ -798,6 +889,57 @@ export default function App() {
           </>
         )}
 
+
+
+        {view === 'sources' && (
+          <section className="panel source-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">外部来源</p>
+                <h2>管理照片与媒体来源</h2>
+                <p className="source-note">来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的 Cookie 明文。</p>
+              </div>
+              <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadSources()}>
+                {busy === 'sources' ? '正在刷新…' : '刷新'}
+              </button>
+            </div>
+
+            {sources.length === 0 && busy !== 'sources' ? (
+              <div className="empty-state">尚未添加外部来源。</div>
+            ) : (
+              <div className="source-list">
+                {sources.map((row) => {
+                  const state = sourceState(row)
+                  const timeLabel = row.source.run_mode === 'scan' ? '上次扫描' : '上次成功'
+                  const timeValue = row.source.run_mode === 'scan' ? row.source.last_run_at : row.source.last_success_at
+                  return (
+                    <article className="source-card" key={row.source.id}>
+                      <div className="source-card-header">
+                        <div className="source-title">
+                          <strong>{row.source.name}</strong>
+                          <span>{sourceMode(row.source)}</span>
+                        </div>
+                        <div className="source-state">
+                          <span className={`status-dot ${state.tone}`} />
+                          <strong>{state.label}</strong>
+                        </div>
+                      </div>
+                      <div className="source-card-meta">
+                        <span>{timeLabel}：{formatSourceTime(timeValue)}</span>
+                        <span>
+                          {row.latestRun
+                            ? `${row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · ${formatBinarySize(row.latestRun.scanned_bytes)}`
+                            : '尚无扫描统计'}
+                        </span>
+                      </div>
+                      {row.source.last_error && <div className="source-error">{row.source.last_error}</div>}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
 
         {view === 'cloud' && (

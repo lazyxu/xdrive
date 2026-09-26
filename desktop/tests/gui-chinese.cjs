@@ -12,6 +12,7 @@ test('desktop GUI defaults to Chinese', () => {
   for (const text of [
     '概览',
     '云端文件',
+    '外部来源',
     '传输中心',
     '存储策略',
     '冲突副本',
