@@ -56,8 +56,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go-linux-api":                   "linux",
 		"go-windows":                     "windows",
 		"build-source-agent":             "linux",
-		"build-linux-client":             "linux",
-		"build-windows-client":           "windows",
+		"package-linux-client":           "linux",
+		"package-windows-client":         "windows",
 		"server-validation":              "linux",
 		"server-image":                   "linux",
 		"caddy-image":                    "linux",
@@ -81,8 +81,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go-linux-api":                   "$XDRIVE_CI_GO_IMAGE",
 		"go-windows":                     "",
 		"build-source-agent":             "$XDRIVE_CI_GO_IMAGE",
-		"build-linux-client":             "$XDRIVE_CI_GO_IMAGE",
-		"build-windows-client":           "",
+		"package-linux-client":           "$XDRIVE_CI_GO_IMAGE",
+		"package-windows-client":         "",
 		"server-validation":              "$XDRIVE_CI_GO_IMAGE",
 		"server-image":                   "$XDRIVE_CI_GO_IMAGE",
 		"caddy-image":                    "$XDRIVE_CI_GO_IMAGE",
@@ -252,10 +252,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"- local: /infra/ci/gitlab-release.yml",
 		"- gate",
 		"- build",
-		"- artifact",
+		"- package",
 		"- test",
 		"- verify",
-		"- package",
+		"- release-build",
 		"- promote",
 		"- release",
 		"$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_TAG =~ /^v.+/",
@@ -268,8 +268,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"desktop-windows:",
 		"build-client-core:",
 		"build-source-agent:",
-		"build-linux-client:",
-		"build-windows-client:",
+		"package-linux-client:",
+		"package-windows-client:",
 		"test-linux-artifact:",
 		"test-source-agent-artifact:",
 		"test-windows-rollback-artifact:",
@@ -346,8 +346,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 
 	requireRaw(t, "GitHub build-once contract", githubRaw,
-		"build-linux-client:",
-		"build-windows-client:",
+		"package-linux-client:",
+		"package-windows-client:",
 		"build-client-core:",
 		"build-source-agent:",
 		"test-linux-artifact:",
@@ -359,8 +359,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"needs: [final-gate]",
 	)
 	requireRaw(t, "GitLab build-once contract", gitlabRaw,
-		"build-linux-client:",
-		"build-windows-client:",
+		"package-linux-client:",
+		"package-windows-client:",
 		"build-source-agent:",
 		"test-linux-artifact:",
 		"test-windows-rollback-artifact:",
@@ -369,6 +369,31 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"test-source-agent-artifact:",
 		"final-gate:",
 		"stage: verify",
+	)
+
+	requireRaw(t, "GitHub pre-test installer packaging contract", githubRaw,
+		"package-linux-client:",
+		"package-windows-client:",
+		"needs: [package-linux-client, package-windows-client]",
+		"name: xdrive-linux-amd64",
+		"name: xdrive-windows-amd64",
+	)
+	assertYAMLStringList(t, gitlab, "stages", []string{
+		"gate",
+		"build",
+		"package",
+		"test",
+		"verify",
+		"release-build",
+		"promote",
+		"release",
+	})
+	requireRaw(t, "GitLab pre-test installer packaging contract", gitlabRaw,
+		"package-linux-client:",
+		"package-windows-client:",
+		"stage: package",
+		"- job: package-linux-client",
+		"- job: package-windows-client",
 	)
 
 	requireRaw(t, "GitHub split critical test contract", githubRaw,
@@ -574,9 +599,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	installerTemplate := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
 	gitlabReleaseScripts := strings.Join([]string{
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-version.sh")),
-		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux.sh")),
-		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows.sh")),
-		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows-native.ps1")),
+		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-assets.sh")),
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-images.sh")),
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-promote-images.sh")),
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-publish-release.sh")),
@@ -633,9 +656,8 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		if strings.Contains(githubRelease, forbidden) {
 			t.Errorf("GitHub publish workflow must not rebuild client artifacts: %q", forbidden)
 		}
-		if strings.Contains(readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux.sh"))+"\n"+
-			readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows.sh")), forbidden) {
-			t.Errorf("GitLab package jobs must not rebuild client artifacts: %q", forbidden)
+		if strings.Contains(readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-assets.sh")), forbidden) {
+			t.Errorf("GitLab release jobs must not rebuild client artifacts: %q", forbidden)
 		}
 	}
 
@@ -653,16 +675,23 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"Download exact Windows installer tested by CI",
 		"Verify single-installer distribution contract",
 	)
-	requireRaw(t, "GitLab Build Packages", gitlabRelease,
-		"package-linux-amd64:",
-		"package-windows-amd64:",
-		"package-server-images:",
+	requireRaw(t, "GitLab release pipeline", gitlabRelease,
+		"release-assets:",
+		"build-server-images:",
 		"promote-server-images:",
 		"publish-release:",
+		"- job: package-linux-client",
+		"- job: package-windows-client",
+		"stage: release-build",
 		"expire_in: 14 days",
 		"GLAB_ENABLE_CI_AUTOLOGIN: \"true\"",
 		"image: $XDRIVE_CI_GLAB_IMAGE",
 	)
+	for _, legacyJob := range []string{"package-linux-amd64:", "package-windows-amd64:", "package-server-images:"} {
+		if strings.Contains(gitlabRelease, legacyJob) {
+			t.Errorf("GitLab release pipeline still contains obsolete post-test packaging job %q", legacyJob)
+		}
+	}
 
 	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
 		"snapshot-$short_sha",
@@ -671,9 +700,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"XDRIVE_PROMOTION_TAG=\"latest\"",
 		"--use-package-registry",
 		"--package-name xdrive-build-packages",
-		"CI-tested Linux installer artifact is missing",
 		"CI-tested source-agent artifact is missing",
-		"CI-tested Windows installer artifact is missing",
 		"s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g",
 	)
 	for _, legacy := range []string{
@@ -702,7 +729,7 @@ func readFile(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	return string(data)
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
 func nestedMapKeys(t *testing.T, root map[string]any, key string) []string {
@@ -736,6 +763,21 @@ func gitlabJobKeys(root map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func assertYAMLStringList(t *testing.T, root map[string]any, key string, want []string) {
+	t.Helper()
+	raw, ok := root[key].([]any)
+	if !ok {
+		t.Fatalf("YAML key %q has type %T, want list", key, root[key])
+	}
+	got := make([]string, 0, len(raw))
+	for _, item := range raw {
+		got = append(got, fmt.Sprint(item))
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("YAML key %q=%v want=%v", key, got, want)
+	}
 }
 
 func assertRunnerParity(t *testing.T, github, gitlab map[string]any, expected map[string]string) {
