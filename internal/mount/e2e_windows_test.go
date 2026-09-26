@@ -479,6 +479,133 @@ func waitE2E(t *testing.T, timeout time.Duration, label string, fn func() bool) 
 	t.Fatalf("timed out waiting for %s", label)
 }
 
+func TestWindowsCfAPIRestartAndOfflineConflict(t *testing.T) {
+	api := newE2EAPI()
+	server := httptest.NewServer(api)
+	defer server.Close()
+
+	rootBase := t.TempDir()
+	root := filepath.Join(rootBase, "xDrive")
+	statePath := filepath.Join(rootBase, "state", "baseline.json")
+	conflictEvents := make(chan Event, 8)
+	SetEventSink(func(event Event) {
+		if event.Kind == EventConflict {
+			select {
+			case conflictEvents <- event:
+			default:
+			}
+		}
+	})
+	defer SetEventSink(nil)
+
+	startProvider := func() (context.CancelFunc, <-chan error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- runPlatformWithOptions(
+				ctx,
+				client.New(server.URL, "restart-token"),
+				root,
+				Options{StatePath: statePath},
+			)
+		}()
+		return cancel, done
+	}
+	stopProvider := func(cancel context.CancelFunc, done <-chan error) {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("provider did not stop during restart test")
+		}
+	}
+	waitBaselineRevision := func(want uint64) {
+		waitE2E(t, 10*time.Second, fmt.Sprintf("persisted baseline revision %d", want), func() bool {
+			data, err := os.ReadFile(statePath)
+			if err != nil {
+				return false
+			}
+			var state winBaselineStateFile
+			if json.Unmarshal(data, &state) != nil {
+				return false
+			}
+			entry, ok := state.Entries["remote.txt"]
+			return ok && entry.Node.Revision == want
+		})
+	}
+
+	cancel, done := startProvider()
+	remotePath := filepath.Join(root, "remote.txt")
+	waitE2E(t, 20*time.Second, "restart-test initial placeholder", func() bool {
+		info, err := os.Stat(remotePath)
+		return err == nil && info.Size() == int64(len("remote-v1"))
+	})
+	if content, err := os.ReadFile(remotePath); err != nil || string(content) != "remote-v1" {
+		t.Fatalf("initial restart-test hydration content=%q err=%v", content, err)
+	}
+	waitBaselineRevision(1)
+	stopProvider(cancel, done)
+
+	if err := os.WriteFile(remotePath, []byte("offline-client-v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cancel, done = startProvider()
+	waitE2E(t, 20*time.Second, "offline local edit uploaded after restart", func() bool {
+		node, data, ok := api.byName("remote.txt")
+		return ok && node.Revision >= 2 && string(data) == "offline-client-v2"
+	})
+	afterLocalOnly, _, ok := api.byName("remote.txt")
+	if !ok {
+		t.Fatal("remote.txt disappeared after local-only restart")
+	}
+	waitBaselineRevision(afterLocalOnly.Revision)
+	stopProvider(cancel, done)
+
+	if err := os.WriteFile(remotePath, []byte("offline-local-conflict"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	api.externalOverwrite(afterLocalOnly.ID, []byte("web-wins-after-offline"))
+
+	cancel, done = startProvider()
+	waitE2E(t, 25*time.Second, "offline restart conflict copy", func() bool {
+		api.mu.Lock()
+		defer api.mu.Unlock()
+		for _, entry := range api.entries {
+			if strings.HasPrefix(entry.node.Name, "remote (conflict ") &&
+				string(entry.content) == "offline-local-conflict" {
+				return true
+			}
+		}
+		return false
+	})
+
+	var conflictEvent Event
+	select {
+	case conflictEvent = <-conflictEvents:
+	case <-time.After(5 * time.Second):
+		t.Fatal("restart conflict event was not emitted")
+	}
+	if conflictEvent.OriginalPath != "remote.txt" ||
+		conflictEvent.OriginalNodeID != afterLocalOnly.ID ||
+		conflictEvent.ConflictNodeID == 0 {
+		t.Fatalf("restart conflict metadata=%+v", conflictEvent)
+	}
+
+	original, serverWinner, ok := api.byName("remote.txt")
+	if !ok || original.ID != afterLocalOnly.ID || string(serverWinner) != "web-wins-after-offline" {
+		t.Fatalf("offline Web winner was lost: node=%+v ok=%t content=%q", original, ok, serverWinner)
+	}
+	waitE2E(t, 20*time.Second, "offline conflict server winner restored locally", func() bool {
+		content, err := os.ReadFile(remotePath)
+		return err == nil && string(content) == "web-wins-after-offline"
+	})
+	waitBaselineRevision(original.Revision)
+	stopProvider(cancel, done)
+}
+
 func TestWindowsCfAPIE2E(t *testing.T) {
 	api := newE2EAPI()
 	server := httptest.NewServer(api)

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -450,10 +452,18 @@ func (c *agentController) Run() {
 			lastAuthCheck = time.Time{}
 			var recoveryErr error
 			if request.repair {
-				if err := os.MkdirAll(d.root, 0o755); err != nil {
-					recoveryErr = err
-				} else if err := mount.RepairSyncRoot(d.root); err != nil {
-					recoveryErr = err
+				opts := mountOptionsFromConfig(d.cfg, c.transfers)
+				if opts.StatePath != "" {
+					if err := os.Remove(opts.StatePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+						recoveryErr = err
+					}
+				}
+				if recoveryErr == nil {
+					if err := os.MkdirAll(d.root, 0o755); err != nil {
+						recoveryErr = err
+					} else if err := mount.RepairSyncRoot(d.root); err != nil {
+						recoveryErr = err
+					}
 				}
 			}
 			reconcile()
@@ -745,6 +755,14 @@ func mountOptionsFromConfig(cfg userconfig.Config, managers ...*transfer.Manager
 		transfers = managers[0]
 	}
 	opts := mount.Options{CacheLimitBytes: cfg.CacheLimitBytes, Transfers: transfers}
+	if dir, err := userconfig.Dir(); err == nil {
+		if root, rootErr := userconfig.EffectiveMountPath(cfg); rootErr == nil {
+			key := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(cfg.Server)) + "\x00" +
+				strings.ToLower(strings.TrimSpace(cfg.Username)) + "\x00" +
+				strings.ToLower(filepath.Clean(root))))
+			opts.StatePath = filepath.Join(dir, "mount-state", hex.EncodeToString(key[:])+".json")
+		}
+	}
 	for _, rule := range cfg.SyncRules {
 		switch rule.Mode {
 		case userconfig.SyncModeExclude:

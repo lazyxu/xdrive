@@ -10,6 +10,7 @@ type Options struct {
 	ExcludedPaths    []string
 	AlwaysLocalPaths []string
 	CacheLimitBytes  int64
+	StatePath        string
 	Transfers        *transfer.Manager
 }
 
