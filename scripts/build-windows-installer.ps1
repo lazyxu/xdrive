@@ -2,6 +2,7 @@ param(
     [string]$Version = "0.0.0-dev",
     [string]$OutputDir = "dist",
     [string]$DesktopSourceDir = "",
+    [string]$CoreSourceDir = "",
     [string]$SigningPfxPath = $env:XD_WINDOWS_SIGN_PFX_PATH,
     [string]$SigningPassword = $env:XD_WINDOWS_SIGN_PFX_PASSWORD,
     [string]$TimestampUrl = "http://timestamp.digicert.com",
@@ -27,6 +28,20 @@ $DesktopSourceDir = [System.IO.Path]::GetFullPath($DesktopSourceDir)
 $DesktopExe = Join-Path $DesktopSourceDir "xdrive-desktop.exe"
 if (-not (Test-Path $DesktopExe)) {
     throw "Electron desktop runtime is missing: $DesktopExe. Build desktop/release/win-unpacked first."
+}
+
+$UsePrebuiltCore = -not [string]::IsNullOrWhiteSpace($CoreSourceDir)
+if ($UsePrebuiltCore) {
+    if (-not [System.IO.Path]::IsPathRooted($CoreSourceDir)) {
+        $CoreSourceDir = Join-Path $Root $CoreSourceDir
+    }
+    $CoreSourceDir = [System.IO.Path]::GetFullPath($CoreSourceDir)
+    foreach ($name in @("xd.exe", "xdrive-agent.exe")) {
+        $candidate = Join-Path $CoreSourceDir $name
+        if (-not (Test-Path $candidate)) {
+            throw "prebuilt Windows client core is missing: $candidate"
+        }
+    }
 }
 
 function Find-SignTool {
@@ -103,19 +118,24 @@ function Sign-Artifact([string]$Path) {
 
 Push-Location $Root
 try {
-    $env:CGO_ENABLED = "0"
-    $env:GOOS = "windows"
-    $env:GOARCH = "amd64"
-    $VersionFlag = "-X github.com/lazyxu/xdrive/internal/version.Version=$Version"
+    if ($UsePrebuiltCore) {
+        Copy-Item (Join-Path $CoreSourceDir "xd.exe") (Join-Path $Source "xd.exe") -Force
+        Copy-Item (Join-Path $CoreSourceDir "xdrive-agent.exe") (Join-Path $Source "xdrive-agent.exe") -Force
+    } else {
+        $env:CGO_ENABLED = "0"
+        $env:GOOS = "windows"
+        $env:GOARCH = "amd64"
+        $VersionFlag = "-X github.com/lazyxu/xdrive/internal/version.Version=$Version"
 
-    go build -trimpath -ldflags="-s -w $VersionFlag" -o (Join-Path $Source "xd.exe") ./cmd/xd
-    if ($LASTEXITCODE -ne 0) {
-        throw "building xd.exe failed"
-    }
+        go build -trimpath -ldflags="-s -w $VersionFlag" -o (Join-Path $Source "xd.exe") ./cmd/xd
+        if ($LASTEXITCODE -ne 0) {
+            throw "building xd.exe failed"
+        }
 
-    go build -trimpath -ldflags="-s -w -H=windowsgui $VersionFlag" -o (Join-Path $Source "xdrive-agent.exe") ./cmd/xdrive-agent
-    if ($LASTEXITCODE -ne 0) {
-        throw "building xdrive-agent.exe failed"
+        go build -trimpath -ldflags="-s -w -H=windowsgui $VersionFlag" -o (Join-Path $Source "xdrive-agent.exe") ./cmd/xdrive-agent
+        if ($LASTEXITCODE -ne 0) {
+            throw "building xdrive-agent.exe failed"
+        }
     }
 
     Sign-Artifact (Join-Path $Source "xd.exe")
