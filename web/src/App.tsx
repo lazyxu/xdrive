@@ -498,6 +498,9 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
         <ExternalSourcesPanel
           open={sourcesOpen}
           api={api}
+          defaultTargetNodeID={current?.id}
+          defaultTargetLabel={current?.name ?? '我的文件'}
+          defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
           onClose={() => setSourcesOpen(false)}
           onError={handleError}
         />

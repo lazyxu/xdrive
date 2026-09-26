@@ -323,6 +323,21 @@ export class XDriveApi {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }
 
+  createSource(input: {
+    name: string
+    kind: 'synology_photos' | 'yike_photos'
+    direction: 'push' | 'pull'
+    sync_mode: 'backup'
+    run_mode: 'scan' | 'sync'
+    target_node_id: number
+    ignore_rules: string
+  }) {
+    return this.request<ExternalSource>('/api/v1/sources', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
   sourceRuns(sourceID: number, limit = 1) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?limit=${bounded}`)
