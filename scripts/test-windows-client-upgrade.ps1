@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Installer,
-    [Parameter(Mandatory = $true)][string]$TargetVersion
+    [Parameter(Mandatory = $true)][string]$TargetVersion,
+    [ValidateSet("all", "rollback", "upgrade")][string]$Scenario = "all"
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,6 +53,37 @@ function Read-Status {
         throw "transaction status file missing: $StatusPath"
     }
     return Get-Content -LiteralPath $StatusPath -Raw | ConvertFrom-Json
+}
+
+function Uninstall-XDrive {
+    Stop-XDriveProcesses
+    $uninstaller = (& $UninstallerResolver -AppDir $AppDir | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($uninstaller)) {
+        throw "uninstaller resolver returned an empty path after transaction test"
+    }
+    Write-Host "transaction test uninstalling via $uninstaller"
+    $uninstall = Start-Process -FilePath $uninstaller -ArgumentList $installArgs -PassThru
+    if (-not $uninstall.WaitForExit(120000)) {
+        Stop-Process -Id $uninstall.Id -Force -ErrorAction SilentlyContinue
+        throw "uninstaller timed out after 120 seconds"
+    }
+    $uninstall.Refresh()
+    if ($uninstall.ExitCode -ne 0) {
+        throw "uninstaller exited with code $($uninstall.ExitCode)"
+    }
+    if (Test-Path -LiteralPath (Join-Path $AppDir "xd.exe")) {
+        throw "xd.exe remains after transaction test uninstall"
+    }
+    if (Test-Path -LiteralPath (Join-Path $AppDir "xdrive-agent.exe")) {
+        throw "xdrive-agent.exe remains after transaction test uninstall"
+    }
+    if (Test-Path -LiteralPath (Join-Path $AppDir "desktop\xdrive-desktop.exe")) {
+        throw "xdrive-desktop.exe remains after transaction test uninstall"
+    }
+    $remainingRun = Get-ItemProperty -Path $RunKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
+    if ($null -ne $remainingRun) {
+        throw "xDriveAgent autorun remains after transaction test uninstall"
+    }
 }
 
 Remove-Item -LiteralPath $TransactionRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -114,6 +146,7 @@ if ($initialRunValue -notlike "*xdrive-agent.exe*") {
     throw "xDriveAgent autorun registration missing after baseline install"
 }
 
+if ($Scenario -ne "upgrade") {
 $marker = Join-Path $AppDir "rollback-marker.txt"
 Set-Content -LiteralPath $marker -Value "last-known-good"
 
@@ -148,6 +181,16 @@ if ($restoredVersion -ne $TargetVersion) {
     throw "rollback restored wrong version: $restoredVersion"
 }
 Stop-XDriveProcesses
+
+
+}
+
+if ($Scenario -eq "rollback") {
+    Uninstall-XDrive
+    Remove-Item -LiteralPath $TransactionRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Windows client rollback transaction test passed."
+    exit 0
+}
 
 $legacyDir = Join-Path $env:LOCALAPPDATA "Programs\xDrive Desktop Legacy Transaction CI"
 New-Item -ItemType Directory -Force $legacyDir | Out-Null
@@ -243,33 +286,7 @@ if ($null -eq $matchedDesktop) {
 
 Stop-XDriveProcesses
 
-$uninstaller = (& $UninstallerResolver -AppDir $AppDir | Out-String).Trim()
-if ([string]::IsNullOrWhiteSpace($uninstaller)) {
-    throw "uninstaller resolver returned an empty path after transaction test"
-}
-Write-Host "transaction test uninstalling via $uninstaller"
-$uninstall = Start-Process -FilePath $uninstaller -ArgumentList $installArgs -PassThru
-if (-not $uninstall.WaitForExit(120000)) {
-    Stop-Process -Id $uninstall.Id -Force -ErrorAction SilentlyContinue
-    throw "uninstaller timed out after 120 seconds"
-}
-$uninstall.Refresh()
-if ($uninstall.ExitCode -ne 0) {
-    throw "uninstaller exited with code $($uninstall.ExitCode)"
-}
-if (Test-Path -LiteralPath (Join-Path $AppDir "xd.exe")) {
-    throw "xd.exe remains after transaction test uninstall"
-}
-if (Test-Path -LiteralPath (Join-Path $AppDir "xdrive-agent.exe")) {
-    throw "xdrive-agent.exe remains after transaction test uninstall"
-}
-if (Test-Path -LiteralPath (Join-Path $AppDir "desktop\xdrive-desktop.exe")) {
-    throw "xdrive-desktop.exe remains after transaction test uninstall"
-}
-$remainingRun = Get-ItemProperty -Path $RunKey -Name "xDriveAgent" -ErrorAction SilentlyContinue
-if ($null -ne $remainingRun) {
-    throw "xDriveAgent autorun remains after transaction test uninstall"
-}
+Uninstall-XDrive
 
 Remove-Item -LiteralPath $TransactionRoot -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host "Windows client upgrade transaction test passed."
+Write-Host "Windows client upgrade transaction test passed for scenario: $Scenario"
