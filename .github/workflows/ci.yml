@@ -224,6 +224,7 @@ jobs:
             echo "Go 1.24 must be rejected by the minimum-version check" >&2
             exit 1
           fi
+          bash -n scripts/build-windows-go-binaries.sh
           bash -n scripts/ci/gitlab-desktop-windows.sh
           bash -n scripts/ci/gitlab-go-linux.sh
           bash -n scripts/ci/gitlab-package-linux-client.sh
@@ -316,7 +317,33 @@ jobs:
       - name: Windows CfAPI E2E suite
         run: go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1
 
-  build-windows-client:
+  build-windows-go-binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - name: Cross-build Windows Go binaries
+        shell: bash
+        run: bash scripts/build-windows-go-binaries.sh "$XDRIVE_RELEASE_VERSION" release/windows-go
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-go-binaries-amd64
+          path: |
+            release/windows-go/xd.exe
+            release/windows-go/xdrive-agent.exe
+          if-no-files-found: error
+          retention-days: 2
+
+  build-windows-desktop-runtime:
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -329,25 +356,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
       - uses: actions/cache@v4
         with:
           path: |
             .cache/npm
             .cache/electron
             .cache/electron-builder
-          key: client-windows-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
-      - name: Resolve client artifact version
+          key: client-windows-desktop-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
+      - name: Resolve desktop artifact version
         shell: bash
         run: |
           set -euo pipefail
           source scripts/ci/client-artifact-version.sh
-          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
           echo "XDRIVE_DESKTOP_VERSION=$XDRIVE_DESKTOP_VERSION" >> "$GITHUB_ENV"
-      - name: Prepare Windows client signing
+      - name: Prepare Windows desktop signing
         shell: pwsh
         run: |
           if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
@@ -357,22 +379,19 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PASSWORD)) {
               throw "XD_WINDOWS_SIGN_PFX_PASSWORD is required when XD_WINDOWS_SIGN_PFX_B64 is set."
             }
-            $path = Join-Path $env:RUNNER_TEMP "xdrive-client-signing.pfx"
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-signing.pfx"
             [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
             "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "CSC_KEY_PASSWORD=$env:XD_WINDOWS_SIGN_PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } elseif ($env:GITHUB_EVENT_NAME -eq "pull_request") {
             $password = "xdrive-ci-signing"
             $secure = ConvertTo-SecureString $password -AsPlainText -Force
             $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" `
               -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
-            $path = Join-Path $env:RUNNER_TEMP "xdrive-client-ci-signing.pfx"
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-desktop-ci-signing.pfx"
             Export-PfxCertificate -Cert $cert -FilePath $path -Password $secure | Out-Null
             "CSC_LINK=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "CSC_KEY_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
       - name: Build Windows desktop runtime
         working-directory: desktop
@@ -381,17 +400,86 @@ jobs:
           npm install --no-audit --no-fund
           node scripts/set-version.mjs $env:XDRIVE_DESKTOP_VERSION
           npm run runtime:win
-          if (-not (Test-Path ./release/win-unpacked/xdrive-desktop.exe)) { throw "desktop runtime missing" }
+          $exe = "./release/win-unpacked/xdrive-desktop.exe"
+          if (-not (Test-Path $exe)) { throw "desktop runtime missing" }
+          if (-not [string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            $sig = Get-AuthenticodeSignature $exe
+            if ($null -eq $sig.SignerCertificate -or $sig.Status -eq "NotSigned") {
+              throw "desktop runtime signature missing"
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-desktop-runtime-amd64
+          path: desktop/release/win-unpacked
+          if-no-files-found: error
+          retention-days: 2
+
+  build-windows-client:
+    needs: [build-windows-go-binaries, build-windows-desktop-runtime]
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-go-binaries-amd64
+          path: release/windows-go
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-desktop-runtime-amd64
+          path: desktop/release/win-unpacked
+      - name: Verify Windows build components
+        shell: pwsh
+        run: |
+          foreach ($path in @(
+            "./release/windows-go/xd.exe",
+            "./release/windows-go/xdrive-agent.exe",
+            "./desktop/release/win-unpacked/xdrive-desktop.exe"
+          )) {
+            if (-not (Test-Path $path)) { throw "Windows build component missing: $path" }
+          }
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
-      - name: Build unified Windows installer once
+      - name: Prepare unified installer signing
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PASSWORD)) {
+              throw "XD_WINDOWS_SIGN_PFX_PASSWORD is required when XD_WINDOWS_SIGN_PFX_B64 is set."
+            }
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-unified-signing.pfx"
+            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
+            "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $password = "xdrive-ci-signing"
+            $secure = ConvertTo-SecureString $password -AsPlainText -Force
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" `
+              -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-unified-ci-signing.pfx"
+            Export-PfxCertificate -Cert $cert -FilePath $path -Password $secure | Out-Null
+            "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+      - name: Assemble unified Windows installer once
         shell: pwsh
         run: |
           if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
-            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
+            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -GoBinarySourceDir release/windows-go -TimestampUrl "" -SkipSignatureTrustCheck
           } else {
-            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked
+            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -GoBinarySourceDir release/windows-go
           }
           if (-not (Test-Path ./release/xDriveSetup-amd64.exe)) { throw "installer missing" }
       - uses: actions/upload-artifact@v4

@@ -220,24 +220,62 @@ go-windows:
   script:
     - bash scripts/ci/gitlab-go-windows.sh
 
-build-windows-client:
-  stage: artifact
+build-windows-go-binaries:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: build
+  needs: []
+  tags:
+    - linux
+  script:
+    - |
+      set -euo pipefail
+      source scripts/ci/client-artifact-version.sh
+      bash scripts/build-windows-go-binaries.sh "$XDRIVE_RELEASE_VERSION" release/windows-go
+  artifacts:
+    name: "xdrive-windows-go-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - release/windows-go/xd.exe
+      - release/windows-go/xdrive-agent.exe
+
+build-windows-desktop-runtime:
+  stage: build
   needs: []
   variables:
     ELECTRON_CACHE: "$CI_PROJECT_DIR/.cache/electron"
     ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
-  resource_group: xdrive-build-windows-client
+  resource_group: xdrive-build-windows-desktop
   tags:
     - windows
   cache:
-    key: "xdrive-client-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH"
+    key: "xdrive-client-windows-desktop-v1-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
-      - .cache/go-mod/cache/download/
       - .cache/npm/
       - .cache/electron/
       - .cache/electron-builder/
     policy: pull-push
     when: always
+  script:
+    - bash scripts/ci/gitlab-desktop-windows.sh
+  artifacts:
+    name: "xdrive-windows-desktop-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - desktop/release/win-unpacked/
+
+build-windows-client:
+  stage: artifact
+  needs:
+    - job: build-windows-go-binaries
+      artifacts: true
+    - job: build-windows-desktop-runtime
+      artifacts: true
+  resource_group: xdrive-build-windows-client
+  tags:
+    - windows
   script:
     - bash scripts/ci/gitlab-package-windows-client.sh
   artifacts:

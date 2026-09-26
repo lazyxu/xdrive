@@ -4,7 +4,8 @@ param(
     [string]$Action,
     [string]$PfxPath = "",
     [string]$Password = "xdrive-ci-signing",
-    [string]$Version = "0.0.0-ci"
+    [string]$Version = "0.0.0-ci",
+    [string]$GoBinarySourceDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,10 +37,18 @@ try {
         }
 
         "BuildInstaller" {
+            $common = @{
+                Version = $Version
+                OutputDir = "release"
+                DesktopSourceDir = "desktop/release/win-unpacked"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($GoBinarySourceDir)) {
+                $common.GoBinarySourceDir = $GoBinarySourceDir
+            }
             if ($env:CI_PIPELINE_SOURCE -eq "merge_request_event") {
-                & ./scripts/build-windows-installer.ps1 -Version $Version -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -TimestampUrl "" -SkipSignatureTrustCheck
+                & ./scripts/build-windows-installer.ps1 @common -TimestampUrl "" -SkipSignatureTrustCheck
             } else {
-                & ./scripts/build-windows-installer.ps1 -Version $Version -OutputDir release -DesktopSourceDir desktop/release/win-unpacked
+                & ./scripts/build-windows-installer.ps1 @common
             }
             if ($LASTEXITCODE -ne 0) { throw "Windows unified installer build failed with exit code $LASTEXITCODE" }
         }

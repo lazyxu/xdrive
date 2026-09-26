@@ -53,6 +53,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go-windows":                 "windows",
 		"build-source-agent":         "linux",
 		"build-linux-client":         "linux",
+		"build-windows-go-binaries":  "linux",
+		"build-windows-desktop-runtime": "windows",
 		"build-windows-client":       "windows",
 		"server-validation":          "linux",
 		"test-linux-artifact":        "linux",
@@ -69,6 +71,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go-windows":                 "",
 		"build-source-agent":         "$XDRIVE_CI_GO_IMAGE",
 		"build-linux-client":         "$XDRIVE_CI_GO_IMAGE",
+		"build-windows-go-binaries":  "$XDRIVE_CI_GO_IMAGE",
+		"build-windows-desktop-runtime": "",
 		"build-windows-client":       "",
 		"server-validation":          "$XDRIVE_CI_GO_IMAGE",
 		"test-linux-artifact":        "$XDRIVE_CI_GO_IMAGE",
@@ -85,9 +89,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"xdrive-client-linux-v1-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/go-mod/", ".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
 	)
-	assertGitLabCache(t, gitlab, "build-windows-client",
-		"xdrive-client-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/go-mod/cache/download/", ".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
+	assertGitLabCache(t, gitlab, "build-windows-desktop-runtime",
+		"xdrive-client-windows-desktop-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -128,6 +132,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	dockerInstaller := readFile(t, filepath.Join(root, "scripts", "ci", "install-docker-cli.sh"))
 	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
 	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
+	windowsGoBuilder := readFile(t, filepath.Join(root, "scripts", "build-windows-go-binaries.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	gitlabGoLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux.sh"))
 	gitlabPackageLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux-client.sh"))
@@ -152,7 +157,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
 	serverPipeTest := readFile(t, filepath.Join(root, "scripts", "test-server-installer-pipe.sh"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" +
-		goVersionCheck + "\n" + artifactVersion + "\n" + gitlabLinuxBash + "\n" + gitlabWindowsBash + "\n" +
+		goVersionCheck + "\n" + artifactVersion + "\n" + windowsGoBuilder + "\n" + gitlabLinuxBash + "\n" + gitlabWindowsBash + "\n" +
 		gitlabWindowsNative + "\n" + testLinuxPackage + "\n" + testSourcePackage + "\n" + testWindowsPackage
 	for _, command := range []string{
 		"npm run test:main",
@@ -166,6 +171,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
 		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked",
+		"bash scripts/build-windows-go-binaries.sh \"$XDRIVE_RELEASE_VERSION\" release/windows-go",
+		"GoBinarySourceDir",
 		"bash scripts/ci/test-linux-client-package.sh \"$XDRIVE_RELEASE_VERSION\" release/xdrive-linux-amd64.deb",
 		"bash scripts/ci/test-source-agent-package.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
 		"test-windows-client-package.ps1",
@@ -241,6 +248,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"desktop-tests:",
 		"build-source-agent:",
 		"build-linux-client:",
+		"build-windows-go-binaries:",
+		"build-windows-desktop-runtime:",
 		"build-windows-client:",
 		"test-linux-artifact:",
 		"test-source-agent-artifact:",
@@ -251,6 +260,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/ci/gitlab-source-agent.sh",
 		"bash scripts/ci/gitlab-server-validation.sh",
 		"bash scripts/ci/gitlab-go-windows.sh",
+		"bash scripts/build-windows-go-binaries.sh",
+		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-package-windows-client.sh",
 		"bash scripts/ci/gitlab-test-linux-artifact.sh",
 		"bash scripts/ci/gitlab-test-source-agent-artifact.sh",
@@ -258,10 +269,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"release/xdrive-linux-amd64.deb",
 		"release/source-agent/xdrive-source-agent-linux-amd64",
 		"release/source-agent/xdrive-source-agent-linux-arm64",
+		"release/windows-go/xd.exe",
+		"release/windows-go/xdrive-agent.exe",
+		"desktop/release/win-unpacked/",
 		"release/xDriveSetup-amd64.exe",
 		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
 		"xdrive-client-linux-v1-$CI_RUNNER_EXECUTABLE_ARCH",
-		"xdrive-client-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		"xdrive-client-windows-desktop-v1-$CI_RUNNER_EXECUTABLE_ARCH",
 		".cache/go-mod/cache/download/",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
@@ -289,23 +303,38 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"echo \"GOSUMDB=$(go env GOSUMDB)\"",
 	)
 
-	requireRaw(t, "GitHub direct client build contract", githubRaw,
+	requireRaw(t, "GitHub parallel Windows component build contract", githubRaw,
 		"build-linux-client:",
+		"build-windows-go-binaries:",
+		"build-windows-desktop-runtime:",
 		"build-windows-client:",
+		"name: windows-go-binaries-amd64",
+		"name: windows-desktop-runtime-amd64",
+		"-GoBinarySourceDir release/windows-go",
 		"npm run runtime:linux",
 		"npm run runtime:win",
 		"actions/cache@v4",
 	)
+	requireRaw(t, "GitLab parallel Windows component build contract", gitlabRaw,
+		"build-windows-go-binaries:",
+		"build-windows-desktop-runtime:",
+		"build-windows-client:",
+		"release/windows-go/xd.exe",
+		"release/windows-go/xdrive-agent.exe",
+		"desktop/release/win-unpacked/",
+	)
 	if strings.Contains(githubRaw, "desktop-runtime-linux-amd64") ||
 		strings.Contains(githubRaw, "desktop-runtime-windows-amd64") {
-		t.Errorf("GitHub CI must not use intermediate Desktop runtime artifacts")
+		t.Errorf("legacy Desktop runtime artifact names must not return")
 	}
 	if strings.Contains(gitlabRaw, "desktop-runtime-linux-amd64.tar.gz") {
-		t.Errorf("GitLab CI must not use intermediate Desktop runtime artifacts")
+		t.Errorf("legacy Linux Desktop runtime artifact must not return")
 	}
 
 	requireRaw(t, "GitHub build-once contract", githubRaw,
 		"build-linux-client:",
+		"build-windows-go-binaries:",
+		"build-windows-desktop-runtime:",
 		"build-windows-client:",
 		"build-source-agent:",
 		"test-linux-artifact:",
@@ -316,6 +345,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "GitLab build-once contract", gitlabRaw,
 		"build-linux-client:",
+		"build-windows-go-binaries:",
+		"build-windows-desktop-runtime:",
 		"build-windows-client:",
 		"build-source-agent:",
 		"test-linux-artifact:",
@@ -348,6 +379,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go vet ./...",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
 		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked",
+		"CGO_ENABLED=0 GOOS=windows GOARCH=amd64",
 		"bash scripts/ci/test-linux-client-package.sh \"$XDRIVE_RELEASE_VERSION\" release/xdrive-linux-amd64.deb",
 		"bash scripts/ci/test-source-agent-package.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
 		"docker build -t xdrive/server:test .",
@@ -364,6 +396,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"desktop/release/win-unpacked/xdrive-desktop.exe",
 		"install innosetup --no-progress -y",
 		"BuildInstaller",
+		"GoBinarySourceDir",
+		"release/windows-go",
 		"release/xDriveSetup-amd64.exe",
 	)
 	if strings.Contains(gitlabPackageWindows, "test-windows-client-upgrade.ps1") ||
@@ -428,6 +462,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Get-AuthenticodeSignature",
 		"Start-Process -FilePath $installer",
 		"test-windows-client-package.ps1",
+		"GoBinarySourceDir",
 	)
 	requireRaw(t, "Windows uninstaller resolver", windowsUninstallerResolver,
 		"UninstallString",

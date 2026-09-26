@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-for cmd in go git node npm powershell.exe; do
+for cmd in git powershell.exe; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "required Windows packaging command is missing from PATH: $cmd" >&2
     exit 1
@@ -16,15 +16,19 @@ else
   exit 1
 fi
 
-bash scripts/ci/check-go-min-version.sh 1.25
-bash scripts/ci/gitlab-desktop-windows.sh
-
 source scripts/ci/client-artifact-version.sh
 
 test -f desktop/release/win-unpacked/xdrive-desktop.exe || {
   echo "Windows desktop runtime artifact is missing." >&2
   exit 1
 }
+
+for binary in release/windows-go/xd.exe release/windows-go/xdrive-agent.exe; do
+  test -f "$binary" || {
+    echo "Windows Go component artifact is missing: $binary" >&2
+    exit 1
+  }
+done
 
 "$choco_cmd" install innosetup --no-progress -y
 
@@ -65,6 +69,6 @@ fi
 
 rm -rf release
 mkdir -p release
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass   -File scripts/ci/gitlab-windows-native.ps1   -Action BuildInstaller -Version "$XDRIVE_RELEASE_VERSION"
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass   -File scripts/ci/gitlab-windows-native.ps1   -Action BuildInstaller -Version "$XDRIVE_RELEASE_VERSION" -GoBinarySourceDir "release/windows-go"
 
 test -f release/xDriveSetup-amd64.exe
