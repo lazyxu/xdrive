@@ -173,6 +173,10 @@ func (c *Client) ObserveSourceItems(ctx context.Context, sourceID uint64, runID 
 	return out.Plans, err
 }
 
+func (c *Client) HeartbeatSourceRun(ctx context.Context, sourceID uint64, runID string) error {
+	return c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/heartbeat", sourceID, url.PathEscape(runID)), map[string]any{}, nil)
+}
+
 func (c *Client) FinishSourceRun(ctx context.Context, sourceID uint64, runID string, input FinishSourceRunInput) (SyncRun, error) {
 	var out SyncRun
 	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", sourceID, url.PathEscape(runID)), input, &out)

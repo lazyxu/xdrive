@@ -314,6 +314,49 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 	c.JSON(http.StatusOK, observeSourceRunResponse{Plans: plans})
 }
 
+func (s *Server) heartbeatSourceRun(c *gin.Context) {
+	sourceID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+	runID, ok := canonicalRunID(c.Param("runID"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+
+	now := time.Now().UTC()
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var source meta.Source
+		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+			return err
+		}
+		if source.Status != meta.SourceStatusActive {
+			return errSourcePaused
+		}
+		result := tx.Model(&meta.SyncRun{}).
+			Where("id = ? AND source_id = ? AND status = ?", runID, sourceID, meta.SyncRunStatusRunning).
+			Update("updated_at", now)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 0 {
+			return nil
+		}
+		var run meta.SyncRun
+		if err := tx.Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
+			return err
+		}
+		return errSourceRunNotRunning
+	})
+	if err != nil {
+		writeSourceRunError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (s *Server) finishSourceRun(c *gin.Context) {
 	sourceID, ok := parseID(c.Param("id"))
 	if !ok {

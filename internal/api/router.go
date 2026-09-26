@@ -78,6 +78,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/runs", s.beginSourceRun)
 	authed.GET("/sources/:id/runs/:runID", s.getSourceRun)
 	authed.POST("/sources/:id/runs/:runID/observe", s.observeSourceRun)
+	authed.POST("/sources/:id/runs/:runID/heartbeat", s.heartbeatSourceRun)
 	authed.POST("/sources/:id/runs/:runID/finish", s.finishSourceRun)
 
 	admin := authed.Group("/admin")

@@ -117,6 +117,8 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	// A lost begin response is safe to retry with the same client-generated run ID.
 	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
 		token, strings.NewReader(beginBody), http.StatusOK)
+	heartbeatPath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/heartbeat", source.ID, runID)
+	request(t, router, http.MethodPost, heartbeatPath, token, strings.NewReader(`{}`), http.StatusNoContent)
 	otherRun := fmt.Sprintf(`{"run_id":%q,"trigger":"scheduled"}`, uuid.NewString())
 	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
 		token, strings.NewReader(otherRun), http.StatusConflict)
@@ -191,6 +193,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 
 	// Finish is idempotent when the response is lost.
 	request(t, router, http.MethodPost, finishPath, token, strings.NewReader(finishBody), http.StatusOK)
+	request(t, router, http.MethodPost, heartbeatPath, token, strings.NewReader(`{}`), http.StatusConflict)
 
 	assertSourceItemState(t, db, same.ID, meta.SourceItemStateSynced, "same.jpg", 100)
 	assertSourceItemState(t, db, changed.ID, meta.SourceItemStatePending, "changed.jpg", 100)
