@@ -130,9 +130,19 @@ Supply a custom rules file with:
 
 ## Run
 
+Force one run immediately:
+
 ```bash
 ./xdrive-source-agent run
 ```
+
+For normal scheduling, use the due gate:
+
+```bash
+./xdrive-source-agent run --due --interval 6h
+```
+
+With `--due`, the agent first reads the Source state and exits without traversing the Photos roots when the last run is newer than the requested interval. A pending manual request created by the Web **立即扫描** action overrides that interval and is executed with `trigger=manual`. Paused Sources are skipped by the due gate.
 
 A run:
 
@@ -150,12 +160,19 @@ If traversal is interrupted, unavailable, or permission-denied, the run is finis
 
 ## DSM Task Scheduler
 
-Create a scheduled user-defined script such as:
+For Web-triggered **立即扫描** without running a full scan every minute, configure a user-defined task to execute once per minute:
 
 ```bash
 export XD_SOURCE_AGENT_CONFIG_DIR=/volume1/@appdata/xdrive-source-agent
-/volume1/tools/xdrive-source-agent run
+/volume1/tools/xdrive-source-agent run --due --interval 6h
 ```
+
+The one-minute task is a lightweight control-plane check. It performs a real Photos traversal only when either:
+
+- the normal six-hour interval is due; or
+- xDrive has a pending manual run request from the Web UI.
+
+This keeps the NAS as the initiator of the Push connection while allowing a Web request to start on the next Task Scheduler invocation. The pending request remains visible in xDrive until an agent run actually starts.
 
 Run the task as a DSM account that has **read access** to every configured Photos root. No source-side write permission is needed.
 

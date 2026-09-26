@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceagent"
 	"github.com/lazyxu/xdrive/internal/sourceagentconfig"
 )
@@ -100,5 +103,68 @@ func TestMigrateRootFingerprintsAllowsLegacyDeviceChange(t *testing.T) {
 	}
 	if !changed || cfg.SharedRootFingerprint == "" {
 		t.Fatalf("device-change migration failed: %+v", cfg)
+	}
+}
+
+func TestResolveRunTriggerPendingRequestForcesManual(t *testing.T) {
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	last := now.Add(-time.Minute)
+	requested := now.Add(-time.Second)
+	trigger, run, err := resolveRunTrigger(client.Source{
+		Status: meta.SourceStatusActive, LastRunAt: &last, RunRequestedAt: &requested,
+	}, meta.SyncRunTriggerScheduled, true, 6*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run || trigger != meta.SyncRunTriggerManual {
+		t.Fatalf("trigger=%q run=%t want manual/true", trigger, run)
+	}
+}
+
+func TestResolveRunTriggerDueSchedule(t *testing.T) {
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-time.Hour)
+	trigger, run, err := resolveRunTrigger(client.Source{
+		Status: meta.SourceStatusActive, LastRunAt: &recent,
+	}, meta.SyncRunTriggerScheduled, true, 6*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run || trigger != meta.SyncRunTriggerScheduled {
+		t.Fatalf("recent source trigger=%q run=%t want scheduled/false", trigger, run)
+	}
+
+	expired := now.Add(-7 * time.Hour)
+	trigger, run, err = resolveRunTrigger(client.Source{
+		Status: meta.SourceStatusActive, LastRunAt: &expired,
+	}, meta.SyncRunTriggerScheduled, true, 6*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run || trigger != meta.SyncRunTriggerScheduled {
+		t.Fatalf("expired source trigger=%q run=%t want scheduled/true", trigger, run)
+	}
+}
+
+func TestResolveRunTriggerDueSkipsPausedButExplicitRunStillRuns(t *testing.T) {
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	trigger, run, err := resolveRunTrigger(client.Source{
+		Status: meta.SourceStatusPaused,
+	}, meta.SyncRunTriggerScheduled, true, 6*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run || trigger != meta.SyncRunTriggerScheduled {
+		t.Fatalf("paused due source trigger=%q run=%t want scheduled/false", trigger, run)
+	}
+
+	trigger, run, err = resolveRunTrigger(client.Source{
+		Status: meta.SourceStatusPaused,
+	}, meta.SyncRunTriggerManual, false, 6*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run || trigger != meta.SyncRunTriggerManual {
+		t.Fatalf("explicit source trigger=%q run=%t want manual/true", trigger, run)
 	}
 }
