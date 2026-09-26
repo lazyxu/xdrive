@@ -41,6 +41,9 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
+      - name: Typecheck desktop
+        working-directory: desktop
+        run: npm run typecheck
       - name: Test desktop main IPC client
         working-directory: desktop
         run: npm run test:main
@@ -62,7 +65,9 @@ jobs:
             .cache/npm
             .cache/electron
             .cache/electron-builder
-          key: desktop-linux-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
+            desktop/node_modules
+            desktop/node_modules
+          key: desktop-linux-v2-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
       - name: Resolve desktop artifact version
         shell: bash
         run: |
@@ -107,7 +112,7 @@ jobs:
             .cache/npm
             .cache/electron
             .cache/electron-builder
-          key: desktop-windows-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
+          key: desktop-windows-v2-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
       - name: Resolve desktop artifact version
         shell: bash
         run: |

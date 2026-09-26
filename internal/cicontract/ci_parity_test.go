@@ -101,7 +101,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	assertGitLabCache(t, gitlab, "desktop-windows",
 		"xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
+		[]string{".cache/npm/", ".cache/electron/", ".cache/electron-builder/", "desktop/node_modules/"},
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -128,8 +128,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	desktopPackageRaw := readFile(t, filepath.Join(root, "desktop", "package.json"))
 	requireRaw(t, "desktop package scripts", desktopPackageRaw,
-		"electron-builder --win --x64 --dir --publish never",
-		"electron-builder --linux --x64 --dir --publish never",
+		"\"build:package\": \"npm run clean && npm run build:main && npm run build:renderer\"",
+		"\"runtime:win\": \"npm run build:package && electron-builder --win --x64 --dir --publish never\"",
+		"\"runtime:linux\": \"npm run build:package && electron-builder --linux --x64 --dir --publish never\"",
 	)
 	if strings.Contains(desktopPackageRaw, "dist:win") || strings.Contains(desktopPackageRaw, "dist:linux") {
 		t.Errorf("desktop package scripts must build unpacked runtimes only; standalone installer scripts returned")
@@ -180,6 +181,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		testWindowsSmokePackage
 	for _, command := range []string{
 		"npm run test:main",
+		"npm run typecheck",
 		"source scripts/ci/client-artifact-version.sh",
 		"npm run runtime:linux",
 		"npm run runtime:win",
@@ -240,6 +242,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		}
 	}
 
+	requireRaw(t, "GitHub desktop cache contract", githubRaw,
+		"desktop-linux-v2-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}",
+		"desktop-windows-v2-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}",
+		"desktop/node_modules",
+	)
 	requireRaw(t, "GitHub CI", githubRaw,
 		"pull_request:",
 		"push:",
@@ -268,6 +275,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		".electron-linux-cache:",
 		"XDG_CACHE_HOME: \"$CI_PROJECT_DIR/.cache\"",
 		"ELECTRON_BUILDER_CACHE: \"$CI_PROJECT_DIR/.cache/electron-builder\"",
+		"desktop/node_modules/",
 		"extends: .electron-linux-cache",
 		"desktop-tests:",
 		"desktop-linux:",

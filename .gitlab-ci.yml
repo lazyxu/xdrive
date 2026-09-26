@@ -70,6 +70,7 @@ variables:
       - .cache/electron-builder/
       - .cache/ci-tools/
       - .cache/npm/
+      - desktop/node_modules/
     policy: pull-push
     when: always
 
@@ -122,6 +123,7 @@ desktop-tests:
       set -euo pipefail
       cd desktop
       npm install --no-audit --no-fund
+      npm run typecheck
       npm run test:main
 
 desktop-linux:
@@ -164,6 +166,7 @@ desktop-windows:
       - .cache/npm/
       - .cache/electron/
       - .cache/electron-builder/
+      - desktop/node_modules/
     policy: pull-push
     when: always
   script:
