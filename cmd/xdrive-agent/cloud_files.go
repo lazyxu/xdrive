@@ -221,6 +221,22 @@ func (c *agentController) CloudSourceCredentialStatus(ctx context.Context, sourc
 	return cli.SourceCredentialStatus(ctx, sourceID)
 }
 
+func (c *agentController) CloudPutSourceCredential(ctx context.Context, sourceID uint64, cookie string) (client.SourceCredentialStatus, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.SourceCredentialStatus{}, err
+	}
+	return cli.PutSourceCredential(ctx, sourceID, map[string]string{"cookie": cookie})
+}
+
+func (c *agentController) CloudDeleteSourceCredential(ctx context.Context, sourceID uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.DeleteSourceCredential(ctx, sourceID)
+}
+
 func (c *agentController) CloudCreateSource(ctx context.Context, input client.CreateSourceInput) (client.Source, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

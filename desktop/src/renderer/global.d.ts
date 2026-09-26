@@ -258,6 +258,8 @@ declare global {
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>
+        setSourceCredential: (sourceID: number, cookie: string) => Promise<DesktopResult<AgentSourceCredentialStatus>>
+        deleteSourceCredential: (sourceID: number) => Promise<DesktopResult<{ ok: boolean }>>
         createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>
         updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>
         triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>

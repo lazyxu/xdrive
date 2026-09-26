@@ -9,6 +9,8 @@ const agent = Object.freeze({
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
   getSourceRuns: (sourceID: number, limit = 1) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit),
   getSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:get-source-credential', sourceID),
+  setSourceCredential: (sourceID: number, cookie: string) => ipcRenderer.invoke('agent:set-source-credential', sourceID, cookie),
+  deleteSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:delete-source-credential', sourceID),
   createSource: (input: {
     name: string
     kind: string
