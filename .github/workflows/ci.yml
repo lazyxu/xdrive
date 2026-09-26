@@ -386,6 +386,8 @@ jobs:
           bash -n scripts/ci/gitlab-package-linux-client.sh
           bash -n scripts/ci/gitlab-source-agent.sh
           bash -n scripts/ci/gitlab-server-validation.sh
+          bash -n scripts/ci/export-docker-image.sh
+          bash -n scripts/ci/import-docker-image.sh
           bash -n scripts/ci/gitlab-server-image.sh
           bash -n scripts/ci/gitlab-caddy-image.sh
           bash -n scripts/ci/gitlab-server-backup.sh
@@ -416,12 +418,21 @@ jobs:
           grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
           rm -f "$generated"
 
-          grep -q 'tags="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+          grep -q 'remote="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+          grep -q 'artifact: xdrive-server-image' .github/workflows/release.yml
+          grep -q 'artifact: xdrive-web-image' .github/workflows/release.yml
+          grep -q 'artifact: xdrive-caddy-image' .github/workflows/release.yml
+          grep -q 'Load and verify exact image tested by CI' .github/workflows/release.yml
+          grep -q 'Push exact tested image' .github/workflows/release.yml
           grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
           grep -q 'target_tag="edge"' .github/workflows/release.yml
           grep -q 'xdrive-caddy' .github/workflows/release.yml
           grep -q '8443}:443/tcp' deploy/docker-compose.yml
           grep -q 'dns alidns' deploy/Caddyfile
+          if grep -q 'docker/build-push-action@v6' .github/workflows/release.yml; then
+            echo "release must publish exact tested server images without docker rebuild" >&2
+            exit 1
+          fi
           if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
             echo "server image jobs must not publish edge before the full bundle succeeds" >&2
             exit 1
@@ -456,26 +467,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate server image
+      - name: Build and validate exact server image
+        shell: bash
         run: |
-          docker build -t xdrive/server:test .
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -t xdrive/server:test .
           bash scripts/test-server-chunk-storage.sh
+          bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-server-image
+          path: dist/server-image
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
 
   caddy-image:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Caddy AliDNS image
+      - name: Build and validate exact Caddy image
+        shell: bash
         run: |
-          docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
           docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
+          bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-caddy-image
+          path: dist/caddy-image
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
 
   server-backup:
+    needs: server-image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build server image for backup drill
-        run: docker build -t xdrive/server:test .
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-server-image
+          path: dist/server-image
+      - name: Load exact server image tested by CI
+        run: bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test
       - name: Backup, corruption detection, and restore drill
         run: bash scripts/test-server-backup-restore.sh
 
@@ -695,8 +733,21 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
-      - name: Validate web image
-        run: docker build -f Dockerfile -t xdrive/web:test ..
+      - name: Build and validate exact web image
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f web/Dockerfile -t xdrive/web:test .
+          bash scripts/ci/export-docker-image.sh xdrive/web:test dist/web-image
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-web-image
+          path: dist/web-image
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
 
 
   final-gate:

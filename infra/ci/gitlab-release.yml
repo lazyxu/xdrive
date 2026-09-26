@@ -55,7 +55,7 @@ release-assets:
       - release/Caddyfile
       - release/xdrive.env.example
 
-build-server-images:
+publish-server-images:
   extends:
     - .publish-only
     - .release-linux-docker
@@ -64,6 +64,12 @@ build-server-images:
   needs:
     - job: final-gate
       artifacts: false
+    - job: server-image
+      artifacts: true
+    - job: web
+      artifacts: true
+    - job: caddy-image
+      artifacts: true
   script:
     - bash scripts/ci/gitlab-server-images.sh
 
@@ -76,7 +82,7 @@ promote-server-images:
   needs:
     - job: release-assets
       artifacts: false
-    - job: build-server-images
+    - job: publish-server-images
       artifacts: false
   script:
     - bash scripts/ci/gitlab-promote-images.sh

@@ -144,6 +144,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	clientCoreBuild := readFile(t, filepath.Join(root, "scripts", "build-client-core.sh"))
+	dockerImageExport := readFile(t, filepath.Join(root, "scripts", "ci", "export-docker-image.sh"))
+	dockerImageImport := readFile(t, filepath.Join(root, "scripts", "ci", "import-docker-image.sh"))
 	gitlabGoLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux.sh"))
 	gitlabPackageLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux-client.sh"))
 	gitlabSourceAgent := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-source-agent.sh"))
@@ -204,9 +206,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/ci/test-download-with-fallback.sh",
 		"bash scripts/ci/test-prepare-go-mod-cache.sh",
 		"bash scripts/ci/test-client-artifact-version.sh",
-		"docker build -t xdrive/server:test .",
+		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -t xdrive/server:test .",
 		"bash scripts/test-server-chunk-storage.sh",
-		"docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
+		"bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image",
+		"bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image",
+		"bash scripts/ci/export-docker-image.sh xdrive/web:test dist/web-image",
+		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
+		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
 		"bash scripts/test-server-backup-restore.sh",
 		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1",
@@ -215,7 +221,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"npm ci --no-audit --no-fund",
 		"npm run lint",
 		"npm run build",
-		"docker build -f Dockerfile -t xdrive/web:test ..",
+		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -f web/Dockerfile -t xdrive/web:test .",
 	} {
 		if !strings.Contains(githubText, command) {
 			t.Errorf("GitHub CI is missing parity command %q", command)
@@ -400,12 +406,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"server-validation",
 		"server-image",
 		"caddy-image",
-		"server-backup",
 		"web",
 	} {
 		assertGitHubJobNeeds(t, github, job, nil)
 		assertGitLabJobNeeds(t, gitlab, job, nil)
 	}
+	assertGitHubJobNeeds(t, github, "server-backup", []string{"server-image"})
+	assertGitLabJobNeeds(t, gitlab, "server-backup", []string{"server-image"})
 	assertGitHubJobNeeds(t, github, "test-linux-artifact", []string{"package-linux-client"})
 	assertGitHubJobNeeds(t, github, "test-source-agent-artifact", []string{"build-source-agent"})
 	assertGitHubJobNeeds(t, github, "test-windows-rollback-artifact", []string{"package-windows-client"})
@@ -446,6 +453,35 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"server-backup:",
 	)
 
+	requireRaw(t, "GitHub exact server image artifact contract", githubRaw,
+		"name: xdrive-server-image",
+		"name: xdrive-web-image",
+		"name: xdrive-caddy-image",
+		"path: dist/server-image",
+		"path: dist/web-image",
+		"path: dist/caddy-image",
+		"compression-level: 0",
+		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
+	)
+	requireRaw(t, "GitLab exact server image artifact contract", gitlabRaw,
+		"dist/server-image/",
+		"dist/web-image/",
+		"dist/caddy-image/",
+		"- job: server-image",
+		"artifacts: true",
+	)
+	requireRaw(t, "Docker image artifact exporter", dockerImageExport,
+		"docker save",
+		"gzip -1",
+		"image.id",
+		"image.ref",
+	)
+	requireRaw(t, "Docker image artifact importer", dockerImageImport,
+		"gzip -dc",
+		"docker load",
+		"loaded Docker image ID mismatch",
+	)
+
 	if strings.Contains(gitlabRaw, "$ErrorActionPreference") ||
 		strings.Contains(gitlabRaw, "Set-Location desktop") ||
 		strings.Contains(gitlabRaw, "$LASTEXITCODE") {
@@ -473,8 +509,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked release/core/linux-amd64",
 		"bash scripts/ci/test-linux-client-package.sh \"$XDRIVE_RELEASE_VERSION\" release/xdrive-linux-amd64.deb",
 		"bash scripts/ci/test-source-agent-package.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
-		"docker build -t xdrive/server:test .",
-		"docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
+		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -t xdrive/server:test .",
+		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
+		"bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image",
+		"bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image",
+		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
 		"bash scripts/test-server-backup-restore.sh",
 	)
 	requireRaw(t, "GitLab Windows Go wrapper", gitlabGoWindows,
@@ -694,12 +733,30 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"Download exact Linux installer tested by CI",
 		"Download exact Windows installer tested by CI",
 		"Verify single-installer distribution contract",
+		"artifact: xdrive-server-image",
+		"artifact: xdrive-web-image",
+		"artifact: xdrive-caddy-image",
+		"Load and verify exact image tested by CI",
+		"Push exact tested image",
+		"scripts/ci/import-docker-image.sh",
 	)
+	for _, forbidden := range []string{"docker/build-push-action", "docker build --build-arg", "docker build -f"} {
+		if strings.Contains(githubRelease, forbidden) {
+			t.Errorf("GitHub release workflow must publish exact tested server images without rebuilding: %q", forbidden)
+		}
+		if strings.Contains(gitlabReleaseScripts, forbidden) {
+			t.Errorf("GitLab release workflow must publish exact tested server images without rebuilding: %q", forbidden)
+		}
+	}
+
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
 		"release-assets:",
-		"build-server-images:",
+		"publish-server-images:",
 		"promote-server-images:",
 		"publish-release:",
+		"- job: server-image",
+		"- job: web",
+		"- job: caddy-image",
 		"- job: package-linux-client",
 		"- job: package-windows-client",
 		"stage: release-build",
@@ -722,6 +779,8 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"--package-name xdrive-build-packages",
 		"CI-tested source-agent artifact is missing",
 		"s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g",
+		"scripts/ci/import-docker-image.sh",
+		"Published exact CI-tested GitLab server images",
 	)
 	for _, legacy := range []string{
 		"xdrive-client-linux-amd64.deb",

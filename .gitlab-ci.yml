@@ -301,6 +301,12 @@ server-image:
     - *install_docker_cli
   script:
     - bash scripts/ci/gitlab-server-image.sh
+  artifacts:
+    name: "xdrive-server-image-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - dist/server-image/
 
 caddy-image:
   image: $XDRIVE_CI_GO_IMAGE
@@ -315,12 +321,20 @@ caddy-image:
     - *install_docker_cli
   script:
     - bash scripts/ci/gitlab-caddy-image.sh
+  artifacts:
+    name: "xdrive-caddy-image-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - dist/caddy-image/
 
 server-backup:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
   stage: test
-  needs: []
+  needs:
+    - job: server-image
+      artifacts: true
   resource_group: xdrive-server-backup
   tags:
     - linux
@@ -449,11 +463,20 @@ web:
       fi
       command -v docker >/dev/null
       docker info >/dev/null
+      source scripts/ci/client-artifact-version.sh
       cd web
       npm ci --no-audit --no-fund
       npm run lint
       npm run build
-      docker build -f Dockerfile -t xdrive/web:test ..
+      cd ..
+      docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f web/Dockerfile -t xdrive/web:test .
+      bash scripts/ci/export-docker-image.sh xdrive/web:test dist/web-image
+  artifacts:
+    name: "xdrive-web-image-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - dist/web-image/
 
 final-gate:
   image: $XDRIVE_CI_GO_IMAGE

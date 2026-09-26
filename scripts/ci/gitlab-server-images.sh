@@ -12,17 +12,27 @@ source scripts/ci/gitlab-release-version.sh
 
 printf '%s' "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
 
-build_and_push() {
+publish_exact() {
   local name="$1"
-  local dockerfile="$2"
-  local context="$3"
+  local artifact_dir="$2"
+  local local_image="$3"
   local image="$CI_REGISTRY_IMAGE/$name:$XDRIVE_IMAGE_TAG"
-  docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f "$dockerfile" -t "$image" "$context"
+
+  bash scripts/ci/import-docker-image.sh "$artifact_dir" "$local_image"
+
+  local image_version
+  image_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$local_image")"
+  [[ "$image_version" == "$XDRIVE_RELEASE_VERSION" ]] || {
+    echo "exact image version label mismatch: got $image_version want $XDRIVE_RELEASE_VERSION for $local_image" >&2
+    exit 1
+  }
+
+  docker tag "$local_image" "$image"
   docker push "$image"
 }
 
-build_and_push xdrive-server ./Dockerfile .
-build_and_push xdrive-web ./web/Dockerfile .
-build_and_push xdrive-caddy ./deploy/Caddy.Dockerfile .
+publish_exact xdrive-server dist/server-image xdrive/server:test
+publish_exact xdrive-web dist/web-image xdrive/web:test
+publish_exact xdrive-caddy dist/caddy-image xdrive/caddy:test
 
-echo "Published immutable GitLab server images with tag $XDRIVE_IMAGE_TAG"
+echo "Published exact CI-tested GitLab server images with tag $XDRIVE_IMAGE_TAG"

@@ -63,6 +63,8 @@ bash -n scripts/ci/gitlab-go-linux.sh
 bash -n scripts/ci/gitlab-package-linux-client.sh
 bash -n scripts/ci/gitlab-source-agent.sh
 bash -n scripts/ci/gitlab-server-validation.sh
+bash -n scripts/ci/export-docker-image.sh
+bash -n scripts/ci/import-docker-image.sh
 bash -n scripts/ci/gitlab-server-image.sh
 bash -n scripts/ci/gitlab-caddy-image.sh
 bash -n scripts/ci/gitlab-server-backup.sh
@@ -98,12 +100,21 @@ grep -q 'sha-0123456789ab' "$generated"
 grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
 rm -f "$generated"
 
-grep -q 'tags="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+grep -q 'remote="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
+grep -q 'artifact: xdrive-server-image' .github/workflows/release.yml
+grep -q 'artifact: xdrive-web-image' .github/workflows/release.yml
+grep -q 'artifact: xdrive-caddy-image' .github/workflows/release.yml
+grep -q 'Load and verify exact image tested by CI' .github/workflows/release.yml
+grep -q 'Push exact tested image' .github/workflows/release.yml
 grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
 grep -q 'target_tag="edge"' .github/workflows/release.yml
 grep -q 'xdrive-caddy' .github/workflows/release.yml
 grep -q '8443}:443/tcp' deploy/docker-compose.yml
 grep -q 'dns alidns' deploy/Caddyfile
+if grep -q 'docker/build-push-action@v6' .github/workflows/release.yml; then
+  echo "release must publish exact tested server images without docker rebuild" >&2
+  exit 1
+fi
 if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
   echo "server image jobs must not publish edge before the full bundle succeeds" >&2
   exit 1
