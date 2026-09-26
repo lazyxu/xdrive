@@ -49,8 +49,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	expectedPlatforms := map[string]string{
 		"single-commit":              "linux",
 		"desktop-tests":              "linux",
-		"desktop-linux":              "linux",
-		"desktop-windows":            "windows",
 		"go-linux":                   "linux",
 		"go-windows":                 "windows",
 		"build-source-agent":         "linux",
@@ -67,8 +65,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobImages(t, gitlab, map[string]string{
 		"single-commit":              "$XDRIVE_CI_GO_IMAGE",
 		"desktop-tests":              "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-linux":              "$XDRIVE_CI_NODE_IMAGE",
-		"desktop-windows":            "",
 		"go-linux":                   "$XDRIVE_CI_GO_IMAGE",
 		"go-windows":                 "",
 		"build-source-agent":         "$XDRIVE_CI_GO_IMAGE",
@@ -85,9 +81,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/go-mod/cache/download/"},
 	)
+	assertGitLabCache(t, gitlab, "build-linux-client",
+		"xdrive-client-linux-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/", ".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
+	)
 	assertGitLabCache(t, gitlab, "build-windows-client",
-		"xdrive-package-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/go-mod/cache/download/"},
+		"xdrive-client-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/cache/download/", ".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -217,8 +217,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"tags: [\"v*\"]",
 		"workflow_dispatch:",
 		"cancel-in-progress: true",
-		"name: desktop-runtime-linux-amd64",
-		"name: desktop-runtime-windows-amd64",
 		"name: xdrive-linux-amd64",
 		"name: xdrive-windows-amd64",
 		"name: xdrive-source-agent-linux",
@@ -229,7 +227,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"- local: /infra/ci/images.yml",
 		"- local: /infra/ci/gitlab-release.yml",
 		"- gate",
-		"- build",
 		"- artifact",
 		"- test",
 		"- verify",
@@ -249,7 +246,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"test-source-agent-artifact:",
 		"test-windows-artifact:",
 		"final-gate:",
-		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-go-linux.sh",
 		"bash scripts/ci/gitlab-package-linux-client.sh",
 		"bash scripts/ci/gitlab-source-agent.sh",
@@ -259,14 +255,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/ci/gitlab-test-linux-artifact.sh",
 		"bash scripts/ci/gitlab-test-source-agent-artifact.sh",
 		"bash scripts/ci/gitlab-test-windows-artifact.sh",
-		"desktop-runtime-linux-amd64.tar.gz",
-		"desktop/release/win-unpacked/",
 		"release/xdrive-linux-amd64.deb",
 		"release/source-agent/xdrive-source-agent-linux-amd64",
 		"release/source-agent/xdrive-source-agent-linux-arm64",
 		"release/xDriveSetup-amd64.exe",
 		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
-		"xdrive-package-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		"xdrive-client-linux-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		"xdrive-client-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH",
 		".cache/go-mod/cache/download/",
 		"$CI_PIPELINE_SOURCE == \"merge_request_event\"",
 		"$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == \"master\"",
@@ -293,6 +288,21 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"echo \"GOPROXY=$(go env GOPROXY)\"",
 		"echo \"GOSUMDB=$(go env GOSUMDB)\"",
 	)
+
+	requireRaw(t, "GitHub direct client build contract", githubRaw,
+		"build-linux-client:",
+		"build-windows-client:",
+		"npm run runtime:linux",
+		"npm run runtime:win",
+		"actions/cache@v4",
+	)
+	if strings.Contains(githubRaw, "desktop-runtime-linux-amd64") ||
+		strings.Contains(githubRaw, "desktop-runtime-windows-amd64") {
+		t.Errorf("GitHub CI must not use intermediate Desktop runtime artifacts")
+	}
+	if strings.Contains(gitlabRaw, "desktop-runtime-linux-amd64.tar.gz") {
+		t.Errorf("GitLab CI must not use intermediate Desktop runtime artifacts")
+	}
 
 	requireRaw(t, "GitHub build-once contract", githubRaw,
 		"build-linux-client:",
@@ -371,7 +381,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	}
 
 	if strings.Contains(gitlabRaw, "key: \"xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH\"") ||
-		strings.Contains(gitlabRaw, "key: \"xdrive-go-windows-$CI_RUNNER_EXECUTABLE_ARCH\"") {
+		strings.Contains(gitlabRaw, "key: \"xdrive-go-windows-$CI_RUNNER_EXECUTABLE_ARCH\"") ||
+		strings.Contains(gitlabRaw, "key: \"xdrive-package-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH\"") {
 		t.Errorf("GitLab Windows Go cache key must not restore the legacy combined test/package cache")
 	}
 	requireRaw(t, "CI resumable downloader", downloadHelper,

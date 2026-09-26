@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-for cmd in go git powershell.exe; do
+for cmd in go git node npm powershell.exe; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "required Windows packaging command is missing from PATH: $cmd" >&2
     exit 1
@@ -17,6 +17,8 @@ else
 fi
 
 bash scripts/ci/check-go-min-version.sh 1.25
+bash scripts/ci/gitlab-desktop-windows.sh
+
 source scripts/ci/client-artifact-version.sh
 
 test -f desktop/release/win-unpacked/xdrive-desktop.exe || {
