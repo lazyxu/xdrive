@@ -113,6 +113,24 @@ export type AgentSource = {
   updated_at: string
 }
 
+export type AgentCreateSourceInput = {
+  name: string
+  kind: string
+  direction: 'push' | 'pull'
+  sync_mode: 'backup'
+  run_mode: 'scan' | 'sync'
+  target_node_id: number
+  ignore_rules?: string
+}
+
+export type AgentUpdateSourceInput = {
+  name?: string
+  run_mode?: 'scan' | 'sync'
+  status?: 'active' | 'paused'
+  target_node_id?: number
+  ignore_rules?: string
+}
+
 export type AgentSourceRun = {
   id: string
   source_id: number
@@ -406,6 +424,22 @@ export class AgentIPCClient {
   sourceCredentialStatus(sourceID: number) {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentSourceCredentialStatus>('GET', `/v1/sources/credential?${query.toString()}`)
+  }
+
+  createSource(input: AgentCreateSourceInput) {
+    return this.request<AgentSource>('POST', '/v1/sources', input)
+  }
+
+  updateSource(sourceID: number, revision: number, input: AgentUpdateSourceInput) {
+    return this.request<AgentSource>('PATCH', '/v1/sources', {
+      source_id: sourceID,
+      revision,
+      update: input,
+    })
+  }
+
+  triggerSource(sourceID: number) {
+    return this.request<AgentSource>('POST', '/v1/sources/trigger', { source_id: sourceID })
   }
 
   cloudRoot() {

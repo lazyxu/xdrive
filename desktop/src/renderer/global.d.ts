@@ -132,6 +132,24 @@ declare global {
     updated_at: string
   }
 
+  type AgentCreateSourceInput = {
+    name: string
+    kind: string
+    direction: 'push' | 'pull'
+    sync_mode: 'backup'
+    run_mode: 'scan' | 'sync'
+    target_node_id: number
+    ignore_rules?: string
+  }
+
+  type AgentUpdateSourceInput = {
+    name?: string
+    run_mode?: 'scan' | 'sync'
+    status?: 'active' | 'paused'
+    target_node_id?: number
+    ignore_rules?: string
+  }
+
   type AgentSourceRun = {
     id: string
     source_id: number
@@ -240,6 +258,9 @@ declare global {
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>
+        createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>
+        updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>
+        triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>
         cloudRoot: () => Promise<DesktopResult<AgentCloudNode>>
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
         cloudSearch: (query: string) => Promise<DesktopResult<AgentCloudSearchResult[]>>
