@@ -834,6 +834,8 @@ Phase 13C2 adds the **Source Execution Commit Protocol** required before real Pu
 
 Phase 13C3 adds the **Synology Push Executor** on top of that commit protocol. Directory plans are materialized lazily under the snapshotted Source target. File `create`, `update`, and `move_update` operations use the existing resumable uploader and calculate SHA-256 only for those transfer candidates; pure `move` operations do not hash or upload file content. The uploader now reports bytes from newly accepted chunks, so instant upload, resumed chunks, and server-reused ranges do not inflate transfer statistics. Each local file is checked against the scanned size/mtime before and after upload, and each successful final node is committed back to the Source run. Individual conflicts remain pending and make the run partial without blocking unrelated files.
 
+Phase 13C4 hardens long-lived **Synology filesystem identity**. Existing `fs:<root>:<device>:<inode>` IDs are preserved, while the native agent persists a sharded local identity map and uses Linux `statx` birth-time/inode fingerprints when available to recover the same external ID after remounts where the device number changes. Weak inode-only fallback is generation-aware to reduce inode-reuse aliasing, and true legacy-ID collisions allocate `fs2:<root>:<uuid>`. Root configuration is automatically migrated to a remount-stable fingerprint on the first compatible run; replaced roots and corrupt identity state fail closed rather than producing a false whole-library reimport.
+
 Phase 14A adds **Server-side Search** for active files and directories. `GET /api/v1/search` is owner-scoped, accepts a UTF-8 query of at least two characters, optional `type=file|dir`, `limit` from 1–200, and an opaque keyset `cursor`. Matching is case-insensitive against each active node's relative path, preserving the previous Desktop full-path search behavior without transferring the entire namespace to the Agent. Results include the normal node payload, relative `path`, directory `breadcrumbs`, and `next_cursor`; cursors are bound to the original query/type so they cannot be reused across different searches. Deleted/trash nodes and other users' nodes are never included.
 
 
@@ -1003,7 +1005,7 @@ deploy/
 
 ## Roadmap
 
-1. Phase 13C: harden long-lived Synology filesystem identity across NAS reboot/remount and add production operational ergonomics on top of the published amd64/arm64 agent binaries;
+1. Phase 13C: add operational polish for the completed Synology Push path (health/status UX, install/update ergonomics, and optional Synology Photos metadata enrichment);
 2. Phase 13D: add the experimental Yike Photos pull worker for the own library, own albums, and shared albums without mutating the source account;
 3. Phase 13E: add optional photo metadata/collection adapters such as Live Photo grouping and album semantics without coupling them to the source schema;
 4. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;

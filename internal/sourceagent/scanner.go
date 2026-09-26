@@ -31,10 +31,11 @@ type API interface {
 }
 
 type Root struct {
-	Key        string
-	Path       string
-	Prefix     string
-	ExpectedID string
+	Key                 string
+	Path                string
+	Prefix              string
+	ExpectedID          string
+	ExpectedFingerprint string
 }
 
 type Scanner struct {
@@ -44,6 +45,7 @@ type Scanner struct {
 	Roots             []Root
 	BatchSize         int
 	HeartbeatInterval time.Duration
+	IdentityStore     IdentityStore
 }
 
 func Roots(personal, shared string) []Root {
@@ -51,12 +53,24 @@ func Roots(personal, shared string) []Root {
 }
 
 func RootsWithIdentities(personal, personalID, shared, sharedID string) []Root {
+	return RootsWithIdentityState(personal, personalID, "", shared, sharedID, "")
+}
+
+func RootsWithIdentityState(personal, personalID, personalFingerprint, shared, sharedID, sharedFingerprint string) []Root {
 	var roots []Root
 	if strings.TrimSpace(personal) != "" {
-		roots = append(roots, Root{Key: "personal", Path: personal, Prefix: "Personal", ExpectedID: strings.TrimSpace(personalID)})
+		roots = append(roots, Root{
+			Key: "personal", Path: personal, Prefix: "Personal",
+			ExpectedID:          strings.TrimSpace(personalID),
+			ExpectedFingerprint: strings.TrimSpace(personalFingerprint),
+		})
 	}
 	if strings.TrimSpace(shared) != "" {
-		roots = append(roots, Root{Key: "shared", Path: shared, Prefix: "Shared", ExpectedID: strings.TrimSpace(sharedID)})
+		roots = append(roots, Root{
+			Key: "shared", Path: shared, Prefix: "Shared",
+			ExpectedID:          strings.TrimSpace(sharedID),
+			ExpectedFingerprint: strings.TrimSpace(sharedFingerprint),
+		})
 	}
 	return roots
 }
@@ -143,12 +157,22 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 		if strings.TrimSpace(root.ExpectedID) == "" {
 			return failRun(fmt.Errorf("%s root identity is not configured; run setup again", root.Key))
 		}
+		if strings.TrimSpace(root.ExpectedFingerprint) != "" {
+			actualFingerprint, err := RootFingerprint(root.Key, root.Path)
+			if err != nil {
+				return failRun(fmt.Errorf("validate %s root %s: %w", root.Key, root.Path, err))
+			}
+			if actualFingerprint != root.ExpectedFingerprint {
+				return failRun(fmt.Errorf("%s root fingerprint changed: got %s want %s; run setup again after verifying the Synology volume is mounted", root.Key, actualFingerprint, root.ExpectedFingerprint))
+			}
+			continue
+		}
 		actualID, err := RootIdentity(root.Key, root.Path)
 		if err != nil {
 			return failRun(fmt.Errorf("validate %s root %s: %w", root.Key, root.Path, err))
 		}
 		if actualID != root.ExpectedID {
-			return failRun(fmt.Errorf("%s root identity changed: got %s want %s; run setup again after verifying the Synology volume is mounted", root.Key, actualID, root.ExpectedID))
+			return failRun(fmt.Errorf("%s root identity changed before fingerprint migration: got %s want %s; run setup again after verifying the Synology volume is mounted", root.Key, actualID, root.ExpectedID))
 		}
 	}
 
@@ -185,6 +209,11 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
+		}
+		if s.IdentityStore != nil {
+			if err := s.IdentityStore.Flush(); err != nil {
+				return fmt.Errorf("flush source identity state: %w", err)
+			}
 		}
 		plans, err := s.API.ObserveSourceItems(ctx, s.SourceID, run.ID, batch)
 		if err != nil {
@@ -234,18 +263,28 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 		return nil
 	}
 
-	addItem := func(item sourcepkg.DiscoveredItem, localPath string) error {
+	addItem := func(item sourcepkg.DiscoveredItem, localPath string, identity *IdentityObservation) error {
 		if err := heartbeatIfDue(); err != nil {
 			return fmt.Errorf("heartbeat source run: %w", err)
+		}
+		if matcher.Ignored(item.Path, item.Kind == meta.SourceItemKindDirectory) {
+			summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: item})
+			return nil
+		}
+		if identity != nil {
+			externalID, err := resolveExternalID(s.IdentityStore, *identity)
+			if err != nil {
+				return fmt.Errorf("resolve source identity for %q: %w", item.Path, err)
+			}
+			item.ExternalID = externalID
+		}
+		if strings.TrimSpace(item.ExternalID) == "" {
+			return fmt.Errorf("source identity is empty for %q", item.Path)
 		}
 		if previous, exists := seenIdentities[item.ExternalID]; exists {
 			return fmt.Errorf("duplicate source identity %q for %q and %q", item.ExternalID, previous, item.Path)
 		}
 		seenIdentities[item.ExternalID] = item.Path
-		if matcher.Ignored(item.Path, item.Kind == meta.SourceItemKindDirectory) {
-			summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: item})
-			return nil
-		}
 		if _, exists := localItems[item.ExternalID]; exists {
 			return fmt.Errorf("duplicate source identity %q in one batch", item.ExternalID)
 		}
@@ -262,12 +301,25 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	}
 
 	for _, root := range s.Roots {
+		legacyDevice, _, preserveLegacyDevice := ParseLegacyRootIdentity(root.Key, root.ExpectedID)
+		currentRootDevice := uint64(0)
+		if preserveLegacyDevice {
+			currentRootID, err := RootIdentity(root.Key, root.Path)
+			if err != nil {
+				return failRun(fmt.Errorf("resolve current %s root identity: %w", root.Key, err))
+			}
+			var ok bool
+			currentRootDevice, _, ok = ParseLegacyRootIdentity(root.Key, currentRootID)
+			if !ok {
+				return failRun(fmt.Errorf("cannot parse current %s root identity %q", root.Key, currentRootID))
+			}
+		}
 		virtual := sourcepkg.DiscoveredItem{
 			ExternalID: "root:" + root.Key,
 			Kind:       meta.SourceItemKindDirectory,
 			Path:       root.Prefix,
 		}
-		if err := addItem(virtual, root.Path); err != nil {
+		if err := addItem(virtual, root.Path, nil); err != nil {
 			return failRun(err)
 		}
 
@@ -300,18 +352,29 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 				kind = meta.SourceItemKindDirectory
 				size = 0
 			}
-			externalID, err := fileExternalID(root.Key, info)
+			filesystemID, err := filesystemIdentity(root.Key, current, info)
 			if err != nil {
 				return err
 			}
+			if preserveLegacyDevice {
+				currentDevice, inode, ok := ParseLegacyRootIdentity(root.Key, filesystemID.LegacyExternalID)
+				if !ok {
+					return fmt.Errorf("cannot parse filesystem identity %q", filesystemID.LegacyExternalID)
+				}
+				if currentDevice == currentRootDevice {
+					filesystemID.LegacyExternalID = fmt.Sprintf("fs:%s:%d:%d", root.Key, legacyDevice, inode)
+				}
+			}
 			modified := info.ModTime().UTC()
-			return addItem(sourcepkg.DiscoveredItem{
-				ExternalID: externalID,
+			item := sourcepkg.DiscoveredItem{
+				ExternalID: filesystemID.LegacyExternalID,
 				Kind:       kind,
 				Path:       targetPath,
 				Size:       size,
 				ModifiedAt: &modified,
-			}, current)
+			}
+			identity := identityObservation(item, filesystemID)
+			return addItem(item, current, &identity)
 		})
 		if err != nil {
 			return failRun(fmt.Errorf("scan %s root %s: %w", root.Key, root.Path, err))
@@ -319,6 +382,11 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	}
 	if err := flush(); err != nil {
 		return failRun(fmt.Errorf("flush source observations: %w", err))
+	}
+	if s.IdentityStore != nil {
+		if err := s.IdentityStore.Complete(); err != nil {
+			return failRun(fmt.Errorf("complete source identity state: %w", err))
+		}
 	}
 
 	finished, err := s.API.FinishSourceRun(ctx, s.SourceID, run.ID, client.FinishSourceRunInput{

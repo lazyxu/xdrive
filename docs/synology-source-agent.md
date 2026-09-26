@@ -169,13 +169,23 @@ Status shows the configured Source, run mode, roots, credential backend, and the
 
 ## External identity
 
-Filesystem objects use:
+The first version of the agent used:
 
 ```text
 fs:<root-key>:<device>:<inode>
 ```
 
-with separate `personal` and `shared` namespaces. This preserves identity across normal renames/moves within the same filesystem. The logical xDrive paths are rooted under:
+as the external identity. Existing Sources keep those IDs for backward compatibility.
+
+Current agents also maintain a private, sharded identity state below the source-agent config directory. On the first run after upgrade, the current legacy ID is persisted as the stable external ID. Later scans recover that same ID from a portable filesystem fingerprint based on the root namespace, inode, and Linux birth time when `statx` exposes it. This keeps normal rename/move identity and also survives a filesystem remount where `st_dev` changes.
+
+When birth time is unavailable, the agent uses a weaker inode key only for records that were still present in the previous completed generation, or whose path/size/mtime still match. If an inode is reused for a different object, the agent allocates a collision-safe `fs2:<root-key>:<uuid>` identity instead of reusing an existing SourceItem.
+
+Identity state is written atomically in 256 small JSON shards. New mappings are flushed before observations are sent to xDrive, and the completed generation is advanced only after the local traversal succeeds. Corrupt state is treated as an error; it is never silently discarded because doing so could duplicate a previously synchronized library.
+
+The setup configuration also stores a remount-stable root fingerprint. Existing configurations migrate automatically on the first identity-aware run. When Linux `statx` exposes birth time, an NAS that was already remounted before that upgrade run can still recover when the configured root inode is unchanged: the old device number embedded in the saved root ID is reused as the legacy device seed for the first scan, preserving the server's existing file IDs while the new portable state is created. Once migrated, later device-number changes do not require re-running setup. If birth time is unavailable, the root fingerprint intentionally retains the device number and remounts fail closed instead of guessing. A genuinely replaced root always fails closed and requires explicit setup.
+
+The logical xDrive paths remain:
 
 ```text
 Personal/...
