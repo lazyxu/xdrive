@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ReloadOutlined } from '@ant-design/icons'
-import { Badge, Button, Card, Empty, Modal, Space, Spin, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Modal, Space, Spin, Typography } from 'antd'
 import type { BadgeProps } from 'antd'
 import type {
   ExternalSource,
@@ -59,6 +59,12 @@ function sourceMode(source: ExternalSource) {
   return `${direction} · ${mode}`
 }
 
+function sourceKind(kind: string) {
+  if (kind === 'synology_photos') return '群晖 Photos'
+  if (kind === 'yike_photos') return '一刻相册'
+  return kind
+}
+
 export default function ExternalSourcesPanel({
   open,
   api,
@@ -72,6 +78,7 @@ export default function ExternalSourcesPanel({
 }) {
   const [rows, setRows] = useState<SourceRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState<SourceRow | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -98,8 +105,11 @@ export default function ExternalSourcesPanel({
     if (open) void load()
   }, [open, load])
 
+  const selectedState = selected ? sourceStatus(selected) : null
+
   return (
-    <Modal title="外部来源" open={open} onCancel={onClose} footer={null} width={760}>
+    <>
+      <Modal title="外部来源" open={open} onCancel={onClose} footer={null} width={760}>
       <div className="external-sources-toolbar">
         <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
       </div>
@@ -138,12 +148,79 @@ export default function ExternalSourcesPanel({
                       </Space>
                     )}
                   </div>
+                  <div className="external-source-actions">
+                    <Button size="small" onClick={() => setSelected(row)}>查看</Button>
+                  </div>
                 </Card>
               )
             })}
           </div>
         )}
       </Spin>
-    </Modal>
+      </Modal>
+
+      <Modal
+        title={selected ? `${selected.source.name} · 来源详情` : '来源详情'}
+        open={!!selected}
+        onCancel={() => setSelected(null)}
+        footer={null}
+        width={720}
+      >
+        {selected && selectedState && (
+          <>
+            {selected.source.last_error && (
+              <Alert
+                type="error"
+                showIcon
+                message="最近一次运行异常"
+                description={selected.source.last_error}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+              <Descriptions.Item label="来源类型">{sourceKind(selected.source.kind)}</Descriptions.Item>
+              <Descriptions.Item label="工作方式">{sourceMode(selected.source)}</Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Badge status={selectedState.status} text={selectedState.text} />
+              </Descriptions.Item>
+              <Descriptions.Item label="目标目录">
+                {selected.source.target_node_id ? `节点 #${selected.source.target_node_id}` : '未配置'}
+              </Descriptions.Item>
+              <Descriptions.Item label="上次运行">{formatRunTime(selected.source.last_run_at)}</Descriptions.Item>
+              <Descriptions.Item label="上次成功">{formatRunTime(selected.source.last_success_at)}</Descriptions.Item>
+              {selected.source.kind === 'yike_photos' && (
+                <Descriptions.Item label="Cookie">
+                  {selected.credential?.configured ? '已配置' : '未配置'}
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+
+            <Divider orientation="left">最近一次运行</Divider>
+            {selected.latestRun ? (
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label="运行状态">{selected.latestRun.status}</Descriptions.Item>
+                <Descriptions.Item label="开始时间">{formatRunTime(selected.latestRun.started_at)}</Descriptions.Item>
+                <Descriptions.Item label="扫描">
+                  {selected.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · {formatSize(selected.latestRun.scanned_bytes)}
+                </Descriptions.Item>
+                <Descriptions.Item label="计划传输">
+                  {selected.latestRun.planned_transfer_items.toLocaleString('zh-CN')} 项 · {formatSize(selected.latestRun.planned_transfer_bytes)}
+                </Descriptions.Item>
+                <Descriptions.Item label="新增">{selected.latestRun.new_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                <Descriptions.Item label="变更">{selected.latestRun.changed_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                <Descriptions.Item label="移动">{selected.latestRun.moved_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                <Descriptions.Item label="缺失">{selected.latestRun.missing_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                <Descriptions.Item label="实际传输">
+                  {selected.latestRun.transferred_items.toLocaleString('zh-CN')} 项 · {formatSize(selected.latestRun.transferred_bytes)}
+                </Descriptions.Item>
+                <Descriptions.Item label="失败">{selected.latestRun.failed_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
+              </Descriptions>
+            ) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无运行记录" />
+            )}
+          </>
+        )}
+      </Modal>
+    </>
   )
 }
