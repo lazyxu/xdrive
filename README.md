@@ -919,6 +919,8 @@ Release assets are client/deployment deliverables rather than raw application ar
 ```text
 xDriveSetup-amd64.exe
 xdrive-linux-amd64.deb
+xdrive-source-agent-linux-amd64
+xdrive-source-agent-linux-arm64
 xdrive-server-install.sh
 server-backup.sh
 server-backup-scheduled.sh
@@ -969,6 +971,7 @@ packaging/
   linux/                   systemd user mount service + root update timer
 scripts/
   build-linux-deb.sh
+  build-source-agent.sh
   build-windows-installer.ps1
   server-backup.sh
   server-restore.sh
@@ -1000,7 +1003,7 @@ deploy/
 
 ## Roadmap
 
-1. Phase 13C: add DSM amd64/arm64 packaging and production deployment ergonomics for the completed Synology scan/sync agent;
+1. Phase 13C: harden long-lived Synology filesystem identity across NAS reboot/remount and add production operational ergonomics on top of the published amd64/arm64 agent binaries;
 2. Phase 13D: add the experimental Yike Photos pull worker for the own library, own albums, and shared albums without mutating the source account;
 3. Phase 13E: add optional photo metadata/collection adapters such as Live Photo grouping and album semantics without coupling them to the source schema;
 4. use Phase 12/12B/12C Storage Intelligence, CAS health, and 180-day historical sampling as the decision gate for the next storage-format change;

@@ -219,6 +219,7 @@ go-linux:
       go build ./cmd/xdrive-source-agent
 
       source scripts/ci/client-artifact-version.sh
+      bash scripts/build-source-agent.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
       mkdir -p desktop/release
       tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
       test -x desktop/release/linux-unpacked/xdrive-desktop
@@ -369,6 +370,8 @@ go-linux:
     when: on_success
     paths:
       - release/xdrive-linux-amd64.deb
+      - release/source-agent/xdrive-source-agent-linux-amd64
+      - release/source-agent/xdrive-source-agent-linux-arm64
 
 go-windows:
   stage: test

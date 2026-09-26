@@ -200,6 +200,17 @@ jobs:
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
       - run: go build ./cmd/xdrive-source-agent
+      - name: Build Synology source-agent binaries
+        shell: bash
+        run: bash scripts/build-source-agent.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-source-agent-linux
+          path: |
+            release/source-agent/xdrive-source-agent-linux-amd64
+            release/source-agent/xdrive-source-agent-linux-arm64
+          if-no-files-found: error
+          retention-days: 14
       - name: Build and verify Linux unified installer once
         shell: bash
         run: |

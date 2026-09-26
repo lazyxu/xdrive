@@ -41,6 +41,8 @@ package-linux-amd64:
     when: on_success
     paths:
       - release/xdrive-linux-amd64.deb
+      - release/xdrive-source-agent-linux-amd64
+      - release/xdrive-source-agent-linux-arm64
       - release/xdrive-server-install.sh
       - release/server-backup.sh
       - release/server-backup-scheduled.sh

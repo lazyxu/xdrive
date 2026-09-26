@@ -18,15 +18,41 @@ The agent supports both **scan** and **sync** modes:
 - A complete scan may mark previously managed source items as `missing`.
 - Source-side deletion never deletes or trashes xDrive content.
 
-## Install/build
+## Install
 
-Build the Linux binary from the repository:
+Published snapshots and stable releases contain two directly downloadable, pure-Go binaries:
 
-```bash
-go build -o xdrive-source-agent ./cmd/xdrive-source-agent
+```text
+xdrive-source-agent-linux-amd64
+xdrive-source-agent-linux-arm64
 ```
 
-The binary is pure Go. DSM deployment packaging for amd64/arm64 is a later Phase 13C step.
+Check the NAS architecture:
+
+```bash
+uname -m
+```
+
+Use `xdrive-source-agent-linux-amd64` for `x86_64` DSM systems and `xdrive-source-agent-linux-arm64` for `aarch64` / `arm64` systems.
+
+Example installation:
+
+```bash
+mkdir -p /volume1/tools
+cp xdrive-source-agent-linux-amd64 /volume1/tools/xdrive-source-agent
+chmod 0755 /volume1/tools/xdrive-source-agent
+/volume1/tools/xdrive-source-agent version
+```
+
+Verify the downloaded file against the release `SHA256SUMS.txt` before installing it.
+
+The binaries are built with `CGO_ENABLED=0`, so Go, Docker, Python, glibc development packages, and other application runtimes are not required on DSM.
+
+For development, the same exact cross-build path used by CI is:
+
+```bash
+bash scripts/build-source-agent.sh 0.0.0+dev release/source-agent
+```
 
 ## Login
 
