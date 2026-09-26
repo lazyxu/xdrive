@@ -123,6 +123,30 @@ func (c *Client) SourceRuns(ctx context.Context, id uint64, limit int) ([]SyncRu
 	return out, err
 }
 
+type SourceCredentialStatus struct {
+	Configured bool       `json:"configured"`
+	KeyVersion uint32     `json:"key_version,omitempty"`
+	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+}
+
+func (c *Client) SourceCredentialStatus(ctx context.Context, id uint64) (SourceCredentialStatus, error) {
+	var out SourceCredentialStatus
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/credential", id), nil, &out)
+	return out, err
+}
+
+func (c *Client) PutSourceCredential(ctx context.Context, id uint64, payload any) (SourceCredentialStatus, error) {
+	var out SourceCredentialStatus
+	err := c.json(ctx, http.MethodPut, fmt.Sprintf("/api/v1/sources/%d/credential", id), map[string]any{
+		"payload": payload,
+	}, &out)
+	return out, err
+}
+
+func (c *Client) DeleteSourceCredential(ctx context.Context, id uint64) error {
+	return c.json(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d/credential", id), nil, nil)
+}
+
 func (c *Client) SourceRun(ctx context.Context, id uint64, runID string) (SyncRun, error) {
 	var out SyncRun
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/runs/%s", id, url.PathEscape(runID)), nil, &out)

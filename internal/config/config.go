@@ -9,14 +9,17 @@ import (
 )
 
 type Config struct {
-	ListenAddr      string
-	DatabaseURL     string
-	JWTSecret       string
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
-	StorageRoot     string
-	AllowedOrigin   string
-	MaxUploadBytes  int64
+	ListenAddr                   string
+	DatabaseURL                  string
+	JWTSecret                    string
+	AccessTokenTTL               time.Duration
+	RefreshTokenTTL              time.Duration
+	StorageRoot                  string
+	AllowedOrigin                string
+	MaxUploadBytes               int64
+	ConnectorSecretActiveVersion string
+	ConnectorSecretKeys          string
+	ConnectorSecretLegacyKey     string
 }
 
 func Load() (Config, error) {
@@ -29,14 +32,17 @@ func Load() (Config, error) {
 		accessTTL = d
 	}
 	cfg := Config{
-		ListenAddr:      env("XD_LISTEN_ADDR", ":8080"),
-		DatabaseURL:     env("XD_DATABASE_URL", "postgres://xdrive:xdrive@localhost:5432/xdrive?sslmode=disable"),
-		JWTSecret:       os.Getenv("XD_JWT_SECRET"),
-		AccessTokenTTL:  accessTTL,
-		RefreshTokenTTL: 30 * 24 * time.Hour,
-		StorageRoot:     env("XD_STORAGE_ROOT", "./data"),
-		AllowedOrigin:   env("XD_ALLOWED_ORIGIN", "http://localhost:5173"),
-		MaxUploadBytes:  20 << 30,
+		ListenAddr:                   env("XD_LISTEN_ADDR", ":8080"),
+		DatabaseURL:                  env("XD_DATABASE_URL", "postgres://xdrive:xdrive@localhost:5432/xdrive?sslmode=disable"),
+		JWTSecret:                    os.Getenv("XD_JWT_SECRET"),
+		AccessTokenTTL:               accessTTL,
+		RefreshTokenTTL:              30 * 24 * time.Hour,
+		StorageRoot:                  env("XD_STORAGE_ROOT", "./data"),
+		AllowedOrigin:                env("XD_ALLOWED_ORIGIN", "http://localhost:5173"),
+		MaxUploadBytes:               20 << 30,
+		ConnectorSecretActiveVersion: strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_ACTIVE_VERSION")),
+		ConnectorSecretKeys:          strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEYS")),
+		ConnectorSecretLegacyKey:     strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEY")),
 	}
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		return Config{}, fmt.Errorf("XD_JWT_SECRET is required")

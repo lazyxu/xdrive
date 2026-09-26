@@ -221,6 +221,8 @@ chmod +x "$TMP/bin/docker"
 cat > "$TMP/config/.env" <<'EOF'
 POSTGRES_PASSWORD=old-password
 XD_JWT_SECRET=old-jwt-secret-that-is-long-enough
+XD_CONNECTOR_SECRET_ACTIVE_VERSION=2
+XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 XD_RELEASE_CHANNEL=master
 XD_RELEASE_COMMIT=
 XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold
@@ -262,6 +264,8 @@ grep -q '^old-caddy$' "$TMP/config/Caddyfile"
 grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/.env"
 grep -q '^XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-oldoldoldold$' "$TMP/config/.env"
 grep -q '^XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-oldoldoldold$' "$TMP/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=2$' "$TMP/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb$' "$TMP/config/.env"
 test ! -d "$TMP/config/.upgrade-transaction"
 [[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
 [[ "$(cat "$TMP/state/pull-count-server")" == "1" ]]
@@ -311,6 +315,8 @@ grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/pull-fail.err"
 test ! -f "$TMP/state/data-restored"
 grep -q '^old-compose$' "$TMP/config/docker-compose.yml"
 grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=2$' "$TMP/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb$' "$TMP/config/.env"
 test -x "$TMP/config/xdrive-server"
 test -x "$TMP/config/server-doctor.sh"
 test -L "$TMP/host-bin/xdrive-server"
