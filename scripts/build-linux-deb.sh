@@ -4,6 +4,7 @@ set -euo pipefail
 VERSION="${1:-0.0.0+dev}"
 OUT_DIR="${2:-dist}"
 DESKTOP_RUNTIME="${3:-}"
+CORE_RUNTIME="${4:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 case "$VERSION" in
@@ -46,11 +47,25 @@ fi
 
 VERSION_LDFLAG="-X github.com/lazyxu/xdrive/internal/version.Version=$VERSION"
 
-pushd "$ROOT" >/dev/null
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w $VERSION_LDFLAG" -o "$PKG_ROOT/usr/bin/xd" ./cmd/xd
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w $VERSION_LDFLAG" -o "$PKG_ROOT/usr/bin/xdrive-agent" ./cmd/xdrive-agent
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w $VERSION_LDFLAG" -o "$PKG_ROOT/usr/bin/xdrive-updater" ./cmd/xdrive-updater
-popd >/dev/null
+if [[ -n "$CORE_RUNTIME" ]]; then
+  if [[ "$CORE_RUNTIME" != /* ]]; then
+    CORE_RUNTIME="$ROOT/$CORE_RUNTIME"
+  fi
+  for binary in xd xdrive-agent xdrive-updater; do
+    source_binary="$CORE_RUNTIME/$binary"
+    if [[ ! -f "$source_binary" ]]; then
+      echo "prebuilt Linux client core is missing: $source_binary" >&2
+      exit 1
+    fi
+    install -m 0755 "$source_binary" "$PKG_ROOT/usr/bin/$binary"
+  done
+else
+  pushd "$ROOT" >/dev/null
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w $VERSION_LDFLAG" -o "$PKG_ROOT/usr/bin/xd" ./cmd/xd
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w $VERSION_LDFLAG" -o "$PKG_ROOT/usr/bin/xdrive-agent" ./cmd/xdrive-agent
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w $VERSION_LDFLAG" -o "$PKG_ROOT/usr/bin/xdrive-updater" ./cmd/xdrive-updater
+  popd >/dev/null
+fi
 
 install -m 0644 "$ROOT/packaging/linux/xdrive-agent.service" "$PKG_ROOT/usr/lib/systemd/user/xdrive-agent.service"
 install -m 0644 "$ROOT/packaging/linux/xdrive-update.service" "$PKG_ROOT/usr/lib/systemd/system/xdrive-update.service"
