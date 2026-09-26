@@ -31,8 +31,12 @@ package-linux-amd64:
     - linux
   stage: package
   needs:
-    - job: go-linux
+    - job: build-linux-client
       artifacts: true
+    - job: build-source-agent
+      artifacts: true
+    - job: final-gate
+      artifacts: false
   script:
     - bash scripts/ci/gitlab-package-linux.sh
   artifacts:
@@ -58,8 +62,10 @@ package-windows-amd64:
   extends: .publish-only
   stage: package
   needs:
-    - job: go-windows
+    - job: build-windows-client
       artifacts: true
+    - job: final-gate
+      artifacts: false
   resource_group: xdrive-package-windows
   tags:
     - windows
@@ -78,6 +84,9 @@ package-server-images:
     - .release-linux-docker
   stage: package
   resource_group: xdrive-gitlab-server-images
+  needs:
+    - job: final-gate
+      artifacts: false
   script:
     - bash scripts/ci/gitlab-server-images.sh
 

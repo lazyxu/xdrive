@@ -5,7 +5,9 @@ include:
 stages:
   - gate
   - build
+  - artifact
   - test
+  - verify
   - package
   - promote
   - release
@@ -67,8 +69,23 @@ variables:
       - .cache/electron/
       - .cache/electron-builder/
       - .cache/ci-tools/
-      - .cache/go-mod/
       - .cache/npm/
+    policy: pull-push
+    when: always
+
+.go-linux-cache:
+  cache:
+    key: "xdrive-go-linux-v1-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/go-mod/
+    policy: pull-push
+    when: always
+
+.ci-tools-cache:
+  cache:
+    key: "xdrive-ci-tools-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/ci-tools/
     policy: pull-push
     when: always
 
@@ -110,7 +127,6 @@ desktop-linux:
       source scripts/ci/client-artifact-version.sh
       cd desktop
       npm install --no-audit --no-fund
-      npm run test:main
       node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
       npm run runtime:linux
       test -x release/linux-unpacked/xdrive-desktop
@@ -126,12 +142,17 @@ desktop-linux:
 
 desktop-windows:
   stage: build
+  variables:
+    ELECTRON_CACHE: "$CI_PROJECT_DIR/.cache/electron"
+    ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
   tags:
     - windows
   cache:
     key: "xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
       - .cache/npm/
+      - .cache/electron/
+      - .cache/electron-builder/
     policy: pull-push
     when: always
   script:
@@ -143,14 +164,25 @@ desktop-windows:
     paths:
       - desktop/release/win-unpacked/
 
-go-linux:
-  image: $XDRIVE_CI_GO_IMAGE
+desktop-tests:
+  image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache
   stage: test
-  needs:
-    - job: desktop-linux
-      artifacts: true
-  resource_group: xdrive-go-linux-docker
+  needs: []
+  tags:
+    - linux
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      npm run test:main
+
+go-linux:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
   tags:
     - linux
   services:
@@ -163,240 +195,129 @@ go-linux:
     XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
   before_script:
     - *ensure_linux_fetch_tools
-    - *install_node22
-    - *install_docker_cli
     - *install_postgres_client
   script:
-    - |
-      set -euo pipefail
+    - bash scripts/ci/gitlab-go-linux.sh
 
-      bash scripts/ci/check-go-min-version.sh 1.25
-      echo "GOPROXY=$(go env GOPROXY)"
-      echo "GOSUMDB=$(go env GOSUMDB)"
-      command -v docker >/dev/null
-      docker compose version >/dev/null
-      docker info >/dev/null
-      command -v dpkg-deb >/dev/null
-      command -v python3 >/dev/null
-      command -v curl >/dev/null
-      node_major="$(node -p 'process.versions.node.split(".")[0]')"
-      if [[ "$node_major" != "22" ]]; then
-        echo "Node.js 22 is required; found $(node --version)." >&2
-        exit 1
-      fi
+build-source-agent:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: artifact
+  needs: []
+  tags:
+    - linux
+  script:
+    - bash scripts/ci/gitlab-source-agent.sh
+  artifacts:
+    name: "xdrive-source-agent-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    expire_in: 14 days
+    when: on_success
+    paths:
+      - release/source-agent/xdrive-source-agent-linux-amd64
+      - release/source-agent/xdrive-source-agent-linux-arm64
 
-      pg_ready=0
-      for _ in $(seq 1 60); do
-        if PGPASSWORD="$POSTGRES_PASSWORD" pg_isready \
-          -h postgres -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
-          pg_ready=1
-          break
-        fi
-        sleep 1
-      done
-      if [[ "$pg_ready" != "1" ]]; then
-        echo "GitLab PostgreSQL service did not become ready at postgres:5432." >&2
-        exit 1
-      fi
-      PGPASSWORD="$POSTGRES_PASSWORD" psql \
-        -h postgres -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-        -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null
-      echo "PostgreSQL test service ready at postgres:5432."
-
-      go mod tidy "-go=1.25"
-      git diff --exit-code -- go.mod go.sum
-
-      files="$(gofmt -l $(find cmd internal -name '*.go' -type f))"
-      if [[ -n "$files" ]]; then
-        echo "$files"
-        gofmt -d $files
-        exit 1
-      fi
-
-      go test -p 1 -race ./...
-      go vet ./...
-      go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
-      go build ./cmd/xdrive-source-agent
-
-      source scripts/ci/client-artifact-version.sh
-      bash scripts/build-source-agent.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
-      mkdir -p desktop/release
-      tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
-      test -x desktop/release/linux-unpacked/xdrive-desktop
-
-      bash scripts/build-linux-deb.sh "$XDRIVE_RELEASE_VERSION" release desktop/release/linux-unpacked
-      pkg_root="$(mktemp -d)"
-      dpkg-deb -x release/xdrive-linux-amd64.deb "$pkg_root"
-      test -x "$pkg_root/usr/bin/xdrive-updater" || { echo "unified package missing xdrive-updater" >&2; exit 1; }
-      test -f "$pkg_root/usr/lib/systemd/system/xdrive-update.timer" || { echo "unified package missing update timer" >&2; exit 1; }
-      test -f "$pkg_root/usr/share/applications/xdrive.desktop" || { echo "unified package missing desktop menu entry" >&2; exit 1; }
-      dpkg-deb --field release/xdrive-linux-amd64.deb Depends | grep -q 'libgtk-3-0'
-      dpkg-deb --field release/xdrive-linux-amd64.deb Recommends | grep -q 'libappindicator3-1'
-      test -L "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package missing xdrive-desktop link" >&2; exit 1; }
-      test -x "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package xdrive-desktop link is broken" >&2; exit 1; }
-      test "$(cat "$pkg_root/usr/share/doc/xdrive-client/client-version")" = "$XDRIVE_RELEASE_VERSION"
-      rm -rf "$pkg_root"
-      dpkg-deb --field release/xdrive-linux-amd64.deb Provides | grep -q 'xdrive-desktop'
-      dpkg-deb --field release/xdrive-linux-amd64.deb Replaces | grep -q 'xdrive-desktop'
-      pkg_meta="$(mktemp -d)"
-      dpkg-deb -e release/xdrive-linux-amd64.deb "$pkg_meta"
-      grep -q 'xDrive client health check failed' "$pkg_meta/postinst"
-      grep -q '/usr/bin/xdrive-desktop' "$pkg_meta/postinst"
-      rm -rf "$pkg_meta"
-
-      export POSTGRES_PASSWORD=ci-postgres-password
-      export XD_JWT_SECRET=ci-jwt-secret-that-is-long-enough
-      export XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:edge
-      export XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:edge
-      export XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:edge
-
-      bash -n deploy/install-server.sh
-      bash -n scripts/server-backup.sh
-      bash -n scripts/server-backup-scheduled.sh
-      bash -n scripts/server-restore.sh
-      bash -n scripts/server-verify.sh
-      bash -n scripts/test-server-verify.sh
-      bash scripts/test-server-verify.sh
-      bash -n scripts/server-doctor.sh
-      bash -n scripts/test-server-doctor.sh
-      bash scripts/test-server-doctor.sh
-      bash -n scripts/test-server-backup-restore.sh
-      bash -n scripts/test-server-chunk-storage.sh
-      bash -n scripts/test-server-installer-bootstrap.sh
-      bash scripts/test-server-installer-bootstrap.sh
-      bash -n scripts/test-server-installer-transaction.sh
-      bash scripts/test-server-installer-transaction.sh
-      bash -n scripts/test-server-installer-pipe.sh
-      bash scripts/test-server-installer-pipe.sh
-      bash -n scripts/xdrive-server-host.sh
-      bash -n scripts/test-xdrive-server-host.sh
-      bash scripts/test-xdrive-server-host.sh
-      bash -n scripts/cleanup-merged-branches.sh
-      bash -n scripts/test-cleanup-merged-branches.sh
-      bash scripts/test-cleanup-merged-branches.sh
-      bash -n scripts/test-update-channels.sh
-      bash scripts/test-update-channels.sh
-      bash -n scripts/ci/download-with-fallback.sh
-      bash -n scripts/ci/install-node22.sh
-      bash -n scripts/ci/install-docker-cli.sh
-      bash -n scripts/ci/test-download-with-fallback.sh
-      bash scripts/ci/test-download-with-fallback.sh
-      bash -n scripts/ci/check-go-min-version.sh
-      bash -n scripts/ci/client-artifact-version.sh
-      bash -n scripts/ci/test-client-artifact-version.sh
-      bash scripts/ci/test-client-artifact-version.sh
-      bash -n scripts/ci/gitlab-release-version.sh
-      bash -n scripts/ci/gitlab-package-linux.sh
-      bash -n scripts/ci/gitlab-package-windows.sh
-      bash -n scripts/ci/gitlab-server-images.sh
-      bash -n scripts/ci/gitlab-promote-images.sh
-      sh -n scripts/ci/gitlab-publish-release.sh
-      bash -n scripts/ci/test-gitlab-release-version.sh
-      bash scripts/ci/test-gitlab-release-version.sh
-      bash -n scripts/ci/gitlab-desktop-windows.sh
-      bash -n scripts/ci/gitlab-go-windows.sh
-      bash -n scripts/ci/prepare-go-mod-cache.sh
-      bash -n scripts/ci/test-prepare-go-mod-cache.sh
-      bash scripts/ci/test-prepare-go-mod-cache.sh
-
-      docker compose -f deploy/docker-compose.yml config >/dev/null
-      XD_DOMAIN=drive.example.test \
-      XD_HTTPS_PORT=8443 \
-      ALIYUN_ACCESS_KEY_ID=ci-key \
-      ALIYUN_ACCESS_KEY_SECRET=ci-secret \
-        docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
-
-      generated="$(mktemp)"
-      sed \
-        -e 's|@SOURCE_REF@|0123456789abcdef0123456789abcdef01234567|g' \
-        -e 's|@IMAGE_TAG@|sha-0123456789ab|g' \
-        -e 's|@IMAGE_REGISTRY@|ghcr.io/lazyxu|g' \
-        -e 's|@RELEASE_CHANNEL@|master|g' \
-        -e 's|@RELEASE_COMMIT@|0123456789abcdef0123456789abcdef01234567|g' \
-        deploy/install-server.sh > "$generated"
-      bash -n "$generated"
-      grep -q 'sha-0123456789ab' "$generated"
-      grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
-      rm -f "$generated"
-
-      grep -q 'tags="$image:sha-${GITHUB_SHA::12}"' .github/workflows/release.yml
-      grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
-      grep -q 'target_tag="edge"' .github/workflows/release.yml
-      grep -q 'xdrive-caddy' .github/workflows/release.yml
-      grep -q '8443}:443/tcp' deploy/docker-compose.yml
-      grep -q 'dns alidns' deploy/Caddyfile
-      if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
-        echo "server image jobs must not publish edge before the full bundle succeeds" >&2
-        exit 1
-      fi
-
-      backup_line="$(grep -n '^stage 5 "create pre-upgrade backup"' deploy/install-server.sh | head -n1 | cut -d: -f1)"
-      image_line="$(grep -n '^set_env XD_SERVER_IMAGE ' deploy/install-server.sh | head -n1 | cut -d: -f1)"
-      test -n "$backup_line" -a -n "$image_line"
-      test "$backup_line" -lt "$image_line"
-      grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
-      grep -q 'server-doctor.sh' deploy/install-server.sh
-      grep -q 'server-doctor.sh' .github/workflows/release.yml
-      grep -q '/api/v1/readyz' deploy/install-server.sh
-      grep -q '/api/v1/readyz' scripts/server-doctor.sh
-      if grep -q '/api/v1/healthz' deploy/install-server.sh; then
-        echo "install readiness gates must use /readyz, not /healthz" >&2
-        exit 1
-      fi
-      grep -q 'xdrive-server-host.sh' deploy/install-server.sh
-      grep -q 'release/xdrive-server' .github/workflows/release.yml
-      if grep -q 'compose create server' scripts/server-backup.sh; then
-        echo "server backup must not create/recreate the formal server service" >&2
-        exit 1
-      fi
-      grep -q 'UPGRADE INCOMPLETE' deploy/install-server.sh
-      grep -q -- '--leave-server-stopped </dev/null' deploy/install-server.sh
-      grep -q 'flock -n 9' deploy/install-server.sh
-      grep -q -- '--leave-server-stopped' deploy/install-server.sh
-      grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
-      grep -q 'detailed Docker output is captured in' deploy/install-server.sh
-
-      docker build -t xdrive/server:test .
-      bash scripts/test-server-chunk-storage.sh
-
-      docker build -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
-      docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
-
-      bash scripts/test-server-backup-restore.sh
-
+build-linux-client:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: artifact
+  needs:
+    - job: desktop-linux
+      artifacts: true
+  tags:
+    - linux
+  script:
+    - bash scripts/ci/gitlab-package-linux-client.sh
   artifacts:
     name: "xdrive-linux-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     expire_in: 14 days
     when: on_success
     paths:
       - release/xdrive-linux-amd64.deb
-      - release/source-agent/xdrive-source-agent-linux-amd64
-      - release/source-agent/xdrive-source-agent-linux-arm64
+
+server-validation:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .ci-tools-cache
+  stage: test
+  needs: []
+  resource_group: xdrive-go-linux-docker
+  tags:
+    - linux
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_docker_cli
+  script:
+    - bash scripts/ci/gitlab-server-validation.sh
 
 go-windows:
   stage: test
-  needs:
-    - job: desktop-windows
-      artifacts: true
-  resource_group: xdrive-go-windows
+  needs: []
+  resource_group: xdrive-go-windows-tests
   tags:
     - windows
   cache:
-    key: "xdrive-go-windows-v2-$CI_RUNNER_EXECUTABLE_ARCH"
+    key: "xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
       - .cache/go-mod/cache/download/
-      - .cache/npm/
     policy: pull-push
     when: always
   script:
-    # Wrapper runs the full TestWindowsCfAPI* bidirectional/selective-sync E2E gate.
     - bash scripts/ci/gitlab-go-windows.sh
+
+build-windows-client:
+  stage: artifact
+  needs:
+    - job: desktop-windows
+      artifacts: true
+  resource_group: xdrive-build-windows-client
+  tags:
+    - windows
+  cache:
+    key: "xdrive-package-windows-v1-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/go-mod/cache/download/
+    policy: pull-push
+    when: always
+  script:
+    - bash scripts/ci/gitlab-package-windows-client.sh
   artifacts:
     name: "xdrive-windows-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     expire_in: 14 days
     when: on_success
     paths:
       - release/xDriveSetup-amd64.exe
+
+test-linux-artifact:
+  image: $XDRIVE_CI_GO_IMAGE
+  stage: test
+  needs:
+    - job: build-linux-client
+      artifacts: true
+  tags:
+    - linux
+  script:
+    - bash scripts/ci/gitlab-test-linux-artifact.sh
+
+test-source-agent-artifact:
+  image: $XDRIVE_CI_GO_IMAGE
+  stage: test
+  needs:
+    - job: build-source-agent
+      artifacts: true
+  tags:
+    - linux
+  script:
+    - bash scripts/ci/gitlab-test-source-agent-artifact.sh
+
+test-windows-artifact:
+  stage: test
+  needs:
+    - job: build-windows-client
+      artifacts: true
+  resource_group: xdrive-test-windows-artifact
+  tags:
+    - windows
+  script:
+    - bash scripts/ci/gitlab-test-windows-artifact.sh
 
 web:
   image: $XDRIVE_CI_NODE_IMAGE
@@ -428,3 +349,28 @@ web:
       npm run lint
       npm run build
       docker build -f Dockerfile -t xdrive/web:test ..
+
+final-gate:
+  image: $XDRIVE_CI_GO_IMAGE
+  stage: verify
+  needs:
+    - job: desktop-tests
+      artifacts: false
+    - job: go-linux
+      artifacts: false
+    - job: go-windows
+      artifacts: false
+    - job: server-validation
+      artifacts: false
+    - job: web
+      artifacts: false
+    - job: test-linux-artifact
+      artifacts: false
+    - job: test-source-agent-artifact
+      artifacts: false
+    - job: test-windows-artifact
+      artifacts: false
+  tags:
+    - linux
+  script:
+    - echo "All source, server, web, and exact-artifact tests passed."
