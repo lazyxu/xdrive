@@ -10,6 +10,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
+	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/yike"
 )
 
@@ -96,6 +97,9 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 					Page: yike.Page{HasMore: 0},
 					List: []yike.AlbumFile{
 						{File: yike.File{FSID: 1, Path: "/holiday.jpg", Size: 100, MTime: 1000, MD5: "AAAA"}, AlbumID: "own", UK: 123},
+						// The same stable media identity was ignored from the root
+						// library. A different album path must not re-include it.
+						{File: yike.File{FSID: 2, Path: "/visible-in-album.jpg", Size: 200, MTime: 2000}, AlbumID: "own", UK: 123},
 						{File: yike.File{FSID: 3, Path: "/album-only.jpg", Size: 300, MTime: 3000}, AlbumID: "own", UK: 123},
 					},
 				},
@@ -121,11 +125,11 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RootItems != 2 || result.Albums != 2 || result.AlbumMemberships != 4 {
+	if result.RootItems != 2 || result.Albums != 2 || result.AlbumMemberships != 5 {
 		t.Fatalf("unexpected discovery counts: %+v", result)
 	}
-	if result.DuplicateMemberships != 2 {
-		t.Fatalf("duplicate memberships=%d want=2", result.DuplicateMemberships)
+	if result.DuplicateMemberships != 3 {
+		t.Fatalf("duplicate memberships=%d want=3", result.DuplicateMemberships)
 	}
 	if result.OwnItems != 2 || result.SharedItems != 1 {
 		t.Fatalf("own/shared counts: %+v", result)
@@ -165,6 +169,86 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	}
 	if _, exists := items["yike:123:2"]; exists {
 		t.Fatal("ignored root item was sent to source API")
+	}
+
+	if len(result.Collections) != 2 {
+		t.Fatalf("collections=%d want=2: %+v", len(result.Collections), result.Collections)
+	}
+	collections := make(map[string]sourcecollection.Snapshot, len(result.Collections))
+	for _, collection := range result.Collections {
+		collections[collection.ExternalID] = collection
+	}
+	own := collections["yike:album:own"]
+	if own.Name != "Own Album" || len(own.Members) != 2 ||
+		own.Members[0].ItemExternalID != "yike:123:1" || own.Members[0].Position != 0 ||
+		own.Members[1].ItemExternalID != "yike:123:3" || own.Members[1].Position != 2 {
+		t.Fatalf("own collection=%+v", own)
+	}
+	shared := collections["yike:album:shared"]
+	if shared.Name != "Shared Album" || len(shared.Members) != 1 ||
+		shared.Members[0].ItemExternalID != "yike:999:4" || shared.Members[0].Position != 0 {
+		t.Fatalf("shared collection=%+v", shared)
+	}
+}
+
+func TestScannerKeepsEmptyAlbumCollection(t *testing.T) {
+	remote := &fakeRemote{
+		user:  yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{"": {Page: yike.Page{HasMore: 0}}},
+		albums: map[string]yike.AlbumList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.Album{{AlbumID: "empty", Title: "Empty Album"}},
+			},
+		},
+		albumFiles: map[string]map[string]yike.AlbumFileList{
+			"empty": {"": {Page: yike.Page{HasMore: 0}}},
+		},
+	}
+	result, err := (Scanner{
+		Remote: remote, API: &fakeSourceAPI{}, SourceID: 1, RunID: "run-empty",
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Collections) != 1 || result.Collections[0].ExternalID != "yike:album:empty" ||
+		result.Collections[0].Name != "Empty Album" || len(result.Collections[0].Members) != 0 {
+		t.Fatalf("empty collection=%+v", result.Collections)
+	}
+}
+
+func TestScannerRejectsAlbumWithoutIdentity(t *testing.T) {
+	remote := &fakeRemote{
+		user:  yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{"": {Page: yike.Page{HasMore: 0}}},
+		albums: map[string]yike.AlbumList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.Album{{AlbumID: " ", Title: "Broken"}},
+			},
+		},
+		albumFiles: map[string]map[string]yike.AlbumFileList{},
+	}
+	if _, err := (Scanner{
+		Remote: remote, API: &fakeSourceAPI{}, SourceID: 1, RunID: "run-bad-album",
+	}).Scan(context.Background()); err == nil {
+		t.Fatal("empty album identity was accepted")
+	}
+}
+
+func TestCollectionNameNormalizesRemoteTitle(t *testing.T) {
+	long := strings.Repeat("长", 300) + "\x01"
+	name := collectionName(yike.Album{AlbumID: "a", Title: long})
+	if len([]byte(name)) > 512 {
+		t.Fatalf("collection name bytes=%d", len([]byte(name)))
+	}
+	for _, r := range name {
+		if r < 32 {
+			t.Fatalf("collection name retained control rune %q", r)
+		}
+	}
+	if got := collectionName(yike.Album{AlbumID: "fallback", Title: " \x00 "}); got != "Album fallback" {
+		t.Fatalf("fallback collection name=%q", got)
 	}
 }
 

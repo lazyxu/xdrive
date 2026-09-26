@@ -63,6 +63,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/sources/:id/credential", suite: "sources"},
 		{method: "PUT", path: "/api/v1/sources/:id/credential", suite: "sources"},
 		{method: "DELETE", path: "/api/v1/sources/:id/credential", suite: "sources"},
+		{method: "GET", path: "/api/v1/sources/:id/collections", suite: "sources"},
+		{method: "GET", path: "/api/v1/sources/:id/collections/:collectionID/items", suite: "sources"},
 		{method: "GET", path: "/api/v1/sources/:id/runs", suite: "sources"},
 		{method: "POST", path: "/api/v1/sources/:id/runs", suite: "sources"},
 		{method: "GET", path: "/api/v1/sources/:id/runs/:runID", suite: "sources"},
@@ -117,8 +119,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 	if len(missing) != 0 || len(unexpected) != 0 {
 		t.Fatalf("API coverage manifest drift: missing registered routes=%v unexpected registered routes=%v", missing, unexpected)
 	}
-	if len(manifest) != 60 {
-		t.Fatalf("coverage manifest has %d endpoints, want 60", len(manifest))
+	if len(manifest) != 62 {
+		t.Fatalf("coverage manifest has %d endpoints, want 62", len(manifest))
 	}
 }
 
@@ -135,7 +137,7 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		"GET /api/v1/public/share":           {},
 		"POST /api/v1/public/share/download": {},
 	}
-	replacer := strings.NewReplacer(":versionID", "1", ":runID", "run-1", ":index", "0", ":id", "1")
+	replacer := strings.NewReplacer(":versionID", "1", ":collectionID", "1", ":runID", "run-1", ":index", "0", ":id", "1")
 	router := (&Server{}).Router()
 
 	for _, route := range router.Routes() {

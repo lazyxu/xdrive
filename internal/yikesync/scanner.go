@@ -11,6 +11,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
+	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/yike"
 )
 
@@ -49,6 +50,7 @@ type Scanner struct {
 
 type Result struct {
 	Summary              sourcepkg.Summary
+	Collections          []sourcecollection.Snapshot
 	Albums               int64
 	RootItems            int64
 	AlbumMemberships     int64
@@ -93,7 +95,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batch := make([]client.SourceObservation, 0, batchSize)
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
-	seen := make(map[string]struct{})
+	seen := make(map[string]bool)
 
 	flush := func() error {
 		if len(batch) == 0 {
@@ -153,25 +155,27 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		return nil
 	}
 
-	add := func(ownerUK int64, file yike.File, albumFile *yike.AlbumFile) error {
+	add := func(ownerUK int64, file yike.File, albumFile *yike.AlbumFile) (string, bool, error) {
 		externalID, err := yike.ExternalID(ownerUK, file.FSID)
 		if err != nil {
-			return err
+			return "", false, err
 		}
-		if _, duplicate := seen[externalID]; duplicate {
-			result.DuplicateMemberships++
-			return nil
-		}
-		seen[externalID] = struct{}{}
-
 		item, err := discoveredItem(ownUK, ownerUK, file)
 		if err != nil {
-			return err
+			return "", false, err
 		}
+
+		if included, duplicate := seen[externalID]; duplicate {
+			result.DuplicateMemberships++
+			return externalID, included, nil
+		}
+
 		if matcher.Ignored(item.Path, false) {
+			seen[externalID] = false
 			result.Summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: item})
-			return nil
+			return externalID, false, nil
 		}
+		seen[externalID] = true
 		if ownerUK == ownUK {
 			result.OwnItems++
 		} else {
@@ -193,9 +197,11 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			RemoteRevision: item.RemoteRevision,
 		})
 		if len(batch) >= batchSize {
-			return flush()
+			if err := flush(); err != nil {
+				return "", false, err
+			}
 		}
-		return nil
+		return externalID, true, nil
 	}
 
 	if err := walkFilePages(ctx,
@@ -203,7 +209,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		func(page yike.FileList) error {
 			for _, file := range page.List {
 				result.RootItems++
-				if err := add(ownUK, file, nil); err != nil {
+				if _, _, err := add(ownUK, file, nil); err != nil {
 					return err
 				}
 			}
@@ -222,6 +228,18 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	result.Albums = int64(len(albums))
 
 	for _, album := range albums {
+		collectionID, err := collectionExternalID(album)
+		if err != nil {
+			return result, fmt.Errorf("invalid Yike album %q: %w", album.Title, err)
+		}
+		snapshot := sourcecollection.Snapshot{
+			ExternalID:     collectionID,
+			Kind:           "album",
+			Name:           collectionName(album),
+			RemoteRevision: collectionRevision(album),
+		}
+		memberSeen := make(map[string]struct{})
+		var position int64
 		if err := walkAlbumFilePages(ctx,
 			func(cursor string) (yike.AlbumFileList, error) {
 				return s.Remote.ListAlbumFilesPage(ctx, album.AlbumID, cursor)
@@ -230,15 +248,27 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				for _, file := range page.List {
 					result.AlbumMemberships++
 					ownerUK := file.OwnerUK(ownUK)
-					if err := add(ownerUK, file.File, &file); err != nil {
+					externalID, included, err := add(ownerUK, file.File, &file)
+					if err != nil {
 						return err
 					}
+					if included {
+						if _, duplicate := memberSeen[externalID]; !duplicate {
+							snapshot.Members = append(snapshot.Members, sourcecollection.MemberSnapshot{
+								ItemExternalID: externalID,
+								Position:       position,
+							})
+							memberSeen[externalID] = struct{}{}
+						}
+					}
+					position++
 				}
 				return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
 			},
 		); err != nil {
 			return result, fmt.Errorf("scan Yike album %q: %w", album.Title, err)
 		}
+		result.Collections = append(result.Collections, snapshot)
 	}
 	if err := flush(); err != nil {
 		return result, fmt.Errorf("flush Yike source observations: %w", err)
@@ -274,6 +304,46 @@ func appendResultError(result *Result, externalID, itemPath string, err error) {
 		message = message[:1024]
 	}
 	result.Errors = append(result.Errors, message)
+}
+
+func collectionExternalID(album yike.Album) (string, error) {
+	albumID := strings.TrimSpace(album.AlbumID)
+	if albumID == "" {
+		return "", fmt.Errorf("album_id is empty")
+	}
+	value := "yike:album:" + albumID
+	if len([]byte(value)) > 512 {
+		return "", fmt.Errorf("album_id is too long")
+	}
+	return value, nil
+}
+
+func collectionName(album yike.Album) string {
+	name := strings.TrimSpace(album.Title)
+	if name == "" {
+		name = "Album " + strings.TrimSpace(album.AlbumID)
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if r < 32 {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	name = strings.TrimSpace(b.String())
+	if name == "" {
+		name = "Album " + strings.TrimSpace(album.AlbumID)
+	}
+	name = trimUTF8Bytes(name, 512)
+	if strings.TrimSpace(name) == "" {
+		return "Album"
+	}
+	return name
+}
+
+func collectionRevision(album yike.Album) string {
+	return fmt.Sprintf("tid:%d:mtime:%d:join:%d", album.TID, album.MTime, album.JoinTime)
 }
 
 func discoveredItem(ownUK, ownerUK int64, file yike.File) (sourcepkg.DiscoveredItem, error) {

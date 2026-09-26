@@ -45,7 +45,24 @@ Shared/<owner_uk>/<sanitized-name> [<fsid>]
 
 The fsid suffix makes names deterministic and collision-safe. Names are sanitized to xDrive's Windows-compatible namespace.
 
-Album/collection metadata is deferred to Phase 13E.
+Album metadata is persisted separately from media files. Each Yike album becomes one generic SourceCollection and membership is stored as a many-to-many relation to stable SourceItems. The same media object can therefore appear in multiple albums without creating duplicate xDrive Nodes or CAS objects.
+
+Collection identity uses:
+
+```text
+yike:album:<album_id>
+```
+
+Album title/order/revision metadata is refreshed only after a complete remote album traversal succeeds. If an album disappears, its collection becomes `missing` and its membership rows are cleared; already imported media and xDrive Nodes remain untouched.
+
+Read collection metadata through:
+
+```http
+GET /api/v1/sources/<source-id>/collections
+GET /api/v1/sources/<source-id>/collections/<collection-id>/items?limit=200&offset=0
+```
+
+Use `?state=active` or `?state=missing` on the collection list when needed. Collection-item reads default to 200 rows and accept `limit=1..1000` plus a non-negative `offset`; the parent collection's `item_count` reports the total membership size.
 
 ## Configure a Source
 

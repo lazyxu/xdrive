@@ -79,6 +79,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id/credential", s.getSourceCredentialStatus)
 	authed.PUT("/sources/:id/credential", s.putSourceCredential)
 	authed.DELETE("/sources/:id/credential", s.deleteSourceCredential)
+	authed.GET("/sources/:id/collections", s.listSourceCollections)
+	authed.GET("/sources/:id/collections/:collectionID/items", s.listSourceCollectionItems)
 	authed.GET("/sources/:id/runs", s.listSourceRuns)
 	authed.POST("/sources/:id/runs", s.beginSourceRun)
 	authed.GET("/sources/:id/runs/:runID", s.getSourceRun)

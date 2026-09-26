@@ -217,6 +217,21 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 		t.Fatalf("credential plaintext=%q", plain)
 	}
 
+	collection := meta.SourceCollection{
+		SourceID: source.ID, ExternalID: "album-1", Kind: "album", Name: "Album",
+		State: meta.SourceCollectionStateActive, LastSeenRunID: run.ID, LastSeenAt: now,
+	}
+	if err := db.Create(&collection).Error; err != nil {
+		t.Fatal(err)
+	}
+	membership := meta.SourceCollectionItem{
+		CollectionID: collection.ID, SourceItemID: item.ID, Position: 0,
+		LastSeenRunID: run.ID, LastSeenAt: now,
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	if err := db.Delete(&node).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +260,7 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Delete(&source).Error; err != nil {
 		t.Fatal(err)
 	}
-	var itemCount, runCount, credentialCount int64
+	var itemCount, runCount, credentialCount, collectionCount, membershipCount int64
 	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&itemCount).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +270,14 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).Count(&credentialCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if itemCount != 0 || runCount != 0 || credentialCount != 0 {
-		t.Fatalf("source cascade cleanup failed: items=%d runs=%d credentials=%d", itemCount, runCount, credentialCount)
+	if err := db.Model(&meta.SourceCollection{}).Where("source_id = ?", source.ID).Count(&collectionCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.SourceCollectionItem{}).Where("collection_id = ?", collection.ID).Count(&membershipCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if itemCount != 0 || runCount != 0 || credentialCount != 0 || collectionCount != 0 || membershipCount != 0 {
+		t.Fatalf("source cascade cleanup failed: items=%d runs=%d credentials=%d collections=%d memberships=%d",
+			itemCount, runCount, credentialCount, collectionCount, membershipCount)
 	}
 }

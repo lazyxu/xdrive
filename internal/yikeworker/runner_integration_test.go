@@ -130,6 +130,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.UploadSession{}, &meta.UploadPart{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceCredential{},
+		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -228,6 +229,21 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	}
 	if scanResult.DuplicateMemberships != 1 || scanResult.SharedItems != 1 {
 		t.Fatalf("unexpected scan discovery result: %+v", scanResult)
+	}
+	var collection meta.SourceCollection
+	if err := db.Where("source_id = ? AND external_id = ?", source.ID, "yike:album:shared").
+		First(&collection).Error; err != nil {
+		t.Fatal(err)
+	}
+	if collection.State != meta.SourceCollectionStateActive || collection.Name != "Shared" {
+		t.Fatalf("unexpected collection: %+v", collection)
+	}
+	var initialMemberships []meta.SourceCollectionItem
+	if err := db.Where("collection_id = ?", collection.ID).Order("position ASC").Find(&initialMemberships).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(initialMemberships) != 2 {
+		t.Fatalf("initial memberships=%d want=2: %+v", len(initialMemberships), initialMemberships)
 	}
 
 	var refreshedSource meta.Source
@@ -354,6 +370,52 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	}
 	if node, ok := nodes["Shared/999/shared.jpg [2]"]; !ok || node.ID != sharedNodeID {
 		t.Fatalf("source-side deletion propagated to xDrive: %+v", nodes)
+	}
+	var remainingMemberships []meta.SourceCollectionItem
+	if err := db.Where("collection_id = ?", collection.ID).Order("position ASC").Find(&remainingMemberships).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(remainingMemberships) != 1 {
+		t.Fatalf("memberships after shared disappearance=%d want=1: %+v", len(remainingMemberships), remainingMemberships)
+	}
+	var rootItem meta.SourceItem
+	if err := db.Where("source_id = ? AND external_id = ?", source.ID, "yike:123:1").First(&rootItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remainingMemberships[0].SourceItemID != rootItem.ID {
+		t.Fatalf("remaining membership=%+v root item=%+v", remainingMemberships[0], rootItem)
+	}
+
+	// Phase 4: album disappearance marks collection missing and clears only
+	// membership metadata. Existing media Nodes remain untouched.
+	remote.albums = nil
+	remote.albumFiles = map[string][]yike.AlbumFile{}
+	albumMissingRun, _, err := runner.RunSource(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if albumMissingRun.Status != meta.SyncRunStatusCompleted || albumMissingRun.TransferredItems != 0 {
+		t.Fatalf("unexpected album-missing run: %+v", albumMissingRun)
+	}
+	if err := db.First(&collection, collection.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if collection.State != meta.SourceCollectionStateMissing {
+		t.Fatalf("album collection was not marked missing: %+v", collection)
+	}
+	var membershipCount int64
+	if err := db.Model(&meta.SourceCollectionItem{}).Where("collection_id = ?", collection.ID).Count(&membershipCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if membershipCount != 0 {
+		t.Fatalf("missing collection retained %d memberships", membershipCount)
+	}
+	nodes, err = cli.Walk(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node, ok := nodes["Shared/999/shared.jpg [2]"]; !ok || node.ID != sharedNodeID {
+		t.Fatalf("album disappearance affected xDrive media: %+v", nodes)
 	}
 
 	// Credential/preflight failures remain throttled and do not spin every poll.

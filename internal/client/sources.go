@@ -113,6 +113,59 @@ func (c *Client) DeleteSource(ctx context.Context, id, revision uint64) error {
 	return c.jsonRevision(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", id), revision, nil, nil)
 }
 
+type SourceCollection struct {
+	ID             uint64    `json:"id"`
+	ExternalID     string    `json:"external_id"`
+	Kind           string    `json:"kind"`
+	Name           string    `json:"name"`
+	State          string    `json:"state"`
+	RemoteRevision string    `json:"remote_revision,omitempty"`
+	ItemCount      int64     `json:"item_count"`
+	LastSeenAt     time.Time `json:"last_seen_at"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type SourceCollectionItem struct {
+	Position       int64      `json:"position"`
+	SourceItemID   uint64     `json:"source_item_id"`
+	ExternalID     string     `json:"external_id"`
+	NodeID         *uint64    `json:"node_id,omitempty"`
+	Kind           string     `json:"kind"`
+	Path           string     `json:"path"`
+	Size           int64      `json:"size"`
+	ModifiedAt     *time.Time `json:"modified_at,omitempty"`
+	RemoteRevision string     `json:"remote_revision,omitempty"`
+	State          string     `json:"state"`
+}
+
+func (c *Client) SourceCollections(ctx context.Context, id uint64, state string) ([]SourceCollection, error) {
+	var out []SourceCollection
+	path := fmt.Sprintf("/api/v1/sources/%d/collections", id)
+	if state != "" {
+		path += "?state=" + url.QueryEscape(state)
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) SourceCollectionItems(ctx context.Context, sourceID, collectionID uint64, limit, offset int) ([]SourceCollectionItem, error) {
+	var out []SourceCollectionItem
+	path := fmt.Sprintf("/api/v1/sources/%d/collections/%d/items", sourceID, collectionID)
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		query.Set("offset", strconv.Itoa(offset))
+	}
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
 func (c *Client) SourceRuns(ctx context.Context, id uint64, limit int) ([]SyncRun, error) {
 	var out []SyncRun
 	path := fmt.Sprintf("/api/v1/sources/%d/runs", id)
