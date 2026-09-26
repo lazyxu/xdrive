@@ -1,11 +1,14 @@
 package sourceagentconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,15 +20,17 @@ import (
 const configDirEnv = "XD_SOURCE_AGENT_CONFIG_DIR"
 
 type Config struct {
-	Server             string `json:"server"`
-	SessionID          string `json:"session_id"`
-	Username           string `json:"username"`
-	MustChangePassword bool   `json:"must_change_password,omitempty"`
-	SourceID           uint64 `json:"source_id,omitempty"`
-	PersonalRoot       string `json:"personal_root,omitempty"`
-	PersonalRootID     string `json:"personal_root_id,omitempty"`
-	SharedRoot         string `json:"shared_root,omitempty"`
-	SharedRootID       string `json:"shared_root_id,omitempty"`
+	Server                  string `json:"server"`
+	SessionID               string `json:"session_id"`
+	Username                string `json:"username"`
+	MustChangePassword      bool   `json:"must_change_password,omitempty"`
+	SourceID                uint64 `json:"source_id,omitempty"`
+	PersonalRoot            string `json:"personal_root,omitempty"`
+	PersonalRootID          string `json:"personal_root_id,omitempty"`
+	PersonalRootFingerprint string `json:"personal_root_fingerprint,omitempty"`
+	SharedRoot              string `json:"shared_root,omitempty"`
+	SharedRootID            string `json:"shared_root_id,omitempty"`
+	SharedRootFingerprint   string `json:"shared_root_fingerprint,omitempty"`
 }
 
 func Dir() (string, error) {
@@ -45,6 +50,22 @@ func Path() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "config.json"), nil
+}
+
+func IdentityDir(cfg Config) (string, error) {
+	if err := normalize(&cfg); err != nil {
+		return "", err
+	}
+	if cfg.Server == "" || cfg.Username == "" || cfg.SourceID == 0 {
+		return "", fmt.Errorf("server, username, and source id are required for identity state")
+	}
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(cfg.Server + "\n" + cfg.Username + "\n" + strconv.FormatUint(cfg.SourceID, 10)))
+	key := hex.EncodeToString(sum[:16])
+	return filepath.Join(dir, "identity", key), nil
 }
 
 func Load() (Config, error) {
@@ -222,7 +243,9 @@ func normalize(cfg *Config) error {
 	cfg.Username = strings.TrimSpace(cfg.Username)
 	cfg.SessionID = strings.TrimSpace(cfg.SessionID)
 	cfg.PersonalRootID = strings.TrimSpace(cfg.PersonalRootID)
+	cfg.PersonalRootFingerprint = strings.TrimSpace(cfg.PersonalRootFingerprint)
 	cfg.SharedRootID = strings.TrimSpace(cfg.SharedRootID)
+	cfg.SharedRootFingerprint = strings.TrimSpace(cfg.SharedRootFingerprint)
 	var err error
 	if cfg.PersonalRoot != "" {
 		cfg.PersonalRoot, err = normalizeRoot(cfg.PersonalRoot)

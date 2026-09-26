@@ -22,6 +22,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceagent"
+	"github.com/lazyxu/xdrive/internal/sourceagentidentity"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -119,9 +120,14 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	identityStore, err := sourceagentidentity.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: source.ID,
-		Roots: sourceagent.RootsWithIdentities("", "", shared, sharedID),
+		Roots:         sourceagent.RootsWithIdentities("", "", shared, sharedID),
+		IdentityStore: identityStore,
 	}
 
 	run1, err := scanner.Run(context.Background(), meta.SyncRunTriggerManual)
@@ -202,6 +208,9 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	}
 	if item.State != meta.SourceItemStateMissing || item.NodeID == nil || *item.NodeID != firstNodeID {
 		t.Fatalf("unexpected missing source item: %+v", item)
+	}
+	if identityStore.Generation() != 4 {
+		t.Fatalf("identity generation=%d want=4", identityStore.Generation())
 	}
 }
 

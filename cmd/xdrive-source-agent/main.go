@@ -17,6 +17,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceagent"
 	"github.com/lazyxu/xdrive/internal/sourceagentconfig"
+	"github.com/lazyxu/xdrive/internal/sourceagentidentity"
 	"github.com/lazyxu/xdrive/internal/version"
 )
 
@@ -168,11 +169,11 @@ func setup(args []string) error {
 	if strings.TrimSpace(*personal) == "" && strings.TrimSpace(*shared) == "" {
 		return fmt.Errorf("at least one of --personal or --shared is required")
 	}
-	personalID, err := validateLocalRoot("personal", *personal)
+	personalID, personalFingerprint, err := validateLocalRoot("personal", *personal)
 	if err != nil {
 		return fmt.Errorf("personal root: %w", err)
 	}
-	sharedID, err := validateLocalRoot("shared", *shared)
+	sharedID, sharedFingerprint, err := validateLocalRoot("shared", *shared)
 	if err != nil {
 		return fmt.Errorf("shared root: %w", err)
 	}
@@ -261,8 +262,10 @@ func setup(args []string) error {
 	cfg.SourceID = remote.ID
 	cfg.PersonalRoot = strings.TrimSpace(*personal)
 	cfg.PersonalRootID = personalID
+	cfg.PersonalRootFingerprint = personalFingerprint
 	cfg.SharedRoot = strings.TrimSpace(*shared)
 	cfg.SharedRootID = sharedID
+	cfg.SharedRootFingerprint = sharedFingerprint
 	if err := sourceagentconfig.Save(cfg); err != nil {
 		return err
 	}
@@ -331,8 +334,23 @@ func run(args []string) error {
 	if cfg.MustChangePassword {
 		return fmt.Errorf("password change is required before run")
 	}
+	if changed, err := migrateRootFingerprints(&cfg); err != nil {
+		return err
+	} else if changed {
+		if err := sourceagentconfig.Save(cfg); err != nil {
+			return fmt.Errorf("save migrated root fingerprints: %w", err)
+		}
+	}
 	if err := cfg.ReadyForRun(); err != nil {
 		return err
+	}
+	identityDir, err := sourceagentconfig.IdentityDir(cfg)
+	if err != nil {
+		return err
+	}
+	identityStore, err := sourceagentidentity.Open(identityDir)
+	if err != nil {
+		return fmt.Errorf("open source identity state: %w", err)
 	}
 	cli, err := sourceagentconfig.NewClient(cfg)
 	if err != nil {
@@ -343,10 +361,11 @@ func run(args []string) error {
 
 	scanner := sourceagent.Scanner{
 		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID,
-		Roots: sourceagent.RootsWithIdentities(
-			cfg.PersonalRoot, cfg.PersonalRootID,
-			cfg.SharedRoot, cfg.SharedRootID,
+		Roots: sourceagent.RootsWithIdentityState(
+			cfg.PersonalRoot, cfg.PersonalRootID, cfg.PersonalRootFingerprint,
+			cfg.SharedRoot, cfg.SharedRootID, cfg.SharedRootFingerprint,
 		),
+		IdentityStore: identityStore,
 	}
 	result, err := scanner.Run(ctx, strings.TrimSpace(*trigger))
 	printRun(result)
@@ -409,16 +428,68 @@ func ensureRemoteDir(ctx context.Context, cli *client.Client, value string) (cli
 	return current, nil
 }
 
-func validateLocalRoot(key, value string) (string, error) {
+func validateLocalRoot(key, value string) (string, string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return "", nil
+		return "", "", nil
 	}
 	abs, err := filepath.Abs(value)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return sourceagent.RootIdentity(key, abs)
+	legacy, err := sourceagent.RootIdentity(key, abs)
+	if err != nil {
+		return "", "", err
+	}
+	fingerprint, err := sourceagent.RootFingerprint(key, abs)
+	if err != nil {
+		return "", "", err
+	}
+	return legacy, fingerprint, nil
+}
+
+func migrateRootFingerprints(cfg *sourceagentconfig.Config) (bool, error) {
+	if cfg == nil {
+		return false, fmt.Errorf("source-agent config is required")
+	}
+	changed := false
+	migrate := func(key, root, legacy string, fingerprint *string) error {
+		if strings.TrimSpace(root) == "" {
+			return nil
+		}
+		currentLegacy, err := sourceagent.RootIdentity(key, root)
+		if err != nil {
+			return err
+		}
+		currentFingerprint, err := sourceagent.RootFingerprint(key, root)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(*fingerprint) == "" {
+			if currentLegacy != strings.TrimSpace(legacy) {
+				_, oldInode, oldOK := sourceagent.ParseLegacyRootIdentity(key, legacy)
+				_, currentInode, currentOK := sourceagent.ParseLegacyRootIdentity(key, currentLegacy)
+				if !oldOK || !currentOK || oldInode != currentInode ||
+					!strings.HasPrefix(currentFingerprint, "root:btime:") {
+					return fmt.Errorf("%s root identity changed before fingerprint migration: got %s want %s; run setup again after verifying the Synology volume is mounted", key, currentLegacy, legacy)
+				}
+			}
+			*fingerprint = currentFingerprint
+			changed = true
+			return nil
+		}
+		if currentFingerprint != strings.TrimSpace(*fingerprint) {
+			return fmt.Errorf("%s root fingerprint changed: got %s want %s; run setup again after verifying the Synology volume is mounted", key, currentFingerprint, *fingerprint)
+		}
+		return nil
+	}
+	if err := migrate("personal", cfg.PersonalRoot, cfg.PersonalRootID, &cfg.PersonalRootFingerprint); err != nil {
+		return false, err
+	}
+	if err := migrate("shared", cfg.SharedRoot, cfg.SharedRootID, &cfg.SharedRootFingerprint); err != nil {
+		return false, err
+	}
+	return changed, nil
 }
 
 func loadIgnoreRules(path string) (string, error) {
