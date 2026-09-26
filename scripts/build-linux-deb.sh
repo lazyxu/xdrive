@@ -147,7 +147,19 @@ chmod 0755 "$PKG_ROOT/DEBIAN/postrm"
 
 mkdir -p "$OUT_DIR"
 OUTPUT="$OUT_DIR/xdrive-linux-amd64.deb"
-dpkg-deb --root-owner-group --build "$PKG_ROOT" "$OUTPUT"
+
+DPKG_DEB_ARGS=(--root-owner-group)
+case "$VERSION" in
+  v*)
+    echo "Building stable Debian package with dpkg-deb default compression."
+    ;;
+  *)
+    DPKG_DEB_ARGS+=(-Zxz -z1)
+    echo "Building development Debian package with fast XZ level 1 compression."
+    ;;
+esac
+
+dpkg-deb "${DPKG_DEB_ARGS[@]}" --build "$PKG_ROOT" "$OUTPUT"
 dpkg-deb --info "$OUTPUT" >/dev/null
 dpkg-deb --contents "$OUTPUT" >/dev/null
 echo "$OUTPUT"
