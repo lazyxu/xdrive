@@ -733,13 +733,21 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"Download exact Linux installer tested by CI",
 		"Download exact Windows installer tested by CI",
 		"Verify single-installer distribution contract",
-		"artifact: xdrive-server-image",
-		"artifact: xdrive-web-image",
-		"artifact: xdrive-caddy-image",
-		"Load and verify exact image tested by CI",
-		"Push exact tested image",
+		"name: xdrive-server-image",
+		"name: xdrive-web-image",
+		"name: xdrive-caddy-image",
+		"Download exact server image tested by CI",
+		"Download exact web image tested by CI",
+		"Download exact Caddy image tested by CI",
+		"Load and verify exact images tested by CI",
+		"Push exact tested images in parallel",
+		"docker push \"$remote\" &",
+		"for pid in \"${pids[@]}\"",
 		"scripts/ci/import-docker-image.sh",
 	)
+	if strings.Contains(githubRelease, "${{ matrix.") {
+		t.Errorf("GitHub release server image publication must use one batched job, not a matrix")
+	}
 	for _, forbidden := range []string{"docker/build-push-action", "docker build --build-arg", "docker build -f"} {
 		if strings.Contains(githubRelease, forbidden) {
 			t.Errorf("GitHub release workflow must publish exact tested server images without rebuilding: %q", forbidden)
