@@ -18,6 +18,12 @@ const DefaultUploadChunkSize int64 = 8 << 20
 
 type UploadProgress func(done, total int64)
 
+type UploadResult struct {
+	Node             Node
+	SHA256           string
+	TransferredBytes int64
+}
+
 type UploadInit struct {
 	ParentID         *uint64  `json:"parent_id,omitempty"`
 	NodeID           *uint64  `json:"node_id,omitempty"`
@@ -105,7 +111,12 @@ func (c *Client) AbortUpload(ctx context.Context, id string) error {
 }
 
 func (c *Client) UploadFileResumable(ctx context.Context, parentID uint64, path, name string, progress UploadProgress) (Node, error) {
-	return c.uploadPath(ctx, path, UploadInit{
+	result, err := c.UploadFileResumableResult(ctx, parentID, path, name, progress)
+	return result.Node, err
+}
+
+func (c *Client) UploadFileResumableResult(ctx context.Context, parentID uint64, path, name string, progress UploadProgress) (UploadResult, error) {
+	return c.uploadPathResult(ctx, path, UploadInit{
 		ParentID:  &parentID,
 		Name:      name,
 		ChunkSize: DefaultUploadChunkSize,
@@ -113,61 +124,69 @@ func (c *Client) UploadFileResumable(ctx context.Context, parentID uint64, path,
 }
 
 func (c *Client) OverwriteFileResumable(ctx context.Context, nodeID, revision uint64, path string, progress UploadProgress) (Node, error) {
-	return c.uploadPath(ctx, path, UploadInit{
+	result, err := c.OverwriteFileResumableResult(ctx, nodeID, revision, path, progress)
+	return result.Node, err
+}
+
+func (c *Client) OverwriteFileResumableResult(ctx context.Context, nodeID, revision uint64, path string, progress UploadProgress) (UploadResult, error) {
+	return c.uploadPathResult(ctx, path, UploadInit{
 		NodeID:           &nodeID,
 		ExpectedRevision: revision,
 		ChunkSize:        DefaultUploadChunkSize,
 	}, progress)
 }
 
-func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, progress UploadProgress) (Node, error) {
+func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadInit, progress UploadProgress) (UploadResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return Node{}, err
+		return UploadResult{}, err
 	}
 	stat, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		return Node{}, err
+		return UploadResult{}, err
 	}
 	if stat.IsDir() {
 		_ = f.Close()
-		return Node{}, fmt.Errorf("upload source is a directory")
+		return UploadResult{}, fmt.Errorf("upload source is a directory")
 	}
 	init.Size = stat.Size()
 
 	fullHash, chunkHashes, err := hashUploadFile(f, stat.Size(), init.ChunkSize)
 	if err != nil {
 		_ = f.Close()
-		return Node{}, fmt.Errorf("hash upload source: %w", err)
+		return UploadResult{}, fmt.Errorf("hash upload source: %w", err)
 	}
 	afterHash, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		return Node{}, err
+		return UploadResult{}, err
 	}
 	if afterHash.Size() != stat.Size() || !afterHash.ModTime().Equal(stat.ModTime()) {
 		_ = f.Close()
-		return Node{}, fmt.Errorf("upload source changed while hashing")
+		return UploadResult{}, fmt.Errorf("upload source changed while hashing")
 	}
 	init.SHA256 = fullHash
 	init.ChunkSHA256 = chunkHashes
 	init.ResumeKey = init.SHA256
+	result := UploadResult{SHA256: fullHash}
 	defer f.Close()
 
 	session, err := c.StartUpload(ctx, init)
 	if err != nil {
-		return Node{}, err
+		return UploadResult{}, err
 	}
 	if session.Status == "finalized" && session.Result != nil {
 		if progress != nil {
 			progress(init.Size, init.Size)
 		}
-		return *session.Result, nil
+		result.Node = *session.Result
+		return result, nil
 	}
 
 	received := make(map[int]UploadPart, len(session.Received))
 	var done int64
+	var transferredBytes int64
 	for _, part := range session.Received {
 		if part.Index < 0 || part.Index >= len(chunkHashes) {
 			continue
@@ -192,21 +211,22 @@ func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, p
 		buf := make([]byte, int(partSize))
 		n, readErr := f.ReadAt(buf, offset)
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
-			return Node{}, readErr
+			return UploadResult{}, readErr
 		}
 		if int64(n) != partSize {
-			return Node{}, fmt.Errorf("short read for chunk %d: got %d want %d", index, n, partSize)
+			return UploadResult{}, fmt.Errorf("short read for chunk %d: got %d want %d", index, n, partSize)
 		}
 		sum := sha256.Sum256(buf)
 		partHash := hex.EncodeToString(sum[:])
 		if !strings.EqualFold(partHash, chunkHashes[index]) {
-			return Node{}, fmt.Errorf("upload source changed after hashing at chunk %d", index)
+			return UploadResult{}, fmt.Errorf("upload source changed after hashing at chunk %d", index)
 		}
 		part, err := c.putChunkRetry(ctx, session.ID, index, partHash, buf)
 		if err != nil {
-			return Node{}, err
+			return UploadResult{}, err
 		}
 		done += part.Size
+		transferredBytes += part.Size
 		if progress != nil {
 			progress(done, init.Size)
 		}
@@ -214,18 +234,20 @@ func (c *Client) uploadPath(ctx context.Context, path string, init UploadInit, p
 
 	final, err := c.finalizeRetry(ctx, session.ID)
 	if err != nil {
-		return Node{}, err
+		return UploadResult{}, err
 	}
 	if final.Result == nil {
-		return Node{}, fmt.Errorf("finalize upload returned no file")
+		return UploadResult{}, fmt.Errorf("finalize upload returned no file")
 	}
 	if init.SHA256 != "" && final.Result.SHA256 != "" && final.Result.SHA256 != init.SHA256 {
-		return Node{}, fmt.Errorf("server content hash mismatch: got %s want %s", final.Result.SHA256, init.SHA256)
+		return UploadResult{}, fmt.Errorf("server content hash mismatch: got %s want %s", final.Result.SHA256, init.SHA256)
 	}
 	if progress != nil {
 		progress(init.Size, init.Size)
 	}
-	return *final.Result, nil
+	result.Node = *final.Result
+	result.TransferredBytes = transferredBytes
+	return result, nil
 }
 
 func hashUploadFile(f *os.File, size, chunkSize int64) (string, []string, error) {

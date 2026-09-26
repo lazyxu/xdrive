@@ -142,3 +142,55 @@ func TestRootIdentityRejectsSymlinkRoot(t *testing.T) {
 		t.Fatal("symlink root was accepted")
 	}
 }
+
+func TestScannerSyncExecutesAndCommits(t *testing.T) {
+	shared := t.TempDir()
+	local := filepath.Join(shared, "photo.jpg")
+	if err := os.WriteFile(local, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sharedID, err := RootIdentity("shared", shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetID := uint64(100)
+	protocol := &fakeAPI{
+		source: client.Source{ID: 9, Kind: SynologyKind, Direction: meta.SourceDirectionPush},
+		begin: client.SyncRun{
+			ID: "run-9", SourceID: 9, Mode: meta.SourceRunModeSync, TargetNodeID: &targetID,
+		},
+	}
+	execution := newFakeExecutionAPI()
+	execution.upload = client.UploadResult{
+		Node:             client.Node{ID: 200, Type: meta.NodeTypeFile, Revision: 1},
+		SHA256:           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		TransferredBytes: 3,
+	}
+	scanner := Scanner{
+		API: protocol, ExecutionAPI: execution, SourceID: 9,
+		Roots: RootsWithIdentities("", "", shared, sharedID),
+	}
+	run, err := scanner.Run(context.Background(), meta.SyncRunTriggerScheduled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != meta.SyncRunStatusCompleted {
+		t.Fatalf("run status=%q", run.Status)
+	}
+	if execution.createDirs != 1 || execution.uploads != 1 {
+		t.Fatalf("createDirs=%d uploads=%d", execution.createDirs, execution.uploads)
+	}
+	if len(protocol.commits) != 1 || len(protocol.commits[0]) != 2 {
+		t.Fatalf("commits=%+v", protocol.commits)
+	}
+	var fileCommit *client.SourceCommit
+	for i := range protocol.commits[0] {
+		if protocol.commits[0][i].Kind == meta.SourceItemKindFile {
+			fileCommit = &protocol.commits[0][i]
+			break
+		}
+	}
+	if fileCommit == nil || !fileCommit.Transferred || fileCommit.TransferredBytes != 3 {
+		t.Fatalf("file commit=%+v", fileCommit)
+	}
+}

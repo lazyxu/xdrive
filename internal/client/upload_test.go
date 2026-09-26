@@ -100,12 +100,15 @@ func TestUploadFileResumableSkipsCompletedChunkAndRetries(t *testing.T) {
 	defer server.Close()
 
 	c := New(server.URL, "token")
-	node, err := c.UploadFileResumable(context.Background(), 1, path, "large.bin", nil)
+	result, err := c.UploadFileResumableResult(context.Background(), 1, path, "large.bin", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node.ID != 9 || node.SHA256 != fullHash {
-		t.Fatalf("node=%+v", node)
+	if result.Node.ID != 9 || result.Node.SHA256 != fullHash || result.SHA256 != fullHash {
+		t.Fatalf("result=%+v", result)
+	}
+	if result.TransferredBytes != 123 {
+		t.Fatalf("transferred_bytes=%d want=123", result.TransferredBytes)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -162,14 +165,17 @@ func TestUploadFileResumableInstantFinalizeSkipsChunks(t *testing.T) {
 
 	var progress [][2]int64
 	cli := New(server.URL, "token")
-	node, err := cli.UploadFileResumable(context.Background(), 1, path, "instant.bin", func(done, total int64) {
+	result, err := cli.UploadFileResumableResult(context.Background(), 1, path, "instant.bin", func(done, total int64) {
 		progress = append(progress, [2]int64{done, total})
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node.ID != 77 || node.SHA256 != hash {
-		t.Fatalf("node=%+v", node)
+	if result.Node.ID != 77 || result.Node.SHA256 != hash || result.SHA256 != hash {
+		t.Fatalf("result=%+v", result)
+	}
+	if result.TransferredBytes != 0 {
+		t.Fatalf("instant transferred_bytes=%d want=0", result.TransferredBytes)
 	}
 	if len(requests) != 1 || requests[0] != "POST /api/v1/uploads" {
 		t.Fatalf("requests=%v", requests)

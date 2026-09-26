@@ -16,6 +16,8 @@ type fakeAPI struct {
 	finishInput    *client.FinishSourceRunInput
 	observed       [][]client.SourceObservation
 	heartbeatCount int
+	commits        [][]client.SourceCommit
+	commitErr      error
 }
 
 func (f *fakeAPI) Source(context.Context, uint64) (client.Source, error) {
@@ -39,6 +41,12 @@ func (f *fakeAPI) ObserveSourceItems(_ context.Context, _ uint64, _ string, item
 	return out, nil
 }
 
+func (f *fakeAPI) CommitSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceCommit) error {
+	copyItems := append([]client.SourceCommit(nil), items...)
+	f.commits = append(f.commits, copyItems)
+	return f.commitErr
+}
+
 func (f *fakeAPI) HeartbeatSourceRun(context.Context, uint64, string) error {
 	f.heartbeatCount++
 	return nil
@@ -47,8 +55,12 @@ func (f *fakeAPI) HeartbeatSourceRun(context.Context, uint64, string) error {
 func (f *fakeAPI) FinishSourceRun(_ context.Context, _ uint64, _ string, input client.FinishSourceRunInput) (client.SyncRun, error) {
 	copy := input
 	f.finishInput = &copy
+	status := input.Status
+	if status == meta.SyncRunStatusCompleted && input.Summary.FailedItems > 0 {
+		status = meta.SyncRunStatusPartial
+	}
 	return client.SyncRun{
-		ID: "run-1", SourceID: 1, Mode: f.begin.Mode, Status: input.Status,
+		ID: "run-1", SourceID: 1, Mode: f.begin.Mode, Status: status,
 		ScannedItems: input.Summary.ScannedItems, ScannedBytes: input.Summary.ScannedBytes,
 		IgnoredItems: input.Summary.IgnoredItems, IgnoredBytes: input.Summary.IgnoredBytes,
 		NewItems: input.Summary.NewItems, NewBytes: input.Summary.NewBytes,
