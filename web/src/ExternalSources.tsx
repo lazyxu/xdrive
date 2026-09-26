@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ReloadOutlined } from '@ant-design/icons'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
 import type {
@@ -23,6 +23,14 @@ type SourceSettingsValues = {
   ignore_rules?: string
   cookie?: string
 }
+type CreateSourceValues = {
+  kind: 'synology_photos' | 'yike_photos'
+  name: string
+  run_mode: 'scan' | 'sync'
+  ignore_rules?: string
+  cookie?: string
+}
+
 
 function sourceStatus(row: SourceRow): { status: BadgeProps['status']; text: string } {
   const { source, latestRun, credential } = row
@@ -72,6 +80,10 @@ function sourceKind(kind: string) {
   if (kind === 'yike_photos') return '一刻相册'
   return kind
 }
+function shellQuote(value: string) {
+  return "'" + value.replace(/'/g, "'\\''") + "'"
+}
+
 
 function runStatusLabel(status: ExternalSourceRun['status']) {
   const labels: Record<ExternalSourceRun['status'], string> = {
@@ -87,11 +99,17 @@ function runStatusLabel(status: ExternalSourceRun['status']) {
 export default function ExternalSourcesPanel({
   open,
   api,
+  defaultTargetNodeID,
+  defaultTargetLabel,
+  defaultTargetPath,
   onClose,
   onError,
 }: {
   open: boolean
   api: XDriveApi
+  defaultTargetNodeID?: number
+  defaultTargetLabel: string
+  defaultTargetPath: string
   onClose: () => void
   onError: (error: unknown) => void
 }) {
@@ -101,6 +119,10 @@ export default function ExternalSourcesPanel({
   const [setting, setSetting] = useState<SourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createForm] = Form.useForm<CreateSourceValues>()
+  const createKind = Form.useWatch('kind', createForm)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -126,6 +148,101 @@ export default function ExternalSourcesPanel({
   useEffect(() => {
     if (open) void load()
   }, [open, load])
+  const openCreate = () => {
+    createForm.setFieldsValue({
+      kind: 'synology_photos',
+      name: '群晖 Photos',
+      run_mode: 'scan',
+      ignore_rules: '@eaDir/\n\\#recycle/\n',
+      cookie: '',
+    })
+    setCreateOpen(true)
+  }
+
+  const changeCreateKind = (kind: CreateSourceValues['kind']) => {
+    createForm.setFieldsValue(kind === 'synology_photos'
+      ? { name: '群晖 Photos', ignore_rules: '@eaDir/\n\\#recycle/\n', cookie: '' }
+      : { name: '一刻相册', ignore_rules: '', cookie: '' })
+  }
+
+  const createSource = async (values: CreateSourceValues) => {
+    if (!defaultTargetNodeID) {
+      message.error('当前目标文件夹尚未加载，请稍后重试')
+      return
+    }
+    if (values.kind === 'synology_photos' && !defaultTargetPath) {
+      message.error('群晖来源不能直接使用“我的文件”根目录，请先进入一个目标文件夹')
+      return
+    }
+    const cookie = values.cookie?.trim() ?? ''
+    if (values.kind === 'yike_photos' && !cookie) {
+      message.error('请填写一刻相册 Cookie')
+      return
+    }
+
+    setCreating(true)
+    let created: ExternalSource
+    try {
+      created = await api.createSource({
+        name: values.name.trim(),
+        kind: values.kind,
+        direction: values.kind === 'synology_photos' ? 'push' : 'pull',
+        sync_mode: 'backup',
+        run_mode: values.run_mode,
+        target_node_id: defaultTargetNodeID,
+        ignore_rules: values.ignore_rules ?? '',
+      })
+    } catch (error) {
+      onError(error)
+      setCreating(false)
+      return
+    }
+
+    if (values.kind === 'yike_photos') {
+      try {
+        await api.setSourceCredential(created.id, { cookie })
+      } catch (error) {
+        onError(error)
+        message.warning('来源已创建，但 Cookie 保存失败；请在“设置”中重新配置')
+      }
+    }
+
+    message.success('外部来源已添加')
+    setCreateOpen(false)
+    createForm.resetFields()
+    await load()
+    setCreating(false)
+
+    if (values.kind === 'synology_photos') {
+      const command =
+        'xdrive-source-agent setup --name ' + shellQuote(created.name) +
+        ' --target ' + shellQuote(defaultTargetPath) +
+        ' --personal /volume1/homes/USERNAME/Photos --mode ' + created.run_mode
+      Modal.info({
+        title: '群晖来源已添加',
+        width: 720,
+        content: (
+          <div style={{ marginTop: 16 }}>
+            <Alert
+              type="success"
+              showIcon
+              message="xDrive Source 已创建"
+              description="下一步在群晖 DSM 上配置 xdrive-source-agent。Agent 会按相同来源名称复用这个 Source，不会重复创建。"
+              style={{ marginBottom: 16 }}
+            />
+            <Typography.Paragraph>
+              将命令中的 <Typography.Text code>USERNAME</Typography.Text> 替换为 DSM 用户名：
+            </Typography.Paragraph>
+            <Typography.Paragraph code copyable={{ text: command }}>{command}</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">
+              如需同时扫描共享空间，在命令后追加 <Typography.Text code>--shared /volume1/photo</Typography.Text>。
+            </Typography.Paragraph>
+          </div>
+        ),
+      })
+    }
+  }
+
 
   const openSettings = (row: SourceRow) => {
     setSetting(row)
@@ -184,7 +301,10 @@ export default function ExternalSourcesPanel({
     <>
       <Modal title="外部来源" open={open} onCancel={onClose} footer={null} width={760}>
       <div className="external-sources-toolbar">
-        <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>添加来源</Button>
+        </Space>
       </div>
       <Spin spinning={loading && rows.length === 0}>
         {rows.length === 0 && !loading ? (
@@ -296,6 +416,81 @@ export default function ExternalSourcesPanel({
             )}
           </>
         )}
+      </Modal>
+
+      <Modal
+        title="添加外部来源"
+        open={createOpen}
+        onCancel={() => {
+          setCreateOpen(false)
+          createForm.resetFields()
+        }}
+        footer={null}
+        width={640}
+        destroyOnClose
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="目标目录使用当前文件夹"
+          description={`当前目标：${defaultTargetLabel}${defaultTargetPath ? `（${defaultTargetPath}）` : '（我的文件根目录）'}`}
+          style={{ marginBottom: 16 }}
+        />
+        <Form form={createForm} layout="vertical" onFinish={createSource} requiredMark={false}>
+          <Form.Item name="kind" label="来源类型" rules={[{ required: true }]}>
+            <Select
+              onChange={changeCreateKind}
+              options={[
+                { value: 'synology_photos', label: '群晖 Photos' },
+                { value: 'yike_photos', label: '一刻相册' },
+              ]}
+            />
+          </Form.Item>
+          {createKind === 'synology_photos' && !defaultTargetPath && (
+            <Alert
+              type="warning"
+              showIcon
+              message="请先进入一个目标文件夹"
+              description="群晖 DSM setup 需要根目录下的相对目标路径，因此不能直接绑定“我的文件”根目录。"
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Form.Item name="name" label="来源名称" rules={[{ required: true, whitespace: true, max: 128 }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="run_mode" label="初始运行模式" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'scan', label: '仅扫描（推荐先使用）' },
+                { value: 'sync', label: '同步' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="ignore_rules" label="忽略规则">
+            <Input.TextArea rows={5} placeholder="每行一条 gitignore 风格规则" />
+          </Form.Item>
+          {createKind === 'yike_photos' && (
+            <Form.Item
+              name="cookie"
+              label="一刻相册 Cookie"
+              rules={[{ required: true, whitespace: true, message: '请填写一刻相册 Cookie' }]}
+              extra="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
+            >
+              <Input.Password autoComplete="off" />
+            </Form.Item>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onClick={() => { setCreateOpen(false); createForm.resetFields() }}>取消</Button>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={creating}
+              disabled={createKind === 'synology_photos' && !defaultTargetPath}
+            >
+              添加来源
+            </Button>
+          </div>
+        </Form>
       </Modal>
 
       <Modal

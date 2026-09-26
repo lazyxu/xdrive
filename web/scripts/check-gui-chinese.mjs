@@ -11,6 +11,7 @@ const files = {
   audit: read('src/AdminAudit.tsx'),
   share: read('src/ShareDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
+  sources: read('src/ExternalSources.tsx'),
   main: read('src/main.tsx'),
   html: read('index.html'),
 }
@@ -32,6 +33,7 @@ requireText(files.users, ['用户管理', '创建用户', '设置配额', '重�
 requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录'], '审计日志')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享'], '分享窗口')
 requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数'], '公开分享')
+requireText(files.sources, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '保存设置'], '外部来源')
 requireText(files.main, ["import zhCN from 'antd/locale/zh_CN'", 'locale={zhCN}'], 'Ant Design')
 requireText(files.html, ['<html lang="zh-CN">', 'xDrive 网页文件管理器'], '网页入口')
 
