@@ -160,6 +160,7 @@ jobs:
           path: desktop/release/win-unpacked
           if-no-files-found: error
           retention-days: 2
+          compression-level: 0
 
   build-client-core:
     runs-on: ubuntu-latest
@@ -599,6 +600,7 @@ jobs:
           path: release/xDriveSetup-amd64.exe
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
 
   test-linux-artifact:
     needs: package-linux-client

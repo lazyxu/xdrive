@@ -103,6 +103,16 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
 	)
+	assertGitHubArtifactCompression(t, github, "desktop-windows", "desktop-runtime-windows-amd64", "0")
+	assertGitHubArtifactCompression(t, github, "package-windows-client", "xdrive-windows-amd64", "0")
+	assertGitLabJobVariables(t, gitlab, "desktop-windows", map[string]string{
+		"ARTIFACT_COMPRESSION_LEVEL": "fastest",
+		"FF_USE_FASTZIP":             "true",
+	})
+	assertGitLabJobVariables(t, gitlab, "package-windows-client", map[string]string{
+		"ARTIFACT_COMPRESSION_LEVEL": "fastest",
+		"FF_USE_FASTZIP":             "true",
+	})
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
 	var imageConfig map[string]any
@@ -913,6 +923,58 @@ func assertNeedNames(t *testing.T, provider, jobName string, raw any, want []str
 		t.Errorf("%s job %s needs=%v want=%v", provider, jobName, got, want)
 	}
 }
+func assertGitHubArtifactCompression(t *testing.T, github map[string]any, jobName, artifactName, want string) {
+	t.Helper()
+	jobs, ok := github["jobs"].(map[string]any)
+	if !ok {
+		t.Fatalf("GitHub jobs has type %T, want map", github["jobs"])
+	}
+	job, ok := jobs[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("GitHub job %q missing or invalid", jobName)
+	}
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatalf("GitHub job %s steps=%T, want list", jobName, job["steps"])
+	}
+	for _, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		uses, _ := step["uses"].(string)
+		if !strings.HasPrefix(uses, "actions/upload-artifact@") {
+			continue
+		}
+		with, ok := step["with"].(map[string]any)
+		if !ok || fmt.Sprint(with["name"]) != artifactName {
+			continue
+		}
+		if got := fmt.Sprint(with["compression-level"]); got != want {
+			t.Errorf("GitHub job %s artifact %s compression-level=%q want=%q", jobName, artifactName, got, want)
+		}
+		return
+	}
+	t.Errorf("GitHub job %s is missing upload-artifact step for %s", jobName, artifactName)
+}
+
+func assertGitLabJobVariables(t *testing.T, gitlab map[string]any, jobName string, want map[string]string) {
+	t.Helper()
+	job, ok := gitlab[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("GitLab job %q missing or invalid", jobName)
+	}
+	variables, ok := job["variables"].(map[string]any)
+	if !ok {
+		t.Fatalf("GitLab job %s variables=%T, want map", jobName, job["variables"])
+	}
+	for key, wantValue := range want {
+		if got := fmt.Sprint(variables[key]); got != wantValue {
+			t.Errorf("GitLab job %s variable %s=%q want=%q", jobName, key, got, wantValue)
+		}
+	}
+}
+
 func assertRunnerParity(t *testing.T, github, gitlab map[string]any, expected map[string]string) {
 	t.Helper()
 	githubJobs, ok := github["jobs"].(map[string]any)

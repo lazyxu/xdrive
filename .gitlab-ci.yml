@@ -156,6 +156,8 @@ desktop-windows:
   variables:
     ELECTRON_CACHE: "$CI_PROJECT_DIR/.cache/electron"
     ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
+    ARTIFACT_COMPRESSION_LEVEL: "fastest"
+    FF_USE_FASTZIP: "true"
   tags:
     - windows
   cache:
@@ -361,6 +363,9 @@ go-windows:
 
 package-windows-client:
   stage: package
+  variables:
+    ARTIFACT_COMPRESSION_LEVEL: "fastest"
+    FF_USE_FASTZIP: "true"
   needs:
     - job: desktop-windows
       artifacts: true
