@@ -61,6 +61,7 @@ bash -n scripts/build-source-agent.sh
 bash -n scripts/build-client-core.sh
 bash -n scripts/ci/gitlab-desktop-windows.sh
 bash -n scripts/ci/gitlab-go-linux.sh
+bash -n scripts/ci/gitlab-go-linux-api.sh
 bash -n scripts/ci/gitlab-package-linux-client.sh
 bash -n scripts/ci/gitlab-source-agent.sh
 bash -n scripts/ci/gitlab-server-validation.sh

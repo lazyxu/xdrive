@@ -29,7 +29,7 @@ if [[ -n "$files" ]]; then
   exit 1
 fi
 
-go test -p 1 -race ./...
+go list ./... | grep -vx 'github.com/lazyxu/xdrive/internal/api' | xargs go test -p 1 -race
 go vet ./...
 go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
 go build ./cmd/xdrive-source-agent

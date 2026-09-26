@@ -53,6 +53,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"desktop-windows":               "windows",
 		"build-client-core":             "linux",
 		"go-linux":                      "linux",
+		"go-linux-api":                  "linux",
 		"go-windows":                    "windows",
 		"build-source-agent":            "linux",
 		"build-linux-client":            "linux",
@@ -76,6 +77,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"desktop-windows":               "",
 		"build-client-core":             "$XDRIVE_CI_GO_IMAGE",
 		"go-linux":                      "$XDRIVE_CI_GO_IMAGE",
+		"go-linux-api":                  "$XDRIVE_CI_GO_IMAGE",
 		"go-windows":                    "",
 		"build-source-agent":            "$XDRIVE_CI_GO_IMAGE",
 		"build-linux-client":            "$XDRIVE_CI_GO_IMAGE",
@@ -91,6 +93,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"web":                           "$XDRIVE_CI_NODE_IMAGE",
 		"final-gate":                    "$XDRIVE_CI_GO_IMAGE",
 	})
+	assertGitLabCache(t, gitlab, "go-linux-api",
+		"xdrive-go-linux-api-v1-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/go-mod/"},
+	)
 	assertGitLabCache(t, gitlab, "go-windows",
 		"xdrive-go-windows-test-v3-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/go-mod/cache/download/"},
@@ -141,6 +147,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	clientCoreBuild := readFile(t, filepath.Join(root, "scripts", "build-client-core.sh"))
 	gitlabGoLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux.sh"))
+	gitlabGoLinuxAPI := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux-api.sh"))
 	gitlabPackageLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-linux-client.sh"))
 	gitlabSourceAgent := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-source-agent.sh"))
 	gitlabServerValidation := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-validation.sh"))
@@ -179,7 +186,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"npm run runtime:win",
 		"go mod tidy \"-go=1.25\"",
 		"git diff --exit-code -- go.mod go.sum",
-		"go test -p 1 -race ./...",
+		"go list ./... | grep -vx 'github.com/lazyxu/xdrive/internal/api' | xargs go test -p 1 -race",
+		"go test -p 1 -race ./internal/api",
 		"go vet ./...",
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
@@ -272,6 +280,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"final-gate:",
 		"bash scripts/ci/gitlab-desktop-windows.sh",
 		"bash scripts/ci/gitlab-go-linux.sh",
+		"bash scripts/ci/gitlab-go-linux-api.sh",
 		"bash scripts/ci/gitlab-package-linux-client.sh",
 		"bash scripts/ci/gitlab-source-agent.sh",
 		"bash scripts/ci/gitlab-server-validation.sh",
@@ -395,7 +404,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Go module cache rebuilt and verified",
 	)
 	requireRaw(t, "GitLab Linux split wrappers", gitlabLinuxBash,
-		"go test -p 1 -race ./...",
+		"go list ./... | grep -vx 'github.com/lazyxu/xdrive/internal/api' | xargs go test -p 1 -race",
+		"go test -p 1 -race ./internal/api",
 		"go vet ./...",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
 		"bash scripts/build-linux-deb.sh \"$XDRIVE_RELEASE_VERSION\" release desktop/release/linux-unpacked release/core/linux-amd64",

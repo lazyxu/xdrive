@@ -215,6 +215,32 @@ go-linux:
   script:
     - bash scripts/ci/gitlab-go-linux.sh
 
+go-linux-api:
+  image: $XDRIVE_CI_GO_IMAGE
+  stage: test
+  needs: []
+  cache:
+    key: "xdrive-go-linux-api-v1-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/go-mod/
+    policy: pull-push
+    when: always
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - bash scripts/ci/gitlab-go-linux-api.sh
+
 build-source-agent:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache
@@ -424,6 +450,8 @@ final-gate:
     - job: desktop-tests
       artifacts: false
     - job: go-linux
+      artifacts: false
+    - job: go-linux-api
       artifacts: false
     - job: go-windows
       artifacts: false
