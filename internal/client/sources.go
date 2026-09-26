@@ -126,17 +126,63 @@ type SourceCollection struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type SourceItemMetadata struct {
+	OriginalPath    string     `json:"original_path,omitempty"`
+	OwnerExternalID string     `json:"owner_external_id,omitempty"`
+	RemoteCreatedAt *time.Time `json:"remote_created_at,omitempty"`
+	ContentMD5      string     `json:"content_md5,omitempty"`
+	ThumbnailURL    string     `json:"thumbnail_url,omitempty"`
+	PairGroupID     string     `json:"pair_group_id,omitempty"`
+	PairRole        string     `json:"pair_role,omitempty"`
+}
+
+type SourceItem struct {
+	SourceItemID   uint64              `json:"source_item_id"`
+	ExternalID     string              `json:"external_id"`
+	NodeID         *uint64             `json:"node_id,omitempty"`
+	Kind           string              `json:"kind"`
+	Path           string              `json:"path"`
+	Size           int64               `json:"size"`
+	ModifiedAt     *time.Time          `json:"modified_at,omitempty"`
+	SHA256         string              `json:"sha256,omitempty"`
+	RemoteRevision string              `json:"remote_revision,omitempty"`
+	State          string              `json:"state"`
+	Metadata       *SourceItemMetadata `json:"metadata,omitempty"`
+}
+
 type SourceCollectionItem struct {
-	Position       int64      `json:"position"`
-	SourceItemID   uint64     `json:"source_item_id"`
-	ExternalID     string     `json:"external_id"`
-	NodeID         *uint64    `json:"node_id,omitempty"`
-	Kind           string     `json:"kind"`
-	Path           string     `json:"path"`
-	Size           int64      `json:"size"`
-	ModifiedAt     *time.Time `json:"modified_at,omitempty"`
-	RemoteRevision string     `json:"remote_revision,omitempty"`
-	State          string     `json:"state"`
+	Position       int64               `json:"position"`
+	SourceItemID   uint64              `json:"source_item_id"`
+	ExternalID     string              `json:"external_id"`
+	NodeID         *uint64             `json:"node_id,omitempty"`
+	Kind           string              `json:"kind"`
+	Path           string              `json:"path"`
+	Size           int64               `json:"size"`
+	ModifiedAt     *time.Time          `json:"modified_at,omitempty"`
+	SHA256         string              `json:"sha256,omitempty"`
+	RemoteRevision string              `json:"remote_revision,omitempty"`
+	State          string              `json:"state"`
+	Metadata       *SourceItemMetadata `json:"metadata,omitempty"`
+}
+
+func (c *Client) SourceItems(ctx context.Context, id uint64, state string, limit, offset int) ([]SourceItem, error) {
+	var out []SourceItem
+	path := fmt.Sprintf("/api/v1/sources/%d/items", id)
+	query := url.Values{}
+	if state != "" {
+		query.Set("state", state)
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		query.Set("offset", strconv.Itoa(offset))
+	}
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
 }
 
 func (c *Client) SourceCollections(ctx context.Context, id uint64, state string) ([]SourceCollection, error) {
