@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -9,7 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -197,6 +200,23 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	keyring, err := connectorsecret.NewKeyring(1, map[uint32]string{
+		1: strings.Repeat("11", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sourcecredential.Put(context.Background(), db, keyring, source, []byte(`{"cookie":"secret"}`)); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := sourcecredential.Get(context.Background(), db, keyring, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(plain) != `{"cookie":"secret"}` {
+		t.Fatalf("credential plaintext=%q", plain)
+	}
+
 	if err := db.Delete(&node).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -225,14 +245,17 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Delete(&source).Error; err != nil {
 		t.Fatal(err)
 	}
-	var itemCount, runCount int64
+	var itemCount, runCount, credentialCount int64
 	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&itemCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", source.ID).Count(&runCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if itemCount != 0 || runCount != 0 {
-		t.Fatalf("source cascade cleanup failed: items=%d runs=%d", itemCount, runCount)
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).Count(&credentialCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if itemCount != 0 || runCount != 0 || credentialCount != 0 {
+		t.Fatalf("source cascade cleanup failed: items=%d runs=%d credentials=%d", itemCount, runCount, credentialCount)
 	}
 }

@@ -136,6 +136,14 @@ grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/c
 grep -q "XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
 grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
 grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/.env"
+connector_active="$(grep '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=' "$TMP/config-ok/.env" | tail -n1 | cut -d= -f2-)"
+connector_keys="$(grep '^XD_CONNECTOR_SECRET_KEYS=' "$TMP/config-ok/.env" | tail -n1 | cut -d= -f2-)"
+[[ "$connector_active" == "1" ]]
+[[ "$connector_keys" =~ ^1:[0-9a-f]{64}$ ]]
+if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-ok/.env"; then
+  echo "new installs must not persist the legacy connector key variable" >&2
+  exit 1
+fi
 grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
 
 if grep -Eq -- '--(retry|retry-delay|connect-timeout|write-out)=' "$INSTALLER"; then
@@ -247,6 +255,7 @@ chmod +x "$TMP/bin-upgrade/docker"
 
 cat > "$TMP/config-upgrade/.env" <<'EOF'
 POSTGRES_PASSWORD=stale-db-password
+XD_CONNECTOR_SECRET_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 XD_RELEASE_CHANNEL=master
 EOF
 cat > "$TMP/config-upgrade/docker-compose.yml" <<'EOF'
@@ -278,6 +287,13 @@ fi
 test -f "$TMP/state/password-repaired"
 grep -q '^POSTGRES_PASSWORD=stale-db-password$' "$TMP/config-upgrade/.env"
 grep -q '^XD_JWT_SECRET=legacy-jwt-secret$' "$TMP/config-upgrade/.env"
+grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=1$' "$TMP/config-upgrade/.env"
+grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$' "$TMP/config-upgrade/.env"
+if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-upgrade/.env"; then
+  echo "legacy connector key must be removed after keyring migration" >&2
+  exit 1
+fi
+grep -q 'Migrated legacy connector credential key into keyring version 1.' "$TMP/upgrade.out"
 grep -q 'Repaired the managed PostgreSQL role password to match xDrive configuration and verified Docker-network authentication.' "$TMP/upgrade.out"
 grep -q 'Recovered JWT secret from the existing xDrive server container.' "$TMP/upgrade.out"
 grep -q '\[xDrive\] existing deployment detected; entering upgrade maintenance window...' "$TMP/upgrade.out"

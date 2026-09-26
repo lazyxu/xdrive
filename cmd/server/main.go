@@ -13,6 +13,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/api"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/config"
+	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
@@ -43,6 +44,11 @@ func main() {
 				log.Fatal(err)
 			}
 			return
+		case "source-credentials":
+			if err := runSourceCredentialCommand(os.Args[2:]); err != nil {
+				log.Fatal(err)
+			}
+			return
 		}
 	}
 
@@ -61,12 +67,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("open local storage: %v", err)
 	}
+	connectorSecrets, err := connectorsecret.ParseKeyring(
+		cfg.ConnectorSecretActiveVersion,
+		cfg.ConnectorSecretKeys,
+		cfg.ConnectorSecretLegacyKey,
+	)
+	if err != nil {
+		log.Fatalf("invalid connector credential keyring: %v", err)
+	}
 	srv := &api.Server{
 		DB: db, Store: store,
-		Auth:           auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
-		RefreshTTL:     cfg.RefreshTokenTTL,
-		AllowedOrigin:  cfg.AllowedOrigin,
-		MaxUploadBytes: cfg.MaxUploadBytes,
+		Auth:             auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
+		RefreshTTL:       cfg.RefreshTokenTTL,
+		AllowedOrigin:    cfg.AllowedOrigin,
+		MaxUploadBytes:   cfg.MaxUploadBytes,
+		ConnectorSecrets: connectorSecrets,
 	}
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
 	defer janitorCancel()
@@ -79,7 +94,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceCredential{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`UPDATE xd_nodes SET revision = 1 WHERE revision = 0`).Error; err != nil {

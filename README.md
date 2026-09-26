@@ -822,6 +822,19 @@ The mapping deliberately targets `xd_nodes`, not `xd_content_blobs`: a source it
 
 Phase 13B adds the **Source Execution Foundation** without introducing a vendor connector yet. A source now binds to one active owner-scoped xDrive target directory, has a default `sync` or `scan` run mode, and stores a bounded ignore-rule set. Source configuration uses optimistic revisions and is exposed through owner-scoped Source CRUD plus read-only run-history APIs. Only `backup` behavior is exposed: a source-side disappearance is represented as `missing` and never deletes or trashes the xDrive node.
 
+Phase 13D adds a separate **Source Credential Keyring** for pull connectors such as Yike Photos. Connector payloads are stored only as AES-256-GCM ciphertext in `xd_source_credentials`; authenticated additional data binds each ciphertext to its Source ID, connector kind, and key version. The REST API can write/delete a credential and query only `configured/key_version/updated_at`; it never returns decrypted payloads.
+
+Connector encryption is independent from `XD_JWT_SECRET`. New deployments generate `XD_CONNECTOR_SECRET_KEYS=1:<64-hex-key>` with active version 1. Rotation keeps old and new keys simultaneously, switches `XD_CONNECTOR_SECRET_ACTIVE_VERSION` to the new version, then runs:
+
+```bash
+xdrive-server source-credentials status
+xdrive-server source-credentials rewrap --dry-run
+xdrive-server source-credentials rewrap
+xdrive-server source-credentials status
+```
+
+Only after the old key version reports zero credential rows should that historical key be removed from `XD_CONNECTOR_SECRET_KEYS`. Existing deployments using the legacy single `XD_CONNECTOR_SECRET_KEY` are migrated to keyring version 1 without changing the key bytes.
+
 The shared `internal/source` planner normalizes discovered items and classifies them as `ignore`, `unchanged`, `create`, `update`, `move`, or `move_update`. Ignore rules use a gitignore-like ordered syntax with `*`, `**`, `?`, comments, rooted/directory patterns, and `!` negation; rules are evaluated identically for scan and sync planning. Fast scan planning does not hash every source file: it uses stable external identity plus size/mtime, or a connector-provided remote revision/hash when available. SyncRun statistics separately record scanned, ignored, new, changed, moved, unchanged, missing, planned-transfer, actual-transfer, and failure counts/bytes. `LastSeenRunID` provides deterministic missing detection for future executors without relying on wall-clock cutoffs.
 
 Phase 13C begins with a connector-neutral **Source Scan Protocol**. A source agent creates an idempotent run with a client-generated UUID, posts normalized observations in bounded batches, receives stable planner actions, and finishes the run with its scan summary. Observation retries are safe because managed baselines are not advanced for pending update/move work. Run startup snapshots the source revision, target directory, ignore rules, mode, and checkpoint so configuration changes cannot alter planning halfway through a scan. Only one live run is accepted per source; stale runs can be superseded after their heartbeat expires.
@@ -998,6 +1011,7 @@ deploy/
 
 - Use HTTPS in production; JWTs are bearer credentials.
 - Use the generated long `XD_JWT_SECRET` and keep `~/.xd/.env` private.
+- Connector credentials use a separate versioned AES-256-GCM keyring; never remove a historical key until `source-credentials status` shows no rows using that version.
 - The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.
 - File operations are owner-scoped at the metadata layer.

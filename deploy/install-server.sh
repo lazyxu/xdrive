@@ -573,6 +573,13 @@ set_env() {
   fi
 }
 
+unset_env() {
+  local key="$1" tmp="$ENV_PATH.tmp"
+  [[ -f "$ENV_PATH" ]] || return 0
+  awk -v k="$key" 'BEGIN{FS="="} $1!=k{print}' "$ENV_PATH" > "$tmp"
+  mv "$tmp" "$ENV_PATH"
+}
+
 env_value() {
   local key="$1" value
   value="$(grep "^${key}=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
@@ -660,6 +667,8 @@ recover_existing_runtime_secrets() {
   [[ -f "$COMPOSE_PATH" ]] || return 0
 
   local postgres_id server_id configured_pg runtime_pg candidate configured_jwt runtime_jwt
+  local configured_connector_keys runtime_connector_keys configured_connector_active runtime_connector_active
+  local configured_connector_legacy runtime_connector_legacy
   postgres_id="$(managed_container_id postgres)"
   server_id="$(managed_container_id server)"
 
@@ -701,6 +710,34 @@ MSG
     if [[ -n "$runtime_jwt" ]]; then
       set_env XD_JWT_SECRET "$runtime_jwt"
       echo "Recovered JWT secret from the existing xDrive server container."
+    fi
+  fi
+
+  if [[ -n "$server_id" ]]; then
+    configured_connector_keys="$(env_value XD_CONNECTOR_SECRET_KEYS)"
+    configured_connector_active="$(env_value XD_CONNECTOR_SECRET_ACTIVE_VERSION)"
+    configured_connector_legacy="$(env_value XD_CONNECTOR_SECRET_KEY)"
+
+    if [[ -z "$configured_connector_keys" ]]; then
+      runtime_connector_keys="$(container_env_value "$server_id" XD_CONNECTOR_SECRET_KEYS || true)"
+      if [[ -n "$runtime_connector_keys" ]]; then
+        set_env XD_CONNECTOR_SECRET_KEYS "$runtime_connector_keys"
+        configured_connector_keys="$runtime_connector_keys"
+        echo "Recovered connector credential keyring from the existing xDrive server container."
+      fi
+    fi
+    if [[ -n "$configured_connector_keys" && -z "$configured_connector_active" ]]; then
+      runtime_connector_active="$(container_env_value "$server_id" XD_CONNECTOR_SECRET_ACTIVE_VERSION || true)"
+      if [[ -n "$runtime_connector_active" ]]; then
+        set_env XD_CONNECTOR_SECRET_ACTIVE_VERSION "$runtime_connector_active"
+      fi
+    fi
+    if [[ -z "$configured_connector_keys" && -z "$configured_connector_legacy" ]]; then
+      runtime_connector_legacy="$(container_env_value "$server_id" XD_CONNECTOR_SECRET_KEY || true)"
+      if [[ -n "$runtime_connector_legacy" ]]; then
+        set_env XD_CONNECTOR_SECRET_KEY "$runtime_connector_legacy"
+        echo "Recovered legacy connector credential key from the existing xDrive server container."
+      fi
     fi
   fi
 }
@@ -910,11 +947,43 @@ recover_existing_runtime_secrets
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   set_env_in_file "$UPGRADE_STATE_DIR/files/.env" POSTGRES_PASSWORD "$(env_value POSTGRES_PASSWORD)"
   set_env_in_file "$UPGRADE_STATE_DIR/files/.env" XD_JWT_SECRET "$(env_value XD_JWT_SECRET)"
+  set_env_in_file "$UPGRADE_STATE_DIR/files/.env" XD_CONNECTOR_SECRET_ACTIVE_VERSION "$(env_value XD_CONNECTOR_SECRET_ACTIVE_VERSION)"
+  set_env_in_file "$UPGRADE_STATE_DIR/files/.env" XD_CONNECTOR_SECRET_KEYS "$(env_value XD_CONNECTOR_SECRET_KEYS)"
+  set_env_in_file "$UPGRADE_STATE_DIR/files/.env" XD_CONNECTOR_SECRET_KEY "$(env_value XD_CONNECTOR_SECRET_KEY)"
   ROLLBACK_ARMED=1
   echo "[xDrive] transaction prepared; deployment rollback is armed."
 fi
 ensure_env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-$(random_hex 24)}"
 ensure_env XD_JWT_SECRET "${XD_JWT_SECRET:-$(random_hex 48)}"
+
+connector_keys="${XD_CONNECTOR_SECRET_KEYS:-$(env_value XD_CONNECTOR_SECRET_KEYS)}"
+connector_active="${XD_CONNECTOR_SECRET_ACTIVE_VERSION:-$(env_value XD_CONNECTOR_SECRET_ACTIVE_VERSION)}"
+connector_legacy="${XD_CONNECTOR_SECRET_KEY:-$(env_value XD_CONNECTOR_SECRET_KEY)}"
+if [[ -z "$connector_keys" ]]; then
+  if [[ -n "$connector_legacy" ]]; then
+    connector_keys="1:$connector_legacy"
+    connector_active="1"
+    echo "Migrated legacy connector credential key into keyring version 1."
+  else
+    generated_connector_key="$(random_hex 32)"
+    connector_keys="1:$generated_connector_key"
+    connector_active="1"
+    echo "Generated connector credential keyring version 1."
+  fi
+elif [[ -z "$connector_active" ]]; then
+  if [[ "$connector_keys" == *,* ]]; then
+    echo "xDrive server installer: XD_CONNECTOR_SECRET_ACTIVE_VERSION is required when multiple connector keys are configured." >&2
+    exit 1
+  fi
+  connector_active="${connector_keys%%:*}"
+fi
+set_env XD_CONNECTOR_SECRET_ACTIVE_VERSION "$connector_active"
+set_env XD_CONNECTOR_SECRET_KEYS "$connector_keys"
+# The pre-upgrade transaction snapshot retains any legacy single-key setting
+# for rollback. The active upgraded configuration must not keep an obsolete
+# copy of the historical key after keyring migration.
+unset_env XD_CONNECTOR_SECRET_KEY
+
 ensure_env XD_ACCESS_TOKEN_TTL "${XD_ACCESS_TOKEN_TTL:-15m}"
 ensure_env XD_REFRESH_TOKEN_TTL "${XD_REFRESH_TOKEN_TTL:-720h}"
 ensure_env XD_WEB_BIND "${XD_WEB_BIND:-127.0.0.1}"

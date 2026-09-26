@@ -8,19 +8,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
 )
 
 type Server struct {
-	DB             *gorm.DB
-	Store          storage.Store
-	Auth           auth.Manager
-	RefreshTTL     time.Duration
-	AllowedOrigin  string
-	MaxUploadBytes int64
-	obs            *serverObservability
+	DB               *gorm.DB
+	Store            storage.Store
+	Auth             auth.Manager
+	RefreshTTL       time.Duration
+	AllowedOrigin    string
+	MaxUploadBytes   int64
+	ConnectorSecrets *connectorsecret.Keyring
+	obs              *serverObservability
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -74,6 +76,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id", s.getSource)
 	authed.PATCH("/sources/:id", s.updateSource)
 	authed.DELETE("/sources/:id", s.deleteSource)
+	authed.GET("/sources/:id/credential", s.getSourceCredentialStatus)
+	authed.PUT("/sources/:id/credential", s.putSourceCredential)
+	authed.DELETE("/sources/:id/credential", s.deleteSourceCredential)
 	authed.GET("/sources/:id/runs", s.listSourceRuns)
 	authed.POST("/sources/:id/runs", s.beginSourceRun)
 	authed.GET("/sources/:id/runs/:runID", s.getSourceRun)
