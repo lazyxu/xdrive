@@ -31,7 +31,8 @@ CloseApplications=yes
 CloseApplicationsFilter=xdrive-agent.exe,xdrive-desktop.exe
 RestartApplications=no
 UninstallDisplayName=xDrive
-SetupIconFile={#SourceDir}\icons\tray-normal.ico
+UninstallDisplayIcon={app}\desktop\xdrive-desktop.exe
+SetupIconFile={#SourceDir}\icons\app.ico
 
 [Files]
 Source: "{#SourceDir}\xd.exe"; DestDir: "{app}"; Flags: ignoreversion

@@ -9,8 +9,10 @@ files:
   - package.json
 win:
   executableName: xdrive-desktop
+  icon: ../assets/icon/master/xdrive-icon-master.svg
 linux:
   executableName: xdrive-desktop
+  icon: ../assets/icon/master/xdrive-icon-master.svg
   category: Utility
   synopsis: xDrive desktop client
   description: xDrive Electron desktop client with secure local integration to the Go xdrive-agent.
