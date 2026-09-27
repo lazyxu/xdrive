@@ -101,6 +101,15 @@ type StorageStats struct {
 	GeneratedAt               time.Time           `json:"generated_at"`
 }
 
+type VersionInfo struct {
+	Version       string `json:"version"`
+	Channel       string `json:"channel,omitempty"`
+	Commit        string `json:"commit,omitempty"`
+	CommitMessage string `json:"commit_message,omitempty"`
+	CommitTime    string `json:"commit_time,omitempty"`
+	BuildTime     string `json:"build_time,omitempty"`
+}
+
 type AuthResponse struct {
 	Token              string `json:"token"`
 	AccessToken        string `json:"access_token"`
@@ -150,6 +159,25 @@ func (c *Client) authenticate(ctx context.Context, path, username, password stri
 		return out, err
 	}
 	return out, nil
+}
+
+func (c *Client) ServerVersion(ctx context.Context) (VersionInfo, error) {
+	var out VersionInfo
+	if _, err := url.ParseRequestURI(c.BaseURL); err != nil {
+		return out, fmt.Errorf("invalid server URL: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/api/v1/version", nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("User-Agent", "xdrive-xd/0.1")
+	resp, err := c.do(req)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	err = decodeResponse(resp, &out)
+	return out, err
 }
 
 func (c *Client) Quota(ctx context.Context) (QuotaUsage, error) {

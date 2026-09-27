@@ -476,6 +476,11 @@ func TestDesktopIPCStatusAndEvents(t *testing.T) {
 			ConflictCount: 2,
 			HasConflict:   true,
 			Version:       "test",
+			ServerBuild: client.VersionInfo{
+				Version: "snapshot-abcdef123456",
+				Channel: "master",
+				Commit:  "abcdef1234567890",
+			},
 		},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
@@ -484,7 +489,10 @@ func TestDesktopIPCStatusAndEvents(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("status code=%d body=%s", res.Code, res.Body.String())
 	}
-	if !strings.Contains(res.Body.String(), "\"revision\":7") || !strings.Contains(res.Body.String(), "\"username\":\"alice\"") {
+	if !strings.Contains(res.Body.String(), "\"revision\":7") ||
+		!strings.Contains(res.Body.String(), "\"username\":\"alice\"") ||
+		!strings.Contains(res.Body.String(), "\"server_build\":{\"version\":\"snapshot-abcdef123456\"") ||
+		!strings.Contains(res.Body.String(), "\"commit\":\"abcdef1234567890\"") {
 		t.Fatalf("unexpected status body: %s", res.Body.String())
 	}
 	if res.Header().Get("Cache-Control") != "no-store" {

@@ -14,7 +14,7 @@ if [[ "$node_major" != "22" ]]; then
   exit 1
 fi
 
-source scripts/ci/client-artifact-version.sh
+source scripts/ci/build-metadata.sh
 
 ci_tmp="$PWD/.gitlab-desktop-ci-tmp"
 rm -rf "$ci_tmp"

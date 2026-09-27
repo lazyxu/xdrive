@@ -82,19 +82,20 @@ var desktopIPCCapabilities = []string{
 }
 
 type desktopIPCStatus struct {
-	Revision           uint64 `json:"revision"`
-	Configured         bool   `json:"configured"`
-	Username           string `json:"username,omitempty"`
-	Server             string `json:"server,omitempty"`
-	MountPath          string `json:"mount_path,omitempty"`
-	AuthStatus         string `json:"auth_status"`
-	SyncStatus         string `json:"sync_status"`
-	Paused             bool   `json:"paused"`
-	MustChangePassword bool   `json:"must_change_password"`
-	LastError          string `json:"last_error,omitempty"`
-	HasConflict        bool   `json:"has_conflict"`
-	ConflictCount      int    `json:"conflict_count"`
-	Version            string `json:"version"`
+	Revision           uint64              `json:"revision"`
+	Configured         bool                `json:"configured"`
+	Username           string              `json:"username,omitempty"`
+	Server             string              `json:"server,omitempty"`
+	MountPath          string              `json:"mount_path,omitempty"`
+	AuthStatus         string              `json:"auth_status"`
+	SyncStatus         string              `json:"sync_status"`
+	Paused             bool                `json:"paused"`
+	MustChangePassword bool                `json:"must_change_password"`
+	LastError          string              `json:"last_error,omitempty"`
+	HasConflict        bool                `json:"has_conflict"`
+	ConflictCount      int                 `json:"conflict_count"`
+	Version            string              `json:"version"`
+	ServerBuild        *client.VersionInfo `json:"server_build,omitempty"`
 }
 
 type desktopIPCEvent struct {
@@ -1360,6 +1361,11 @@ func (h *desktopIPCHandler) writeStatus(w http.ResponseWriter) {
 }
 
 func makeDesktopIPCStatus(snapshot agentSnapshot, revision uint64) desktopIPCStatus {
+	var serverBuild *client.VersionInfo
+	if snapshot.ServerBuild.Version != "" {
+		build := snapshot.ServerBuild
+		serverBuild = &build
+	}
 	return desktopIPCStatus{
 		Revision:           revision,
 		Configured:         snapshot.Configured,
@@ -1374,6 +1380,7 @@ func makeDesktopIPCStatus(snapshot agentSnapshot, revision uint64) desktopIPCSta
 		HasConflict:        snapshot.HasConflict,
 		ConflictCount:      snapshot.ConflictCount,
 		Version:            snapshot.Version,
+		ServerBuild:        serverBuild,
 	}
 }
 

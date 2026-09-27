@@ -11,6 +11,15 @@ export type AgentHello = {
   capabilities: string[]
 }
 
+export type AgentBuildInfo = {
+  version: string
+  channel?: string
+  commit?: string
+  commit_message?: string
+  commit_time?: string
+  build_time?: string
+}
+
 export type AgentStatus = {
   revision: number
   configured: boolean
@@ -25,6 +34,7 @@ export type AgentStatus = {
   has_conflict: boolean
   conflict_count: number
   version: string
+  server_build?: AgentBuildInfo
 }
 
 export type AgentSettings = {

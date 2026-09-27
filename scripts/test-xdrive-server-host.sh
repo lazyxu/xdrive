@@ -9,7 +9,7 @@ cleanup() {
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
     for file in \
-      update.out update.err backup.out restore.out backup-fail.err doctor.out \
+      update.out update.err version.out backup.out restore.out backup-fail.err doctor.out \
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
@@ -55,6 +55,16 @@ cat > "$TMP/bin/docker" <<'SH'
 set -euo pipefail
 printf '%s\n' "$*" >> "$TEST_STATE/docker-args"
 case "$*" in
+  *"exec -T server xdrive-server version"*)
+    cat <<'EOF'
+server version: snapshot-0123456789ab
+channel: master
+commit: 0123456789abcdef0123456789abcdef01234567
+commit message: feat: server build metadata
+commit time: 2026-09-27T13:00:00Z
+build time: 2026-09-27T13:05:00Z
+EOF
+    ;;
   *"audit record"*)
     printf '%s\n' "$*" >> "$TEST_STATE/audit-calls"
     ;;
@@ -122,7 +132,12 @@ echo "mock verify"
 SH
 chmod +x "$TMP/home/bin/server-verify.sh"
 
-printf 'XD_DOMAIN=\n' > "$TMP/home/config/.env"
+cat > "$TMP/home/config/.env" <<'EOF'
+XD_DOMAIN=
+XD_RELEASE_CHANNEL=master
+XD_RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567
+XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-0123456789ab
+EOF
 printf 'name: xdrive\nservices: {}\n' > "$TMP/home/config/docker-compose.yml"
 
 TEST_STATE="$TMP/state" \
@@ -149,6 +164,19 @@ bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab.out" 2
 grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-url"
 grep -q '^--source gitlab --channel master$' "$TMP/state/installer-args"
 grep -q 'downloading host installer from gitlab' "$TMP/update-gitlab.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" version >"$TMP/version.out"
+
+grep -q '^server version: snapshot-0123456789ab$' "$TMP/version.out"
+grep -q '^channel: master$' "$TMP/version.out"
+grep -q '^commit: 0123456789abcdef0123456789abcdef01234567$' "$TMP/version.out"
+grep -q '^commit message: feat: server build metadata$' "$TMP/version.out"
+grep -q '^commit time: 2026-09-27T13:00:00Z$' "$TMP/version.out"
+grep -q '^build time: 2026-09-27T13:05:00Z$' "$TMP/version.out"
+grep -q '^server image: ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/version.out"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

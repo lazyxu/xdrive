@@ -134,7 +134,7 @@ desktop-linux:
   script:
     - |
       set -euo pipefail
-      source scripts/ci/client-artifact-version.sh
+      source scripts/ci/build-metadata.sh
       cd desktop
       npm install --no-audit --no-fund
       node scripts/set-version.mjs "$XDRIVE_DESKTOP_VERSION"
