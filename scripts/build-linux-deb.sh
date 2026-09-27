@@ -34,6 +34,7 @@ mkdir -p \
   "$PKG_ROOT/usr/bin" \
   "$PKG_ROOT/usr/lib/systemd/user" \
   "$PKG_ROOT/usr/share/applications" \
+  "$PKG_ROOT/usr/share/icons/hicolor/scalable/apps" \
   "$PKG_ROOT/usr/share/doc/xdrive-client"
 
 cp -a "$DESKTOP_RUNTIME/." "$PKG_ROOT/opt/xdrive-desktop/"
@@ -68,6 +69,7 @@ fi
 
 install -m 0644 "$ROOT/packaging/linux/xdrive-agent.service" "$PKG_ROOT/usr/lib/systemd/user/xdrive-agent.service"
 install -m 0644 "$ROOT/packaging/linux/xdrive.desktop" "$PKG_ROOT/usr/share/applications/xdrive.desktop"
+install -m 0644 "$ROOT/assets/icon/master/xdrive-icon-master.svg" "$PKG_ROOT/usr/share/icons/hicolor/scalable/apps/xdrive.svg"
 install -m 0644 "$ROOT/README.md" "$PKG_ROOT/usr/share/doc/xdrive-client/README.md"
 install -m 0644 "$ROOT/LICENSE" "$PKG_ROOT/usr/share/doc/xdrive-client/LICENSE"
 printf '%s\n' "$VERSION" > "$PKG_ROOT/usr/share/doc/xdrive-client/client-version"

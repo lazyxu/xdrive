@@ -141,13 +141,13 @@ try {
     Sign-Artifact (Join-Path $Source "xd.exe")
     Sign-Artifact (Join-Path $Source "xdrive-agent.exe")
 
-    $IconSource = Join-Path $Root "packaging\windows\icons\tray-normal.ico"
+    $IconSource = Join-Path $Root "assets\icon\windows\app.ico"
     $IconTarget = Join-Path $Source "icons"
     if (-not (Test-Path $IconSource)) {
         throw "Windows installer icon is missing: $IconSource"
     }
     New-Item -ItemType Directory -Force $IconTarget | Out-Null
-    Copy-Item $IconSource (Join-Path $IconTarget "tray-normal.ico")
+    Copy-Item $IconSource (Join-Path $IconTarget "app.ico")
 
     $LegacyCleanupSource = Join-Path $Root "internal\update\windows_legacy_cleanup.ps1"
     if (-not (Test-Path $LegacyCleanupSource)) {

@@ -25,6 +25,8 @@ if [[ -e "$pkg_root/usr/lib/systemd/system/xdrive-update.timer" || -e "$pkg_root
   exit 1
 fi
 test -f "$pkg_root/usr/share/applications/xdrive.desktop" || { echo "unified package missing desktop menu entry" >&2; exit 1; }
+test -f "$pkg_root/usr/share/icons/hicolor/scalable/apps/xdrive.svg" || { echo "unified package missing xDrive application icon" >&2; exit 1; }
+grep -q '^Icon=xdrive$' "$pkg_root/usr/share/applications/xdrive.desktop"
 dpkg-deb --field "$PACKAGE" Depends | grep -q 'libgtk-3-0'
 dpkg-deb --field "$PACKAGE" Recommends | grep -q 'libappindicator3-1'
 test -L "$pkg_root/usr/bin/xdrive-desktop" || { echo "unified package missing xdrive-desktop link" >&2; exit 1; }
@@ -43,7 +45,6 @@ grep -q 'xDrive client health check failed' "$pkg_meta/postinst"
 grep -q '/usr/bin/xdrive-desktop' "$pkg_meta/postinst"
 grep -q 'systemctl disable --now xdrive-update.timer' "$pkg_meta/postinst"
 grep -q 'background auto-update is disabled by default' "$pkg_meta/postinst"
-grep -q 'systemctl disable --now xdrive-update.timer' "$pkg_meta/postinst"
 if grep -q 'systemctl enable --now xdrive-update.timer' "$pkg_meta/postinst"; then
   echo "Linux client package must not enable automatic updates by default" >&2
   exit 1
