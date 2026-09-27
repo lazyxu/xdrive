@@ -13,6 +13,7 @@ test('desktop native feedback wires taskbar progress and clickable navigation', 
   assert.ok(main.includes("powerMonitor.on('resume'"), 'missing system-resume monitor recovery')
   assert.ok(main.includes('restartDesktopMonitors()'), 'missing monitor restart helper')
   assert.ok(main.includes('app.setUserTasks(windowsUserTasks(process.execPath))'), 'missing Windows Jump List tasks')
+  assert.ok(main.includes("win.webContents.on('before-input-event'"), 'missing window-local keyboard shortcuts')
   assert.ok(main.includes("app.on('second-instance', (_event, commandLine)"), 'missing second-instance shortcut routing')
   assert.ok(main.includes('tray.setImage(trayStatusImage())'), 'missing dynamic tray status icon updates')
   assert.ok(main.includes("showDesktopNotification('xDrive 冲突'"), 'missing clickable conflict notification')

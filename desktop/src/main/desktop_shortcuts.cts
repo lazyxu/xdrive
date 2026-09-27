@@ -1,5 +1,15 @@
 export type DesktopShortcutAction = 'open-folder' | 'sync-now' | 'transfers' | 'settings'
 
+export type DesktopKeyboardInput = {
+  type?: string
+  key: string
+  control?: boolean
+  meta?: boolean
+  shift?: boolean
+  alt?: boolean
+  isAutoRepeat?: boolean
+}
+
 const allowedActions = new Set<DesktopShortcutAction>([
   'open-folder',
   'sync-now',
@@ -13,6 +23,20 @@ export function desktopShortcutActionFromArgs(args: readonly string[]): DesktopS
     const value = arg.slice('--desktop-action='.length) as DesktopShortcutAction
     return allowedActions.has(value) ? value : null
   }
+  return null
+}
+
+export function desktopShortcutActionFromInput(input: DesktopKeyboardInput): DesktopShortcutAction | null {
+  if (input.type && input.type !== 'keyDown') return null
+  if (input.isAutoRepeat) return null
+  if (!(input.control || input.meta) || input.alt) return null
+
+  const key = input.key.toLowerCase()
+  if (!input.shift && key === ',') return 'settings'
+  if (!input.shift) return null
+  if (key === 's') return 'sync-now'
+  if (key === 'o') return 'open-folder'
+  if (key === 't') return 'transfers'
   return null
 }
 
