@@ -40,7 +40,7 @@ nav { display: grid; gap: 8px; }
 .account span { color: #7789a5; font-size: 11px; }
 
 .content { padding: 34px 40px 48px; overflow: auto; }
-.topbar { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; }
+.topbar { display: flex; justify-content: space-between; gap: 28px; align-items: center; }
 .eyebrow { margin: 0 0 8px; color: #5574a8; font-size: 11px; font-weight: 800; letter-spacing: .14em; }
 h1 { margin: 0; font-size: 30px; line-height: 1.15; }
 h2 { margin: 0; font-size: 18px; }
@@ -93,7 +93,7 @@ dd { margin: 7px 0 0; color: #24324a; font-weight: 700; font-size: 14px; overflo
 @media (max-width: 960px) {
   .shell { grid-template-columns: 184px 1fr; }
   .content { padding: 28px; }
-  .topbar { flex-direction: column; }
+  .topbar { flex-direction: column; align-items: stretch; }
   .status-grid { grid-template-columns: 1fr; }
   dl { grid-template-columns: repeat(2,1fr); }
   .conflict-row { align-items: flex-start; flex-direction: column; }

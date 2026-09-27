@@ -56,6 +56,24 @@ test('desktop GUI defaults to Chinese', () => {
   assert.match(html, /<title>xDrive 桌面版<\/title>/)
 })
 
+test('desktop keeps sync controls global instead of repeating page status actions', () => {
+  const start = renderer.indexOf('<header className="topbar">')
+  const end = renderer.indexOf('</header>', start)
+  assert.notEqual(start, -1, 'missing desktop topbar')
+  assert.notEqual(end, -1, 'missing desktop topbar end')
+  const topbar = renderer.slice(start, end)
+
+  assert.ok(topbar.includes('<h1>{viewLabel(view)}</h1>'), 'topbar should show the current page title')
+  assert.equal(topbar.includes('{headline}'), false, 'topbar should not repeat sync status as the page title')
+  assert.ok(topbar.includes('aria-label="同步状态"'), 'missing global sync status capsule')
+  assert.ok(topbar.includes('aria-label="立即同步"'), 'missing global sync shortcut')
+  assert.ok(topbar.includes('aria-label="更多同步操作"'), 'missing global sync overflow menu')
+  assert.ok(renderer.includes('打开同步文件夹'), 'missing global open-folder action')
+  assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'missing paused-sync exception banner')
+  assert.ok(renderer.includes('发现 {status.conflict_count || 0} 个同步冲突'), 'missing conflict exception banner')
+  assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
+})
+
 test('desktop GUI does not regress to key English labels', () => {
   for (const text of [
     'AGENT CONNECTION',
