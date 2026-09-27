@@ -1,6 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Button as MuiButton } from '@mui/material'
+import {
+  Alert as MuiAlert,
+  Box as MuiBox,
+  Button as MuiButton,
+  Chip,
+  Divider as MuiDivider,
+  IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
+import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
@@ -110,6 +131,7 @@ export default function App() {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [syncMenuAnchor, setSyncMenuAnchor] = useState<HTMLElement | null>(null)
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [clientUpdate, setClientUpdate] = useState<AgentUpdateState | null>(null)
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
@@ -177,6 +199,24 @@ export default function App() {
   const updateProgress = clientUpdate?.bytes_total
     ? Math.max(0, Math.min(100, ((clientUpdate.bytes_done || 0) * 100) / clientUpdate.bytes_total))
     : 0
+  const globalSyncState = useMemo<{
+    label: string
+    color: 'success' | 'warning' | 'error' | 'info'
+  }>(() => {
+    if (status?.last_error) return { label: '同步异常', color: 'error' }
+    if (status?.has_conflict) return { label: `${status.conflict_count || 0} 个冲突`, color: 'warning' }
+    if (status?.paused) return { label: '同步已暂停', color: 'warning' }
+    if (activeTransfers.length > 0) return { label: `正在同步 · ${activeTransfers.length}`, color: 'info' }
+    return { label: status?.sync_status || '同步正常', color: 'success' }
+  }, [
+    activeTransfers.length,
+    status?.conflict_count,
+    status?.has_conflict,
+    status?.last_error,
+    status?.paused,
+    status?.sync_status,
+  ])
+
   useEffect(() => {
     let active = true
     void window.xdriveDesktop.getInfo().then((value) => {
@@ -1111,16 +1151,142 @@ export default function App() {
       <main className="content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">{viewLabel(view)}</p>
-            <h1>{headline}</h1>
-            <p className="subtitle">{status?.last_error || `${status?.auth_status} · ${status?.sync_status}`}</p>
+            <p className="eyebrow">xDrive</p>
+            <h1>{viewLabel(view)}</h1>
           </div>
-          <div className="actions">
-            <button className="secondary" type="button" disabled={!!busy} onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}>打开文件夹</button>
-            <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void run('sync', () => window.xdriveDesktop.agent.syncNow(), '已请求立即同步。')}>立即同步</button>
-            <button className="primary" type="button" disabled={!!busy} onClick={() => void run('pause', () => window.xdriveDesktop.agent.setPaused(!status?.paused))}>{status?.paused ? '继续同步' : '暂停同步'}</button>
-          </div>
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={0.75}
+            sx={{ flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}
+          >
+            <Chip
+              aria-label="同步状态"
+              clickable
+              size="small"
+              variant="outlined"
+              color={globalSyncState.color}
+              label={globalSyncState.label}
+              icon={<MuiBox component="span" sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'currentColor' }} />}
+              onClick={(event) => setSyncMenuAnchor(event.currentTarget)}
+              sx={{ fontWeight: 700 }}
+            />
+            <Tooltip title={status?.paused ? '同步已暂停' : '立即同步'}>
+              <span>
+                <IconButton
+                  aria-label="立即同步"
+                  size="small"
+                  color="primary"
+                  disabled={!!busy || status?.paused}
+                  onClick={() => void run('sync', () => window.xdriveDesktop.agent.syncNow(), '已请求立即同步。')}
+                >
+                  <SyncRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="更多同步操作">
+              <IconButton
+                aria-label="更多同步操作"
+                size="small"
+                onClick={(event) => setSyncMenuAnchor(event.currentTarget)}
+              >
+                <MoreHorizRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Menu
+              id="global-sync-menu"
+              anchorEl={syncMenuAnchor}
+              open={Boolean(syncMenuAnchor)}
+              onClose={() => setSyncMenuAnchor(null)}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+              <MuiBox sx={{ minWidth: 260, px: 2, py: 1.25 }}>
+                <Typography variant="body2" fontWeight={700}>{globalSyncState.label}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {status?.auth_status || '已登录'}{status?.server ? ` · ${status.server}` : ''}
+                </Typography>
+              </MuiBox>
+              <MuiDivider />
+              <MenuItem onClick={() => {
+                setSyncMenuAnchor(null)
+                void run('folder', () => window.xdriveDesktop.agent.openFolder())
+              }}>
+                <ListItemIcon><FolderOpenRoundedIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>打开同步文件夹</ListItemText>
+              </MenuItem>
+              <MenuItem disabled={!!busy} onClick={() => {
+                setSyncMenuAnchor(null)
+                const nextPaused = !status?.paused
+                void run(
+                  'pause',
+                  () => window.xdriveDesktop.agent.setPaused(nextPaused),
+                  nextPaused ? '同步已暂停。' : '同步已恢复。',
+                )
+              }}>
+                <ListItemIcon>
+                  {status?.paused ? <PlayArrowRoundedIcon fontSize="small" /> : <PauseRoundedIcon fontSize="small" />}
+                </ListItemIcon>
+                <ListItemText>{status?.paused ? '恢复同步' : '暂停同步'}</ListItemText>
+              </MenuItem>
+              {status?.has_conflict ? (
+                <MenuItem onClick={() => {
+                  setSyncMenuAnchor(null)
+                  setView('conflicts')
+                }}>
+                  <ListItemIcon><WarningAmberRoundedIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText>{`查看冲突（${status.conflict_count || 0}）`}</ListItemText>
+                </MenuItem>
+              ) : null}
+              <MuiDivider />
+              <MenuItem onClick={() => {
+                setSyncMenuAnchor(null)
+                setView('diagnostics')
+              }}>
+                <ListItemIcon><BuildRoundedIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>客户端诊断</ListItemText>
+              </MenuItem>
+            </Menu>
+          </Stack>
         </header>
+
+        {(status?.last_error || status?.paused || status?.has_conflict) ? (
+          <Stack spacing={1} sx={{ mt: 2 }}>
+            {status?.last_error ? (
+              <MuiAlert
+                severity="error"
+                action={<MuiButton color="inherit" size="small" onClick={() => setView('diagnostics')}>运行诊断</MuiButton>}
+              >
+                同步异常：{status.last_error}
+              </MuiAlert>
+            ) : null}
+            {status?.paused ? (
+              <MuiAlert
+                severity="warning"
+                action={(
+                  <MuiButton
+                    color="inherit"
+                    size="small"
+                    disabled={!!busy}
+                    onClick={() => void run('pause', () => window.xdriveDesktop.agent.setPaused(false), '同步已恢复。')}
+                  >
+                    恢复同步
+                  </MuiButton>
+                )}
+              >
+                同步已暂停；此设备不会继续后台同步。
+              </MuiAlert>
+            ) : null}
+            {status?.has_conflict ? (
+              <MuiAlert
+                severity="warning"
+                action={<MuiButton color="inherit" size="small" onClick={() => setView('conflicts')}>处理冲突</MuiButton>}
+              >
+                发现 {status.conflict_count || 0} 个同步冲突，请进入“冲突”页面处理。
+              </MuiAlert>
+            ) : null}
+          </Stack>
+        ) : null}
 
         {error && <div className="alert error">{error}</div>}
         {notice && <div className="alert success">{notice}</div>}
