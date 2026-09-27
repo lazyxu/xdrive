@@ -15,6 +15,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"github.com/lazyxu/xdrive/internal/sourcemetadata"
@@ -189,9 +190,12 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 	if err != nil {
 		return client.SyncRun{}, result, err
 	}
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	api.cancelRun = cancelRun
 
 	finishFailure := func(cause error, summaryFailed bool) (client.SyncRun, yikesync.Result, error) {
-		if summaryFailed {
+		if summaryFailed && !errors.Is(cause, context.Canceled) {
 			result.Summary.AddFailure()
 		}
 		status := meta.SyncRunStatusFailed
@@ -212,7 +216,7 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		return finished, result, cause
 	}
 
-	credentialPlaintext, err := sourcecredential.Get(ctx, r.DB, r.Keyring, source)
+	credentialPlaintext, err := sourcecredential.Get(runCtx, r.DB, r.Keyring, source)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return finishFailure(fmt.Errorf("Yike source credential is not configured"), true)
@@ -250,6 +254,9 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		yikeExecutor.Heartbeat = func(heartbeatCtx context.Context) error {
 			return api.HeartbeatSourceRun(heartbeatCtx, source.ID, run.ID)
 		}
+		yikeExecutor.Progress = func(progressCtx context.Context, path string, done, total int64) error {
+			return api.UpdateSourceRunTransferProgress(progressCtx, source.ID, run.ID, path, done, total)
+		}
 		executor = yikeExecutor
 	}
 
@@ -261,19 +268,19 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		IgnoreRules: run.IgnoreRules,
 		Mode:        run.Mode,
 		Executor:    executor,
-	}).Scan(ctx)
+	}).Scan(runCtx)
 	if err != nil {
 		return finishFailure(err, true)
 	}
 
-	if _, err := sourcemetadata.ApplySnapshot(ctx, r.DB, source.ID, run.ID, result.Metadata); err != nil {
+	if _, err := sourcemetadata.ApplySnapshot(runCtx, r.DB, source.ID, run.ID, result.Metadata); err != nil {
 		return finishFailure(fmt.Errorf("apply Yike media metadata snapshot: %w", err), true)
 	}
-	if _, err := sourcecollection.ApplySnapshot(ctx, r.DB, source.ID, run.ID, result.Collections); err != nil {
+	if _, err := sourcecollection.ApplySnapshot(runCtx, r.DB, source.ID, run.ID, result.Collections); err != nil {
 		return finishFailure(fmt.Errorf("apply Yike collection snapshot: %w", err), true)
 	}
 
-	finished, err := api.FinishSourceRun(ctx, source.ID, run.ID, client.FinishSourceRunInput{
+	finished, err := api.FinishSourceRun(runCtx, source.ID, run.ID, client.FinishSourceRunInput{
 		Status:            meta.SyncRunStatusCompleted,
 		CompleteInventory: true,
 		Summary:           result.Summary,
@@ -321,8 +328,17 @@ func isActiveRun(err error) bool {
 		apiErr.Msg == "source already has an active run"
 }
 
+func isSourceRunCancellationRequested(err error) bool {
+	var apiErr *client.APIError
+	return errors.As(err, &apiErr) &&
+		apiErr.Status == http.StatusConflict &&
+		apiErr.Msg == "source run cancellation requested"
+}
+
 func sourceErrorMessage(err error) string {
 	switch {
+	case errors.Is(err, context.Canceled):
+		return "来源运行已取消"
 	case errors.Is(err, yike.ErrAuthentication):
 		return "一刻相册登录已失效，请更新 Cookie"
 	case errors.Is(err, yike.ErrRateLimited):
@@ -349,6 +365,17 @@ type ownerSourceAPI struct {
 	serverURL string
 	auth      auth.Manager
 	owner     meta.User
+	cancelRun context.CancelFunc
+}
+
+func (a *ownerSourceAPI) handleRunControlError(err error) error {
+	if !isSourceRunCancellationRequested(err) {
+		return err
+	}
+	if a.cancelRun != nil {
+		a.cancelRun()
+	}
+	return context.Canceled
 }
 
 func (a *ownerSourceAPI) client() (*client.Client, error) {
@@ -454,12 +481,28 @@ func (a *ownerSourceAPI) FailSourceItems(ctx context.Context, sourceID uint64, r
 	return c.FailSourceItems(ctx, sourceID, runID, items)
 }
 
+func (a *ownerSourceAPI) UpdateSourceRunSummary(ctx context.Context, sourceID uint64, runID string, summary sourcepkg.Summary) error {
+	c, err := a.client()
+	if err != nil {
+		return err
+	}
+	return a.handleRunControlError(c.UpdateSourceRunSummary(ctx, sourceID, runID, summary))
+}
+
+func (a *ownerSourceAPI) UpdateSourceRunTransferProgress(ctx context.Context, sourceID uint64, runID, path string, done, total int64) error {
+	c, err := a.client()
+	if err != nil {
+		return err
+	}
+	return a.handleRunControlError(c.UpdateSourceRunTransferProgress(ctx, sourceID, runID, path, done, total))
+}
+
 func (a *ownerSourceAPI) HeartbeatSourceRun(ctx context.Context, sourceID uint64, runID string) error {
 	c, err := a.client()
 	if err != nil {
 		return err
 	}
-	return c.HeartbeatSourceRun(ctx, sourceID, runID)
+	return a.handleRunControlError(c.HeartbeatSourceRun(ctx, sourceID, runID))
 }
 
 func (a *ownerSourceAPI) FinishSourceRun(ctx context.Context, sourceID uint64, runID string, input client.FinishSourceRunInput) (client.SyncRun, error) {

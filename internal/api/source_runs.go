@@ -88,6 +88,43 @@ type finishSourceRunRequest struct {
 	Error             string            `json:"error,omitempty"`
 }
 
+type sourceRunProgressRequest struct {
+	Summary          *sourcepkg.Summary `json:"summary,omitempty"`
+	ActivePath       string             `json:"active_path,omitempty"`
+	ActiveBytes      *int64             `json:"active_bytes,omitempty"`
+	ActiveTotalBytes *int64             `json:"active_total_bytes,omitempty"`
+}
+
+func sourceRunContinueError(run meta.SyncRun) error {
+	if run.Status != meta.SyncRunStatusRunning {
+		return errSourceRunNotRunning
+	}
+	if run.CancelRequestedAt != nil {
+		return errSourceRunCancellationRequested
+	}
+	return nil
+}
+
+func sourceRunSummaryUpdates(summary sourcepkg.Summary) map[string]any {
+	return map[string]any{
+		"scanned_items":          summary.ScannedItems,
+		"scanned_bytes":          summary.ScannedBytes,
+		"ignored_items":          summary.IgnoredItems,
+		"ignored_bytes":          summary.IgnoredBytes,
+		"new_items":              summary.NewItems,
+		"new_bytes":              summary.NewBytes,
+		"changed_items":          summary.ChangedItems,
+		"changed_bytes":          summary.ChangedBytes,
+		"moved_items":            summary.MovedItems,
+		"unchanged_items":        summary.UnchangedItems,
+		"unchanged_bytes":        summary.UnchangedBytes,
+		"planned_transfer_items": summary.PlannedTransferItems,
+		"planned_transfer_bytes": summary.PlannedTransferBytes,
+		"skipped_items":          summary.IgnoredItems + summary.UnchangedItems,
+		"failed_items":           summary.FailedItems,
+	}
+}
+
 func (s *Server) beginSourceRun(c *gin.Context) {
 	sourceID, ok := parseID(c.Param("id"))
 	if !ok {
@@ -165,11 +202,20 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 				return errSourceRunActive
 			}
 			finished := now
+			status := meta.SyncRunStatusFailed
+			errorText := "stale source run superseded"
+			if active.CancelRequestedAt != nil {
+				status = meta.SyncRunStatusCancelled
+				errorText = "stale cancelled source run superseded"
+			}
 			if err := tx.Model(&meta.SyncRun{}).Where("id = ?", active.ID).Updates(map[string]any{
-				"status":      meta.SyncRunStatusFailed,
-				"error":       "stale source run superseded",
-				"finished_at": &finished,
-				"updated_at":  now,
+				"status":                status,
+				"error":                 errorText,
+				"active_transfer_path":  "",
+				"active_transfer_bytes": 0,
+				"active_transfer_total": 0,
+				"finished_at":           &finished,
+				"updated_at":            now,
 			}).Error; err != nil {
 				return err
 			}
@@ -264,8 +310,8 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if run.Status != meta.SyncRunStatusRunning {
-			return errSourceRunNotRunning
+		if err := sourceRunContinueError(run); err != nil {
+			return err
 		}
 		matcher, err := sourcepkg.CompileIgnoreRules(run.IgnoreRules)
 		if err != nil {
@@ -431,8 +477,8 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if run.Status != meta.SyncRunStatusRunning {
-			return errSourceRunNotRunning
+		if err := sourceRunContinueError(run); err != nil {
+			return err
 		}
 		if run.Mode != meta.SourceRunModeSync || run.TargetNodeID == nil {
 			return errInvalidSourceConfig
@@ -446,7 +492,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			return err
 		}
 
-		var created, updated, transferredItems, transferredBytes int64
+		var created, updated, processedTransferItems, processedTransferBytes, transferredItems, transferredBytes int64
 		for _, commit := range commits {
 			item := commit.item
 			raw := commit.raw
@@ -541,6 +587,10 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			} else {
 				updated++
 			}
+			if item.Kind == meta.SourceItemKindFile && action != sourcepkg.ActionMove {
+				processedTransferItems++
+				processedTransferBytes += item.Size
+			}
 			if raw.Transferred {
 				transferredItems++
 				transferredBytes += raw.TransferredBytes
@@ -548,11 +598,16 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 		}
 
 		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Updates(map[string]any{
-			"created_items":     gorm.Expr("created_items + ?", created),
-			"updated_items":     gorm.Expr("updated_items + ?", updated),
-			"transferred_items": gorm.Expr("transferred_items + ?", transferredItems),
-			"transferred_bytes": gorm.Expr("transferred_bytes + ?", transferredBytes),
-			"updated_at":        now,
+			"created_items":            gorm.Expr("created_items + ?", created),
+			"updated_items":            gorm.Expr("updated_items + ?", updated),
+			"processed_transfer_items": gorm.Expr("processed_transfer_items + ?", processedTransferItems),
+			"processed_transfer_bytes": gorm.Expr("processed_transfer_bytes + ?", processedTransferBytes),
+			"transferred_items":        gorm.Expr("transferred_items + ?", transferredItems),
+			"transferred_bytes":        gorm.Expr("transferred_bytes + ?", transferredBytes),
+			"active_transfer_path":     "",
+			"active_transfer_bytes":    0,
+			"active_transfer_total":    0,
+			"updated_at":               now,
 		}).Error
 	})
 	if err != nil {
@@ -619,8 +674,8 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if run.Status != meta.SyncRunStatusRunning {
-			return errSourceRunNotRunning
+		if err := sourceRunContinueError(run); err != nil {
+			return err
 		}
 
 		for _, failure := range failures {
@@ -648,13 +703,148 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 				return err
 			}
 		}
-		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Update("updated_at", now).Error
+		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Updates(map[string]any{
+			"active_transfer_path":  "",
+			"active_transfer_bytes": 0,
+			"active_transfer_total": 0,
+			"updated_at":            now,
+		}).Error
 	})
 	if err != nil {
 		writeSourceRunError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) progressSourceRun(c *gin.Context) {
+	sourceID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+	runID, ok := canonicalRunID(c.Param("runID"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	var req sourceRunProgressRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if req.Summary == nil && req.ActiveBytes == nil && req.ActiveTotalBytes == nil {
+		fail(c, http.StatusBadRequest, "summary or active transfer progress is required")
+		return
+	}
+	if req.Summary != nil {
+		if err := validateSourceSummary(*req.Summary); err != nil {
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if (req.ActiveBytes == nil) != (req.ActiveTotalBytes == nil) {
+		fail(c, http.StatusBadRequest, "active_bytes and active_total_bytes must be provided together")
+		return
+	}
+	if req.ActiveBytes != nil {
+		if *req.ActiveBytes < 0 || *req.ActiveTotalBytes < 0 || *req.ActiveBytes > *req.ActiveTotalBytes {
+			fail(c, http.StatusBadRequest, "invalid active transfer progress")
+			return
+		}
+		if len([]byte(req.ActivePath)) > 2048 {
+			fail(c, http.StatusBadRequest, "active_path is too long")
+			return
+		}
+	}
+
+	now := time.Now().UTC()
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var source meta.Source
+		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+			return err
+		}
+		if source.Status != meta.SourceStatusActive {
+			return errSourcePaused
+		}
+		var run meta.SyncRun
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
+			return err
+		}
+		if err := sourceRunContinueError(run); err != nil {
+			return err
+		}
+		updates := map[string]any{"updated_at": now}
+		if req.Summary != nil {
+			for key, value := range sourceRunSummaryUpdates(*req.Summary) {
+				updates[key] = value
+			}
+		}
+		if req.ActiveBytes != nil {
+			updates["active_transfer_path"] = strings.TrimSpace(req.ActivePath)
+			updates["active_transfer_bytes"] = *req.ActiveBytes
+			updates["active_transfer_total"] = *req.ActiveTotalBytes
+		}
+		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Updates(updates).Error
+	})
+	if err != nil {
+		writeSourceRunError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) cancelSourceRun(c *gin.Context) {
+	sourceID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+	runID, ok := canonicalRunID(c.Param("runID"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+
+	now := time.Now().UTC()
+	accepted := false
+	var out meta.SyncRun
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var source meta.Source
+		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND source_id = ?", runID, sourceID).First(&out).Error; err != nil {
+			return err
+		}
+		if meta.SyncRunTerminal(out.Status) {
+			return nil
+		}
+		if out.Status != meta.SyncRunStatusRunning {
+			return errSourceRunNotRunning
+		}
+		if out.CancelRequestedAt == nil {
+			out.CancelRequestedAt = &now
+			out.UpdatedAt = now
+			accepted = true
+			return tx.Model(&meta.SyncRun{}).Where("id = ?", out.ID).Updates(map[string]any{
+				"cancel_requested_at": &now,
+				"updated_at":          now,
+			}).Error
+		}
+		return nil
+	})
+	if err != nil {
+		writeSourceRunError(c, err)
+		return
+	}
+	status := http.StatusOK
+	if accepted {
+		status = http.StatusAccepted
+	}
+	c.JSON(status, toSyncRunDTO(out))
 }
 
 func (s *Server) heartbeatSourceRun(c *gin.Context) {
@@ -678,20 +868,15 @@ func (s *Server) heartbeatSourceRun(c *gin.Context) {
 		if source.Status != meta.SourceStatusActive {
 			return errSourcePaused
 		}
-		result := tx.Model(&meta.SyncRun{}).
-			Where("id = ? AND source_id = ? AND status = ?", runID, sourceID, meta.SyncRunStatusRunning).
-			Update("updated_at", now)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 0 {
-			return nil
-		}
 		var run meta.SyncRun
-		if err := tx.Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		return errSourceRunNotRunning
+		if err := sourceRunContinueError(run); err != nil {
+			return err
+		}
+		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Update("updated_at", now).Error
 	})
 	if err != nil {
 		writeSourceRunError(c, err)
@@ -749,11 +934,15 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			return nil
 		}
 
+		status := req.Status
+		if run.CancelRequestedAt != nil {
+			status = meta.SyncRunStatusCancelled
+		}
 		summary := req.Summary
 		summary.MissingItems = 0
 		summary.MissingBytes = 0
 		inventoryComplete := req.CompleteInventory &&
-			(req.Status == meta.SyncRunStatusCompleted || req.Status == meta.SyncRunStatusPartial)
+			(status == meta.SyncRunStatusCompleted || status == meta.SyncRunStatusPartial)
 		if inventoryComplete {
 			matcher, err := sourcepkg.CompileIgnoreRules(run.IgnoreRules)
 			if err != nil {
@@ -795,7 +984,6 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			}
 		}
 
-		status := req.Status
 		if status == meta.SyncRunStatusCompleted && summary.FailedItems > 0 {
 			status = meta.SyncRunStatusPartial
 		}
@@ -804,6 +992,9 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		run.Status = status
 		run.CheckpointAfter = req.Checkpoint
 		run.Error = req.Error
+		run.ActiveTransferPath = ""
+		run.ActiveTransferBytes = 0
+		run.ActiveTransferTotal = 0
 		run.FinishedAt = &finished
 		run.UpdatedAt = now
 		if err := tx.Save(&run).Error; err != nil {
@@ -817,6 +1008,8 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			if req.Checkpoint != "" {
 				sourceUpdates["checkpoint"] = req.Checkpoint
 			}
+		} else if status == meta.SyncRunStatusCancelled {
+			sourceUpdates["last_error"] = ""
 		} else {
 			msg := req.Error
 			if msg == "" && status == meta.SyncRunStatusPartial {
@@ -998,6 +1191,8 @@ func writeSourceRunError(c *gin.Context, err error) {
 		fail(c, http.StatusConflict, "source already has an active run")
 	case errors.Is(err, errSourceRunNotRunning):
 		fail(c, http.StatusConflict, "source run is not running")
+	case errors.Is(err, errSourceRunCancellationRequested):
+		fail(c, http.StatusConflict, "source run cancellation requested")
 	case errors.Is(err, errSourceRunIDConflict):
 		fail(c, http.StatusConflict, "run_id already belongs to another source")
 	case errors.Is(err, errSourceExecutionConflict):
@@ -1010,10 +1205,11 @@ func writeSourceRunError(c *gin.Context, err error) {
 }
 
 var (
-	errSourcePaused            = errors.New("source paused")
-	errSourceTargetUnavailable = errors.New("source target unavailable")
-	errSourceRunActive         = errors.New("source run already active")
-	errSourceRunNotRunning     = errors.New("source run not running")
-	errSourceRunIDConflict     = errors.New("source run id conflict")
-	errSourceExecutionConflict = errors.New("source execution conflict")
+	errSourcePaused                   = errors.New("source paused")
+	errSourceTargetUnavailable        = errors.New("source target unavailable")
+	errSourceRunActive                = errors.New("source run already active")
+	errSourceRunNotRunning            = errors.New("source run not running")
+	errSourceRunCancellationRequested = errors.New("source run cancellation requested")
+	errSourceRunIDConflict            = errors.New("source run id conflict")
+	errSourceExecutionConflict        = errors.New("source execution conflict")
 )

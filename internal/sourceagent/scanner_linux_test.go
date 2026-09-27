@@ -76,6 +76,11 @@ func TestScannerWalksPersonalAndSharedWithIgnore(t *testing.T) {
 	if len(api.observed) != 3 {
 		t.Fatalf("observation batches=%d want 3", len(api.observed))
 	}
+	if len(api.progress) == 0 ||
+		api.progress[len(api.progress)-1].ScannedItems != summary.ScannedItems ||
+		api.progress[len(api.progress)-1].PlannedTransferBytes != summary.PlannedTransferBytes {
+		t.Fatalf("live progress=%+v final=%+v", api.progress, summary)
+	}
 	if api.heartbeatCount == 0 {
 		t.Fatal("long-scan heartbeat was not exercised")
 	}

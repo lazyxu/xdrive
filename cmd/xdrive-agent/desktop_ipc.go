@@ -154,6 +154,7 @@ type desktopIPCController interface {
 	CloudRevokeShare(context.Context, uint64) error
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error)
+	CloudCancelSourceRun(context.Context, uint64, string) (client.SyncRun, error)
 	CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
 	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
 	CloudTestSourceCredential(context.Context, string, string) (client.SourceCredentialTestResult, error)
@@ -363,6 +364,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("DELETE /v1/sources", h.deleteSource)
 	mux.HandleFunc("POST /v1/sources/trigger", h.triggerSource)
 	mux.HandleFunc("GET /v1/sources/runs", h.sourceRuns)
+	mux.HandleFunc("POST /v1/sources/runs/cancel", h.cancelSourceRun)
 	mux.HandleFunc("GET /v1/sources/items", h.sourceItems)
 	mux.HandleFunc("POST /v1/source-credentials/test", h.testSourceCredential)
 	mux.HandleFunc("GET /v1/sources/credential", h.sourceCredentialStatus)
@@ -999,6 +1001,27 @@ func (h *desktopIPCHandler) sourceRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cancelSourceRun(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SourceID uint64 `json:"source_id"`
+		RunID    string `json:"run_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.RunID = strings.TrimSpace(input.RunID)
+	if input.SourceID == 0 || input.RunID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_run", "source_id and run_id are required")
+		return
+	}
+	run, err := h.ctrl.CloudCancelSourceRun(r.Context(), input.SourceID, input.RunID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, run)
 }
 
 func (h *desktopIPCHandler) sourceItems(w http.ResponseWriter, r *http.Request) {

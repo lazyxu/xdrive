@@ -34,6 +34,7 @@ type SourceAPI interface {
 	ObserveSourceItems(context.Context, uint64, string, []client.SourceObservation) ([]client.SourcePlan, error)
 	CommitSourceItems(context.Context, uint64, string, []client.SourceCommit) error
 	FailSourceItems(context.Context, uint64, string, []client.SourceFailure) error
+	UpdateSourceRunSummary(context.Context, uint64, string, sourcepkg.Summary) error
 	HeartbeatSourceRun(context.Context, uint64, string) error
 }
 
@@ -163,6 +164,9 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				return err
 			}
 		}
+		if err := s.API.UpdateSourceRunSummary(ctx, s.SourceID, s.RunID, result.Summary); err != nil {
+			return err
+		}
 		batch = batch[:0]
 		clear(batchItems)
 		clear(batchRefs)
@@ -287,6 +291,9 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	}
 	if err := flush(); err != nil {
 		return result, fmt.Errorf("flush Yike source observations: %w", err)
+	}
+	if err := s.API.UpdateSourceRunSummary(ctx, s.SourceID, s.RunID, result.Summary); err != nil {
+		return result, fmt.Errorf("report Yike source progress: %w", err)
 	}
 	return result, nil
 }

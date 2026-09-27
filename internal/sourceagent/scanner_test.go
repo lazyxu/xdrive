@@ -3,10 +3,16 @@ package sourceagent
 import (
 	"context"
 	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
+	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 )
 
 type fakeAPI struct {
@@ -15,7 +21,9 @@ type fakeAPI struct {
 	plans          func([]client.SourceObservation) []client.SourcePlan
 	finishInput    *client.FinishSourceRunInput
 	observed       [][]client.SourceObservation
+	progress       []sourcepkg.Summary
 	heartbeatCount int
+	heartbeatErr   error
 	commits        [][]client.SourceCommit
 	commitErr      error
 }
@@ -47,9 +55,18 @@ func (f *fakeAPI) CommitSourceItems(_ context.Context, _ uint64, _ string, items
 	return f.commitErr
 }
 
+func (f *fakeAPI) UpdateSourceRunSummary(_ context.Context, _ uint64, _ string, summary sourcepkg.Summary) error {
+	f.progress = append(f.progress, summary)
+	return nil
+}
+
+func (f *fakeAPI) UpdateSourceRunTransferProgress(context.Context, uint64, string, string, int64, int64) error {
+	return nil
+}
+
 func (f *fakeAPI) HeartbeatSourceRun(context.Context, uint64, string) error {
 	f.heartbeatCount++
-	return nil
+	return f.heartbeatErr
 }
 
 func (f *fakeAPI) FinishSourceRun(_ context.Context, _ uint64, _ string, input client.FinishSourceRunInput) (client.SyncRun, error) {
@@ -68,6 +85,38 @@ func (f *fakeAPI) FinishSourceRun(_ context.Context, _ uint64, _ string, input c
 		PlannedTransferBytes: input.Summary.PlannedTransferBytes,
 		FailedItems:          input.Summary.FailedItems,
 	}, nil
+}
+
+func TestScannerCooperativelyCancelsOnRunRequest(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("native source scanning is supported on Linux only")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.jpg"), []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rootID, err := RootIdentity("shared", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &fakeAPI{
+		source:       client.Source{ID: 1, Kind: SynologyKind, Direction: meta.SourceDirectionPush},
+		begin:        client.SyncRun{ID: "run-1", SourceID: 1, Mode: meta.SourceRunModeScan},
+		heartbeatErr: &client.APIError{Status: http.StatusConflict, Msg: "source run cancellation requested"},
+	}
+	run, err := (Scanner{
+		API: api, SourceID: 1, HeartbeatInterval: time.Nanosecond,
+		Roots: RootsWithIdentities("", "", root, rootID),
+	}).Run(context.Background(), meta.SyncRunTriggerManual)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error=%v want context.Canceled", err)
+	}
+	if run.Status != meta.SyncRunStatusCancelled {
+		t.Fatalf("run status=%q want cancelled", run.Status)
+	}
+	if api.finishInput == nil || api.finishInput.Summary.FailedItems != 0 || api.finishInput.CompleteInventory {
+		t.Fatalf("cancel finish input=%+v", api.finishInput)
+	}
 }
 
 func TestScannerRejectsSyncModeUntilExecutorExists(t *testing.T) {

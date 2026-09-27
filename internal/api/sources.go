@@ -35,40 +35,46 @@ type sourceDTO struct {
 }
 
 type syncRunDTO struct {
-	ID                   string     `json:"id"`
-	SourceID             uint64     `json:"source_id"`
-	SourceRevision       uint64     `json:"source_revision"`
-	TargetNodeID         *uint64    `json:"target_node_id,omitempty"`
-	IgnoreRules          string     `json:"ignore_rules,omitempty"`
-	Mode                 string     `json:"mode"`
-	Trigger              string     `json:"trigger"`
-	Status               string     `json:"status"`
-	CheckpointBefore     string     `json:"checkpoint_before,omitempty"`
-	CheckpointAfter      string     `json:"checkpoint_after,omitempty"`
-	ScannedItems         int64      `json:"scanned_items"`
-	ScannedBytes         int64      `json:"scanned_bytes"`
-	IgnoredItems         int64      `json:"ignored_items"`
-	IgnoredBytes         int64      `json:"ignored_bytes"`
-	NewItems             int64      `json:"new_items"`
-	NewBytes             int64      `json:"new_bytes"`
-	ChangedItems         int64      `json:"changed_items"`
-	ChangedBytes         int64      `json:"changed_bytes"`
-	MovedItems           int64      `json:"moved_items"`
-	UnchangedItems       int64      `json:"unchanged_items"`
-	UnchangedBytes       int64      `json:"unchanged_bytes"`
-	MissingItems         int64      `json:"missing_items"`
-	MissingBytes         int64      `json:"missing_bytes"`
-	PlannedTransferItems int64      `json:"planned_transfer_items"`
-	PlannedTransferBytes int64      `json:"planned_transfer_bytes"`
-	CreatedItems         int64      `json:"created_items"`
-	UpdatedItems         int64      `json:"updated_items"`
-	SkippedItems         int64      `json:"skipped_items"`
-	TransferredItems     int64      `json:"transferred_items"`
-	TransferredBytes     int64      `json:"transferred_bytes"`
-	FailedItems          int64      `json:"failed_items"`
-	Error                string     `json:"error,omitempty"`
-	StartedAt            time.Time  `json:"started_at"`
-	FinishedAt           *time.Time `json:"finished_at,omitempty"`
+	ID                     string     `json:"id"`
+	SourceID               uint64     `json:"source_id"`
+	SourceRevision         uint64     `json:"source_revision"`
+	TargetNodeID           *uint64    `json:"target_node_id,omitempty"`
+	IgnoreRules            string     `json:"ignore_rules,omitempty"`
+	Mode                   string     `json:"mode"`
+	Trigger                string     `json:"trigger"`
+	Status                 string     `json:"status"`
+	CheckpointBefore       string     `json:"checkpoint_before,omitempty"`
+	CheckpointAfter        string     `json:"checkpoint_after,omitempty"`
+	ScannedItems           int64      `json:"scanned_items"`
+	ScannedBytes           int64      `json:"scanned_bytes"`
+	IgnoredItems           int64      `json:"ignored_items"`
+	IgnoredBytes           int64      `json:"ignored_bytes"`
+	NewItems               int64      `json:"new_items"`
+	NewBytes               int64      `json:"new_bytes"`
+	ChangedItems           int64      `json:"changed_items"`
+	ChangedBytes           int64      `json:"changed_bytes"`
+	MovedItems             int64      `json:"moved_items"`
+	UnchangedItems         int64      `json:"unchanged_items"`
+	UnchangedBytes         int64      `json:"unchanged_bytes"`
+	MissingItems           int64      `json:"missing_items"`
+	MissingBytes           int64      `json:"missing_bytes"`
+	PlannedTransferItems   int64      `json:"planned_transfer_items"`
+	PlannedTransferBytes   int64      `json:"planned_transfer_bytes"`
+	ProcessedTransferItems int64      `json:"processed_transfer_items"`
+	ProcessedTransferBytes int64      `json:"processed_transfer_bytes"`
+	CreatedItems           int64      `json:"created_items"`
+	UpdatedItems           int64      `json:"updated_items"`
+	SkippedItems           int64      `json:"skipped_items"`
+	TransferredItems       int64      `json:"transferred_items"`
+	TransferredBytes       int64      `json:"transferred_bytes"`
+	FailedItems            int64      `json:"failed_items"`
+	ActiveTransferPath     string     `json:"active_transfer_path,omitempty"`
+	ActiveTransferBytes    int64      `json:"active_transfer_bytes"`
+	ActiveTransferTotal    int64      `json:"active_transfer_total_bytes"`
+	CancelRequestedAt      *time.Time `json:"cancel_requested_at,omitempty"`
+	Error                  string     `json:"error,omitempty"`
+	StartedAt              time.Time  `json:"started_at"`
+	FinishedAt             *time.Time `json:"finished_at,omitempty"`
 }
 
 func toSourceDTO(source meta.Source) sourceDTO {
@@ -94,9 +100,13 @@ func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 		MovedItems: run.MovedItems, UnchangedItems: run.UnchangedItems, UnchangedBytes: run.UnchangedBytes,
 		MissingItems: run.MissingItems, MissingBytes: run.MissingBytes,
 		PlannedTransferItems: run.PlannedTransferItems, PlannedTransferBytes: run.PlannedTransferBytes,
+		ProcessedTransferItems: run.ProcessedTransferItems, ProcessedTransferBytes: run.ProcessedTransferBytes,
 		CreatedItems: run.CreatedItems, UpdatedItems: run.UpdatedItems, SkippedItems: run.SkippedItems,
 		TransferredItems: run.TransferredItems, TransferredBytes: run.TransferredBytes,
-		FailedItems: run.FailedItems, Error: run.Error, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
+		FailedItems:        run.FailedItems,
+		ActiveTransferPath: run.ActiveTransferPath, ActiveTransferBytes: run.ActiveTransferBytes,
+		ActiveTransferTotal: run.ActiveTransferTotal, CancelRequestedAt: run.CancelRequestedAt,
+		Error: run.Error, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
 	}
 }
 

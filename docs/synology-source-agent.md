@@ -167,9 +167,12 @@ A run:
 6. receives `create/update/move/move_update/unchanged` planner actions;
 7. in `sync` mode, executes planned directory/file mutations and commits the verified final node state;
 8. records planned and actual transfer statistics;
-9. marks the inventory complete only if the entire traversal and all observation batches succeed.
+9. publishes live scan/planning progress after each observation batch and current-file upload progress while a file is transferring;
+10. marks the inventory complete only if the entire traversal and all observation batches succeed.
 
-If traversal is interrupted, unavailable, or permission-denied, the run is finished as failed/cancelled with `complete_inventory=false`. The server therefore does not infer source-side deletion. Individual execution conflicts leave only those SourceItems pending and make the run `partial`; other items continue syncing.
+Web/Desktop poll the persisted SyncRun while it is active and can request **停止**. Cancellation is cooperative and durable: xDrive sets `cancel_requested_at`; the next heartbeat, observation, progress update, or commit returns a cancellation signal. The source-agent cancels its current run context, which interrupts an active resumable upload rather than waiting for the entire file to finish. The run is then finalized as `cancelled` with `complete_inventory=false`.
+
+If traversal is interrupted, unavailable, permission-denied, or cancelled, the run is finished as failed/cancelled with `complete_inventory=false`. The server therefore does not infer source-side deletion. Individual execution conflicts leave only those SourceItems pending and make the run `partial`; other items continue syncing.
 
 ## DSM Task Scheduler
 

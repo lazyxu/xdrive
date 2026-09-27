@@ -175,12 +175,18 @@ export type AgentSourceRun = {
   missing_bytes: number
   planned_transfer_items: number
   planned_transfer_bytes: number
+  processed_transfer_items?: number
+  processed_transfer_bytes?: number
   created_items: number
   updated_items: number
   skipped_items: number
   transferred_items: number
   transferred_bytes: number
   failed_items: number
+  active_transfer_path?: string
+  active_transfer_bytes?: number
+  active_transfer_total_bytes?: number
+  cancel_requested_at?: string
   error?: string
   started_at: string
   finished_at?: string
@@ -485,6 +491,13 @@ export class AgentIPCClient {
   sourceRuns(sourceID: number, limit = 1) {
     const query = new URLSearchParams({ source_id: String(sourceID), limit: String(limit) })
     return this.request<AgentSourceRun[]>('GET', `/v1/sources/runs?${query.toString()}`)
+  }
+
+  cancelSourceRun(sourceID: number, runID: string) {
+    return this.request<AgentSourceRun>('POST', '/v1/sources/runs/cancel', {
+      source_id: sourceID,
+      run_id: runID,
+    })
   }
 
   sourceItems(sourceID: number, state = '', limit = 1000, offset = 0) {

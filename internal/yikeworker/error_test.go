@@ -1,10 +1,13 @@
 package yikeworker
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
+	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/yike"
 )
 
@@ -16,11 +19,22 @@ func TestSourceErrorMessageClassifiesYikeFailures(t *testing.T) {
 		{fmt.Errorf("wrapped: %w", yike.ErrAuthentication), "一刻相册登录已失效，请更新 Cookie"},
 		{fmt.Errorf("wrapped: %w", yike.ErrRateLimited), "一刻相册请求过于频繁，请稍后重试"},
 		{fmt.Errorf("wrapped: %w", yike.ErrUnavailable), "一刻相册服务暂时不可用，请稍后重试"},
+		{context.Canceled, "来源运行已取消"},
 		{errors.New("other failure"), "other failure"},
 	}
 	for _, tt := range tests {
 		if got := sourceErrorMessage(tt.err); got != tt.want {
 			t.Fatalf("sourceErrorMessage(%v)=%q want %q", tt.err, got, tt.want)
 		}
+	}
+}
+
+func TestSourceRunCancellationRequestIsTyped(t *testing.T) {
+	err := &client.APIError{Status: http.StatusConflict, Msg: "source run cancellation requested"}
+	if !isSourceRunCancellationRequested(err) {
+		t.Fatal("cancellation request was not recognized")
+	}
+	if isSourceRunCancellationRequested(&client.APIError{Status: http.StatusConflict, Msg: "source run is not running"}) {
+		t.Fatal("unrelated conflict was classified as cancellation")
 	}
 }

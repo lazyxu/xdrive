@@ -46,6 +46,8 @@ Use a Yike account whose test set includes photos and videos. Complete every blo
 - [ ] A newly added Yike item is imported on the next run.
 - [ ] A remotely changed item is updated rather than duplicated.
 - [ ] A pure path move is reflected without re-downloading bytes when the planner identifies a move.
+- [ ] During a large transfer, Web/Desktop show live scan/transfer progress and the current Source path.
+- [ ] Use “停止” during a large transfer; the run becomes `cancelled`, active I/O stops promptly, failed-item count does not increase, and no missing inference runs.
 - [ ] Stop/restart the worker during a large transfer; the next run resumes through the existing xDrive upload-session/Range path.
 - [ ] Force one item-level transfer failure; the Source shows the failed item and Web/Desktop expose “重试失败项”.
 - [ ] After the underlying failure is removed, the next scan retries the failed item and clears its error state.

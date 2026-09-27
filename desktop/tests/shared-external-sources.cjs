@@ -117,6 +117,65 @@ test('shared external-source trigger gating matches connector execution model', 
   )
 })
 
+test('shared run detail exposes live progress and cancellation state', () => {
+  const running = shared.externalSourceRunDetailView({
+    id: 'run-1',
+    source_id: 1,
+    source_revision: 1,
+    mode: 'sync',
+    trigger: 'manual',
+    status: 'running',
+    scanned_items: 120,
+    scanned_bytes: 1200,
+    ignored_items: 0,
+    ignored_bytes: 0,
+    new_items: 10,
+    new_bytes: 1000,
+    changed_items: 0,
+    changed_bytes: 0,
+    moved_items: 0,
+    unchanged_items: 110,
+    unchanged_bytes: 200,
+    missing_items: 0,
+    missing_bytes: 0,
+    planned_transfer_items: 10,
+    planned_transfer_bytes: 1000,
+    processed_transfer_items: 4,
+    processed_transfer_bytes: 400,
+    created_items: 4,
+    updated_items: 0,
+    skipped_items: 110,
+    transferred_items: 4,
+    transferred_bytes: 400,
+    failed_items: 0,
+    active_transfer_path: 'Library/big.mp4 [9]',
+    active_transfer_bytes: 100,
+    active_transfer_total_bytes: 200,
+    started_at: '2026-09-27T10:00:00Z',
+  })
+  assert.equal(running.progress.percent, 50)
+  assert.match(running.progress.label, /已处理 4 \/ 已发现 10 项/)
+  assert.equal(running.progress.activePath, 'Library/big.mp4 [9]')
+  assert.equal(running.progress.cancelling, false)
+
+  const cancelling = shared.externalSourceRunDetailView({
+    ...{
+      id: 'run-2', source_id: 1, source_revision: 1, mode: 'scan', trigger: 'manual', status: 'running',
+      scanned_items: 5, scanned_bytes: 50, ignored_items: 0, ignored_bytes: 0, new_items: 0, new_bytes: 0,
+      changed_items: 0, changed_bytes: 0, moved_items: 0, unchanged_items: 5, unchanged_bytes: 50,
+      missing_items: 0, missing_bytes: 0, planned_transfer_items: 0, planned_transfer_bytes: 0,
+      processed_transfer_items: 0, processed_transfer_bytes: 0,
+      created_items: 0, updated_items: 0, skipped_items: 5, transferred_items: 0, transferred_bytes: 0,
+      failed_items: 0, active_transfer_bytes: 0, active_transfer_total_bytes: 0,
+      started_at: '2026-09-27T10:00:00Z',
+    },
+    cancel_requested_at: '2026-09-27T10:01:00Z',
+  })
+  assert.equal(cancelling.progress.percent, undefined)
+  assert.equal(cancelling.progress.label, '正在取消…')
+  assert.equal(cancelling.progress.cancelling, true)
+})
+
 test('shared trigger action label promotes retries without hiding pending state', () => {
   assert.equal(shared.externalSourceTriggerActionLabel({ source: source() }), '立即扫描')
   assert.equal(shared.externalSourceTriggerActionLabel({

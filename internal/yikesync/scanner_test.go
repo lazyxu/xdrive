@@ -42,6 +42,7 @@ type fakeSourceAPI struct {
 	observed   [][]client.SourceObservation
 	commits    [][]client.SourceCommit
 	failures   [][]client.SourceFailure
+	progress   []sourcepkg.Summary
 	heartbeats int
 	action     string
 	commitErr  error
@@ -70,6 +71,11 @@ func (f *fakeSourceAPI) CommitSourceItems(_ context.Context, _ uint64, _ string,
 func (f *fakeSourceAPI) FailSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceFailure) error {
 	copyItems := append([]client.SourceFailure(nil), items...)
 	f.failures = append(f.failures, copyItems)
+	return nil
+}
+
+func (f *fakeSourceAPI) UpdateSourceRunSummary(_ context.Context, _ uint64, _ string, summary sourcepkg.Summary) error {
+	f.progress = append(f.progress, summary)
 	return nil
 }
 
@@ -149,6 +155,10 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 		result.Summary.NewItems != 3 || result.Summary.PlannedTransferItems != 3 ||
 		result.Summary.PlannedTransferBytes != 800 {
 		t.Fatalf("unexpected summary: %+v", result.Summary)
+	}
+	if len(api.progress) == 0 || api.progress[len(api.progress)-1].ScannedItems != result.Summary.ScannedItems ||
+		api.progress[len(api.progress)-1].PlannedTransferBytes != result.Summary.PlannedTransferBytes {
+		t.Fatalf("progress snapshots=%+v final=%+v", api.progress, result.Summary)
 	}
 	if len(api.observed) != 2 {
 		t.Fatalf("observation batches=%d want=2", len(api.observed))

@@ -15,6 +15,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  LinearProgress,
   Stack,
   Typography as MuiTypography,
 } from '@mui/material'
@@ -121,6 +122,7 @@ export default function ExternalSourcesPanel({
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
+  const [cancellingRunID, setCancellingRunID] = useState<string | null>(null)
   const [testingCreateCredential, setTestingCreateCredential] = useState(false)
   const [createCredentialTest, setCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [createCredentialTestError, setCreateCredentialTestError] = useState('')
@@ -134,8 +136,8 @@ export default function ExternalSourcesPanel({
   const [createForm] = Form.useForm<CreateSourceValues>()
   const createKind = Form.useWatch('kind', createForm)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const sources = await api.sources()
       const next = await Promise.all(sources.map(async (source) => {
@@ -154,13 +156,21 @@ export default function ExternalSourcesPanel({
     } catch (error) {
       onError(error)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [api, onError])
 
   useEffect(() => {
     if (open) void load()
   }, [open, load])
+
+  useEffect(() => {
+    if (!open || !rows.some((row) => row.latestRun?.status === 'running' || row.source.run_requested_at)) return
+    const timer = window.setInterval(() => {
+      void load(true)
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [open, rows, load])
   const openSynologyGuide = (source: ExternalSource) => {
     setGuideSource(source)
     void api.me()
@@ -295,6 +305,21 @@ export default function ExternalSourcesPanel({
       onError(error)
     } finally {
       setTriggeringSourceID(null)
+    }
+  }
+
+  const cancelRun = async (row: ExternalSourceRow) => {
+    const run = row.latestRun
+    if (!run || run.status !== 'running' || run.cancel_requested_at) return
+    setCancellingRunID(run.id)
+    try {
+      await api.cancelSourceRun(row.source.id, run.id)
+      message.success('已请求停止当前运行')
+      await load(true)
+    } catch (error) {
+      onError(error)
+    } finally {
+      setCancellingRunID(null)
     }
   }
 
@@ -499,6 +524,18 @@ export default function ExternalSourcesPanel({
                           {externalSourceTriggerActionLabel(row)}
                         </Button>
                       </Tooltip>
+                      {row.latestRun?.status === 'running' && (
+                        <MuiButton
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          disabled={Boolean(row.latestRun.cancel_requested_at) || cancellingRunID === row.latestRun.id}
+                          onClick={() => void cancelRun(row)}
+                          sx={{ minWidth: 'auto', px: 1.25, py: 0.25, fontSize: 12 }}
+                        >
+                          {row.latestRun.cancel_requested_at || cancellingRunID === row.latestRun.id ? '正在取消…' : '停止'}
+                        </MuiButton>
+                      )}
                       <Button size="small" onClick={() => openSettings(row)}>设置</Button>
                     </Space>
                   </div>
@@ -549,6 +586,33 @@ export default function ExternalSourcesPanel({
             </Descriptions>
 
             <Divider orientation="left">最近一次运行</Divider>
+            {selectedRunDetail?.progress && (
+              <MuiBox sx={{ mb: 2, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
+                  <MuiTypography variant="body2">{selectedRunDetail.progress.label}</MuiTypography>
+                  {selected?.latestRun?.status === 'running' && (
+                    <MuiButton
+                      size="small"
+                      color="warning"
+                      variant="outlined"
+                      disabled={selectedRunDetail.progress.cancelling || cancellingRunID === selected.latestRun.id}
+                      onClick={() => void cancelRun(selected)}
+                    >
+                      {selectedRunDetail.progress.cancelling || cancellingRunID === selected.latestRun.id ? '正在取消…' : '停止'}
+                    </MuiButton>
+                  )}
+                </Stack>
+                <LinearProgress
+                  variant={selectedRunDetail.progress.percent === undefined ? 'indeterminate' : 'determinate'}
+                  value={selectedRunDetail.progress.percent ?? 0}
+                />
+                {selectedRunDetail.progress.activePath && (
+                  <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                    当前文件：{selectedRunDetail.progress.activePath}
+                  </MuiTypography>
+                )}
+              </MuiBox>
+            )}
             {selectedRunDetail ? (
               <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
                 <Descriptions.Item label="运行状态">{selectedRunDetail.statusLabel}</Descriptions.Item>

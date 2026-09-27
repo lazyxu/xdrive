@@ -124,6 +124,14 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('自动回滚失败'), 'missing Yike rollback failure fallback')
 })
 
+test('desktop external sources expose live progress and cooperative cancellation', () => {
+  assert.ok(renderer.includes('LinearProgress'), 'missing Source live progress bar')
+  assert.ok(renderer.includes('当前文件：'), 'missing active Source file label')
+  assert.ok(renderer.includes('正在取消…'), 'missing Source cancellation state')
+  assert.ok(renderer.includes('cancelSourceRun'), 'missing renderer Source cancel bridge call')
+  assert.ok(renderer.includes('loadSources(true)'), 'missing silent Source progress refresh')
+})
+
 test('desktop external sources expose per-file failures', () => {
   assert.ok(renderer.includes('getSourceItems'), 'missing Source item query')
   assert.ok(renderer.includes('查看失败项'), 'missing per-file failure action')

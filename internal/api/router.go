@@ -93,6 +93,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/runs/:runID/observe", s.observeSourceRun)
 	authed.POST("/sources/:id/runs/:runID/commit", s.commitSourceRun)
 	authed.POST("/sources/:id/runs/:runID/failures", s.failSourceRunItems)
+	authed.POST("/sources/:id/runs/:runID/progress", s.progressSourceRun)
+	authed.POST("/sources/:id/runs/:runID/cancel", s.cancelSourceRun)
 	authed.POST("/sources/:id/runs/:runID/heartbeat", s.heartbeatSourceRun)
 	authed.POST("/sources/:id/runs/:runID/finish", s.finishSourceRun)
 

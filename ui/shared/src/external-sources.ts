@@ -47,12 +47,18 @@ export interface ExternalSourceRun {
   missing_bytes: number
   planned_transfer_items: number
   planned_transfer_bytes: number
+  processed_transfer_items?: number
+  processed_transfer_bytes?: number
   created_items: number
   updated_items: number
   skipped_items: number
   transferred_items: number
   transferred_bytes: number
   failed_items: number
+  active_transfer_path?: string
+  active_transfer_bytes?: number
+  active_transfer_total_bytes?: number
+  cancel_requested_at?: string
   error?: string
   started_at: string
   finished_at?: string
@@ -203,9 +209,17 @@ export interface ExternalSourceRunMetric {
   bytes?: number
 }
 
+export interface ExternalSourceRunProgressView {
+  percent?: number
+  label: string
+  activePath?: string
+  cancelling: boolean
+}
+
 export interface ExternalSourceRunDetailView {
   statusLabel: string
   startedAt: string
+  progress?: ExternalSourceRunProgressView
   metrics: ExternalSourceRunMetric[]
 }
 
@@ -363,10 +377,41 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
   }
 }
 
+function formatExternalSourceBytes(bytes: number) {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** i
+  return `${value >= 10 || i === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[i]}`
+}
+
 export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSourceRunDetailView {
+  const activeBytes = Math.max(0, Math.min(run.active_transfer_bytes || 0, run.active_transfer_total_bytes || 0))
+  const plannedBytes = Math.max(0, run.planned_transfer_bytes || 0)
+  const processedBytes = Math.max(0, run.processed_transfer_bytes || 0) + activeBytes
+  const running = run.status === 'running'
+  const syncProgress = run.mode === 'sync' && plannedBytes > 0
+  const percent = running && syncProgress
+    ? Math.max(0, Math.min(100, Math.round((processedBytes / plannedBytes) * 1000) / 10))
+    : undefined
+  const processedItems = Math.max(0, run.processed_transfer_items || 0)
+  const progress = running
+    ? {
+        percent,
+        label: run.cancel_requested_at
+          ? '正在取消…'
+          : run.mode === 'sync' && run.planned_transfer_items > 0
+            ? `已处理 ${processedItems.toLocaleString('zh-CN')} / 已发现 ${run.planned_transfer_items.toLocaleString('zh-CN')} 项 · ${formatExternalSourceBytes(processedBytes)} / ${formatExternalSourceBytes(plannedBytes)} · 已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`
+            : `已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`,
+        activePath: run.active_transfer_path || undefined,
+        cancelling: Boolean(run.cancel_requested_at),
+      }
+    : undefined
+
   return {
     statusLabel: externalSourceRunStatusLabel(run.status),
     startedAt: run.started_at,
+    progress,
     metrics: [
       { key: 'scanned', label: '扫描', items: run.scanned_items, bytes: run.scanned_bytes },
       { key: 'planned_transfer', label: '计划传输', items: run.planned_transfer_items, bytes: run.planned_transfer_bytes },

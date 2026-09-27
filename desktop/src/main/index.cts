@@ -798,6 +798,17 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().sourceRuns(sourceID, requestedLimit)
   }, false))
+  ipcMain.handle('agent:cancel-source-run', (_event, sourceID: unknown, runID: unknown) => runAgentAction<AgentSourceRun>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof runID !== 'string' || !runID.trim()
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id and run id are required.')
+    }
+    return requireAgentClient().cancelSourceRun(sourceID, runID.trim())
+  }, false))
   ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')
