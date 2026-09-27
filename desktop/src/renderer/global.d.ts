@@ -17,6 +17,7 @@ export {}
 declare global {
   type DesktopInfo = { version: string; platform: string; arch: string }
   type DesktopStartup = { start_at_login: boolean }
+  type DesktopBehavior = { close_to_tray: boolean }
   type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
   type AgentHello = {
@@ -206,6 +207,8 @@ declare global {
       getInfo: () => Promise<DesktopInfo>
       getStartup: () => Promise<DesktopStartup>
       setStartup: (enabled: boolean) => Promise<DesktopResult<DesktopStartup>>
+      getBehavior: () => Promise<DesktopBehavior>
+      setCloseToTray: (enabled: boolean) => Promise<DesktopResult<DesktopBehavior>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
       hide: () => void
       quit: () => void

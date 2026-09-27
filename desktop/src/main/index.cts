@@ -9,6 +9,7 @@ import {
   Menu,
   nativeImage,
   Notification,
+  screen,
   session,
   Tray,
   type OpenDialogOptions,
@@ -16,6 +17,7 @@ import {
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
+import { parseDesktopWindowState, restoreDesktopWindowBounds, type DesktopWindowState } from './window_state.cjs'
 import {
   AgentIPCClient,
   AgentIPCError,
@@ -64,6 +66,12 @@ let mainWindow: BrowserWindow | null = null
 let pendingDesktopView: DesktopViewTarget | null = null
 let tray: Tray | null = null
 let quitting = false
+let desktopPreferences: DesktopPreferences = {
+  start_at_login: true,
+  close_to_tray: true,
+  close_to_tray_prompted: false,
+}
+let windowStateSaveTimer: NodeJS.Timeout | null = null
 let agentClient: AgentIPCClient | null = null
 let agentLifecycle: AgentLifecycle | null = null
 let agentState: AgentConnectionState = { connected: false, error: 'Connecting to xdrive-agent…' }
@@ -77,19 +85,25 @@ const desktopPreferencesName = 'desktop-settings.json'
 
 type DesktopPreferences = {
   start_at_login: boolean
+  close_to_tray: boolean
+  close_to_tray_prompted: boolean
+  window?: DesktopWindowState
 }
 
 async function loadDesktopPreferences(): Promise<DesktopPreferences> {
   const file = path.join(app.getPath('userData'), desktopPreferencesName)
   try {
     const parsed = JSON.parse(await readFile(file, 'utf8')) as Partial<DesktopPreferences>
-    if (typeof parsed.start_at_login === 'boolean') {
-      return { start_at_login: parsed.start_at_login }
+    return {
+      start_at_login: typeof parsed.start_at_login === 'boolean' ? parsed.start_at_login : true,
+      close_to_tray: typeof parsed.close_to_tray === 'boolean' ? parsed.close_to_tray : true,
+      close_to_tray_prompted: parsed.close_to_tray_prompted === true,
+      window: parseDesktopWindowState(parsed.window),
     }
   } catch {
-    // First run or malformed local preference: use the product default below.
+    // First run or malformed local preference: use the product defaults below.
   }
-  return { start_at_login: true }
+  return { start_at_login: true, close_to_tray: true, close_to_tray_prompted: false }
 }
 
 async function saveDesktopPreferences(preferences: DesktopPreferences) {
@@ -142,10 +156,55 @@ async function applyStartAtLogin(enabled: boolean) {
 }
 
 async function setStartAtLogin(enabled: boolean) {
-  const preferences = { start_at_login: enabled }
-  await saveDesktopPreferences(preferences)
+  desktopPreferences = { ...desktopPreferences, start_at_login: enabled }
+  await saveDesktopPreferences(desktopPreferences)
   await applyStartAtLogin(enabled)
-  return preferences
+  return { start_at_login: desktopPreferences.start_at_login }
+}
+
+async function setCloseToTray(enabled: boolean) {
+  desktopPreferences = { ...desktopPreferences, close_to_tray: enabled }
+  await saveDesktopPreferences(desktopPreferences)
+  return { close_to_tray: desktopPreferences.close_to_tray }
+}
+
+function persistWindowState(win: BrowserWindow) {
+  if (win.isDestroyed()) return
+  const bounds = win.getNormalBounds()
+  desktopPreferences = {
+    ...desktopPreferences,
+    window: {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      maximized: win.isMaximized(),
+    },
+  }
+  void saveDesktopPreferences(desktopPreferences).catch((error) => {
+    console.error('failed to save desktop window state:', error)
+  })
+}
+
+function scheduleWindowStateSave(win: BrowserWindow) {
+  if (windowStateSaveTimer) clearTimeout(windowStateSaveTimer)
+  windowStateSaveTimer = setTimeout(() => {
+    windowStateSaveTimer = null
+    persistWindowState(win)
+  }, 250)
+}
+
+function notifyCloseToTrayOnce() {
+  if (desktopPreferences.close_to_tray_prompted) return
+  desktopPreferences = { ...desktopPreferences, close_to_tray_prompted: true }
+  void saveDesktopPreferences(desktopPreferences)
+  const title = 'xDrive 仍在后台运行'
+  const body = '关闭主窗口后，xDrive 会继续驻留托盘并保持后台同步；可在“设置”中修改此行为。'
+  if (Notification.isSupported()) {
+    showDesktopNotification(title, body)
+  } else {
+    void dialog.showMessageBox({ type: 'info', title, message: title, detail: body })
+  }
 }
 
 function showMainWindow() {
@@ -174,9 +233,14 @@ function updateTaskbarProgress() {
 }
 
 function createMainWindow(showOnReady = true) {
+  const workAreas = screen.getAllDisplays().map((display) => display.workArea)
+  const bounds = restoreDesktopWindowBounds(
+    desktopPreferences.window,
+    workAreas,
+    screen.getPrimaryDisplay().workArea,
+  )
   const win = new BrowserWindow({
-    width: 1120,
-    height: 760,
+    ...bounds,
     minWidth: 900,
     minHeight: 600,
     show: false,
@@ -190,11 +254,22 @@ function createMainWindow(showOnReady = true) {
     },
   })
   mainWindow = win
-  win.on('minimize', () => win.hide())
+  if (desktopPreferences.window?.maximized) win.maximize()
+  win.on('move', () => scheduleWindowStateSave(win))
+  win.on('resize', () => scheduleWindowStateSave(win))
+  win.on('maximize', () => scheduleWindowStateSave(win))
+  win.on('unmaximize', () => scheduleWindowStateSave(win))
   win.on('close', (event) => {
     if (quitting) return
+    persistWindowState(win)
     event.preventDefault()
-    win.hide()
+    if (desktopPreferences.close_to_tray) {
+      win.hide()
+      notifyCloseToTrayOnce()
+      return
+    }
+    quitting = true
+    app.quit()
   })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
@@ -568,7 +643,18 @@ function startUpdateMonitor() {
 
 function registerIPCHandlers() {
   ipcMain.handle('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch }))
-  ipcMain.handle('desktop:get-startup', () => loadDesktopPreferences())
+  ipcMain.handle('desktop:get-startup', () => ({ start_at_login: desktopPreferences.start_at_login }))
+  ipcMain.handle('desktop:get-behavior', () => ({ close_to_tray: desktopPreferences.close_to_tray }))
+  ipcMain.handle('desktop:set-close-to-tray', async (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') {
+      return { ok: false, error: { code: 'invalid_input', message: 'close_to_tray must be a boolean.' } }
+    }
+    try {
+      return { ok: true, data: await setCloseToTray(enabled) }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
   ipcMain.handle('desktop:set-startup', async (_event, enabled: unknown) => {
     if (typeof enabled !== 'boolean') {
       return { ok: false, error: { code: 'invalid_input', message: 'start_at_login must be a boolean.' } }
@@ -1034,8 +1120,8 @@ if (!primaryInstance) {
     Menu.setApplicationMenu(null)
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
 
-    const preferences = await loadDesktopPreferences()
-    await applyStartAtLogin(preferences.start_at_login).catch((error) => {
+    desktopPreferences = await loadDesktopPreferences()
+    await applyStartAtLogin(desktopPreferences.start_at_login).catch((error) => {
       console.error('failed to configure desktop startup:', error)
     })
 
