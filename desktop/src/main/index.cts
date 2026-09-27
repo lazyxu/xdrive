@@ -944,7 +944,11 @@ function registerIPCHandlers() {
       (value.direction !== 'push' && value.direction !== 'pull') ||
       value.sync_mode !== 'backup' ||
       (value.run_mode !== 'scan' && value.run_mode !== 'sync') ||
-      typeof value.target_node_id !== 'number' || !Number.isSafeInteger(value.target_node_id) || value.target_node_id <= 0 ||
+      (value.schedule_type !== undefined && value.schedule_type !== 'interval' && value.schedule_type !== 'cron') ||
+      (value.schedule_expression !== undefined && typeof value.schedule_expression !== 'string') ||
+      (value.schedule_timezone !== undefined && typeof value.schedule_timezone !== 'string') ||
+      typeof value.target_node_id !== 'number' || !Number.isSafeInteger(value.target_node_id) ||
+      (value.kind === 'yike_photos' ? value.target_node_id !== 0 : value.target_node_id <= 0) ||
       (value.ignore_rules !== undefined && typeof value.ignore_rules !== 'string')
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Valid Source configuration is required.')
@@ -956,6 +960,9 @@ function registerIPCHandlers() {
       sync_mode: value.sync_mode,
       run_mode: value.run_mode,
       target_node_id: value.target_node_id,
+      ...(value.schedule_type === undefined ? {} : { schedule_type: value.schedule_type }),
+      ...(value.schedule_expression === undefined ? {} : { schedule_expression: value.schedule_expression.trim() }),
+      ...(value.schedule_timezone === undefined ? {} : { schedule_timezone: value.schedule_timezone.trim() }),
       ...(value.ignore_rules === undefined ? {} : { ignore_rules: value.ignore_rules }),
     })
   }, false))
@@ -974,6 +981,9 @@ function registerIPCHandlers() {
       (value.name !== undefined && (typeof value.name !== 'string' || !value.name.trim())) ||
       (value.run_mode !== undefined && value.run_mode !== 'scan' && value.run_mode !== 'sync') ||
       (value.status !== undefined && value.status !== 'active' && value.status !== 'paused') ||
+      (value.schedule_type !== undefined && value.schedule_type !== 'interval' && value.schedule_type !== 'cron') ||
+      (value.schedule_expression !== undefined && typeof value.schedule_expression !== 'string') ||
+      (value.schedule_timezone !== undefined && typeof value.schedule_timezone !== 'string') ||
       (value.target_node_id !== undefined && (typeof value.target_node_id !== 'number' || !Number.isSafeInteger(value.target_node_id) || value.target_node_id <= 0)) ||
       (value.ignore_rules !== undefined && typeof value.ignore_rules !== 'string')
     ) {
@@ -982,6 +992,8 @@ function registerIPCHandlers() {
     return requireAgentClient().updateSource(sourceID, revision, {
       ...value,
       ...(value.name === undefined ? {} : { name: value.name.trim() }),
+      ...(value.schedule_expression === undefined ? {} : { schedule_expression: value.schedule_expression.trim() }),
+      ...(value.schedule_timezone === undefined ? {} : { schedule_timezone: value.schedule_timezone.trim() }),
     })
   }, false))
   ipcMain.handle('agent:delete-source', (_event, sourceID: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {

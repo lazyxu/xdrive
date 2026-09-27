@@ -74,7 +74,8 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(yikeCreate.Body.Bytes(), &yikeManaged); err != nil {
 		t.Fatal(err)
 	}
-	if yikeManaged.TargetNodeID != nil || yikeManaged.Status != meta.SourceStatusPaused || yikeManaged.Revision != 1 {
+	if yikeManaged.TargetNodeID != nil || yikeManaged.Status != meta.SourceStatusPaused || yikeManaged.Revision != 1 ||
+		yikeManaged.ScheduleType != "interval" || yikeManaged.ScheduleExpression != "6h" {
 		t.Fatalf("unexpected managed Yike source: %+v", yikeManaged)
 	}
 	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,
@@ -102,7 +103,8 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	if created.ID == 0 || created.Revision != 1 || created.RunMode != meta.SourceRunModeScan ||
 		created.SyncMode != meta.SourceSyncModeBackup || created.Status != meta.SourceStatusActive ||
-		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID {
+		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID ||
+		created.ScheduleType != "interval" || created.ScheduleExpression != "6h" {
 		t.Fatalf("unexpected created source: %+v", created)
 	}
 
@@ -158,15 +160,20 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	// Source mutations use the same optimistic revision contract as node mutations.
 	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
 		strings.NewReader(`{"run_mode":"sync"}`), http.StatusPreconditionRequired)
+	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
+		strings.NewReader(`{"schedule_type":"cron","schedule_expression":"0 3 * *","schedule_timezone":"UTC"}`), http.StatusBadRequest,
+		map[string]string{"If-Match": `"1"`})
 	updatedRes := requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
-		strings.NewReader(`{"run_mode":"sync","status":"paused","ignore_rules":"*.tmp\n"}`), http.StatusOK,
+		strings.NewReader(`{"run_mode":"sync","status":"paused","ignore_rules":"*.tmp\n","schedule_type":"cron","schedule_expression":"0 3 * * *","schedule_timezone":"Asia/Shanghai"}`), http.StatusOK,
 		map[string]string{"If-Match": `"1"`})
 	var updated sourceDTO
 	if err := json.Unmarshal(updatedRes.Body.Bytes(), &updated); err != nil {
 		t.Fatal(err)
 	}
 	if updated.Revision != 2 || updated.RunMode != meta.SourceRunModeSync ||
-		updated.Status != meta.SourceStatusPaused || updated.IgnoreRules != "*.tmp\n" {
+		updated.Status != meta.SourceStatusPaused || updated.IgnoreRules != "*.tmp\n" ||
+		updated.ScheduleType != "cron" || updated.ScheduleExpression != "0 3 * * *" ||
+		updated.ScheduleTimezone != "Asia/Shanghai" {
 		t.Fatalf("unexpected updated source: %+v", updated)
 	}
 	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,

@@ -97,6 +97,9 @@ Yike uses a server-managed xDrive **logical Node** target. Clients do not choose
   "direction": "pull",
   "sync_mode": "backup",
   "run_mode": "scan",
+  "schedule_type": "interval",
+  "schedule_expression": "6h",
+  "schedule_timezone": "",
   "target_node_id": 0,
   "ignore_rules": ""
 }

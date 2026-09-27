@@ -301,6 +301,18 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if notDue.Eligible != 0 {
 		t.Fatalf("recent source was unexpectedly due: %+v", notDue)
 	}
+	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).Updates(map[string]any{
+		"schedule_type": "interval", "schedule_expression": "2h", "schedule_timezone": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	dueSources, err := runner.RunDue(context.Background(), refreshedSource.LastRunAt.Add(3*time.Hour), 6*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dueSources.Eligible != 1 {
+		t.Fatalf("per-source interval did not override global fallback: %+v", dueSources)
+	}
 
 	requestedAt := time.Now().UTC()
 	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).

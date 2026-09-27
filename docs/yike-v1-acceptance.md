@@ -67,3 +67,13 @@ docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
 ## Pass criteria
 
 V1 is release-ready only when normal repository CI is green, the credential persistence tests pass, the read-only live smoke passes against a current Yike account, and every applicable blocking end-to-end item above passes. If Yike changes its private API, fail closed: report a clear Source error, preserve the stored xDrive backup, and do not add mutating Yike workarounds.
+
+
+## Per-Source scheduling
+
+- [ ] Default newly created Source uses `interval=6h`.
+- [ ] Changing the Source to another interval affects only that Source.
+- [ ] A five-field cron schedule runs in the configured IANA timezone.
+- [ ] A pending manual **立即扫描** request overrides interval/cron and runs on the next worker poll.
+- [ ] Paused Sources remain skipped even when their schedule is due.
+- [ ] An older Source with empty schedule fields still follows `XD_SOURCE_PULL_INTERVAL` as the compatibility fallback.

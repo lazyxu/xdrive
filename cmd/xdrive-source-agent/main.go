@@ -18,6 +18,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/sourceagent"
 	"github.com/lazyxu/xdrive/internal/sourceagentconfig"
 	"github.com/lazyxu/xdrive/internal/sourceagentidentity"
+	"github.com/lazyxu/xdrive/internal/sourceschedule"
 	"github.com/lazyxu/xdrive/internal/version"
 )
 
@@ -67,7 +68,7 @@ Usage:
   xdrive-source-agent version
 
 The setup command creates or reuses a Synology Photos push Source. The default mode is scan-only; use --mode sync to enable transfers.
-DSM Task Scheduler should invoke "xdrive-source-agent run". Source-side deletion is never propagated to xDrive.`)
+DSM Task Scheduler should invoke "xdrive-source-agent run --due" frequently; the Source's interval/cron schedule decides whether a scan actually starts. Source-side deletion is never propagated to xDrive.`)
 }
 
 func login(args []string) error {
@@ -347,8 +348,8 @@ func status() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("source: %s (%d)\nstatus: %s\nrun mode: %s\ntarget node: %s\n",
-		source.Name, source.ID, source.Status, source.RunMode, optionalID(source.TargetNodeID))
+	fmt.Printf("source: %s (%d)\nstatus: %s\nrun mode: %s\nschedule: %s\ntarget node: %s\n",
+		source.Name, source.ID, source.Status, source.RunMode, sourceScheduleText(source), optionalID(source.TargetNodeID))
 	if source.RunRequestedAt != nil {
 		fmt.Printf("manual scan requested: %s\n", source.RunRequestedAt.Format(time.RFC3339))
 	}
@@ -368,11 +369,26 @@ func status() error {
 	return nil
 }
 
+func sourceScheduleText(source client.Source) string {
+	switch source.ScheduleType {
+	case sourceschedule.TypeCron:
+		timezone := source.ScheduleTimezone
+		if timezone == "" {
+			timezone = "UTC"
+		}
+		return fmt.Sprintf("cron %s (%s)", source.ScheduleExpression, timezone)
+	case sourceschedule.TypeInterval:
+		return "every " + source.ScheduleExpression
+	default:
+		return "legacy fallback"
+	}
+}
+
 func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	trigger := fs.String("trigger", meta.SyncRunTriggerScheduled, "run trigger: scheduled, manual, or reconcile")
 	dueOnly := fs.Bool("due", false, "run only when the source is due or has a pending manual request")
-	interval := fs.Duration("interval", 6*time.Hour, "scheduled scan interval used with --due")
+	interval := fs.Duration("interval", 6*time.Hour, "legacy fallback interval for Sources without an explicit schedule")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -459,10 +475,17 @@ func resolveRunTrigger(source client.Source, requested string, dueOnly bool, int
 	if !dueOnly || requested != meta.SyncRunTriggerScheduled {
 		return requested, true, nil
 	}
-	if source.LastRunAt == nil || !source.LastRunAt.After(now.Add(-interval)) {
-		return requested, true, nil
+	due, err := sourceschedule.Due(meta.Source{
+		ScheduleType:       source.ScheduleType,
+		ScheduleExpression: source.ScheduleExpression,
+		ScheduleTimezone:   source.ScheduleTimezone,
+		LastRunAt:          source.LastRunAt,
+		RunRequestedAt:     source.RunRequestedAt,
+	}, now, interval)
+	if err != nil {
+		return "", false, err
 	}
-	return requested, false, nil
+	return requested, due, nil
 }
 
 func logout() error {
