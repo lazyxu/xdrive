@@ -3,6 +3,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -166,5 +168,119 @@ func TestResolveRunTriggerDueSkipsPausedButExplicitRunStillRuns(t *testing.T) {
 	}
 	if !run || trigger != meta.SyncRunTriggerManual {
 		t.Fatalf("explicit source trigger=%q run=%t want manual/true", trigger, run)
+	}
+}
+
+type fakeSetupSourceAPI struct {
+	byID    map[uint64]client.Source
+	sources []client.Source
+	err     error
+}
+
+func (f fakeSetupSourceAPI) Source(_ context.Context, id uint64) (client.Source, error) {
+	if f.err != nil {
+		return client.Source{}, f.err
+	}
+	if source, ok := f.byID[id]; ok {
+		return source, nil
+	}
+	return client.Source{}, &client.APIError{Status: 404, Msg: "not found"}
+}
+
+func (f fakeSetupSourceAPI) Sources(context.Context) ([]client.Source, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]client.Source(nil), f.sources...), nil
+}
+
+func TestResolveSetupSourcePrefersExplicitSourceID(t *testing.T) {
+	target := uint64(77)
+	api := fakeSetupSourceAPI{
+		byID: map[uint64]client.Source{
+			12: {
+				ID: 12, Name: "UI 创建的群晖来源", Kind: sourceagent.SynologyKind,
+				Direction: meta.SourceDirectionPush, TargetNodeID: &target,
+			},
+		},
+		sources: []client.Source{{
+			ID: 99, Name: "Synology Photos", Kind: sourceagent.SynologyKind,
+			Direction: meta.SourceDirectionPush,
+		}},
+	}
+	got, err := resolveSetupSource(context.Background(), api, 99, 12, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != 12 {
+		t.Fatalf("resolved source=%d want=12", got.ID)
+	}
+}
+
+func TestResolveSetupSourceExplicitMissingIDDoesNotFallBackByName(t *testing.T) {
+	api := fakeSetupSourceAPI{
+		byID: map[uint64]client.Source{},
+		sources: []client.Source{{
+			ID: 99, Name: "Synology Photos", Kind: sourceagent.SynologyKind,
+			Direction: meta.SourceDirectionPush,
+		}},
+	}
+	got, err := resolveSetupSource(context.Background(), api, 0, 12, "Synology Photos")
+	if err == nil {
+		t.Fatalf("explicit missing source unexpectedly resolved: %+v", got)
+	}
+	var apiErr *client.APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != 404 {
+		t.Fatalf("explicit missing source error=%v want API 404", err)
+	}
+}
+
+func TestResolveSetupSourceConfiguredMissingIDFallsBackByName(t *testing.T) {
+	api := fakeSetupSourceAPI{
+		byID: map[uint64]client.Source{},
+		sources: []client.Source{{
+			ID: 99, Name: "Synology Photos", Kind: sourceagent.SynologyKind,
+			Direction: meta.SourceDirectionPush,
+		}},
+	}
+	got, err := resolveSetupSource(context.Background(), api, 12, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != 99 {
+		t.Fatalf("fallback source=%d want=99", got.ID)
+	}
+}
+
+func TestSetupTargetPreservesExistingTargetUnlessOverridden(t *testing.T) {
+	target := uint64(42)
+	remote := client.Source{ID: 7, TargetNodeID: &target}
+
+	id, path := setupTarget(remote, "")
+	if id != 42 || path != "" {
+		t.Fatalf("preserved target id=%d path=%q want=42/empty", id, path)
+	}
+
+	id, path = setupTarget(remote, "Photos/Manual")
+	if id != 0 || path != "Photos/Manual" {
+		t.Fatalf("explicit target id=%d path=%q want=0/Photos/Manual", id, path)
+	}
+
+	id, path = setupTarget(client.Source{}, "")
+	if id != 0 || path != "Photos/Synology" {
+		t.Fatalf("new-source default id=%d path=%q want=0/Photos/Synology", id, path)
+	}
+}
+
+func TestSetupSourceNamePreservesExistingName(t *testing.T) {
+	remote := client.Source{ID: 7, Name: "家庭照片"}
+	if got := setupSourceName(remote, ""); got != "家庭照片" {
+		t.Fatalf("preserved name=%q want=家庭照片", got)
+	}
+	if got := setupSourceName(remote, "办公室照片"); got != "办公室照片" {
+		t.Fatalf("explicit name=%q want=办公室照片", got)
+	}
+	if got := setupSourceName(client.Source{}, ""); got != "Synology Photos" {
+		t.Fatalf("new-source default name=%q", got)
 	}
 }
