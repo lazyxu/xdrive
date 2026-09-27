@@ -28,3 +28,36 @@ function Get-XDriveComparablePath {
 
     return $full
 }
+
+function Get-XDriveStartMenuProgramPaths {
+    param(
+        [string]$AppData = $env:APPDATA,
+        [string]$KnownPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs),
+        [string]$CommonPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms),
+        [bool]$Is64BitOperatingSystem = [Environment]::Is64BitOperatingSystem
+    )
+
+    $paths = New-Object System.Collections.Generic.List[string]
+
+    if (-not [string]::IsNullOrWhiteSpace($knownPrograms)) {
+        $paths.Add($knownPrograms)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AppData)) {
+        $appDataPrograms = Join-Path $AppData "Microsoft\Windows\Start Menu\Programs"
+        if ($Is64BitOperatingSystem) {
+            if ($appDataPrograms -match '(?i)\\System32\\config\\systemprofile\\') {
+                $paths.Add(($appDataPrograms -replace '(?i)\\System32\\config\\systemprofile\\', '\SysWOW64\config\systemprofile\'))
+            } elseif ($appDataPrograms -match '(?i)\\SysWOW64\\config\\systemprofile\\') {
+                $paths.Add(($appDataPrograms -replace '(?i)\\SysWOW64\\config\\systemprofile\\', '\System32\config\systemprofile\'))
+            }
+        }
+        $paths.Add($appDataPrograms)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($commonPrograms)) {
+        $paths.Add($commonPrograms)
+    }
+
+    return $paths | Select-Object -Unique
+}

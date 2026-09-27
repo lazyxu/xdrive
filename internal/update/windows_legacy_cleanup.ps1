@@ -6,6 +6,24 @@ $ErrorActionPreference = "Stop"
 $unified = [System.IO.Path]::GetFullPath($UnifiedAppDir).TrimEnd('\')
 $uninstallRoot = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
 
+function Get-XDriveStartMenuProgramPaths {
+    $paths = @()
+    $knownPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+    if (-not [string]::IsNullOrWhiteSpace($knownPrograms)) { $paths += $knownPrograms }
+    if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
+        $appDataPrograms = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+        if ([Environment]::Is64BitOperatingSystem -and $appDataPrograms -match '(?i)\\System32\\config\\systemprofile\\') {
+            $paths += ($appDataPrograms -replace '(?i)\\System32\\config\\systemprofile\\', '\SysWOW64\config\systemprofile\')
+        } elseif ([Environment]::Is64BitOperatingSystem -and $appDataPrograms -match '(?i)\\SysWOW64\\config\\systemprofile\\') {
+            $paths += ($appDataPrograms -replace '(?i)\\SysWOW64\\config\\systemprofile\\', '\System32\config\systemprofile\')
+        }
+        $paths += $appDataPrograms
+    }
+    $commonPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
+    if (-not [string]::IsNullOrWhiteSpace($commonPrograms)) { $paths += $commonPrograms }
+    return $paths | Select-Object -Unique
+}
+
 function Is-UnifiedPath([string]$Path) {
     if (-not $Path) {
         return $false
@@ -68,12 +86,13 @@ if (Test-Path -LiteralPath $runKey) {
     }
 }
 
-$programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-foreach ($path in @(
-    (Join-Path $programs "xDrive Desktop.lnk"),
-    (Join-Path $programs "xDrive Desktop")
-)) {
-    Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+foreach ($programs in @(Get-XDriveStartMenuProgramPaths)) {
+    foreach ($path in @(
+        (Join-Path $programs "xDrive Desktop.lnk"),
+        (Join-Path $programs "xDrive Desktop")
+    )) {
+        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $legacyDefault = Join-Path $env:LOCALAPPDATA "Programs\xDrive Desktop"

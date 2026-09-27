@@ -9,6 +9,32 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-XDriveStartMenuProgramPaths {
+    $paths = @()
+    $knownPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+    if (-not [string]::IsNullOrWhiteSpace($knownPrograms)) { $paths += $knownPrograms }
+    if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
+        $appDataPrograms = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+        if ([Environment]::Is64BitOperatingSystem -and $appDataPrograms -match '(?i)\\System32\\config\\systemprofile\\') {
+            $paths += ($appDataPrograms -replace '(?i)\\System32\\config\\systemprofile\\', '\SysWOW64\config\systemprofile\')
+        } elseif ([Environment]::Is64BitOperatingSystem -and $appDataPrograms -match '(?i)\\SysWOW64\\config\\systemprofile\\') {
+            $paths += ($appDataPrograms -replace '(?i)\\SysWOW64\\config\\systemprofile\\', '\System32\config\systemprofile\')
+        }
+        $paths += $appDataPrograms
+    }
+    $commonPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
+    if (-not [string]::IsNullOrWhiteSpace($commonPrograms)) { $paths += $commonPrograms }
+    return $paths | Select-Object -Unique
+}
+
+function Get-XDriveStartMenuGroup {
+    $groups = @(Get-XDriveStartMenuProgramPaths | ForEach-Object { Join-Path $_ "xDrive" })
+    $existing = $groups | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($null -ne $existing) { return $existing }
+    if ($groups.Count -eq 0) { throw "Windows Start Menu Programs folder could not be resolved" }
+    return $groups[0]
+}
 $ProgressPreference = "SilentlyContinue"
 
 function Ensure-Parent([string]$Path) {
@@ -265,8 +291,7 @@ function Restore-LastKnownGood([string]$AppDir, [string]$BackupDir, [string]$Sta
     Mirror-Directory $BackupDir $AppDir
     Restore-RegistryState $StateRoot
 
-    $programsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-    $startMenuGroup = Join-Path $programsMenu "xDrive"
+    $startMenuGroup = Get-XDriveStartMenuGroup
     Remove-Item -LiteralPath $startMenuGroup -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $StartMenuBackup) {
         Mirror-Directory $StartMenuBackup $startMenuGroup
@@ -285,8 +310,7 @@ $appDir = Get-XDriveAppDir
 $transactionRoot = Split-Path -Parent $StatusPath
 $backupDir = Join-Path $transactionRoot "last-known-good"
 $startMenuBackup = Join-Path $transactionRoot "last-known-good-startmenu"
-$programsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$startMenuGroup = Join-Path $programsMenu "xDrive"
+$startMenuGroup = Get-XDriveStartMenuGroup
 
 try {
     Write-Log "begin update $CurrentVersion -> $TargetVersion"

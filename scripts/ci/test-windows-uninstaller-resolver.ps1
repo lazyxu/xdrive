@@ -30,6 +30,16 @@ if ([string]::Equals($wowSystem32, $wowSysnative, [System.StringComparison]::Ord
     throw "Sysnative must not be normalized as a SysWOW64 alias"
 }
 
+$syntheticStartMenuRoots = @(Get-XDriveStartMenuProgramPaths `
+    -AppData "C:\Windows\System32\config\systemprofile\AppData\Roaming" `
+    -KnownPrograms "" `
+    -CommonPrograms "C:\ProgramData\Microsoft\Windows\Start Menu\Programs" `
+    -Is64BitOperatingSystem $true)
+$expectedInnoStartMenu = "C:\Windows\SysWOW64\config\systemprofile\AppData\Roaming\Microsoft\Windows\Start Menu\Programs"
+if (-not [string]::Equals($syntheticStartMenuRoots[0], $expectedInnoStartMenu, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Start Menu discovery must prefer the 32-bit Inno Setup system-profile alias: $($syntheticStartMenuRoots -join ', ')"
+}
+
 try {
     New-Item -ItemType Directory -Force -Path $TestRoot | Out-Null
     $candidate = Join-Path $TestRoot "unins001.exe"

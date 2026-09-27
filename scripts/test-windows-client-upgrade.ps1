@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $Root "scripts\ci\windows-path-normalization.ps1")
 $TransactionScript = Join-Path $Root "internal\update\windows_upgrade_transaction.ps1"
 $LegacyCleanupScript = Join-Path $Root "internal\update\windows_legacy_cleanup.ps1"
 $UninstallerResolver = Join-Path $Root "scripts\ci\resolve-windows-uninstaller.ps1"
@@ -14,8 +15,6 @@ $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $TransactionRoot = Join-Path $env:LOCALAPPDATA "xdrive\updates\transaction"
 $StatusPath = Join-Path $TransactionRoot "last-transaction.json"
 $LogPath = Join-Path $TransactionRoot "last-transaction.log"
-$ProgramsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-$CommonProgramsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
 $Installer = (Resolve-Path $Installer).Path
 
 function Stop-XDriveProcesses {
@@ -131,10 +130,7 @@ if (Test-Path -LiteralPath (Join-Path $AppDir "icons")) {
     throw "runtime tray icons must not be installed"
 }
 
-$shortcutRoots = @(
-    $ProgramsMenu,
-    $CommonProgramsMenu
-) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+$shortcutRoots = @(Get-XDriveStartMenuProgramPaths)
 $shortcut = $shortcutRoots |
     Where-Object { Test-Path $_ } |
     ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
@@ -142,6 +138,7 @@ $shortcut = $shortcutRoots |
 if ($null -eq $shortcut) {
     throw "unified client must install the xDrive Desktop shortcut (searched: $($shortcutRoots -join ', '))"
 }
+$startMenuGroup = $shortcut.Directory.FullName
 
 $initialRunValue = (Get-ItemProperty -Path $RunKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
 if ($initialRunValue -notlike "*xdrive-agent.exe*") {
@@ -157,7 +154,6 @@ Set-Content -LiteralPath $marker -Value "last-known-good"
 # rollback must remove them again.
 $desktopAppPathKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\xdrive-desktop.exe"
 Remove-Item -LiteralPath $desktopAppPathKey -Recurse -Force -ErrorAction SilentlyContinue
-$startMenuGroup = Join-Path $ProgramsMenu "xDrive"
 Remove-Item -LiteralPath $startMenuGroup -Recurse -Force -ErrorAction SilentlyContinue
 
 $failed = Invoke-Transaction "snapshot-deadbeefdead"

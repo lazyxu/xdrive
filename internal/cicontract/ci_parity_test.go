@@ -702,6 +702,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "Windows uninstaller resolver regression", windowsUninstallerTest,
 		"unins001.exe",
 		"resolver must reject uninstallers outside the unified app directory",
+		"Start Menu discovery must prefer the 32-bit Inno Setup system-profile alias",
 	)
 	requireRaw(t, "Windows transaction scenario contract", windowsUpgradeTest,
 		"ValidateSet(\"all\", \"rollback\", \"upgrade\")",
@@ -724,14 +725,19 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Windows legacy cleanup":           windowsLegacyCleanup,
 	} {
 		requireRaw(t, label+" Start Menu discovery", content,
-			"GetFolderPath([Environment+SpecialFolder]::Programs)",
+			"Get-XDriveStartMenuProgramPaths",
 		)
-		if strings.Contains(content, `Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs`) {
+		if strings.Contains(content, `Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs`) &&
+			!strings.Contains(content, `SysWOW64\config\systemprofile`) {
 			t.Errorf("%s must use the Windows known-folder API instead of assuming Start Menu is under APPDATA", label)
 		}
 	}
-	requireRaw(t, "Windows shortcut search roots", gitlabWindowsNative+"\n"+windowsUpgradeTest,
+	requireRaw(t, "Windows shortcut search roots", windowsPathNormalizer,
+		"function Get-XDriveStartMenuProgramPaths",
+		"GetFolderPath([Environment+SpecialFolder]::Programs)",
 		"GetFolderPath([Environment+SpecialFolder]::CommonPrograms)",
+		`SysWOW64\config\systemprofile`,
+		`System32\config\systemprofile`,
 	)
 	requireRaw(t, "Windows installer Start Menu migration", windowsInstaller,
 		"DefaultGroupName=xDrive",
