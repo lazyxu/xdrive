@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
+	"github.com/lazyxu/xdrive/internal/shellintegration"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -197,6 +199,7 @@ func (c *agentController) Run() {
 		mountDone     chan error
 		lastAuthCheck time.Time
 		conflictKey   string
+		explorerRoot  string
 	)
 
 	stopMount := func() {
@@ -234,6 +237,12 @@ func (c *agentController) Run() {
 	reconcile := func() {
 		d, loadErr := loadDesired()
 		if loadErr != nil {
+			if explorerRoot != "" {
+				if err := shellintegration.UnregisterExplorerActions(); err != nil {
+					log.Printf("remove Explorer actions: %v", err)
+				}
+				explorerRoot = ""
+			}
 			if running {
 				stopMount()
 			}
@@ -251,6 +260,14 @@ func (c *agentController) Run() {
 				s.ConflictCount = 0
 			})
 			return
+		}
+
+		if !strings.EqualFold(explorerRoot, d.root) {
+			if err := shellintegration.RegisterExplorerActions(d.root); err != nil {
+				log.Printf("register Explorer actions for %s: %v", d.root, err)
+			} else {
+				explorerRoot = d.root
+			}
 		}
 
 		c.setSnapshot(func(s *agentSnapshot) {
@@ -407,6 +424,9 @@ func (c *agentController) Run() {
 		startMount(d)
 	}
 
+	if err := shellintegration.UnregisterExplorerActions(); err != nil {
+		log.Printf("clear stale Explorer actions: %v", err)
+	}
 	reconcile()
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()

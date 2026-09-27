@@ -13,6 +13,14 @@ import (
 )
 
 func main() {
+	if handled, err := runShellAction(os.Args[1:]); handled {
+		if err != nil {
+			writeEarlyError(err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	closeInstance, err := acquireSingleInstance()
 	if err != nil {
 		if errors.Is(err, errAlreadyRunning) {
