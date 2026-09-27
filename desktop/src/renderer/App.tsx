@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  externalSourceCardView,
+  externalSourceConnectorProfile,
   externalSourceDefaults,
   externalSourceKindLabel,
   externalSourceModeLabel,
@@ -8,7 +10,6 @@ import {
   formatBinarySize,
   formatExternalSourceTime,
   getExternalSourceState,
-  getExternalSourceTriggerState,
 } from '@xdrive/shared'
 import type {
   ExternalSourceRow,
@@ -345,7 +346,7 @@ export default function App() {
       const rows = await Promise.all(sourceResult.data.map(async (source) => {
         const [runsResult, credentialResult] = await Promise.all([
           window.xdriveDesktop.agent.getSourceRuns(source.id, 1),
-          source.kind === 'yike_photos'
+          externalSourceConnectorProfile(source.kind).credential === 'cookie'
             ? window.xdriveDesktop.agent.getSourceCredential(source.id)
             : Promise.resolve(null),
         ])
@@ -514,7 +515,7 @@ export default function App() {
       }
 
       const cookie = sourceEditCookie.trim()
-      if (row.source.kind === 'yike_photos' && cookie) {
+      if (externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && cookie) {
         const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, cookie)
         if (!credential.ok) {
           setError(`来源设置已保存，但 Cookie 更新失败：${credential.error.message}`)
@@ -1201,28 +1202,25 @@ export default function App() {
             ) : (
               <div className="source-list">
                 {sources.map((row) => {
-                  const state = getExternalSourceState(row)
-                  const trigger = getExternalSourceTriggerState(row)
-                  const timeLabel = row.source.run_mode === 'scan' ? '上次扫描' : '上次成功'
-                  const timeValue = row.source.run_mode === 'scan' ? row.source.last_run_at : row.source.last_success_at
+                  const card = externalSourceCardView(row)
                   return (
                     <article className="source-card" key={row.source.id}>
                       <div className="source-card-header">
                         <div className="source-title">
                           <strong>{row.source.name}</strong>
-                          <span>{externalSourceModeLabel(row.source)}</span>
+                          <span>{card.modeLabel}</span>
                         </div>
                         <div className="source-state">
-                          <span className={`status-dot ${desktopSourceTone(state.tone)}`} />
-                          <strong>{state.label}</strong>
+                          <span className={`status-dot ${desktopSourceTone(card.state.tone)}`} />
+                          <strong>{card.state.label}</strong>
                         </div>
                       </div>
                       <div className="source-card-meta">
-                        <span>{timeLabel}：{formatExternalSourceTime(timeValue)}</span>
+                        <span>{card.lastActivityLabel}：{formatExternalSourceTime(card.lastActivityAt)}</span>
                         <span>
-                          {row.latestRun
-                            ? `${row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · ${formatBinarySize(row.latestRun.scanned_bytes)}`
-                            : '尚无扫描统计'}
+                          {card.scannedItems === undefined || card.scannedBytes === undefined
+                            ? '尚无扫描统计'
+                            : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBinarySize(card.scannedBytes)}`}
                         </span>
                       </div>
                       {row.source.last_error && <div className="source-error">{row.source.last_error}</div>}
@@ -1237,8 +1235,8 @@ export default function App() {
                         <button
                           className="secondary"
                           type="button"
-                          title={trigger.label}
-                          disabled={!!busy || !trigger.ready}
+                          title={card.trigger.label}
+                          disabled={!!busy || !card.trigger.ready}
                           onClick={() => void triggerSourceNow(row)}
                         >
                           {row.source.run_requested_at
@@ -1296,7 +1294,7 @@ export default function App() {
                               placeholder="每行一条 gitignore 风格规则"
                             />
                           </label>
-                          {row.source.kind === 'yike_photos' && (
+                          {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && (
                             <label className="source-settings-wide">
                               <span>一刻相册 Cookie</span>
                               <input
@@ -1314,7 +1312,7 @@ export default function App() {
                               {busy === `source-settings-${row.source.id}` ? '正在保存…' : '保存设置'}
                             </button>
                             <button className="secondary" type="button" disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</button>
-                            {row.source.kind === 'yike_photos' && row.credential?.configured && (
+                            {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && row.credential?.configured && (
                               <button className="danger" type="button" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>清除 Cookie</button>
                             )}
                           </div>
@@ -1325,11 +1323,11 @@ export default function App() {
                           <div className="source-detail-grid">
                             <div><span>来源类型</span><strong>{externalSourceKindLabel(row.source.kind)}</strong></div>
                             <div><span>工作方式</span><strong>{externalSourceModeLabel(row.source)}</strong></div>
-                            <div><span>状态</span><strong>{state.label}</strong></div>
+                            <div><span>状态</span><strong>{card.state.label}</strong></div>
                             <div><span>目标节点</span><strong>{row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}</strong></div>
                             <div><span>上次运行</span><strong>{formatExternalSourceTime(row.source.last_run_at)}</strong></div>
                             <div><span>上次成功</span><strong>{formatExternalSourceTime(row.source.last_success_at)}</strong></div>
-                            {row.source.kind === 'yike_photos' && (
+                            {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && (
                               <div><span>Cookie</span><strong>{row.credential?.configured ? '已配置' : '未配置'}</strong></div>
                             )}
                             <div><span>配置修订号</span><strong>{row.source.revision}</strong></div>

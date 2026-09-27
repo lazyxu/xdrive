@@ -117,6 +117,27 @@ export interface ExternalSourceDefaults {
   ignoreRules: string
 }
 
+export interface ExternalSourceConnectorProfile {
+  kind: string
+  label: string
+  direction: ExternalSourceDirection
+  credential: 'cookie' | null
+  manualTriggerExecutor: 'pull_worker' | 'source_agent'
+  defaultName: string
+  defaultIgnoreRules: string
+}
+
+export interface ExternalSourceCardView {
+  modeLabel: string
+  state: ExternalSourceState
+  trigger: ExternalSourceTriggerState
+  lastActivityLabel: '上次扫描' | '上次成功'
+  lastActivityAt?: string
+  scannedItems?: number
+  scannedBytes?: number
+  connector: ExternalSourceConnectorProfile
+}
+
 export function formatExternalSourceTime(value?: string, now = new Date()) {
   if (!value) return '尚无记录'
   const date = new Date(value)
@@ -142,10 +163,42 @@ export function externalSourceModeLabel(source: Pick<ExternalSource, 'direction'
   return `${source.direction === 'push' ? 'Push' : 'Pull'} · ${source.run_mode === 'scan' ? '仅扫描' : '同步'}`
 }
 
+export function externalSourceConnectorProfile(kind: string): ExternalSourceConnectorProfile {
+  if (kind === 'yike_photos') {
+    return {
+      kind,
+      label: '一刻相册',
+      direction: 'pull',
+      credential: 'cookie',
+      manualTriggerExecutor: 'pull_worker',
+      defaultName: '一刻相册',
+      defaultIgnoreRules: '',
+    }
+  }
+  if (kind === 'synology_photos') {
+    return {
+      kind,
+      label: '群晖 Photos',
+      direction: 'push',
+      credential: null,
+      manualTriggerExecutor: 'source_agent',
+      defaultName: '群晖 Photos',
+      defaultIgnoreRules: '@eaDir/\n\\#recycle/\n',
+    }
+  }
+  return {
+    kind,
+    label: kind,
+    direction: 'pull',
+    credential: null,
+    manualTriggerExecutor: 'pull_worker',
+    defaultName: kind,
+    defaultIgnoreRules: '',
+  }
+}
+
 export function externalSourceKindLabel(kind: string) {
-  if (kind === 'synology_photos') return '群晖 Photos'
-  if (kind === 'yike_photos') return '一刻相册'
-  return kind
+  return externalSourceConnectorProfile(kind).label
 }
 
 export function externalSourceRunStatusLabel(status: ExternalSourceRunStatus) {
@@ -161,11 +214,12 @@ export function externalSourceRunStatusLabel(status: ExternalSourceRunStatus) {
 
 export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceState {
   const { source, latestRun, credential } = row
+  const connector = externalSourceConnectorProfile(source.kind)
   if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '已暂停' }
   if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: '运行中' }
   if (source.run_requested_at) return { key: 'pending', tone: 'busy', label: '等待执行' }
   if (source.last_error) return { key: 'error', tone: 'bad', label: '异常' }
-  if (source.kind === 'yike_photos') {
+  if (connector.credential === 'cookie') {
     return credential?.configured
       ? { key: 'credential_ready', tone: 'good', label: 'Cookie 已配置' }
       : { key: 'credential_missing', tone: 'warning', label: 'Cookie 未配置' }
@@ -177,29 +231,37 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
 
 export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalSourceTriggerState {
   const { source, latestRun, credential } = row
+  const connector = externalSourceConnectorProfile(source.kind)
   if (source.run_requested_at) return { ready: false, label: '已提交扫描请求' }
-  if (source.kind === 'yike_photos' && !credential?.configured) return { ready: false, label: '请先配置 Cookie' }
+  if (connector.credential === 'cookie' && !credential?.configured) return { ready: false, label: '请先配置 Cookie' }
   if (source.status !== 'active') return { ready: false, label: '来源已暂停' }
   if (latestRun?.status === 'running') return { ready: false, label: '来源正在运行' }
-  if (source.kind === 'synology_photos') {
+  if (connector.manualTriggerExecutor === 'source_agent') {
     return { ready: true, label: '提交请求，由群晖 source-agent 下一次任务检查执行' }
   }
   return { ready: true, label: '立即请求 Pull worker 扫描此来源' }
 }
 
 export function externalSourceDefaults(kind: SupportedExternalSourceKind): ExternalSourceDefaults {
-  if (kind === 'yike_photos') {
-    return {
-      kind,
-      name: '一刻相册',
-      direction: 'pull',
-      ignoreRules: '',
-    }
-  }
+  const profile = externalSourceConnectorProfile(kind)
   return {
     kind,
-    name: '群晖 Photos',
-    direction: 'push',
-    ignoreRules: '@eaDir/\n\\#recycle/\n',
+    name: profile.defaultName,
+    direction: profile.direction,
+    ignoreRules: profile.defaultIgnoreRules,
+  }
+}
+
+export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCardView {
+  const { source, latestRun } = row
+  return {
+    modeLabel: externalSourceModeLabel(source),
+    state: getExternalSourceState(row),
+    trigger: getExternalSourceTriggerState(row),
+    lastActivityLabel: source.run_mode === 'scan' ? '上次扫描' : '上次成功',
+    lastActivityAt: source.run_mode === 'scan' ? source.last_run_at : source.last_success_at,
+    scannedItems: latestRun?.scanned_items,
+    scannedBytes: latestRun?.scanned_bytes,
+    connector: externalSourceConnectorProfile(source.kind),
   }
 }
