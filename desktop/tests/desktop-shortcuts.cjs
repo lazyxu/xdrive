@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 
 const {
   desktopShortcutActionFromArgs,
+  desktopShortcutActionFromInput,
   desktopShortcutShowsWindow,
   windowsUserTasks,
 } = require('../dist/main/desktop_shortcuts.cjs')
@@ -44,4 +45,29 @@ test('Windows Jump List exposes four constrained xDrive tasks', () => {
     assert.equal(task.iconPath, program)
     assert.equal(task.iconIndex, 0)
   }
+})
+
+
+test('window-local keyboard shortcuts map to constrained desktop actions', () => {
+  const keyDown = (key, extra = {}) => ({
+    type: 'keyDown',
+    key,
+    control: true,
+    meta: false,
+    shift: false,
+    alt: false,
+    isAutoRepeat: false,
+    ...extra,
+  })
+
+  assert.equal(desktopShortcutActionFromInput(keyDown(',')), 'settings')
+  assert.equal(desktopShortcutActionFromInput(keyDown('S', { shift: true })), 'sync-now')
+  assert.equal(desktopShortcutActionFromInput(keyDown('O', { shift: true })), 'open-folder')
+  assert.equal(desktopShortcutActionFromInput(keyDown('T', { shift: true })), 'transfers')
+  assert.equal(desktopShortcutActionFromInput(keyDown('S')), null)
+  assert.equal(desktopShortcutActionFromInput(keyDown('S', { shift: true, alt: true })), null)
+  assert.equal(desktopShortcutActionFromInput(keyDown('S', { shift: true, isAutoRepeat: true })), null)
+  assert.equal(desktopShortcutActionFromInput(keyDown('S', { type: 'keyUp', shift: true })), null)
+  assert.equal(desktopShortcutActionFromInput({ ...keyDown(','), control: false, meta: false }), null)
+  assert.equal(desktopShortcutActionFromInput({ ...keyDown(','), control: false, meta: true }), 'settings')
 })

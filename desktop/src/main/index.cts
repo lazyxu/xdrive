@@ -20,6 +20,7 @@ import { trayUpdatePresentation } from './tray_update.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
 import {
   desktopShortcutActionFromArgs,
+  desktopShortcutActionFromInput,
   desktopShortcutShowsWindow,
   windowsUserTasks,
   type DesktopShortcutAction,
@@ -320,6 +321,12 @@ function createMainWindow(showOnReady = true) {
   })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
+  })
+  win.webContents.on('before-input-event', (event, input) => {
+    const action = desktopShortcutActionFromInput(input)
+    if (!action) return
+    event.preventDefault()
+    void performDesktopShortcutAction(action)
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', (event, url) => {
