@@ -40,6 +40,10 @@ type clientUpdateState struct {
 	Status           string  `json:"status"`
 	CurrentVersion   string  `json:"current_version"`
 	LatestVersion    string  `json:"latest_version,omitempty"`
+	ReleaseName      string  `json:"release_name,omitempty"`
+	PublishedAt      string  `json:"published_at,omitempty"`
+	ReleaseNotes     string  `json:"release_notes,omitempty"`
+	ReleaseURL       string  `json:"release_url,omitempty"`
 	Channel          string  `json:"channel,omitempty"`
 	UpdateAvailable  bool    `json:"update_available"`
 	Downloaded       bool    `json:"downloaded"`
@@ -187,6 +191,10 @@ func (m *clientUpdateManager) SetSource(source string) (clientUpdateState, error
 	m.state.Source = source
 	m.state.Status = clientUpdateStatusIdle
 	m.state.LatestVersion = ""
+	m.state.ReleaseName = ""
+	m.state.PublishedAt = ""
+	m.state.ReleaseNotes = ""
+	m.state.ReleaseURL = ""
 	m.state.Channel = ""
 	m.state.UpdateAvailable = false
 	m.state.Downloaded = false
@@ -463,6 +471,10 @@ func (m *clientUpdateManager) markChecked(result xupdate.Result) {
 	}
 	m.state.Channel = result.Channel
 	m.state.LatestVersion = result.Latest
+	m.state.ReleaseName = result.ReleaseName
+	m.state.PublishedAt = result.PublishedAt
+	m.state.ReleaseNotes = result.ReleaseNotes
+	m.state.ReleaseURL = result.ReleaseURL
 	m.state.UpdateAvailable = result.UpdateAvailable
 	m.state.LastCheckedAt = now
 	if !result.UpdateAvailable {

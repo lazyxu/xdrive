@@ -13,6 +13,7 @@ import {
   powerMonitor,
   screen,
   session,
+  shell,
   Tray,
   type OpenDialogOptions,
 } from 'electron'
@@ -69,7 +70,7 @@ import {
 } from './agent_client.cjs'
 
 
-type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
 
 type AgentConnectionState = {
   connected: boolean
@@ -551,17 +552,22 @@ function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnec
 function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUpdateState | null) {
   if (!next) return
   if (next.status === 'available' && previous?.status !== 'available') {
+    const details = [
+      next.latest_version ? `新版本 ${next.latest_version}` : '发现新的 xDrive 客户端版本',
+      next.published_at ? `发布于 ${new Date(next.published_at).toLocaleString()}` : '',
+      next.release_name && next.release_name !== next.latest_version ? next.release_name : '',
+    ].filter(Boolean)
     showDesktopNotification(
       'xDrive 有可用更新',
-      next.latest_version ? `发现新版本 ${next.latest_version}。` : '发现新的 xDrive 客户端版本。',
-      'settings',
+      details.join(' · '),
+      'settings-update',
     )
   }
   if (next.status === 'downloaded' && previous?.status !== 'downloaded') {
     showDesktopNotification(
       'xDrive 更新已下载',
       next.latest_version ? `版本 ${next.latest_version} 已下载并通过校验，可开始安装。` : '客户端更新已下载并通过校验，可开始安装。',
-      'settings',
+      'settings-update',
     )
   }
 }
@@ -814,6 +820,19 @@ function registerIPCHandlers() {
       return { ok: true, data: await setCloseToTray(enabled) }
     } catch (error) {
       return { ok: false, error: agentError(error) }
+    }
+  })
+  ipcMain.handle('desktop:open-external', async (_event, rawURL: unknown) => {
+    if (typeof rawURL !== 'string') return { ok: false, error: { code: 'invalid_input', message: 'URL is required.' } }
+    try {
+      const parsed = new URL(rawURL)
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        return { ok: false, error: { code: 'invalid_input', message: 'Only HTTP(S) release links are allowed.' } }
+      }
+      await shell.openExternal(parsed.toString())
+      return { ok: true, data: { opened: true } }
+    } catch {
+      return { ok: false, error: { code: 'invalid_input', message: 'Release URL is invalid.' } }
     }
   })
   ipcMain.handle('desktop:select-directory', async (_event, defaultPath?: unknown) => {

@@ -311,7 +311,15 @@ export default function App() {
       if (active) setTransfers(value)
     })
     const unsubscribeNavigate = window.xdriveDesktop.onNavigate((target) => {
-      if (active) setView(target)
+      if (!active) return
+      if (target === 'settings-update') {
+        setView('settings')
+        window.setTimeout(() => {
+          document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 120)
+        return
+      }
+      setView(target)
     })
     return () => {
       active = false
@@ -2566,7 +2574,7 @@ export default function App() {
                 开启后，点击关闭按钮只隐藏主窗口并继续同步；关闭后将直接退出 xDrive 桌面版。
               </Typography>
             </Stack>
-            <div className="update-card">
+            <div className="update-card" id="client-update-card">
               <div className="update-card-header">
                 <div>
                   <strong>客户端更新</strong>
@@ -2621,8 +2629,29 @@ export default function App() {
                     <div><span>当前版本</span><strong>{clientUpdate.current_version || status?.version || '未知'}</strong></div>
                     <div><span>最新版本</span><strong>{clientUpdate.latest_version || '尚未检查'}</strong></div>
                     <div><span>状态</span><strong>{updateStatusLabel(clientUpdate)}</strong></div>
+                    <div><span>发布时间</span><strong>{clientUpdate.published_at ? new Date(clientUpdate.published_at).toLocaleString() : '未知'}</strong></div>
+                    <div><span>发布名称</span><strong>{clientUpdate.release_name || clientUpdate.latest_version || '—'}</strong></div>
+                    <div><span>安装包大小</span><strong>{clientUpdate.bytes_total ? formatBinarySize(clientUpdate.bytes_total) : '未知'}</strong></div>
+                    <div><span>更新通道</span><strong>{clientUpdate.channel || '—'}</strong></div>
                     <div><span>上次检查</span><strong>{clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'}</strong></div>
                   </div>
+                  {clientUpdate.release_notes ? (
+                    <MuiBox sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
+                      <Typography variant="subtitle2" sx={{ mb: 0.75 }}>发布说明</Typography>
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {clientUpdate.release_notes}
+                      </Typography>
+                    </MuiBox>
+                  ) : null}
+                  {clientUpdate.release_url ? (
+                    <MuiButton
+                      size="small"
+                      sx={{ mt: 1 }}
+                      onClick={() => void window.xdriveDesktop.openExternal(clientUpdate.release_url || '')}
+                    >
+                      查看发布页面
+                    </MuiButton>
+                  ) : null}
 
                   {(clientUpdate.status === 'downloading' || clientUpdate.bytes_done || clientUpdate.bytes_total) ? (
                     <div className="update-progress">

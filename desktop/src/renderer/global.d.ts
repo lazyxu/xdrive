@@ -20,7 +20,7 @@ declare global {
   type DesktopInfo = { version: string; platform: string; arch: string }
   type DesktopStartup = { start_at_login: boolean }
   type DesktopPreferences = { start_at_login: boolean; close_to_tray: boolean }
-  type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+  type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
 
   type AgentHello = {
     discovery_version: number
@@ -71,6 +71,10 @@ declare global {
     status: 'idle' | 'checking' | 'available' | 'up_to_date' | 'downloading' | 'downloaded' | 'installing' | 'error' | string
     current_version: string
     latest_version?: string
+    release_name?: string
+    published_at?: string
+    release_notes?: string
+    release_url?: string
     channel?: string
     update_available: boolean
     downloaded: boolean
@@ -216,6 +220,7 @@ declare global {
       setStartup: (enabled: boolean) => Promise<DesktopResult<DesktopStartup>>
       setCloseToTray: (enabled: boolean) => Promise<DesktopResult<DesktopPreferences>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
+      openExternal: (url: string) => Promise<DesktopResult<{ opened: boolean }>>
       hide: () => void
       quit: () => void
       onNavigate: (callback: (view: DesktopViewTarget) => void) => () => void

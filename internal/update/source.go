@@ -18,9 +18,11 @@ const (
 )
 
 type gitLabRelease struct {
-	TagName    string `json:"tag_name"`
-	ReleasedAt string `json:"released_at"`
-	Commit     struct {
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ReleasedAt  string `json:"released_at"`
+	Commit      struct {
 		ID string `json:"id"`
 	} `json:"commit"`
 	Assets struct {
@@ -205,6 +207,13 @@ func checkGitLabTarget(ctx context.Context, current, assetName, channel, commit 
 		}
 		result.Latest = tag
 		result.UpdateAvailable = !sameSnapshot(current, full)
+	}
+
+	result.ReleaseName = strings.TrimSpace(release.Name)
+	result.PublishedAt = strings.TrimSpace(release.ReleasedAt)
+	result.ReleaseNotes = strings.TrimSpace(release.Description)
+	if tag := strings.TrimSpace(release.TagName); tag != "" {
+		result.ReleaseURL = strings.TrimRight(base, "/") + "/" + strings.Trim(project, "/") + "/-/releases/" + url.PathEscape(tag)
 	}
 
 	for _, link := range release.Assets.Links {

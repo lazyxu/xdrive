@@ -56,6 +56,9 @@ func TestGitLabSourceStableAndMasterAreSeparated(t *testing.T) {
 	if stable.Latest != "v1.10.0" || !stable.UpdateAvailable {
 		t.Fatalf("stable=%+v", stable)
 	}
+	if stable.PublishedAt != "2026-09-25T12:00:00Z" || stable.ReleaseName == "" || stable.ReleaseNotes == "" || stable.ReleaseURL == "" {
+		t.Fatalf("stable release metadata=%+v", stable)
+	}
 	if stable.Asset.URL != server.URL+"/assets/pkg.bin" {
 		t.Fatalf("stable asset URL=%q", stable.Asset.URL)
 	}
@@ -102,6 +105,8 @@ func gitLabTestRelease(tag, releasedAt, commit, base string) map[string]any {
 	}
 	return map[string]any{
 		"tag_name":    tag,
+		"name":        "xDrive " + tag,
+		"description": "Release notes for " + tag,
 		"released_at": releasedAt,
 		"commit":      map[string]any{"id": commit},
 		"assets": map[string]any{

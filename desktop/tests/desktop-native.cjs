@@ -27,7 +27,7 @@ test('desktop native feedback wires taskbar progress and clickable navigation', 
   assert.ok(main.includes("{ label: '设置', click: () => showDesktopView('settings') }"), 'missing tray settings shortcut')
   assert.ok(main.includes("label: '打开传输中心'"), 'missing tray transfer center shortcut')
   assert.ok(main.includes("showDesktopNotification('xDrive 冲突'"), 'missing clickable conflict notification')
-  assert.ok(main.includes("'settings'"), 'missing update notification target')
+  assert.ok(main.includes("'settings-update'"), 'update notification must navigate to the client update section')
   assert.ok(main.includes("'desktop:navigate'"), 'missing main-process navigation event')
   assert.ok(preload.includes("'desktop:navigate'"), 'missing preload navigation bridge')
   assert.ok(renderer.includes('window.xdriveDesktop.onNavigate'), 'missing renderer navigation subscription')
