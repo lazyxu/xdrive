@@ -15,10 +15,12 @@ import (
 )
 
 const (
-	DefaultBaseURL = "https://photo.baidu.com/youai"
-	maxCookieBytes = 16 << 10
-	maxJSONBytes   = 16 << 20
-	maxPages       = 100000
+	DefaultBaseURL                       = "https://photo.baidu.com/youai"
+	maxCookieBytes                       = 16 << 10
+	maxJSONBytes                         = 16 << 20
+	maxPages                             = 100000
+	defaultDownloadResponseHeaderTimeout = 30 * time.Second
+	defaultDownloadIdleTimeout           = 60 * time.Second
 )
 
 var (
@@ -28,10 +30,12 @@ var (
 )
 
 type Client struct {
-	baseURL    string
-	cookie     string
-	httpClient *http.Client
-	userAgent  string
+	baseURL               string
+	cookie                string
+	httpClient            *http.Client
+	userAgent             string
+	downloadHeaderTimeout time.Duration
+	downloadIdleTimeout   time.Duration
 }
 
 func New(cookie string) (*Client, error) {
@@ -62,7 +66,9 @@ func NewWithBaseURL(baseURL, cookie string, httpClient *http.Client) (*Client, e
 	}
 	return &Client{
 		baseURL: baseURL, cookie: cookie, httpClient: httpClient,
-		userAgent: "Mozilla/5.0 xDrive-Yike-Connector",
+		userAgent:             "Mozilla/5.0 xDrive-Yike-Connector",
+		downloadHeaderTimeout: defaultDownloadResponseHeaderTimeout,
+		downloadIdleTimeout:   defaultDownloadIdleTimeout,
 	}, nil
 }
 
@@ -217,8 +223,10 @@ func (c *Client) OpenDownload(ctx context.Context, link DownloadLink, offset int
 		return nil, fmt.Errorf("Yike download URL resolves to a private literal address")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	downloadCtx, cancel := context.WithCancel(ctx)
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	for key, value := range link.Headers {
@@ -232,33 +240,99 @@ func (c *Client) OpenDownload(ctx context.Context, link DownloadLink, offset int
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 	}
 
-	downloadClient := *c.httpClient
-	downloadClient.Timeout = 0
+	downloadClient := c.mediaDownloadClient()
 	resp, err := downloadClient.Do(req)
 	if err != nil {
-		return nil, err
+		cancel()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, fmt.Errorf("%w: open Yike media download: %v", ErrUnavailable, err)
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		defer resp.Body.Close()
+		defer cancel()
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("Yike media download returned HTTP %d", resp.StatusCode)
 	}
+
+	body := &idleTimeoutReadCloser{
+		body: resp.Body, cancel: cancel, parent: ctx, timeout: c.downloadIdleTimeout,
+	}
 	if offset == 0 {
-		return resp.Body, nil
+		return body, nil
 	}
 	if resp.StatusCode == http.StatusPartialContent {
 		wantPrefix := fmt.Sprintf("bytes %d-", offset)
 		if !strings.HasPrefix(strings.TrimSpace(resp.Header.Get("Content-Range")), wantPrefix) {
-			_ = resp.Body.Close()
+			_ = body.Close()
 			return nil, fmt.Errorf("Yike media range response starts at the wrong offset")
 		}
-		return resp.Body, nil
+		return body, nil
 	}
-	if _, err := io.CopyN(io.Discard, resp.Body, offset); err != nil {
-		_ = resp.Body.Close()
+	if _, err := io.CopyN(io.Discard, body, offset); err != nil {
+		_ = body.Close()
 		return nil, fmt.Errorf("skip Yike media download to offset %d: %w", offset, err)
 	}
-	return resp.Body, nil
+	return body, nil
+}
+
+func (c *Client) mediaDownloadClient() http.Client {
+	out := *c.httpClient
+	out.Timeout = 0
+	timeout := c.downloadHeaderTimeout
+	if timeout <= 0 {
+		return out
+	}
+
+	switch transport := out.Transport.(type) {
+	case nil:
+		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+			cloned := defaultTransport.Clone()
+			cloned.ResponseHeaderTimeout = timeout
+			out.Transport = cloned
+		}
+	case *http.Transport:
+		cloned := transport.Clone()
+		if cloned.ResponseHeaderTimeout <= 0 || cloned.ResponseHeaderTimeout > timeout {
+			cloned.ResponseHeaderTimeout = timeout
+		}
+		out.Transport = cloned
+	}
+	return out
+}
+
+type idleTimeoutReadCloser struct {
+	body    io.ReadCloser
+	cancel  context.CancelFunc
+	parent  context.Context
+	timeout time.Duration
+}
+
+func (r *idleTimeoutReadCloser) Read(p []byte) (int, error) {
+	if r.timeout <= 0 {
+		return r.body.Read(p)
+	}
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(r.timeout, func() {
+		close(timedOut)
+		r.cancel()
+	})
+	n, err := r.body.Read(p)
+	if timer.Stop() {
+		return n, err
+	}
+
+	<-timedOut
+	if parentErr := r.parent.Err(); parentErr != nil {
+		return n, parentErr
+	}
+	return n, fmt.Errorf("Yike media download stalled for %s", r.timeout)
+}
+
+func (r *idleTimeoutReadCloser) Close() error {
+	r.cancel()
+	return r.body.Close()
 }
 
 func (c *Client) baseURLUsesPrivateHost() bool {
