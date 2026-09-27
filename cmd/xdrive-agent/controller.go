@@ -995,6 +995,10 @@ func (c *agentController) SetUpdateMode(mode string) (clientUpdateState, error) 
 	return c.updates.SetMode(mode)
 }
 
+func (c *agentController) SetUpdateSource(source string) (clientUpdateState, error) {
+	return c.updates.SetSource(source)
+}
+
 func (c *agentController) CheckClientUpdate(ctx context.Context) (clientUpdateState, error) {
 	return c.updates.Check(ctx)
 }

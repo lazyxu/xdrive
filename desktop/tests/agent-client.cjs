@@ -53,6 +53,7 @@ test('client update endpoints keep check download and install separate', async (
     seen.push({ method: req.method, path: req.url, body })
     json(res, 200, {
       mode: body?.mode || 'manual',
+      source: body?.source || 'github',
       status: req.url === '/v1/update/download' ? 'downloaded' : req.url === '/v1/update/install' ? 'installing' : 'available',
       current_version: 'snapshot-old',
       latest_version: 'snapshot-new',
@@ -64,12 +65,14 @@ test('client update endpoints keep check download and install separate', async (
 
   assert.equal((await client.updateState()).mode, 'manual')
   assert.equal((await client.setUpdateMode('download')).mode, 'download')
+  assert.equal((await client.setUpdateSource('gitlab')).source, 'gitlab')
   assert.equal((await client.checkUpdate()).status, 'available')
   assert.equal((await client.downloadUpdate()).status, 'downloaded')
   assert.equal((await client.installUpdate()).status, 'installing')
   assert.deepEqual(seen, [
     { method: 'GET', path: '/v1/update', body: null },
     { method: 'PATCH', path: '/v1/update/settings', body: { mode: 'download' } },
+    { method: 'PATCH', path: '/v1/update/settings', body: { source: 'gitlab' } },
     { method: 'POST', path: '/v1/update/check', body: null },
     { method: 'POST', path: '/v1/update/download', body: null },
     { method: 'POST', path: '/v1/update/install', body: null },

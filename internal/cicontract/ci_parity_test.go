@@ -704,8 +704,18 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 
 	requireRaw(t, "server installer registry contract", installerTemplate,
 		"IMAGE_REGISTRY=\"${XD_IMAGE_REGISTRY:-@IMAGE_REGISTRY@}\"",
+		"BUILT_SOURCE=\"${XD_BUILT_SOURCE:-@UPDATE_SOURCE@}\"",
 		`[[ -z "$IMAGE_REGISTRY" || "$IMAGE_REGISTRY" == "@IMAGE_REGISTRY@" ]]`,
-		`[[ -n "$IMAGE_REGISTRY" ]] || IMAGE_REGISTRY="ghcr.io/lazyxu"`,
+		`if [[ -z "${XD_IMAGE_REGISTRY:-}" && "$BUILT_SOURCE" != "@UPDATE_SOURCE@" && "$requested_source" != "$BUILT_SOURCE" ]]; then`,
+		`IMAGE_REGISTRY="$(resolve_gitlab_registry)"`,
+		`IMAGE_REGISTRY="ghcr.io/lazyxu"`,
+		`set_env XD_UPDATE_SOURCE "$requested_source"`,
+	)
+	requireRaw(t, "GitHub server update-source bake", githubRelease,
+		`s|@UPDATE_SOURCE@|github|g`,
+	)
+	requireRaw(t, "GitLab server update-source bake", gitlabReleaseScripts,
+		`s|@UPDATE_SOURCE@|gitlab|g`,
 	)
 
 	for _, forbidden := range []string{

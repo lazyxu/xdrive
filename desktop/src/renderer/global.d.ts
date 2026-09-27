@@ -63,9 +63,11 @@ declare global {
   }
 
   type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
+  type AgentUpdateSource = 'github' | 'gitlab'
 
   type AgentUpdateState = {
     mode: AgentUpdateMode
+    source: AgentUpdateSource
     status: 'idle' | 'checking' | 'available' | 'up_to_date' | 'downloading' | 'downloaded' | 'installing' | 'error' | string
     current_version: string
     latest_version?: string
@@ -264,6 +266,7 @@ declare global {
         updateSettings: (input: { mount_path?: string; cache_limit_bytes?: number }) => Promise<DesktopResult<AgentSettings>>
         getUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         setUpdateMode: (mode: AgentUpdateMode) => Promise<DesktopResult<AgentUpdateState>>
+        setUpdateSource: (source: AgentUpdateSource) => Promise<DesktopResult<AgentUpdateState>>
         checkUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         downloadUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         installUpdate: () => Promise<DesktopResult<AgentUpdateState>>

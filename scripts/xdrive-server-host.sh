@@ -3,7 +3,9 @@ set -euo pipefail
 umask 077
 
 REPOSITORY="${XD_REPOSITORY:-lazyxu/xdrive}"
-INSTALLER_URL="${XD_INSTALLER_URL:-https://raw.githubusercontent.com/$REPOSITORY/master/deploy/install-server.sh}"
+GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
+GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
+INSTALLER_URL_OVERRIDE="${XD_INSTALLER_URL:-}"
 
 resolve_self() {
   if command -v readlink >/dev/null 2>&1; then
@@ -23,7 +25,7 @@ usage() {
 xDrive server host manager
 
 Usage:
-  xdrive-server update [--channel stable|master|commit] [--commit SHA]
+  xdrive-server update [--source github|gitlab] [--channel stable|master|commit] [--commit SHA]
   xdrive-server doctor [--strict]
   xdrive-server status
   xdrive-server backup [server-backup.sh options...]
@@ -91,13 +93,34 @@ record_system_audit() {
   return 0
 }
 
+normalize_update_source() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    ""|github) printf '%s\n' github ;;
+    gitlab) printf '%s\n' gitlab ;;
+    *) echo "xdrive-server: invalid update source: $1 (expected github or gitlab)" >&2; return 2 ;;
+  esac
+}
+
+installer_url_for_source() {
+  local source="$1"
+  if [[ -n "$INSTALLER_URL_OVERRIDE" ]]; then
+    printf '%s\n' "$INSTALLER_URL_OVERRIDE"
+    return
+  fi
+  case "$source" in
+    github) printf 'https://raw.githubusercontent.com/%s/master/deploy/install-server.sh\n' "$REPOSITORY" ;;
+    gitlab) printf '%s/%s/-/raw/master/deploy/install-server.sh\n' "${GITLAB_BASE_URL%/}" "${GITLAB_PROJECT#/}" ;;
+  esac
+}
+
 download_installer() {
-  local destination="$1"
+  local source="$1" destination="$2" installer_url
+  installer_url="$(installer_url_for_source "$source")"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 10 \
-      "$INSTALLER_URL" -o "$destination" </dev/null
+      "$installer_url" -o "$destination" </dev/null
   elif command -v wget >/dev/null 2>&1; then
-    wget -q --tries=5 --timeout=15 -O "$destination" "$INSTALLER_URL" </dev/null
+    wget -q --tries=5 --timeout=15 -O "$destination" "$installer_url" </dev/null
   else
     echo "xdrive-server: curl or wget is required to update." >&2
     return 1
@@ -105,7 +128,7 @@ download_installer() {
 }
 
 update_cmd() (
-  local tmp installer status target_commit audit_target="" previous=""
+  local tmp installer status target_commit audit_target="" previous="" update_source=""
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-server-update.XXXXXX")"
   installer="$tmp/install-server.sh"
   trap 'rm -rf "$tmp"' EXIT INT TERM
@@ -114,13 +137,16 @@ update_cmd() (
     case "$previous" in
       --commit) audit_target="$arg" ;;
       --channel) [[ -z "$audit_target" ]] && audit_target="$arg" ;;
+      --source) update_source="$arg" ;;
     esac
     previous="$arg"
   done
   [[ -n "$audit_target" ]] || audit_target="$(env_value XD_RELEASE_CHANNEL)"
+  [[ -n "$update_source" ]] || update_source="$(env_value XD_UPDATE_SOURCE)"
+  update_source="$(normalize_update_source "$update_source")"
 
-  echo "[xDrive] downloading host installer..."
-  download_installer "$installer"
+  echo "[xDrive] downloading host installer from $update_source..."
+  download_installer "$update_source" "$installer"
   chmod 700 "$installer"
   bash -n "$installer"
   echo "[xDrive] installer downloaded and syntax-checked."

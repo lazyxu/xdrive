@@ -14,14 +14,18 @@ const (
 	UpdateModeCheck    = "check"
 	UpdateModeDownload = "download"
 	UpdateModeInstall  = "install"
+
+	UpdateSourceGitHub = "github"
+	UpdateSourceGitLab = "gitlab"
 )
 
 type UpdatePreferences struct {
-	Mode string `json:"mode"`
+	Mode   string `json:"mode"`
+	Source string `json:"source"`
 }
 
 func DefaultUpdatePreferences() UpdatePreferences {
-	return UpdatePreferences{Mode: UpdateModeManual}
+	return UpdatePreferences{Mode: UpdateModeManual, Source: UpdateSourceGitHub}
 }
 
 func NormalizeUpdateMode(mode string) (string, error) {
@@ -36,6 +40,17 @@ func NormalizeUpdateMode(mode string) (string, error) {
 		return UpdateModeInstall, nil
 	default:
 		return "", fmt.Errorf("invalid update mode %q", mode)
+	}
+}
+
+func NormalizeUpdateSource(source string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "", UpdateSourceGitHub:
+		return UpdateSourceGitHub, nil
+	case UpdateSourceGitLab:
+		return UpdateSourceGitLab, nil
+	default:
+		return "", fmt.Errorf("invalid update source %q; expected github or gitlab", source)
 	}
 }
 
@@ -67,7 +82,12 @@ func LoadUpdatePreferences() (UpdatePreferences, error) {
 	if err != nil {
 		return UpdatePreferences{}, err
 	}
+	source, err := NormalizeUpdateSource(prefs.Source)
+	if err != nil {
+		return UpdatePreferences{}, err
+	}
 	prefs.Mode = mode
+	prefs.Source = source
 	return prefs, nil
 }
 
@@ -76,7 +96,12 @@ func SaveUpdatePreferences(prefs UpdatePreferences) error {
 	if err != nil {
 		return err
 	}
+	source, err := NormalizeUpdateSource(prefs.Source)
+	if err != nil {
+		return err
+	}
 	prefs.Mode = mode
+	prefs.Source = source
 
 	dir, err := Dir()
 	if err != nil {

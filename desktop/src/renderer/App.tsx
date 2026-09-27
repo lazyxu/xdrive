@@ -14,12 +14,15 @@ import {
   DialogContentText,
   DialogTitle,
   Divider as MuiDivider,
+  FormControl,
   FormControlLabel,
   IconButton,
+  InputLabel,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
+  Select,
   Stack,
   Switch,
   Tooltip,
@@ -851,6 +854,15 @@ function App() {
       'update-mode',
       () => window.xdriveDesktop.agent.setUpdateMode(mode),
       mode === 'manual' ? '已关闭后台更新检查。' : '更新策略已保存，并将按新策略检查更新。',
+    )
+    if (data) setClientUpdate(data)
+  }
+
+  const changeUpdateSource = async (source: AgentUpdateSource) => {
+    const data = await run(
+      'update-source',
+      () => window.xdriveDesktop.agent.setUpdateSource(source),
+      `更新来源已切换为 ${source === 'gitlab' ? 'GitLab' : 'GitHub'}；下一次检查更新时生效。`,
     )
     if (data) setClientUpdate(data)
   }
@@ -2441,18 +2453,36 @@ function App() {
                   <span>默认不自动更新。你可以选择只检查、自动下载，或自动下载安装。</span>
                 </div>
                 {updateSupported && clientUpdate ? (
-                  <select
-                    className="update-mode-select"
-                    value={clientUpdate.mode}
-                    disabled={!!busy || updateOperationBusy}
-                    onChange={(event) => void changeUpdateMode(event.target.value as AgentUpdateMode)}
-                    aria-label="客户端更新策略"
-                  >
-                    <option value="manual">手动检查</option>
-                    <option value="check">自动检查</option>
-                    <option value="download">有更新自动下载</option>
-                    <option value="install" disabled={!clientUpdate.install_supported}>自动更新</option>
-                  </select>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ minWidth: { sm: 360 } }}>
+                    <FormControl size="small" sx={{ minWidth: 140 }}>
+                      <InputLabel id="client-update-source-label">更新来源</InputLabel>
+                      <Select
+                        labelId="client-update-source-label"
+                        value={clientUpdate.source}
+                        label="更新来源"
+                        disabled={!!busy || updateOperationBusy}
+                        onChange={(event) => void changeUpdateSource(event.target.value as AgentUpdateSource)}
+                      >
+                        <MenuItem value="github">GitHub</MenuItem>
+                        <MenuItem value="gitlab">GitLab</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ minWidth: 190 }}>
+                      <InputLabel id="client-update-mode-label">更新策略</InputLabel>
+                      <Select
+                        labelId="client-update-mode-label"
+                        value={clientUpdate.mode}
+                        label="更新策略"
+                        disabled={!!busy || updateOperationBusy}
+                        onChange={(event) => void changeUpdateMode(event.target.value as AgentUpdateMode)}
+                      >
+                        <MenuItem value="manual">手动检查</MenuItem>
+                        <MenuItem value="check">自动检查</MenuItem>
+                        <MenuItem value="download">有更新自动下载</MenuItem>
+                        <MenuItem value="install" disabled={!clientUpdate.install_supported}>自动更新</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Stack>
                 ) : null}
               </div>
 
@@ -2463,7 +2493,8 @@ function App() {
               ) : (
                 <>
                   <p className="update-mode-note">
-                    {updateModeDescription(clientUpdate.mode)}
+                    当前来源：{clientUpdate.source === 'gitlab' ? 'GitLab · http://gitlab.t-fluid.com:1080' : 'GitHub'}。
+                    {' '}{updateModeDescription(clientUpdate.mode)}
                     {!clientUpdate.install_supported ? ' 当前平台不会后台安装更新；下载后请使用系统包管理器完成安装。' : ''}
                   </p>
                   <div className="update-metrics">

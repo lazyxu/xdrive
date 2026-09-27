@@ -34,9 +34,11 @@ export type AgentSettings = {
 }
 
 export type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
+export type AgentUpdateSource = 'github' | 'gitlab'
 
 export type AgentUpdateState = {
   mode: AgentUpdateMode
+  source: AgentUpdateSource
   status: 'idle' | 'checking' | 'available' | 'up_to_date' | 'downloading' | 'downloaded' | 'installing' | 'error' | string
   current_version: string
   latest_version?: string
@@ -442,6 +444,10 @@ export class AgentIPCClient {
 
   setUpdateMode(mode: AgentUpdateMode) {
     return this.request<AgentUpdateState>('PATCH', '/v1/update/settings', { mode })
+  }
+
+  setUpdateSource(source: AgentUpdateSource) {
+    return this.request<AgentUpdateState>('PATCH', '/v1/update/settings', { source })
   }
 
   checkUpdate() {

@@ -16,14 +16,16 @@ type fakeClientUpdateBackend struct {
 	downloadN    int
 	installN     int
 	installStart bool
+	lastSource   string
 }
 
 func (f *fakeClientUpdateBackend) Target(string) (string, string, error) {
 	return "master", "", nil
 }
 
-func (f *fakeClientUpdateBackend) Check(context.Context, string, string, string) (xupdate.Result, error) {
+func (f *fakeClientUpdateBackend) Check(_ context.Context, _ string, _ string, _ string, source string) (xupdate.Result, error) {
 	f.checkN++
+	f.lastSource = source
 	return f.result, nil
 }
 
@@ -35,8 +37,9 @@ func (f *fakeClientUpdateBackend) Download(_ context.Context, _ xupdate.Result, 
 	return filepath.Join("cache", "installer.exe"), nil
 }
 
-func (f *fakeClientUpdateBackend) Install(_ context.Context, _ string, _ string, _ string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
+func (f *fakeClientUpdateBackend) Install(_ context.Context, _ string, _ string, _ string, source string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
 	f.installN++
+	f.lastSource = source
 	if progress != nil {
 		progress(xupdate.ProgressEvent{Step: 5, Stage: "install", Message: "starting installer"})
 	}
@@ -67,6 +70,9 @@ func TestClientUpdateManagerDefaultsToManual(t *testing.T) {
 	}
 	if state.Status != clientUpdateStatusIdle {
 		t.Fatalf("status=%q want=%q", state.Status, clientUpdateStatusIdle)
+	}
+	if state.Source != userconfig.UpdateSourceGitHub {
+		t.Fatalf("source=%q want=%q", state.Source, userconfig.UpdateSourceGitHub)
 	}
 }
 
@@ -207,5 +213,33 @@ func TestClientUpdateManagerConfiguredModesRespectUserIntent(t *testing.T) {
 					tc.wantChecks, tc.wantDownloads, tc.wantInstalls)
 			}
 		})
+	}
+}
+
+func TestClientUpdateManagerSourcePersistsAndSelectsBackend(t *testing.T) {
+	backend := &fakeClientUpdateBackend{
+		result: xupdate.Result{Latest: "snapshot-abcdef123456", Channel: "master"},
+	}
+	manager := testUpdateManager(t, backend)
+
+	state, err := manager.SetSource(userconfig.UpdateSourceGitLab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Source != userconfig.UpdateSourceGitLab || state.Status != clientUpdateStatusIdle {
+		t.Fatalf("state=%+v", state)
+	}
+	prefs, err := userconfig.LoadUpdatePreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.Source != userconfig.UpdateSourceGitLab {
+		t.Fatalf("persisted source=%q", prefs.Source)
+	}
+	if _, err := manager.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if backend.lastSource != userconfig.UpdateSourceGitLab {
+		t.Fatalf("backend source=%q", backend.lastSource)
 	}
 }

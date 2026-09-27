@@ -37,6 +37,27 @@ emit() {
 }
 
 case "$url" in
+  */api/v4/projects/xuliang%2Fxdrive/repository/commits/*)
+    emit '{
+  "id": "abcdef0123456789abcdef0123456789abcdef01"
+}'
+    ;;
+  */api/v4/projects/xuliang%2Fxdrive/releases/snapshot-abcdef012345)
+    emit '{
+  "tag_name": "snapshot-abcdef012345"
+}'
+    ;;
+  */api/v4/projects/xuliang%2Fxdrive/releases?*)
+    emit '[
+  {"tag_name":"snapshot-abcdef012345","released_at":"2026-09-27T12:00:00Z"},
+  {"tag_name":"v1.2.3","released_at":"2026-09-26T12:00:00Z"}
+]'
+    ;;
+  */api/v4/projects/xuliang%2Fxdrive)
+    emit '{
+  "container_registry_image_prefix": "registry.gitlab.example/xuliang/xdrive"
+}'
+    ;;
   */commits/*)
     emit '{
   "sha": "abcdef0123456789abcdef0123456789abcdef01"
@@ -157,6 +178,25 @@ unset XD_IMAGE_REGISTRY
 [[ "$(env_value "$TMP/mirror" XD_SERVER_IMAGE)" == "registry.example.test/team/xdrive-server:sha-$SHORT_SHA" ]]
 [[ "$(env_value "$TMP/mirror" XD_WEB_IMAGE)" == "registry.example.test/team/xdrive-web:sha-$SHORT_SHA" ]]
 [[ "$(env_value "$TMP/mirror" XD_CADDY_IMAGE)" == "registry.example.test/team/xdrive-caddy:sha-$SHORT_SHA" ]]
+
+run_case gitlab-master --source gitlab --channel master
+[[ "$(env_value "$TMP/gitlab-master" XD_UPDATE_SOURCE)" == "gitlab" ]]
+[[ "$(env_value "$TMP/gitlab-master" XD_RELEASE_CHANNEL)" == "master" ]]
+[[ "$(env_value "$TMP/gitlab-master" XD_IMAGE_REGISTRY)" == "registry.gitlab.example/xuliang/xdrive" ]]
+[[ "$(env_value "$TMP/gitlab-master" XD_SERVER_IMAGE)" == "registry.gitlab.example/xuliang/xdrive/xdrive-server:sha-$SHORT_SHA" ]]
+grep -q "Resolved latest fully published GitLab master snapshot: $SHORT_SHA" "$TMP/gitlab-master.out"
+
+run_case gitlab-stable --source gitlab --channel stable
+[[ "$(env_value "$TMP/gitlab-stable" XD_UPDATE_SOURCE)" == "gitlab" ]]
+[[ "$(env_value "$TMP/gitlab-stable" XD_RELEASE_CHANNEL)" == "stable" ]]
+[[ "$(env_value "$TMP/gitlab-stable" XD_SERVER_IMAGE)" == "registry.gitlab.example/xuliang/xdrive/xdrive-server:$STABLE_TAG" ]]
+grep -q "Resolved stable release: $STABLE_TAG" "$TMP/gitlab-stable.out"
+
+run_case gitlab-commit --source gitlab --commit abcdef0
+[[ "$(env_value "$TMP/gitlab-commit" XD_UPDATE_SOURCE)" == "gitlab" ]]
+[[ "$(env_value "$TMP/gitlab-commit" XD_RELEASE_CHANNEL)" == "commit" ]]
+[[ "$(env_value "$TMP/gitlab-commit" XD_RELEASE_COMMIT)" == "$FULL_SHA" ]]
+[[ "$(env_value "$TMP/gitlab-commit" XD_SERVER_IMAGE)" == "registry.gitlab.example/xuliang/xdrive/xdrive-server:sha-$SHORT_SHA" ]]
 
 
 set +e

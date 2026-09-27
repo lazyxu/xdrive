@@ -1,0 +1,295 @@
+package update
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const (
+	SourceGitHub = "github"
+	SourceGitLab = "gitlab"
+
+	defaultGitLabBaseURL = "http://gitlab.t-fluid.com:1080"
+	defaultGitLabProject = "xuliang/xdrive"
+)
+
+type gitLabRelease struct {
+	TagName    string `json:"tag_name"`
+	ReleasedAt string `json:"released_at"`
+	Commit     struct {
+		ID string `json:"id"`
+	} `json:"commit"`
+	Assets struct {
+		Links []struct {
+			Name           string `json:"name"`
+			URL            string `json:"url"`
+			DirectAssetURL string `json:"direct_asset_url"`
+		} `json:"links"`
+	} `json:"assets"`
+}
+
+type gitLabCommit struct {
+	ID string `json:"id"`
+}
+
+func NormalizeSource(source string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "", SourceGitHub:
+		return SourceGitHub, nil
+	case SourceGitLab:
+		return SourceGitLab, nil
+	default:
+		return "", fmt.Errorf("invalid update source %q; expected github or gitlab", source)
+	}
+}
+
+func AutomaticSource() (string, error) {
+	return NormalizeSource(os.Getenv("XD_UPDATE_SOURCE"))
+}
+
+func CheckPlatformTargetFromSource(ctx context.Context, current, channel, commit, source string) (Result, error) {
+	return CheckAssetTargetFromSource(ctx, current, platformAssetName(), channel, commit, source)
+}
+
+func CheckAssetTargetFromSource(ctx context.Context, current, assetName, channel, commit, source string) (Result, error) {
+	normalized, err := NormalizeSource(source)
+	if err != nil {
+		return Result{Current: current}, err
+	}
+	if normalized == SourceGitHub {
+		return DefaultChecker().CheckTarget(ctx, current, assetName, channel, commit)
+	}
+	return checkGitLabTarget(ctx, current, assetName, channel, commit)
+}
+
+func InstallTargetFromSourceWithProgress(ctx context.Context, current, channel, commit, source string, progress ProgressFunc) (bool, Result, error) {
+	normalizedChannel, err := NormalizeChannel(channel)
+	if err != nil {
+		return false, Result{Current: current}, err
+	}
+	normalizedSource, err := NormalizeSource(source)
+	if err != nil {
+		return false, Result{Current: current}, err
+	}
+	reportProgress(progress, ProgressEvent{
+		Step: 1, Stage: "check",
+		Message: fmt.Sprintf("checking %s channel from %s via %s", normalizedChannel, current, normalizedSource),
+	})
+	result, err := CheckAssetTargetFromSource(ctx, current, platformAssetName(), normalizedChannel, commit, normalizedSource)
+	if err != nil {
+		return false, result, err
+	}
+	if !result.UpdateAvailable {
+		reportProgress(progress, ProgressEvent{
+			Step: 1, Stage: "check",
+			Message: fmt.Sprintf("%s is current on %s channel via %s", current, normalizedChannel, normalizedSource),
+		})
+		return false, result, nil
+	}
+	message := fmt.Sprintf("update available: %s -> %s", current, result.Latest)
+	if result.Asset.Size > 0 {
+		message += fmt.Sprintf(" | %s %s", result.Asset.Name, formatBytes(float64(result.Asset.Size)))
+	}
+	reportProgress(progress, ProgressEvent{Step: 1, Stage: "check", Message: message})
+
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = os.TempDir()
+	}
+	dir := filepath.Join(cache, "xdrive", "updates", result.Latest)
+	downloadChecker := DefaultChecker()
+	pathname, err := DownloadVerifiedWithProgress(ctx, downloadChecker, result, dir, progress)
+	if err != nil {
+		return false, result, err
+	}
+	reportProgress(progress, ProgressEvent{Step: 5, Stage: "install", Message: "starting platform installer"})
+	installMessage, err := installDownloaded(ctx, pathname, result)
+	if err != nil {
+		return false, result, err
+	}
+	if strings.TrimSpace(installMessage) == "" {
+		installMessage = "platform installer accepted"
+	}
+	reportProgress(progress, ProgressEvent{Step: 5, Stage: "install", Message: installMessage})
+	return true, result, nil
+}
+
+func checkGitLabTarget(ctx context.Context, current, assetName, channel, commit string) (Result, error) {
+	channel, err := NormalizeChannel(channel)
+	if err != nil {
+		return Result{Current: current}, err
+	}
+	result := Result{Current: current, Channel: channel}
+	checker := DefaultChecker()
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("XD_UPDATE_GITLAB_BASE_URL")), "/")
+	if base == "" {
+		base = defaultGitLabBaseURL
+	}
+	project := strings.Trim(strings.TrimSpace(os.Getenv("XD_UPDATE_GITLAB_PROJECT")), "/")
+	if project == "" {
+		project = defaultGitLabProject
+	}
+	projectAPI := base + "/api/v4/projects/" + url.PathEscape(project)
+
+	var release gitLabRelease
+	switch channel {
+	case ChannelStable:
+		releases, err := gitLabReleases(ctx, checker, projectAPI, current)
+		if err != nil {
+			return result, err
+		}
+		found := false
+		for _, candidate := range releases {
+			tag := strings.TrimSpace(candidate.TagName)
+			if !IsReleaseVersion(tag) {
+				continue
+			}
+			if !found || Compare(tag, release.TagName) > 0 {
+				release = candidate
+				found = true
+			}
+		}
+		if !found {
+			return result, fmt.Errorf("gitlab has no stable vMAJOR.MINOR.PATCH release")
+		}
+		result.Latest = strings.TrimSpace(release.TagName)
+		if IsReleaseVersion(current) {
+			result.UpdateAvailable = Compare(result.Latest, current) > 0
+		} else {
+			result.UpdateAvailable = result.Latest != strings.TrimSpace(current)
+		}
+
+	case ChannelMaster:
+		releases, err := gitLabReleases(ctx, checker, projectAPI, current)
+		if err != nil {
+			return result, err
+		}
+		found := false
+		for _, candidate := range releases {
+			tag := strings.TrimSpace(candidate.TagName)
+			if !IsSnapshotVersion(tag) {
+				continue
+			}
+			if !found || candidate.ReleasedAt > release.ReleasedAt {
+				release = candidate
+				found = true
+			}
+		}
+		if !found {
+			return result, fmt.Errorf("gitlab has no published master snapshot")
+		}
+		result.Latest = strings.TrimSpace(release.TagName)
+		result.Commit = gitLabReleaseCommit(release)
+		if result.Commit == "" {
+			result.Commit = strings.TrimPrefix(result.Latest, "snapshot-")
+		}
+		result.UpdateAvailable = !sameSnapshot(current, result.Commit)
+
+	case ChannelCommit:
+		full, err := gitLabResolveCommit(ctx, checker, projectAPI, commit, current)
+		if err != nil {
+			return result, err
+		}
+		result.Commit = full
+		tag := "snapshot-" + full[:12]
+		release, err = gitLabReleaseByTag(ctx, checker, projectAPI, tag, current)
+		if err != nil {
+			return result, fmt.Errorf("commit %s does not have a successful published GitLab snapshot: %w", full[:12], err)
+		}
+		if releaseCommit := gitLabReleaseCommit(release); releaseCommit != "" && releaseCommit != full {
+			return result, fmt.Errorf("gitlab release %s points to %s instead of %s", tag, releaseCommit, full)
+		}
+		result.Latest = tag
+		result.UpdateAvailable = !sameSnapshot(current, full)
+	}
+
+	for _, link := range release.Assets.Links {
+		name := strings.TrimSpace(link.Name)
+		raw := strings.TrimSpace(link.DirectAssetURL)
+		if raw == "" {
+			raw = strings.TrimSpace(link.URL)
+		}
+		raw = absoluteProviderURL(base, raw)
+		asset := Asset{Name: name, ReleaseTag: result.Latest, URL: raw}
+		switch name {
+		case assetName:
+			result.Asset = asset
+		case "SHA256SUMS.txt":
+			result.Checksums = asset
+		}
+	}
+	if result.UpdateAvailable {
+		if len(assetDownloadSources(result.Asset)) == 0 {
+			return result, fmt.Errorf("%s channel %s on gitlab does not contain %s", channel, result.Latest, assetName)
+		}
+		if len(assetDownloadSources(result.Checksums)) == 0 {
+			return result, fmt.Errorf("%s channel %s on gitlab does not contain SHA256SUMS.txt", channel, result.Latest)
+		}
+	}
+	return result, nil
+}
+
+func gitLabReleases(ctx context.Context, checker Checker, projectAPI, current string) ([]gitLabRelease, error) {
+	var releases []gitLabRelease
+	if err := checker.getJSONWithRetry(ctx, projectAPI+"/releases?per_page=100", current, "GitLab release metadata", &releases); err != nil {
+		return nil, err
+	}
+	return releases, nil
+}
+
+func gitLabReleaseByTag(ctx context.Context, checker Checker, projectAPI, tag, current string) (gitLabRelease, error) {
+	var release gitLabRelease
+	requestURL := projectAPI + "/releases/" + url.PathEscape(tag)
+	if err := checker.getJSONWithRetry(ctx, requestURL, current, "GitLab release metadata", &release); err != nil {
+		return release, err
+	}
+	return release, nil
+}
+
+func gitLabResolveCommit(ctx context.Context, checker Checker, projectAPI, ref, current string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if !validCommitRef(ref) {
+		return "", fmt.Errorf("commit must be 7-40 hexadecimal characters")
+	}
+	var commit gitLabCommit
+	if err := checker.getJSONWithRetry(ctx, projectAPI+"/repository/commits/"+url.PathEscape(ref), current, "GitLab commit metadata", &commit); err != nil {
+		return "", err
+	}
+	full := strings.ToLower(strings.TrimSpace(commit.ID))
+	if len(full) != 40 || !validCommitRef(full) {
+		return "", fmt.Errorf("GitLab commit API returned invalid SHA")
+	}
+	return full, nil
+}
+
+func gitLabReleaseCommit(release gitLabRelease) string {
+	full := strings.ToLower(strings.TrimSpace(release.Commit.ID))
+	if len(full) != 40 || !validCommitRef(full) {
+		return ""
+	}
+	return full
+}
+
+func absoluteProviderURL(base, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.IsAbs() {
+		return raw
+	}
+	baseURL, err := url.Parse(strings.TrimRight(base, "/") + "/")
+	if err != nil {
+		return raw
+	}
+	ref, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return baseURL.ResolveReference(ref).String()
+}

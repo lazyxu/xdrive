@@ -94,10 +94,12 @@ sed \
   -e 's|@IMAGE_REGISTRY@|ghcr.io/lazyxu|g' \
   -e 's|@RELEASE_CHANNEL@|master|g' \
   -e 's|@RELEASE_COMMIT@|0123456789abcdef0123456789abcdef01234567|g' \
+  -e 's|@UPDATE_SOURCE@|github|g' \
   deploy/install-server.sh > "$generated"
 bash -n "$generated"
 grep -q 'sha-0123456789ab' "$generated"
 grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
+grep -q 'BUILT_SOURCE="${XD_BUILT_SOURCE:-github}"' "$generated"
 rm -f "$generated"
 
 grep -q 'pattern: xdrive-\*-image' .github/workflows/release.yml

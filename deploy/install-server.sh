@@ -10,7 +10,10 @@ SOURCE_REF="${XD_SOURCE_REF:-@SOURCE_REF@}"
 IMAGE_TAG="${XD_IMAGE_TAG:-@IMAGE_TAG@}"
 BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
 BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
+BUILT_SOURCE="${XD_BUILT_SOURCE:-@UPDATE_SOURCE@}"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
+GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
+GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
 IMAGE_REGISTRY="${XD_IMAGE_REGISTRY:-@IMAGE_REGISTRY@}"
 STAGING_DIR="$CONFIG_DIR/.install-staging"
 UPGRADE_STATE_DIR="$CONFIG_DIR/.upgrade-transaction"
@@ -111,21 +114,25 @@ usage() {
 xDrive server installer
 
 Usage:
-  install-server.sh [--channel stable|master|commit] [--commit SHA]
+  install-server.sh [--source github|gitlab] [--channel stable|master|commit] [--commit SHA]
 
 Channels:
   stable  Latest successful vMAJOR.MINOR.PATCH release.
   master  Latest fully successful master snapshot.
   commit  Pin to a specified successfully published master commit.
 
-The selected channel is persisted in ~/.xd/.env and reused on later updates.
+The selected source and channel are persisted in ~/.xd/.env and reused on later updates.
 USAGE
 }
 
+requested_source="${XD_INSTALL_SOURCE:-}"
 requested_channel="${XD_INSTALL_CHANNEL:-}"
 requested_commit="${XD_INSTALL_COMMIT:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --source)
+      [[ $# -ge 2 ]] || { echo "--source requires github or gitlab" >&2; exit 2; }
+      requested_source="$2"; shift 2 ;;
     --channel)
       [[ $# -ge 2 ]] || { echo "--channel requires a value" >&2; exit 2; }
       requested_channel="$2"; shift 2 ;;
@@ -148,6 +155,22 @@ existing_env_value() {
   [[ -f "$ENV_PATH" ]] || return 0
   grep "^$key=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- || true
 }
+
+if [[ -z "$requested_source" ]]; then
+  requested_source="$(existing_env_value XD_UPDATE_SOURCE)"
+fi
+if [[ -z "$requested_source" ]]; then
+  if [[ "$BUILT_SOURCE" != "@UPDATE_SOURCE@" && -n "$BUILT_SOURCE" ]]; then
+    requested_source="$BUILT_SOURCE"
+  else
+    requested_source="github"
+  fi
+fi
+requested_source="$(printf '%s' "$requested_source" | tr '[:upper:]' '[:lower:]')"
+case "$requested_source" in
+  github|gitlab) ;;
+  *) echo "invalid update source: $requested_source (expected github or gitlab)" >&2; exit 2 ;;
+esac
 
 if [[ -z "$requested_channel" && -n "$requested_commit" ]]; then
   requested_channel="commit"
@@ -387,8 +410,87 @@ fetch_stdout() {
   fi
 }
 
+gitlab_project_key() {
+  local project="${GITLAB_PROJECT#/}"
+  printf '%s\n' "${project//\//%2F}"
+}
+
+gitlab_api_base() {
+  printf '%s/api/v4/projects/%s\n' "${GITLAB_BASE_URL%/}" "$(gitlab_project_key)"
+}
+
+resolve_gitlab_commit() {
+  local ref="$1" json full
+  [[ "$ref" =~ ^[0-9A-Fa-f]{7,40}$ ]] || {
+    echo "xDrive server installer: commit must be 7-40 hexadecimal characters." >&2
+    return 1
+  }
+  if ! json="$(fetch_stdout "$(gitlab_api_base)/repository/commits/$ref")"; then
+    echo "xDrive server installer: could not query GitLab commit $ref." >&2
+    return 1
+  fi
+  full="$(printf '%s\n' "$json" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{40}"' | head -n1 | grep -oE '[0-9a-fA-F]{40}' | tr '[:upper:]' '[:lower:]' || true)"
+  [[ ${#full} -eq 40 ]] || {
+    echo "xDrive server installer: could not resolve GitLab commit $ref." >&2
+    return 1
+  }
+  printf '%s\n' "$full"
+}
+
+gitlab_release_tags() {
+  local json
+  if ! json="$(fetch_stdout "$(gitlab_api_base)/releases?per_page=100&order_by=released_at&sort=desc")"; then
+    echo "xDrive server installer: could not query GitLab releases." >&2
+    return 1
+  fi
+  printf '%s\n' "$json" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | sed -E 's/^.*"([^"]+)"$/\1/' || true
+}
+
+resolve_gitlab_latest_stable_tag() {
+  local tag
+  tag="$(gitlab_release_tags | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([+-].*)?$' | sort -V | tail -n1)"
+  [[ -n "$tag" ]] || {
+    echo "xDrive server installer: no stable GitLab release is available." >&2
+    return 1
+  }
+  printf '%s\n' "$tag"
+}
+
+resolve_gitlab_latest_snapshot_tag() {
+  local tag
+  tag="$(gitlab_release_tags | grep -E '^snapshot-[0-9a-fA-F]{7,40}$' | head -n1)"
+  [[ -n "$tag" ]] || {
+    echo "xDrive server installer: no published GitLab master snapshot is available." >&2
+    return 1
+  }
+  printf '%s\n' "$tag"
+}
+
+verify_gitlab_release() {
+  local tag="$1"
+  fetch_stdout "$(gitlab_api_base)/releases/$tag" >/dev/null
+}
+
+resolve_gitlab_registry() {
+  local json registry
+  if ! json="$(fetch_stdout "$(gitlab_api_base)")"; then
+    echo "xDrive server installer: could not query GitLab project metadata for the Container Registry." >&2
+    return 1
+  fi
+  registry="$(printf '%s\n' "$json" | grep -oE '"container_registry_image_prefix"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/^.*"([^"]+)"$/\1/' || true)"
+  [[ -n "$registry" && "$registry" != "null" ]] || {
+    echo "xDrive server installer: GitLab did not report container_registry_image_prefix; set XD_IMAGE_REGISTRY explicitly." >&2
+    return 1
+  }
+  printf '%s\n' "$registry"
+}
+
 resolve_commit() {
   local ref="$1" json full
+  if [[ "$requested_source" == "gitlab" ]]; then
+    resolve_gitlab_commit "$ref"
+    return
+  fi
   [[ "$ref" =~ ^[0-9A-Fa-f]{7,40}$ ]] || {
     echo "xDrive server installer: commit must be 7-40 hexadecimal characters." >&2
     return 1
@@ -426,6 +528,10 @@ resolve_published_master() {
 
 resolve_latest_stable_tag() {
   local json tag
+  if [[ "$requested_source" == "gitlab" ]]; then
+    resolve_gitlab_latest_stable_tag
+    return
+  fi
   if ! json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/latest")"; then
     echo "xDrive server installer: no stable release is available." >&2
     return 1
@@ -440,6 +546,13 @@ resolve_latest_stable_tag() {
 
 verify_published_commit() {
   local full="$1" tag="snapshot-${1:0:12}"
+  if [[ "$requested_source" == "gitlab" ]]; then
+    if ! verify_gitlab_release "$tag"; then
+      echo "xDrive server installer: commit $full has no successful published GitLab snapshot ($tag)." >&2
+      return 1
+    fi
+    return
+  fi
   if ! fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/tags/$tag" >/dev/null; then
     echo "xDrive server installer: commit $full has no successful published snapshot ($tag)." >&2
     return 1
@@ -450,12 +563,22 @@ resolve_install_source() {
   local channel="$1" commit="$2" full tag
   case "$channel" in
     master)
-      full="$(resolve_published_master)"
-      SOURCE_REF="$full"
-      IMAGE_TAG="sha-${full:0:12}"
-      BUILT_CHANNEL="master"
-      BUILT_COMMIT="$full"
-      echo "Resolved latest fully published master snapshot: ${full:0:12}"
+      if [[ "$requested_source" == "gitlab" ]]; then
+        tag="$(resolve_gitlab_latest_snapshot_tag)"
+        SOURCE_REF="$tag"
+        full="${tag#snapshot-}"
+        IMAGE_TAG="sha-$full"
+        BUILT_CHANNEL="master"
+        BUILT_COMMIT="$full"
+        echo "Resolved latest fully published GitLab master snapshot: $full"
+      else
+        full="$(resolve_published_master)"
+        SOURCE_REF="$full"
+        IMAGE_TAG="sha-${full:0:12}"
+        BUILT_CHANNEL="master"
+        BUILT_COMMIT="$full"
+        echo "Resolved latest fully published master snapshot: ${full:0:12}"
+      fi
       ;;
     stable)
       tag="$(resolve_latest_stable_tag)"
@@ -472,7 +595,11 @@ resolve_install_source() {
       }
       full="$(resolve_commit "$commit")"
       verify_published_commit "$full"
-      SOURCE_REF="$full"
+      if [[ "$requested_source" == "gitlab" ]]; then
+        SOURCE_REF="snapshot-${full:0:12}"
+      else
+        SOURCE_REF="$full"
+      fi
       IMAGE_TAG="sha-${full:0:12}"
       BUILT_CHANNEL="commit"
       BUILT_COMMIT="$full"
@@ -483,13 +610,13 @@ resolve_install_source() {
 }
 
 artifact_is_template=false
-if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then
+if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" || "$BUILT_SOURCE" == "@UPDATE_SOURCE@" ]]; then
   artifact_is_template=true
 fi
 
 stage 1 "resolve release channel"
 needs_source_resolution=false
-if [[ "$artifact_is_template" == "true" || "$requested_channel" != "$BUILT_CHANNEL" ]]; then
+if [[ "$artifact_is_template" == "true" || "$requested_channel" != "$BUILT_CHANNEL" || "$requested_source" != "$BUILT_SOURCE" ]]; then
   needs_source_resolution=true
 elif [[ "$requested_channel" == "commit" && -n "$requested_commit" && "$requested_commit" != "$BUILT_COMMIT" ]]; then
   needs_source_resolution=true
@@ -505,6 +632,7 @@ if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then
   echo "xDrive server installer: release source resolution left template placeholders unresolved." >&2
   exit 1
 fi
+echo "Update source: $requested_source"
 echo "Release source: $SOURCE_REF"
 echo "Container image tag: $IMAGE_TAG"
 need() {
@@ -529,7 +657,11 @@ fi
 stage 3 "download deployment assets"
 mkdir -p "$CONFIG_DIR" "$STAGING_DIR"
 chmod 700 "$CONFIG_DIR" "$STAGING_DIR"
-raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
+if [[ "$requested_source" == "gitlab" ]]; then
+  raw_base="${GITLAB_BASE_URL%/}/${GITLAB_PROJECT#/}/-/raw/$SOURCE_REF"
+else
+  raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
+fi
 fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/8 docker-compose.yml"
 fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/8 Caddyfile"
 asset_no=2
@@ -1012,16 +1144,37 @@ ensure_env XD_LOG_MAX_SIZE "${XD_LOG_MAX_SIZE:-10m}"
 ensure_env XD_LOG_MAX_FILES "${XD_LOG_MAX_FILES:-5}"
 ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
+previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
+ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"
 ensure_env XD_RELEASE_COMMIT "${requested_commit:-}"
+# A registry baked into a provider-specific release is only that provider's
+# default. When the user explicitly switches providers, discard the baked
+# default unless XD_IMAGE_REGISTRY was explicitly supplied at runtime.
+if [[ -z "${XD_IMAGE_REGISTRY:-}" && "$BUILT_SOURCE" != "@UPDATE_SOURCE@" && "$requested_source" != "$BUILT_SOURCE" ]]; then
+  IMAGE_REGISTRY=""
+fi
 if [[ -z "$IMAGE_REGISTRY" || "$IMAGE_REGISTRY" == "@IMAGE_REGISTRY@" ]]; then
-  IMAGE_REGISTRY="$(existing_env_value XD_IMAGE_REGISTRY)"
+  existing_registry="$(existing_env_value XD_IMAGE_REGISTRY)"
+  if [[ -n "${XD_IMAGE_REGISTRY:-}" ]]; then
+    IMAGE_REGISTRY="$XD_IMAGE_REGISTRY"
+  elif [[ -n "$existing_registry" && ( "$previous_source" == "$requested_source" || ( -z "$previous_source" && "$requested_source" == "github" ) ) ]]; then
+    IMAGE_REGISTRY="$existing_registry"
+  elif [[ "$requested_source" == "gitlab" ]]; then
+    IMAGE_REGISTRY="$(resolve_gitlab_registry)"
+  else
+    IMAGE_REGISTRY="ghcr.io/lazyxu"
+  fi
 fi
 IMAGE_REGISTRY="${IMAGE_REGISTRY%/}"
-[[ -n "$IMAGE_REGISTRY" ]] || IMAGE_REGISTRY="ghcr.io/lazyxu"
+[[ -n "$IMAGE_REGISTRY" ]] || {
+  echo "xDrive server installer: could not determine an image registry for $requested_source." >&2
+  exit 1
+}
 validate_image_registry "$IMAGE_REGISTRY"
 ensure_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
 set_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
+set_env XD_UPDATE_SOURCE "$requested_source"
 set_env XD_RELEASE_CHANNEL "$requested_channel"
 if [[ "$requested_channel" == "commit" ]]; then
   set_env XD_RELEASE_COMMIT "$requested_commit"
@@ -1326,5 +1479,6 @@ echo "Restore:         $CONFIG_DIR/server-restore.sh"
 echo "Verify storage:  $CONFIG_DIR/server-verify.sh"
 echo "Diagnose server: xdrive-server doctor"
 echo "Update server:   xdrive-server update"
+echo "Update source:   $(env_value XD_UPDATE_SOURCE)"
 echo "Release channel: $(env_value XD_RELEASE_CHANNEL)${requested_commit:+ ($requested_commit)}"
 echo "Manage: xdrive-server status|doctor|update|backup|verify"

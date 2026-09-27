@@ -153,6 +153,7 @@ jobs:
             -e "s|@IMAGE_REGISTRY@|ghcr.io/$GITHUB_REPOSITORY_OWNER|g" \
             -e "s|@RELEASE_CHANNEL@|$release_channel|g" \
             -e "s|@RELEASE_COMMIT@|$release_commit|g" \
+            -e "s|@UPDATE_SOURCE@|github|g" \
             deploy/install-server.sh > release/xdrive-server-install.sh
           chmod +x release/xdrive-server-install.sh
           cp deploy/docker-compose.yml release/docker-compose.yml

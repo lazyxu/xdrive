@@ -144,6 +144,15 @@ grep -q -- 'audit record --action system.update --result success' "$TMP/state/au
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config" \
+bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab.out" 2>"$TMP/update-gitlab.err"
+
+grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-url"
+grep -q '^--source gitlab --channel master$' "$TMP/state/installer-args"
+grep -q 'downloading host installer from gitlab' "$TMP/update-gitlab.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
 bash "$HOST" backup >"$TMP/backup.out"
 grep -q '/tmp/mock-xdrive-backup' "$TMP/backup.out"
 grep -q -- 'audit record --action system.backup --result success' "$TMP/state/audit-calls"

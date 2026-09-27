@@ -55,7 +55,7 @@ Before running the one-line installer, the server needs:
 - Linux amd64;
 - Docker Engine with Docker Compose v2 (`docker compose`);
 - `curl` or `wget`;
-- outbound HTTPS access to GitHub/GHCR and Docker Hub;
+- outbound access to the selected update provider and container registry (GitHub/GHCR by default; optional GitLab at `http://gitlab.t-fluid.com:1080/xuliang/xdrive`) plus Docker Hub;
 - enough disk space for PostgreSQL plus uploaded file blobs;
 - for public HTTPS, a domain managed by AliDNS, API credentials allowed to edit its DNS records, and inbound TCP 8443 (or your configured `XD_HTTPS_PORT`) reachable from clients;
 - enough host resources for the configured container limits.
@@ -71,13 +71,13 @@ tmp="$(mktemp)"
 curl -fsSL --retry 3 --connect-timeout 15 \
   https://raw.githubusercontent.com/lazyxu/xdrive/master/deploy/install-server.sh \
   -o "$tmp"
-bash "$tmp" --channel master
+bash "$tmp" --source github --channel master
 rc=$?
 rm -f "$tmp"
 exit "$rc"
 ```
 
-The bootstrap installer supports three release channels. The selected channel is persisted in `~/.xd/.env`.
+The bootstrap installer supports two update sources (`github` and `gitlab`) and three release channels. The selected source and channel are persisted in `~/.xd/.env`. To bootstrap directly from GitLab, download `http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh` and run it with `--source gitlab`.
 
 ```bash
 # Latest stable vMAJOR.MINOR.PATCH release
@@ -119,8 +119,9 @@ Routine server operations should then use the host manager rather than re-runnin
 
 ```bash
 xdrive-server update
-xdrive-server update --channel master
-xdrive-server update --channel commit --commit 0123456789ab
+xdrive-server update --source github --channel master
+xdrive-server update --source gitlab --channel master
+xdrive-server update --source gitlab --channel commit --commit 0123456789ab
 xdrive-server doctor
 xdrive-server status
 xdrive-server backup
@@ -136,7 +137,7 @@ xdrive-server admin disable USER
 
 The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. The `xdrive-server` executable inside `xdrive-server-1` remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
 
-The host manager downloads the latest bootstrap installer to a temporary file, validates it with `bash -n`, and then runs that file with stdin detached from any download pipe. The installer resolves the selected successfully published release/commit and uses immutable `sha-<commit>` images for master/commit channels.
+The host manager downloads the bootstrap installer from the selected update source to a temporary file, validates it with `bash -n`, and then runs that file with stdin detached from any download pipe. `--source github|gitlab` is independent from `--channel stable|master|commit`; both are persisted in `~/.xd/.env`. GitLab defaults to `http://gitlab.t-fluid.com:1080/xuliang/xdrive`. The installer resolves the selected successfully published release/commit and uses immutable `sha-<commit>` images for master/commit channels. Switching providers is explicit: xDrive does not silently fall back from one provider to the other.
 
 For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag. Releases also publish the standalone host manager asset `xdrive-server`.
 
@@ -298,7 +299,7 @@ For support and troubleshooting, run:
 ~/.xd/server-doctor.sh
 ```
 
-It checks Docker/Compose, current release state, container health, PostgreSQL authentication, lightweight CAS metadata health, data mounts, disk space, upgrade-lock/rollback state, TLS/public reachability, GitHub/GHCR reachability, and appends the last 100 container log lines after automatic secret redaction. It is read-only by default. Use `--strict` when automation should fail on diagnostic errors.
+It checks Docker/Compose, current release state, container health, PostgreSQL authentication, lightweight CAS metadata health, data mounts, disk space, upgrade-lock/rollback state, TLS/public reachability, the selected update provider/registry reachability, and appends the last 100 container log lines after automatic secret redaction. It is read-only by default. Use `--strict` when automation should fail on diagnostic errors.
 
 By default, the installer registers a daily scheduled backup at 03:17 local server time and retains seven days. Override with `XD_BACKUP_SCHEDULE` and `XD_BACKUP_RETENTION_DAYS`. Scheduled runs skip rather than overlap if a previous backup is still running.
 
@@ -444,13 +445,17 @@ Unlike Windows CfAPI, the Linux FUSE client is **not a fully mirrored sync folde
 
 ## Client version checks and automatic updates
 
-Windows and Linux clients use the same three release channels as the server:
+Windows and Linux clients use the same three release channels as the server, with an independently selectable update source:
 
-- **stable** — latest stable GitHub Release tagged `vMAJOR.MINOR.PATCH`;
-- **master** — latest fully successful master build from the rolling `snapshot` prerelease;
-- **commit** — an immutable successfully published master build identified by commit SHA and released as `snapshot-<sha12>`.
+- **source `github`** — GitHub Releases and GitHub release assets;
+- **source `gitlab`** — the self-hosted GitLab project at `http://gitlab.t-fluid.com:1080/xuliang/xdrive`, including its Releases/Generic Package assets;
+- **stable** — latest stable `vMAJOR.MINOR.PATCH` release on the selected source;
+- **master** — latest successfully published `snapshot-<sha12>` build on the selected source;
+- **commit** — the immutable `snapshot-<sha12>` release for the requested commit on the selected source.
 
-Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Before installation, the client prefers the SHA-256 digest and exact asset size already returned by the GitHub Release API; legacy releases without a digest fall back to `SHA256SUMS.txt`. Release assets are downloaded from the GitHub asset API first and the browser download URL second. Interactive/manual updates print five stages (check, checksum, download, verify, install), show the target installer/package size before transfer, and report downloaded bytes / total / percentage / current rate / elapsed time during transfer. Partial files are kept as `.part` files and resumed with HTTP Range across retries **and across a later rerun of the update command**, so a weak connection no longer forces a large installer back to byte zero. Metadata and checksum requests also retry with backoff. The short metadata timeout is not used as the total installer download deadline.
+Desktop exposes **更新来源** and **更新策略** as separate settings. The selected source is stored in the user's update preferences and is also honored by `xd update`, the background Agent, Linux `xdrive-updater`, and diagnostics. Source changes do not silently start an update and there is no cross-provider fallback.
+
+Stable builds default to `stable`. Builds whose embedded version is `snapshot-<sha12>` default to `master`. Plain local `dev` builds do not auto-update unless a channel is explicitly selected. Every provider path requires SHA-256 verification before installation. GitHub uses release metadata digests when available and otherwise falls back to `SHA256SUMS.txt`; GitLab release assets use the published `SHA256SUMS.txt`. Interactive/manual updates print five stages (check, checksum, download, verify, install), show the target installer/package size when known, and report downloaded bytes / total / percentage / current rate / elapsed time during transfer. Partial files are kept as `.part` files and resumed with HTTP Range across retries **and across a later rerun of the update command**, so a weak connection no longer forces a large installer back to byte zero. Metadata and checksum requests also retry with backoff. The short metadata timeout is not used as the total installer download deadline.
 
 **Windows:** the background updater resolves and verifies `xDriveSetup-amd64.exe`. That single asset contains Electron Desktop, Agent, and `xd`, so `xd update --install` upgrades the complete client rather than only the Go Core. The updater now hands installation to a detached transaction: it stops Desktop/Agent, creates a last-known-good copy of the installed client, installs with automatic starts suppressed, verifies the new `xd` version and Agent Desktop-IPC handshake, then starts the new Desktop. Only after those checks pass does it remove an older standalone `xDrive Desktop` installation from Phase 2–5. If installation or health verification fails, the previous client directory is restored and the old Agent/Desktop are restarted. Transaction state is written under the user cache directory. Run `xd update --status` to inspect the latest state (`preparing`, `installing`, `verifying`, `success`, `rolled_back`, or `failed`) together with the target version and local transaction log path. `xd doctor` reports only the state, target version, and timestamp; local paths and transaction error text are intentionally omitted from the diagnostic report.
 
@@ -462,18 +467,18 @@ Useful commands:
 xd version
 xd update
 xd update --install
-xd update --channel stable
-xd update --channel master --install
-xd update --channel commit --commit 0123456789ab --install
+xd update --source github --channel stable
+xd update --source gitlab --channel master --install
+xd update --source gitlab --channel commit --commit 0123456789ab --install
 xd update --status
 xd doctor
 ```
 
-`xd doctor` and Electron Diagnostics share the same Go diagnostic engine. It produces a copy/paste-safe report with version/update channel, GitHub update metadata reachability, local config, credential backend, cache policy, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks the most recent client-upgrade transaction state, CfAPI sync-root registration, and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
+`xd doctor` and Electron Diagnostics share the same Go diagnostic engine. It produces a copy/paste-safe report with version/update source/channel, selected-provider update metadata reachability, local config, credential backend, cache policy, server/TLS health, authenticated API access, sync-root state, free disk space, and platform updater/mount integration. Windows additionally checks the most recent client-upgrade transaction state, CfAPI sync-root registration, and xDriveAgent autorun; Linux checks FUSE mount state plus the systemd updater and user mount-agent services. Secrets, tokens, session IDs, and the user's home path are not printed. Use `xd doctor --strict` to return non-zero when a check fails.
 
 `xd update --status` shows the full local transaction record on platforms that support detached update transactions, including the local log path. Use `xd doctor` when a redacted, copy/paste-safe summary is needed.
 
-For a persistent pinned commit target, set both `XD_UPDATE_CHANNEL=commit` and `XD_UPDATE_COMMIT=<sha>` in the updater environment. `XD_UPDATE_CHANNEL=stable|master` can also override the build's default channel. On Linux a manual root update can use `sudo xdrive-updater --channel ...`.
+For a persistent pinned commit target, set `XD_UPDATE_SOURCE=github|gitlab`, `XD_UPDATE_CHANNEL=commit`, and `XD_UPDATE_COMMIT=<sha>` in the updater environment. `XD_UPDATE_CHANNEL=stable|master` can also override the build's default channel. The Desktop/user preference takes precedence for the normal client updater. On Linux a manual root update can use `sudo xdrive-updater --source gitlab --channel ...`.
 
 For restricted or high-latency networks, the updater honors the standard `HTTPS_PROXY` environment used by Go's HTTP transport. A regional/custom asset mirror can be configured with:
 
@@ -481,7 +486,7 @@ For restricted or high-latency networks, the updater honors the standard `HTTPS_
 XD_UPDATE_ASSET_MIRROR=https://mirror.example.com/xdrive
 ```
 
-The mirror contract is `<base>/<release-tag>/<asset-name>`; it is tried before the GitHub asset API and browser download URL, while SHA-256 verification remains mandatory. `XD_UPDATE_API_BASE` can additionally point metadata/API requests at a compatible GitHub API proxy.
+The mirror contract is `<base>/<release-tag>/<asset-name>`; it is tried before provider asset URLs, while SHA-256 verification remains mandatory. `XD_UPDATE_API_BASE` can additionally point GitHub metadata/API requests at a compatible GitHub API proxy. GitLab can be overridden with `XD_UPDATE_GITLAB_BASE_URL` and `XD_UPDATE_GITLAB_PROJECT`.
 
 Set `XD_DISABLE_AUTO_UPDATE=1` to disable the Windows agent's automatic update checks.
 
@@ -494,7 +499,7 @@ xd status
 xd config --mount PATH
 xd mount [PATH]
 xd version
-xd update [--channel stable|master|commit] [--commit SHA] [--install]
+xd update [--source github|gitlab] [--channel stable|master|commit] [--commit SHA] [--install]
 xd update --status
 xd doctor [--strict]
 xd logout

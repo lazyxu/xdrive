@@ -52,6 +52,21 @@ func Run(ctx context.Context) Report {
 	}
 	checks := []Check{{Name: "client version", Status: Pass, Detail: version.String()}}
 
+	source := ""
+	if prefs, prefsErr := userconfig.LoadUpdatePreferences(); prefsErr == nil {
+		source = prefs.Source
+	}
+	if source == "" {
+		var sourceErr error
+		source, sourceErr = xupdate.AutomaticSource()
+		if sourceErr != nil {
+			checks = append(checks, Check{Name: "update source", Status: Fail, Detail: sourceErr.Error()})
+		}
+	}
+	if source != "" {
+		checks = append(checks, Check{Name: "update source", Status: Pass, Detail: source})
+	}
+
 	channel, commit, err := xupdate.AutomaticTarget(version.String())
 	if err != nil {
 		checks = append(checks, Check{Name: "update channel", Status: Fail, Detail: err.Error()})
@@ -64,7 +79,7 @@ func Run(ctx context.Context) Report {
 		}
 		checks = append(checks, Check{Name: "update channel", Status: Pass, Detail: detail})
 		checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		result, checkErr := xupdate.CheckTarget(checkCtx, version.String(), channel, commit)
+		result, checkErr := xupdate.CheckPlatformTargetFromSource(checkCtx, version.String(), channel, commit, source)
 		cancel()
 		if checkErr != nil {
 			checks = append(checks, Check{Name: "update metadata", Status: Warn, Detail: checkErr.Error()})

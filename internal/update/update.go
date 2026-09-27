@@ -315,7 +315,7 @@ func (c Checker) getJSONWithRetry(ctx context.Context, requestURL, current, labe
 		if err != nil {
 			return err
 		}
-		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Accept", "application/json")
 		req.Header.Set("User-Agent", "xdrive-updater/"+current)
 		resp, err := c.HTTP.Do(req)
 		if err == nil {
@@ -345,7 +345,7 @@ func (c Checker) getJSONWithRetry(ctx context.Context, requestURL, current, labe
 			}
 		}
 	}
-	return fmt.Errorf("%s failed after %d attempts via %s: %w; check HTTPS connectivity/HTTPS_PROXY, or configure XD_UPDATE_ASSET_MIRROR for release downloads",
+	return fmt.Errorf("%s failed after %d attempts via %s: %w; check network connectivity/HTTP(S)_PROXY, or configure XD_UPDATE_ASSET_MIRROR for release downloads",
 		label, c.RetryAttempts, endpointHost(requestURL), lastErr)
 }
 
@@ -716,7 +716,7 @@ func downloadChecksum(ctx context.Context, checker Checker, asset Asset, assetNa
 			}
 		}
 	}
-	return "", fmt.Errorf("checksum download failed after %d attempts via %s: %w; check HTTPS connectivity/HTTPS_PROXY or XD_UPDATE_ASSET_MIRROR",
+	return "", fmt.Errorf("checksum download failed after %d attempts via %s: %w; check network connectivity/HTTP(S)_PROXY or XD_UPDATE_ASSET_MIRROR",
 		checker.RetryAttempts, sourceHosts(sources), lastErr)
 }
 

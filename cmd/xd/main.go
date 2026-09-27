@@ -64,7 +64,7 @@ Usage:
   xd config --mount PATH
   xd mount [PATH]
   xd version
-  xd update [--channel stable|master|commit] [--commit SHA] [--install]
+  xd update [--source github|gitlab] [--channel stable|master|commit] [--commit SHA] [--install]
   xd update --status
   xd doctor [--strict]
   xd logout
@@ -338,14 +338,15 @@ func updateCmd(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	install := fs.Bool("install", false, "install the available update now")
 	showStatus := fs.Bool("status", false, "show the most recent platform update transaction")
+	sourceFlag := fs.String("source", "", "update source: github or gitlab")
 	channelFlag := fs.String("channel", "", "update channel: stable, master, or commit")
 	commitFlag := fs.String("commit", "", "commit SHA for the commit channel")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *showStatus {
-		if *install || strings.TrimSpace(*channelFlag) != "" || strings.TrimSpace(*commitFlag) != "" {
-			return fmt.Errorf("--status cannot be combined with --install, --channel, or --commit")
+		if *install || strings.TrimSpace(*sourceFlag) != "" || strings.TrimSpace(*channelFlag) != "" || strings.TrimSpace(*commitFlag) != "" {
+			return fmt.Errorf("--status cannot be combined with --install, --source, --channel, or --commit")
 		}
 		status, err := xupdate.LastInstallStatus()
 		if err != nil {
@@ -372,6 +373,25 @@ func updateCmd(args []string) error {
 	}
 
 	current := version.String()
+	source := strings.TrimSpace(*sourceFlag)
+	if source == "" {
+		if prefs, prefsErr := userconfig.LoadUpdatePreferences(); prefsErr == nil {
+			source = prefs.Source
+		}
+	}
+	if source == "" {
+		var sourceErr error
+		source, sourceErr = xupdate.AutomaticSource()
+		if sourceErr != nil {
+			return sourceErr
+		}
+	} else {
+		var sourceErr error
+		source, sourceErr = xupdate.NormalizeSource(source)
+		if sourceErr != nil {
+			return sourceErr
+		}
+	}
 	channel := strings.TrimSpace(*channelFlag)
 	commit := strings.TrimSpace(*commitFlag)
 	if channel == "" && commit != "" {
@@ -401,35 +421,35 @@ func updateCmd(args []string) error {
 	defer cancel()
 
 	if *install {
-		started, installed, err := xupdate.InstallTargetWithProgress(ctx, current, normalized, commit, func(event xupdate.ProgressEvent) {
+		started, installed, err := xupdate.InstallTargetFromSourceWithProgress(ctx, current, normalized, commit, source, func(event xupdate.ProgressEvent) {
 			fmt.Println(xupdate.FormatProgress(event))
 		})
 		if err != nil {
 			return err
 		}
 		if started {
-			fmt.Printf("updated target verified: %s from %s channel; upgrade handoff accepted\n", installed.Latest, normalized)
+			fmt.Printf("updated target verified: %s from %s channel via %s; upgrade handoff accepted\n", installed.Latest, normalized, source)
 		}
 		return nil
 	}
 
-	fmt.Printf("[update 1/1] check: checking %s channel from %s\n", normalized, current)
-	result, err := xupdate.CheckTarget(ctx, current, normalized, commit)
+	fmt.Printf("[update 1/1] check: checking %s channel from %s via %s\n", normalized, current, source)
+	result, err := xupdate.CheckPlatformTargetFromSource(ctx, current, normalized, commit, source)
 	if err != nil {
 		return err
 	}
 	if !result.UpdateAvailable {
-		fmt.Printf("xDrive %s is current on %s channel\n", current, normalized)
+		fmt.Printf("xDrive %s is current on %s channel via %s\n", current, normalized, source)
 		return nil
 	}
-	fmt.Printf("update available on %s: %s -> %s\n", normalized, current, result.Latest)
+	fmt.Printf("update available on %s via %s: %s -> %s\n", normalized, source, current, result.Latest)
 	if result.Asset.Size > 0 {
 		fmt.Printf("download: %s (%s)\n", result.Asset.Name, formatStorageBytes(result.Asset.Size))
 	}
 	if normalized == xupdate.ChannelCommit {
-		fmt.Printf("run: xd update --channel commit --commit %s --install\n", result.Commit)
+		fmt.Printf("run: xd update --source %s --channel commit --commit %s --install\n", source, result.Commit)
 	} else {
-		fmt.Printf("run: xd update --channel %s --install\n", normalized)
+		fmt.Printf("run: xd update --source %s --channel %s --install\n", source, normalized)
 	}
 	return nil
 }
