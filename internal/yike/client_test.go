@@ -23,6 +23,8 @@ func TestFileThumbURLAcceptsObservedYikeShapes(t *testing.T) {
 		{name: "array", json: `{"fsid":1,"thumburl":["https://img.example/a.jpg","https://img.example/b.jpg"]}`, want: []string{"https://img.example/a.jpg", "https://img.example/b.jpg"}},
 		{name: "null", json: `{"fsid":1,"thumburl":null}`, want: nil},
 		{name: "empty string", json: `{"fsid":1,"thumburl":""}`, want: nil},
+		{name: "mixed array", json: `{"fsid":1,"thumburl":["https://img.example/a.jpg",{"url":"ignored"},7]}`, want: []string{"https://img.example/a.jpg"}},
+		{name: "object ignored", json: `{"fsid":1,"thumburl":{"small":"https://img.example/a.jpg"}}`, want: nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var file File

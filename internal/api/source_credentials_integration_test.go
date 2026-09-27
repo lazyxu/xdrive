@@ -75,6 +75,8 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	var credentialTestErr error
 	var testedKind string
 	var testedPayload json.RawMessage
+	accountExternalID := "12345"
+	accountName := "张三"
 	server := &Server{
 		DB:               db,
 		Auth:             auth.New("source-credential-test-secret", time.Hour),
@@ -88,7 +90,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 				return sourceCredentialTestDTO{}, credentialTestErr
 			}
 			return sourceCredentialTestDTO{
-				Valid: true, Kind: kind, AccountExternalID: "12345", AccountName: "张三",
+				Valid: true, Kind: kind, AccountExternalID: accountExternalID, AccountName: accountName,
 			}, nil
 		},
 	}
@@ -225,6 +227,52 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatalf("managed Yike target=%q", logicalTarget)
 	}
 
+	duplicateSource := meta.Source{
+		OwnerID: userA.ID, Name: "Yike Duplicate", Kind: yikeSourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused, Revision: 1,
+	}
+	if err := db.Create(&duplicateSource).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicatePath := fmt.Sprintf("/api/v1/sources/%d/credential", duplicateSource.ID)
+	duplicatePut := requestWithHeaders(t, router, http.MethodPut, duplicatePath, tokenA, strings.NewReader(body), http.StatusConflict,
+		map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(duplicatePut.Body.String(), "yike_account_already_configured") {
+		t.Fatalf("duplicate Yike account response=%s", duplicatePut.Body.String())
+	}
+	var duplicateCredentialCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", duplicateSource.ID).Count(&duplicateCredentialCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if duplicateCredentialCount != 0 {
+		t.Fatalf("duplicate Yike credential rows=%d want=0", duplicateCredentialCount)
+	}
+
+	if err := db.Create(&meta.SourceItem{
+		SourceID: source.ID, ExternalID: "yike:12345:999", Kind: meta.SourceItemKindFile,
+		Path: "Library/test.jpg", State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	accountExternalID = "67890"
+	accountName = "李四"
+	mismatchPut := requestWithHeaders(t, router, http.MethodPut, statusPath, tokenA, strings.NewReader(body), http.StatusConflict,
+		map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(mismatchPut.Body.String(), "yike_account_mismatch") {
+		t.Fatalf("mismatched Yike account response=%s", mismatchPut.Body.String())
+	}
+	accountExternalID = "12345"
+	accountName = "张三"
+	preservedAfterMismatch, err := sourcecredential.Get(context.Background(), db, ringV1, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(preservedAfterMismatch) != `{"cookie":"BDUSS=top-secret-cookie"}` {
+		t.Fatalf("mismatched account changed stored credential: %q", preservedAfterMismatch)
+	}
+	clear(preservedAfterMismatch)
+
 	testedPayload = nil
 	storedTestRes := request(t, router, http.MethodPost, storedTestPath, tokenA, nil, http.StatusOK)
 	if strings.Contains(storedTestRes.Body.String(), "top-secret-cookie") || strings.Contains(storedTestRes.Body.String(), "BDUSS") {
@@ -339,6 +387,43 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("credential rows=%d want=0", count)
 	}
+	var pausedSource meta.Source
+	if err := db.First(&pausedSource, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pausedSource.Status != meta.SourceStatusPaused || pausedSource.Revision != 3 || pausedSource.TargetNodeID == nil ||
+		*pausedSource.TargetNodeID != target.ID {
+		t.Fatalf("cleared Yike credential did not pause source: %+v", pausedSource)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", source.ID), tokenA,
+		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
+		map[string]string{"If-Match": `"3"`})
+
+	// Reconfiguring the same account reuses the managed target and reactivates
+	// the Source without moving already imported items.
+	requestWithHeaders(t, router, http.MethodPut, statusPath, tokenA, strings.NewReader(body), http.StatusOK,
+		map[string]string{"Content-Type": "application/json"})
+	var reactivated meta.Source
+	if err := db.First(&reactivated, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reactivated.Status != meta.SourceStatusActive || reactivated.Revision != 4 || reactivated.TargetNodeID == nil ||
+		*reactivated.TargetNodeID != target.ID {
+		t.Fatalf("reconfigured Yike source was not reactivated: %+v", reactivated)
+	}
+	request(t, router, http.MethodDelete, statusPath, tokenA, nil, http.StatusNoContent)
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("credential rows after second clear=%d want=0", count)
+	}
+	if err := db.First(&pausedSource, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pausedSource.Status != meta.SourceStatusPaused || pausedSource.Revision != 5 {
+		t.Fatalf("second clear did not pause Yike source: %+v", pausedSource)
+	}
 
 	var auditCount int64
 	if err := db.Model(&meta.AuditEvent{}).
@@ -348,7 +433,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		Count(&auditCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if auditCount != 2 {
-		t.Fatalf("credential audit events=%d want=2", auditCount)
+	if auditCount != 4 {
+		t.Fatalf("credential audit events=%d want=4", auditCount)
 	}
 }

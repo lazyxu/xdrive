@@ -278,6 +278,14 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		return tx.Where("source_id = ?", source.ID).First(&row).Error
 	})
 	if err != nil {
+		if errors.Is(err, errYikeAccountAlreadyConfigured) {
+			fail(c, http.StatusConflict, "yike_account_already_configured")
+			return
+		}
+		if errors.Is(err, errYikeAccountMismatch) {
+			fail(c, http.StatusConflict, "yike_account_mismatch")
+			return
+		}
 		fail(c, http.StatusInternalServerError, "store source credential failed")
 		return
 	}
@@ -299,7 +307,23 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
-	if err := sourcecredential.Delete(c.Request.Context(), s.DB, source.ID); err != nil {
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := sourcecredential.Delete(c.Request.Context(), tx, source.ID); err != nil {
+			return err
+		}
+		if source.Kind == yikeSourceKind {
+			now := time.Now().UTC()
+			return tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+				Updates(map[string]any{
+					"status":           meta.SourceStatusPaused,
+					"revision":         gorm.Expr("revision + 1"),
+					"run_requested_at": nil,
+					"updated_at":       now,
+				}).Error
+		}
+		return nil
+	})
+	if err != nil {
 		fail(c, http.StatusInternalServerError, "delete source credential failed")
 		return
 	}

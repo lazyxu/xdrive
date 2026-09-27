@@ -368,11 +368,18 @@ export default function ExternalSourcesPanel({
     if (!setting) return
     try {
       await api.deleteSourceCredential(setting.source.id)
-      message.success('Cookie 已清除')
+      message.success('Cookie 已清除，来源已自动暂停')
       setSetting({
         ...setting,
+        source: {
+          ...setting.source,
+          status: 'paused',
+          revision: setting.source.revision + 1,
+          run_requested_at: undefined,
+        },
         credential: { configured: false },
       })
+      settingsForm.setFieldValue('status', 'paused')
       await load()
     } catch (error) {
       onError(error)
@@ -528,7 +535,9 @@ export default function ExternalSourcesPanel({
                 <Badge status={sourceBadgeStatus(selectedDetail.state.tone)} text={selectedDetail.state.label} />
               </Descriptions.Item>
               <Descriptions.Item label="目标目录">
-                {selectedDetail.targetNodeID ? `节点 #${selectedDetail.targetNodeID}` : '未配置'}
+                {selected.source.kind === 'yike_photos'
+                  ? yikeManagedTargetLabel
+                  : selectedDetail.targetNodeID ? `节点 #${selectedDetail.targetNodeID}` : '未配置'}
               </Descriptions.Item>
               <Descriptions.Item label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</Descriptions.Item>
               <Descriptions.Item label="上次成功">{formatExternalSourceTime(selectedDetail.lastSuccessAt)}</Descriptions.Item>

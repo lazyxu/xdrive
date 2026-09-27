@@ -279,6 +279,18 @@ func (s *Server) updateSource(c *gin.Context) {
 			if !meta.ValidSourceStatus(status) {
 				return errInvalidSourceConfig
 			}
+			if current.Kind == yikeSourceKind && status == meta.SourceStatusActive {
+				if current.TargetNodeID == nil {
+					return errYikeCredentialRequired
+				}
+				var credentialCount int64
+				if err := tx.Model(&meta.SourceCredential{}).Where("source_id = ?", current.ID).Count(&credentialCount).Error; err != nil {
+					return err
+				}
+				if credentialCount == 0 {
+					return errYikeCredentialRequired
+				}
+			}
 			updates["status"] = status
 		}
 		if req.TargetNodeID != nil {
@@ -323,6 +335,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
+		case errors.Is(err, errYikeCredentialRequired):
+			fail(c, http.StatusConflict, "Yike Photos must configure a valid Cookie before activation")
 		case errors.Is(err, errManagedSourceTarget):
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 		case errors.Is(err, errInvalidSourceTarget):
@@ -482,8 +496,11 @@ func (s *Server) ownedSource(uid, id uint64) (meta.Source, error) {
 }
 
 var (
-	errInvalidSourceConfig = errors.New("invalid source configuration")
-	errInvalidSourceTarget = errors.New("invalid source target")
-	errManagedSourceTarget = errors.New("managed source target")
-	errSourceNameTaken     = errors.New("source name taken")
+	errInvalidSourceConfig          = errors.New("invalid source configuration")
+	errInvalidSourceTarget          = errors.New("invalid source target")
+	errManagedSourceTarget          = errors.New("managed source target")
+	errYikeCredentialRequired       = errors.New("Yike credential is required")
+	errYikeAccountAlreadyConfigured = errors.New("Yike account already configured")
+	errYikeAccountMismatch          = errors.New("Yike account does not match managed target")
+	errSourceNameTaken              = errors.New("source name taken")
 )
