@@ -76,6 +76,13 @@ test('desktop keeps sync controls global instead of repeating page status action
   assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
 })
 
+test('desktop external sources expose safe source deletion', () => {
+  assert.ok(renderer.includes('删除来源'), 'missing source delete action')
+  assert.ok(renderer.includes('已同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
+  assert.ok(renderer.includes('文件会保留，不会删除'), 'missing non-destructive delete confirmation result')
+  assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
+})
+
 test('desktop GUI does not regress to key English labels', () => {
   for (const text of [
     'AGENT CONNECTION',

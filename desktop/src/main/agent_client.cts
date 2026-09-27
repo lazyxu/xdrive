@@ -488,6 +488,10 @@ export class AgentIPCClient {
     })
   }
 
+  deleteSource(sourceID: number, revision: number) {
+    return this.request<{ ok: boolean }>('DELETE', '/v1/sources', { source_id: sourceID, revision })
+  }
+
   triggerSource(sourceID: number) {
     return this.request<AgentSource>('POST', '/v1/sources/trigger', { source_id: sourceID })
   }

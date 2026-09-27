@@ -369,12 +369,23 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if source.Revision != expected {
 			return errRevisionConflict
 		}
+		var activeRuns int64
+		if err := tx.Model(&meta.SyncRun{}).
+			Where("source_id = ? AND status = ?", source.ID, meta.SyncRunStatusRunning).
+			Count(&activeRuns).Error; err != nil {
+			return err
+		}
+		if activeRuns != 0 {
+			return errSourceRunActive
+		}
 		return tx.Delete(&source).Error
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, errRevisionConflict):
 			revisionConflict(c, expected, currentRevision)
+		case errors.Is(err, errSourceRunActive):
+			fail(c, http.StatusConflict, "source already has an active run")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "source not found")
 		default:

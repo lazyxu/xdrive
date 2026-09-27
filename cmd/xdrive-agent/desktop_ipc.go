@@ -158,6 +158,7 @@ type desktopIPCController interface {
 	CloudDeleteSourceCredential(context.Context, uint64) error
 	CloudCreateSource(context.Context, client.CreateSourceInput) (client.Source, error)
 	CloudUpdateSource(context.Context, uint64, uint64, client.UpdateSourceInput) (client.Source, error)
+	CloudDeleteSource(context.Context, uint64, uint64) error
 	CloudTriggerSource(context.Context, uint64) (client.Source, error)
 	FileAvailability(path string) (mount.FileAvailability, error)
 	SetFileAvailability(path, action string) error
@@ -355,6 +356,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
+	mux.HandleFunc("DELETE /v1/sources", h.deleteSource)
 	mux.HandleFunc("POST /v1/sources/trigger", h.triggerSource)
 	mux.HandleFunc("GET /v1/sources/runs", h.sourceRuns)
 	mux.HandleFunc("GET /v1/sources/credential", h.sourceCredentialStatus)
@@ -913,6 +915,25 @@ func (h *desktopIPCHandler) updateSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, updated)
+}
+
+func (h *desktopIPCHandler) deleteSource(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SourceID uint64 `json:"source_id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.SourceID == 0 || input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_revision", "source_id and revision must be positive integers")
+		return
+	}
+	if err := h.ctrl.CloudDeleteSource(r.Context(), input.SourceID, input.Revision); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *desktopIPCHandler) triggerSource(w http.ResponseWriter, r *http.Request) {

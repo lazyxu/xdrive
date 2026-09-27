@@ -221,6 +221,7 @@ declare global {
         deleteSourceCredential: (sourceID: number) => Promise<DesktopResult<{ ok: boolean }>>
         createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>
         updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>
+        deleteSource: (sourceID: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
         triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>
         cloudRoot: () => Promise<DesktopResult<AgentCloudNode>>
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>

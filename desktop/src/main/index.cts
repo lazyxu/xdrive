@@ -641,6 +641,17 @@ function registerIPCHandlers() {
       ...(value.name === undefined ? {} : { name: value.name.trim() }),
     })
   }, false))
+  ipcMain.handle('agent:delete-source', (_event, sourceID: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id and revision are required.')
+    }
+    return requireAgentClient().deleteSource(sourceID, revision)
+  }, false))
   ipcMain.handle('agent:trigger-source', (_event, sourceID: unknown) => runAgentAction<AgentSource>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')

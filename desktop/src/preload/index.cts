@@ -27,6 +27,7 @@ const agent = Object.freeze({
     target_node_id?: number
     ignore_rules?: string
   }) => ipcRenderer.invoke('agent:update-source', sourceID, revision, input),
+  deleteSource: (sourceID: number, revision: number) => ipcRenderer.invoke('agent:delete-source', sourceID, revision),
   triggerSource: (sourceID: number) => ipcRenderer.invoke('agent:trigger-source', sourceID),
   cloudRoot: () => ipcRenderer.invoke('agent:cloud-root'),
   cloudChildren: (parentID: number) => ipcRenderer.invoke('agent:cloud-children', parentID),

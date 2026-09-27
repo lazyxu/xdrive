@@ -303,6 +303,13 @@ export class XDriveApi {
     })
   }
 
+  deleteSource(sourceID: number, revision: number) {
+    return this.request<void>(`/api/v1/sources/${sourceID}`, {
+      method: 'DELETE',
+      headers: { 'If-Match': `"${revision}"` },
+    })
+  }
+
   setSourceCredential(sourceID: number, payload: Record<string, unknown>) {
     return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`, {
       method: 'PUT',
