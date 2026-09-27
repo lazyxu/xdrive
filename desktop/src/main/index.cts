@@ -8,6 +8,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   Notification,
   powerMonitor,
   screen,
@@ -291,6 +292,10 @@ function updateTaskbarProgress() {
   mainWindow.setProgressBar(progress.value, { mode: progress.mode })
 }
 
+function desktopWindowBackground() {
+  return nativeTheme.shouldUseDarkColors ? '#0f141d' : '#f5f7fb'
+}
+
 function createMainWindow(showOnReady = true) {
   const restoredBounds = resolveWindowBounds(
     desktopPreferences.window_bounds,
@@ -302,7 +307,7 @@ function createMainWindow(showOnReady = true) {
     minHeight: 600,
     show: false,
     title: 'xDrive 桌面版',
-    backgroundColor: '#f5f7fb',
+    backgroundColor: desktopWindowBackground(),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),
       contextIsolation: true,
@@ -1248,6 +1253,10 @@ if (!primaryInstance) {
   })
   void app.whenReady().then(async () => {
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
+    nativeTheme.themeSource = 'system'
+    nativeTheme.on('updated', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(desktopWindowBackground())
+    })
     Menu.setApplicationMenu(null)
     registerWindowsUserTasks()
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
