@@ -5,6 +5,10 @@ command -v docker >/dev/null
 docker info >/dev/null
 source scripts/ci/build-metadata.sh
 
+GOPROXY="${GOPROXY:-https://proxy.golang.org|direct}"
+GOSUMDB="${GOSUMDB:-sum.golang.org}"
+XDRIVE_CI_DISTROLESS_IMAGE="${XDRIVE_CI_DISTROLESS_IMAGE:-gcr.io/distroless/static-debian12:nonroot}"
+
 docker build \
   --build-arg "VERSION=$XDRIVE_BUILD_VERSION" \
   --build-arg "BUILD_CHANNEL=$XDRIVE_BUILD_CHANNEL" \
@@ -12,6 +16,9 @@ docker build \
   --build-arg "BUILD_COMMIT_MESSAGE_B64=$XDRIVE_BUILD_COMMIT_MESSAGE_B64" \
   --build-arg "BUILD_COMMIT_TIME=$XDRIVE_BUILD_COMMIT_TIME" \
   --build-arg "BUILD_TIME=$XDRIVE_BUILD_TIME" \
+  --build-arg "GOPROXY=$GOPROXY" \
+  --build-arg "GOSUMDB=$GOSUMDB" \
+  --build-arg "RUNTIME_IMAGE=$XDRIVE_CI_DISTROLESS_IMAGE" \
   -t xdrive/server:test .
 
 server_version_output="$(docker run --rm xdrive/server:test version)"

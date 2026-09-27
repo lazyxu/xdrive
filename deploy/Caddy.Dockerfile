@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 ARG CADDY_VERSION=2.10.2
 FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
-RUN xcaddy build --with github.com/caddy-dns/alidns@c8c945ded9ace193e86f063842ba59981b35146b
+ARG GOPROXY=https://proxy.golang.org|direct
+ARG GOSUMDB=sum.golang.org
+RUN GOPROXY="${GOPROXY}" GOSUMDB="${GOSUMDB}" xcaddy build --with github.com/caddy-dns/alidns@c8c945ded9ace193e86f063842ba59981b35146b
 
 FROM caddy:${CADDY_VERSION}-alpine
 ARG VERSION=dev

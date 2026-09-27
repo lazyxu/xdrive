@@ -48,10 +48,11 @@ variables:
         set -euo pipefail
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+        apt-get install -y --no-install-recommends ca-certificates curl jq xz-utils
         rm -rf /var/lib/apt/lists/*
     - &install_node22 bash scripts/ci/install-node22.sh
     - &install_docker_cli bash scripts/ci/install-docker-cli.sh
+    - &install_docker_cli_only bash scripts/ci/install-docker-cli.sh --docker-only
     - &install_postgres_client |
         set -euo pipefail
         export DEBIAN_FRONTEND=noninteractive
@@ -298,7 +299,7 @@ server-image:
     - linux
   before_script:
     - *ensure_linux_fetch_tools
-    - *install_docker_cli
+    - *install_docker_cli_only
   script:
     - bash scripts/ci/gitlab-server-image.sh
   artifacts:
@@ -318,7 +319,7 @@ caddy-image:
     - linux
   before_script:
     - *ensure_linux_fetch_tools
-    - *install_docker_cli
+    - *install_docker_cli_only
   script:
     - bash scripts/ci/gitlab-caddy-image.sh
   artifacts:
@@ -340,7 +341,7 @@ server-backup:
     - linux
   before_script:
     - *ensure_linux_fetch_tools
-    - *install_docker_cli
+    - *install_docker_cli_only
   script:
     - bash scripts/ci/gitlab-server-backup.sh
 
@@ -405,7 +406,7 @@ test-windows-rollback-artifact:
   needs:
     - job: package-windows-client
       artifacts: true
-  resource_group: xdrive-test-windows-rollback-artifact
+  resource_group: xdrive-test-windows-client-artifact
   variables:
     XDRIVE_WINDOWS_TRANSACTION_SCENARIO: "rollback"
   tags:
@@ -418,7 +419,7 @@ test-windows-upgrade-artifact:
   needs:
     - job: package-windows-client
       artifacts: true
-  resource_group: xdrive-test-windows-upgrade-artifact
+  resource_group: xdrive-test-windows-client-artifact
   variables:
     XDRIVE_WINDOWS_TRANSACTION_SCENARIO: "upgrade"
   tags:
@@ -431,7 +432,7 @@ test-windows-smoke-artifact:
   needs:
     - job: package-windows-client
       artifacts: true
-  resource_group: xdrive-test-windows-smoke-artifact
+  resource_group: xdrive-test-windows-client-artifact
   tags:
     - windows
   script:
@@ -452,7 +453,7 @@ web:
     - linux
   before_script:
     - *ensure_linux_fetch_tools
-    - *install_docker_cli
+    - *install_docker_cli_only
   script:
     - |
       set -euo pipefail

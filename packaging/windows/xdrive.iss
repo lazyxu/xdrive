@@ -17,6 +17,7 @@ AppPublisherURL=https://github.com/lazyxu/xdrive
 AppSupportURL=https://github.com/lazyxu/xdrive/issues
 DefaultDirName={localappdata}\Programs\xDrive
 DefaultGroupName=xDrive
+UsePreviousGroup=no
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
 OutputBaseFilename=xDriveSetup-amd64

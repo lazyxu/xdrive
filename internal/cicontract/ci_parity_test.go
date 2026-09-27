@@ -122,11 +122,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"XDRIVE_CI_NODE_VERSION: \"22.23.3\"",
 		"XDRIVE_CI_DOCKER_VERSION: \"27.5.1\"",
 		"XDRIVE_CI_COMPOSE_VERSION: \"v2.32.4\"",
+		"XDRIVE_CI_COMPOSE_PACKAGE_VERSION: \"2.32.4-1~debian.12~bookworm\"",
 		"GOPROXY: \"https://goproxy.cn|https://mirrors.aliyun.com/goproxy/|https://proxy.golang.org|direct\"",
 		"GOSUMDB: \"sum.golang.google.cn\"",
 		"NPM_CONFIG_REGISTRY: \"https://registry.npmmirror.com\"",
 		"XDRIVE_CI_NODE_MIRROR: \"https://mirrors.huaweicloud.com/nodejs\"",
 		"XDRIVE_CI_DOCKER_MIRROR: \"https://mirrors.aliyun.com/docker-ce\"",
+		"XDRIVE_CI_DISTROLESS_IMAGE: \"gcr.m.daocloud.io/distroless/static-debian12:nonroot\"",
 		"XDRIVE_CI_GITHUB_RELEASE_PROXY: \"\"",
 		"XDRIVE_CI_DOWNLOAD_ATTEMPTS: \"5\"",
 		"ELECTRON_MIRROR: \"https://cdn.npmmirror.com/binaries/electron/\"",
@@ -180,6 +182,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	windowsPathNormalizer := readFile(t, filepath.Join(root, "scripts", "ci", "windows-path-normalization.ps1"))
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
+	windowsInstaller := readFile(t, filepath.Join(root, "packaging", "windows", "xdrive.iss"))
 	serverPipeTest := readFile(t, filepath.Join(root, "scripts", "test-server-installer-pipe.sh"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" +
 		goVersionCheck + "\n" + artifactVersion + "\n" + clientCoreBuild + "\n" + gitlabLinuxBash + "\n" + gitlabWindowsBash + "\n" +
@@ -220,12 +223,14 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"--build-arg \"BUILD_COMMIT_MESSAGE_B64=$XDRIVE_BUILD_COMMIT_MESSAGE_B64\"",
 		"--build-arg \"BUILD_COMMIT_TIME=$XDRIVE_BUILD_COMMIT_TIME\"",
 		"--build-arg \"BUILD_TIME=$XDRIVE_BUILD_TIME\"",
+		"-t xdrive/server:test .",
 		"bash scripts/test-server-chunk-storage.sh",
 		"bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image",
 		"bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image",
 		"bash scripts/ci/export-docker-image.sh xdrive/web:test dist/web-image",
 		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
-		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
+		"-f deploy/Caddy.Dockerfile",
+		"-t xdrive/caddy:test .",
 		"bash scripts/test-server-backup-restore.sh",
 		"go test -mod=readonly ./internal/... ./cmd/xdrive-agent",
 		"go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1",
@@ -337,6 +342,17 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		".cache/ci-tools/",
 		"when: always",
 	)
+	assertGitLabJobTextContains(t, gitlab, "server-validation",
+		"apt-get install -y --no-install-recommends ca-certificates curl jq xz-utils",
+	)
+	assertGitLabJobTextContains(t, gitlab, "server-validation",
+		"bash scripts/ci/install-docker-cli.sh",
+	)
+	for _, jobName := range []string{"server-image", "caddy-image", "server-backup", "web"} {
+		assertGitLabJobTextContains(t, gitlab, jobName,
+			"bash scripts/ci/install-docker-cli.sh --docker-only",
+		)
+	}
 	requireRaw(t, "GitLab CI wrappers", gitlabContractText,
 		"bash scripts/ci/check-go-min-version.sh 1.25",
 		"pg_isready",
@@ -440,6 +456,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client"})
+	assertGitLabSharedResourceGroup(t, gitlab, []string{
+		"test-windows-rollback-artifact",
+		"test-windows-upgrade-artifact",
+		"test-windows-smoke-artifact",
+	})
 	requireRaw(t, "GitHub split critical test contract", githubRaw,
 		"go-linux-api:",
 		"Race test internal/api",
@@ -547,11 +568,28 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"--build-arg \"VERSION=$XDRIVE_BUILD_VERSION\"",
 		"--build-arg \"BUILD_CHANNEL=$XDRIVE_BUILD_CHANNEL\"",
 		"--build-arg \"BUILD_COMMIT=$XDRIVE_BUILD_COMMIT\"",
-		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .",
+		"-t xdrive/server:test .",
+		"-f deploy/Caddy.Dockerfile",
+		"-t xdrive/caddy:test .",
 		"bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image",
 		"bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image",
 		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
 		"bash scripts/test-server-backup-restore.sh",
+		"--build-arg \"GOPROXY=$GOPROXY\"",
+		"--build-arg \"GOSUMDB=$GOSUMDB\"",
+		"--build-arg \"RUNTIME_IMAGE=$XDRIVE_CI_DISTROLESS_IMAGE\"",
+	)
+	serverDockerfile := readFile(t, filepath.Join(root, "Dockerfile"))
+	caddyDockerfile := readFile(t, filepath.Join(root, "deploy", "Caddy.Dockerfile"))
+	requireRaw(t, "server Dockerfile dependency overrides", serverDockerfile,
+		"ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot",
+		"FROM ${RUNTIME_IMAGE}",
+		"ARG GOPROXY=https://proxy.golang.org|direct",
+		"ARG GOSUMDB=sum.golang.org",
+	)
+	requireRaw(t, "Caddy Dockerfile Go dependency overrides", caddyDockerfile,
+		"ARG GOPROXY=https://proxy.golang.org|direct",
+		"ARG GOSUMDB=sum.golang.org",
 	)
 	requireRaw(t, "GitLab Windows Go wrapper", gitlabGoWindows,
 		"bash scripts/ci/prepare-go-mod-cache.sh",
@@ -599,9 +637,16 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "CI Docker installer", dockerInstaller,
 		"XDRIVE_CI_DOCKER_MIRROR",
 		"https://download.docker.com",
-		"XDRIVE_CI_GITHUB_RELEASE_PROXY",
-		"https://github.com/docker/compose/releases/download",
+		"XDRIVE_CI_COMPOSE_PACKAGE_VERSION",
+		"https://mirrors.huaweicloud.com/docker-ce",
+		"dpkg-deb -x",
+		"--docker-only",
 	)
+	dockerOnlyExit := strings.Index(dockerInstaller, `if [[ "$install_compose" != true ]]`)
+	composeVersionRequirement := strings.Index(dockerInstaller, `compose_version="${XDRIVE_CI_COMPOSE_VERSION:?`)
+	if dockerOnlyExit < 0 || composeVersionRequirement < 0 || composeVersionRequirement < dockerOnlyExit {
+		t.Errorf("CI Docker-only installation must not require Compose configuration")
+	}
 	requireRaw(t, "Go minimum-version check", goVersionCheck,
 		"Go >= $minimum is required",
 		"Go version OK:",
@@ -667,6 +712,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"xDriveAgent autorun registration missing after baseline install",
 		"transaction test uninstalling via",
 		"xDriveAgent autorun remains after transaction test uninstall",
+	)
+	requireRaw(t, "Windows installer Start Menu migration", windowsInstaller,
+		"DefaultGroupName=xDrive",
+		"UsePreviousGroup=no",
 	)
 	requireRaw(t, "server pipe installer test", serverPipeTest,
 		"pipe_status=(\"${PIPESTATUS[@]}\")",
@@ -1071,6 +1120,40 @@ func assertGitLabJobNeeds(t *testing.T, gitlab map[string]any, jobName string, w
 		t.Fatalf("GitLab job %q missing or invalid", jobName)
 	}
 	assertNeedNames(t, "GitLab", jobName, job["needs"], want)
+}
+
+func assertGitLabJobTextContains(t *testing.T, gitlab map[string]any, jobName, want string) {
+	t.Helper()
+	job, ok := gitlab[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("GitLab job %q missing or invalid", jobName)
+	}
+	if text := collectYAMLStrings(job); !strings.Contains(text, want) {
+		t.Errorf("GitLab job %s is missing %q", jobName, want)
+	}
+}
+
+func assertGitLabSharedResourceGroup(t *testing.T, gitlab map[string]any, jobNames []string) {
+	t.Helper()
+	var shared string
+	for _, jobName := range jobNames {
+		job, ok := gitlab[jobName].(map[string]any)
+		if !ok {
+			t.Fatalf("GitLab job %q missing or invalid", jobName)
+		}
+		group, _ := job["resource_group"].(string)
+		if group == "" {
+			t.Errorf("GitLab job %s must serialize shared Windows installer state", jobName)
+			continue
+		}
+		if shared == "" {
+			shared = group
+			continue
+		}
+		if group != shared {
+			t.Errorf("GitLab Windows artifact jobs must share one resource group: %s=%q want=%q", jobName, group, shared)
+		}
+	}
 }
 
 func assertNeedNames(t *testing.T, provider, jobName string, raw any, want []string) {

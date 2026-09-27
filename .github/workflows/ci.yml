@@ -494,6 +494,8 @@ jobs:
           grep -q 'detailed Docker output is captured in' deploy/install-server.sh
   server-image:
     runs-on: ubuntu-latest
+    # Dockerfile defaults keep GitHub on official registries; GitLab passes
+    # region-friendly mirrors into the same build arguments.
     steps:
       - uses: actions/checkout@v4
       - name: Build and validate exact server image
@@ -611,6 +613,8 @@ jobs:
 
   caddy-image:
     runs-on: ubuntu-latest
+    # Dockerfile defaults keep GitHub on official Go infrastructure; GitLab
+    # overrides the same build arguments for its runner network.
     steps:
       - uses: actions/checkout@v4
       - name: Build and validate exact Caddy image
