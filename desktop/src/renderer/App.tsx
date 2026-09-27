@@ -11,12 +11,14 @@ import {
   DialogContentText,
   DialogTitle,
   Divider as MuiDivider,
+  FormControlLabel,
   IconButton,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
   Stack,
+  Switch,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -130,7 +132,10 @@ function updateModeDescription(mode: AgentUpdateMode) {
 
 export default function App() {
   const [info, setInfo] = useState<DesktopInfo | null>(null)
-  const [startAtLogin, setStartAtLogin] = useState(true)
+  const [desktopPreferences, setDesktopPreferences] = useState<DesktopPreferences>({
+    start_at_login: true,
+    close_to_tray: true,
+  })
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
   const [view, setView] = useState<View>('overview')
   const [busy, setBusy] = useState('')
@@ -228,8 +233,8 @@ export default function App() {
     void window.xdriveDesktop.getInfo().then((value) => {
       if (active) setInfo(value)
     })
-    void window.xdriveDesktop.getStartup().then((value) => {
-      if (active) setStartAtLogin(value.start_at_login)
+    void window.xdriveDesktop.getPreferences().then((value) => {
+      if (active) setDesktopPreferences(value)
     })
     void window.xdriveDesktop.agent.getState().then((value) => {
       if (active) setAgent(value)
@@ -378,8 +383,18 @@ export default function App() {
       setError(result.error.message)
       return
     }
-    setStartAtLogin(result.data.start_at_login)
+    setDesktopPreferences((current) => ({ ...current, start_at_login: result.data.start_at_login }))
     setNotice(enabled ? 'xDrive 桌面版将在登录系统后自动启动。' : '已关闭开机启动。')
+  }
+
+  const changeCloseToTray = async (enabled: boolean) => {
+    const result = await window.xdriveDesktop.setCloseToTray(enabled)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    setDesktopPreferences(result.data)
+    setNotice(enabled ? '关闭窗口时将继续在系统托盘后台运行。' : '关闭窗口时将退出 xDrive 桌面版。')
   }
 
   const retry = async () => {
@@ -2163,10 +2178,32 @@ export default function App() {
                 {busy === 'restart-agent' ? '正在重启 Agent…' : '重启 Agent'}
               </button>
             </div>
-            <label className="toggle-row">
-              <input type="checkbox" checked={startAtLogin} onChange={(e) => void changeStartAtLogin(e.target.checked)} />
-              <span><strong>登录系统后启动 xDrive 桌面版</strong><small>启动后直接驻留系统托盘，并保持后台 Agent 正常运行。</small></span>
-            </label>
+            <Stack spacing={0.5} sx={{ mb: 2 }}>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={desktopPreferences.start_at_login}
+                    onChange={(event) => void changeStartAtLogin(event.target.checked)}
+                  />
+                )}
+                label="登录系统后启动 xDrive 桌面版"
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ pl: 6 }}>
+                启动后保持后台 Agent 正常运行；主窗口可按你的关闭偏好处理。
+              </Typography>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={desktopPreferences.close_to_tray}
+                    onChange={(event) => void changeCloseToTray(event.target.checked)}
+                  />
+                )}
+                label="关闭窗口时最小化到系统托盘"
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ pl: 6 }}>
+                开启后，点击关闭按钮只隐藏主窗口并继续同步；关闭后将直接退出 xDrive 桌面版。
+              </Typography>
+            </Stack>
             <div className="update-card">
               <div className="update-card-header">
                 <div>

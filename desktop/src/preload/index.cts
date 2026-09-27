@@ -87,7 +87,9 @@ const agent = Object.freeze({
 contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   getInfo: () => ipcRenderer.invoke('desktop:get-info'),
   getStartup: () => ipcRenderer.invoke('desktop:get-startup'),
+  getPreferences: () => ipcRenderer.invoke('desktop:get-preferences'),
   setStartup: (enabled: boolean) => ipcRenderer.invoke('desktop:set-startup', enabled),
+  setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('desktop:set-close-to-tray', enabled),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),
