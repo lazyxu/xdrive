@@ -18,6 +18,8 @@ Do not hand-edit generated platform or Web icon files. Update the master SVG fir
 
 Run `make icons` from the repository root (or `node scripts/generate-icon-assets.mjs`). The generator prefers Inkscape, then `rsvg-convert`, then ImageMagick `magick`; set `XDRIVE_ICON_RENDERER` to force a renderer on PATH.
 
+The generator also rewrites `assets/icon/generated-assets.json`. This machine-readable contract stores the Git blob SHA of the approved master plus every generated Web/Windows derivative. Desktop CI recomputes those hashes, so changing the master or any generated derivative without running `make icons` fails immediately.
+
 The approved master is never rewritten. For rasterization only, the generator expands the current `feDropShadow` into equivalent SVG filter primitives in a temporary file so older renderers do not lose the xDrive mark. It then regenerates the Web favicon/PWA assets and Windows `app.ico` in one pass.
 
 Current Windows `app.ico` contains 16, 32, 48, 64, and 256 px frames. Every generated frame must fit completely inside the ICO file; CI rejects truncated derivatives.
