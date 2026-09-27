@@ -18,6 +18,7 @@ import {
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
+import { editContextMenuTemplate } from './edit_context_menu.cjs'
 import {
   desktopShortcutActionFromArgs,
   desktopShortcutActionFromInput,
@@ -321,6 +322,10 @@ function createMainWindow(showOnReady = true) {
   })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
+  })
+  win.webContents.on('context-menu', (_event, params) => {
+    if (!params.isEditable) return
+    Menu.buildFromTemplate(editContextMenuTemplate(params.editFlags)).popup({ window: win })
   })
   win.webContents.on('before-input-event', (event, input) => {
     const action = desktopShortcutActionFromInput(input)
