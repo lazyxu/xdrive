@@ -16,6 +16,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceagent"
 	"github.com/lazyxu/xdrive/internal/sourceagentconfig"
+	"github.com/lazyxu/xdrive/internal/sourceschedule"
 )
 
 func TestMigrateRootFingerprintsSeedsLegacyConfig(t *testing.T) {
@@ -169,6 +170,34 @@ func TestResolveRunTriggerUsesPerSourceCron(t *testing.T) {
 	}
 	if !run || trigger != meta.SyncRunTriggerScheduled {
 		t.Fatalf("due cron trigger=%q run=%t", trigger, run)
+	}
+}
+
+func TestResolveRunTriggerManualScheduleOnlyRunsPendingRequest(t *testing.T) {
+	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-365 * 24 * time.Hour)
+	source := client.Source{
+		Status: meta.SourceStatusActive, LastRunAt: &old,
+		ScheduleType: sourceschedule.TypeManual,
+	}
+	trigger, run, err := resolveRunTrigger(source, meta.SyncRunTriggerScheduled, true, 6*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run || trigger != meta.SyncRunTriggerScheduled {
+		t.Fatalf("manual-only scheduled trigger=%q run=%t want scheduled/false", trigger, run)
+	}
+	requested := now.Add(-time.Second)
+	source.RunRequestedAt = &requested
+	trigger, run, err = resolveRunTrigger(source, meta.SyncRunTriggerScheduled, true, 6*time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run || trigger != meta.SyncRunTriggerManual {
+		t.Fatalf("manual-only pending trigger=%q run=%t want manual/true", trigger, run)
+	}
+	if got := sourceScheduleText(source); got != "manual only" {
+		t.Fatalf("schedule text=%q want manual only", got)
 	}
 }
 

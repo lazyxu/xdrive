@@ -274,7 +274,7 @@ export default function ExternalSourcesPanel({
         sync_mode: 'backup',
         run_mode: values.run_mode,
         schedule_type: values.schedule_type,
-        schedule_expression: values.schedule_expression.trim(),
+        schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
         target_node_id: values.kind === 'yike_photos' ? 0 : (defaultTargetNodeID ?? 0),
         ignore_rules: values.ignore_rules ?? '',
@@ -400,7 +400,7 @@ export default function ExternalSourcesPanel({
         run_mode: values.run_mode,
         status: values.status,
         schedule_type: values.schedule_type,
-        schedule_expression: values.schedule_expression.trim(),
+        schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
         ignore_rules: values.ignore_rules ?? '',
       })
@@ -781,14 +781,17 @@ export default function ExternalSourcesPanel({
             >
               <MenuItem value="interval">固定间隔</MenuItem>
               <MenuItem value="cron">Cron</MenuItem>
+              <MenuItem value="manual">仅手动</MenuItem>
             </TextField>
-            <TextField
-              size="small"
-              label={createScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
-              value={createScheduleExpression}
-              onChange={(event) => createForm.setFieldValue('schedule_expression', event.target.value)}
-              helperText={createScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
-            />
+            {createScheduleType !== 'manual' && (
+              <TextField
+                size="small"
+                label={createScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
+                value={createScheduleExpression}
+                onChange={(event) => createForm.setFieldValue('schedule_expression', event.target.value)}
+                helperText={createScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
+              />
+            )}
             {createScheduleType === 'cron' && (
               <TextField
                 size="small"
@@ -896,14 +899,17 @@ export default function ExternalSourcesPanel({
               >
                 <MenuItem value="interval">固定间隔</MenuItem>
                 <MenuItem value="cron">Cron</MenuItem>
+                <MenuItem value="manual">仅手动</MenuItem>
               </TextField>
-              <TextField
-                size="small"
-                label={settingsScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
-                value={settingsScheduleExpression}
-                onChange={(event) => settingsForm.setFieldValue('schedule_expression', event.target.value)}
-                helperText={settingsScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
-              />
+              {settingsScheduleType !== 'manual' && (
+                <TextField
+                  size="small"
+                  label={settingsScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
+                  value={settingsScheduleExpression}
+                  onChange={(event) => settingsForm.setFieldValue('schedule_expression', event.target.value)}
+                  helperText={settingsScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
+                />
+              )}
               {settingsScheduleType === 'cron' && (
                 <TextField
                   size="small"

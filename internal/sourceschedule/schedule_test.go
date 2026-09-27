@@ -15,6 +15,10 @@ func TestNormalizeSchedules(t *testing.T) {
 		got != (Spec{Type: TypeCron, Expression: "0 3 * * *", Timezone: "Asia/Shanghai"}) {
 		t.Fatalf("cron spec=%+v err=%v", got, err)
 	}
+	if got, err := Normalize("manual", "stale-value", "Asia/Shanghai"); err != nil ||
+		got != (Spec{Type: TypeManual}) {
+		t.Fatalf("manual spec=%+v err=%v", got, err)
+	}
 	for _, tc := range []Spec{
 		{Type: TypeInterval, Expression: "30s"},
 		{Type: TypeInterval, Expression: "bad"},
@@ -44,6 +48,27 @@ func TestDueIntervalAndManualOverride(t *testing.T) {
 	source.RunRequestedAt = &manual
 	if due, err := Due(source, now, DefaultInterval); err != nil || !due {
 		t.Fatalf("manual source due=%v err=%v", due, err)
+	}
+}
+
+func TestManualScheduleRunsOnlyOnExplicitRequest(t *testing.T) {
+	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	source := meta.Source{ScheduleType: TypeManual}
+	if due, err := Due(source, now, DefaultInterval); err != nil || due {
+		t.Fatalf("manual source without request due=%v err=%v", due, err)
+	}
+	last := now.Add(-365 * 24 * time.Hour)
+	source.LastRunAt = &last
+	if due, err := Due(source, now, DefaultInterval); err != nil || due {
+		t.Fatalf("old manual source without request due=%v err=%v", due, err)
+	}
+	requested := now.Add(-time.Minute)
+	source.RunRequestedAt = &requested
+	if due, err := Due(source, now, DefaultInterval); err != nil || !due {
+		t.Fatalf("manual source with request due=%v err=%v", due, err)
+	}
+	if next, err := NextRunAt(meta.Source{ScheduleType: TypeManual}, now, DefaultInterval); err != nil || !next.IsZero() {
+		t.Fatalf("manual next=%v err=%v want zero", next, err)
 	}
 }
 

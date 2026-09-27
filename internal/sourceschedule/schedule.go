@@ -13,6 +13,7 @@ import (
 const (
 	TypeInterval = "interval"
 	TypeCron     = "cron"
+	TypeManual   = "manual"
 
 	DefaultIntervalExpression = "6h"
 	DefaultInterval           = 6 * time.Hour
@@ -45,6 +46,8 @@ func Normalize(scheduleType, expression, timezone string) (Spec, error) {
 			return Spec{}, fmt.Errorf("interval schedule must be a duration between %s and %s", MinInterval, MaxInterval)
 		}
 		return Spec{Type: TypeInterval, Expression: expression}, nil
+	case TypeManual:
+		return Spec{Type: TypeManual}, nil
 	case TypeCron:
 		if expression == "" {
 			return Spec{}, fmt.Errorf("schedule_expression is required for cron schedule")
@@ -60,7 +63,7 @@ func Normalize(scheduleType, expression, timezone string) (Spec, error) {
 		}
 		return Spec{Type: TypeCron, Expression: expression, Timezone: timezone}, nil
 	default:
-		return Spec{}, fmt.Errorf("schedule_type must be interval or cron")
+		return Spec{}, fmt.Errorf("schedule_type must be interval, cron, or manual")
 	}
 }
 
@@ -89,6 +92,13 @@ func Due(source meta.Source, now time.Time, fallback time.Duration) (bool, error
 	if source.RunRequestedAt != nil {
 		return true, nil
 	}
+	spec, err := Effective(source, fallback)
+	if err != nil {
+		return false, err
+	}
+	if spec.Type == TypeManual {
+		return false, nil
+	}
 	if source.LastRunAt == nil {
 		return true, nil
 	}
@@ -100,7 +110,17 @@ func Due(source meta.Source, now time.Time, fallback time.Duration) (bool, error
 }
 
 func NextRunAt(source meta.Source, now time.Time, fallback time.Duration) (time.Time, error) {
-	if source.RunRequestedAt != nil || source.LastRunAt == nil {
+	if source.RunRequestedAt != nil {
+		return now.UTC(), nil
+	}
+	spec, err := Effective(source, fallback)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if spec.Type == TypeManual {
+		return time.Time{}, nil
+	}
+	if source.LastRunAt == nil {
 		return now.UTC(), nil
 	}
 	return nextAfter(source, *source.LastRunAt, fallback)

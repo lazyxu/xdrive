@@ -740,7 +740,7 @@ export default function App() {
         sync_mode: 'backup',
         run_mode: sourceCreateRunMode,
         schedule_type: sourceCreateScheduleType,
-        schedule_expression: sourceCreateScheduleExpression.trim(),
+        schedule_expression: sourceCreateScheduleType === 'manual' ? '' : sourceCreateScheduleExpression.trim(),
         schedule_timezone: sourceCreateScheduleType === 'cron' ? sourceCreateScheduleTimezone.trim() : '',
         target_node_id: sourceCreateKind === 'yike_photos' ? 0 : (target?.id ?? 0),
         ignore_rules: sourceCreateIgnoreRules,
@@ -843,7 +843,7 @@ export default function App() {
         run_mode: sourceEditRunMode,
         status: sourceEditStatus,
         schedule_type: sourceEditScheduleType,
-        schedule_expression: sourceEditScheduleExpression.trim(),
+        schedule_expression: sourceEditScheduleType === 'manual' ? '' : sourceEditScheduleExpression.trim(),
         schedule_timezone: sourceEditScheduleType === 'cron' ? sourceEditScheduleTimezone.trim() : '',
         ignore_rules: sourceEditIgnoreRules,
       })
@@ -1674,8 +1674,11 @@ export default function App() {
                   <TextField select size="small" label="调度方式" value={sourceCreateScheduleType} onChange={(event) => setSourceCreateScheduleType(event.target.value as ExternalSourceScheduleType)}>
                     <MenuItem value="interval">固定间隔</MenuItem>
                     <MenuItem value="cron">Cron</MenuItem>
+                    <MenuItem value="manual">仅手动</MenuItem>
                   </TextField>
-                  <TextField size="small" label={sourceCreateScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceCreateScheduleExpression} onChange={(event) => setSourceCreateScheduleExpression(event.target.value)} helperText={sourceCreateScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
+                  {sourceCreateScheduleType !== 'manual' && (
+                    <TextField size="small" label={sourceCreateScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceCreateScheduleExpression} onChange={(event) => setSourceCreateScheduleExpression(event.target.value)} helperText={sourceCreateScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
+                  )}
                   {sourceCreateScheduleType === 'cron' && (
                     <TextField size="small" label="时区" value={sourceCreateScheduleTimezone} onChange={(event) => setSourceCreateScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
                   )}
@@ -1902,8 +1905,11 @@ export default function App() {
                             <TextField select size="small" label="调度方式" value={sourceEditScheduleType} onChange={(event) => setSourceEditScheduleType(event.target.value as ExternalSourceScheduleType)}>
                               <MenuItem value="interval">固定间隔</MenuItem>
                               <MenuItem value="cron">Cron</MenuItem>
+                              <MenuItem value="manual">仅手动</MenuItem>
                             </TextField>
-                            <TextField size="small" label={sourceEditScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceEditScheduleExpression} onChange={(event) => setSourceEditScheduleExpression(event.target.value)} helperText={sourceEditScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
+                            {sourceEditScheduleType !== 'manual' && (
+                              <TextField size="small" label={sourceEditScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceEditScheduleExpression} onChange={(event) => setSourceEditScheduleExpression(event.target.value)} helperText={sourceEditScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
+                            )}
                             {sourceEditScheduleType === 'cron' && (
                               <TextField size="small" label="时区" value={sourceEditScheduleTimezone} onChange={(event) => setSourceEditScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
                             )}

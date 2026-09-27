@@ -2,7 +2,7 @@ export type SupportedExternalSourceKind = 'synology_photos' | 'yike_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceStatus = 'active' | 'paused'
-export type ExternalSourceScheduleType = 'interval' | 'cron'
+export type ExternalSourceScheduleType = 'interval' | 'cron' | 'manual'
 export type ExternalSourceRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
 
 export interface ExternalSource {
@@ -268,6 +268,9 @@ export function externalSourceScheduleLabel(source: Pick<ExternalSource, 'schedu
   }
   if (source.schedule_type === 'interval' && source.schedule_expression) {
     return `每 ${source.schedule_expression}`
+  }
+  if (source.schedule_type === 'manual') {
+    return '仅手动'
   }
   return '兼容默认间隔'
 }

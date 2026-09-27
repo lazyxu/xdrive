@@ -68,14 +68,14 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	yikeWithTarget := fmt.Sprintf(`{"name":"Yike invalid target","kind":"yike_photos","direction":"pull","sync_mode":"backup","run_mode":"scan","target_node_id":%d}`, targetA.ID)
 	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(yikeWithTarget), http.StatusBadRequest)
 	yikeCreate := request(t, router, http.MethodPost, "/api/v1/sources", tokenA,
-		strings.NewReader(`{"name":"Yike managed","kind":"yike_photos","direction":"pull","sync_mode":"backup","run_mode":"scan","target_node_id":0}`),
+		strings.NewReader(`{"name":"Yike managed","kind":"yike_photos","direction":"pull","sync_mode":"backup","run_mode":"scan","schedule_type":"manual","target_node_id":0}`),
 		http.StatusCreated)
 	var yikeManaged sourceDTO
 	if err := json.Unmarshal(yikeCreate.Body.Bytes(), &yikeManaged); err != nil {
 		t.Fatal(err)
 	}
 	if yikeManaged.TargetNodeID != nil || yikeManaged.Status != meta.SourceStatusPaused || yikeManaged.Revision != 1 ||
-		yikeManaged.ScheduleType != "interval" || yikeManaged.ScheduleExpression != "6h" {
+		yikeManaged.ScheduleType != "manual" || yikeManaged.ScheduleExpression != "" || yikeManaged.ScheduleTimezone != "" {
 		t.Fatalf("unexpected managed Yike source: %+v", yikeManaged)
 	}
 	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,

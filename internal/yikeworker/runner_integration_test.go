@@ -313,6 +313,18 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if dueSources.Eligible != 1 {
 		t.Fatalf("per-source interval did not override global fallback: %+v", dueSources)
 	}
+	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).Updates(map[string]any{
+		"schedule_type": "manual", "schedule_expression": "", "schedule_timezone": "",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	manualOnly, err := runner.RunDue(context.Background(), refreshedSource.LastRunAt.Add(365*24*time.Hour), 6*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manualOnly.Eligible != 0 {
+		t.Fatalf("manual-only source was unexpectedly scheduled: %+v", manualOnly)
+	}
 
 	requestedAt := time.Now().UTC()
 	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).
