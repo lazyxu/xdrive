@@ -15,11 +15,13 @@ type ExplorerVerbSpec struct {
 	Label     string
 	AppliesTo string
 	Command   string
+	Icon      string
 }
 
-func ExplorerVerbSpecs(root, executable string) []ExplorerVerbSpec {
+func ExplorerVerbSpecs(root, executable, icon string) []ExplorerVerbSpec {
 	root = strings.TrimRight(strings.TrimSpace(root), "\\/")
 	executable = strings.TrimSpace(executable)
+	icon = strings.TrimSpace(icon)
 	escapedRoot := strings.ReplaceAll(root, `"`, `\\"`)
 	descendantRoot := escapedRoot
 	if !strings.HasSuffix(descendantRoot, `\`) {
@@ -39,12 +41,14 @@ func ExplorerVerbSpecs(root, executable string) []ExplorerVerbSpec {
 			Label:     "始终保留在此设备",
 			AppliesTo: appliesTo,
 			Command:   command("keep"),
+			Icon:      icon,
 		},
 		{
 			Key:       VerbReleaseSpaceKey,
 			Label:     "释放空间",
 			AppliesTo: appliesTo,
 			Command:   command("release"),
+			Icon:      icon,
 		},
 	}
 }

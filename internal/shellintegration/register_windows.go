@@ -44,7 +44,8 @@ func RegisterExplorerActions(root string) error {
 	if err := UnregisterExplorerActions(); err != nil {
 		return err
 	}
-	for _, spec := range ExplorerVerbSpecs(root, executable) {
+	icon := explorerVerbIcon(executable)
+	for _, spec := range ExplorerVerbSpecs(root, executable, icon) {
 		if err := writeExplorerVerb(spec); err != nil {
 			_ = UnregisterExplorerActions()
 			return err
@@ -54,6 +55,15 @@ func RegisterExplorerActions(root string) error {
 	return nil
 }
 
+func explorerVerbIcon(agentExecutable string) string {
+	candidate := filepath.Join(filepath.Dir(agentExecutable), "desktop", "xdrive-desktop.exe")
+	info, err := os.Stat(candidate)
+	if err != nil || info.IsDir() {
+		return ""
+	}
+	return candidate
+}
+
 func writeExplorerVerb(spec ExplorerVerbSpec) error {
 	keyPath := explorerShellBase + `\` + spec.Key
 	key, _, err := registry.CreateKey(registry.CURRENT_USER, keyPath, registry.ALL_ACCESS)
@@ -61,12 +71,16 @@ func writeExplorerVerb(spec ExplorerVerbSpec) error {
 		return fmt.Errorf("create Explorer verb %s: %w", spec.Key, err)
 	}
 	defer key.Close()
-	for name, value := range map[string]string{
+	values := map[string]string{
 		"MUIVerb":          spec.Label,
 		"AppliesTo":        spec.AppliesTo,
 		"MultiSelectModel": "Single",
 		"Position":         "Bottom",
-	} {
+	}
+	if spec.Icon != "" {
+		values["Icon"] = spec.Icon
+	}
+	for name, value := range values {
 		if err := key.SetStringValue(name, value); err != nil {
 			return fmt.Errorf("write Explorer verb %s/%s: %w", spec.Key, name, err)
 		}
