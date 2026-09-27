@@ -127,7 +127,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{},
 		&meta.UploadSession{}, &meta.UploadPart{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceCredential{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{},
@@ -195,7 +195,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		files: []yike.File{
 			{
 				FSID: 1, Path: "/root.jpg", Size: int64(len(rootPayload)),
-				CTime: 900, MTime: 1000, MD5: strings.Repeat("a", 32),
+				CTime: 900, MTime: 1000, MD5: "1c323ac6dfdbb9b3b61fddbf84448cdd",
 				ThumbURL: []string{"https://thumb.example/root"},
 			},
 		},
@@ -204,12 +204,12 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 			"shared": {
 				{File: yike.File{
 					FSID: 1, Path: "/root.jpg", Size: int64(len(rootPayload)),
-					CTime: 900, MTime: 1000, MD5: strings.Repeat("a", 32),
+					CTime: 900, MTime: 1000, MD5: "1c323ac6dfdbb9b3b61fddbf84448cdd",
 					ThumbURL: []string{"https://thumb.example/root"},
 				}, AlbumID: "shared", UK: 123},
 				{File: yike.File{
 					FSID: 2, Path: "/shared.jpg", Size: int64(len(sharedPayload)),
-					CTime: 1900, MTime: 2000, MD5: strings.Repeat("b", 32),
+					CTime: 1900, MTime: 2000, MD5: "bd440fe2a75c94a84cc0c8cd8f5d7523",
 					ThumbURL: []string{"", "https://thumb.example/shared"},
 				}, AlbumID: "shared", TID: 7, UK: 999},
 			},
@@ -273,7 +273,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	rootMetadata := metadataByOwner["123"]
 	if rootMetadata.OriginalPath != "/root.jpg" ||
 		rootMetadata.RemoteCreatedAt == nil || rootMetadata.RemoteCreatedAt.Unix() != 900 ||
-		rootMetadata.ContentMD5 != strings.Repeat("a", 32) ||
+		rootMetadata.ContentMD5 != "1c323ac6dfdbb9b3b61fddbf84448cdd" ||
 		rootMetadata.ThumbnailURL != "https://thumb.example/root" ||
 		rootMetadata.PairGroupID != "" || rootMetadata.PairRole != "" {
 		t.Fatalf("unexpected root metadata: %+v", rootMetadata)
@@ -281,7 +281,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	sharedMetadata := metadataByOwner["999"]
 	if sharedMetadata.OriginalPath != "/shared.jpg" ||
 		sharedMetadata.RemoteCreatedAt == nil || sharedMetadata.RemoteCreatedAt.Unix() != 1900 ||
-		sharedMetadata.ContentMD5 != strings.Repeat("b", 32) ||
+		sharedMetadata.ContentMD5 != "bd440fe2a75c94a84cc0c8cd8f5d7523" ||
 		sharedMetadata.ThumbnailURL != "https://thumb.example/shared" ||
 		sharedMetadata.PairGroupID != "" || sharedMetadata.PairRole != "" {
 		t.Fatalf("unexpected shared metadata: %+v", sharedMetadata)
@@ -416,7 +416,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	remote.albumFiles["shared"] = []yike.AlbumFile{
 		{File: yike.File{
 			FSID: 1, Path: "/root.jpg", Size: int64(len(rootPayload)),
-			CTime: 900, MTime: 1000, MD5: strings.Repeat("a", 32),
+			CTime: 900, MTime: 1000, MD5: "1c323ac6dfdbb9b3b61fddbf84448cdd",
 			ThumbURL: []string{"https://thumb.example/root"},
 		}, AlbumID: "shared", UK: 123},
 	}
@@ -440,7 +440,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if retainedMetadata.OwnerExternalID != "999" ||
-		retainedMetadata.ContentMD5 != strings.Repeat("b", 32) {
+		retainedMetadata.ContentMD5 != "bd440fe2a75c94a84cc0c8cd8f5d7523" {
 		t.Fatalf("missing media lost metadata: %+v", retainedMetadata)
 	}
 	nodes, err = cli.Walk(context.Background())

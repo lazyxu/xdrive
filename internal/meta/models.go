@@ -167,6 +167,7 @@ type UploadSession struct {
 	ChunkSize        int64  `gorm:"not null"`
 	ChunkCount       int    `gorm:"not null"`
 	SHA256           string `gorm:"size:64;index"`
+	ExpectedMD5      string `gorm:"size:32;index"`
 	ResumeKey        string `gorm:"size:128;index"`
 	Status           string `gorm:"size:16;not null;index"`
 	ResultNodeID     *uint64

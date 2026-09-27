@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -40,6 +41,7 @@ type uploadInitRequest struct {
 	Size             int64    `json:"size"`
 	ChunkSize        int64    `json:"chunk_size,omitempty"`
 	SHA256           string   `json:"sha256,omitempty"`
+	MD5              string   `json:"md5,omitempty"`
 	ChunkSHA256      []string `json:"chunk_sha256,omitempty"`
 	ResumeKey        string   `json:"resume_key,omitempty"`
 	ExpectedRevision uint64   `json:"expected_revision,omitempty"`
@@ -61,6 +63,7 @@ type uploadSessionDTO struct {
 	ChunkSize        int64           `json:"chunk_size"`
 	ChunkCount       int             `json:"chunk_count"`
 	SHA256           string          `json:"sha256,omitempty"`
+	MD5              string          `json:"md5,omitempty"`
 	ResumeKey        string          `json:"resume_key,omitempty"`
 	ExpectedRevision uint64          `json:"expected_revision,omitempty"`
 	Status           string          `json:"status"`
@@ -89,6 +92,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	req.SHA256 = strings.ToLower(strings.TrimSpace(req.SHA256))
 	if req.SHA256 != "" && !validSHA256(req.SHA256) {
 		fail(c, http.StatusBadRequest, "invalid sha256")
+		return
+	}
+	req.MD5 = strings.ToLower(strings.TrimSpace(req.MD5))
+	if req.MD5 != "" && !validMD5(req.MD5) {
+		fail(c, http.StatusBadRequest, "invalid md5")
 		return
 	}
 	req.ResumeKey = strings.TrimSpace(req.ResumeKey)
@@ -121,6 +129,18 @@ func (s *Server) createUploadSession(c *gin.Context) {
 
 	uid := userID(c)
 	_ = s.cleanupExpiredUploads(c.Request.Context(), uid)
+	if req.SHA256 == "" && req.MD5 != "" {
+		resolved, ok, err := verifiedDigestSHA256(
+			c.Request.Context(), s.DB, uid, contentDigestAlgorithmMD5, req.MD5, req.Size,
+		)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "verified digest lookup failed")
+			return
+		}
+		if ok {
+			req.SHA256 = resolved
+		}
+	}
 
 	// Resume lookup happens before target-state validation so a client that
 	// lost the final response can recover the already-finalized result instead
@@ -136,6 +156,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		if req.SHA256 != "" {
 			q = q.Where("sha256 = ? OR sha256 = ''", req.SHA256)
+		}
+		if req.MD5 != "" {
+			q = q.Where("expected_md5 = ? OR expected_md5 = ''", req.MD5)
 		}
 		if err := q.Order("created_at DESC").First(&existing).Error; err == nil {
 			if existing.Status == meta.UploadStatusFinalized {
@@ -155,9 +178,17 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					}
 					return
 				}
+				updates := map[string]any{}
 				if existing.SHA256 == "" && req.SHA256 != "" {
-					_ = s.DB.Model(&existing).Update("sha256", req.SHA256).Error
+					updates["sha256"] = req.SHA256
 					existing.SHA256 = req.SHA256
+				}
+				if existing.ExpectedMD5 == "" && req.MD5 != "" {
+					updates["expected_md5"] = req.MD5
+					existing.ExpectedMD5 = req.MD5
+				}
+				if len(updates) != 0 {
+					_ = s.DB.Model(&existing).Updates(updates).Error
 				}
 				s.writeUploadSession(c, existing, http.StatusOK)
 				return
@@ -249,6 +280,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		ChunkSize:        req.ChunkSize,
 		ChunkCount:       chunkCount,
 		SHA256:           req.SHA256,
+		ExpectedMD5:      req.MD5,
 		ResumeKey:        req.ResumeKey,
 		Status:           meta.UploadStatusActive,
 		ExpiresAt:        time.Now().Add(uploadSessionTTL),
@@ -487,7 +519,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	newKey := storageKey(session.OwnerID, targetLogical, uuid.NewString())
 	seq := &uploadPartSequence{ctx: c.Request.Context(), store: s.Store, parts: parts}
 	fullHash := sha256.New()
-	size, putErr := s.Store.Put(c.Request.Context(), newKey, io.TeeReader(seq, fullHash))
+	md5Hash := md5.New()
+	size, putErr := s.Store.Put(c.Request.Context(), newKey, io.TeeReader(seq, io.MultiWriter(fullHash, md5Hash)))
 	closeErr := seq.Close()
 	if putErr != nil {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
@@ -505,6 +538,14 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 	actualHash := hex.EncodeToString(fullHash.Sum(nil))
+	actualMD5 := hex.EncodeToString(md5Hash.Sum(nil))
+	if session.ExpectedMD5 != "" && !strings.EqualFold(actualMD5, session.ExpectedMD5) {
+		_ = s.Store.Delete(c.Request.Context(), newKey)
+		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+			"error": "file_md5_mismatch", "expected": session.ExpectedMD5, "actual": actualMD5,
+		})
+		return
+	}
 	if session.SHA256 != "" && !strings.EqualFold(actualHash, session.SHA256) {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
 		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
@@ -600,6 +641,14 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			result.ID = current.ID
 		}
 
+		if currentSession.ExpectedMD5 != "" {
+			if err := recordVerifiedDigestAliasTx(
+				tx, currentSession.OwnerID, contentDigestAlgorithmMD5,
+				currentSession.ExpectedMD5, size, actualHash, now,
+			); err != nil {
+				return err
+			}
+		}
 		resultID := result.ID
 		if err := tx.Model(&meta.UploadSession{}).Where("id = ?", currentSession.ID).Updates(map[string]any{
 			"status": meta.UploadStatusFinalized, "result_node_id": resultID,
@@ -671,7 +720,8 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 	out := uploadSessionDTO{
 		ID: session.ID, ParentID: session.ParentID, NodeID: session.NodeID, Name: session.Name,
 		Size: session.TotalSize, ChunkSize: session.ChunkSize, ChunkCount: session.ChunkCount,
-		SHA256: session.SHA256, ResumeKey: session.ResumeKey, ExpectedRevision: session.ExpectedRevision,
+		SHA256: session.SHA256, MD5: session.ExpectedMD5,
+		ResumeKey: session.ResumeKey, ExpectedRevision: session.ExpectedRevision,
 		Status: session.Status, ExpiresAt: session.ExpiresAt,
 		Received: make([]uploadPartDTO, 0, len(parts)),
 	}
@@ -754,6 +804,14 @@ func expectedPartSize(session meta.UploadSession, index int) int64 {
 
 func validSHA256(v string) bool {
 	if len(v) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(v)
+	return err == nil
+}
+
+func validMD5(v string) bool {
+	if len(v) != 32 {
 		return false
 	}
 	_, err := hex.DecodeString(v)

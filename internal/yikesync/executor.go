@@ -26,8 +26,8 @@ type ExecutionAPI interface {
 	List(context.Context, uint64) ([]client.Node, error)
 	CreateDir(context.Context, uint64, string) (client.Node, error)
 	RenameMove(context.Context, uint64, uint64, *string, *uint64) (client.Node, error)
-	UploadStreamResumableResult(context.Context, uint64, string, int64, string, client.UploadStreamOpen, client.UploadProgress) (client.UploadResult, error)
-	OverwriteStreamResumableResult(context.Context, uint64, uint64, int64, string, client.UploadStreamOpen, client.UploadProgress) (client.UploadResult, error)
+	UploadStreamResumableDigestResult(context.Context, uint64, string, int64, string, string, client.UploadStreamOpen, client.UploadProgress) (client.UploadResult, error)
+	OverwriteStreamResumableDigestResult(context.Context, uint64, uint64, int64, string, string, client.UploadStreamOpen, client.UploadProgress) (client.UploadResult, error)
 }
 
 type TransferRef struct {
@@ -80,8 +80,8 @@ func (e *Executor) Execute(ctx context.Context, plan client.SourcePlan, item sou
 		if existing != nil {
 			return client.SourceCommit{}, fmt.Errorf("destination %q already exists", item.Path)
 		}
-		result, uploadErr := e.API.UploadStreamResumableResult(
-			ctx, parent.ID, name, item.Size, resumeKey(item),
+		result, uploadErr := e.API.UploadStreamResumableDigestResult(
+			ctx, parent.ID, name, item.Size, metadataMD5(ref.File.MD5), resumeKey(item),
 			e.open(ref), e.progress(ctx),
 		)
 		if uploadErr != nil {
@@ -93,8 +93,8 @@ func (e *Executor) Execute(ctx context.Context, plan client.SourcePlan, item sou
 		if plan.NodeID == nil || plan.NodeRevision == 0 {
 			return client.SourceCommit{}, fmt.Errorf("Yike update is missing node identity")
 		}
-		result, uploadErr := e.API.OverwriteStreamResumableResult(
-			ctx, *plan.NodeID, plan.NodeRevision, item.Size, resumeKey(item),
+		result, uploadErr := e.API.OverwriteStreamResumableDigestResult(
+			ctx, *plan.NodeID, plan.NodeRevision, item.Size, metadataMD5(ref.File.MD5), resumeKey(item),
 			e.open(ref), e.progress(ctx),
 		)
 		if uploadErr != nil {
@@ -120,8 +120,8 @@ func (e *Executor) Execute(ctx context.Context, plan client.SourcePlan, item sou
 		if err != nil {
 			return client.SourceCommit{}, err
 		}
-		result, uploadErr := e.API.OverwriteStreamResumableResult(
-			ctx, node.ID, node.Revision, item.Size, resumeKey(item),
+		result, uploadErr := e.API.OverwriteStreamResumableDigestResult(
+			ctx, node.ID, node.Revision, item.Size, metadataMD5(ref.File.MD5), resumeKey(item),
 			e.open(ref), e.progress(ctx),
 		)
 		if uploadErr != nil {

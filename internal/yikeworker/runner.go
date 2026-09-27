@@ -389,11 +389,12 @@ func (a *ownerExecutionAPI) RenameMove(ctx context.Context, id, revision uint64,
 	return c.RenameMove(ctx, id, revision, name, parentID)
 }
 
-func (a *ownerExecutionAPI) UploadStreamResumableResult(
+func (a *ownerExecutionAPI) UploadStreamResumableDigestResult(
 	ctx context.Context,
 	parentID uint64,
 	name string,
 	size int64,
+	md5Digest string,
 	resumeKey string,
 	open client.UploadStreamOpen,
 	progress client.UploadProgress,
@@ -402,13 +403,14 @@ func (a *ownerExecutionAPI) UploadStreamResumableResult(
 	if err != nil {
 		return client.UploadResult{}, err
 	}
-	return c.UploadStreamResumableResult(ctx, parentID, name, size, resumeKey, open, progress)
+	return c.UploadStreamResumableDigestResult(ctx, parentID, name, size, md5Digest, resumeKey, open, progress)
 }
 
-func (a *ownerExecutionAPI) OverwriteStreamResumableResult(
+func (a *ownerExecutionAPI) OverwriteStreamResumableDigestResult(
 	ctx context.Context,
 	nodeID, revision uint64,
 	size int64,
+	md5Digest string,
 	resumeKey string,
 	open client.UploadStreamOpen,
 	progress client.UploadProgress,
@@ -417,7 +419,7 @@ func (a *ownerExecutionAPI) OverwriteStreamResumableResult(
 	if err != nil {
 		return client.UploadResult{}, err
 	}
-	return c.OverwriteStreamResumableResult(ctx, nodeID, revision, size, resumeKey, open, progress)
+	return c.OverwriteStreamResumableDigestResult(ctx, nodeID, revision, size, md5Digest, resumeKey, open, progress)
 }
 
 func (a *ownerSourceAPI) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (client.SyncRun, error) {

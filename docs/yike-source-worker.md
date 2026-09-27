@@ -224,12 +224,15 @@ If any part of the remote inventory cannot be completed, the run finishes failed
 
 ## Pull execution
 
-For `run_mode=sync`, create/update candidates are streamed directly:
+For `run_mode=sync`, create/update candidates first offer Yike's canonical MD5 to the upload API. xDrive never trusts that digest by itself: the first transfer is assembled server-side while SHA256 and MD5 are both computed, and a reusable `MD5 + size -> SHA256` mapping is recorded only when the computed MD5 matches Yike's value. A later item for the same xDrive user can resolve that verified mapping to an already-owned healthy CAS blob and instant-attach it without requesting a Yike dlink or transferring media bytes. Digest mappings are owner-scoped; a cross-user digest value is never proof of possession. Conflicting verified mappings become `ambiguous` and are no longer eligible for instant reuse.
+
+On a cache miss, the normal streaming path remains:
 
 ```text
 Yike dlink
   -> HTTP Range stream
   -> 8 MiB xDrive upload chunks
+  -> server verifies MD5 + SHA256
   -> CAS/finalize
   -> Source /commit
 ```
@@ -242,4 +245,4 @@ Pure `move` plans rename/move the existing xDrive Node without downloading conte
 
 Shared media uses the read-only direct album download endpoint. If that direct link is unavailable, only that item remains pending and the run becomes `partial`; other media continue. xDrive never calls Yike `copyfile`, `addfile`, delete, or other mutation endpoints to make a shared item downloadable.
 
-Actual `TransferredBytes` counts only chunks newly accepted by xDrive. Scan mode reports planned transfer bytes only.
+Actual `TransferredBytes` counts only chunks newly accepted by xDrive. A verified-MD5 CAS instant attach reports zero transferred bytes. Scan mode reports planned transfer bytes only.

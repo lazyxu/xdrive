@@ -47,6 +47,7 @@ func (s *Server) tryInstantUploadSession(
 		ChunkSize:        req.ChunkSize,
 		ChunkCount:       chunkCount,
 		SHA256:           req.SHA256,
+		ExpectedMD5:      req.MD5,
 		ResumeKey:        req.ResumeKey,
 		Status:           meta.UploadStatusFinalized,
 		ExpiresAt:        time.Now().Add(uploadSessionTTL),
