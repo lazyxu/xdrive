@@ -30,6 +30,7 @@ var (
 	ErrAuthentication = errors.New("Yike authentication failed")
 	ErrRateLimited    = errors.New("Yike request rate limited")
 	ErrUnavailable    = errors.New("Yike service unavailable")
+	ErrNoAlbums       = errors.New("Yike has no shared albums")
 )
 
 type Client struct {
@@ -137,6 +138,9 @@ func (c *Client) ListAlbumsPage(ctx context.Context, cursor string) (AlbumList, 
 		query.Set("cursor", cursor)
 	}
 	if err := c.getJSON(ctx, "/album/v1/list", query, &out); err != nil {
+		if errors.Is(err, ErrNoAlbums) {
+			return AlbumList{}, nil
+		}
 		return AlbumList{}, err
 	}
 	return out.AlbumList, validatePage(out.AlbumList.Page)
@@ -663,7 +667,7 @@ func (e apiEnvelope) Err() error {
 	case 50805:
 		return fmt.Errorf("Yike API errno 50805: album already joined%s", detail)
 	case 50820:
-		return fmt.Errorf("Yike API errno 50820: no shared albums found%s", detail)
+		return fmt.Errorf("%w: API errno 50820%s", ErrNoAlbums, detail)
 	default:
 		lower := strings.ToLower(message)
 		if strings.Contains(lower, "login") || strings.Contains(message, "登录") {
