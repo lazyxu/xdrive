@@ -1,0 +1,62 @@
+# Yike Photos V1 release acceptance
+
+Yike Photos support depends on the current private Web API used by the signed-in `photo.baidu.com` application. This checklist is the release gate for the first usable xDrive Yike backup version. The connector is intentionally **read-only on Yike** and **backup-only on xDrive**.
+
+## Scope that must work
+
+A user must be able to configure a Yike Cookie in Web or Desktop, validate it, choose an xDrive target directory, run scan-only or sync mode, trigger an immediate run, and let the pull worker run on schedule. Media already copied into xDrive must never be deleted merely because it disappears from Yike.
+
+The V1 release does not require Yike-side uploads/deletes/renames, mirror deletion, inferred Live Photo pairing, EXIF processing, or a Yike-style album browsing UI.
+
+## Credential-safe live smoke
+
+Never paste a real Cookie into source code, an issue, a PR, CI variables intended for logs, or a shell command that will be saved to history. On a trusted test machine, read it interactively into an environment variable:
+
+```bash
+read -rsp "Yike Cookie: " XD_YIKE_TEST_COOKIE
+echo
+export XD_YIKE_TEST_COOKIE
+scripts/test-yike-live.sh
+unset XD_YIKE_TEST_COOKIE
+```
+
+The smoke test is build-tagged and not part of normal CI. It only calls read-only user-info, list, album-list and download-link endpoints. Passing it confirms the current private API contract still matches xDrive; it does not replace the end-to-end sync checks below.
+
+## End-to-end release gate
+
+Use a non-production xDrive target directory and a Yike account whose test set includes photos and videos. Complete every blocking item:
+
+- [ ] Web: add a Yike source, expand “如何获取 Cookie”, test the Cookie, choose a target and create the source.
+- [ ] Desktop: repeat the same create/test flow against a separate target.
+- [ ] An invalid/expired Cookie is rejected and is not shown as configured.
+- [ ] Replacing a valid stored Cookie with an invalid Cookie is rejected and the previous credential remains usable.
+- [ ] `scan` mode enumerates the root library without downloading media.
+- [ ] `sync` mode downloads normal photos and videos into the selected xDrive target.
+- [ ] At least one large video completes through resumable upload without worker-local full-file staging.
+- [ ] Root-library media and own albums are traversed successfully.
+- [ ] Joined/shared albums are traversed when the account has them.
+- [ ] One media object belonging to multiple albums produces one SourceItem/xDrive file, with multiple collection memberships rather than duplicate content.
+- [ ] Chinese names, spaces and names containing Windows-reserved characters are mapped to valid deterministic xDrive paths.
+- [ ] A second run with no remote changes transfers no duplicate content.
+- [ ] A newly added Yike item is imported on the next run.
+- [ ] A remotely changed item is updated rather than duplicated.
+- [ ] A pure path move is reflected without re-downloading bytes when the planner identifies a move.
+- [ ] Stop/restart the worker during a large transfer; the next run resumes through the existing xDrive upload-session/Range path.
+- [ ] Force one item-level transfer failure; the Source shows the failed item and Web/Desktop expose “重试失败项”.
+- [ ] After the underlying failure is removed, the next scan retries the failed item and clears its error state.
+- [ ] Remove a test item from Yike; the SourceItem becomes `missing` but the already imported xDrive node/content remains.
+- [ ] Pause a Source and confirm scheduled/manual execution is gated until re-enabled.
+- [ ] Delete the Source and confirm its Source metadata/credential are removed while already imported xDrive files remain.
+- [ ] Restart the API and pull worker; configured Sources remain usable.
+- [ ] Backup and restore the server, then run `xdrive-server source-credentials verify` with the restored connector keyring before restarting normal pull work.
+
+A convenient forced run in the deployed Compose stack is:
+
+```bash
+docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
+  exec -T worker xdrive-server worker --once
+```
+
+## Pass criteria
+
+V1 is release-ready only when normal repository CI is green, the credential persistence tests pass, the read-only live smoke passes against a current Yike account, and every applicable blocking end-to-end item above passes. If Yike changes its private API, fail closed: report a clear Source error, preserve the stored xDrive backup, and do not add mutating Yike workarounds.

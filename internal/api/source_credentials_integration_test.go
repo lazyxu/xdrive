@@ -178,6 +178,22 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodPut, statusPath, tokenB, strings.NewReader(body), http.StatusNotFound,
 		map[string]string{"Content-Type": "application/json"})
 
+	credentialTestErr = yike.ErrAuthentication
+	rejectedBody := `{"payload":{"cookie":"BDUSS=rejected-cookie"}}`
+	rejectedPut := requestWithHeaders(t, router, http.MethodPut, statusPath, tokenA, strings.NewReader(rejectedBody), http.StatusUnprocessableEntity,
+		map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(rejectedPut.Body.String(), "yike_auth_failed") {
+		t.Fatalf("rejected credential response=%s", rejectedPut.Body.String())
+	}
+	var rejectedCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).Count(&rejectedCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rejectedCount != 0 {
+		t.Fatalf("invalid credential persisted %d rows", rejectedCount)
+	}
+	credentialTestErr = nil
+
 	putRes := requestWithHeaders(t, router, http.MethodPut, statusPath, tokenA, strings.NewReader(body), http.StatusOK,
 		map[string]string{"Content-Type": "application/json"})
 	if strings.Contains(putRes.Body.String(), "top-secret-cookie") || strings.Contains(putRes.Body.String(), "BDUSS") {
@@ -211,6 +227,22 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if bytes.Contains(row.Ciphertext, []byte("top-secret-cookie")) || bytes.Contains(row.Ciphertext, []byte("BDUSS")) {
 		t.Fatal("database ciphertext contains credential plaintext")
 	}
+
+	credentialTestErr = yike.ErrAuthentication
+	rejectedReplace := requestWithHeaders(t, router, http.MethodPut, statusPath, tokenA, strings.NewReader(rejectedBody), http.StatusUnprocessableEntity,
+		map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(rejectedReplace.Body.String(), "yike_auth_failed") {
+		t.Fatalf("rejected replacement response=%s", rejectedReplace.Body.String())
+	}
+	credentialTestErr = nil
+	preserved, err := sourcecredential.Get(context.Background(), db, ringV1, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(preserved) != `{"cookie":"BDUSS=top-secret-cookie"}` {
+		t.Fatalf("rejected replacement changed stored credential: %q", preserved)
+	}
+	clear(preserved)
 
 	rotated, err := connectorsecret.NewKeyring(2, map[uint32]string{1: keyV1, 2: keyV2})
 	if err != nil {

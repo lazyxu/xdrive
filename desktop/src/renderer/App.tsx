@@ -41,8 +41,10 @@ import {
   externalSourceDefaults,
   externalSourceDetailView,
   externalSourceRunDetailView,
+  externalSourceTriggerActionLabel,
   formatBinarySize,
   formatExternalSourceTime,
+  yikeConnectorNotice,
   yikeCookieHelp,
 } from '@xdrive/shared'
 import type {
@@ -678,9 +680,15 @@ function App() {
       if (sourceCreateKind === 'yike_photos') {
         const credential = await window.xdriveDesktop.agent.setSourceCredential(created.data.id, cookie)
         if (!credential.ok) {
+          const rollback = await window.xdriveDesktop.agent.deleteSource(created.data.id, created.data.revision)
+          if (rollback.ok) {
+            setError(`Cookie 保存失败：${credential.error.message}。刚创建的一刻相册来源已自动撤销，请检查后重试。`)
+            await loadSources()
+            return
+          }
           setSourceCreateOpen(false)
           setSourceCreateCookie('')
-          setError(`来源已创建，但 Cookie 保存失败：${credential.error.message}。请在该来源的“设置”中重新配置 Cookie。`)
+          setError(`来源已创建，但 Cookie 保存失败且自动回滚失败：${credential.error.message}；回滚错误：${rollback.error.message}。请在该来源的“设置”中重新配置 Cookie。`)
           await loadSources()
           return
         }
@@ -1612,6 +1620,7 @@ function App() {
                       required
                     />
                     <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
+                    <MuiAlert severity="warning" sx={{ mt: 0.5 }}>{yikeConnectorNotice}</MuiAlert>
                     <YikeCookieHelpGuide />
                     <MuiButton
                       type="button"
@@ -1670,7 +1679,7 @@ function App() {
                         <span>
                           {card.scannedItems === undefined || card.scannedBytes === undefined
                             ? '尚无扫描统计'
-                            : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBinarySize(card.scannedBytes)}`}
+                            : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBinarySize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`}
                         </span>
                       </div>
                       {row.source.last_error && <div className="source-error">{row.source.last_error}</div>}
@@ -1703,11 +1712,9 @@ function App() {
                           disabled={!!busy || !card.trigger.ready}
                           onClick={() => void triggerSourceNow(row)}
                         >
-                          {row.source.run_requested_at
-                            ? '已请求'
-                            : busy === `source-trigger-${row.source.id}`
-                              ? '正在请求…'
-                              : '立即扫描'}
+                          {busy === `source-trigger-${row.source.id}`
+                            ? '正在请求…'
+                            : externalSourceTriggerActionLabel(row)}
                         </button>
                         <button
                           className="secondary"
@@ -1860,9 +1867,19 @@ function App() {
                               severity="error"
                               sx={{ mt: 1.5 }}
                               action={(
-                                <MuiButton color="inherit" size="small" onClick={() => setSourceFailedItemsOpen(true)}>
-                                  查看失败项（{failedItems.length}）
-                                </MuiButton>
+                                <Stack direction="row" spacing={0.5}>
+                                  <MuiButton color="inherit" size="small" onClick={() => setSourceFailedItemsOpen(true)}>
+                                    查看失败项（{failedItems.length}）
+                                  </MuiButton>
+                                  <MuiButton
+                                    color="inherit"
+                                    size="small"
+                                    disabled={!!busy || !card.trigger.ready}
+                                    onClick={() => void triggerSourceNow(row)}
+                                  >
+                                    {busy === `source-trigger-${row.source.id}` ? '正在请求…' : '立即重试'}
+                                  </MuiButton>
+                                </Stack>
                               )}
                             >
                               当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
