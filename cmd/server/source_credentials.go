@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const sourceCredentialUsage = "usage: xdrive-server source-credentials <status|rewrap> [--dry-run]"
+const sourceCredentialUsage = "usage: xdrive-server source-credentials <status|verify|rewrap> [--dry-run]"
 
 func runSourceCredentialCommand(args []string) error {
 	if len(args) == 0 {
@@ -61,6 +61,26 @@ func runSourceCredentialCommand(args []string) error {
 			fmt.Printf("credential_key_version_%d: %d\n", row.KeyVersion, row.Count)
 		}
 		fmt.Printf("credentials_total: %d\n", total)
+		return nil
+
+	case "verify":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: xdrive-server source-credentials verify")
+		}
+		report, err := sourcecredential.VerifyAll(context.Background(), db, keyring)
+		if err != nil {
+			return err
+		}
+		active := uint32(0)
+		versions := []uint32(nil)
+		if keyring != nil {
+			active = keyring.ActiveVersion()
+			versions = keyring.Versions()
+		}
+		fmt.Printf("active_key_version: %d\n", active)
+		fmt.Printf("configured_key_versions: %v\n", versions)
+		fmt.Printf("scanned: %d\n", report.Scanned)
+		fmt.Printf("verified: %d\n", report.Verified)
 		return nil
 
 	case "rewrap":

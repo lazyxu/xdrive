@@ -829,7 +829,14 @@ Phase 13B adds the **Source Execution Foundation** without introducing a vendor 
 
 Phase 13D adds a separate **Source Credential Keyring** for pull connectors such as Yike Photos. Connector payloads are stored only as AES-256-GCM ciphertext in `xd_source_credentials`; authenticated additional data binds each ciphertext to its Source ID, connector kind, and key version. The REST API can write/delete a credential and query only `configured/key_version/updated_at`; it never returns decrypted payloads.
 
-Connector encryption is independent from `XD_JWT_SECRET`. New deployments generate `XD_CONNECTOR_SECRET_KEYS=1:<64-hex-key>` with active version 1. Rotation keeps old and new keys simultaneously, switches `XD_CONNECTOR_SECRET_ACTIVE_VERSION` to the new version, then runs:
+Connector encryption is independent from `XD_JWT_SECRET`. New deployments generate `XD_CONNECTOR_SECRET_KEYS=1:<64-hex-key>` with active version 1. The connector keyring is required to decrypt persisted external-source credentials after a disaster recovery. Verify that the configured key bytes can actually decrypt every stored credential with:
+
+```bash
+docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
+  run -T --rm --no-deps server source-credentials verify
+```
+
+A zero exit status means every persisted connector credential was authenticated and decrypted successfully; the command does not modify ciphertext. Rotation keeps old and new keys simultaneously, switches `XD_CONNECTOR_SECRET_ACTIVE_VERSION` to the new version, then runs:
 
 ```bash
 xdrive-server source-credentials status
