@@ -745,6 +745,18 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	if strings.Contains(githubRelease, "${{ matrix.") {
 		t.Errorf("GitHub release server image publication must use one runner instead of a matrix")
 	}
+	requireRaw(t, "GitHub snapshot retention", githubRelease,
+		"name: Prune old immutable master snapshots",
+		"keep_recent=50",
+		"daily_days=30",
+		"^snapshot-[0-9a-fA-F]{12}$",
+		"gh release delete \"$tag\" --repo \"$repo\" -y",
+		"gh api --method DELETE \"repos/$repo/git/refs/tags/$tag\"",
+	)
+	if strings.Contains(githubRelease, "git/refs/tags/snapshot\" >/dev/null") {
+		t.Errorf("snapshot retention must not delete the rolling snapshot tag")
+	}
+
 	requireRaw(t, "GitHub rolling snapshot recreation", githubRelease,
 		"gh release delete snapshot --repo \"$repo\" -y",
 		"gh release create snapshot release/* --repo \"$repo\" --prerelease",

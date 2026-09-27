@@ -284,6 +284,91 @@ jobs:
               --title "xDrive snapshot ${GITHUB_SHA::12}" \
               --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
           fi
+      - name: Prune old immutable master snapshots
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          keep_recent=50
+          daily_days=30
+          releases_json="$(mktemp)"
+          trap 'rm -f "$releases_json"' EXIT
+
+          gh release list --repo "$repo" --limit 1000 --json tagName,publishedAt > "$releases_json"
+          delete_tags="$(
+            KEEP_RECENT="$keep_recent" DAILY_DAYS="$daily_days" RELEASES_JSON="$releases_json" python3 - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import re
+
+          keep_recent = int(os.environ["KEEP_RECENT"])
+          daily_days = int(os.environ["DAILY_DAYS"])
+          now = dt.datetime.now(dt.timezone.utc)
+          cutoff = now - dt.timedelta(days=daily_days)
+          pattern = re.compile(r"^snapshot-[0-9a-fA-F]{12}$")
+
+          with open(os.environ["RELEASES_JSON"], encoding="utf-8") as handle:
+              releases = json.load(handle)
+
+          items = []
+          unknown = set()
+          for release in releases:
+              tag = str(release.get("tagName") or "")
+              if not pattern.fullmatch(tag):
+                  continue
+              raw = release.get("publishedAt")
+              if not raw:
+                  unknown.add(tag)
+                  continue
+              try:
+                  published = dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00")).astimezone(dt.timezone.utc)
+              except ValueError:
+                  unknown.add(tag)
+                  continue
+              items.append((published, tag))
+
+          items.sort(reverse=True)
+          keep = set(unknown)
+          keep.update(tag for _, tag in items[:keep_recent])
+
+          daily_kept = set()
+          for published, tag in items[keep_recent:]:
+              if published > now:
+                  keep.add(tag)
+                  continue
+              if published < cutoff:
+                  continue
+              day = published.date()
+              if day not in daily_kept:
+                  daily_kept.add(day)
+                  keep.add(tag)
+
+          for _, tag in items:
+              if tag not in keep:
+                  print(tag)
+          PY
+          )"
+
+          if [[ -z "$delete_tags" ]]; then
+            echo "No immutable snapshots need pruning."
+            exit 0
+          fi
+
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            echo "Pruning immutable snapshot: $tag"
+            if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+              gh release delete "$tag" --repo "$repo" -y
+            fi
+            if gh api "repos/$repo/git/ref/tags/$tag" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/$repo/git/refs/tags/$tag" >/dev/null
+            fi
+          done <<< "$delete_tags"
+
       - name: Publish rolling snapshot prerelease
         if: github.ref == 'refs/heads/master'
         env:
