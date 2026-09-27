@@ -34,8 +34,6 @@ services:
   test-client:
     image: $HTTP_CLIENT_IMAGE
     command: ["sleep", "infinity"]
-    volumes:
-      - "$TMP:/test-output"
 EOF
 
 compose() {
@@ -113,10 +111,9 @@ printf 'chunk-admin-password-123\n' |
 
 login_file="$TMP/login.json"
 http -fsS \
-  -o /test-output/login.json \
   -H 'Content-Type: application/json' \
   -d '{"username":"chunk-admin","password":"chunk-admin-password-123"}' \
-  "http://server:8080/api/v1/auth/login"
+  "http://server:8080/api/v1/auth/login" > "$login_file"
 token="$(python3 - "$login_file" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
@@ -131,9 +128,8 @@ fi
 
 root_file="$TMP/root.json"
 http -fsS \
-  -o /test-output/root.json \
   -H "Authorization: Bearer $token" \
-  "http://server:8080/api/v1/nodes/root"
+  "http://server:8080/api/v1/nodes/root" > "$root_file"
 root_id="$(python3 - "$root_file" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
@@ -144,11 +140,10 @@ PY
 hash='9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'
 session_file="$TMP/session.json"
 http -fsS \
-  -o /test-output/session.json \
   -H "Authorization: Bearer $token" \
   -H 'Content-Type: application/json' \
   -d "{\"parent_id\":$root_id,\"name\":\"probe.bin\",\"size\":4,\"chunk_size\":4194304,\"sha256\":\"$hash\",\"resume_key\":\"chunk-storage-probe\"}" \
-  "http://server:8080/api/v1/uploads"
+  "http://server:8080/api/v1/uploads" > "$session_file"
 session_id="$(python3 - "$session_file" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
@@ -157,10 +152,9 @@ PY
 )"
 
 chunk_body="$TMP/chunk-response.json"
-chunk_status="$(
+chunk_result="$(
   http -sS \
-    -o /test-output/chunk-response.json \
-    -w '%{http_code}' \
+    -w $'\n%{http_code}' \
     -X PUT \
     -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/octet-stream' \
@@ -168,6 +162,8 @@ chunk_status="$(
     --data-binary 'test' \
     "http://server:8080/api/v1/uploads/$session_id/chunks/0"
 )"
+chunk_status="${chunk_result##*$'\n'}"
+printf '%s' "${chunk_result%$'\n'*}" > "$chunk_body"
 
 if [[ "$chunk_status" != "201" ]]; then
   echo "chunk upload failed after storage repair: HTTP $chunk_status $(cat "$chunk_body")" >&2
@@ -181,12 +177,11 @@ fi
 
 final_file="$TMP/finalize.json"
 http -fsS \
-  -o /test-output/finalize.json \
   -X POST \
   -H "Authorization: Bearer $token" \
   -H 'Content-Type: application/json' \
   -d '{}' \
-  "http://server:8080/api/v1/uploads/$session_id/finalize"
+  "http://server:8080/api/v1/uploads/$session_id/finalize" > "$final_file"
 node_id="$(python3 - "$final_file" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
@@ -206,7 +201,11 @@ fi
 duplicate_file="$TMP/duplicate.bin"
 printf 'test' > "$duplicate_file"
 duplicate_json="$TMP/duplicate.json"
-http -fsS   -o /test-output/duplicate.json   -H "Authorization: Bearer $token"   -F "file=@/test-output/duplicate.bin;filename=probe-copy.bin"   "http://server:8080/api/v1/nodes/$root_id/files"
+http -fsS \
+  -H "Authorization: Bearer $token" \
+  -F 'file=@-;filename=probe-copy.bin' \
+  "http://server:8080/api/v1/nodes/$root_id/files" \
+  < "$duplicate_file" > "$duplicate_json"
 duplicate_id="$(python3 - "$duplicate_json" <<'PY'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
@@ -226,9 +225,8 @@ fi
 
 download_file="$TMP/download.bin"
 http -fsS \
-  -o /test-output/download.bin \
   -H "Authorization: Bearer $token" \
-  "http://server:8080/api/v1/files/$node_id/content"
+  "http://server:8080/api/v1/files/$node_id/content" > "$download_file"
 printf 'test' > "$TMP/expected.bin"
 cmp "$TMP/expected.bin" "$download_file"
 

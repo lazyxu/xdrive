@@ -14,6 +14,8 @@ $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $TransactionRoot = Join-Path $env:LOCALAPPDATA "xdrive\updates\transaction"
 $StatusPath = Join-Path $TransactionRoot "last-transaction.json"
 $LogPath = Join-Path $TransactionRoot "last-transaction.log"
+$ProgramsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+$CommonProgramsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
 $Installer = (Resolve-Path $Installer).Path
 
 function Stop-XDriveProcesses {
@@ -130,15 +132,15 @@ if (Test-Path -LiteralPath (Join-Path $AppDir "icons")) {
 }
 
 $shortcutRoots = @(
-    (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
-    (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs")
-)
+    $ProgramsMenu,
+    $CommonProgramsMenu
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 $shortcut = $shortcutRoots |
     Where-Object { Test-Path $_ } |
     ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } |
     Select-Object -First 1
 if ($null -eq $shortcut) {
-    throw "unified client must install the xDrive Desktop shortcut"
+    throw "unified client must install the xDrive Desktop shortcut (searched: $($shortcutRoots -join ', '))"
 }
 
 $initialRunValue = (Get-ItemProperty -Path $RunKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
@@ -155,7 +157,7 @@ Set-Content -LiteralPath $marker -Value "last-known-good"
 # rollback must remove them again.
 $desktopAppPathKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\xdrive-desktop.exe"
 Remove-Item -LiteralPath $desktopAppPathKey -Recurse -Force -ErrorAction SilentlyContinue
-$startMenuGroup = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\xDrive"
+$startMenuGroup = Join-Path $ProgramsMenu "xDrive"
 Remove-Item -LiteralPath $startMenuGroup -Recurse -Force -ErrorAction SilentlyContinue
 
 $failed = Invoke-Transaction "snapshot-deadbeefdead"

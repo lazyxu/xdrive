@@ -265,7 +265,8 @@ function Restore-LastKnownGood([string]$AppDir, [string]$BackupDir, [string]$Sta
     Mirror-Directory $BackupDir $AppDir
     Restore-RegistryState $StateRoot
 
-    $startMenuGroup = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\xDrive"
+    $programsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+    $startMenuGroup = Join-Path $programsMenu "xDrive"
     Remove-Item -LiteralPath $startMenuGroup -Recurse -Force -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $StartMenuBackup) {
         Mirror-Directory $StartMenuBackup $startMenuGroup
@@ -284,7 +285,8 @@ $appDir = Get-XDriveAppDir
 $transactionRoot = Split-Path -Parent $StatusPath
 $backupDir = Join-Path $transactionRoot "last-known-good"
 $startMenuBackup = Join-Path $transactionRoot "last-known-good-startmenu"
-$startMenuGroup = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\xDrive"
+$programsMenu = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+$startMenuGroup = Join-Path $programsMenu "xDrive"
 
 try {
     Write-Log "begin update $CurrentVersion -> $TargetVersion"

@@ -182,6 +182,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	windowsPathNormalizer := readFile(t, filepath.Join(root, "scripts", "ci", "windows-path-normalization.ps1"))
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
+	windowsUpgradeTransaction := readFile(t, filepath.Join(root, "internal", "update", "windows_upgrade_transaction.ps1"))
+	windowsLegacyCleanup := readFile(t, filepath.Join(root, "internal", "update", "windows_legacy_cleanup.ps1"))
 	windowsInstaller := readFile(t, filepath.Join(root, "packaging", "windows", "xdrive.iss"))
 	chunkStorageTest := readFile(t, filepath.Join(root, "scripts", "test-server-chunk-storage.sh"))
 	branchCleanup := readFile(t, filepath.Join(root, "scripts", "cleanup-merged-branches.sh"))
@@ -715,6 +717,22 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"transaction test uninstalling via",
 		"xDriveAgent autorun remains after transaction test uninstall",
 	)
+	for label, content := range map[string]string{
+		"Windows native CI helper":         gitlabWindowsNative,
+		"Windows upgrade transaction test": windowsUpgradeTest,
+		"Windows upgrade transaction":      windowsUpgradeTransaction,
+		"Windows legacy cleanup":           windowsLegacyCleanup,
+	} {
+		requireRaw(t, label+" Start Menu discovery", content,
+			"GetFolderPath([Environment+SpecialFolder]::Programs)",
+		)
+		if strings.Contains(content, `Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs`) {
+			t.Errorf("%s must use the Windows known-folder API instead of assuming Start Menu is under APPDATA", label)
+		}
+	}
+	requireRaw(t, "Windows shortcut search roots", gitlabWindowsNative+"\n"+windowsUpgradeTest,
+		"GetFolderPath([Environment+SpecialFolder]::CommonPrograms)",
+	)
 	requireRaw(t, "Windows installer Start Menu migration", windowsInstaller,
 		"DefaultGroupName=xDrive",
 		"UsePreviousGroup=no",
@@ -724,9 +742,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"test-client:",
 		"http://server:8080/api/v1/readyz",
 		"compose exec -T test-client curl",
+		`file=@-;filename=probe-copy.bin`,
 	)
 	if strings.Contains(chunkStorageTest, `http://127.0.0.1:$PORT`) {
 		t.Errorf("chunk storage test must not access Docker-published ports through the job container loopback")
+	}
+	if strings.Contains(chunkStorageTest, "/test-output") {
+		t.Errorf("chunk storage test must stream data across Docker exec instead of bind-mounting job-container paths into the host daemon")
 	}
 	requireRaw(t, "branch cleanup jq query", branchCleanup,
 		`--arg label_name "$superseded_label"`,

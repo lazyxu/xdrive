@@ -68,7 +68,7 @@ if (Test-Path -LiteralPath $runKey) {
     }
 }
 
-$programs = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+$programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
 foreach ($path in @(
     (Join-Path $programs "xDrive Desktop.lnk"),
     (Join-Path $programs "xDrive Desktop")

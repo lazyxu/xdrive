@@ -72,9 +72,12 @@ try {
             if (-not (Test-Path (Join-Path $app "desktop\xdrive-desktop.exe"))) { throw "installed Electron desktop missing" }
             if (Test-Path (Join-Path $app "icons")) { throw "runtime tray icons must not be installed" }
 
-            $shortcutRoots = @((Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"), (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"))
+            $shortcutRoots = @(
+                [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs),
+                [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
+            ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
             $shortcut = $shortcutRoots | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Filter "xDrive.lnk" -Recurse -ErrorAction SilentlyContinue } | Select-Object -First 1
-            if ($null -eq $shortcut) { throw "unified client must install the xDrive Desktop shortcut" }
+            if ($null -eq $shortcut) { throw "unified client must install the xDrive Desktop shortcut (searched: $($shortcutRoots -join ', '))" }
 
             $reported = & (Join-Path $app "xd.exe") version
             if ($LASTEXITCODE -ne 0) { throw "installed xd.exe version command failed" }
