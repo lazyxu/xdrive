@@ -110,6 +110,53 @@ test('shared external-source trigger gating matches connector execution model', 
   )
 })
 
+test('shared connector profiles own credential and trigger semantics', () => {
+  assert.deepEqual(shared.externalSourceConnectorProfile('synology_photos'), {
+    kind: 'synology_photos',
+    label: '群晖 Photos',
+    direction: 'push',
+    credential: null,
+    manualTriggerExecutor: 'source_agent',
+    defaultName: '群晖 Photos',
+    defaultIgnoreRules: '@eaDir/\n\\#recycle/\n',
+  })
+  assert.deepEqual(shared.externalSourceConnectorProfile('yike_photos'), {
+    kind: 'yike_photos',
+    label: '一刻相册',
+    direction: 'pull',
+    credential: 'cookie',
+    manualTriggerExecutor: 'pull_worker',
+    defaultName: '一刻相册',
+    defaultIgnoreRules: '',
+  })
+
+  const unknown = shared.externalSourceConnectorProfile('future_connector')
+  assert.equal(unknown.label, 'future_connector')
+  assert.equal(unknown.credential, null)
+})
+
+test('shared source card view derives display data once for both UIs', () => {
+  const row = {
+    source: source({
+      run_mode: 'scan',
+      last_run_at: '2026-09-26T18:32:00Z',
+    }),
+    latestRun: {
+      status: 'completed',
+      scanned_items: 128493,
+      scanned_bytes: 2800000000000,
+    },
+  }
+  const view = shared.externalSourceCardView(row)
+  assert.equal(view.modeLabel, 'Push · 仅扫描')
+  assert.equal(view.lastActivityLabel, '上次扫描')
+  assert.equal(view.lastActivityAt, '2026-09-26T18:32:00Z')
+  assert.equal(view.scannedItems, 128493)
+  assert.equal(view.scannedBytes, 2800000000000)
+  assert.equal(view.connector.manualTriggerExecutor, 'source_agent')
+  assert.equal(view.trigger.ready, true)
+})
+
 test('shared external-source defaults preserve connector-specific setup rules', () => {
   assert.deepEqual(shared.externalSourceDefaults('yike_photos'), {
     kind: 'yike_photos',

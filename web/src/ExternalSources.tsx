@@ -4,6 +4,8 @@ import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, 
 import type { BadgeProps } from 'antd'
 import type { XDriveApi } from './api'
 import {
+  externalSourceCardView,
+  externalSourceConnectorProfile,
   externalSourceDefaults,
   externalSourceKindLabel,
   externalSourceModeLabel,
@@ -11,7 +13,6 @@ import {
   formatExternalSourceTime,
   formatSize,
   getExternalSourceState,
-  getExternalSourceTriggerState,
 } from '../../ui/shared/src'
 import type {
   ExternalSource,
@@ -85,7 +86,7 @@ export default function ExternalSourcesPanel({
       const next = await Promise.all(sources.map(async (source) => {
         const [runs, credential] = await Promise.all([
           api.sourceRuns(source.id, 1),
-          source.kind === 'yike_photos'
+          externalSourceConnectorProfile(source.kind).credential === 'cookie'
             ? api.sourceCredentialStatus(source.id)
             : Promise.resolve(undefined),
         ])
@@ -242,7 +243,7 @@ export default function ExternalSourcesPanel({
         status: values.status,
         ignore_rules: values.ignore_rules ?? '',
       })
-      if (setting.source.kind === 'yike_photos' && values.cookie?.trim()) {
+      if (externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && values.cookie?.trim()) {
         await api.setSourceCredential(setting.source.id, { cookie: values.cookie.trim() })
       }
       message.success('来源设置已保存')
@@ -289,26 +290,21 @@ export default function ExternalSourcesPanel({
         ) : (
           <div className="external-source-list">
             {rows.map((row) => {
-              const state = getExternalSourceState(row)
-              const trigger = getExternalSourceTriggerState(row)
-              const timeLabel = row.source.run_mode === 'scan' ? '上次扫描' : '上次成功'
-              const timeValue = row.source.run_mode === 'scan'
-                ? row.source.last_run_at
-                : row.source.last_success_at
-              const stats = row.latestRun
-                ? `${row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · ${formatSize(row.latestRun.scanned_bytes)}`
-                : '尚无扫描统计'
+              const card = externalSourceCardView(row)
+              const stats = card.scannedItems === undefined || card.scannedBytes === undefined
+                ? '尚无扫描统计'
+                : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatSize(card.scannedBytes)}`
 
               return (
                 <Card key={row.source.id} size="small" className="external-source-card">
                   <div className="external-source-card-header">
                     <div>
                       <Typography.Title level={4} style={{ margin: 0 }}>{row.source.name}</Typography.Title>
-                      <div className="external-source-subtitle">{externalSourceModeLabel(row.source)}</div>
+                      <div className="external-source-subtitle">{card.modeLabel}</div>
                     </div>
-                    <Badge status={sourceBadgeStatus(state.tone)} text={state.label} />
+                    <Badge status={sourceBadgeStatus(card.state.tone)} text={card.state.label} />
                   </div>
-                  <div className="external-source-time">{timeLabel}：{formatExternalSourceTime(timeValue)}</div>
+                  <div className="external-source-time">{card.lastActivityLabel}：{formatExternalSourceTime(card.lastActivityAt)}</div>
                   <div className="external-source-card-meta">
                     <div className="external-source-stats">{stats}</div>
                     {row.source.last_error && (
@@ -322,10 +318,10 @@ export default function ExternalSourcesPanel({
                   <div className="external-source-actions">
                     <Space size="small">
                       <Button size="small" onClick={() => setSelected(row)}>查看</Button>
-                      <Tooltip title={trigger.label}>
+                      <Tooltip title={card.trigger.label}>
                         <Button
                           size="small"
-                          disabled={!trigger.ready}
+                          disabled={!card.trigger.ready}
                           loading={triggeringSourceID === row.source.id}
                           onClick={() => void triggerNow(row)}
                         >
@@ -372,7 +368,7 @@ export default function ExternalSourcesPanel({
               </Descriptions.Item>
               <Descriptions.Item label="上次运行">{formatExternalSourceTime(selected.source.last_run_at)}</Descriptions.Item>
               <Descriptions.Item label="上次成功">{formatExternalSourceTime(selected.source.last_success_at)}</Descriptions.Item>
-              {selected.source.kind === 'yike_photos' && (
+              {externalSourceConnectorProfile(selected.source.kind).credential === 'cookie' && (
                 <Descriptions.Item label="Cookie">
                   {selected.credential?.configured ? '已配置' : '未配置'}
                 </Descriptions.Item>
@@ -524,7 +520,7 @@ export default function ExternalSourcesPanel({
               />
             </Form.Item>
 
-            {setting.source.kind === 'yike_photos' && (
+            {externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && (
               <>
                 <Divider orientation="left">一刻相册凭据</Divider>
                 <Alert
