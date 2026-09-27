@@ -27,7 +27,7 @@ import {
   windowsUserTasks,
   type DesktopShortcutAction,
 } from './desktop_shortcuts.cjs'
-import { trayStatusIconBase64, trayStatusKind } from './tray_status.cjs'
+import { trayStatusIconFile, trayStatusKind, type TrayStatusKind } from './tray_status.cjs'
 import {
   defaultDesktopPreferences,
   normalizeDesktopPreferences,
@@ -374,11 +374,19 @@ function statusLabel() {
   return status.sync_status || status.auth_status
 }
 
+function trayStatusAssetPath(kind: TrayStatusKind) {
+  const root = app.isPackaged
+    ? path.join(process.resourcesPath, 'tray-icons')
+    : path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'tray')
+  return path.join(root, trayStatusIconFile(kind))
+}
+
 function trayStatusImage() {
   const kind = trayStatusKind(agentState.connected, agentState.status, agentTransfers, agentUpdateState)
-  return nativeImage
-    .createFromBuffer(Buffer.from(trayStatusIconBase64(kind), 'base64'))
-    .resize({ width: process.platform === 'win32' ? 16 : 22, height: process.platform === 'win32' ? 16 : 22 })
+  const assetPath = trayStatusAssetPath(kind)
+  const image = nativeImage.createFromPath(assetPath)
+  if (image.isEmpty()) throw new Error(`xDrive tray icon is missing or invalid: ${assetPath}`)
+  return image.resize({ width: process.platform === 'win32' ? 16 : 22, height: process.platform === 'win32' ? 16 : 22 })
 }
 
 function updateTrayIcon() {
