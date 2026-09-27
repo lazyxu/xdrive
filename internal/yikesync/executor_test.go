@@ -50,6 +50,7 @@ type fakeYikeExecutionAPI struct {
 	overwrites  int
 	moves       int
 	createDirs  int
+	lastMD5     string
 	openOffsets []int64
 }
 
@@ -81,16 +82,18 @@ func (f *fakeYikeExecutionAPI) RenameMove(_ context.Context, id, revision uint64
 	return node, nil
 }
 
-func (f *fakeYikeExecutionAPI) UploadStreamResumableResult(
+func (f *fakeYikeExecutionAPI) UploadStreamResumableDigestResult(
 	ctx context.Context,
 	parentID uint64,
 	name string,
 	size int64,
+	md5Digest string,
 	_ string,
 	open client.UploadStreamOpen,
 	_ client.UploadProgress,
 ) (client.UploadResult, error) {
 	f.uploads++
+	f.lastMD5 = md5Digest
 	body, err := open(ctx, 0)
 	if err != nil {
 		return client.UploadResult{}, err
@@ -115,15 +118,17 @@ func (f *fakeYikeExecutionAPI) UploadStreamResumableResult(
 	return client.UploadResult{Node: node, SHA256: hash, TransferredBytes: size}, nil
 }
 
-func (f *fakeYikeExecutionAPI) OverwriteStreamResumableResult(
+func (f *fakeYikeExecutionAPI) OverwriteStreamResumableDigestResult(
 	ctx context.Context,
 	nodeID, revision uint64,
 	size int64,
+	md5Digest string,
 	_ string,
 	open client.UploadStreamOpen,
 	_ client.UploadProgress,
 ) (client.UploadResult, error) {
 	f.overwrites++
+	f.lastMD5 = md5Digest
 	body, err := open(ctx, 0)
 	if err != nil {
 		return client.UploadResult{}, err
@@ -150,7 +155,10 @@ func TestExecutorStreamsSharedCreateAndCommitsHash(t *testing.T) {
 		ModifiedAt: &modified, RemoteRevision: "md5:abcd",
 	}
 	albumFile := yike.AlbumFile{
-		File:    yike.File{FSID: 9, Path: "/shared.jpg", Size: item.Size, MTime: 1000},
+		File: yike.File{
+			FSID: 9, Path: "/shared.jpg", Size: item.Size, MTime: 1000,
+			MD5: strings.Repeat("a", 32),
+		},
 		AlbumID: "shared-album", TID: 7, UK: 999,
 	}
 	commit, err := executor.Execute(context.Background(), client.SourcePlan{
@@ -161,6 +169,9 @@ func TestExecutorStreamsSharedCreateAndCommitsHash(t *testing.T) {
 	}
 	if remote.albumLinks != 1 || remote.normalLinks != 0 || api.uploads != 1 {
 		t.Fatalf("albumLinks=%d normalLinks=%d uploads=%d", remote.albumLinks, remote.normalLinks, api.uploads)
+	}
+	if api.lastMD5 != strings.Repeat("a", 32) {
+		t.Fatalf("forwarded md5=%q", api.lastMD5)
 	}
 	if api.createDirs != 2 {
 		t.Fatalf("created dirs=%d want=2", api.createDirs)

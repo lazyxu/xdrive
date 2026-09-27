@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -62,7 +63,7 @@ func newInstantUploadTestEnv(t *testing.T) instantUploadTestEnv {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
-		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
+		&meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +270,187 @@ func TestInstantUploadOverwritePreservesHistory(t *testing.T) {
 func instantSHA256(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
+}
+
+func instantMD5(value []byte) string {
+	sum := md5.Sum(value)
+	return hex.EncodeToString(sum[:])
+}
+
+func TestVerifiedMD5CanInstantReuseOwnedCAS(t *testing.T) {
+	env := newInstantUploadTestEnv(t)
+	aliceToken := createTestUser(t, env.db, env.router, "md5-alice", "instant-password-a")
+	bobToken := createTestUser(t, env.db, env.router, "md5-bob", "instant-password-b")
+	aliceRoot := requestNode(t, env.router, http.MethodGet, "/api/v1/nodes/root", aliceToken, nil, http.StatusOK)
+	bobRoot := requestNode(t, env.router, http.MethodGet, "/api/v1/nodes/root", bobToken, nil, http.StatusOK)
+
+	payload := []byte("verified-yike-md5-content")
+	md5Digest := instantMD5(payload)
+	sha := sha256Hex(payload)
+
+	initBody, err := json.Marshal(uploadInitRequest{
+		ParentID: &aliceRoot.ID, Name: "first.bin", Size: int64(len(payload)),
+		ChunkSize: defaultUploadChunkSize, MD5: md5Digest, ResumeKey: "md5-first",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := request(t, env.router, http.MethodPost, "/api/v1/uploads", aliceToken, bytes.NewReader(initBody), http.StatusCreated)
+	if res.Header().Get("X-XDrive-Instant-Upload") != "" {
+		t.Fatal("unverified MD5 unexpectedly instant-finalized")
+	}
+	var first uploadSessionDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.Status != meta.UploadStatusActive || first.MD5 != md5Digest {
+		t.Fatalf("first session=%+v", first)
+	}
+	requestWithHeaders(
+		t, env.router, http.MethodPut, fmt.Sprintf("/api/v1/uploads/%s/chunks/0", first.ID),
+		aliceToken, bytes.NewReader(payload), http.StatusCreated,
+		map[string]string{"Content-Type": "application/octet-stream", "X-Chunk-SHA256": sha},
+	)
+	final := request(t, env.router, http.MethodPost, "/api/v1/uploads/"+first.ID+"/finalize", aliceToken, strings.NewReader(`{}`), http.StatusOK)
+	var finalized uploadSessionDTO
+	if err := json.Unmarshal(final.Body.Bytes(), &finalized); err != nil {
+		t.Fatal(err)
+	}
+	if finalized.Result == nil || finalized.Result.SHA256 != sha {
+		t.Fatalf("finalized=%+v", finalized)
+	}
+
+	var alice meta.User
+	if err := env.db.Where("username = ?", "md5-alice").First(&alice).Error; err != nil {
+		t.Fatal(err)
+	}
+	var alias meta.ContentDigestAlias
+	if err := env.db.Where(
+		"owner_id = ? AND algorithm = ? AND digest = ? AND size = ?",
+		alice.ID, contentDigestAlgorithmMD5, md5Digest, len(payload),
+	).First(&alias).Error; err != nil {
+		t.Fatal(err)
+	}
+	if alias.State != meta.ContentDigestAliasStateReady || alias.SHA256 != sha {
+		t.Fatalf("verified alias=%+v", alias)
+	}
+
+	secondBody, err := json.Marshal(uploadInitRequest{
+		ParentID: &aliceRoot.ID, Name: "second.bin", Size: int64(len(payload)),
+		ChunkSize: defaultUploadChunkSize, MD5: md5Digest, ResumeKey: "md5-second",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRes := request(t, env.router, http.MethodPost, "/api/v1/uploads", aliceToken, bytes.NewReader(secondBody), http.StatusCreated)
+	if secondRes.Header().Get("X-XDrive-Instant-Upload") != "1" {
+		t.Fatal("verified MD5 did not instant-finalize")
+	}
+	var second uploadSessionDTO
+	if err := json.Unmarshal(secondRes.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.Status != meta.UploadStatusFinalized || second.Result == nil || second.Result.SHA256 != sha {
+		t.Fatalf("second session=%+v", second)
+	}
+	var firstFile, secondFile meta.File
+	if err := env.db.Where("node_id = ?", finalized.Result.ID).First(&firstFile).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := env.db.Where("node_id = ?", second.Result.ID).First(&secondFile).Error; err != nil {
+		t.Fatal(err)
+	}
+	if firstFile.StorageKey != secondFile.StorageKey {
+		t.Fatalf("CAS was not reused: first=%q second=%q", firstFile.StorageKey, secondFile.StorageKey)
+	}
+
+	// Digest knowledge is owner scoped: Bob must still upload bytes.
+	bobBody, err := json.Marshal(uploadInitRequest{
+		ParentID: &bobRoot.ID, Name: "probe.bin", Size: int64(len(payload)),
+		ChunkSize: defaultUploadChunkSize, MD5: md5Digest, ResumeKey: "md5-bob",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobRes := request(t, env.router, http.MethodPost, "/api/v1/uploads", bobToken, bytes.NewReader(bobBody), http.StatusCreated)
+	if bobRes.Header().Get("X-XDrive-Instant-Upload") != "" {
+		t.Fatal("cross-user MD5 probe instant-finalized")
+	}
+	var bobSession uploadSessionDTO
+	if err := json.Unmarshal(bobRes.Body.Bytes(), &bobSession); err != nil {
+		t.Fatal(err)
+	}
+	if bobSession.Status != meta.UploadStatusActive {
+		t.Fatalf("bob session=%+v", bobSession)
+	}
+
+	// A wrong remote digest fails closed and never creates a trusted alias.
+	wrongMD5 := strings.Repeat("0", 32)
+	if wrongMD5 == md5Digest {
+		wrongMD5 = strings.Repeat("1", 32)
+	}
+	badBody, err := json.Marshal(uploadInitRequest{
+		ParentID: &aliceRoot.ID, Name: "bad-md5.bin", Size: int64(len(payload)),
+		ChunkSize: defaultUploadChunkSize, MD5: wrongMD5, ResumeKey: "md5-bad",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	badRes := request(t, env.router, http.MethodPost, "/api/v1/uploads", aliceToken, bytes.NewReader(badBody), http.StatusCreated)
+	var bad uploadSessionDTO
+	if err := json.Unmarshal(badRes.Body.Bytes(), &bad); err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(
+		t, env.router, http.MethodPut, fmt.Sprintf("/api/v1/uploads/%s/chunks/0", bad.ID),
+		aliceToken, bytes.NewReader(payload), http.StatusCreated,
+		map[string]string{"Content-Type": "application/octet-stream", "X-Chunk-SHA256": sha},
+	)
+	request(t, env.router, http.MethodPost, "/api/v1/uploads/"+bad.ID+"/finalize", aliceToken, strings.NewReader(`{}`), http.StatusUnprocessableEntity)
+	var badAliasCount int64
+	if err := env.db.Model(&meta.ContentDigestAlias{}).
+		Where("owner_id = ? AND algorithm = ? AND digest = ? AND size = ?", alice.ID, contentDigestAlgorithmMD5, wrongMD5, len(payload)).
+		Count(&badAliasCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if badAliasCount != 0 {
+		t.Fatalf("mismatched MD5 created %d trusted aliases", badAliasCount)
+	}
+}
+
+func TestVerifiedDigestCollisionDisablesAlias(t *testing.T) {
+	env := newInstantUploadTestEnv(t)
+	token := createTestUser(t, env.db, env.router, "md5-collision", "instant-password")
+	var user meta.User
+	if err := env.db.Where("username = ?", "md5-collision").First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	_ = token
+	digest := strings.Repeat("a", 32)
+	shaA := strings.Repeat("b", 64)
+	shaB := strings.Repeat("c", 64)
+	now := time.Now().UTC()
+	if err := env.db.Transaction(func(tx *gorm.DB) error {
+		return recordVerifiedDigestAliasTx(tx, user.ID, contentDigestAlgorithmMD5, digest, 123, shaA, now)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.db.Transaction(func(tx *gorm.DB) error {
+		return recordVerifiedDigestAliasTx(tx, user.ID, contentDigestAlgorithmMD5, digest, 123, shaB, now.Add(time.Second))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var alias meta.ContentDigestAlias
+	if err := env.db.First(&alias, "owner_id = ? AND algorithm = ? AND digest = ? AND size = ?",
+		user.ID, contentDigestAlgorithmMD5, digest, 123).Error; err != nil {
+		t.Fatal(err)
+	}
+	if alias.State != meta.ContentDigestAliasStateAmbiguous || alias.SHA256 != "" {
+		t.Fatalf("collision alias=%+v", alias)
+	}
+	if sha, ok, err := verifiedDigestSHA256(context.Background(), env.db, user.ID, contentDigestAlgorithmMD5, digest, 123); err != nil || ok || sha != "" {
+		t.Fatalf("ambiguous lookup sha=%q ok=%v err=%v", sha, ok, err)
+	}
 }
 
 func TestInstantUploadBlobHealthFailureFallsBackToChunks(t *testing.T) {

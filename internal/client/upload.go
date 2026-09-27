@@ -33,6 +33,7 @@ type UploadInit struct {
 	Size             int64    `json:"size"`
 	ChunkSize        int64    `json:"chunk_size,omitempty"`
 	SHA256           string   `json:"sha256,omitempty"`
+	MD5              string   `json:"md5,omitempty"`
 	ChunkSHA256      []string `json:"chunk_sha256,omitempty"`
 	ResumeKey        string   `json:"resume_key,omitempty"`
 	ExpectedRevision uint64   `json:"expected_revision,omitempty"`
@@ -54,6 +55,7 @@ type UploadSession struct {
 	ChunkSize        int64        `json:"chunk_size"`
 	ChunkCount       int          `json:"chunk_count"`
 	SHA256           string       `json:"sha256,omitempty"`
+	MD5              string       `json:"md5,omitempty"`
 	ResumeKey        string       `json:"resume_key,omitempty"`
 	ExpectedRevision uint64       `json:"expected_revision,omitempty"`
 	Status           string       `json:"status"`
@@ -147,11 +149,25 @@ func (c *Client) UploadStreamResumableResult(
 	open UploadStreamOpen,
 	progress UploadProgress,
 ) (UploadResult, error) {
+	return c.UploadStreamResumableDigestResult(ctx, parentID, name, size, "", resumeKey, open, progress)
+}
+
+func (c *Client) UploadStreamResumableDigestResult(
+	ctx context.Context,
+	parentID uint64,
+	name string,
+	size int64,
+	md5Digest string,
+	resumeKey string,
+	open UploadStreamOpen,
+	progress UploadProgress,
+) (UploadResult, error) {
 	return c.uploadStreamResult(ctx, UploadInit{
 		ParentID:  &parentID,
 		Name:      name,
 		Size:      size,
 		ChunkSize: DefaultUploadChunkSize,
+		MD5:       strings.ToLower(strings.TrimSpace(md5Digest)),
 		ResumeKey: strings.TrimSpace(resumeKey),
 	}, open, progress)
 }
@@ -164,11 +180,24 @@ func (c *Client) OverwriteStreamResumableResult(
 	open UploadStreamOpen,
 	progress UploadProgress,
 ) (UploadResult, error) {
+	return c.OverwriteStreamResumableDigestResult(ctx, nodeID, revision, size, "", resumeKey, open, progress)
+}
+
+func (c *Client) OverwriteStreamResumableDigestResult(
+	ctx context.Context,
+	nodeID, revision uint64,
+	size int64,
+	md5Digest string,
+	resumeKey string,
+	open UploadStreamOpen,
+	progress UploadProgress,
+) (UploadResult, error) {
 	return c.uploadStreamResult(ctx, UploadInit{
 		NodeID:           &nodeID,
 		ExpectedRevision: revision,
 		Size:             size,
 		ChunkSize:        DefaultUploadChunkSize,
+		MD5:              strings.ToLower(strings.TrimSpace(md5Digest)),
 		ResumeKey:        strings.TrimSpace(resumeKey),
 	}, open, progress)
 }

@@ -41,6 +41,8 @@ Use a Yike account whose test set includes photos and videos. Complete every blo
 - [ ] One media object belonging to multiple albums produces one SourceItem/xDrive file, with multiple collection memberships rather than duplicate content.
 - [ ] Chinese names, spaces and names containing Windows-reserved characters are mapped to valid deterministic xDrive paths.
 - [ ] A second run with no remote changes transfers no duplicate content.
+- [ ] After one file with a valid Yike MD5 has been downloaded and verified, importing another same-user item with the same size/MD5 can reuse the owned CAS blob with zero transferred bytes and without opening a new Yike media download.
+- [ ] An MD5 mismatch fails closed, creates no trusted digest mapping, and does not publish the target file.
 - [ ] A newly added Yike item is imported on the next run.
 - [ ] A remotely changed item is updated rather than duplicated.
 - [ ] A pure path move is reflected without re-downloading bytes when the planner identifies a move.
