@@ -17,6 +17,7 @@ export {}
 declare global {
   type DesktopInfo = { version: string; platform: string; arch: string }
   type DesktopStartup = { start_at_login: boolean }
+  type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
   type AgentHello = {
     discovery_version: number
@@ -208,6 +209,7 @@ declare global {
       selectDirectory: (defaultPath?: string) => Promise<string | null>
       hide: () => void
       quit: () => void
+      onNavigate: (callback: (view: DesktopViewTarget) => void) => () => void
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>

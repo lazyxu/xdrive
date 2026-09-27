@@ -243,10 +243,14 @@ export default function App() {
     const unsubscribeTransfers = window.xdriveDesktop.agent.onTransfers((value) => {
       if (active) setTransfers(value)
     })
+    const unsubscribeNavigate = window.xdriveDesktop.onNavigate((target) => {
+      if (active) setView(target)
+    })
     return () => {
       active = false
       unsubscribe()
       unsubscribeTransfers()
+      unsubscribeNavigate()
     }
   }, [])
 
