@@ -376,6 +376,18 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		"leftpending": "create",
 	})
 
+	failurePath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/failures", source.ID, runID)
+	failureBody := `{"items":[{"external_id":"leftpending","error":"download unavailable"}]}`
+	request(t, router, http.MethodPost, failurePath, token, strings.NewReader(failureBody), http.StatusNoContent)
+	request(t, router, http.MethodPost, failurePath, token, strings.NewReader(failureBody), http.StatusNoContent)
+	var failedItem meta.SourceItem
+	if err := db.Where("source_id = ? AND external_id = ?", source.ID, "leftpending").First(&failedItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failedItem.State != meta.SourceItemStateError || failedItem.LastError != "download unavailable" {
+		t.Fatalf("unexpected failed source item: %+v", failedItem)
+	}
+
 	// Simulate the executor restoring source content. Generic node/file mutation
 	// already uses revision preconditions; commit records only the final state.
 	if err := db.Model(&meta.File{}).Where("node_id = ?", photoNode.ID).
@@ -402,6 +414,8 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		"transferred_bytes":10
 	}]}`, photoNode.ID, base.Format(time.RFC3339Nano), sourceHash)
 	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(photoCommit), http.StatusNoContent)
+	conflictFailure := `{"items":[{"external_id":"photo","error":"late failure"}]}`
+	request(t, router, http.MethodPost, failurePath, token, strings.NewReader(conflictFailure), http.StatusConflict)
 
 	var synced meta.SourceItem
 	if err := db.First(&synced, photoItem.ID).Error; err != nil {
@@ -477,7 +491,8 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 
 	// A buggy executor cannot report a successful sync while planned work remains
-	// pending. The server derives this from persisted SourceItem state.
+	// unresolved. The server derives this from persisted SourceItem state, including
+	// both pending work and explicitly reported per-item errors.
 	finishBody := `{
 		"status":"completed",
 		"complete_inventory":true,
@@ -511,4 +526,27 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if latestSource.LastSuccessAt != nil {
 		t.Fatalf("partial sync unexpectedly advanced last_success_at: %+v", latestSource)
 	}
+
+	// A later run retries an error item and clears its previous error when observed.
+	retryRunID := uuid.NewString()
+	retryBegin := fmt.Sprintf(`{"run_id":%q,"trigger":"scheduled"}`, retryRunID)
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
+		token, strings.NewReader(retryBegin), http.StatusCreated)
+	retryObserve := `{"items":[{"external_id":"leftpending","kind":"directory","path":"leftpending","size":0}]}`
+	retryObservePath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/observe", source.ID, retryRunID)
+	retryRes := request(t, router, http.MethodPost, retryObservePath, token, strings.NewReader(retryObserve), http.StatusOK)
+	var retryPlan observeSourceRunResponse
+	if err := json.Unmarshal(retryRes.Body.Bytes(), &retryPlan); err != nil {
+		t.Fatal(err)
+	}
+	assertSourcePlans(t, retryPlan.Plans, map[string]string{"leftpending": "create"})
+	if err := db.Where("source_id = ? AND external_id = ?", source.ID, "leftpending").First(&failedItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failedItem.State != meta.SourceItemStatePending || failedItem.LastError != "" {
+		t.Fatalf("retry did not clear source item error: %+v", failedItem)
+	}
+	retryFinish := `{"status":"failed","complete_inventory":false,"error":"test cleanup","summary":{}}`
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", source.ID, retryRunID),
+		token, strings.NewReader(retryFinish), http.StatusOK)
 }

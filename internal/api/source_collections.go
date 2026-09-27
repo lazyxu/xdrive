@@ -37,6 +37,7 @@ type sourceCollectionItemDTO struct {
 	SHA256         string                 `json:"sha256,omitempty"`
 	RemoteRevision string                 `json:"remote_revision,omitempty"`
 	State          string                 `json:"state"`
+	LastError      string                 `json:"last_error,omitempty"`
 	Metadata       *sourceItemMetadataDTO `json:"metadata,omitempty"`
 }
 
@@ -144,6 +145,7 @@ func (s *Server) listSourceCollectionItems(c *gin.Context) {
 			SHA256:         item.SHA256,
 			RemoteRevision: item.RemoteRevision,
 			State:          item.State,
+			LastError:      item.LastError,
 			Metadata:       item.Metadata,
 		})
 	}

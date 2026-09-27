@@ -444,6 +444,14 @@ func (a *ownerSourceAPI) CommitSourceItems(ctx context.Context, sourceID uint64,
 	return c.CommitSourceItems(ctx, sourceID, runID, items)
 }
 
+func (a *ownerSourceAPI) FailSourceItems(ctx context.Context, sourceID uint64, runID string, items []client.SourceFailure) error {
+	c, err := a.client()
+	if err != nil {
+		return err
+	}
+	return c.FailSourceItems(ctx, sourceID, runID, items)
+}
+
 func (a *ownerSourceAPI) HeartbeatSourceRun(ctx context.Context, sourceID uint64, runID string) error {
 	c, err := a.client()
 	if err != nil {

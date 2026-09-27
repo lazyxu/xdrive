@@ -19,6 +19,7 @@ const (
 	sourceObservationBatchLimit = 500
 	sourceRunStaleAfter         = 30 * time.Minute
 	sourceRunTextLimit          = 64 << 10
+	sourceItemFailureTextLimit  = 4 << 10
 )
 
 type beginSourceRunRequest struct {
@@ -68,6 +69,15 @@ type sourceCommitDTO struct {
 
 type commitSourceRunRequest struct {
 	Items []sourceCommitDTO `json:"items"`
+}
+
+type sourceFailureDTO struct {
+	ExternalID string `json:"external_id"`
+	Error      string `json:"error"`
+}
+
+type failSourceRunRequest struct {
+	Items []sourceFailureDTO `json:"items"`
 }
 
 type finishSourceRunRequest struct {
@@ -552,6 +562,101 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (s *Server) failSourceRunItems(c *gin.Context) {
+	sourceID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+	runID, ok := canonicalRunID(c.Param("runID"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	var req failSourceRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if len(req.Items) == 0 || len(req.Items) > sourceObservationBatchLimit {
+		fail(c, http.StatusBadRequest, fmt.Sprintf("items must contain 1-%d entries", sourceObservationBatchLimit))
+		return
+	}
+
+	seen := make(map[string]struct{}, len(req.Items))
+	failures := make([]sourceFailureDTO, 0, len(req.Items))
+	for _, raw := range req.Items {
+		raw.ExternalID = strings.TrimSpace(raw.ExternalID)
+		raw.Error = strings.TrimSpace(raw.Error)
+		if raw.ExternalID == "" || len([]byte(raw.ExternalID)) > 512 {
+			fail(c, http.StatusBadRequest, "external_id is required and must be at most 512 bytes")
+			return
+		}
+		if raw.Error == "" || len([]byte(raw.Error)) > sourceItemFailureTextLimit {
+			fail(c, http.StatusBadRequest, fmt.Sprintf("error is required and must be at most %d bytes", sourceItemFailureTextLimit))
+			return
+		}
+		if _, duplicate := seen[raw.ExternalID]; duplicate {
+			fail(c, http.StatusBadRequest, "duplicate external_id in failure batch")
+			return
+		}
+		seen[raw.ExternalID] = struct{}{}
+		failures = append(failures, raw)
+	}
+
+	now := time.Now().UTC()
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		var source meta.Source
+		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+			return err
+		}
+		if source.Status != meta.SourceStatusActive {
+			return errSourcePaused
+		}
+
+		var run meta.SyncRun
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
+			return err
+		}
+		if run.Status != meta.SyncRunStatusRunning {
+			return errSourceRunNotRunning
+		}
+
+		for _, failure := range failures {
+			var item meta.SourceItem
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("source_id = ? AND external_id = ?", sourceID, failure.ExternalID).
+				First(&item).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errSourceExecutionConflict
+				}
+				return err
+			}
+			if item.LastSeenRunID != runID ||
+				(item.State != meta.SourceItemStatePending && item.State != meta.SourceItemStateError) {
+				return errSourceExecutionConflict
+			}
+			if item.State == meta.SourceItemStateError && item.LastError == failure.Error {
+				continue
+			}
+			if err := tx.Model(&meta.SourceItem{}).Where("id = ?", item.ID).Updates(map[string]any{
+				"state":      meta.SourceItemStateError,
+				"last_error": failure.Error,
+				"updated_at": now,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Update("updated_at", now).Error
+	})
+	if err != nil {
+		writeSourceRunError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (s *Server) heartbeatSourceRun(c *gin.Context) {
 	sourceID, ok := parseID(c.Param("id"))
 	if !ok {
@@ -678,14 +783,15 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 
 		if run.Mode == meta.SourceRunModeSync {
-			var pendingItems int64
+			var unresolvedItems int64
 			if err := tx.Model(&meta.SourceItem{}).
-				Where("source_id = ? AND last_seen_run_id = ? AND state = ?", sourceID, runID, meta.SourceItemStatePending).
-				Count(&pendingItems).Error; err != nil {
+				Where("source_id = ? AND last_seen_run_id = ? AND state IN ?",
+					sourceID, runID, []string{meta.SourceItemStatePending, meta.SourceItemStateError}).
+				Count(&unresolvedItems).Error; err != nil {
 				return err
 			}
-			if pendingItems > summary.FailedItems {
-				summary.FailedItems = pendingItems
+			if unresolvedItems > summary.FailedItems {
+				summary.FailedItems = unresolvedItems
 			}
 		}
 
