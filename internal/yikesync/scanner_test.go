@@ -41,6 +41,7 @@ func (f *fakeRemote) ListAlbumFilesPage(_ context.Context, albumID, cursor strin
 type fakeSourceAPI struct {
 	observed   [][]client.SourceObservation
 	commits    [][]client.SourceCommit
+	failures   [][]client.SourceFailure
 	heartbeats int
 	action     string
 	commitErr  error
@@ -64,6 +65,12 @@ func (f *fakeSourceAPI) CommitSourceItems(_ context.Context, _ uint64, _ string,
 	copyItems := append([]client.SourceCommit(nil), items...)
 	f.commits = append(f.commits, copyItems)
 	return f.commitErr
+}
+
+func (f *fakeSourceAPI) FailSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceFailure) error {
+	copyItems := append([]client.SourceFailure(nil), items...)
+	f.failures = append(f.failures, copyItems)
+	return nil
 }
 
 func (f *fakeSourceAPI) HeartbeatSourceRun(context.Context, uint64, string) error {
@@ -367,7 +374,7 @@ func TestScannerSyncExecutesAndCommitsPlans(t *testing.T) {
 	}
 }
 
-func TestScannerSyncKeepsFailedItemPendingAndContinues(t *testing.T) {
+func TestScannerSyncReportsFailedItemAndContinues(t *testing.T) {
 	remote := &fakeRemote{
 		user: yike.UserInfo{YouaID: "123"},
 		files: map[string]yike.FileList{
@@ -397,6 +404,44 @@ func TestScannerSyncKeepsFailedItemPendingAndContinues(t *testing.T) {
 	if len(api.commits) != 1 || len(api.commits[0]) != 1 ||
 		api.commits[0][0].ExternalID != "yike:123:1" {
 		t.Fatalf("api commits=%+v", api.commits)
+	}
+	if len(api.failures) != 1 || len(api.failures[0]) != 1 ||
+		api.failures[0][0].ExternalID != "yike:123:2" ||
+		!strings.Contains(api.failures[0][0].Error, "download unavailable") {
+		t.Fatalf("api failures=%+v", api.failures)
+	}
+}
+
+func TestScannerSyncReportsCommitFailure(t *testing.T) {
+	remote := &fakeRemote{
+		user: yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.File{{FSID: 1, Path: "/fail-commit.jpg", Size: 10, MTime: 100}},
+			},
+		},
+		albums:     map[string]yike.AlbumList{"": {Page: yike.Page{HasMore: 0}}},
+		albumFiles: map[string]map[string]yike.AlbumFileList{},
+	}
+	api := &fakeSourceAPI{
+		action:    string(sourcepkg.ActionCreate),
+		commitErr: fmt.Errorf("commit unavailable"),
+	}
+	result, err := (Scanner{
+		Remote: remote, API: api, SourceID: 1, RunID: "run-commit-failure",
+		Mode: meta.SourceRunModeSync, Executor: &fakePlanExecutor{},
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Summary.FailedItems != 1 {
+		t.Fatalf("summary=%+v", result.Summary)
+	}
+	if len(api.failures) != 1 || len(api.failures[0]) != 1 ||
+		api.failures[0][0].ExternalID != "yike:123:1" ||
+		!strings.Contains(api.failures[0][0].Error, "commit unavailable") {
+		t.Fatalf("api failures=%+v", api.failures)
 	}
 }
 

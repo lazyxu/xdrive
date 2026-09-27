@@ -154,6 +154,7 @@ type SourceItem struct {
 	SHA256         string              `json:"sha256,omitempty"`
 	RemoteRevision string              `json:"remote_revision,omitempty"`
 	State          string              `json:"state"`
+	LastError      string              `json:"last_error,omitempty"`
 	Metadata       *SourceItemMetadata `json:"metadata,omitempty"`
 }
 
@@ -169,6 +170,7 @@ type SourceCollectionItem struct {
 	SHA256         string              `json:"sha256,omitempty"`
 	RemoteRevision string              `json:"remote_revision,omitempty"`
 	State          string              `json:"state"`
+	LastError      string              `json:"last_error,omitempty"`
 	Metadata       *SourceItemMetadata `json:"metadata,omitempty"`
 }
 
@@ -305,6 +307,11 @@ type FinishSourceRunInput struct {
 	Error             string            `json:"error,omitempty"`
 }
 
+type SourceFailure struct {
+	ExternalID string `json:"external_id"`
+	Error      string `json:"error"`
+}
+
 type SourceCommit struct {
 	ExternalID       string     `json:"external_id"`
 	Action           string     `json:"action"`
@@ -341,6 +348,12 @@ func (c *Client) ObserveSourceItems(ctx context.Context, sourceID uint64, runID 
 
 func (c *Client) CommitSourceItems(ctx context.Context, sourceID uint64, runID string, items []SourceCommit) error {
 	return c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/commit", sourceID, url.PathEscape(runID)), map[string]any{
+		"items": items,
+	}, nil)
+}
+
+func (c *Client) FailSourceItems(ctx context.Context, sourceID uint64, runID string, items []SourceFailure) error {
+	return c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/failures", sourceID, url.PathEscape(runID)), map[string]any{
 		"items": items,
 	}, nil)
 }

@@ -33,6 +33,7 @@ type Remote interface {
 type SourceAPI interface {
 	ObserveSourceItems(context.Context, uint64, string, []client.SourceObservation) ([]client.SourcePlan, error)
 	CommitSourceItems(context.Context, uint64, string, []client.SourceCommit) error
+	FailSourceItems(context.Context, uint64, string, []client.SourceFailure) error
 	HeartbeatSourceRun(context.Context, uint64, string) error
 }
 
@@ -114,6 +115,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		}
 		planned := make(map[string]struct{}, len(plans))
 		commits := make([]client.SourceCommit, 0, len(plans))
+		failures := make([]client.SourceFailure, 0)
 		for _, plan := range plans {
 			item, ok := batchItems[plan.ExternalID]
 			if !ok {
@@ -141,6 +143,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				}
 				result.Summary.AddFailure()
 				appendResultError(&result, item.ExternalID, item.Path, err)
+				failures = append(failures, sourceFailure(item.ExternalID, err))
 				continue
 			}
 			commits = append(commits, commit)
@@ -149,7 +152,14 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			}
 		}
 		if len(commits) != 0 {
-			if err := s.commitResults(ctx, commits, &result); err != nil {
+			commitFailures, err := s.commitResults(ctx, commits, &result)
+			if err != nil {
+				return err
+			}
+			failures = append(failures, commitFailures...)
+		}
+		if len(failures) != 0 {
+			if err := s.API.FailSourceItems(ctx, s.SourceID, s.RunID, failures); err != nil {
 				return err
 			}
 		}
@@ -281,23 +291,39 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	return result, nil
 }
 
-func (s Scanner) commitResults(ctx context.Context, commits []client.SourceCommit, result *Result) error {
+func (s Scanner) commitResults(ctx context.Context, commits []client.SourceCommit, result *Result) ([]client.SourceFailure, error) {
 	if err := s.API.CommitSourceItems(ctx, s.SourceID, s.RunID, commits); err == nil {
-		return nil
+		return nil, nil
 	}
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
+	failures := make([]client.SourceFailure, 0)
 	for _, commit := range commits {
 		if err := s.API.CommitSourceItems(ctx, s.SourceID, s.RunID, []client.SourceCommit{commit}); err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return nil, ctx.Err()
 			}
 			result.Summary.AddFailure()
 			appendResultError(result, commit.ExternalID, commit.Path, err)
+			failures = append(failures, sourceFailure(commit.ExternalID, err))
 		}
 	}
-	return nil
+	return failures, nil
+}
+
+func sourceFailure(externalID string, err error) client.SourceFailure {
+	message := ""
+	if err != nil {
+		message = strings.TrimSpace(err.Error())
+	}
+	if message == "" {
+		message = "source item execution failed"
+	}
+	return client.SourceFailure{
+		ExternalID: externalID,
+		Error:      trimUTF8Bytes(message, 4<<10),
+	}
 }
 
 func appendResultError(result *Result, externalID, itemPath string, err error) {
@@ -305,10 +331,7 @@ func appendResultError(result *Result, externalID, itemPath string, err error) {
 		return
 	}
 	message := fmt.Sprintf("%s (%s): %v", externalID, itemPath, err)
-	if len(message) > 1024 {
-		message = message[:1024]
-	}
-	result.Errors = append(result.Errors, message)
+	result.Errors = append(result.Errors, trimUTF8Bytes(message, 1024))
 }
 
 func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {

@@ -31,6 +31,7 @@ type sourceItemDTO struct {
 	SHA256         string                 `json:"sha256,omitempty"`
 	RemoteRevision string                 `json:"remote_revision,omitempty"`
 	State          string                 `json:"state"`
+	LastError      string                 `json:"last_error,omitempty"`
 	Metadata       *sourceItemMetadataDTO `json:"metadata,omitempty"`
 }
 
@@ -46,6 +47,7 @@ type sourceItemRow struct {
 	SHA256               string
 	RemoteRevision       string
 	State                string
+	LastError            string
 	MetadataSourceItemID *uint64
 	OriginalPath         string
 	OwnerExternalID      string
@@ -68,6 +70,7 @@ func (r sourceItemRow) dto() sourceItemDTO {
 		SHA256:         r.SHA256,
 		RemoteRevision: r.RemoteRevision,
 		State:          r.State,
+		LastError:      r.LastError,
 	}
 	if r.MetadataSourceItemID != nil {
 		out.Metadata = &sourceItemMetadataDTO{
@@ -151,7 +154,7 @@ func sourceListWindow(c *gin.Context) (int, int, bool) {
 
 const sourceItemSelect = `si.id AS source_item_id,
 	si.external_id, si.node_id, si.kind, si.path, si.size, si.modified_at,
-	si.sha256, si.remote_revision, si.state,
+	si.sha256, si.remote_revision, si.state, si.last_error,
 	sm.source_item_id AS metadata_source_item_id,
 	COALESCE(sm.original_path, '') AS original_path,
 	COALESCE(sm.owner_external_id, '') AS owner_external_id,
