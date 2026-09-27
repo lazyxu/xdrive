@@ -725,7 +725,6 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"name: xdrive-linux-amd64",
 		"name: xdrive-windows-amd64",
 		"name: xdrive-source-agent-linux",
-		"snapshot-${GITHUB_SHA::12}",
 		"target_tag=\"edge\"",
 		"target_tag=\"latest\"",
 		"retention-days: 14",
@@ -746,9 +745,20 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		t.Errorf("GitHub release server image publication must use one runner instead of a matrix")
 	}
 	requireRaw(t, "GitHub rolling snapshot recreation", githubRelease,
+		"gh api --method PATCH \"repos/$repo/git/refs/tags/snapshot\" -f sha=\"$GITHUB_SHA\" -F force=true",
 		"gh release delete snapshot --repo \"$repo\" -y",
 		"gh release create snapshot release/* --repo \"$repo\" --prerelease",
 	)
+	for _, forbidden := range []string{
+		"Publish immutable master snapshot",
+		"tag=\"snapshot-${GITHUB_SHA::12}\"",
+		"refs/tags/$tag",
+		"Immutable successful master snapshot",
+	} {
+		if strings.Contains(githubRelease, forbidden) {
+			t.Errorf("GitHub master snapshot publishing must keep one rolling snapshot tag/release; found legacy immutable snapshot logic %q", forbidden)
+		}
+	}
 	if strings.Contains(githubRelease, "gh release delete-asset snapshot") {
 		t.Errorf("GitHub rolling snapshot update must recreate the release instead of deleting assets one by one")
 	}

@@ -252,38 +252,6 @@ jobs:
               --tag "ghcr.io/$owner/$image:$target_tag" \
               "ghcr.io/$owner/$image:$source_tag"
           done
-      - name: Publish immutable master snapshot
-        if: github.ref == 'refs/heads/master'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          repo="$GITHUB_REPOSITORY"
-          tag="snapshot-${GITHUB_SHA::12}"
-          if gh api "repos/$repo/git/ref/tags/$tag" >/dev/null 2>&1; then
-            existing="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.sha')"
-            [[ "$existing" == "$GITHUB_SHA" ]] || {
-              echo "$tag already points to $existing, refusing to overwrite immutable snapshot." >&2
-              exit 1
-            }
-          else
-            gh api --method POST "repos/$repo/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null
-          fi
-
-          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            while IFS= read -r asset; do
-              [[ -n "$asset" ]] && gh release delete-asset "$tag" "$asset" --repo "$repo" -y
-            done < <(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name')
-            gh release upload "$tag" release/* --repo "$repo"
-            gh release edit "$tag" --repo "$repo" --prerelease \
-              --title "xDrive snapshot ${GITHUB_SHA::12}" \
-              --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
-          else
-            gh release create "$tag" release/* --repo "$repo" --prerelease \
-              --title "xDrive snapshot ${GITHUB_SHA::12}" \
-              --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
-          fi
       - name: Publish rolling snapshot prerelease
         if: github.ref == 'refs/heads/master'
         env:
