@@ -423,11 +423,170 @@ func TestAPIErrorClassification(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			client.apiMaxAttempts = 1
+			client.apiRetryBaseDelay = 0
 			_, err = client.UserInfo(context.Background())
 			if !errors.Is(err, tt.target) {
 				t.Fatalf("error=%v want classification %v", err, tt.target)
 			}
 		})
+	}
+}
+
+func TestAPIRetriesTransientHTTPFailures(t *testing.T) {
+	var mu sync.Mutex
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		current := attempts
+		mu.Unlock()
+		if current < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"errno":0,"youa_id":"12345"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiRetryBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 10 * time.Millisecond
+
+	info, err := client.UserInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.YouaID != "12345" {
+		t.Fatalf("user info=%+v", info)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 3 {
+		t.Fatalf("attempts=%d want=3", attempts)
+	}
+}
+
+func TestAPIRetriesRateLimitWithRetryAfter(t *testing.T) {
+	var mu sync.Mutex
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		current := attempts
+		mu.Unlock()
+		if current == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"errno":0,"youa_id":"12345"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiRetryBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 10 * time.Millisecond
+	if _, err := client.UserInfo(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 2 {
+		t.Fatalf("attempts=%d want=2", attempts)
+	}
+}
+
+func TestAPIRetryAfterDoesNotBlockWorkerForLongDelay(t *testing.T) {
+	client, err := NewWithBaseURL("https://photo.example/youai", "cookie=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiRetryMaxDelay = 30 * time.Second
+	if delay, allowed := client.apiRetryDelay(0, "120"); allowed || delay != 0 {
+		t.Fatalf("long Retry-After delay=%s allowed=%v", delay, allowed)
+	}
+	if delay, allowed := client.apiRetryDelay(0, "10"); !allowed || delay != 10*time.Second {
+		t.Fatalf("bounded Retry-After delay=%s allowed=%v", delay, allowed)
+	}
+}
+
+func TestAPIDoesNotRetryAuthenticationOrBusinessRateLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		code int
+	}{
+		{name: "http auth", code: http.StatusUnauthorized},
+		{name: "business rate limit", code: http.StatusOK, body: `{"errno":50005}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			attempts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				attempts++
+				mu.Unlock()
+				w.WriteHeader(tc.code)
+				if tc.body != "" {
+					_, _ = w.Write([]byte(tc.body))
+				}
+			}))
+			defer server.Close()
+			client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.apiRetryBaseDelay = time.Millisecond
+			_, _ = client.UserInfo(context.Background())
+			mu.Lock()
+			defer mu.Unlock()
+			if attempts != 1 {
+				t.Fatalf("attempts=%d want=1", attempts)
+			}
+		})
+	}
+}
+
+func TestSharedAlbumDownloadRetriesTransientFailure(t *testing.T) {
+	var mu sync.Mutex
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		current := attempts
+		mu.Unlock()
+		if current == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Location", serverURL(r)+"/download/shared")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiRetryBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 10 * time.Millisecond
+	link, err := client.DownloadAlbumFileLink(context.Background(), 123, AlbumFile{
+		File: File{FSID: 22}, AlbumID: "album-1", TID: 7, UK: 999,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 2 || !strings.HasSuffix(link.URL, "/download/shared") {
+		t.Fatalf("attempts=%d link=%+v", attempts, link)
 	}
 }
 

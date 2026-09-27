@@ -21,6 +21,9 @@ const (
 	maxPages                             = 100000
 	defaultDownloadResponseHeaderTimeout = 30 * time.Second
 	defaultDownloadIdleTimeout           = 60 * time.Second
+	defaultAPIMaxAttempts                = 3
+	defaultAPIRetryBaseDelay             = 500 * time.Millisecond
+	defaultAPIRetryMaxDelay              = 30 * time.Second
 )
 
 var (
@@ -36,6 +39,9 @@ type Client struct {
 	userAgent             string
 	downloadHeaderTimeout time.Duration
 	downloadIdleTimeout   time.Duration
+	apiMaxAttempts        int
+	apiRetryBaseDelay     time.Duration
+	apiRetryMaxDelay      time.Duration
 }
 
 func New(cookie string) (*Client, error) {
@@ -69,6 +75,9 @@ func NewWithBaseURL(baseURL, cookie string, httpClient *http.Client) (*Client, e
 		userAgent:             "Mozilla/5.0 xDrive-Yike-Connector",
 		downloadHeaderTimeout: defaultDownloadResponseHeaderTimeout,
 		downloadIdleTimeout:   defaultDownloadIdleTimeout,
+		apiMaxAttempts:        defaultAPIMaxAttempts,
+		apiRetryBaseDelay:     defaultAPIRetryBaseDelay,
+		apiRetryMaxDelay:      defaultAPIRetryMaxDelay,
 	}, nil
 }
 
@@ -372,79 +381,242 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 		"tid":      {strconv.FormatInt(file.TID, 10)},
 		"uk":       {strconv.FormatInt(file.UK, 10)},
 	}
-	req, err := c.request(ctx, http.MethodGet, "/album/v1/download", query)
-	if err != nil {
-		return DownloadLink{}, err
-	}
 	noRedirect := *c.httpClient
 	noRedirect.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	resp, err := noRedirect.Do(req)
-	if err != nil {
-		return DownloadLink{}, err
+
+	attempts := c.apiAttempts()
+	for attempt := 0; attempt < attempts; attempt++ {
+		req, err := c.request(ctx, http.MethodGet, "/album/v1/download", query)
+		if err != nil {
+			return DownloadLink{}, err
+		}
+		resp, err := noRedirect.Do(req)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return DownloadLink{}, ctxErr
+			}
+			if attempt+1 < attempts {
+				if err := c.waitAPIRetry(ctx, attempt, ""); err != nil {
+					return DownloadLink{}, err
+				}
+				continue
+			}
+			return DownloadLink{}, fmt.Errorf("%w: open shared album download link: %v", ErrUnavailable, err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			retryAfter := resp.Header.Get("Retry-After")
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			if attempt+1 < attempts {
+				if delay, allowed := c.apiRetryDelay(attempt, retryAfter); allowed {
+					if err := sleepContext(ctx, delay); err != nil {
+						return DownloadLink{}, err
+					}
+					continue
+				}
+			}
+			if resp.StatusCode == http.StatusTooManyRequests {
+				return DownloadLink{}, fmt.Errorf("%w: HTTP %d", ErrRateLimited, resp.StatusCode)
+			}
+			return DownloadLink{}, fmt.Errorf("%w: HTTP %d", ErrUnavailable, resp.StatusCode)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			return DownloadLink{}, fmt.Errorf("%w: HTTP %d", ErrAuthentication, resp.StatusCode)
+		}
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			return DownloadLink{}, fmt.Errorf("shared album direct download returned HTTP %d", resp.StatusCode)
+		}
+		location, err := resp.Location()
+		_ = resp.Body.Close()
+		if err != nil {
+			return DownloadLink{}, fmt.Errorf("shared album direct download returned invalid redirect: %w", err)
+		}
+		return DownloadLink{
+			URL: location.String(),
+			Headers: map[string]string{
+				"User-Agent": c.userAgent,
+				"Referer":    "https://photo.baidu.com/",
+			},
+		}, nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
-		return DownloadLink{}, fmt.Errorf("shared album direct download returned HTTP %d", resp.StatusCode)
-	}
-	location, err := resp.Location()
-	if err != nil {
-		return DownloadLink{}, fmt.Errorf("shared album direct download returned invalid redirect: %w", err)
-	}
-	return DownloadLink{
-		URL: location.String(),
-		Headers: map[string]string{
-			"User-Agent": c.userAgent,
-			"Referer":    "https://photo.baidu.com/",
-		},
-	}, nil
+	return DownloadLink{}, fmt.Errorf("%w: shared album download retries exhausted", ErrUnavailable)
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, query url.Values, target any) error {
-	req, err := c.request(ctx, http.MethodGet, path, query)
-	if err != nil {
-		return err
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
+	attempts := c.apiAttempts()
+	for attempt := 0; attempt < attempts; attempt++ {
+		req, err := c.request(ctx, http.MethodGet, path, query)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if attempt+1 < attempts {
+				if err := c.waitAPIRetry(ctx, attempt, ""); err != nil {
+					return err
+				}
+				continue
+			}
+			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
+
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			return fmt.Errorf("%w: HTTP %d", ErrAuthentication, resp.StatusCode)
+		case http.StatusTooManyRequests:
+			retryAfter := resp.Header.Get("Retry-After")
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			if attempt+1 < attempts {
+				if delay, allowed := c.apiRetryDelay(attempt, retryAfter); allowed {
+					if err := sleepContext(ctx, delay); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+			return fmt.Errorf("%w: HTTP %d", ErrRateLimited, resp.StatusCode)
+		}
+		if resp.StatusCode >= 500 {
+			retryAfter := resp.Header.Get("Retry-After")
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			if attempt+1 < attempts {
+				if delay, allowed := c.apiRetryDelay(attempt, retryAfter); allowed {
+					if err := sleepContext(ctx, delay); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+			return fmt.Errorf("%w: HTTP %d", ErrUnavailable, resp.StatusCode)
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			return fmt.Errorf("Yike API returned HTTP %d", resp.StatusCode)
+		}
+
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONBytes+1))
+		_ = resp.Body.Close()
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if attempt+1 < attempts {
+				if err := c.waitAPIRetry(ctx, attempt, ""); err != nil {
+					return err
+				}
+				continue
+			}
+			return fmt.Errorf("%w: read Yike API response: %v", ErrUnavailable, err)
+		}
+		if len(data) > maxJSONBytes {
+			return fmt.Errorf("Yike API response exceeds %d bytes", maxJSONBytes)
+		}
+		if err := json.Unmarshal(data, target); err != nil {
+			return fmt.Errorf("decode Yike API response: %w", err)
+		}
+		var envelope apiEnvelope
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			return err
+		}
+		return envelope.Err()
 	}
-	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("%w: HTTP %d", ErrAuthentication, resp.StatusCode)
-	case http.StatusTooManyRequests:
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("%w: HTTP %d", ErrRateLimited, resp.StatusCode)
+	return fmt.Errorf("%w: Yike API retries exhausted", ErrUnavailable)
+}
+
+func (c *Client) apiAttempts() int {
+	if c.apiMaxAttempts < 1 {
+		return 1
 	}
-	if resp.StatusCode >= 500 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("%w: HTTP %d", ErrUnavailable, resp.StatusCode)
+	return c.apiMaxAttempts
+}
+
+func (c *Client) waitAPIRetry(ctx context.Context, attempt int, retryAfter string) error {
+	delay, allowed := c.apiRetryDelay(attempt, retryAfter)
+	if !allowed {
+		return nil
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("Yike API returned HTTP %d", resp.StatusCode)
+	return sleepContext(ctx, delay)
+}
+
+func (c *Client) apiRetryDelay(attempt int, retryAfter string) (time.Duration, bool) {
+	maxDelay := c.apiRetryMaxDelay
+	if maxDelay <= 0 {
+		maxDelay = defaultAPIRetryMaxDelay
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONBytes+1))
+	if value, ok := parseRetryAfter(retryAfter, time.Now()); ok {
+		if value > maxDelay {
+			return 0, false
+		}
+		return value, true
+	}
+
+	delay := c.apiRetryBaseDelay
+	if delay < 0 {
+		delay = 0
+	}
+	for i := 0; i < attempt && delay < maxDelay; i++ {
+		if delay > maxDelay/2 {
+			delay = maxDelay
+			break
+		}
+		delay *= 2
+	}
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+	return delay, true
+}
+
+func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds < 0 || seconds > int64((time.Duration(1<<63-1))/time.Second) {
+			return 0, false
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	when, err := http.ParseTime(value)
 	if err != nil {
-		return err
+		return 0, false
 	}
-	if len(data) > maxJSONBytes {
-		return fmt.Errorf("Yike API response exceeds %d bytes", maxJSONBytes)
+	delay := when.Sub(now)
+	if delay < 0 {
+		delay = 0
 	}
-	if err := json.Unmarshal(data, target); err != nil {
-		return fmt.Errorf("decode Yike API response: %w", err)
+	return delay, true
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
 	}
-	var envelope apiEnvelope
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return err
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	return envelope.Err()
 }
 
 func (c *Client) request(ctx context.Context, method, path string, query url.Values) (*http.Request, error) {
