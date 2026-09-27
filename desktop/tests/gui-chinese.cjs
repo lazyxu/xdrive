@@ -9,6 +9,11 @@ const synologyGuide = fs.readFileSync(path.join(root, 'src', 'renderer', 'Synolo
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
 
+test('desktop renderer default export is the full App root, not a helper component', () => {
+  assert.match(renderer, /export default function App\(\)/)
+  assert.equal(renderer.includes('export default function YikeCookieHelpGuide()'), false)
+})
+
 test('desktop GUI defaults to Chinese', () => {
   for (const text of [
     '概览',
