@@ -10,6 +10,9 @@ const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 
 
 test('desktop native feedback wires taskbar progress and clickable navigation', () => {
   assert.ok(main.includes('setProgressBar'), 'missing Windows taskbar progress')
+  assert.ok(main.includes('setOverlayIcon'), 'missing Windows taskbar status overlay')
+  assert.ok(main.includes('flashFrame(true)'), 'missing Windows taskbar attention flash')
+  assert.ok(main.includes("win.on('focus', () => win.flashFrame(false))"), 'missing taskbar flash reset on focus')
   assert.ok(main.includes("powerMonitor.on('resume'"), 'missing system-resume monitor recovery')
   assert.ok(main.includes('restartDesktopMonitors()'), 'missing monitor restart helper')
   assert.ok(main.includes('app.setUserTasks(windowsUserTasks(process.execPath))'), 'missing Windows Jump List tasks')
@@ -20,6 +23,7 @@ test('desktop native feedback wires taskbar progress and clickable navigation', 
   assert.ok(main.includes('tray.setImage(trayStatusImage())'), 'missing dynamic tray status icon updates')
   assert.ok(main.includes("path.join(process.resourcesPath, 'tray-icons')"), 'missing packaged tray icon resource path')
   assert.ok(main.includes("path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'tray')"), 'missing development tray icon resource path')
+  assert.ok(main.includes('taskbarOverlayImage(kind)'), 'taskbar overlay must reuse master-derived tray icon assets')
   assert.ok(main.includes("{ label: '设置', click: () => showDesktopView('settings') }"), 'missing tray settings shortcut')
   assert.ok(main.includes("label: '打开传输中心'"), 'missing tray transfer center shortcut')
   assert.ok(main.includes("showDesktopNotification('xDrive 冲突'"), 'missing clickable conflict notification')

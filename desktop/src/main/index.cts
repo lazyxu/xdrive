@@ -20,6 +20,7 @@ import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { trayTransferPresentation } from './tray_transfers.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
+import { taskbarOverlayKind } from './taskbar_attention.cjs'
 import { editContextMenuTemplate } from './edit_context_menu.cjs'
 import {
   desktopShortcutActionFromArgs,
@@ -298,6 +299,11 @@ function desktopWindowBackground() {
   return nativeTheme.shouldUseDarkColors ? '#0f141d' : '#f5f7fb'
 }
 
+function requestTaskbarAttention() {
+  if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed() || mainWindow.isFocused()) return
+  mainWindow.flashFrame(true)
+}
+
 function desktopRuntimeIconPath() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'app-icon.png')
@@ -325,11 +331,13 @@ function createMainWindow(showOnReady = true) {
     },
   })
   mainWindow = win
+  updateTaskbarOverlay()
   if (desktopPreferences.window_maximized) win.maximize()
   win.on('move', () => scheduleWindowStateSave(win))
   win.on('resize', () => scheduleWindowStateSave(win))
   win.on('maximize', () => scheduleWindowStateSave(win))
   win.on('unmaximize', () => scheduleWindowStateSave(win))
+  win.on('focus', () => win.flashFrame(false))
   win.on('close', (event) => {
     if (quitting) return
     event.preventDefault()
@@ -387,6 +395,26 @@ function trayStatusAssetPath(kind: TrayStatusKind) {
     ? path.join(process.resourcesPath, 'tray-icons')
     : path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'tray')
   return path.join(root, trayStatusIconFile(kind))
+}
+
+function taskbarOverlayImage(kind: 'conflict' | 'offline') {
+  const assetPath = trayStatusAssetPath(kind)
+  const image = nativeImage.createFromPath(assetPath)
+  if (image.isEmpty()) throw new Error(`xDrive taskbar overlay icon is missing or invalid: ${assetPath}`)
+  return image.resize({ width: 16, height: 16 })
+}
+
+function updateTaskbarOverlay() {
+  if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return
+  const kind = taskbarOverlayKind(agentState.connected, agentState.status)
+  if (!kind) {
+    mainWindow.setOverlayIcon(null, '')
+    return
+  }
+  mainWindow.setOverlayIcon(
+    taskbarOverlayImage(kind),
+    kind === 'conflict' ? 'xDrive 有同步冲突' : 'xDrive 需要处理同步或登录问题',
+  )
 }
 
 function trayStatusImage() {
@@ -505,13 +533,18 @@ function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnec
   const before = previous.status
   const after = next.status
   if (after.conflict_count > before.conflict_count) {
+    requestTaskbarAttention()
     showDesktopNotification('xDrive 冲突', `${after.conflict_count} 个未解决冲突需要处理。`, 'conflicts')
   } else if (before.sync_status === '正在同步' && after.sync_status === '同步正常') {
     showDesktopNotification('xDrive', '同步已完成。', 'transfers')
   }
 
   if (before.auth_status !== after.auth_status && (after.auth_status === '登录已过期' || after.auth_status === '账户已禁用')) {
+    requestTaskbarAttention()
     showDesktopNotification('xDrive', 'xDrive 登录状态需要处理，请打开 xDrive 桌面版重新登录。')
+  }
+  if (after.last_error && after.last_error !== before.last_error && !after.has_conflict) {
+    requestTaskbarAttention()
   }
 }
 
@@ -539,6 +572,7 @@ function publishAgentState(next: AgentConnectionState) {
   if (changed) notifyAgentTransition(previous, next)
   agentState = next
   rebuildTrayMenu()
+  updateTaskbarOverlay()
   updateTaskbarProgress()
   if (changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent:state', next)
 }
