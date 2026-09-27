@@ -284,19 +284,38 @@ Backup and restore code discovers the actual mount through Docker metadata rathe
 
 A restore must never depend on direct host ownership of `data/files`; containerized copy/extract operations are used where numeric container ownership matters.
 
-## Diagnostics
+## Installation environment summary and diagnostics
 
-`server-doctor.sh` reports:
+The installer, `xdrive-server status`, and `server-doctor.sh` share one host-environment summary contract. A successful installation prints this summary before returning, and operators can reproduce it at any time with:
 
-- Docker mode: rootful or rootless;
-- current Unix user and whether Docker is usable without sudo;
+```text
+xdrive-server status
+xdrive-server status --summary-only
+```
+
+The summary explicitly reports:
+
 - canonical xDrive home;
-- active persistent data bind paths;
-- mount type and source for PostgreSQL, file storage and Caddy when enabled;
-- filesystem capacity for the xDrive home/data paths;
-- a warning when legacy flat-layout files or retained legacy named volumes remain.
+- Docker mode: `rootful`, `rootless`, or unavailable;
+- active Docker context and Docker data root;
+- update source, release channel, and pinned commit when present;
+- the resolved host paths for file data, PostgreSQL data, Caddy data/config, and backups;
+- filesystem total/used/free/percentage information for the xDrive home and every persistent path;
+- the active container mount source for each data path when the corresponding container exists;
+- every exact volume from `state/legacy-volumes-retained`, including whether it is present and whether a container still references it;
+- the normal Compose service table unless `--summary-only` is requested.
 
-Diagnostics are read-only.
+`server-doctor.sh` prints the same installation-environment section at the top of its redacted diagnostic report and then continues with deeper checks:
+
+- current Unix user and whether Docker is usable without sudo;
+- container state and health;
+- PostgreSQL authentication and CAS metadata health;
+- HTTP/HTTPS readiness;
+- update-provider connectivity;
+- host-layout consistency and legacy-layout warnings;
+- recent redacted container logs.
+
+Doctor keeps its existing redaction contract: home-relative paths are displayed with `~` and secrets are never printed. Diagnostics are read-only.
 
 ## CI contract
 
@@ -316,4 +335,6 @@ Normal CI must verify at least:
 - destructive uninstall requires `--yes` and purges container-owned bind trees through Docker;
 - legacy-volume cleanup reads only the migration record, refuses in-use volumes, and requires `--yes`.
 
-A real Rootless Docker smoke test may additionally be run on a compatible runner, but mandatory CI must not assume that every Docker-executor runner permits nested user namespaces.
+GitHub CI includes a mandatory `server-rootless-e2e` gate on a hosted Ubuntu runner. That job installs the official Rootless Docker prerequisites, starts a real `dockerd-rootless.sh` daemon as the non-root runner user, asserts that Docker reports the `rootless` security option, imports the exact server/Web images produced earlier in the same CI run, installs xDrive against that daemon, and verifies the live `status`, `doctor`, bind mounts, readiness endpoint, and non-root server UID/GID.
+
+This is intentionally a provider-specific CI capability rather than a fake parity job. The current GitLab pipeline uses Docker-executor Linux runners, where nested user namespaces cannot be assumed. GitLab server validation syntax-checks the same Rootless E2E script and enforces the status/doctor contracts, while the GitHub hosted Rootless job is the authoritative mandatory real-daemon gate.

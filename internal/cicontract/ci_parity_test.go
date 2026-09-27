@@ -36,11 +36,18 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	githubJobs := nestedMapKeys(t, github, "jobs")
 	gitlabJobs := gitlabJobKeys(gitlab)
+	githubProviderSpecificJobs := map[string]struct{}{
+		"server-rootless-e2e": {},
+	}
 	var githubCoreJobs []string
 	for _, name := range githubJobs {
-		if name != "publish" {
-			githubCoreJobs = append(githubCoreJobs, name)
+		if name == "publish" {
+			continue
 		}
+		if _, providerSpecific := githubProviderSpecificJobs[name]; providerSpecific {
+			continue
+		}
+		githubCoreJobs = append(githubCoreJobs, name)
 	}
 	if !reflect.DeepEqual(githubCoreJobs, gitlabJobs) {
 		t.Fatalf("CI core job drift: GitHub=%v GitLab=%v", githubCoreJobs, gitlabJobs)
@@ -416,6 +423,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	}
 	assertGitHubJobNeeds(t, github, "server-backup", []string{"server-image"})
 	assertGitLabJobNeeds(t, gitlab, "server-backup", []string{"server-image"})
+	assertGitHubJobNeeds(t, github, "server-rootless-e2e", []string{"server-image", "web"})
 	assertGitHubJobNeeds(t, github, "test-linux-artifact", []string{"package-linux-client"})
 	assertGitHubJobNeeds(t, github, "test-source-agent-artifact", []string{"build-source-agent"})
 	assertGitHubJobNeeds(t, github, "test-windows-rollback-artifact", []string{"package-windows-client"})
@@ -446,6 +454,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "GitHub parallel server validation contract", githubRaw,
 		"server-validation:",
 		"server-image:",
+		"server-rootless-e2e:",
 		"caddy-image:",
 		"server-backup:",
 	)
@@ -465,6 +474,22 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"path: dist/caddy-image",
 		"compression-level: 0",
 		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
+	)
+	requireRaw(t, "GitHub real Rootless Docker gate", githubRaw,
+		"server-rootless-e2e:",
+		"runs-on: ubuntu-24.04",
+		"needs: [server-image, web]",
+		"https://get.docker.com/rootless",
+		"FORCE_ROOTLESS_INSTALL=1",
+		"SKIP_IPTABLES=1",
+		"apparmor_restrict_unprivileged_userns",
+		"apparmor_parser -r",
+		"Delegate=cpu cpuset io memory pids",
+		"loginctl enable-linger",
+		`systemctl restart "user@$user_id.service"`,
+		"DBUS_SESSION_BUS_ADDRESS",
+		"bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/web-image",
+		"- server-rootless-e2e",
 	)
 	requireRaw(t, "GitLab exact server image artifact contract", gitlabRaw,
 		"dist/server-image/",
@@ -831,8 +856,11 @@ func TestServerHostLayoutAndRootlessContract(t *testing.T) {
 	compose := readFile(t, filepath.Join(root, "deploy", "docker-compose.yml"))
 	installer := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
 	hostManager := readFile(t, filepath.Join(root, "scripts", "xdrive-server-host.sh"))
+	doctor := readFile(t, filepath.Join(root, "scripts", "server-doctor.sh"))
 	design := readFile(t, filepath.Join(root, "docs", "server-host-layout.md"))
 	uninstallTest := readFile(t, filepath.Join(root, "scripts", "test-server-uninstall.sh"))
+	statusSummaryTest := readFile(t, filepath.Join(root, "scripts", "test-server-status-summary.sh"))
+	rootlessE2E := readFile(t, filepath.Join(root, "scripts", "ci", "test-server-rootless-e2e.sh"))
 	githubCI := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
 	gitlabValidation := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-validation.sh"))
 
@@ -876,12 +904,33 @@ func TestServerHostLayoutAndRootlessContract(t *testing.T) {
 		`CONFIG_DIR="$XDRIVE_HOME/config"`,
 		`BIN_DIR="$XDRIVE_HOME/bin"`,
 		`LEGACY_VOLUMES_RECORD="$STATE_DIR/legacy-volumes-retained"`,
+		`xdrive-server status [--summary-only]`,
+		`xDrive installation environment`,
+		`Docker mode`,
+		`Persistent paths`,
+		`Retained legacy volumes`,
+		`disk_usage_for_path`,
+		`active_mount`,
 		`xdrive-server cleanup legacy-volumes [--yes]`,
 		`xdrive-server uninstall [--purge-data] [--purge-backups] --yes`,
 		`compose down --remove-orphans`,
 		`docker volume rm "$volume"`,
 		`purge_container_owned_dir`,
 		`uninstall requires --yes`,
+	)
+	requireRaw(t, "server doctor environment summary", doctor,
+		"---- installation environment ----",
+		"status --summary-only",
+		"XD_STATUS_REDACT_HOME=1",
+	)
+	requireRaw(t, "server installer environment summary", installer,
+		"show_install_environment",
+		"status --summary-only",
+		"[xDrive] installation environment",
+		"interactive_tty_available",
+		`[[ "${XD_NONINTERACTIVE:-0}" != "1" ]] || return 1`,
+		"( exec 3<>/dev/tty ) 2>/dev/null",
+		"if interactive_tty_available; then",
 	)
 
 	requireRaw(t, "server host-layout design", design,
@@ -891,7 +940,27 @@ func TestServerHostLayoutAndRootlessContract(t *testing.T) {
 		"## Legacy layout migration",
 		"## Uninstall and retained-data contract",
 		"### Legacy named-volume cleanup",
+		"## Installation environment summary and diagnostics",
+		"server-rootless-e2e",
 		"## CI contract",
+	)
+	requireRaw(t, "server status summary test", statusSummaryTest,
+		"status --summary-only",
+		"Docker mode",
+		"xdrive_old_files (present,unused)",
+	)
+	requireRaw(t, "real rootless E2E script", rootlessE2E,
+		"dockerd-rootless.sh",
+		"SecurityOptions",
+		"grep -qi rootless",
+		"CgroupDriver",
+		"systemd cgroup delegation",
+		"--network host",
+		"REGISTRY_HTTP_ADDR=127.0.0.1",
+		"install-server.sh",
+		"status",
+		"doctor",
+		"65532:65532",
 	)
 	requireRaw(t, "server uninstall validation", uninstallTest,
 		"uninstall --yes",

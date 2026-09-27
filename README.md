@@ -124,6 +124,7 @@ xdrive-server update --source gitlab --channel master
 xdrive-server update --source gitlab --channel commit --commit 0123456789ab
 xdrive-server doctor
 xdrive-server status
+xdrive-server status --summary-only
 xdrive-server backup
 xdrive-server restore BACKUP_DIR --yes
 xdrive-server verify
@@ -139,7 +140,7 @@ xdrive-server admin enable admin
 xdrive-server admin disable USER
 ```
 
-The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. The `xdrive-server` executable inside `xdrive-server-1` remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
+The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. `xdrive-server status` starts with an installation-environment summary showing rootful/rootless Docker mode, Docker context/root, every resolved persistent host path, per-path filesystem usage, active bind mounts, release source/channel, and retained legacy volumes; it then prints the normal Compose service table. Use `status --summary-only` when only the deployment environment is needed. The installer prints the same summary after a successful install, and `doctor` embeds it at the top of the diagnostic report. The `xdrive-server` executable inside `xdrive-server-1` remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
 
 Persistent server state uses host bind mounts under `~/.xd/data` by default:
 
