@@ -21,6 +21,7 @@ sed \
   -e "s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g" \
   -e "s|@RELEASE_CHANNEL@|$XDRIVE_RELEASE_CHANNEL|g" \
   -e "s|@RELEASE_COMMIT@|$XDRIVE_RELEASE_COMMIT|g" \
+  -e "s|@UPDATE_SOURCE@|gitlab|g" \
   deploy/install-server.sh > release/xdrive-server-install.sh
 chmod +x release/xdrive-server-install.sh
 

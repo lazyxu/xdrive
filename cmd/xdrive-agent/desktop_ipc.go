@@ -131,6 +131,7 @@ type desktopIPCController interface {
 	UpdateSettings(mountPath *string, cacheLimitBytes *int64) error
 	UpdateState() clientUpdateState
 	SetUpdateMode(string) (clientUpdateState, error)
+	SetUpdateSource(string) (clientUpdateState, error)
 	CheckClientUpdate(context.Context) (clientUpdateState, error)
 	DownloadClientUpdate(context.Context) (clientUpdateState, error)
 	InstallClientUpdate(context.Context) (clientUpdateState, error)
@@ -584,15 +585,31 @@ func (h *desktopIPCHandler) updateState(w http.ResponseWriter, _ *http.Request) 
 
 func (h *desktopIPCHandler) updateMode(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Mode string `json:"mode"`
+		Mode   *string `json:"mode"`
+		Source *string `json:"source"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
-	state, err := h.ctrl.SetUpdateMode(input.Mode)
-	if err != nil {
-		writeDesktopIPCControllerError(w, err)
+	if input.Mode == nil && input.Source == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "empty_update_settings", "mode or source is required")
 		return
+	}
+	state := h.ctrl.UpdateState()
+	var err error
+	if input.Mode != nil {
+		state, err = h.ctrl.SetUpdateMode(*input.Mode)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+	}
+	if input.Source != nil {
+		state, err = h.ctrl.SetUpdateSource(*input.Source)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, state)
 }

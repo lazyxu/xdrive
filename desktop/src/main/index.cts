@@ -59,6 +59,7 @@ import {
   type AgentFileAvailability,
   type AgentSettings,
   type AgentUpdateMode,
+  type AgentUpdateSource,
   type AgentUpdateState,
   type AgentStatus,
   type AgentTransfers,
@@ -1102,6 +1103,18 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'client-update')
       const next = await requireAgentClient().setUpdateMode(mode as AgentUpdateMode)
+      publishAgentUpdate(next)
+      return next
+    }, false)
+  })
+  ipcMain.handle('agent:set-update-source', (_event, source: unknown) => {
+    if (source !== 'github' && source !== 'gitlab') {
+      return { ok: false, error: { code: 'invalid_input', message: 'A valid client update source is required.' } }
+    }
+    return runAgentAction<AgentUpdateState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'client-update')
+      const next = await requireAgentClient().setUpdateSource(source as AgentUpdateSource)
       publishAgentUpdate(next)
       return next
     }, false)

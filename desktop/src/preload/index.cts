@@ -63,6 +63,7 @@ const agent = Object.freeze({
   updateSettings: (input: { mount_path?: string; cache_limit_bytes?: number }) => ipcRenderer.invoke('agent:update-settings', input),
   getUpdate: () => ipcRenderer.invoke('agent:get-update'),
   setUpdateMode: (mode: 'manual' | 'check' | 'download' | 'install') => ipcRenderer.invoke('agent:set-update-mode', mode),
+  setUpdateSource: (source: 'github' | 'gitlab') => ipcRenderer.invoke('agent:set-update-source', source),
   checkUpdate: () => ipcRenderer.invoke('agent:check-update'),
   downloadUpdate: () => ipcRenderer.invoke('agent:download-update'),
   installUpdate: () => ipcRenderer.invoke('agent:install-update'),

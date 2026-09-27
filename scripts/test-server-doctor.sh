@@ -108,6 +108,22 @@ grep -q 'https://ghcr.io/v2/' "$TMP/state/curl-args"
 grep -q 'https://pkg-containers.githubusercontent.com/' "$TMP/state/curl-args"
 grep -q 'summary:' "$TMP/report"
 
+cat >> "$TMP/config/.env" <<'EOF'
+XD_UPDATE_SOURCE=gitlab
+XD_IMAGE_REGISTRY=registry.gitlab.example/xuliang/xdrive
+EOF
+: > "$TMP/state/curl-args"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/config" \
+  bash "$DOCTOR" >"$TMP/report-gitlab" 2>"$TMP/err-gitlab"
+grep -q 'source=gitlab channel=master' "$TMP/report-gitlab"
+grep -q 'http://gitlab.t-fluid.com:1080/xuliang/xdrive' "$TMP/state/curl-args"
+grep -q 'http://gitlab.t-fluid.com:1080/api/v4/projects/xuliang%2Fxdrive' "$TMP/state/curl-args"
+grep -q 'https://registry.gitlab.example/v2/' "$TMP/state/curl-args"
+if grep -q 'https://api.github.com/' "$TMP/state/curl-args"; then
+  echo "GitLab doctor path unexpectedly probed GitHub" >&2
+  exit 1
+fi
+
 for secret in super-secret-db-password super-secret-jwt super-secret-alidns token-should-not-leak db-password-should-not-leak refresh-should-not-leak env-should-not-leak; do
   if grep -Fq "$secret" "$TMP/report" "$TMP/err"; then
     echo "doctor leaked secret: $secret" >&2

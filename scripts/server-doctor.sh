@@ -158,10 +158,12 @@ else
   record FAIL "compose file" "missing $(safe_path "$COMPOSE_PATH")"
 fi
 
+update_source="$(env_value XD_UPDATE_SOURCE)"
+[[ -n "$update_source" ]] || update_source="github"
 channel="$(env_value XD_RELEASE_CHANNEL)"
 commit="$(env_value XD_RELEASE_COMMIT)"
 server_image="$(env_value XD_SERVER_IMAGE)"
-release_detail="channel=${channel:-unknown}"
+release_detail="source=$update_source channel=${channel:-unknown}"
 if [[ -n "$commit" ]]; then release_detail+=" commit=${commit:0:12}"; fi
 if [[ -n "$server_image" ]]; then
   image_tag="${server_image##*:}"
@@ -284,13 +286,24 @@ if command -v curl >/dev/null 2>&1; then
     fi
   }
 
-  external_http_check "GitHub API" "https://api.github.com/"
-  external_http_check "GitHub Web" "https://github.com/"
-  external_http_check "Release CDN" "https://release-assets.githubusercontent.com/"
-  external_http_check "GHCR registry" "https://ghcr.io/v2/"
-  external_http_check "Container CDN" "https://pkg-containers.githubusercontent.com/"
+  if [[ "$update_source" == "gitlab" ]]; then
+    gitlab_base="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
+    external_http_check "GitLab Web" "${gitlab_base%/}/xuliang/xdrive"
+    external_http_check "GitLab API" "${gitlab_base%/}/api/v4/projects/xuliang%2Fxdrive"
+    image_registry="$(env_value XD_IMAGE_REGISTRY)"
+    registry_host="${image_registry%%/*}"
+    if [[ -n "$registry_host" ]]; then
+      external_http_check "GitLab registry" "https://$registry_host/v2/"
+    fi
+  else
+    external_http_check "GitHub API" "https://api.github.com/"
+    external_http_check "GitHub Web" "https://github.com/"
+    external_http_check "Release CDN" "https://release-assets.githubusercontent.com/"
+    external_http_check "GHCR registry" "https://ghcr.io/v2/"
+    external_http_check "Container CDN" "https://pkg-containers.githubusercontent.com/"
+  fi
 else
-  record WARN "external network" "curl unavailable; GitHub/GHCR checks skipped"
+  record WARN "external network" "curl unavailable; update-provider network checks skipped"
 fi
 
 echo

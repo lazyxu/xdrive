@@ -41,6 +41,7 @@ type fakeDesktopIPCController struct {
 	updateCache               *int64
 	updateState               clientUpdateState
 	updateMode                string
+	updateSource              string
 	updateChecks              int
 	updateDownloads           int
 	updateInstalls            int
@@ -149,6 +150,12 @@ func (f *fakeDesktopIPCController) UpdateState() clientUpdateState {
 func (f *fakeDesktopIPCController) SetUpdateMode(mode string) (clientUpdateState, error) {
 	f.updateMode = mode
 	f.updateState.Mode = mode
+	return f.updateState, f.err
+}
+
+func (f *fakeDesktopIPCController) SetUpdateSource(source string) (clientUpdateState, error) {
+	f.updateSource = source
+	f.updateState.Source = source
 	return f.updateState, f.err
 }
 
@@ -493,6 +500,7 @@ func TestDesktopIPCActions(t *testing.T) {
 		root: "/existing",
 		updateState: clientUpdateState{
 			Mode:            userconfig.UpdateModeManual,
+			Source:          userconfig.UpdateSourceGitHub,
 			Status:          clientUpdateStatusAvailable,
 			CurrentVersion:  "snapshot-old",
 			LatestVersion:   "snapshot-new",
@@ -518,6 +526,7 @@ func TestDesktopIPCActions(t *testing.T) {
 		{http.MethodPatch, "/v1/settings", `{"mount_path":"/tmp/xdrive","cache_limit_bytes":5368709120}`},
 		{http.MethodGet, "/v1/update", ""},
 		{http.MethodPatch, "/v1/update/settings", `{"mode":"download"}`},
+		{http.MethodPatch, "/v1/update/settings", `{"source":"gitlab"}`},
 		{http.MethodPost, "/v1/update/check", ""},
 		{http.MethodPost, "/v1/update/download", ""},
 		{http.MethodPost, "/v1/update/install", ""},
@@ -548,9 +557,9 @@ func TestDesktopIPCActions(t *testing.T) {
 	if ctrl.updateMount == nil || *ctrl.updateMount != mountPath || ctrl.updateCache == nil || *ctrl.updateCache != cache {
 		t.Fatalf("settings update not forwarded: mount=%v cache=%v", ctrl.updateMount, ctrl.updateCache)
 	}
-	if ctrl.updateMode != userconfig.UpdateModeDownload || ctrl.updateChecks != 1 || ctrl.updateDownloads != 1 || ctrl.updateInstalls != 1 {
-		t.Fatalf("update actions not forwarded: mode=%q check=%d download=%d install=%d",
-			ctrl.updateMode, ctrl.updateChecks, ctrl.updateDownloads, ctrl.updateInstalls)
+	if ctrl.updateMode != userconfig.UpdateModeDownload || ctrl.updateSource != userconfig.UpdateSourceGitLab || ctrl.updateChecks != 1 || ctrl.updateDownloads != 1 || ctrl.updateInstalls != 1 {
+		t.Fatalf("update actions not forwarded: mode=%q source=%q check=%d download=%d install=%d",
+			ctrl.updateMode, ctrl.updateSource, ctrl.updateChecks, ctrl.updateDownloads, ctrl.updateInstalls)
 	}
 	if ctrl.rulePath != "Projects/Archive" || ctrl.ruleMode != "exclude" {
 		t.Fatalf("sync rule not forwarded: path=%q mode=%q", ctrl.rulePath, ctrl.ruleMode)
