@@ -66,13 +66,14 @@ func (s *FlexibleStringList) UnmarshalJSON(data []byte) error {
 }
 
 type File struct {
-	FSID     int64              `json:"fsid"`
-	Path     string             `json:"path"`
-	Size     int64              `json:"size"`
-	CTime    int64              `json:"ctime"`
-	MTime    int64              `json:"mtime"`
-	ThumbURL FlexibleStringList `json:"thumburl,omitempty"`
-	MD5      string             `json:"md5,omitempty"`
+	FSID      int64              `json:"fsid"`
+	Path      string             `json:"path"`
+	Size      int64              `json:"size"`
+	CTime     int64              `json:"ctime"`
+	MTime     int64              `json:"mtime"`
+	ShootTime int64              `json:"shoot_time,omitempty"`
+	ThumbURL  FlexibleStringList `json:"thumburl,omitempty"`
+	MD5       string             `json:"md5,omitempty"`
 }
 
 func (f File) ModifiedAt() time.Time { return time.Unix(f.MTime, 0).UTC() }

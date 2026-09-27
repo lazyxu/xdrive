@@ -71,7 +71,7 @@ func TestUserInfoAndRootFilePagination(t *testing.T) {
 				t.Fatalf("need_filter_hidden=%q", r.URL.Query().Get("need_filter_hidden"))
 			}
 			if cursor == "" {
-				_, _ = w.Write([]byte(`{"errno":0,"has_more":1,"cursor":"next-1","list":[{"fsid":11,"path":"/a.jpg","size":10,"mtime":100}]}`))
+				_, _ = w.Write([]byte(`{"errno":0,"has_more":1,"cursor":"next-1","list":[{"fsid":11,"path":"/a.jpg","size":10,"ctime":90,"mtime":100,"shoot_time":80}]}`))
 				return
 			}
 			if cursor != "next-1" {
@@ -99,7 +99,8 @@ func TestUserInfoAndRootFilePagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || files[0].FSID != 11 || files[1].FSID != 12 {
+	if len(files) != 2 || files[0].FSID != 11 || files[1].FSID != 12 ||
+		files[0].ShootTime != 80 || files[0].CTime != 90 || files[0].MTime != 100 {
 		t.Fatalf("files=%+v", files)
 	}
 	mu.Lock()

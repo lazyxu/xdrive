@@ -109,7 +109,7 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 						// library. A different album path must not re-include it.
 						{File: yike.File{FSID: 2, Path: "/visible-in-album.jpg", Size: 200, MTime: 2000}, AlbumID: "own", UK: 123},
 						{File: yike.File{
-							FSID: 3, Path: "/album-only.jpg", Size: 300, CTime: 2500, MTime: 3000,
+							FSID: 3, Path: "/album-only.jpg", Size: 300, CTime: 2500, MTime: 3000, ShootTime: 1500,
 							MD5: strings.Repeat("a", 32), ThumbURL: []string{"", " https://thumb.example/3 "},
 						}, AlbumID: "own", UK: 123},
 					},
@@ -195,6 +195,7 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	}
 	if albumOnly.OriginalPath != "/album-only.jpg" ||
 		albumOnly.OwnerExternalID != "123" ||
+		albumOnly.CapturedAt == nil || albumOnly.CapturedAt.Unix() != 1500 ||
 		albumOnly.RemoteCreatedAt == nil || albumOnly.RemoteCreatedAt.Unix() != 2500 ||
 		albumOnly.ContentMD5 != strings.Repeat("a", 32) ||
 		albumOnly.ThumbnailURL != "https://thumb.example/3" ||
