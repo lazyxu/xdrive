@@ -64,6 +64,12 @@ test('desktop GUI defaults to Chinese', () => {
   assert.match(html, /<title>xDrive 桌面版<\/title>/)
 })
 
+test('desktop brand lockups use the shared application icon', () => {
+  assert.ok(renderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"), 'missing shared desktop brand icon import')
+  assert.equal((renderer.match(/src=\{xDriveBrandIcon\}/g) || []).length, 4, 'desktop should use the shared icon in every brand lockup')
+  assert.equal(renderer.includes('<div className="brand-mark">x</div>'), false, 'legacy text x brand mark remains')
+})
+
 test('desktop keeps sync controls global instead of repeating page status actions', () => {
   const start = renderer.indexOf('<header className="topbar">')
   const end = renderer.indexOf('</header>', start)

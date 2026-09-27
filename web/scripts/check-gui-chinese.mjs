@@ -30,6 +30,13 @@ const forbidText = (source, values, label) => {
 }
 
 requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹', '版本历史'], '文件管理器')
+requireText(files.app, ['src="/xdrive-icon-master.svg"'], 'xDrive 品牌图标')
+if ((files.app.match(/src="\/xdrive-icon-master\.svg"/g) || []).length !== 3) {
+  throw new Error('Web 应在登录页和两个导航品牌位统一使用主应用图标')
+}
+if (files.app.includes('<div className="brand-mark">x</div>') || files.app.includes('<div className="brand-mark small">x</div>')) {
+  throw new Error('Web 仍存在旧的文字 x 品牌标识')
+}
 requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码'], '用户管理')
 requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录'], '审计日志')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享'], '分享窗口')

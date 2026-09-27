@@ -35,6 +35,7 @@ import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
+import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
 import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
@@ -1262,7 +1263,7 @@ function App() {
     return (
       <div className="center-shell">
         <section className="auth-panel">
-          <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>桌面版</span></div></div>
+          <div className="brand large"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>桌面版</span></div></div>
           <p className="eyebrow">AGENT 连接</p>
           <h1>{headline}</h1>
           <p className="subtitle">xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。</p>
@@ -1286,7 +1287,7 @@ function App() {
     return (
       <div className="center-shell">
         <form className="auth-panel" onSubmit={login}>
-          <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>桌面版</span></div></div>
+          <div className="brand large"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>桌面版</span></div></div>
           <p className="eyebrow">登录</p>
           <h1>{headline}</h1>
           <p className="subtitle">凭据会直接传递给 Go Agent，Electron 渲染进程不会接触 access token 或 refresh token。</p>
@@ -1311,7 +1312,7 @@ function App() {
     return (
       <div className="center-shell">
         <form className="auth-panel" onSubmit={changePassword}>
-          <div className="brand large"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>{status.username}</span></div></div>
+          <div className="brand large"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>{status.username}</span></div></div>
           <p className="eyebrow">需要修改密码</p>
           <h1>{headline}</h1>
           <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
@@ -1329,7 +1330,7 @@ function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">x</div><div><strong>xDrive</strong><span>桌面版</span></div></div>
+        <div className="brand"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>桌面版</span></div></div>
         <nav aria-label="桌面版功能区">
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>概览</button>
           <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>云端文件</button>
