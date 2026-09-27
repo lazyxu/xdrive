@@ -292,7 +292,7 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 		"tid":      {strconv.FormatInt(file.TID, 10)},
 		"uk":       {strconv.FormatInt(file.UK, 10)},
 	}
-	req, err := c.request(ctx, http.MethodHead, "/album/v1/download", query)
+	req, err := c.request(ctx, http.MethodGet, "/album/v1/download", query)
 	if err != nil {
 		return DownloadLink{}, err
 	}
@@ -308,12 +308,12 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
 		return DownloadLink{}, fmt.Errorf("shared album direct download returned HTTP %d", resp.StatusCode)
 	}
-	location := strings.TrimSpace(resp.Header.Get("Location"))
-	if location == "" {
-		return DownloadLink{}, fmt.Errorf("shared album direct download returned no redirect location")
+	location, err := resp.Location()
+	if err != nil {
+		return DownloadLink{}, fmt.Errorf("shared album direct download returned invalid redirect: %w", err)
 	}
 	return DownloadLink{
-		URL: location,
+		URL: location.String(),
 		Headers: map[string]string{
 			"User-Agent": c.userAgent,
 			"Referer":    "https://photo.baidu.com/",

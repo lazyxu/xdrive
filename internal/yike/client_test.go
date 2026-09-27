@@ -129,7 +129,7 @@ func TestDownloadLinksAreReadOnly(t *testing.T) {
 				"errno": 0,
 				"dlink": serverURL(r) + "/download/root",
 			})
-		case r.Method == http.MethodHead && r.URL.Path == "/youai/album/v1/download":
+		case r.Method == http.MethodGet && r.URL.Path == "/youai/album/v1/download":
 			if r.URL.Query().Get("fsid") != "22" || r.URL.Query().Get("album_id") != "album-1" ||
 				r.URL.Query().Get("tid") != "7" || r.URL.Query().Get("uk") != "999" {
 				t.Fatalf("shared query=%v", r.URL.Query())
@@ -200,7 +200,7 @@ func TestSharedAlbumDownloadDoesNotCopyOnFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("shared album direct-link failure was accepted")
 	}
-	if len(requests) != 1 || requests[0] != "HEAD /youai/album/v1/download" {
+	if len(requests) != 1 || requests[0] != "GET /youai/album/v1/download" {
 		t.Fatalf("unexpected fallback requests=%v", requests)
 	}
 }
