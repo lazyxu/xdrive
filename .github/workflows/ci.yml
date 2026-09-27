@@ -359,6 +359,9 @@ jobs:
           bash -n scripts/xdrive-server-host.sh
           bash -n scripts/test-xdrive-server-host.sh
           bash scripts/test-xdrive-server-host.sh
+          bash -n scripts/test-server-status-summary.sh
+          bash scripts/test-server-status-summary.sh
+          bash -n scripts/ci/test-server-rootless-e2e.sh
           bash -n scripts/cleanup-merged-branches.sh
           bash -n scripts/test-cleanup-merged-branches.sh
           bash scripts/test-cleanup-merged-branches.sh
@@ -499,6 +502,90 @@ jobs:
           if-no-files-found: error
           retention-days: 2
           compression-level: 0
+
+  server-rootless-e2e:
+    needs: [server-image, web]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-server-image
+          path: dist/server-image
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-web-image
+          path: dist/web-image
+      - name: Install Rootless Docker prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y uidmap dbus-user-session slirp4netns fuse-overlayfs
+          if ! command -v dockerd-rootless.sh >/dev/null 2>&1; then
+            rootless_installer="$RUNNER_TEMP/docker-rootless-install.sh"
+            curl -fsSL https://get.docker.com/rootless -o "$rootless_installer"
+            install_runtime="$RUNNER_TEMP/docker-rootless-install-runtime"
+            mkdir -p "$install_runtime"
+            chmod 700 "$install_runtime"
+            FORCE_ROOTLESS_INSTALL=1 SKIP_IPTABLES=1 XDG_RUNTIME_DIR="$install_runtime" sh "$rootless_installer"
+            echo "$HOME/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/bin:$PATH"
+          fi
+          command -v dockerd-rootless.sh
+          rootlesskit_path="$(command -v rootlesskit)"
+          if [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" == "1" ]]; then
+            profile_name="${rootlesskit_path#/}"
+            profile_name="${profile_name//\//.}"
+            profile_file="/etc/apparmor.d/$profile_name"
+            cat <<EOF | sudo tee "$profile_file" >/dev/null
+          abi <abi/4.0>,
+          include <tunables/global>
+
+          $rootlesskit_path flags=(unconfined) {
+            userns,
+          }
+          EOF
+            sudo apparmor_parser -r "$profile_file"
+          fi
+          user_name="$(id -un)"
+          user_id="$(id -u)"
+          sudo mkdir -p /etc/systemd/system/user@.service.d
+          cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/xdrive-rootless-delegate.conf >/dev/null
+          [Service]
+          Delegate=cpu cpuset io memory pids
+          EOF
+          sudo systemctl daemon-reload
+          sudo loginctl enable-linger "$user_name"
+          sudo systemctl restart "user@$user_id.service"
+          user_runtime="/run/user/$user_id"
+          for _ in $(seq 1 30); do
+            [[ -S "$user_runtime/bus" ]] && break
+            sleep 1
+          done
+          [[ -S "$user_runtime/bus" ]] || {
+            echo "rootless E2E could not establish the runner's systemd user bus" >&2
+            exit 1
+          }
+          sudo systemctl show "user@$user_id.service" -p Delegate -p DelegateControllers
+          export XDG_RUNTIME_DIR="$user_runtime"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$user_runtime/bus"
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+          subuid_count="$(awk -F: -v u="$user_name" '$1==u {sum += $3} END {print sum+0}' /etc/subuid)"
+          subgid_count="$(awk -F: -v u="$user_name" '$1==u {sum += $3} END {print sum+0}' /etc/subgid)"
+          if (( subuid_count < 65536 )); then
+            sudo usermod --add-subuids 100000-165535 "$user_name"
+          fi
+          if (( subgid_count < 65536 )); then
+            sudo usermod --add-subgids 100000-165535 "$user_name"
+          fi
+          grep "^$user_name:" /etc/subuid
+          grep "^$user_name:" /etc/subgid
+      - name: Real Rootless Docker install/status/doctor E2E
+        shell: bash
+        run: bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/web-image
 
   caddy-image:
     runs-on: ubuntu-latest
@@ -776,6 +863,7 @@ jobs:
       - go-windows
       - server-validation
       - server-image
+      - server-rootless-e2e
       - caddy-image
       - server-backup
       - web

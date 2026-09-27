@@ -5,7 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCTOR="$ROOT/scripts/server-doctor.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/home/config" "$TMP/home/data/files" "$TMP/home/data/postgres" "$TMP/home/data/caddy/data" "$TMP/home/data/caddy/config" "$TMP/home/state" "$TMP/state"
+mkdir -p "$TMP/bin" "$TMP/home/config" "$TMP/home/bin" "$TMP/home/data/files" "$TMP/home/data/postgres" "$TMP/home/data/caddy/data" "$TMP/home/data/caddy/config" "$TMP/home/backups" "$TMP/home/state" "$TMP/state"
+cp "$ROOT/scripts/xdrive-server-host.sh" "$TMP/home/bin/xdrive-server"
+chmod +x "$TMP/home/bin/xdrive-server"
 
 cat > "$TMP/home/config/.env" <<'EOF'
 POSTGRES_PASSWORD=super-secret-db-password
@@ -99,6 +101,11 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG
   bash "$DOCTOR" >"$TMP/report" 2>"$TMP/err"
 
 grep -q '^xDrive server diagnostic report' "$TMP/report"
+grep -q '^---- installation environment ----$' "$TMP/report"
+grep -q '^xDrive installation environment$' "$TMP/report"
+grep -Eq 'Docker mode[[:space:]]+rootful$' "$TMP/report"
+grep -q '^Persistent paths$' "$TMP/report"
+grep -Eq 'Volumes[[:space:]]+none$' "$TMP/report"
 grep -q '\[PASS\] Docker' "$TMP/report"
 grep -q '\[PASS\] Docker access' "$TMP/report"
 grep -q 'mode=rootful; usable without sudo' "$TMP/report"

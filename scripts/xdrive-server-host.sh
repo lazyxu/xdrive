@@ -42,7 +42,7 @@ xDrive server host manager
 Usage:
   xdrive-server update [--source github|gitlab] [--channel stable|master|commit] [--commit SHA]
   xdrive-server doctor [--strict]
-  xdrive-server status
+  xdrive-server status [--summary-only]
   xdrive-server backup [server-backup.sh options...]
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
@@ -194,12 +194,151 @@ doctor_cmd() {
   XD_CONFIG_DIR="$XDRIVE_HOME" exec "$doctor" "$@"
 }
 
+display_path() {
+  local value="$1"
+  if [[ "${XD_STATUS_REDACT_HOME:-0}" == "1" && -n "${HOME:-}" && "$value" == "$HOME"* ]]; then
+    printf '~%s' "${value#$HOME}"
+  else
+    printf '%s' "$value"
+  fi
+}
+
+docker_mode() {
+  local security
+  if ! docker info </dev/null >/dev/null 2>&1; then
+    printf 'unavailable\n'
+    return 0
+  fi
+  security="$(docker info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null || true)"
+  if printf '%s' "$security" | grep -qi rootless; then
+    printf 'rootless\n'
+  else
+    printf 'rootful\n'
+  fi
+}
+
+disk_usage_for_path() {
+  local path="$1" probe="$1"
+  command -v df >/dev/null 2>&1 || { printf 'unavailable'; return 0; }
+  while [[ ! -e "$probe" && "$probe" != "/" ]]; do
+    probe="$(dirname "$probe")"
+  done
+  df -hP -- "$probe" 2>/dev/null | awk 'NR==2 {
+    printf "%s total, %s used, %s free, %s used, fs=%s", $2, $3, $4, $5, $1
+  }'
+}
+
+configured_path() {
+  local key="$1" fallback="$2" value
+  value="$(env_value "$key")"
+  [[ -n "$value" ]] || value="$fallback"
+  printf '%s\n' "$value"
+}
+
+active_mount() {
+  local service="$1" destination="$2" id info
+  [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || { printf 'inactive'; return 0; }
+  id="$(compose ps -aq "$service" 2>/dev/null | head -n1 || true)"
+  [[ -n "$id" ]] || { printf 'inactive'; return 0; }
+  info="$(docker inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{if .Name}}volume={{.Name}}{{else}}bind={{.Source}}{{end}}{{end}}{{end}}" </dev/null 2>/dev/null || true)"
+  [[ -n "$info" ]] && printf '%s' "$info" || printf 'missing'
+}
+
+status_path_line() {
+  local label="$1" path="$2" service="${3:-}" destination="${4:-}" mount="n/a" disk
+  disk="$(disk_usage_for_path "$path")"
+  if [[ -n "$service" && -n "$destination" ]]; then
+    mount="$(active_mount "$service" "$destination")"
+  fi
+  printf '  %-15s %s\n' "$label" "$(display_path "$path")"
+  printf '  %-15s %s; mount=%s\n' "" "${disk:-unavailable}" "$mount"
+}
+
+retained_legacy_summary() {
+  local value volume exists attached count=0
+  if [[ ! -f "$LEGACY_VOLUMES_RECORD" ]]; then
+    printf 'none\n'
+    return 0
+  fi
+  while IFS='=' read -r _ value; do
+    volume="${value%$'\r'}"
+    [[ -n "$volume" ]] || continue
+    count=$((count + 1))
+    if docker volume inspect "$volume" </dev/null >/dev/null 2>&1; then
+      exists="present"
+      attached="$(docker ps -aq --filter "volume=$volume" </dev/null 2>/dev/null || true)"
+      [[ -n "$attached" ]] && exists="$exists,in-use" || exists="$exists,unused"
+    else
+      exists="missing"
+    fi
+    printf '%s (%s)\n' "$volume" "$exists"
+  done < "$LEGACY_VOLUMES_RECORD"
+  [[ "$count" -gt 0 ]] || printf 'none\n'
+}
+
+status_summary() {
+  local mode context docker_root source channel commit
+  local files_dir postgres_dir caddy_data_dir caddy_config_dir legacy first line
+
+  mode="$(docker_mode)"
+  context="$(docker context show </dev/null 2>/dev/null || true)"
+  docker_root="$(docker info --format '{{.DockerRootDir}}' </dev/null 2>/dev/null || true)"
+  source="$(env_value XD_UPDATE_SOURCE)"
+  channel="$(env_value XD_RELEASE_CHANNEL)"
+  commit="$(env_value XD_RELEASE_COMMIT)"
+
+  files_dir="$(configured_path XD_FILES_DATA_DIR "$DATA_DIR/files")"
+  postgres_dir="$(configured_path XD_POSTGRES_DATA_DIR "$DATA_DIR/postgres")"
+  caddy_data_dir="$(configured_path XD_CADDY_DATA_DIR "$DATA_DIR/caddy/data")"
+  caddy_config_dir="$(configured_path XD_CADDY_CONFIG_DIR "$DATA_DIR/caddy/config")"
+
+  echo "xDrive installation environment"
+  printf '  %-15s %s\n' "Home" "$(display_path "$XDRIVE_HOME")"
+  printf '  %-15s %s\n' "Docker mode" "$mode"
+  printf '  %-15s %s\n' "Docker context" "${context:-unknown}"
+  printf '  %-15s %s\n' "Docker root" "$(display_path "${docker_root:-unknown}")"
+  printf '  %-15s %s / %s%s\n' "Update" "${source:-unknown}" "${channel:-unknown}" "${commit:+ / ${commit:0:12}}"
+  printf '  %-15s %s\n' "Home disk" "$(disk_usage_for_path "$XDRIVE_HOME")"
+  echo "Persistent paths"
+  status_path_line "Files" "$files_dir" server /data
+  status_path_line "PostgreSQL" "$postgres_dir" postgres /var/lib/postgresql/data
+  status_path_line "Caddy data" "$caddy_data_dir" caddy /data
+  status_path_line "Caddy config" "$caddy_config_dir" caddy /config
+  status_path_line "Backups" "$BACKUP_DIR"
+
+  echo "Retained legacy volumes"
+  legacy="$(retained_legacy_summary)"
+  first=1
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    if [[ "$first" == "1" ]]; then
+      printf '  %-15s %s\n' "Volumes" "$line"
+      first=0
+    else
+      printf '  %-15s %s\n' "" "$line"
+    fi
+  done <<< "$legacy"
+  [[ "$first" == "0" ]] || printf '  %-15s none\n' "Volumes"
+}
+
 status_cmd() {
+  local summary_only=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --summary-only) summary_only=1 ;;
+      *) echo "usage: xdrive-server status [--summary-only]" >&2; return 2 ;;
+    esac
+  done
   [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || {
     echo "xdrive-server: no xDrive deployment found in $CONFIG_DIR" >&2
     return 1
   }
-  compose ps
+  status_summary
+  if [[ "$summary_only" != "1" ]]; then
+    echo
+    echo "Services"
+    compose ps
+  fi
 }
 
 backup_cmd() {

@@ -138,6 +138,16 @@ echo "home:   $(safe_path "$XDRIVE_HOME")"
 echo "config: $(safe_path "$CONFIG_DIR")"
 echo "redaction: passwords, JWTs, access/refresh tokens, Authorization headers and home paths are redacted"
 echo
+echo "---- installation environment ----"
+summary_manager="$XDRIVE_HOME/bin/xdrive-server"
+if [[ -x "$summary_manager" ]]; then
+  if ! XD_STATUS_REDACT_HOME=1 XD_CONFIG_DIR="$XDRIVE_HOME" "$summary_manager" status --summary-only 2>/dev/null | redact_stream; then
+    record WARN "environment summary" "host manager summary failed; continuing with detailed diagnostics"
+  fi
+else
+  record WARN "environment summary" "host manager missing at $(safe_path "$summary_manager"); detailed diagnostics follow"
+fi
+echo
 
 if command -v docker >/dev/null 2>&1; then
   record PASS "Docker" "$(docker --version </dev/null 2>/dev/null || echo installed)"

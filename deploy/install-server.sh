@@ -690,6 +690,12 @@ need() {
   }
 }
 
+interactive_tty_available() {
+  [[ "${XD_NONINTERACTIVE:-0}" != "1" ]] || return 1
+  [[ -r /dev/tty && -w /dev/tty ]] || return 1
+  ( exec 3<>/dev/tty ) 2>/dev/null
+}
+
 stage 2 "validate host prerequisites"
 case "$(uname -m)" in
   x86_64|amd64) ;;
@@ -1415,7 +1421,7 @@ web_port="$(env_value XD_WEB_PORT)"
 validate_port "$https_port"
 validate_rootless_port "Web" "$web_port"
 validate_rootless_port "HTTPS" "$https_port"
-if [[ -z "$domain" && -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" != "1" ]]; then
+if [[ -z "$domain" ]] && interactive_tty_available; then
   read -r -p "Public domain for DNS-01 HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
   domain="${input_domain:-}"
   if [[ -n "$domain" ]]; then
@@ -1430,7 +1436,7 @@ if [[ -n "$domain" ]]; then
   alidns_key_id="$(env_value ALIYUN_ACCESS_KEY_ID)"
   alidns_key_secret="$(env_value ALIYUN_ACCESS_KEY_SECRET)"
   if [[ -z "$alidns_key_id" || -z "$alidns_key_secret" ]]; then
-    if [[ -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" != "1" ]]; then
+    if interactive_tty_available; then
       if [[ -z "$alidns_key_id" ]]; then
         read -r -p "AliDNS AccessKey ID: " alidns_key_id </dev/tty
         [[ -n "$alidns_key_id" ]] || { echo "AliDNS AccessKey ID cannot be empty." >&2; exit 1; }
@@ -1522,6 +1528,14 @@ compose_with_stdin() {
   fi
 }
 
+show_install_environment() {
+  echo
+  echo "[xDrive] installation environment"
+  if ! XD_CONFIG_DIR="$XDRIVE_HOME" "$HOST_MANAGER_PATH" status --summary-only; then
+    echo "[xDrive] warning: installation environment summary is unavailable; run 'xdrive-server status' after install." >&2
+  fi
+}
+
 install_backup_schedule() {
   command -v crontab >/dev/null 2>&1 || {
     echo "Backup schedule: crontab is unavailable; run $BIN_DIR/server-backup-scheduled.sh from your scheduler."
@@ -1550,6 +1564,7 @@ if [[ "${XD_INSTALL_NO_START:-0}" == "1" ]]; then
   fi
   stage 9 "complete"
   echo "Files installed without starting containers."
+  show_install_environment
   exit 0
 fi
 
@@ -1684,7 +1699,7 @@ install_backup_schedule
 if ! compose exec -T server xdrive-server admin exists >/dev/null 2>&1; then
   echo
   echo "xDrive requires an administrator account before users can sign in."
-  if [[ -r /dev/tty && -w /dev/tty ]]; then
+  if interactive_tty_available; then
     admin_username="admin"
     read -r -p "Administrator username [admin]: " input_username </dev/tty || true
     [[ -n "${input_username:-}" ]] && admin_username="$input_username"
@@ -1718,3 +1733,4 @@ echo "Update server:   xdrive-server update"
 echo "Update source:   $(env_value XD_UPDATE_SOURCE)"
 echo "Release channel: $(env_value XD_RELEASE_CHANNEL)${requested_commit:+ ($requested_commit)}"
 echo "Manage: xdrive-server status|doctor|update|backup|verify"
+show_install_environment

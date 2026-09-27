@@ -41,6 +41,9 @@ bash scripts/test-server-uninstall.sh
 bash -n scripts/xdrive-server-host.sh
 bash -n scripts/test-xdrive-server-host.sh
 bash scripts/test-xdrive-server-host.sh
+bash -n scripts/test-server-status-summary.sh
+bash scripts/test-server-status-summary.sh
+bash -n scripts/ci/test-server-rootless-e2e.sh
 bash -n scripts/cleanup-merged-branches.sh
 bash -n scripts/test-cleanup-merged-branches.sh
 bash scripts/test-cleanup-merged-branches.sh
