@@ -114,11 +114,11 @@ while IFS=$'\t' read -r branch superseded_sha pr_number; do
   fi
 done < <(
   "$GH_BIN" api --paginate "repos/$repo/pulls?state=closed&per_page=100" |
-    jq -r --arg repo "$repo" --arg label "$superseded_label" '
+    jq -r --arg repo "$repo" --arg label_name "$superseded_label" '
       .[]
       | select(.merged_at == null)
       | select(.head.repo.full_name == $repo)
-      | select(any(.labels[]?; .name == $label))
+      | select(any(.labels[]?; .name == $label_name))
       | [.head.ref, .head.sha, (.number | tostring)]
       | @tsv
     '

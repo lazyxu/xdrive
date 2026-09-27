@@ -4,7 +4,13 @@
 
 For every code change in this repository, use this workflow by default:
 
-1. Run `git fetch origin` first.
+Provider delivery rules:
+
+- **GitLab:** after the applicable local validation passes, make a normal commit on the latest GitLab `master` and push it directly to `gitlab/master`. Never force-push. Treat the resulting GitLab `master` pipeline as the authoritative post-push validation; if it fails, diagnose it and fix forward with another normally pushed commit.
+- **GitHub:** never push changes directly to `origin/master`. Push an exactly-one-commit short-lived branch, open a PR targeting `master`, require the PR CI to pass, and merge it with linear history.
+- **Changes for both providers:** start from a commit shared by both masters whenever possible, validate locally, push the commit directly to GitLab `master`, and push that same commit to a short-lived GitHub branch for a PR. Do not push it directly to GitHub `master`.
+
+1. Run `git fetch origin` and `git fetch gitlab` first when both remotes exist.
 2. Before creating or continuing a work branch, reconcile only branches that are materially related to the current task, dependency chain, or touched subsystem:
    - inspect related unmerged branches for their diff, PR/MR state, CI state, conflicts, and unfinished work;
    - continue a viable related branch instead of duplicating the same work;
@@ -12,26 +18,26 @@ For every code change in this repository, use this workflow by default:
    - keep a related branch only when there is a concrete reason it cannot yet be merged or deleted, and state that reason.
    Do **not** inspect, wait on, merge, rebase, or otherwise manage unrelated branches/PRs/MRs merely because they exist. Unrelated work may proceed independently unless it creates an actual merge conflict or changes a dependency required by the current task.
    Do not start a fresh implementation while an older viable half-finished branch for the same or directly related work is still unresolved.
-3. After reconciling the current task's related branches, create a new short-lived branch from the latest `origin/master` only when no related existing branch should be continued.
+3. After reconciling the current task's related branches, use the provider delivery rule above: GitLab work may continue on a clean local `master` based on `gitlab/master`; GitHub work uses a new short-lived branch from the latest `origin/master` when no related existing branch should be continued.
    - Every short-lived work branch must carry **exactly one work commit above its selected base at all times after the first commit is created**. Do not accumulate follow-up, fixup, or "temporary" commits with the intention of squashing them later.
    - After the first commit, fold every subsequent change into that same work commit with `git commit --amend` (and force-push only the non-`master` work branch when needed). Keep the branch single-commit throughout development, review fixes, and pre-merge reconciliation.
    - For closely related dependent phases, do **not** wait for an upstream PR/MR to merge before continuing. Pull/reuse the active work branch directly, or create a short-lived stacked branch from its current tested head when that is the fastest safe path.
    - A stacked/dependent branch must likewise add exactly one work commit above its immediate dependency branch. After the dependency lands, rebase/reconstruct that one commit onto the latest `origin/master`; never use a late squash as normal cleanup.
    - Do not block implementation merely because a related PR is waiting on CI/review when the dependency branch is available and its current tree is suitable for continued work.
-4. Make the requested change only on that branch, preserving the one-work-commit invariant.
+4. Make the requested change only on the selected delivery branch, or on the clean local `master` selected for a GitLab direct push. Preserve the one-work-commit invariant on every short-lived GitHub branch.
 5. Add or update relevant tests.
 6. Run the applicable local tests and require them to pass before opening or updating the PR/MR.
-7. Before the first PR/MR validation push, fetch `origin` again. Rebase the existing single work commit onto `origin/master` only if `master` has actually advanced; do not perform no-op rebases merely to retrigger CI. Finish amend/rebase cleanup **before** the first full PR/MR validation whenever possible.
-8. Before the first full PR/MR validation, verify that the work branch is already exactly one commit relative to its merge base; do **not** plan a final squash after CI. For a normal branch based on `origin/master`, verify with:
+7. Before the first delivery push, fetch the target remote again. For GitHub, rebase the existing single work commit onto `origin/master` only if `master` has actually advanced. For GitLab, update the clean local `master` from `gitlab/master` before committing or pushing. Do not perform no-op rebases merely to retrigger CI.
+8. Before the first full GitHub PR validation, verify that the work branch is already exactly one commit relative to its merge base; do **not** plan a final squash after CI. For a normal branch based on `origin/master`, verify with:
 
    ```bash
    git rev-list --count origin/master..HEAD
    ```
 
    The result must be `1`. A result greater than `1` is a workflow violation to fix before full PR/MR validation, not an expected pre-merge cleanup step. The purpose of keeping the branch single-commit from the start is to avoid a late squash/force-push that causes an otherwise unnecessary additional CI run.
-9. Push the branch and open or update the PR (or the corresponding GitLab MR when validating the GitLab mirror). The PR/MR CI run is the authoritative full validation for that source tree. Once it is green, do not push, rebase, amend, squash, or otherwise retrigger CI unless the source tree must change.
+9. For GitHub, push the branch and open or update the PR; its CI is the authoritative pre-merge validation. For GitLab, push the locally validated commit directly to `gitlab/master`; its `master` pipeline is the authoritative post-push validation. Once the applicable pipeline is green, do not push, rebase, amend, squash, or otherwise retrigger CI unless the source tree must change.
 10. If `origin/master` advances after CI is green, rebase only when required by repository rules or to resolve an actual conflict. A required rebase changes the tested commit and therefore requires the PR/MR CI to run again.
-11. Merge the already-single-commit PR/MR into `master` using a linear-history merge. Prefer rebase/linear merge semantics; do not rely on squash merge to repair a multi-commit work branch.
+11. Merge an already-single-commit GitHub PR into `master` using a linear-history merge. GitLab changes are already on `master` through the validated normal push. Do not rely on squash merge to repair a multi-commit work branch.
 12. After the merge succeeds, delete the merged remote branch through the repository cleanup automation:
    - GitHub: `.github/workflows/cleanup-merged-branches.yml` runs on pushes to `master` and safely removes redundant merged branches, including rebase-merged PR branches whose original head SHA no longer appears in `master` history.
    - If an automatic cleanup run is missed or delayed, use that workflow's `workflow_dispatch` entry point instead of requiring a locally authenticated branch-delete command.
@@ -51,7 +57,7 @@ For every code change in this repository, use this workflow by default:
 
 - Full CI runs for GitHub pull requests or GitLab merge requests targeting `master`, and also for direct pushes to `master` on both providers. Ordinary pushes to short-lived feature/fix branches do not run full CI.
 - GitHub `workflow_dispatch` and a GitLab Web/Run pipeline are the equivalent manual full-CI entry points.
-- A successful PR/MR CI run is the pre-merge test gate. Keep the branch single-commit before that run so no late squash is needed solely for history cleanup; avoid duplicate PR/MR CI caused by post-validation amend/squash operations. The subsequent `master` push intentionally runs the same full CI again on each provider as post-merge/mirror verification.
+- A successful GitHub PR CI run is the pre-merge test gate. GitLab uses local validation before its direct `master` push and the resulting `master` pipeline as the authoritative post-push gate. Keep GitHub branches single-commit before PR CI so no late squash is needed solely for history cleanup.
 - Client packaging follows **Build Once / Test Exact Artifact / Publish Exact Artifact**. `desktop-linux`, `desktop-windows`, and `build-client-core` build the reusable client components; `package-linux-client` and `package-windows-client` assemble the only user-facing installers independently of ordinary source/server/web tests, so installer production continues even if an unrelated test fails. Exact-artifact tests wait for and consume only their corresponding installer artifacts. Publishing must consume those artifacts byte-for-byte and must never rebuild Electron or the client installer.
 - There is exactly one user-facing installer per platform: `xdrive-linux-amd64.deb` on Linux and `xDriveSetup-amd64.exe` on Windows. Do not reintroduce `xdrive-desktop-linux-amd64.deb`, `xDriveDesktopSetup-amd64.exe`, or a second Linux client installer filename.
 - Release jobs should not rerun test suites that are already required by the full CI. Server images follow **Build Once / Test Exact Image / Publish Exact Image**: `server-image`, `web`, and `caddy-image` build versioned candidate images during CI, validate them, and persist exact image artifacts; `server-backup` imports the exact server image instead of rebuilding it; release publication imports those same image artifacts, pushes immutable registry tags, and only then promotes them to `edge`/`latest`. The publish phase may build deployment assets, but it must not rebuild client installers or server images.
@@ -85,7 +91,7 @@ For every code change in this repository, use this workflow by default:
 - Never force-push `master` or rewrite its published history.
 - Never use `git push --force`, `git push -f`, or `git push --force-with-lease` against `master`.
 - Repository branch protection/rulesets for `master` must keep force pushes and branch deletion disabled.
-- Normal changes must arrive through a tested short-lived branch/PR; do not bypass required CI checks.
+- GitHub changes must arrive through a tested short-lived branch/PR; do not bypass required CI checks. GitLab changes follow the explicitly allowed locally validated direct-to-`master` workflow above.
 - Force-pushing a work branch is allowed only when needed to amend/rebase while preserving the branch's single-work-commit invariant, and only after verifying the target is not `master`. Do not accumulate multiple commits and use a late squash as the normal workflow.
 
 Do not merge known failing or untested changes into `master`.

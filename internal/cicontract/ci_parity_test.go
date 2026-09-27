@@ -183,6 +183,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	windowsUninstallerTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-windows-uninstaller-resolver.ps1"))
 	windowsUpgradeTest := readFile(t, filepath.Join(root, "scripts", "test-windows-client-upgrade.ps1"))
 	windowsInstaller := readFile(t, filepath.Join(root, "packaging", "windows", "xdrive.iss"))
+	chunkStorageTest := readFile(t, filepath.Join(root, "scripts", "test-server-chunk-storage.sh"))
+	branchCleanup := readFile(t, filepath.Join(root, "scripts", "cleanup-merged-branches.sh"))
 	serverPipeTest := readFile(t, filepath.Join(root, "scripts", "test-server-installer-pipe.sh"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" +
 		goVersionCheck + "\n" + artifactVersion + "\n" + clientCoreBuild + "\n" + gitlabLinuxBash + "\n" + gitlabWindowsBash + "\n" +
@@ -716,6 +718,19 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "Windows installer Start Menu migration", windowsInstaller,
 		"DefaultGroupName=xDrive",
 		"UsePreviousGroup=no",
+		`Name: "{userprograms}\xDrive\xDrive"`,
+	)
+	requireRaw(t, "chunk storage Docker-network client", chunkStorageTest,
+		"test-client:",
+		"http://server:8080/api/v1/readyz",
+		"compose exec -T test-client curl",
+	)
+	if strings.Contains(chunkStorageTest, `http://127.0.0.1:$PORT`) {
+		t.Errorf("chunk storage test must not access Docker-published ports through the job container loopback")
+	}
+	requireRaw(t, "branch cleanup jq query", branchCleanup,
+		`--arg label_name "$superseded_label"`,
+		`.name == $label_name`,
 	)
 	requireRaw(t, "server pipe installer test", serverPipeTest,
 		"pipe_status=(\"${PIPESTATUS[@]}\")",

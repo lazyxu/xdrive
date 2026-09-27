@@ -51,9 +51,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xdrive-
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\xdrive-desktop.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}\desktop"
 
 [Icons]
-Name: "{group}\xDrive"; Filename: "{app}\desktop\xdrive-desktop.exe"; WorkingDir: "{app}\desktop"; AppUserModelID: "io.github.lazyxu.xdrive.desktop"
-Name: "{group}\xDrive README"; Filename: "{app}\README.md"
-Name: "{group}\Uninstall xDrive"; Filename: "{uninstallexe}"
+Name: "{userprograms}\xDrive\xDrive"; Filename: "{app}\desktop\xdrive-desktop.exe"; WorkingDir: "{app}\desktop"; AppUserModelID: "io.github.lazyxu.xdrive.desktop"
+Name: "{userprograms}\xDrive\xDrive README"; Filename: "{app}\README.md"
+Name: "{userprograms}\xDrive\Uninstall xDrive"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{app}\xdrive-agent.exe"; Description: "Start xDrive background agent"; Flags: nowait runhidden; Check: ShouldStartAgent
