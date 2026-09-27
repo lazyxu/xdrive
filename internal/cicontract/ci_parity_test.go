@@ -745,6 +745,13 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	if strings.Contains(githubRelease, "${{ matrix.") {
 		t.Errorf("GitHub release server image publication must use one runner instead of a matrix")
 	}
+	requireRaw(t, "GitHub rolling snapshot recreation", githubRelease,
+		"gh release delete snapshot --repo \"$repo\" -y",
+		"gh release create snapshot release/* --repo \"$repo\" --prerelease",
+	)
+	if strings.Contains(githubRelease, "gh release delete-asset snapshot") {
+		t.Errorf("GitHub rolling snapshot update must recreate the release instead of deleting assets one by one")
+	}
 	for _, forbidden := range []string{"docker/build-push-action", "docker build --build-arg", "docker build -f"} {
 		if strings.Contains(githubRelease, forbidden) {
 			t.Errorf("GitHub release workflow must publish exact tested server images without rebuilding: %q", forbidden)
