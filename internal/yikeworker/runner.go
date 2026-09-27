@@ -145,7 +145,7 @@ func (r *Runner) recordPreflightFailure(ctx context.Context, sourceID uint64, no
 	}
 	return r.DB.WithContext(ctx).Model(&meta.Source{}).Where("id = ?", sourceID).Updates(map[string]any{
 		"last_run_at":      now,
-		"last_error":       truncateError(cause),
+		"last_error":       sourceErrorMessage(cause),
 		"run_requested_at": nil,
 		"updated_at":       now,
 	}).Error
@@ -204,7 +204,7 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 			Status:            status,
 			CompleteInventory: false,
 			Summary:           result.Summary,
-			Error:             truncateError(cause),
+			Error:             sourceErrorMessage(cause),
 		})
 		if finishErr != nil {
 			return client.SyncRun{}, result, errors.Join(cause, fmt.Errorf("finish failed Yike run: %w", finishErr))
@@ -319,6 +319,21 @@ func isActiveRun(err error) bool {
 	return errors.As(err, &apiErr) &&
 		apiErr.Status == http.StatusConflict &&
 		apiErr.Msg == "source already has an active run"
+}
+
+func sourceErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, yike.ErrAuthentication):
+		return "一刻相册登录已失效，请更新 Cookie"
+	case errors.Is(err, yike.ErrRateLimited):
+		return "一刻相册请求过于频繁，请稍后重试"
+	case errors.Is(err, yike.ErrUnavailable):
+		return "一刻相册服务暂时不可用，请稍后重试"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "一刻相册连接超时，请稍后重试"
+	default:
+		return truncateError(err)
+	}
 }
 
 func truncateError(err error) string {

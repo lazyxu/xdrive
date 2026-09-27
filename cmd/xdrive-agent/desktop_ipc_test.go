@@ -79,6 +79,10 @@ type fakeDesktopIPCController struct {
 	cloudSources          []client.Source
 	cloudSourceRuns       []client.SyncRun
 	cloudSourceCredential client.SourceCredentialStatus
+	cloudCredentialTest       client.SourceCredentialTestResult
+	cloudTestCredentialKind   string
+	cloudTestCredentialCookie string
+	cloudTestStoredID         uint64
 	cloudPutCredential    client.SourceCredentialStatus
 	cloudPutCredentialID  uint64
 	cloudPutCookie        string
@@ -95,7 +99,7 @@ type fakeDesktopIPCController struct {
 	cloudTriggerID        uint64
 }
 
-func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
+func (f *fakeDesktopIPCController) SnapshotWithRevision()func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
 	return f.snapshot, f.revision
 }
 
@@ -243,6 +247,16 @@ func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int)
 
 func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error) {
 	return f.cloudSourceCredential, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudTestSourceCredential(_ context.Context, kind, cookie string) (client.SourceCredentialTestResult, error) {
+	f.cloudTestCredentialKind, f.cloudTestCredentialCookie = kind, cookie
+	return f.cloudCredentialTest, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudTestStoredSourceCredential(_ context.Context, sourceID uint64) (client.SourceCredentialTestResult, error) {
+	f.cloudTestStoredID = sourceID
+	return f.cloudCredentialTest, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudPutSourceCredential(_ context.Context, sourceID uint64, cookie string) (client.SourceCredentialStatus, error) {
@@ -645,7 +659,10 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			Status: "completed", ScannedItems: 12, ScannedBytes: 34, StartedAt: now,
 		}},
 		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
-		cloudPutCredential:    client.SourceCredentialStatus{Configured: true, KeyVersion: 3, UpdatedAt: &now},
+		cloudCredentialTest: client.SourceCredentialTestResult{
+			Valid: true, Kind: "yike_photos", AccountExternalID: "12345", AccountName: "Test User",
+		},
+		cloudPutCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 3, UpdatedAt: &now},
 		cloudCreatedSource:    client.Source{ID: 10, Name: "群晖 Photos", Kind: "synology_photos", Direction: "push", SyncMode: "backup", RunMode: "scan", Status: "active", Revision: 1},
 		cloudUpdatedSource:    client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4},
 		cloudTriggeredSource:  client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4, RunRequestedAt: &now},
@@ -678,7 +695,19 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		}
 	}
 
-	res := desktopIPCRequest(t, handler, http.MethodPut, "/v1/sources/credential", `{"source_id":9,"cookie":"  BDUSS=secret; STOKEN=secret  "}`)
+	res := desktopIPCRequest(t, handler, http.MethodPost, "/v1/source-credentials/test", `{"kind":"yike_photos","cookie":"  BDUSS=ephemeral  "}`)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"account_external_id\":\"12345\"") {
+		t.Fatalf("test credential status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudTestCredentialKind != "yike_photos" || ctrl.cloudTestCredentialCookie != "BDUSS=ephemeral" {
+		t.Fatalf("credential test not forwarded safely: kind=%q cookie=%q", ctrl.cloudTestCredentialKind, ctrl.cloudTestCredentialCookie)
+	}
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/credential/test", `{"source_id":9}`)
+	if res.Code != http.StatusOK || ctrl.cloudTestStoredID != 9 {
+		t.Fatalf("test stored credential status=%d body=%s id=%d", res.Code, res.Body.String(), ctrl.cloudTestStoredID)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPut, "/v1/sources/credential", `{"source_id":9,"cookie":"  BDUSS=secret; STOKEN=secret  "}`)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"key_version\":3") {
 		t.Fatalf("put credential status=%d body=%s", res.Code, res.Body.String())
 	}

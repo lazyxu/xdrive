@@ -5,6 +5,7 @@ import type {
   CreatedFileShare,
   ExternalSource,
   ExternalSourceCredentialStatus,
+  ExternalSourceCredentialTestResult,
   ExternalSourceRun,
   FileShare,
   FileVersion,
@@ -293,6 +294,20 @@ export class XDriveApi {
 
   sourceCredentialStatus(sourceID: number) {
     return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`)
+  }
+
+  testSourceCredential(kind: string, payload: Record<string, unknown>) {
+    return this.request<ExternalSourceCredentialTestResult>('/api/v1/source-credentials/test', {
+      method: 'POST',
+      body: JSON.stringify({ kind, payload }),
+    })
+  }
+
+  testStoredSourceCredential(sourceID: number) {
+    return this.request<ExternalSourceCredentialTestResult>(`/api/v1/sources/${sourceID}/credential/test`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
   }
 
   updateSource(sourceID: number, revision: number, input: UpdateExternalSourceInput) {

@@ -443,6 +443,14 @@ test('external source credentials never expose stored Cookie through read IPC', 
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null
     seen.push({ method: req.method, path: url.pathname, body })
 
+    if (req.method === 'POST' && url.pathname === '/v1/source-credentials/test') {
+      json(res, 200, { valid: true, kind: 'yike_photos', account_external_id: '12345', account_name: 'Test User' })
+      return
+    }
+    if (req.method === 'POST' && url.pathname === '/v1/sources/credential/test') {
+      json(res, 200, { valid: true, kind: 'yike_photos', account_external_id: '12345', account_name: 'Test User' })
+      return
+    }
     if (req.method === 'PUT' && url.pathname === '/v1/sources/credential') {
       json(res, 200, { configured: true, key_version: 3, updated_at: new Date(0).toISOString() })
       return
@@ -454,6 +462,11 @@ test('external source credentials never expose stored Cookie through read IPC', 
     json(res, 404, { error: 'not_found', message: 'not found' })
   })
 
+  const candidate = await client.testSourceCredential('yike_photos', 'BDUSS=ephemeral')
+  assert.equal(candidate.account_name, 'Test User')
+  const stored = await client.testStoredSourceCredential(9)
+  assert.equal(stored.account_external_id, '12345')
+
   const status = await client.setSourceCredential(9, 'BDUSS=secret; STOKEN=secret')
   assert.equal(status.configured, true)
   assert.equal(status.key_version, 3)
@@ -461,6 +474,16 @@ test('external source credentials never expose stored Cookie through read IPC', 
 
   assert.equal((await client.deleteSourceCredential(9)).ok, true)
   assert.deepEqual(seen, [
+    {
+      method: 'POST',
+      path: '/v1/source-credentials/test',
+      body: { kind: 'yike_photos', cookie: 'BDUSS=ephemeral' },
+    },
+    {
+      method: 'POST',
+      path: '/v1/sources/credential/test',
+      body: { source_id: 9 },
+    },
     {
       method: 'PUT',
       path: '/v1/sources/credential',

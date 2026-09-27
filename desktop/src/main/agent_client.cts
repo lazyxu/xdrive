@@ -190,6 +190,13 @@ export type AgentSourceCredentialStatus = {
   updated_at?: string
 }
 
+export type AgentSourceCredentialTestResult = {
+  valid: boolean
+  kind: string
+  account_external_id?: string
+  account_name?: string
+}
+
 export type AgentCloudNode = {
   id: number
   parent_id?: number
@@ -463,6 +470,14 @@ export class AgentIPCClient {
   sourceCredentialStatus(sourceID: number) {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentSourceCredentialStatus>('GET', `/v1/sources/credential?${query.toString()}`)
+  }
+
+  testSourceCredential(kind: string, cookie: string) {
+    return this.request<AgentSourceCredentialTestResult>('POST', '/v1/source-credentials/test', { kind, cookie })
+  }
+
+  testStoredSourceCredential(sourceID: number) {
+    return this.request<AgentSourceCredentialTestResult>('POST', '/v1/sources/credential/test', { source_id: sourceID })
   }
 
   setSourceCredential(sourceID: number, cookie: string) {

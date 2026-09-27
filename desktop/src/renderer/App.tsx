@@ -31,6 +31,8 @@ import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
+  externalSourceCredentialTestErrorLabel,
+  externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
   externalSourceRunDetailView,
@@ -38,6 +40,7 @@ import {
   formatExternalSourceTime,
 } from '@xdrive/shared'
 import type {
+  ExternalSourceCredentialTestResult,
   ExternalSourceRow,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
@@ -157,6 +160,8 @@ export default function App() {
   const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>('scan')
   const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState(initialSourceDefaults.ignoreRules)
   const [sourceCreateCookie, setSourceCreateCookie] = useState('')
+  const [sourceCreateCredentialTest, setSourceCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
+  const [sourceEditCredentialTest, setSourceEditCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [sourceDeleteTarget, setSourceDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [synologyGuideSource, setSynologyGuideSource] = useState<AgentSource | null>(null)
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -496,6 +501,7 @@ export default function App() {
     setSourceCreateRunMode('scan')
     setSourceCreateIgnoreRules(defaults.ignoreRules)
     setSourceCreateCookie('')
+    setSourceCreateCredentialTest(null)
     setSourceCreateOpen(true)
     setSourceTargetLoading(true)
     setError('')
@@ -517,6 +523,31 @@ export default function App() {
     setSourceCreateName(defaults.name)
     setSourceCreateIgnoreRules(defaults.ignoreRules)
     if (kind === 'synology_photos') setSourceCreateCookie('')
+    setSourceCreateCredentialTest(null)
+  }
+
+  const testCreateYikeCredential = async () => {
+    const cookie = sourceCreateCookie.trim()
+    if (!cookie) {
+      setError('请先填写一刻相册 Cookie。')
+      return null
+    }
+    setBusy('source-create-test')
+    setError('')
+    setNotice('')
+    try {
+      const result = await window.xdriveDesktop.agent.testSourceCredential('yike_photos', cookie)
+      if (!result.ok) {
+        setSourceCreateCredentialTest(null)
+        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message))
+        return null
+      }
+      setSourceCreateCredentialTest(result.data)
+      setNotice(externalSourceCredentialTestSuccessLabel(result.data))
+      return result.data
+    } finally {
+      setBusy('')
+    }
   }
 
   const createExternalSource = async (event: FormEvent) => {
@@ -541,6 +572,15 @@ export default function App() {
     setError('')
     setNotice('')
     try {
+      if (sourceCreateKind === 'yike_photos') {
+        const tested = await window.xdriveDesktop.agent.testSourceCredential('yike_photos', cookie)
+        if (!tested.ok) {
+          setSourceCreateCredentialTest(null)
+          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message))
+          return
+        }
+        setSourceCreateCredentialTest(tested.data)
+      }
       const created = await window.xdriveDesktop.agent.createSource({
         name,
         kind: sourceCreateKind,
@@ -587,6 +627,29 @@ export default function App() {
     setSourceEditStatus(row.source.status)
     setSourceEditIgnoreRules(row.source.ignore_rules || '')
     setSourceEditCookie('')
+    setSourceEditCredentialTest(null)
+  }
+
+  const testSettingsYikeCredential = async (row: ExternalSourceRow) => {
+    setBusy(`source-credential-test-${row.source.id}`)
+    setError('')
+    setNotice('')
+    try {
+      const cookie = sourceEditCookie.trim()
+      const result = cookie
+        ? await window.xdriveDesktop.agent.testSourceCredential('yike_photos', cookie)
+        : await window.xdriveDesktop.agent.testStoredSourceCredential(row.source.id)
+      if (!result.ok) {
+        setSourceEditCredentialTest(null)
+        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message))
+        return null
+      }
+      setSourceEditCredentialTest(result.data)
+      setNotice(externalSourceCredentialTestSuccessLabel(result.data))
+      return result.data
+    } finally {
+      setBusy('')
+    }
   }
 
   const saveSourceSettings = async (event: FormEvent, row: ExternalSourceRow) => {
@@ -601,6 +664,16 @@ export default function App() {
     setError('')
     setNotice('')
     try {
+      const pendingCookie = sourceEditCookie.trim()
+      if (externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && pendingCookie) {
+        const tested = await window.xdriveDesktop.agent.testSourceCredential('yike_photos', pendingCookie)
+        if (!tested.ok) {
+          setSourceEditCredentialTest(null)
+          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message))
+          return
+        }
+        setSourceEditCredentialTest(tested.data)
+      }
       const updated = await window.xdriveDesktop.agent.updateSource(row.source.id, row.source.revision, {
         name,
         run_mode: sourceEditRunMode,
@@ -1446,12 +1519,30 @@ export default function App() {
                     <input
                       type="password"
                       value={sourceCreateCookie}
-                      onChange={(event) => setSourceCreateCookie(event.target.value)}
+                      onChange={(event) => {
+                        setSourceCreateCookie(event.target.value)
+                        setSourceCreateCredentialTest(null)
+                      }}
                       autoComplete="off"
                       placeholder="粘贴已登录的一刻相册 Web Cookie"
                       required
                     />
                     <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
+                    <MuiButton
+                      type="button"
+                      size="small"
+                      variant="outlined"
+                      disabled={!!busy}
+                      onClick={() => void testCreateYikeCredential()}
+                      sx={{ alignSelf: 'flex-start', mt: 0.5 }}
+                    >
+                      {busy === 'source-create-test' ? '正在测试…' : '测试连接'}
+                    </MuiButton>
+                    {sourceCreateCredentialTest && (
+                      <MuiAlert severity="success" sx={{ mt: 0.5 }}>
+                        {externalSourceCredentialTestSuccessLabel(sourceCreateCredentialTest)}
+                      </MuiAlert>
+                    )}
                   </label>
                 )}
                 {sourceCreateKind === 'synology_photos' && (
@@ -1584,11 +1675,29 @@ export default function App() {
                               <input
                                 type="password"
                                 value={sourceEditCookie}
-                                onChange={(event) => setSourceEditCookie(event.target.value)}
+                                onChange={(event) => {
+                                  setSourceEditCookie(event.target.value)
+                                  setSourceEditCredentialTest(null)
+                                }}
                                 autoComplete="off"
                                 placeholder={row.credential?.configured ? '留空则保持当前 Cookie' : '当前未配置，请粘贴 Cookie'}
                               />
                               <small>已保存的 Cookie 不会回读到桌面渲染进程。</small>
+                              <MuiButton
+                                type="button"
+                                size="small"
+                                variant="outlined"
+                                disabled={!!busy}
+                                onClick={() => void testSettingsYikeCredential(row)}
+                                sx={{ alignSelf: 'flex-start', mt: 0.5 }}
+                              >
+                                {busy === `source-credential-test-${row.source.id}` ? '正在测试…' : '测试连接'}
+                              </MuiButton>
+                              {sourceEditCredentialTest && (
+                                <MuiAlert severity="success" sx={{ mt: 0.5 }}>
+                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
+                                </MuiAlert>
+                              )}
                             </label>
                           )}
                           <div className="source-settings-actions">

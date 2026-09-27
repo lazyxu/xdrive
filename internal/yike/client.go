@@ -21,6 +21,12 @@ const (
 	maxPages       = 100000
 )
 
+var (
+	ErrAuthentication = errors.New("Yike authentication failed")
+	ErrRateLimited    = errors.New("Yike request rate limited")
+	ErrUnavailable    = errors.New("Yike service unavailable")
+)
+
 type Client struct {
 	baseURL    string
 	cookie     string
@@ -328,9 +334,24 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, tar
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("%w: HTTP %d", ErrAuthentication, resp.StatusCode)
+	case http.StatusTooManyRequests:
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("%w: HTTP %d", ErrRateLimited, resp.StatusCode)
+	}
+	if resp.StatusCode >= 500 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("%w: HTTP %d", ErrUnavailable, resp.StatusCode)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("Yike API returned HTTP %d", resp.StatusCode)
@@ -368,19 +389,38 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 }
 
 type apiEnvelope struct {
-	Errno int `json:"errno"`
+	Errno   int    `json:"errno"`
+	Errmsg  string `json:"errmsg"`
+	Message string `json:"message"`
 }
 
 func (e apiEnvelope) Err() error {
+	message := strings.TrimSpace(e.Errmsg)
+	if message == "" {
+		message = strings.TrimSpace(e.Message)
+	}
+	detail := ""
+	if message != "" {
+		detail = ": " + message
+	}
+
 	switch e.Errno {
 	case 0:
 		return nil
+	case -6, -9, -10, -12, 9019:
+		return fmt.Errorf("%w: API errno %d%s", ErrAuthentication, e.Errno, detail)
+	case 50005:
+		return fmt.Errorf("%w: API errno 50005%s", ErrRateLimited, detail)
 	case 50805:
-		return fmt.Errorf("Yike API errno 50805: album already joined")
+		return fmt.Errorf("Yike API errno 50805: album already joined%s", detail)
 	case 50820:
-		return fmt.Errorf("Yike API errno 50820: no shared albums found")
+		return fmt.Errorf("Yike API errno 50820: no shared albums found%s", detail)
 	default:
-		return fmt.Errorf("Yike API errno %d", e.Errno)
+		lower := strings.ToLower(message)
+		if strings.Contains(lower, "login") || strings.Contains(message, "登录") {
+			return fmt.Errorf("%w: API errno %d%s", ErrAuthentication, e.Errno, detail)
+		}
+		return fmt.Errorf("Yike API errno %d%s", e.Errno, detail)
 	}
 }
 

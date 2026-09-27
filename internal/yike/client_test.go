@@ -3,6 +3,7 @@ package yike
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,7 @@ func TestUserInfoAndRootFilePagination(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/youai/user/v1/getuinfo":
-			_, _ = w.Write([]byte(`{"errno":0,"youa_id":"12345"}`))
+			_, _ = w.Write([]byte(`{"errno":0,"youa_id":"12345","nickname":"Test User"}`))
 		case "/youai/file/v1/list":
 			cursor := r.URL.Query().Get("cursor")
 			mu.Lock()
@@ -60,8 +61,8 @@ func TestUserInfoAndRootFilePagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.YouaID != "12345" {
-		t.Fatalf("youa_id=%q", info.YouaID)
+	if info.YouaID != "12345" || info.Nickname != "Test User" {
+		t.Fatalf("user info=%+v", info)
 	}
 	files, err := client.ListAllFiles(context.Background())
 	if err != nil {
@@ -298,6 +299,40 @@ func TestOpenDownloadFallsBackWhenRangeIgnored(t *testing.T) {
 	}
 	if string(got) != "defghij" {
 		t.Fatalf("download=%q", got)
+	}
+}
+
+func TestAPIErrorClassification(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		target error
+	}{
+		{name: "http unauthorized", status: http.StatusUnauthorized, body: `{}`, target: ErrAuthentication},
+		{name: "http forbidden", status: http.StatusForbidden, body: `{}`, target: ErrAuthentication},
+		{name: "http rate limited", status: http.StatusTooManyRequests, body: `{}`, target: ErrRateLimited},
+		{name: "http unavailable", status: http.StatusServiceUnavailable, body: `{}`, target: ErrUnavailable},
+		{name: "errno auth", status: http.StatusOK, body: `{"errno":-6,"errmsg":"登录失效"}`, target: ErrAuthentication},
+		{name: "errno auth 9019", status: http.StatusOK, body: `{"errno":9019}`, target: ErrAuthentication},
+		{name: "errno rate", status: http.StatusOK, body: `{"errno":50005,"errmsg":"请求过于频繁"}`, target: ErrRateLimited},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+			client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.UserInfo(context.Background())
+			if !errors.Is(err, tt.target) {
+				t.Fatalf("error=%v want classification %v", err, tt.target)
+			}
+		})
 	}
 }
 

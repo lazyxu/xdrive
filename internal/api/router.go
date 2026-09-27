@@ -22,10 +22,11 @@ type Server struct {
 	AllowedOrigin    string
 	MaxUploadBytes   int64
 	ConnectorSecrets *connectorsecret.Keyring
+	credentialTest   sourceCredentialTester
 	obs              *serverObservability
 }
 
-func (s *Server) Router() *gin.Engine {
+func (s *Server) Router()func (s *Server) Router() *gin.Engine {
 	s.ensureObservability()
 	r := gin.New()
 	r.Use(s.requestID(), s.observeHTTP(), s.recovery(), s.cors())
@@ -71,6 +72,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/files/:id/shares", s.listFileShares)
 	authed.DELETE("/shares/:id", s.revokeShare)
 
+	authed.POST("/source-credentials/test", s.testSourceCredential)
+
 	authed.GET("/sources", s.listSources)
 	authed.POST("/sources", s.createSource)
 	authed.GET("/sources/:id", s.getSource)
@@ -79,6 +82,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/trigger", s.triggerSource)
 	authed.GET("/sources/:id/credential", s.getSourceCredentialStatus)
 	authed.PUT("/sources/:id/credential", s.putSourceCredential)
+	authed.POST("/sources/:id/credential/test", s.testStoredSourceCredential)
 	authed.DELETE("/sources/:id/credential", s.deleteSourceCredential)
 	authed.GET("/sources/:id/items", s.listSourceItems)
 	authed.GET("/sources/:id/collections", s.listSourceCollections)
