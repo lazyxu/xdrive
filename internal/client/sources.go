@@ -229,6 +229,27 @@ func (c *Client) SourceRuns(ctx context.Context, id uint64, limit int) ([]SyncRu
 	return out, err
 }
 
+type SourceCredentialTestResult struct {
+	Valid             bool   `json:"valid"`
+	Kind              string `json:"kind"`
+	AccountExternalID string `json:"account_external_id,omitempty"`
+	AccountName       string `json:"account_name,omitempty"`
+}
+
+func (c *Client) TestSourceCredential(ctx context.Context, kind string, payload any) (SourceCredentialTestResult, error) {
+	var out SourceCredentialTestResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/source-credentials/test", map[string]any{
+		"kind": kind, "payload": payload,
+	}, &out)
+	return out, err
+}
+
+func (c *Client) TestStoredSourceCredential(ctx context.Context, id uint64) (SourceCredentialTestResult, error) {
+	var out SourceCredentialTestResult
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/credential/test", id), map[string]any{}, &out)
+	return out, err
+}
+
 type SourceCredentialStatus struct {
 	Configured bool       `json:"configured"`
 	KeyVersion uint32     `json:"key_version,omitempty"`
