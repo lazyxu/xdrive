@@ -73,3 +73,13 @@ test('generated Windows ICO contains the required icon frames', () => {
     assert.ok(sizes.includes(size), `app.ico missing ${size}x${size} frame`)
   }
 })
+
+test('icon derivatives have one-command regeneration tooling', () => {
+  const generator = text('scripts/generate-icon-assets.mjs')
+  assert.ok(generator.includes("['inkscape', 'rsvg-convert', 'magick']"), 'icon generator must provide portable renderer fallbacks')
+  assert.ok(generator.includes('rendererCompatibleSvg'), 'icon generator must preserve the master while normalizing renderer compatibility')
+  assert.ok(generator.includes('[16, 32, 48, 64, 180, 192, 256, 512]'), 'icon generator must render every required derivative size')
+  assert.ok(generator.includes("[16, 32, 48, 64, 256]"), 'icon generator must build every Windows ICO frame')
+  assert.ok(generator.includes("[16, 32, 48]"), 'icon generator must build every favicon ICO frame')
+  assert.ok(text('Makefile').includes('icons:\n\tnode scripts/generate-icon-assets.mjs'), 'Makefile must expose the one-command icon generator')
+})
