@@ -74,7 +74,11 @@ func TestCheckStableAndDownloadVerified(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/lazyxu/xdrive/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"tag_name": "v0.2.0",
+			"tag_name":     "v0.2.0",
+			"name":         "xDrive v0.2.0",
+			"body":         "Highlights\n- Faster sync",
+			"html_url":     "https://github.com/lazyxu/xdrive/releases/tag/v0.2.0",
+			"published_at": "2026-09-27T12:00:00Z",
 			"assets": []map[string]string{
 				{"name": assetName, "browser_download_url": server.URL + "/asset"},
 				{"name": "SHA256SUMS.txt", "browser_download_url": server.URL + "/sums"},
@@ -95,6 +99,10 @@ func TestCheckStableAndDownloadVerified(t *testing.T) {
 	}
 	if !result.UpdateAvailable || result.Latest != "v0.2.0" || result.Channel != ChannelStable {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.ReleaseName != "xDrive v0.2.0" || result.PublishedAt != "2026-09-27T12:00:00Z" ||
+		!strings.Contains(result.ReleaseNotes, "Faster sync") || result.ReleaseURL == "" {
+		t.Fatalf("missing release metadata: %+v", result)
 	}
 	path, err := DownloadVerified(context.Background(), checker, result, t.TempDir())
 	if err != nil {

@@ -42,6 +42,10 @@ export type AgentUpdateState = {
   status: 'idle' | 'checking' | 'available' | 'up_to_date' | 'downloading' | 'downloaded' | 'installing' | 'error' | string
   current_version: string
   latest_version?: string
+  release_name?: string
+  published_at?: string
+  release_notes?: string
+  release_url?: string
   channel?: string
   update_available: boolean
   downloaded: boolean

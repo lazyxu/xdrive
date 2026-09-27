@@ -45,6 +45,10 @@ type Result struct {
 	Channel         string
 	Commit          string
 	UpdateAvailable bool
+	ReleaseName     string
+	PublishedAt     string
+	ReleaseNotes    string
+	ReleaseURL      string
 	Asset           Asset
 	Checksums       Asset
 }
@@ -68,8 +72,12 @@ type Checker struct {
 }
 
 type releaseResponse struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	Body        string `json:"body"`
+	HTMLURL     string `json:"html_url"`
+	PublishedAt string `json:"published_at"`
+	Assets      []struct {
 		ID                 int64  `json:"id"`
 		URL                string `json:"url"`
 		Name               string `json:"name"`
@@ -219,6 +227,10 @@ func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel, c
 	if err != nil {
 		return result, err
 	}
+	result.ReleaseName = strings.TrimSpace(rel.Name)
+	result.PublishedAt = strings.TrimSpace(rel.PublishedAt)
+	result.ReleaseNotes = strings.TrimSpace(rel.Body)
+	result.ReleaseURL = strings.TrimSpace(rel.HTMLURL)
 
 	switch channel {
 	case ChannelStable:

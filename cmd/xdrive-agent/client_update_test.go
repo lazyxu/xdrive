@@ -91,6 +91,10 @@ func TestClientUpdateManagerCheckAndDownloadDoNotInstall(t *testing.T) {
 			Latest:          "snapshot-abcdef123456",
 			Channel:         "master",
 			UpdateAvailable: true,
+			ReleaseName:     "xDrive snapshot abcdef123456",
+			PublishedAt:     "2026-09-27T12:00:00Z",
+			ReleaseNotes:    "Improved update details",
+			ReleaseURL:      "https://example.test/releases/snapshot-abcdef123456",
 			Asset: xupdate.Asset{
 				Name: "xDriveSetup-amd64.exe",
 				Size: 100,
@@ -105,6 +109,9 @@ func TestClientUpdateManagerCheckAndDownloadDoNotInstall(t *testing.T) {
 	}
 	if !state.UpdateAvailable || state.Status != clientUpdateStatusAvailable {
 		t.Fatalf("check state=%+v", state)
+	}
+	if state.ReleaseName == "" || state.PublishedAt == "" || state.ReleaseNotes == "" || state.ReleaseURL == "" {
+		t.Fatalf("release metadata missing from state=%+v", state)
 	}
 	if backend.checkN != 1 || backend.downloadN != 0 || backend.installN != 0 {
 		t.Fatalf("unexpected backend calls check=%d download=%d install=%d", backend.checkN, backend.downloadN, backend.installN)
