@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { formatBinarySize } from '@xdrive/shared'
+import {
+  externalSourceDefaults,
+  externalSourceKindLabel,
+  externalSourceModeLabel,
+  externalSourceRunStatusLabel,
+  formatBinarySize,
+  formatExternalSourceTime,
+  getExternalSourceState,
+  getExternalSourceTriggerState,
+} from '@xdrive/shared'
+import type {
+  ExternalSourceRow,
+  ExternalSourceStateTone,
+  SupportedExternalSourceKind,
+} from '@xdrive/shared'
 
 type View = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
-
-type SourceRow = {
-  source: AgentSource
-  latestRun?: AgentSourceRun
-  credential?: AgentSourceCredentialStatus
-}
 
 function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
@@ -60,58 +68,10 @@ function viewLabel(view: View) {
   return labels[view]
 }
 
-function formatSourceTime(value?: string) {
-  if (!value) return '尚无记录'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '尚无记录'
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const days = Math.round((today.getTime() - target.getTime()) / 86_400_000)
-  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  if (days === 0) return `今天 ${time}`
-  if (days === 1) return `昨天 ${time}`
-  return date.toLocaleString('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
-
-function sourceMode(source: AgentSource) {
-  return `${source.direction === 'push' ? 'Push' : 'Pull'} · ${source.run_mode === 'scan' ? '仅扫描' : '同步'}`
-}
-
-function sourceKind(kind: string) {
-  if (kind === 'synology_photos') return '群晖 Photos'
-  if (kind === 'yike_photos') return '一刻相册'
-  return kind
-}
-
-function sourceRunStatus(status: AgentSourceRun['status']) {
-  if (status === 'running') return '运行中'
-  if (status === 'completed') return '已完成'
-  if (status === 'partial') return '部分完成'
-  if (status === 'failed') return '失败'
-  if (status === 'cancelled') return '已取消'
-  return status
-}
-
-function sourceState(row: SourceRow) {
-  if (row.source.status === 'paused') return { tone: 'waiting', label: '已暂停' }
-  if (row.latestRun?.status === 'running') return { tone: 'ready', label: '运行中' }
-  if (row.source.run_requested_at) return { tone: 'warning', label: '等待执行' }
-  if (row.source.last_error) return { tone: 'warning', label: '异常' }
-  if (row.source.kind === 'yike_photos') {
-    return row.credential?.configured
-      ? { tone: 'ready', label: 'Cookie 已配置' }
-      : { tone: 'warning', label: 'Cookie 未配置' }
-  }
-  if (row.source.last_success_at) return { tone: 'ready', label: '正常' }
-  if (row.latestRun?.status === 'partial') return { tone: 'warning', label: '部分完成' }
-  return { tone: 'waiting', label: '尚未运行' }
+function desktopSourceTone(tone: ExternalSourceStateTone) {
+  if (tone === 'good' || tone === 'busy') return 'ready'
+  if (tone === 'neutral') return 'waiting'
+  return 'warning'
 }
 
 function shareStatusLabel(status: string) {
@@ -134,7 +94,7 @@ export default function App() {
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
-  const [sources, setSources] = useState<SourceRow[]>([])
+  const [sources, setSources] = useState<ExternalSourceRow[]>([])
   const [selectedSourceID, setSelectedSourceID] = useState<number | null>(null)
   const [editingSourceID, setEditingSourceID] = useState<number | null>(null)
   const [sourceEditName, setSourceEditName] = useState('')
@@ -143,10 +103,11 @@ export default function App() {
   const [sourceEditIgnoreRules, setSourceEditIgnoreRules] = useState('')
   const [sourceEditCookie, setSourceEditCookie] = useState('')
   const [sourceCreateOpen, setSourceCreateOpen] = useState(false)
-  const [sourceCreateKind, setSourceCreateKind] = useState<'synology_photos' | 'yike_photos'>('synology_photos')
-  const [sourceCreateName, setSourceCreateName] = useState('群晖 Photos')
+  const initialSourceDefaults = externalSourceDefaults('synology_photos')
+  const [sourceCreateKind, setSourceCreateKind] = useState<SupportedExternalSourceKind>(initialSourceDefaults.kind)
+  const [sourceCreateName, setSourceCreateName] = useState(initialSourceDefaults.name)
   const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>('scan')
-  const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState('@eaDir/\n\\#recycle/\n')
+  const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState(initialSourceDefaults.ignoreRules)
   const [sourceCreateCookie, setSourceCreateCookie] = useState('')
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
   const [sourceTargetDirectories, setSourceTargetDirectories] = useState<AgentCloudNode[]>([])
@@ -402,7 +363,7 @@ export default function App() {
     }
   }
 
-  const triggerSourceNow = async (row: SourceRow) => {
+  const triggerSourceNow = async (row: ExternalSourceRow) => {
     const sourceID = row.source.id
     const success = row.source.kind === 'synology_photos'
       ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查。'
@@ -433,10 +394,11 @@ export default function App() {
   }
 
   const openSourceCreate = async () => {
-    setSourceCreateKind('synology_photos')
-    setSourceCreateName('群晖 Photos')
+    const defaults = externalSourceDefaults('synology_photos')
+    setSourceCreateKind(defaults.kind)
+    setSourceCreateName(defaults.name)
     setSourceCreateRunMode('scan')
-    setSourceCreateIgnoreRules('@eaDir/\n\\#recycle/\n')
+    setSourceCreateIgnoreRules(defaults.ignoreRules)
     setSourceCreateCookie('')
     setSourceCreateOpen(true)
     setSourceTargetLoading(true)
@@ -453,16 +415,12 @@ export default function App() {
     }
   }
 
-  const changeSourceCreateKind = (kind: 'synology_photos' | 'yike_photos') => {
-    setSourceCreateKind(kind)
-    if (kind === 'synology_photos') {
-      setSourceCreateName('群晖 Photos')
-      setSourceCreateIgnoreRules('@eaDir/\n\\#recycle/\n')
-      setSourceCreateCookie('')
-    } else {
-      setSourceCreateName('一刻相册')
-      setSourceCreateIgnoreRules('')
-    }
+  const changeSourceCreateKind = (kind: SupportedExternalSourceKind) => {
+    const defaults = externalSourceDefaults(kind)
+    setSourceCreateKind(defaults.kind)
+    setSourceCreateName(defaults.name)
+    setSourceCreateIgnoreRules(defaults.ignoreRules)
+    if (kind === 'synology_photos') setSourceCreateCookie('')
   }
 
   const createExternalSource = async (event: FormEvent) => {
@@ -490,7 +448,7 @@ export default function App() {
       const created = await window.xdriveDesktop.agent.createSource({
         name,
         kind: sourceCreateKind,
-        direction: sourceCreateKind === 'synology_photos' ? 'push' : 'pull',
+        direction: externalSourceDefaults(sourceCreateKind).direction,
         sync_mode: 'backup',
         run_mode: sourceCreateRunMode,
         target_node_id: target.id,
@@ -523,7 +481,7 @@ export default function App() {
     }
   }
 
-  const openSourceSettings = (row: SourceRow) => {
+  const openSourceSettings = (row: ExternalSourceRow) => {
     setEditingSourceID(row.source.id)
     setSourceEditName(row.source.name)
     setSourceEditRunMode(row.source.run_mode)
@@ -532,7 +490,7 @@ export default function App() {
     setSourceEditCookie('')
   }
 
-  const saveSourceSettings = async (event: FormEvent, row: SourceRow) => {
+  const saveSourceSettings = async (event: FormEvent, row: ExternalSourceRow) => {
     event.preventDefault()
     const name = sourceEditName.trim()
     if (!name) {
@@ -574,7 +532,7 @@ export default function App() {
     }
   }
 
-  const clearSourceCookie = async (row: SourceRow) => {
+  const clearSourceCookie = async (row: ExternalSourceRow) => {
     if (!window.confirm(`确定清除“${row.source.name}”保存的 Cookie？清除后 Pull 扫描将暂停，直到重新配置 Cookie。`)) return
     const data = await run(
       `source-cookie-delete-${row.source.id}`,
@@ -1144,7 +1102,7 @@ export default function App() {
                 <div className="source-create-grid">
                   <label>
                     <span>来源类型</span>
-                    <select value={sourceCreateKind} onChange={(event) => changeSourceCreateKind(event.target.value as 'synology_photos' | 'yike_photos')}>
+                    <select value={sourceCreateKind} onChange={(event) => changeSourceCreateKind(event.target.value as SupportedExternalSourceKind)}>
                       <option value="synology_photos">群晖 Photos · Push</option>
                       <option value="yike_photos">一刻相册 · Pull</option>
                     </select>
@@ -1243,36 +1201,24 @@ export default function App() {
             ) : (
               <div className="source-list">
                 {sources.map((row) => {
-                  const state = sourceState(row)
+                  const state = getExternalSourceState(row)
+                  const trigger = getExternalSourceTriggerState(row)
                   const timeLabel = row.source.run_mode === 'scan' ? '上次扫描' : '上次成功'
                   const timeValue = row.source.run_mode === 'scan' ? row.source.last_run_at : row.source.last_success_at
-                  const running = row.latestRun?.status === 'running'
-                  const credentialReady = row.source.kind !== 'yike_photos' || row.credential?.configured === true
-                  const triggerReady = row.source.status === 'active' &&
-                    credentialReady &&
-                    !running &&
-                    !row.source.run_requested_at
-                  const triggerTitle = row.source.run_requested_at ? '已提交扫描请求' :
-                    row.source.kind === 'yike_photos' && !row.credential?.configured ? '请先配置 Cookie' :
-                    row.source.status !== 'active' ? '来源已暂停' :
-                    running ? '来源正在运行' :
-                    row.source.kind === 'synology_photos'
-                      ? '提交请求，由群晖 source-agent 下一次任务检查执行'
-                      : '立即请求 Pull worker 扫描此来源'
                   return (
                     <article className="source-card" key={row.source.id}>
                       <div className="source-card-header">
                         <div className="source-title">
                           <strong>{row.source.name}</strong>
-                          <span>{sourceMode(row.source)}</span>
+                          <span>{externalSourceModeLabel(row.source)}</span>
                         </div>
                         <div className="source-state">
-                          <span className={`status-dot ${state.tone}`} />
+                          <span className={`status-dot ${desktopSourceTone(state.tone)}`} />
                           <strong>{state.label}</strong>
                         </div>
                       </div>
                       <div className="source-card-meta">
-                        <span>{timeLabel}：{formatSourceTime(timeValue)}</span>
+                        <span>{timeLabel}：{formatExternalSourceTime(timeValue)}</span>
                         <span>
                           {row.latestRun
                             ? `${row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · ${formatBinarySize(row.latestRun.scanned_bytes)}`
@@ -1291,8 +1237,8 @@ export default function App() {
                         <button
                           className="secondary"
                           type="button"
-                          title={triggerTitle}
-                          disabled={!!busy || !triggerReady}
+                          title={trigger.label}
+                          disabled={!!busy || !trigger.ready}
                           onClick={() => void triggerSourceNow(row)}
                         >
                           {row.source.run_requested_at
@@ -1377,12 +1323,12 @@ export default function App() {
                       {selectedSourceID === row.source.id && (
                         <div className="source-detail">
                           <div className="source-detail-grid">
-                            <div><span>来源类型</span><strong>{sourceKind(row.source.kind)}</strong></div>
-                            <div><span>工作方式</span><strong>{sourceMode(row.source)}</strong></div>
+                            <div><span>来源类型</span><strong>{externalSourceKindLabel(row.source.kind)}</strong></div>
+                            <div><span>工作方式</span><strong>{externalSourceModeLabel(row.source)}</strong></div>
                             <div><span>状态</span><strong>{state.label}</strong></div>
                             <div><span>目标节点</span><strong>{row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}</strong></div>
-                            <div><span>上次运行</span><strong>{formatSourceTime(row.source.last_run_at)}</strong></div>
-                            <div><span>上次成功</span><strong>{formatSourceTime(row.source.last_success_at)}</strong></div>
+                            <div><span>上次运行</span><strong>{formatExternalSourceTime(row.source.last_run_at)}</strong></div>
+                            <div><span>上次成功</span><strong>{formatExternalSourceTime(row.source.last_success_at)}</strong></div>
                             {row.source.kind === 'yike_photos' && (
                               <div><span>Cookie</span><strong>{row.credential?.configured ? '已配置' : '未配置'}</strong></div>
                             )}
@@ -1397,11 +1343,11 @@ export default function App() {
                           <div className="source-run-detail">
                             <div className="source-run-heading">
                               <strong>最近一次运行</strong>
-                              <span>{row.latestRun ? sourceRunStatus(row.latestRun.status) : '尚无运行记录'}</span>
+                              <span>{row.latestRun ? externalSourceRunStatusLabel(row.latestRun.status) : '尚无运行记录'}</span>
                             </div>
                             {row.latestRun && (
                               <div className="source-run-grid">
-                                <div><span>开始时间</span><strong>{formatSourceTime(row.latestRun.started_at)}</strong></div>
+                                <div><span>开始时间</span><strong>{formatExternalSourceTime(row.latestRun.started_at)}</strong></div>
                                 <div><span>扫描</span><strong>{row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.scanned_bytes)}</strong></div>
                                 <div><span>计划传输</span><strong>{row.latestRun.planned_transfer_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.planned_transfer_bytes)}</strong></div>
                                 <div><span>实际传输</span><strong>{row.latestRun.transferred_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.transferred_bytes)}</strong></div>
