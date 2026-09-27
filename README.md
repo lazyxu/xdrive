@@ -44,8 +44,8 @@ Not in the MVP: content-defined chunking (CDC), small-file packs, thumbnails/tra
 The supported server deployment is Docker Compose. The installer uses these default paths:
 
 ```text
-~/.xd/docker-compose.yml
-~/.xd/.env
+~/.xd/config/docker-compose.yml
+~/.xd/config/.env
 ```
 
 ### Prerequisites
@@ -53,14 +53,14 @@ The supported server deployment is Docker Compose. The installer uses these defa
 Before running the one-line installer, the server needs:
 
 - Linux amd64;
-- Docker Engine with Docker Compose v2 (`docker compose`);
+- Docker Engine with Docker Compose v2 (`docker compose`), either rootful Docker accessible to the current user or Docker Rootless Mode;
 - `curl` or `wget`;
 - outbound access to the selected update provider and container registry (GitHub/GHCR by default; optional GitLab at `http://gitlab.t-fluid.com:1080/xuliang/xdrive`) plus Docker Hub;
 - enough disk space for PostgreSQL plus uploaded file blobs;
 - for public HTTPS, a domain managed by AliDNS, API credentials allowed to edit its DNS records, and inbound TCP 8443 (or your configured `XD_HTTPS_PORT`) reachable from clients;
 - enough host resources for the configured container limits.
 
-No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose runs PostgreSQL and the optional xDrive Caddy image with the AliDNS DNS-01 module. DNS-01 certificate issuance does not require inbound ports 80 or 443.
+No PostgreSQL, Nginx, or Caddy installation is required on the host; Compose runs PostgreSQL and the optional xDrive Caddy image with the AliDNS DNS-01 module. DNS-01 certificate issuance does not require inbound ports 80 or 443. The server installer is designed to run as a normal Unix user and never invokes `sudo`; Docker access must already work for that user. Rootless Docker is supported with the default unprivileged host ports 3000 and 8443.
 
 ### Bootstrap install and server management
 
@@ -77,7 +77,7 @@ rm -f "$tmp"
 exit "$rc"
 ```
 
-The bootstrap installer supports two update sources (`github` and `gitlab`) and three release channels. The selected source and channel are persisted in `~/.xd/.env`. To bootstrap directly from GitLab, download `http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh` and run it with `--source gitlab`.
+The bootstrap installer supports two update sources (`github` and `gitlab`) and three release channels. The selected source and channel are persisted in `~/.xd/config/.env`. To bootstrap directly from GitLab, download `http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh` and run it with `--source gitlab`.
 
 ```bash
 # Latest stable vMAJOR.MINOR.PATCH release
@@ -109,7 +109,7 @@ ALIYUN_ACCESS_KEY_SECRET=your-key-secret \
 bash "$tmp" --channel stable
 ```
 
-After the first successful install, the installer places the host-side manager at `~/.xd/xdrive-server` and, when `/usr/local/bin` is writable, links it as:
+After the first successful install, the installer places the host-side manager at `~/.xd/bin/xdrive-server` and, when `/usr/local/bin` is writable, links it as:
 
 ```bash
 xdrive-server
@@ -137,11 +137,22 @@ xdrive-server admin disable USER
 
 The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. The `xdrive-server` executable inside `xdrive-server-1` remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
 
-The host manager downloads the bootstrap installer from the selected update source to a temporary file, validates it with `bash -n`, and then runs that file with stdin detached from any download pipe. `--source github|gitlab` is independent from `--channel stable|master|commit`; both are persisted in `~/.xd/.env`. GitLab defaults to `http://gitlab.t-fluid.com:1080/xuliang/xdrive`. The installer resolves the selected successfully published release/commit and uses immutable `sha-<commit>` images for master/commit channels. Switching providers is explicit: xDrive does not silently fall back from one provider to the other.
+Persistent server state uses host bind mounts under `~/.xd/data` by default:
+
+```text
+~/.xd/data/files
+~/.xd/data/postgres
+~/.xd/data/caddy/data
+~/.xd/data/caddy/config
+```
+
+Configuration, host tools, backups, logs, and transaction state are separated into `config/`, `bin/`, `backups/`, `logs/`, and `state/`. Existing flat `~/.xd` deployments and Docker named volumes are migrated transactionally on upgrade; legacy named volumes are retained instead of being deleted automatically. See [`docs/server-host-layout.md`](docs/server-host-layout.md) for the full contract.
+
+The host manager downloads the bootstrap installer from the selected update source to a temporary file, validates it with `bash -n`, and then runs that file with stdin detached from any download pipe. `--source github|gitlab` is independent from `--channel stable|master|commit`; both are persisted in `~/.xd/config/.env`. GitLab defaults to `http://gitlab.t-fluid.com:1080/xuliang/xdrive`. The installer resolves the selected successfully published release/commit and uses immutable `sha-<commit>` images for master/commit channels. Switching providers is explicit: xDrive does not silently fall back from one provider to the other.
 
 For a tagged release, download and run the release asset `xdrive-server-install.sh`; it pins the matching container image tag. Releases also publish the standalone host manager asset `xdrive-server`.
 
-Upgrades are serialized with an exclusive `flock` lock. Existing deployments enter a maintenance window after the pre-upgrade backup: public Web/Caddy containers are stopped, the new API is started and health-checked before public services are reopened, and deployment files are treated as a transaction. If the new API fails after migration/startup begins, xDrive restores the verified pre-upgrade database/blob backup plus the previous deployment files and images. Failures before the database is touched restore deployment state only. Container images are pulled **one service at a time** so a transient failure retries only the affected service. On Docker Compose versions with JSON progress support, the terminal shows real downloaded bytes / known total bytes / percentage / current rate for that service while raw Docker events remain in the private pull log. Older Compose versions fall back to host RX reporting. If rollback itself cannot complete, the transaction state is retained under `~/.xd/.upgrade-transaction` for manual recovery.
+Upgrades are serialized with an exclusive `flock` lock. Existing deployments enter a maintenance window after the pre-upgrade backup: public Web/Caddy containers are stopped, the new API is started and health-checked before public services are reopened, and deployment files are treated as a transaction. If the new API fails after migration/startup begins, xDrive restores the verified pre-upgrade database/blob backup plus the previous deployment files and images. Failures before the database is touched restore deployment state only. Container images are pulled **one service at a time** so a transient failure retries only the affected service. On Docker Compose versions with JSON progress support, the terminal shows real downloaded bytes / known total bytes / percentage / current rate for that service while raw Docker events remain in the private pull log. Older Compose versions fall back to host RX reporting. If rollback itself cannot complete, the transaction state is retained under `~/.xd/state/upgrade-transaction` for manual recovery.
 
 The installer:
 
@@ -150,7 +161,7 @@ The installer:
 3. creates `~/.xd` with user-only permissions and preserves existing secrets;
 4. stages the new Compose/Caddy/maintenance files and host manager;
 5. on upgrades, creates a verified **pre-upgrade backup before replacing deployment files** without creating/recreating the formal server service;
-6. creates `~/.xd/.env` with random PostgreSQL and JWT secrets if they do not already exist;
+6. creates `~/.xd/config/.env` with random PostgreSQL and JWT secrets if they do not already exist;
 7. pulls PostgreSQL plus the xDrive server/Web images one service at a time and, when a domain is configured, the `xdrive-caddy` image containing the AliDNS plugin;
 8. starts PostgreSQL, waits for database/API/Web health checks, and applies log rotation plus CPU/memory/PID limits;
 9. for a public domain, obtains/renews the TLS certificate through AliDNS DNS-01 and waits until the real HTTPS health endpoint succeeds on `XD_HTTPS_PORT`;
@@ -169,7 +180,7 @@ Without a domain, xDrive runs in HTTP/private mode on `XD_WEB_PORT` (default 300
 
 xDrive does **not** expose public or self-service registration. All accounts are created by an administrator.
 
-On an interactive first install, `install-server.sh` asks for the initial administrator username and password after the containers start. The password is piped to the server process through stdin; it is not written to `~/.xd/.env` or passed as a command-line argument.
+On an interactive first install, `install-server.sh` asks for the initial administrator username and password after the containers start. The password is piped to the server process through stdin; it is not written to `~/.xd/config/.env` or passed as a command-line argument.
 
 For non-interactive installs, or for an existing deployment that has users but no administrator yet, create the first administrator locally on the server:
 
@@ -177,8 +188,8 @@ For non-interactive installs, or for an existing deployment that has users but n
 XD_DIR="$HOME/.xd"
 read -s -p 'Admin password: ' P; echo
 printf '%s\n' "$P" | docker compose \
-  --env-file "$XD_DIR/.env" \
-  -f "$XD_DIR/docker-compose.yml" \
+  --env-file "$XD_DIR/config/.env" \
+  -f "$XD_DIR/config/docker-compose.yml" \
   exec -T server \
   xdrive-server admin create --username admin --password-stdin
 unset P
@@ -195,7 +206,7 @@ xdrive-server admin enable admin
 xdrive-server admin disable USER
 ```
 
-The interactive reset prompts twice on `/dev/tty` with terminal echo disabled. The password is not placed in shell history, process arguments, `~/.xd/.env`, or xDrive logs. A successful reset immediately increments the account session version and revokes all outstanding refresh sessions, so existing clients must sign in again. Recovery resets require a password change at the next login by default; pass `--no-must-change` only when the replacement password is already the account's final password.
+The interactive reset prompts twice on `/dev/tty` with terminal echo disabled. The password is not placed in shell history, process arguments, `~/.xd/config/.env`, or xDrive logs. A successful reset immediately increments the account session version and revokes all outstanding refresh sessions, so existing clients must sign in again. Recovery resets require a password change at the next login by default; pass `--no-must-change` only when the replacement password is already the account's final password.
 
 For automation, explicitly opt into stdin mode:
 
@@ -266,11 +277,11 @@ Common operations:
 ```bash
 XD_DIR="$HOME/.xd"
 
-docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" ps
-docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" logs -f
-docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" pull
-docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" up -d
-docker compose --env-file "$XD_DIR/.env" -f "$XD_DIR/docker-compose.yml" down
+docker compose --env-file "$XD_DIR/config/.env" -f "$XD_DIR/config/docker-compose.yml" ps
+docker compose --env-file "$XD_DIR/config/.env" -f "$XD_DIR/config/docker-compose.yml" logs -f
+docker compose --env-file "$XD_DIR/config/.env" -f "$XD_DIR/config/docker-compose.yml" pull
+docker compose --env-file "$XD_DIR/config/.env" -f "$XD_DIR/config/docker-compose.yml" up -d
+docker compose --env-file "$XD_DIR/config/.env" -f "$XD_DIR/config/docker-compose.yml" down
 ```
 
 Data is persisted in Docker volumes:
@@ -286,17 +297,17 @@ For production, set `XD_DOMAIN`, provide `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS
 The Docker deployment installs five maintenance tools in `~/.xd`:
 
 ```text
-~/.xd/server-backup.sh
-~/.xd/server-backup-scheduled.sh
-~/.xd/server-restore.sh
-~/.xd/server-verify.sh
-~/.xd/server-doctor.sh
+~/.xd/bin/server-backup.sh
+~/.xd/bin/server-backup-scheduled.sh
+~/.xd/bin/server-restore.sh
+~/.xd/bin/server-verify.sh
+~/.xd/bin/server-doctor.sh
 ```
 
 For support and troubleshooting, run:
 
 ```bash
-~/.xd/server-doctor.sh
+~/.xd/bin/server-doctor.sh
 ```
 
 It checks Docker/Compose, current release state, container health, PostgreSQL authentication, lightweight CAS metadata health, data mounts, disk space, upgrade-lock/rollback state, TLS/public reachability, the selected update provider/registry reachability, and appends the last 100 container log lines after automatic secret redaction. It is read-only by default. Use `--strict` when automation should fail on diagnostic errors.
@@ -308,7 +319,7 @@ By default, the installer registers a daily scheduled backup at 03:17 local serv
 A normal verification briefly stops the API so the database and blob tree cannot change during the scan:
 
 ```bash
-~/.xd/server-verify.sh
+~/.xd/bin/server-verify.sh
 ```
 
 For conservative CAS metadata repair, inspect the plan first and then apply it:
@@ -333,24 +344,24 @@ It checks current `xd_files.storage_key` **and historical `xd_file_versions.stor
 The underlying server command is also available inside the container:
 
 ```bash
-docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
+docker compose --env-file ~/.xd/config/.env -f ~/.xd/config/docker-compose.yml \
   exec -T server xdrive-server storage verify --json
 ```
 
 For the lightweight DB-only invariant check used by Doctor and monitoring:
 
 ```bash
-docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
+docker compose --env-file ~/.xd/config/.env -f ~/.xd/config/docker-compose.yml \
   exec -T server xdrive-server storage health --json
 ```
 
 #### Backup
 
 ```bash
-~/.xd/server-backup.sh
+~/.xd/bin/server-backup.sh
 ```
 
-The default destination is `~/.xd/backups/xdrive-backup-<UTC timestamp>/`. A backup is a directory rather than a recompressed mega-archive:
+The default destination is `~/.xd/backups/snapshots/xdrive-backup-<UTC timestamp>/`. A backup is a directory rather than a recompressed mega-archive:
 
 ```text
 database.dump
@@ -365,7 +376,7 @@ SHA256SUMS.txt
 Choose another destination, preferably a different disk or remote-mounted backup target:
 
 ```bash
-~/.xd/server-backup.sh --output-dir /mnt/backup/xdrive
+~/.xd/bin/server-backup.sh --output-dir /mnt/backup/xdrive
 ```
 
 By default an inconsistent source is rejected. `--allow-inconsistent` exists for emergency capture only and records `consistency_verified: false` in the manifest.
@@ -373,7 +384,7 @@ By default an inconsistent source is rejected. `--allow-inconsistent` exists for
 #### Restore
 
 ```bash
-~/.xd/server-restore.sh /mnt/backup/xdrive/xdrive-backup-20260923T120000Z
+~/.xd/bin/server-restore.sh /mnt/backup/xdrive/xdrive-backup-20260923T120000Z
 ```
 
 Restore verifies `SHA256SUMS.txt` before changing anything. By default it then creates a **pre-restore safety backup** of the current installation, stops the API, recreates the xDrive PostgreSQL database, replaces `file-data`, and runs an offline consistency check. The API is reopened only if that check succeeds. In non-interactive automation, pass `--yes`.
@@ -381,10 +392,10 @@ Restore verifies `SHA256SUMS.txt` before changing anything. By default it then c
 For a recovery drill where a safety copy is unnecessary:
 
 ```bash
-~/.xd/server-restore.sh BACKUP_DIR --yes --no-safety-backup
+~/.xd/bin/server-restore.sh BACKUP_DIR --yes --no-safety-backup
 ```
 
-Backup directories contain user metadata and all file contents and must be protected like the live server. The generated `~/.xd/.env` is deliberately **not copied into data backups**; store deployment secrets separately.
+Backup directories contain user metadata and all file contents and must be protected like the live server. The generated `~/.xd/config/.env` is deliberately **not copied into data backups**; store deployment secrets separately.
 
 ### GHCR visibility
 
@@ -837,7 +848,7 @@ Phase 13D adds a separate **Source Credential Keyring** for pull connectors such
 Connector encryption is independent from `XD_JWT_SECRET`. New deployments generate `XD_CONNECTOR_SECRET_KEYS=1:<64-hex-key>` with active version 1. The connector keyring is required to decrypt persisted external-source credentials after a disaster recovery. Verify that the configured key bytes can actually decrypt every stored credential with:
 
 ```bash
-docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
+docker compose --env-file ~/.xd/config/.env -f ~/.xd/config/docker-compose.yml \
   run -T --rm --no-deps server source-credentials verify
 ```
 
@@ -1051,7 +1062,7 @@ deploy/
 ## Security and MVP limitations
 
 - Use HTTPS in production; JWTs are bearer credentials.
-- Use the generated long `XD_JWT_SECRET` and keep `~/.xd/.env` private.
+- Use the generated long `XD_JWT_SECRET` and keep `~/.xd/config/.env` private.
 - Connector credentials use a separate versioned AES-256-GCM keyring; never remove a historical key until `source-credentials status` shows no rows using that version.
 - The server validates names against a Windows-compatible filename subset.
 - Local storage rejects path traversal and writes uploads through temporary files followed by rename.

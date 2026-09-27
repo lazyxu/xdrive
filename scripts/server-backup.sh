@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
+XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 OUTPUT_ROOT=""
 ALLOW_INCONSISTENT=0
 LEAVE_SERVER_STOPPED=0
@@ -25,7 +25,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config-dir) CONFIG_DIR="$2"; shift 2 ;;
+    --config-dir) XDRIVE_HOME="$2"; shift 2 ;;
     --output-dir) OUTPUT_ROOT="$2"; shift 2 ;;
     --allow-inconsistent) ALLOW_INCONSISTENT=1; shift ;;
     --leave-server-stopped) LEAVE_SERVER_STOPPED=1; shift ;;
@@ -34,6 +34,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+CONFIG_DIR="$XDRIVE_HOME/config"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 ENV_PATH="$CONFIG_DIR/.env"
 [[ -f "$COMPOSE_PATH" ]] || { echo "missing $COMPOSE_PATH" >&2; exit 1; }
@@ -42,7 +43,7 @@ command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
 
 if [[ -z "$OUTPUT_ROOT" ]]; then
-  OUTPUT_ROOT="$CONFIG_DIR/backups"
+  OUTPUT_ROOT="$XDRIVE_HOME/backups/snapshots"
 fi
 mkdir -p "$OUTPUT_ROOT"
 OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd)"

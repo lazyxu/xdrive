@@ -11,10 +11,10 @@ services:
     image: ${XD_POSTGRES_IMAGE:-postgres:17-alpine}
     environment:
       POSTGRES_USER: xdrive
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in ~/.xd/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in ~/.xd/config/.env}
       POSTGRES_DB: xdrive
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - "${XD_POSTGRES_DATA_DIR:-../data/postgres}:/var/lib/postgresql/data"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U xdrive -d xdrive"]
       interval: 5s
@@ -33,8 +33,14 @@ services:
     environment:
       XD_STORAGE_ROOT: /data
     volumes:
-      - file-data:/data
-    command: ["storage", "prepare", "--uid", "65532", "--gid", "65532"]
+      - "${XD_FILES_DATA_DIR:-../data/files}:/data"
+    command:
+      - "storage"
+      - "prepare"
+      - "--uid"
+      - "${XD_SERVER_UID:-65532}"
+      - "--gid"
+      - "${XD_SERVER_GID:-65532}"
     restart: "no"
     logging: *default-logging
     mem_limit: ${XD_STORAGE_INIT_MEMORY_LIMIT:-256m}
@@ -43,6 +49,7 @@ services:
 
   server:
     image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
+    user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"
     environment:
       XD_LISTEN_ADDR: :8080
       XD_DATABASE_URL: postgres://xdrive:${POSTGRES_PASSWORD}@postgres:5432/xdrive?sslmode=disable
@@ -56,7 +63,7 @@ services:
       XD_ALLOWED_ORIGIN: ${XD_ALLOWED_ORIGIN:-http://localhost:3000}
       XD_MAX_UPLOAD_BYTES: ${XD_MAX_UPLOAD_BYTES:-21474836480}
     volumes:
-      - file-data:/data
+      - "${XD_FILES_DATA_DIR:-../data/files}:/data"
     depends_on:
       storage-init:
         condition: service_completed_successfully
@@ -76,6 +83,7 @@ services:
 
   worker:
     image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
+    user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"
     command: ["worker"]
     environment:
       XD_DATABASE_URL: postgres://xdrive:${POSTGRES_PASSWORD}@postgres:5432/xdrive?sslmode=disable
@@ -126,8 +134,8 @@ services:
       - "${XD_HTTPS_BIND:-0.0.0.0}:${XD_HTTPS_PORT:-8443}:443/tcp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - "${XD_CADDY_DATA_DIR:-../data/caddy/data}:/data"
+      - "${XD_CADDY_CONFIG_DIR:-../data/caddy/config}:/config"
     depends_on:
       web:
         condition: service_healthy
@@ -142,8 +150,3 @@ services:
     cpus: ${XD_CADDY_CPU_LIMIT:-0.50}
     pids_limit: ${XD_CADDY_PIDS_LIMIT:-128}
 
-volumes:
-  postgres-data:
-  file-data:
-  caddy-data:
-  caddy-config:

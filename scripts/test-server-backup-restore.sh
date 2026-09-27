@@ -3,9 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
-CONFIG_DIR="$TMP/config"
-BACKUP_ROOT="$TMP/backups"
-mkdir -p "$CONFIG_DIR" "$BACKUP_ROOT"
+XDRIVE_HOME="$TMP/xdrive-home"
+CONFIG_DIR="$XDRIVE_HOME/config"
+DATA_DIR="$XDRIVE_HOME/data"
+FILES_DIR="$DATA_DIR/files"
+POSTGRES_DIR="$DATA_DIR/postgres"
+BACKUP_ROOT="$XDRIVE_HOME/backups/snapshots"
+mkdir -p "$CONFIG_DIR" "$FILES_DIR" "$POSTGRES_DIR" "$BACKUP_ROOT"
 cp "$ROOT/deploy/docker-compose.yml" "$CONFIG_DIR/docker-compose.yml"
 cat > "$CONFIG_DIR/.env" <<'EOF'
 POSTGRES_PASSWORD=xdrive-backup-test
@@ -21,6 +25,11 @@ XD_ALLOWED_ORIGIN=http://localhost:31999
 XD_MAX_UPLOAD_BYTES=21474836480
 XD_SERVER_IMAGE=xdrive/server:test
 XD_WEB_IMAGE=xdrive/web:not-used
+XD_DOCKER_MODE=rootful
+XD_SERVER_UID=65532
+XD_SERVER_GID=65532
+XD_FILES_DATA_DIR=$FILES_DIR
+XD_POSTGRES_DATA_DIR=$POSTGRES_DIR
 EOF
 
 compose() {
@@ -59,7 +68,15 @@ assert_runtime_services() {
 }
 
 cleanup() {
-  compose down -v --remove-orphans >/dev/null 2>&1 || true
+  compose down --remove-orphans >/dev/null 2>&1 || true
+  if [[ -d "$DATA_DIR" ]]; then
+    docker run --rm \
+      -v "$DATA_DIR:/xdrive-data" \
+      --entrypoint sh \
+      postgres:17-alpine \
+      -c "chown -R $(id -u):$(id -g) /xdrive-data && chmod -R u+rwX /xdrive-data" \
+      >/dev/null 2>&1 || true
+  fi
   rm -rf "$TMP"
 }
 trap cleanup EXIT INT TERM
@@ -78,14 +95,14 @@ storage_key="$uid/e2e/blob-backup"
 content='backup-content-v1'
 compose exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -c   "INSERT INTO xd_files(node_id,size,storage_key,created_at,updated_at) VALUES ($file_id,${#content},'$storage_key',now(),now())" >/dev/null
 
-docker run --rm -v xdrive_file-data:/data --entrypoint sh postgres:17-alpine -c   "mkdir -p /data/$uid/e2e && printf '%s' '$content' > /data/$storage_key"
+docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "mkdir -p /data/$uid/e2e && printf '%s' '$content' > /data/$storage_key"
 
 compose up -d server worker >/dev/null
 wait_server
 assert_runtime_services
 
-"$ROOT/scripts/server-verify.sh" --config-dir "$CONFIG_DIR" >/dev/null
-backup_dir="$("$ROOT/scripts/server-backup.sh" --config-dir "$CONFIG_DIR" --output-dir "$BACKUP_ROOT")"
+"$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+backup_dir="$("$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$BACKUP_ROOT")"
 assert_runtime_services
 [[ -f "$backup_dir/database.dump" ]]
 [[ -f "$backup_dir/blobs.tar" ]]
@@ -98,25 +115,25 @@ assert_runtime_services
 
 # Deliberately corrupt both directions: a referenced blob disappears and an
 # unreferenced blob appears. Verification must reject the state.
-docker run --rm -v xdrive_file-data:/data --entrypoint sh postgres:17-alpine -c   "rm -f /data/$storage_key && printf orphan > /data/orphan.bin"
+docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "rm -f /data/$storage_key && printf orphan > /data/orphan.bin"
 
-if "$ROOT/scripts/server-verify.sh" --config-dir "$CONFIG_DIR" >/dev/null 2>&1; then
+if "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null 2>&1; then
   echo "verify unexpectedly accepted missing/orphan blobs" >&2
   exit 1
 fi
 
-"$ROOT/scripts/server-restore.sh" "$backup_dir"   --config-dir "$CONFIG_DIR"   --yes   --no-safety-backup >/dev/null
+"$ROOT/scripts/server-restore.sh" "$backup_dir"   --config-dir "$XDRIVE_HOME"   --yes   --no-safety-backup >/dev/null
 wait_server
 assert_runtime_services
 
-"$ROOT/scripts/server-verify.sh" --config-dir "$CONFIG_DIR" >/dev/null
-restored="$(docker run --rm -v xdrive_file-data:/data:ro --entrypoint cat postgres:17-alpine "/data/$storage_key")"
+"$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
+restored="$(docker run --rm -v "$FILES_DIR:/data":ro --entrypoint cat postgres:17-alpine "/data/$storage_key")"
 [[ "$restored" == "$content" ]] || {
   echo "restored blob mismatch: $restored" >&2
   exit 1
 }
 
-if docker run --rm -v xdrive_file-data:/data:ro --entrypoint sh postgres:17-alpine -c 'test -e /data/orphan.bin'; then
+if docker run --rm -v "$FILES_DIR:/data":ro --entrypoint sh postgres:17-alpine -c 'test -e /data/orphan.bin'; then
   echo "orphan survived restore" >&2
   exit 1
 fi

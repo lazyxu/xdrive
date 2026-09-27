@@ -104,6 +104,10 @@ chmod +x "$TMP/bin/curl"
 cat > "$TMP/bin/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == "info" ]]; then
+  if [[ "$*" == *"--format"* ]]; then echo '[]'; fi
+  exit 0
+fi
 if [[ "$#" -ge 2 && "$1" == "compose" && "$2" == "version" ]]; then
   exit 0
 fi
@@ -132,7 +136,7 @@ run_case() {
 
 env_value() {
   local cfg="$1" key="$2"
-  grep "^$key=" "$cfg/.env" | tail -n1 | cut -d= -f2-
+  grep "^$key=" "$cfg/config/.env" | tail -n1 | cut -d= -f2-
 }
 
 run_case stable --channel stable

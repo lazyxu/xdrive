@@ -20,10 +20,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$TMP/bin" "$TMP/state" "$TMP/config" "$TMP/host-bin"
+mkdir -p "$TMP/bin" "$TMP/state" "$TMP/config/state" "$TMP/host-bin"
 
 # Hold the installer lock and verify a second invocation refuses to run.
-exec 8>"$TMP/config/.install.lock"
+exec 8>"$TMP/config/state/install.lock"
 flock -n 8
 set +e
 PATH="/usr/bin:/bin" \
@@ -136,6 +136,11 @@ cat > "$TMP/bin/docker" <<'SH'
 set -euo pipefail
 args="$*"
 printf '%s\n' "$args" >> "$TEST_STATE/docker-calls"
+
+if [[ "$1" == "info" ]]; then
+  if [[ "$args" == *"--format"* ]]; then echo '[]'; fi
+  exit 0
+fi
 
 if [[ "$1" == "inspect" ]]; then
   exit 1
@@ -261,12 +266,15 @@ test -f "$TMP/state/data-restored"
 grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/upgrade.err"
 grep -q '^old-compose$' "$TMP/config/docker-compose.yml"
 grep -q '^old-caddy$' "$TMP/config/Caddyfile"
+grep -q '^old-compose$' "$TMP/config/config/docker-compose.yml"
+grep -q '^old-caddy$' "$TMP/config/config/Caddyfile"
+grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/config/.env"
 grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/.env"
 grep -q '^XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-oldoldoldold$' "$TMP/config/.env"
 grep -q '^XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-oldoldoldold$' "$TMP/config/.env"
 grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=2$' "$TMP/config/.env"
 grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb$' "$TMP/config/.env"
-test ! -d "$TMP/config/.upgrade-transaction"
+test ! -d "$TMP/config/state/upgrade-transaction"
 [[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
 [[ "$(cat "$TMP/state/pull-count-server")" == "1" ]]
 [[ "$(cat "$TMP/state/pull-count-web")" == "1" ]]
@@ -274,10 +282,10 @@ grep -q 'pull postgres attempt 3/3' "$TMP/upgrade.out"
 grep -q 'pull postgres failed; retrying' "$TMP/upgrade.err"
 grep -q 'pull postgres.*1.0 KiB / 4.0 KiB (25%)' "$TMP/upgrade.out"
 grep -q 'pull postgres.*4.0 KiB / 4.0 KiB (100%)' "$TMP/upgrade.out"
-test -x "$TMP/config/xdrive-server"
-test -x "$TMP/config/server-doctor.sh"
+test -x "$TMP/config/bin/xdrive-server"
+test -x "$TMP/config/bin/server-doctor.sh"
 test -L "$TMP/host-bin/xdrive-server"
-[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/xdrive-server" ]]
+[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/bin/xdrive-server" ]]
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/upgrade.err"
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
@@ -315,12 +323,14 @@ grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/pull-fail.err"
 test ! -f "$TMP/state/data-restored"
 grep -q '^old-compose$' "$TMP/config/docker-compose.yml"
 grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/.env"
+grep -q '^old-compose$' "$TMP/config/config/docker-compose.yml"
+grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/config/.env"
 grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=2$' "$TMP/config/.env"
 grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb$' "$TMP/config/.env"
-test -x "$TMP/config/xdrive-server"
-test -x "$TMP/config/server-doctor.sh"
+test -x "$TMP/config/bin/xdrive-server"
+test -x "$TMP/config/bin/server-doctor.sh"
 test -L "$TMP/host-bin/xdrive-server"
-[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/xdrive-server" ]]
+[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/bin/xdrive-server" ]]
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/pull-fail.err"
 
 echo "server transactional upgrade tests passed"

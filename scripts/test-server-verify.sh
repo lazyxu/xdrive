@@ -5,10 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFY="$ROOT/scripts/server-verify.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/config" "$TMP/state"
+mkdir -p "$TMP/bin" "$TMP/home/config" "$TMP/state"
 
-printf 'XD_DOMAIN=\n' > "$TMP/config/.env"
-printf 'name: xdrive\nservices: {}\n' > "$TMP/config/docker-compose.yml"
+printf 'XD_DOMAIN=\n' > "$TMP/home/config/.env"
+printf 'name: xdrive\nservices: {}\n' > "$TMP/home/config/docker-compose.yml"
 
 cat > "$TMP/bin/docker" <<'SH'
 #!/usr/bin/env bash
@@ -64,7 +64,7 @@ chmod +x "$TMP/bin/docker"
 
 run_verify() {
   : > "$TMP/state/docker-args"
-  TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/config" \
+  TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
     bash "$VERIFY" "$@"
 }
 

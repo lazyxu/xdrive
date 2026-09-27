@@ -113,6 +113,10 @@ chmod +x "$TMP/bin-ok/curl"
 cat > "$TMP/bin-ok/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == "info" ]]; then
+  if [[ "$*" == *"--format"* ]]; then echo '[]'; fi
+  exit 0
+fi
 if [[ "$#" -ge 2 && "$1" == "compose" && "$2" == "version" ]]; then
   echo "Docker Compose version v2.test"
   exit 0
@@ -132,19 +136,25 @@ bash "$INSTALLER" >"$TMP/ok.out" 2>"$TMP/ok.err"
 grep -q '\[xDrive\] \[1/9\] resolve release channel' "$TMP/ok.out"
 grep -q 'Resolved latest fully published master snapshot: 0123456789ab' "$TMP/ok.out"
 grep -q '\[xDrive\] \[9/9\] complete' "$TMP/ok.out"
-grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
-grep -q "XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
-grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/.env"
-grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/.env"
-connector_active="$(grep '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=' "$TMP/config-ok/.env" | tail -n1 | cut -d= -f2-)"
-connector_keys="$(grep '^XD_CONNECTOR_SECRET_KEYS=' "$TMP/config-ok/.env" | tail -n1 | cut -d= -f2-)"
+grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
+grep -q "XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
+grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
+grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/config/.env"
+connector_active="$(grep '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=' "$TMP/config-ok/config/.env" | tail -n1 | cut -d= -f2-)"
+connector_keys="$(grep '^XD_CONNECTOR_SECRET_KEYS=' "$TMP/config-ok/config/.env" | tail -n1 | cut -d= -f2-)"
 [[ "$connector_active" == "1" ]]
 [[ "$connector_keys" =~ ^1:[0-9a-f]{64}$ ]]
-if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-ok/.env"; then
+if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-ok/config/.env"; then
   echo "new installs must not persist the legacy connector key variable" >&2
   exit 1
 fi
 grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
+test -x "$TMP/config-ok/bin/xdrive-server"
+test -x "$TMP/config-ok/bin/server-backup.sh"
+test -f "$TMP/config-ok/state/layout-version"
+test "$(cat "$TMP/config-ok/state/layout-version")" = "2"
+test ! -e "$TMP/config-ok/.env"
+test ! -e "$TMP/config-ok/docker-compose.yml"
 
 if grep -Eq -- '--(retry|retry-delay|connect-timeout|write-out)=' "$INSTALLER"; then
   echo "installer must use old-curl-compatible space-separated long option values" >&2
@@ -195,6 +205,11 @@ printf '%s\n' "$args" >> "$TEST_STATE/docker-calls"
 
 if [[ "$#" -ge 2 && "$1" == "compose" && "$2" == "version" ]]; then
   echo "Docker Compose version v2.test"
+  exit 0
+fi
+
+if [[ "$1" == "info" ]]; then
+  if [[ "$args" == *"--format"* ]]; then echo '[]'; fi
   exit 0
 fi
 
@@ -285,11 +300,12 @@ bash "$INSTALLER" >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"; then
 fi
 
 test -f "$TMP/state/password-repaired"
-grep -q '^POSTGRES_PASSWORD=stale-db-password$' "$TMP/config-upgrade/.env"
-grep -q '^XD_JWT_SECRET=legacy-jwt-secret$' "$TMP/config-upgrade/.env"
-grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=1$' "$TMP/config-upgrade/.env"
-grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$' "$TMP/config-upgrade/.env"
-if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-upgrade/.env"; then
+test -f "$TMP/config-upgrade/.env"
+grep -q '^POSTGRES_PASSWORD=stale-db-password$' "$TMP/config-upgrade/config/.env"
+grep -q '^XD_JWT_SECRET=legacy-jwt-secret$' "$TMP/config-upgrade/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=1$' "$TMP/config-upgrade/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$' "$TMP/config-upgrade/config/.env"
+if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-upgrade/config/.env"; then
   echo "legacy connector key must be removed after keyring migration" >&2
   exit 1
 fi
@@ -298,5 +314,7 @@ grep -q 'Repaired the managed PostgreSQL role password to match xDrive configura
 grep -q 'Recovered JWT secret from the existing xDrive server container.' "$TMP/upgrade.out"
 grep -q '\[xDrive\] existing deployment detected; entering upgrade maintenance window...' "$TMP/upgrade.out"
 grep -q '\[xDrive\] transaction armed; rollback backup:' "$TMP/upgrade.out"
+test -x "$TMP/config-upgrade/bin/xdrive-server"
+test -f "$TMP/config-upgrade/config/docker-compose.yml"
 
 echo "server installer bootstrap and stage-reporting tests passed"
