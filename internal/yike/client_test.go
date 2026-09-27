@@ -13,6 +13,34 @@ import (
 	"time"
 )
 
+func TestFileThumbURLAcceptsObservedYikeShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		json string
+		want []string
+	}{
+		{name: "string", json: `{"fsid":1,"thumburl":"https://img.example/a.jpg"}`, want: []string{"https://img.example/a.jpg"}},
+		{name: "array", json: `{"fsid":1,"thumburl":["https://img.example/a.jpg","https://img.example/b.jpg"]}`, want: []string{"https://img.example/a.jpg", "https://img.example/b.jpg"}},
+		{name: "null", json: `{"fsid":1,"thumburl":null}`, want: nil},
+		{name: "empty string", json: `{"fsid":1,"thumburl":""}`, want: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var file File
+			if err := json.Unmarshal([]byte(tc.json), &file); err != nil {
+				t.Fatal(err)
+			}
+			if len(file.ThumbURL) != len(tc.want) {
+				t.Fatalf("thumburl=%v want=%v", file.ThumbURL, tc.want)
+			}
+			for i := range tc.want {
+				if file.ThumbURL[i] != tc.want[i] {
+					t.Fatalf("thumburl=%v want=%v", file.ThumbURL, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestClientRejectsInvalidCookie(t *testing.T) {
 	if _, err := NewWithBaseURL("https://photo.example", "", nil); err == nil {
 		t.Fatal("empty cookie was accepted")
@@ -127,6 +155,9 @@ func TestDownloadLinksAreReadOnly(t *testing.T) {
 		mu.Unlock()
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/youai/file/v2/download":
+			if r.URL.Query().Get("clienttype") != "70" {
+				t.Fatalf("clienttype=%q", r.URL.Query().Get("clienttype"))
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"errno": 0,
 				"dlink": serverURL(r) + "/download/root",

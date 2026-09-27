@@ -33,6 +33,7 @@ import {
   formatSize,
   yikeConnectorNotice,
   yikeCookieHelp,
+  yikeManagedTargetLabel,
 } from '../../ui/shared/src'
 import type {
   ExternalSource,
@@ -215,7 +216,7 @@ export default function ExternalSourcesPanel({
   }
 
   const createSource = async (values: CreateSourceValues) => {
-    if (!defaultTargetNodeID) {
+    if (values.kind !== 'yike_photos' && !defaultTargetNodeID) {
       message.error('当前目标文件夹尚未加载，请稍后重试')
       return
     }
@@ -241,7 +242,7 @@ export default function ExternalSourcesPanel({
         direction: externalSourceDefaults(values.kind).direction,
         sync_mode: 'backup',
         run_mode: values.run_mode,
-        target_node_id: defaultTargetNodeID,
+        target_node_id: values.kind === 'yike_photos' ? 0 : (defaultTargetNodeID ?? 0),
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
@@ -629,13 +630,19 @@ export default function ExternalSourcesPanel({
         width={640}
         destroyOnClose
       >
-        <Alert
-          type="info"
-          showIcon
-          message="目标目录使用当前文件夹"
-          description={`当前目标：${defaultTargetLabel}${defaultTargetPath ? `（${defaultTargetPath}）` : '（我的文件根目录）'}`}
-          style={{ marginBottom: 16 }}
-        />
+        {createKind === 'yike_photos' ? (
+          <MuiAlert severity="info" sx={{ mb: 2 }}>
+            固定逻辑目录：{yikeManagedTargetLabel}。连接成功后由服务器按百度 UID 和账号名称自动创建；底层文件仍使用 xDrive CAS 存储。
+          </MuiAlert>
+        ) : (
+          <Alert
+            type="info"
+            showIcon
+            message="目标目录使用当前文件夹"
+            description={`当前目标：${defaultTargetLabel}${defaultTargetPath ? `（${defaultTargetPath}）` : '（我的文件根目录）'}`}
+            style={{ marginBottom: 16 }}
+          />
+        )}
         <Form form={createForm} layout="vertical" onFinish={createSource} requiredMark={false}>
           <Form.Item name="kind" label="来源类型" rules={[{ required: true }]}>
             <Select

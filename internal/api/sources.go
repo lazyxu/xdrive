@@ -150,23 +150,44 @@ func (s *Server) createSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid run_mode")
 		return
 	}
-	if req.TargetNodeID == 0 {
-		fail(c, http.StatusBadRequest, "target_node_id is required")
-		return
+	isYike := req.Kind == yikeSourceKind
+	if isYike {
+		if req.Direction != meta.SourceDirectionPull {
+			fail(c, http.StatusBadRequest, "Yike Photos only supports pull direction")
+			return
+		}
+		if req.TargetNodeID != 0 {
+			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
+			return
+		}
+	} else {
+		if req.TargetNodeID == 0 {
+			fail(c, http.StatusBadRequest, "target_node_id is required")
+			return
+		}
+		if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
+			fail(c, http.StatusBadRequest, "target directory not found")
+			return
+		}
 	}
 	if _, err := sourcepkg.CompileIgnoreRules(req.IgnoreRules); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if _, err := s.ownedDirectory(userID(c), req.TargetNodeID); err != nil {
-		fail(c, http.StatusBadRequest, "target directory not found")
-		return
+	var target *uint64
+	status := meta.SourceStatusActive
+	if isYike {
+		// The managed target is bound atomically after the Cookie is validated and
+		// the Yike account UID/name are known.
+		status = meta.SourceStatusPaused
+	} else {
+		value := req.TargetNodeID
+		target = &value
 	}
-	target := req.TargetNodeID
 	source := meta.Source{
 		OwnerID: userID(c), Name: req.Name, Kind: req.Kind, Direction: req.Direction,
-		SyncMode: meta.SourceSyncModeBackup, RunMode: req.RunMode, Status: meta.SourceStatusActive,
-		Revision: 1, TargetNodeID: &target, IgnoreRules: req.IgnoreRules,
+		SyncMode: meta.SourceSyncModeBackup, RunMode: req.RunMode, Status: status,
+		Revision: 1, TargetNodeID: target, IgnoreRules: req.IgnoreRules,
 	}
 	if err := s.DB.Create(&source).Error; err != nil {
 		if isDuplicate(err) {
@@ -261,6 +282,9 @@ func (s *Server) updateSource(c *gin.Context) {
 			updates["status"] = status
 		}
 		if req.TargetNodeID != nil {
+			if current.Kind == yikeSourceKind {
+				return errManagedSourceTarget
+			}
 			if *req.TargetNodeID == 0 {
 				return errInvalidSourceTarget
 			}
@@ -299,6 +323,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
+		case errors.Is(err, errManagedSourceTarget):
+			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 		case errors.Is(err, errInvalidSourceTarget):
 			fail(c, http.StatusBadRequest, "target directory not found")
 		case errors.Is(err, errInvalidSourceConfig):
@@ -458,5 +484,6 @@ func (s *Server) ownedSource(uid, id uint64) (meta.Source, error) {
 var (
 	errInvalidSourceConfig = errors.New("invalid source configuration")
 	errInvalidSourceTarget = errors.New("invalid source target")
+	errManagedSourceTarget = errors.New("managed source target")
 	errSourceNameTaken     = errors.New("source name taken")
 )

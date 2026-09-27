@@ -87,19 +87,29 @@ The same metadata object is included in collection-item reads. Missing media kee
 
 ## Configure a Source
 
-Create one xDrive target directory first, then create a Source using the existing Source API:
+Yike uses a server-managed xDrive **logical Node** target. Clients do not choose a target directory. Create the Source with `target_node_id=0` (or omit it when calling the REST API):
 
 ```json
 {
-  "name": "Yike Photos",
+  "name": "一刻相册",
   "kind": "yike_photos",
   "direction": "pull",
   "sync_mode": "backup",
   "run_mode": "scan",
-  "target_node_id": 123,
+  "target_node_id": 0,
   "ignore_rules": ""
 }
 ```
+
+The Source remains paused and has no target until its Cookie is validated. On the first successful credential write, xDrive reads the Yike `youa_id` and nickname and atomically creates/binds:
+
+```text
+来源/
+└─ 一刻相册/
+   └─ uid_<百度UID>_<账号名称>/
+```
+
+For example: `来源/一刻相册/uid_12345_张三/`. Invalid filename characters in the nickname are replaced safely. This hierarchy exists only in `xd_nodes`; file content still uses xDrive's content-addressed storage (CAS), so the managed folder does not duplicate physical blobs or change deduplication semantics. The target cannot be changed through the Source update API.
 
 The first version supports only `backup` semantics. A media object that disappears from Yike becomes `missing`; its xDrive data is never deleted or trashed.
 
@@ -157,7 +167,7 @@ Body:
 }
 ```
 
-The response contains only credential status metadata. The Cookie is encrypted with the versioned connector keyring and is never returned by GET.
+The response contains only credential status metadata. The Cookie is encrypted with the versioned connector keyring and is never returned by GET. For a new Yike Source, target-directory creation, Source binding/activation, and encrypted credential persistence occur in one database transaction.
 
 ## Worker schedule
 
