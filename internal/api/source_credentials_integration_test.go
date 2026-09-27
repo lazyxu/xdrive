@@ -55,7 +55,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceCredential{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceCredential{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 				return sourceCredentialTestDTO{}, credentialTestErr
 			}
 			return sourceCredentialTestDTO{
-				Valid: true, Kind: kind, AccountExternalID: "12345", AccountName: "Test User",
+				Valid: true, Kind: kind, AccountExternalID: "12345", AccountName: "张三",
 			}, nil
 		},
 	}
@@ -107,7 +107,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err := json.Unmarshal(testRes.Body.Bytes(), &tested); err != nil {
 		t.Fatal(err)
 	}
-	if !tested.Valid || tested.Kind != "yike_photos" || tested.AccountExternalID != "12345" || tested.AccountName != "Test User" {
+	if !tested.Valid || tested.Kind != "yike_photos" || tested.AccountExternalID != "12345" || tested.AccountName != "张三" {
 		t.Fatalf("unexpected credential test result: %+v", tested)
 	}
 	if testedKind != "yike_photos" || string(testedPayload) != `{"cookie":"BDUSS=ephemeral-cookie"}` {
@@ -205,6 +205,24 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	if !status.Configured || status.KeyVersion != 1 || status.UpdatedAt == nil {
 		t.Fatalf("unexpected credential status: %+v", status)
+	}
+	var boundSource meta.Source
+	if err := db.First(&boundSource, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if boundSource.TargetNodeID == nil || *boundSource.TargetNodeID == rootA.ID || boundSource.Revision != 2 {
+		t.Fatalf("Yike managed target was not bound: %+v", boundSource)
+	}
+	var target meta.Node
+	if err := db.First(&target, *boundSource.TargetNodeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	logicalTarget, err := server.logicalPath(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logicalTarget != "来源/一刻相册/uid_12345_张三" {
+		t.Fatalf("managed Yike target=%q", logicalTarget)
 	}
 
 	testedPayload = nil

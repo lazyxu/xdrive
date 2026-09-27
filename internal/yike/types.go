@@ -1,6 +1,8 @@
 package yike
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -17,14 +19,46 @@ type Page struct {
 
 func (p Page) HasNext() bool { return p.HasMore == 1 }
 
+type FlexibleStringList []string
+
+func (s *FlexibleStringList) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		*s = nil
+		return nil
+	}
+	switch data[0] {
+	case '"':
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		if value == "" {
+			*s = nil
+		} else {
+			*s = FlexibleStringList{value}
+		}
+		return nil
+	case '[':
+		var values []string
+		if err := json.Unmarshal(data, &values); err != nil {
+			return err
+		}
+		*s = FlexibleStringList(values)
+		return nil
+	default:
+		return fmt.Errorf("expected string, string array, or null")
+	}
+}
+
 type File struct {
-	FSID     int64    `json:"fsid"`
-	Path     string   `json:"path"`
-	Size     int64    `json:"size"`
-	CTime    int64    `json:"ctime"`
-	MTime    int64    `json:"mtime"`
-	ThumbURL []string `json:"thumburl,omitempty"`
-	MD5      string   `json:"md5,omitempty"`
+	FSID     int64              `json:"fsid"`
+	Path     string             `json:"path"`
+	Size     int64              `json:"size"`
+	CTime    int64              `json:"ctime"`
+	MTime    int64              `json:"mtime"`
+	ThumbURL FlexibleStringList `json:"thumburl,omitempty"`
+	MD5      string             `json:"md5,omitempty"`
 }
 
 func (f File) ModifiedAt() time.Time { return time.Unix(f.MTime, 0).UTC() }

@@ -139,6 +139,7 @@ export interface ExternalSourceDefaults {
 }
 
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
+export const yikeManagedTargetLabel = '来源 / 一刻相册 / uid_<百度UID>_<账号名称>'
 
 export const yikeCookieHelp = {
   title: '如何获取 Cookie',

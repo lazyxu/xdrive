@@ -196,7 +196,10 @@ func (c *Client) DownloadFileLink(ctx context.Context, fsid int64) (DownloadLink
 		apiEnvelope
 		DLink string `json:"dlink"`
 	}
-	query := url.Values{"fsid": {strconv.FormatInt(fsid, 10)}}
+	query := url.Values{
+		"fsid":       {strconv.FormatInt(fsid, 10)},
+		"clienttype": {"70"},
+	}
 	if err := c.getJSON(ctx, "/file/v2/download", query, &out); err != nil {
 		return DownloadLink{}, err
 	}

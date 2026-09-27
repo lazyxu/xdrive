@@ -256,20 +256,29 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 	// Yike credentials are bearer-style web session cookies. Validate them again
 	// at the persistence boundary so non-UI/API callers cannot store an already
 	// invalid session and leave a Source looking configured but unusable.
-	if source.Kind == "yike_photos" {
-		if _, err := s.testSourceCredentialPayload(c.Request.Context(), source.Kind, compact.Bytes()); err != nil {
+	var identity sourceCredentialTestDTO
+	if source.Kind == yikeSourceKind {
+		identity, err = s.testSourceCredentialPayload(c.Request.Context(), source.Kind, compact.Bytes())
+		if err != nil {
 			writeSourceCredentialTestError(c, err)
 			return
 		}
 	}
 
-	if err := sourcecredential.Put(c.Request.Context(), s.DB, s.ConnectorSecrets, source, compact.Bytes()); err != nil {
-		fail(c, http.StatusInternalServerError, "store source credential failed")
-		return
-	}
 	var row meta.SourceCredential
-	if err := s.DB.Where("source_id = ?", source.ID).First(&row).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "read source credential status failed")
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if source.Kind == yikeSourceKind {
+			if err := bindYikeManagedTargetTx(c.Request.Context(), tx, &source, identity); err != nil {
+				return fmt.Errorf("bind Yike managed target: %w", err)
+			}
+		}
+		if err := sourcecredential.Put(c.Request.Context(), tx, s.ConnectorSecrets, source, compact.Bytes()); err != nil {
+			return err
+		}
+		return tx.Where("source_id = ?", source.ID).First(&row).Error
+	})
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "store source credential failed")
 		return
 	}
 	recordSourceCredentialAudit(c, s.DB, auditpkg.ActionSourceCredentialUpdate, source, row.KeyVersion)

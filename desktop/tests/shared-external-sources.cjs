@@ -310,6 +310,7 @@ test('shared Yike credential test messages are actionable', () => {
 
 
 test('shared Yike Cookie guide gives the full-header workflow', () => {
+  assert.equal(shared.yikeManagedTargetLabel, '来源 / 一刻相册 / uid_<百度UID>_<账号名称>')
   assert.match(shared.yikeConnectorNotice, /未公开接口/)
   assert.match(shared.yikeConnectorNotice, /不会上传、删除或修改/)
   assert.equal(shared.yikeCookieHelp.title, '如何获取 Cookie')

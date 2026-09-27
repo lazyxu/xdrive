@@ -108,6 +108,8 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('测试连接'), 'missing Yike connection test action')
   assert.ok(renderer.includes('YikeCookieHelpGuide'), 'missing Yike Cookie acquisition guide')
   assert.ok(renderer.includes('yikeConnectorNotice'), 'missing Yike private-API notice')
+  assert.ok(renderer.includes('yikeManagedTargetLabel'), 'missing Yike managed target label')
+  assert.ok(renderer.includes('固定逻辑目录'), 'missing Yike managed target explanation')
   assert.ok(renderer.includes('点击展开'), 'missing Yike Cookie guide affordance')
   assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
   assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')

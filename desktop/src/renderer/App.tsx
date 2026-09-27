@@ -50,6 +50,7 @@ import {
   formatExternalSourceTime,
   yikeConnectorNotice,
   yikeCookieHelp,
+  yikeManagedTargetLabel,
 } from '@xdrive/shared'
 import type {
   ExternalSourceCredentialTestResult,
@@ -644,7 +645,7 @@ function App() {
       setError('来源名称不能为空。')
       return
     }
-    if (!target) {
+    if (sourceCreateKind !== 'yike_photos' && !target) {
       setError('请选择目标文件夹。')
       return
     }
@@ -673,7 +674,7 @@ function App() {
         direction: externalSourceDefaults(sourceCreateKind).direction,
         sync_mode: 'backup',
         run_mode: sourceCreateRunMode,
-        target_node_id: target.id,
+        target_node_id: sourceCreateKind === 'yike_photos' ? 0 : (target?.id ?? 0),
         ignore_rules: sourceCreateIgnoreRules,
       })
       if (!created.ok) {
@@ -704,7 +705,7 @@ function App() {
         setSynologyGuideSource(created.data)
         setNotice('群晖来源已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
       } else {
-        setNotice('一刻相册来源已添加，Cookie 已安全保存。')
+        setNotice(`一刻相册来源已添加，目标目录固定为 ${yikeManagedTargetLabel}。`)
       }
       await loadSources()
     } finally {
@@ -1545,7 +1546,7 @@ function App() {
                 <div className="source-create-heading">
                   <div>
                     <strong>添加外部来源</strong>
-                    <span>选择来源类型、运行方式与 xDrive 目标文件夹。</span>
+                    <span>{sourceCreateKind === 'yike_photos' ? '一刻相册目标目录由服务器自动管理。' : '选择来源类型、运行方式与 xDrive 目标文件夹。'}</span>
                   </div>
                   <button className="secondary" type="button" disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>关闭</button>
                 </div>
@@ -1570,6 +1571,11 @@ function App() {
                   </label>
                 </div>
 
+                {sourceCreateKind === 'yike_photos' ? (
+                  <MuiAlert severity="info" sx={{ mb: 1.5 }}>
+                    固定逻辑目录：{yikeManagedTargetLabel}。连接成功后自动创建；底层文件仍使用 xDrive CAS 存储。
+                  </MuiAlert>
+                ) : (
                 <div className="source-target">
                   <div className="source-target-heading">
                     <div>
@@ -1607,6 +1613,7 @@ function App() {
                     ))}
                   </div>
                 </div>
+                )}
 
                 <label className="source-create-wide">
                   <span>忽略规则</span>
@@ -1658,7 +1665,7 @@ function App() {
                   </div>
                 )}
                 <div className="source-create-actions">
-                  <button className="primary" type="submit" disabled={!!busy || sourceTargetLoading}>
+                  <button className="primary" type="submit" disabled={!!busy || (sourceCreateKind !== 'yike_photos' && sourceTargetLoading)}>
                     {busy === 'source-create' ? '正在添加…' : '添加来源'}
                   </button>
                   <button className="secondary" type="button" disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</button>
