@@ -306,6 +306,45 @@ jobs:
           gh release create snapshot release/* --repo "$repo" --prerelease \
             --title "xDrive snapshot ${GITHUB_SHA::12}" \
             --notes "Rolling development snapshot from master at `$GITHUB_SHA`. The exact CI-tested installers are published without rebuilding."
+      - name: Prune old immutable master snapshots
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          keep="snapshot-${GITHUB_SHA::12}"
+
+          echo "Keeping rolling snapshot tag and latest immutable snapshot: $keep"
+
+          # Read the complete release list before deleting anything so pagination cannot skip entries.
+          mapfile -t snapshot_releases < <(
+            gh api --paginate "repos/$repo/releases?per_page=100" \
+              --jq '.[] | "\(.id)|\(.tag_name)"'
+          )
+          for row in "${snapshot_releases[@]}"; do
+            release_id="${row%%|*}"
+            tag="${row#*|}"
+            [[ "$tag" =~ ^snapshot-[0-9a-fA-F]{12}$ ]] || continue
+            [[ "$tag" == "$keep" ]] && continue
+            echo "Deleting old snapshot release: $tag"
+            gh api --method DELETE "repos/$repo/releases/$release_id" >/dev/null
+          done
+
+          # Preserve the rolling 'snapshot' ref and delete stale immutable snapshot refs only.
+          mapfile -t snapshot_refs < <(
+            gh api --paginate "repos/$repo/git/matching-refs/tags/snapshot-" \
+              --jq '.[].ref'
+          )
+          for ref in "${snapshot_refs[@]}"; do
+            tag="${ref#refs/tags/}"
+            [[ "$tag" =~ ^snapshot-[0-9a-fA-F]{12}$ ]] || continue
+            [[ "$tag" == "$keep" ]] && continue
+            echo "Deleting old snapshot tag: $tag"
+            gh api --method DELETE "repos/$repo/git/refs/tags/$tag" >/dev/null
+          done
+
       - name: Assert distribution assets are not archive-wrapped
         shell: bash
         run: |
