@@ -1,7 +1,9 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 
-const { trayStatusKind, trayStatusIconBase64 } = require('../dist/main/tray_status.cjs')
+const { trayStatusKind, trayStatusIconFile } = require('../dist/main/tray_status.cjs')
 
 function status(overrides = {}) {
   return {
@@ -58,9 +60,20 @@ test('tray status shows syncing for transfers, sync engine, and update work', ()
   assert.equal(trayStatusKind(true, status(), emptyTransfers, null), 'normal')
 })
 
-test('every tray state has an embedded PNG icon', () => {
+test('every tray state resolves to one canonical 16px PNG asset', () => {
+  const repoRoot = path.join(__dirname, '..', '..')
   for (const kind of ['normal', 'syncing', 'paused', 'conflict', 'offline']) {
-    const bytes = Buffer.from(trayStatusIconBase64(kind), 'base64')
+    const filename = trayStatusIconFile(kind)
+    assert.equal(filename, `tray-${kind}.png`)
+    const bytes = fs.readFileSync(path.join(repoRoot, 'assets', 'icon', 'tray', filename))
     assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], kind)
+    assert.equal(bytes.readUInt32BE(16), 16, `${kind} width`)
+    assert.equal(bytes.readUInt32BE(20), 16, `${kind} height`)
   }
+})
+
+test('tray status source no longer embeds duplicate base64 artwork', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'tray_status.cts'), 'utf8')
+  assert.equal(source.includes('iVBORw0KGgo'), false)
+  assert.equal(source.includes('trayStatusIconBase64'), false)
 })

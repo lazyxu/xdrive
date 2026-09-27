@@ -18,6 +18,8 @@ test('desktop native feedback wires taskbar progress and clickable navigation', 
   assert.ok(main.includes('editContextMenuTemplate(params.editFlags)'), 'missing edit-flag driven menu state')
   assert.ok(main.includes("app.on('second-instance', (_event, commandLine)"), 'missing second-instance shortcut routing')
   assert.ok(main.includes('tray.setImage(trayStatusImage())'), 'missing dynamic tray status icon updates')
+  assert.ok(main.includes("path.join(process.resourcesPath, 'tray-icons')"), 'missing packaged tray icon resource path')
+  assert.ok(main.includes("path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'tray')"), 'missing development tray icon resource path')
   assert.ok(main.includes("{ label: '设置', click: () => showDesktopView('settings') }"), 'missing tray settings shortcut')
   assert.ok(main.includes("showDesktopNotification('xDrive 冲突'"), 'missing clickable conflict notification')
   assert.ok(main.includes("'settings'"), 'missing update notification target')
