@@ -8,7 +8,7 @@
 - Electron Desktop (Windows/Linux): electron-builder consumes the master SVG directly and generates the platform icon set; renderer brand lockups import the same master SVG.
 - Linux DEB: installs the master SVG as `hicolor/scalable/apps/xdrive.svg`.
 - Windows Inno Setup: uses `assets/icon/windows/app.ico`, a generated derivative of the master SVG.
-- Tray/status icons are operational state assets and remain separate from the main application icon. Their canonical PNGs live in `assets/icon/tray/` and are copied into packaged Electron resources.
+- Tray/status icons are master-derived operational variants. The generator renders the approved master at tray scale and overlays small state badges; their canonical PNGs live in `assets/icon/tray/` and are copied into packaged Electron resources.
 
 ## Rules
 
@@ -45,4 +45,4 @@ The tray uses five 16 × 16 PNG state assets:
 - `tray-conflict.png`
 - `tray-offline.png`
 
-These are not derivatives of the brand master SVG. They are operational status artwork and should be edited as a set. Electron packages them under `resources/tray-icons/`; development builds read the same canonical files directly from `assets/icon/tray/`.
+These are generated derivatives of the brand master SVG with small operational state badges. Do not hand-edit them. Electron packages them under `resources/tray-icons/`; development builds read the same generated files directly from `assets/icon/tray/`.

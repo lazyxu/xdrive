@@ -22,6 +22,14 @@ build_linux() {
 build_windows() {
   (
     cd "$ROOT"
+    agent_resource="$ROOT/cmd/xdrive-agent/rsrc_windows_amd64.syso"
+    rm -f "$agent_resource"
+    trap 'rm -f "$agent_resource"' EXIT
+    go run github.com/tc-hib/go-winres@v0.3.3 make --in packaging/windows/xdrive-agent-winres.json --arch amd64 --out cmd/xdrive-agent/rsrc
+    [[ -f "$agent_resource" ]] || {
+      echo "Windows agent icon resource was not generated: $agent_resource" >&2
+      exit 1
+    }
     CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w $VERSION_LDFLAG" -o "$windows_dir/xd.exe" ./cmd/xd
     CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -H=windowsgui $VERSION_LDFLAG" -o "$windows_dir/xdrive-agent.exe" ./cmd/xdrive-agent
   )

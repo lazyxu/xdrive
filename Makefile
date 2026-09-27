@@ -17,7 +17,8 @@ build-linux-client:
 
 build-windows-binaries:
 	GOOS=windows GOARCH=amd64 go build -o dist/xd.exe ./cmd/xd
-	GOOS=windows GOARCH=amd64 go build -ldflags="-H=windowsgui" -o dist/xdrive-agent.exe ./cmd/xdrive-agent
+	go run github.com/tc-hib/go-winres@v0.3.3 make --in packaging/windows/xdrive-agent-winres.json --arch amd64 --out cmd/xdrive-agent/rsrc
+	GOOS=windows GOARCH=amd64 go build -ldflags="-H=windowsgui" -o dist/xdrive-agent.exe ./cmd/xdrive-agent; status=$?; rm -f cmd/xdrive-agent/rsrc_windows_amd64.syso; exit $status
 
 web-build:
 	cd web && npm ci --no-audit --no-fund && npm run build
