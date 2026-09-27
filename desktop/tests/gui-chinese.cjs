@@ -97,6 +97,8 @@ test('desktop Yike source exposes connection testing', () => {
   assert.ok(renderer.includes('testSourceCredential'), 'missing candidate Cookie test')
   assert.ok(renderer.includes('testStoredSourceCredential'), 'missing stored Cookie test')
   assert.ok(renderer.includes('测试连接'), 'missing Yike connection test action')
+  assert.ok(renderer.includes('YikeCookieHelpGuide'), 'missing Yike Cookie acquisition guide')
+  assert.ok(renderer.includes('点击展开'), 'missing Yike Cookie guide affordance')
 })
 
 test('desktop external sources expose per-file failures', () => {

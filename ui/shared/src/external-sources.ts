@@ -138,6 +138,22 @@ export interface ExternalSourceDefaults {
   ignoreRules: string
 }
 
+export const yikeCookieHelp = {
+  title: '如何获取 Cookie',
+  summary: '请从你自己已登录的一刻相册网页版中复制 photo.baidu.com 请求的完整 Cookie 请求头值；不要只复制某一个字段，也不要包含 Cookie: 前缀。',
+  steps: [
+    '浏览器登录 photo.baidu.com',
+    '按 F12 打开开发者工具',
+    '打开 Network / 网络',
+    '刷新一刻相册页面',
+    '点击一个发往 photo.baidu.com/youai/... 的请求',
+    '在 Request Headers / 请求标头中找到 Cookie',
+    '复制 Cookie: 后面的整段内容',
+    '粘贴到 xDrive，然后点“测试连接”',
+  ],
+  security: 'Cookie 属于敏感登录凭据，请仅用于你自己的账号，不要发送给其他人或第三方服务。xDrive 会在服务器端加密保存。',
+} as const
+
 export interface ExternalSourceConnectorProfile {
   kind: string
   label: string

@@ -293,3 +293,12 @@ test('shared Yike credential test messages are actionable', () => {
     '连接成功：Alice（123）',
   )
 })
+
+
+test('shared Yike Cookie guide gives the full-header workflow', () => {
+  assert.equal(shared.yikeCookieHelp.title, '如何获取 Cookie')
+  assert.equal(shared.yikeCookieHelp.steps.length, 8)
+  assert.match(shared.yikeCookieHelp.summary, /完整 Cookie/)
+  assert.match(shared.yikeCookieHelp.steps[4], /photo\.baidu\.com\/youai/)
+  assert.match(shared.yikeCookieHelp.steps[7], /测试连接/)
+})
