@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
-import { Button as MuiButton } from '@mui/material'
+import {
+  Button as MuiButton,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+} from '@mui/material'
 import type { XDriveApi } from './api'
 import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
@@ -72,6 +79,8 @@ export default function ExternalSourcesPanel({
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
+  const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
   const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
   const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [createForm] = Form.useForm<CreateSourceValues>()
@@ -242,6 +251,28 @@ export default function ExternalSourcesPanel({
       await load()
     } catch (error) {
       onError(error)
+    }
+  }
+
+  const deleteSource = async () => {
+    if (!deleteTarget) return
+    const row = deleteTarget
+    setDeletingSourceID(row.source.id)
+    try {
+      await api.deleteSource(row.source.id, row.source.revision)
+      message.success('来源已删除；已同步到 xDrive 的文件已保留')
+      if (selected?.source.id === row.source.id) setSelected(null)
+      if (setting?.source.id === row.source.id) {
+        setSetting(null)
+        settingsForm.resetFields()
+      }
+      setDeleteTarget(null)
+      await load()
+    } catch (error) {
+      onError(error)
+      await load()
+    } finally {
+      setDeletingSourceID(null)
     }
   }
 
@@ -515,20 +546,47 @@ export default function ExternalSourcesPanel({
               </>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <Button
-                onClick={() => {
-                  setSetting(null)
-                  settingsForm.resetFields()
-                }}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <MuiButton
+                type="button"
+                color="error"
+                variant="outlined"
+                disabled={savingSettings || setting.latestRun?.status === 'running'}
+                onClick={() => setDeleteTarget(setting)}
               >
-                取消
-              </Button>
-              <Button type="primary" htmlType="submit" loading={savingSettings}>保存设置</Button>
+                删除来源
+              </MuiButton>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button
+                  onClick={() => {
+                    setSetting(null)
+                    settingsForm.resetFields()
+                  }}
+                >
+                  取消
+                </Button>
+                <Button type="primary" htmlType="submit" loading={savingSettings}>保存设置</Button>
+              </div>
             </div>
           </Form>
         )}
       </Modal>
+
+      <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)}>
+        <DialogTitle>删除外部来源？</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            删除“{deleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
+            已经同步到 xDrive 的文件会保留，不会删除。
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton disabled={deletingSourceID !== null} onClick={() => setDeleteTarget(null)}>取消</MuiButton>
+          <MuiButton color="error" variant="contained" disabled={deletingSourceID !== null} onClick={() => void deleteSource()}>
+            {deletingSourceID === null ? '删除来源' : '正在删除…'}
+          </MuiButton>
+        </DialogActions>
+      </Dialog>
 
       <SynologyDsmGuideDialog
         open={!!guideSource}

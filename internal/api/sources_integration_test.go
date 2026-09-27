@@ -179,6 +179,23 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/runs", created.ID),
 		tokenB, nil, http.StatusNotFound)
 
+	activeRun := meta.SyncRun{
+		ID: uuid.NewString(), SourceID: created.ID, Mode: meta.SourceRunModeSync,
+		Trigger: meta.SyncRunTriggerManual, Status: meta.SyncRunStatusRunning,
+		StartedAt: now.Add(2 * time.Minute),
+	}
+	if err := db.Create(&activeRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
+		nil, http.StatusConflict, map[string]string{"If-Match": `"2"`})
+	activeFinished := now.Add(3 * time.Minute)
+	if err := db.Model(&meta.SyncRun{}).Where("id = ?", activeRun.ID).Updates(map[string]any{
+		"status": meta.SyncRunStatusCancelled, "finished_at": &activeFinished,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	// Source deletion removes only source metadata/history. The target xDrive node remains.
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
 		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})

@@ -5,6 +5,11 @@ import {
   Box as MuiBox,
   Button as MuiButton,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Divider as MuiDivider,
   IconButton,
   ListItemIcon,
@@ -152,6 +157,7 @@ export default function App() {
   const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>('scan')
   const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState(initialSourceDefaults.ignoreRules)
   const [sourceCreateCookie, setSourceCreateCookie] = useState('')
+  const [sourceDeleteTarget, setSourceDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [synologyGuideSource, setSynologyGuideSource] = useState<AgentSource | null>(null)
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
   const [sourceTargetDirectories, setSourceTargetDirectories] = useState<AgentCloudNode[]>([])
@@ -273,6 +279,7 @@ export default function App() {
       setSourceEditCookie('')
       setSourceCreateOpen(false)
       setSourceCreateCookie('')
+      setSourceDeleteTarget(null)
       setSynologyGuideSource(null)
       setSourceTargetCrumbs([])
       setSourceTargetDirectories([])
@@ -629,6 +636,22 @@ export default function App() {
     )
     if (data) {
       setSourceEditCookie('')
+      await loadSources()
+    }
+  }
+
+  const deleteExternalSource = async () => {
+    if (!sourceDeleteTarget) return
+    const row = sourceDeleteTarget
+    const data = await run(
+      `source-delete-${row.source.id}`,
+      () => window.xdriveDesktop.agent.deleteSource(row.source.id, row.source.revision),
+      '来源已删除；已同步到 xDrive 的文件已保留。',
+    )
+    if (data) {
+      if (selectedSourceID === row.source.id) setSelectedSourceID(null)
+      if (editingSourceID === row.source.id) setEditingSourceID(null)
+      setSourceDeleteTarget(null)
       await loadSources()
     }
   }
@@ -1572,6 +1595,17 @@ export default function App() {
                             {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && row.credential?.configured && (
                               <button className="danger" type="button" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>清除 Cookie</button>
                             )}
+                            <MuiButton
+                              type="button"
+                              color="error"
+                              variant="outlined"
+                              size="small"
+                              disabled={!!busy || row.latestRun?.status === 'running'}
+                              onClick={() => setSourceDeleteTarget(row)}
+                              sx={{ minWidth: 'auto', px: 1.2, py: 0.35, fontSize: 12 }}
+                            >
+                              删除来源
+                            </MuiButton>
                           </div>
                         </form>
                       )}
@@ -2272,6 +2306,22 @@ export default function App() {
           </section>
         )}
       </main>
+
+      <Dialog open={!!sourceDeleteTarget} onClose={() => busy.startsWith('source-delete-') ? undefined : setSourceDeleteTarget(null)}>
+        <DialogTitle>删除外部来源？</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            删除“{sourceDeleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
+            已经同步到 xDrive 的文件会保留，不会删除。
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton disabled={busy.startsWith('source-delete-')} onClick={() => setSourceDeleteTarget(null)}>取消</MuiButton>
+          <MuiButton color="error" variant="contained" disabled={busy.startsWith('source-delete-')} onClick={() => void deleteExternalSource()}>
+            {busy.startsWith('source-delete-') ? '正在删除…' : '删除来源'}
+          </MuiButton>
+        </DialogActions>
+      </Dialog>
 
       <SynologyDsmGuideDialog
         open={!!synologyGuideSource}

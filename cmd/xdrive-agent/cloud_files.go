@@ -253,6 +253,14 @@ func (c *agentController) CloudUpdateSource(ctx context.Context, sourceID, revis
 	return cli.UpdateSource(ctx, sourceID, revision, input)
 }
 
+func (c *agentController) CloudDeleteSource(ctx context.Context, sourceID, revision uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.DeleteSource(ctx, sourceID, revision)
+}
+
 func (c *agentController) CloudTriggerSource(ctx context.Context, sourceID uint64) (client.Source, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -90,6 +90,8 @@ type fakeDesktopIPCController struct {
 	cloudUpdateID         uint64
 	cloudUpdateRevision   uint64
 	cloudUpdateInput      client.UpdateSourceInput
+	cloudDeleteSourceID   uint64
+	cloudDeleteSourceRev  uint64
 	cloudTriggerID        uint64
 }
 
@@ -261,6 +263,11 @@ func (f *fakeDesktopIPCController) CloudCreateSource(_ context.Context, input cl
 func (f *fakeDesktopIPCController) CloudUpdateSource(_ context.Context, sourceID, revision uint64, input client.UpdateSourceInput) (client.Source, error) {
 	f.cloudUpdateID, f.cloudUpdateRevision, f.cloudUpdateInput = sourceID, revision, input
 	return f.cloudUpdatedSource, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteSource(_ context.Context, sourceID, revision uint64) error {
+	f.cloudDeleteSourceID, f.cloudDeleteSourceRev = sourceID, revision
+	return f.err
 }
 
 func (f *fakeDesktopIPCController) CloudTriggerSource(_ context.Context, sourceID uint64) (client.Source, error) {
@@ -716,6 +723,12 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		t.Fatalf("update input not forwarded: id=%d revision=%d input=%+v", ctrl.cloudUpdateID, ctrl.cloudUpdateRevision, ctrl.cloudUpdateInput)
 	}
 
+	res = desktopIPCRequest(t, handler, http.MethodDelete, "/v1/sources", `{"source_id":9,"revision":4}`)
+	if res.Code != http.StatusOK || ctrl.cloudDeleteSourceID != 9 || ctrl.cloudDeleteSourceRev != 4 ||
+		!strings.Contains(res.Body.String(), "\"ok\":true") {
+		t.Fatalf("delete source status=%d body=%s id=%d revision=%d", res.Code, res.Body.String(), ctrl.cloudDeleteSourceID, ctrl.cloudDeleteSourceRev)
+	}
+
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/trigger", `{"source_id":9}`)
 	if res.Code != http.StatusAccepted || ctrl.cloudTriggerID != 9 || !strings.Contains(res.Body.String(), "run_requested_at") {
 		t.Fatalf("trigger source status=%d body=%s id=%d", res.Code, res.Body.String(), ctrl.cloudTriggerID)
@@ -728,6 +741,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	}{
 		{http.MethodPatch, "/v1/sources", `{"source_id":0,"revision":1,"update":{}}`},
 		{http.MethodPatch, "/v1/sources", `{"source_id":9,"revision":0,"update":{}}`},
+		{http.MethodDelete, "/v1/sources", `{"source_id":9,"revision":0}`},
 		{http.MethodPost, "/v1/sources/trigger", `{"source_id":0}`},
 	} {
 		res = desktopIPCRequest(t, handler, tc.method, tc.path, tc.body)
