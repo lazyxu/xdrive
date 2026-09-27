@@ -84,6 +84,9 @@ try {
             $runValue = (Get-ItemProperty -Path $runKey -Name "xDriveAgent" -ErrorAction Stop).xDriveAgent
             if ($runValue -notlike "*xdrive-agent.exe*") { throw "xDriveAgent autorun registration missing" }
 
+            $shellCleanup = Start-Process -FilePath (Join-Path $app "xdrive-agent.exe") -ArgumentList @("--shell-action", "unregister") -Wait -PassThru
+            if ($shellCleanup.ExitCode -ne 0) { throw "installed agent Explorer shell-action mode failed" }
+
             $uninstaller = (& ./scripts/ci/resolve-windows-uninstaller.ps1 -AppDir $app | Out-String).Trim()
             if ([string]::IsNullOrWhiteSpace($uninstaller)) { throw "uninstaller resolver returned an empty path" }
             $u = Start-Process -FilePath $uninstaller -ArgumentList $args -Wait -PassThru

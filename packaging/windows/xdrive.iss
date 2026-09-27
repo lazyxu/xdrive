@@ -59,6 +59,7 @@ Filename: "{app}\desktop\xdrive-desktop.exe"; Parameters: "--background"; Descri
 Filename: "{app}\desktop\xdrive-desktop.exe"; Description: "Open xDrive Desktop"; Flags: nowait postinstall skipifsilent; Check: ShouldStartDesktopForeground
 
 [UninstallRun]
+Filename: "{app}\xdrive-agent.exe"; Parameters: "--shell-action unregister"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveXDriveExplorerActions"
 Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-desktop.exe /F >NUL 2>&1 & taskkill /IM xdrive-agent.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveProcesses"
 Filename: "{app}\xd.exe"; Parameters: "cleanup"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "CleanupXDriveSyncRoot"
 
