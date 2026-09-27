@@ -58,6 +58,25 @@ declare global {
     sync_rules: Array<{ path: string; mode: string }>
   }
 
+  type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
+
+  type AgentUpdateState = {
+    mode: AgentUpdateMode
+    status: 'idle' | 'checking' | 'available' | 'up_to_date' | 'downloading' | 'downloaded' | 'installing' | 'error' | string
+    current_version: string
+    latest_version?: string
+    channel?: string
+    update_available: boolean
+    downloaded: boolean
+    install_supported: boolean
+    last_checked_at?: string
+    message?: string
+    last_error?: string
+    bytes_done?: number
+    bytes_total?: number
+    bytes_per_second?: number
+  }
+
   type AgentFileAvailability = {
     Path: string
     Mode: string
@@ -230,6 +249,11 @@ declare global {
         syncNow: () => Promise<DesktopResult<AgentStatus>>
         getSettings: () => Promise<DesktopResult<AgentSettings>>
         updateSettings: (input: { mount_path?: string; cache_limit_bytes?: number }) => Promise<DesktopResult<AgentSettings>>
+        getUpdate: () => Promise<DesktopResult<AgentUpdateState>>
+        setUpdateMode: (mode: AgentUpdateMode) => Promise<DesktopResult<AgentUpdateState>>
+        checkUpdate: () => Promise<DesktopResult<AgentUpdateState>>
+        downloadUpdate: () => Promise<DesktopResult<AgentUpdateState>>
+        installUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => Promise<DesktopResult<AgentSettings>>
         getFileAvailability: (path: string) => Promise<DesktopResult<AgentFileAvailability>>
         setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') => Promise<DesktopResult<AgentFileAvailability | { ok: boolean }>>

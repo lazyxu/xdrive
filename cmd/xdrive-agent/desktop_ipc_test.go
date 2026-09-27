@@ -39,6 +39,11 @@ type fakeDesktopIPCController struct {
 	syncs                 int
 	updateMount           *string
 	updateCache           *int64
+	updateState           clientUpdateState
+	updateMode            string
+	updateChecks          int
+	updateDownloads       int
+	updateInstalls        int
 	rulePath              string
 	ruleMode              string
 	filePath              string
@@ -128,6 +133,31 @@ func (f *fakeDesktopIPCController) Settings() (userconfig.Config, string, error)
 func (f *fakeDesktopIPCController) UpdateSettings(mountPath *string, cacheLimitBytes *int64) error {
 	f.updateMount, f.updateCache = mountPath, cacheLimitBytes
 	return f.err
+}
+
+func (f *fakeDesktopIPCController) UpdateState() clientUpdateState {
+	return f.updateState
+}
+
+func (f *fakeDesktopIPCController) SetUpdateMode(mode string) (clientUpdateState, error) {
+	f.updateMode = mode
+	f.updateState.Mode = mode
+	return f.updateState, f.err
+}
+
+func (f *fakeDesktopIPCController) CheckClientUpdate(context.Context) (clientUpdateState, error) {
+	f.updateChecks++
+	return f.updateState, f.err
+}
+
+func (f *fakeDesktopIPCController) DownloadClientUpdate(context.Context) (clientUpdateState, error) {
+	f.updateDownloads++
+	return f.updateState, f.err
+}
+
+func (f *fakeDesktopIPCController) InstallClientUpdate(context.Context) (clientUpdateState, error) {
+	f.updateInstalls++
+	return f.updateState, f.err
 }
 
 func (f *fakeDesktopIPCController) SetSelectiveSyncRule(path, mode string) error {
@@ -434,7 +464,14 @@ func TestDesktopIPCActions(t *testing.T) {
 			CacheLimitBytes: 2 << 30,
 			SyncRules:       []userconfig.SyncRule{{Path: "archive", Mode: userconfig.SyncModeExclude}},
 		},
-		root:      "/existing",
+		root: "/existing",
+		updateState: clientUpdateState{
+			Mode:            userconfig.UpdateModeManual,
+			Status:          clientUpdateStatusAvailable,
+			CurrentVersion:  "snapshot-old",
+			LatestVersion:   "snapshot-new",
+			UpdateAvailable: true,
+		},
 		fileState: mount.FileAvailability{Path: "/tmp/xdrive/a.txt", Mode: "always-local", Placeholder: true, Pinned: true, InSync: true},
 		items:     []conflictstate.Record{{ID: "c1", OriginalPath: "a.txt", ConflictPath: "a-conflict.txt"}},
 	}
@@ -453,6 +490,11 @@ func TestDesktopIPCActions(t *testing.T) {
 		{http.MethodPost, "/v1/sync/now", ""},
 		{http.MethodGet, "/v1/settings", ""},
 		{http.MethodPatch, "/v1/settings", `{"mount_path":"/tmp/xdrive","cache_limit_bytes":5368709120}`},
+		{http.MethodGet, "/v1/update", ""},
+		{http.MethodPatch, "/v1/update/settings", `{"mode":"download"}`},
+		{http.MethodPost, "/v1/update/check", ""},
+		{http.MethodPost, "/v1/update/download", ""},
+		{http.MethodPost, "/v1/update/install", ""},
 		{http.MethodPut, "/v1/settings/sync-rule", `{"path":"Projects/Archive","mode":"exclude"}`},
 		{http.MethodGet, "/v1/file-availability?path=%2Ftmp%2Fxdrive%2Fa.txt", ""},
 		{http.MethodPost, "/v1/file-availability", `{"path":"/tmp/xdrive/a.txt","action":"keep"}`},
@@ -479,6 +521,10 @@ func TestDesktopIPCActions(t *testing.T) {
 	}
 	if ctrl.updateMount == nil || *ctrl.updateMount != mountPath || ctrl.updateCache == nil || *ctrl.updateCache != cache {
 		t.Fatalf("settings update not forwarded: mount=%v cache=%v", ctrl.updateMount, ctrl.updateCache)
+	}
+	if ctrl.updateMode != userconfig.UpdateModeDownload || ctrl.updateChecks != 1 || ctrl.updateDownloads != 1 || ctrl.updateInstalls != 1 {
+		t.Fatalf("update actions not forwarded: mode=%q check=%d download=%d install=%d",
+			ctrl.updateMode, ctrl.updateChecks, ctrl.updateDownloads, ctrl.updateInstalls)
 	}
 	if ctrl.rulePath != "Projects/Archive" || ctrl.ruleMode != "exclude" {
 		t.Fatalf("sync rule not forwarded: path=%q mode=%q", ctrl.rulePath, ctrl.ruleMode)

@@ -42,6 +42,40 @@ test('status uses bearer token and parses status', async (t) => {
   assert.equal(status.username, 'alice')
 })
 
+test('client update endpoints keep check download and install separate', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    const chunks = []
+    if (req.method !== 'GET') {
+      for await (const chunk of req) chunks.push(chunk)
+    }
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null
+    seen.push({ method: req.method, path: req.url, body })
+    json(res, 200, {
+      mode: body?.mode || 'manual',
+      status: req.url === '/v1/update/download' ? 'downloaded' : req.url === '/v1/update/install' ? 'installing' : 'available',
+      current_version: 'snapshot-old',
+      latest_version: 'snapshot-new',
+      channel: 'master',
+      update_available: true,
+      downloaded: req.url === '/v1/update/download' || req.url === '/v1/update/install',
+    })
+  })
+
+  assert.equal((await client.updateState()).mode, 'manual')
+  assert.equal((await client.setUpdateMode('download')).mode, 'download')
+  assert.equal((await client.checkUpdate()).status, 'available')
+  assert.equal((await client.downloadUpdate()).status, 'downloaded')
+  assert.equal((await client.installUpdate()).status, 'installing')
+  assert.deepEqual(seen, [
+    { method: 'GET', path: '/v1/update', body: null },
+    { method: 'PATCH', path: '/v1/update/settings', body: { mode: 'download' } },
+    { method: 'POST', path: '/v1/update/check', body: null },
+    { method: 'POST', path: '/v1/update/download', body: null },
+    { method: 'POST', path: '/v1/update/install', body: null },
+  ])
+})
+
 test('events support 204 and changed status', async (t) => {
   let calls = 0
   const { client } = await fixture(t, (req, res) => {

@@ -24,6 +24,13 @@ test('desktop GUI defaults to Chinese', () => {
     '冲突副本',
     '客户端诊断',
     '客户端设置',
+    '客户端更新',
+    '手动检查',
+    '自动检查',
+    '有更新自动下载',
+    '自动更新',
+    '检查更新',
+    '下载更新',
     '创建分享链接',
   ]) {
     assert.ok(renderer.includes(text), `missing Chinese desktop label: ${text}`)

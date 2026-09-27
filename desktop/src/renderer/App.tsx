@@ -80,6 +80,25 @@ function shareStatusLabel(status: string) {
   if (status === 'revoked') return '已撤销'
   return status
 }
+function updateStatusLabel(state: AgentUpdateState | null) {
+  if (!state) return '不可用'
+  if (state.status === 'idle') return '等待检查'
+  if (state.status === 'checking') return '正在检查'
+  if (state.status === 'available') return '发现新版本'
+  if (state.status === 'up_to_date') return '已是最新'
+  if (state.status === 'downloading') return '正在下载'
+  if (state.status === 'downloaded') return '已下载，等待安装'
+  if (state.status === 'installing') return '正在安装'
+  if (state.status === 'error') return '更新错误'
+  return state.status
+}
+
+function updateModeDescription(mode: AgentUpdateMode) {
+  if (mode === 'check') return '后台定期检查；发现新版本后只提示，不会自动下载。'
+  if (mode === 'download') return '后台定期检查并自动下载、校验；安装前仍由你确认。'
+  if (mode === 'install') return '后台定期检查，有新版本时自动下载并安装。'
+  return '不在后台检查更新；只有点击“检查更新”时才访问更新服务。'
+}
 
 export default function App() {
   const [info, setInfo] = useState<DesktopInfo | null>(null)
@@ -90,6 +109,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [settings, setSettings] = useState<AgentSettings | null>(null)
+  const [clientUpdate, setClientUpdate] = useState<AgentUpdateState | null>(null)
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
@@ -149,7 +169,11 @@ export default function App() {
   const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
   const completedTransfers = transfers.transfers.filter((item) => item.state === 'completed')
   const failedTransfers = transfers.transfers.filter((item) => item.state === 'failed')
-
+  const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
+  const updateOperationBusy = clientUpdate?.status === 'checking' || clientUpdate?.status === 'downloading' || clientUpdate?.status === 'installing'
+  const updateProgress = clientUpdate?.bytes_total
+    ? Math.max(0, Math.min(100, ((clientUpdate.bytes_done || 0) * 100) / clientUpdate.bytes_total))
+    : 0
   useEffect(() => {
     let active = true
     void window.xdriveDesktop.getInfo().then((value) => {
@@ -176,6 +200,24 @@ export default function App() {
       unsubscribeTransfers()
     }
   }, [])
+
+  useEffect(() => {
+    if (!agent.connected || !(agent.hello?.capabilities.includes('client-update') ?? false)) {
+      setClientUpdate(null)
+      return
+    }
+    let active = true
+    const refresh = async () => {
+      const result = await window.xdriveDesktop.agent.getUpdate()
+      if (active && result.ok) setClientUpdate(result.data)
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 4_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [agent.connected, agent.hello?.agent_version])
 
   useEffect(() => {
     if (!agent.connected || !configured) {
@@ -567,6 +609,37 @@ export default function App() {
       cache_limit_bytes: Math.round(gib * 1024 ** 3),
     }), '设置已保存。')
     if (data) setSettings(data)
+  }
+
+  const changeUpdateMode = async (mode: AgentUpdateMode) => {
+    const data = await run(
+      'update-mode',
+      () => window.xdriveDesktop.agent.setUpdateMode(mode),
+      mode === 'manual' ? '已关闭后台更新检查。' : '更新策略已保存，并将按新策略检查更新。',
+    )
+    if (data) setClientUpdate(data)
+  }
+
+  const checkClientUpdate = async () => {
+    const data = await run('update-check', () => window.xdriveDesktop.agent.checkUpdate())
+    if (!data) return
+    setClientUpdate(data)
+    setNotice(data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
+  }
+
+  const downloadClientUpdate = async () => {
+    const data = await run('update-download', () => window.xdriveDesktop.agent.downloadUpdate())
+    if (!data) return
+    setClientUpdate(data)
+    setNotice(data.downloaded ? '更新已下载并通过校验，等待安装。' : '当前已是最新版本。')
+  }
+
+  const installClientUpdate = async () => {
+    if (!window.confirm('安装更新将关闭当前 xDrive 客户端，完成校验后自动重启。确定现在安装？')) return
+    const data = await run('update-install', () => window.xdriveDesktop.agent.installUpdate())
+    if (!data) return
+    setClientUpdate(data)
+    setNotice(data.status === 'installing' ? '更新安装已启动，xDrive 将完成验证并重启。' : '当前已是最新版本。')
   }
 
   const loadStorage = async () => {
@@ -1863,7 +1936,7 @@ export default function App() {
         {view === 'settings' && (
           <section className="panel">
             <div className="section-heading">
-              <div><p className="eyebrow">客户端设置</p><h2>同步、生命周期与缓存</h2></div>
+              <div><p className="eyebrow">客户端设置</p><h2>同步、更新、生命周期与缓存</h2></div>
               <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent()}>
                 {busy === 'restart-agent' ? '正在重启 Agent…' : '重启 Agent'}
               </button>
@@ -1872,6 +1945,99 @@ export default function App() {
               <input type="checkbox" checked={startAtLogin} onChange={(e) => void changeStartAtLogin(e.target.checked)} />
               <span><strong>登录系统后启动 xDrive 桌面版</strong><small>启动后直接驻留系统托盘，并保持后台 Agent 正常运行。</small></span>
             </label>
+            <div className="update-card">
+              <div className="update-card-header">
+                <div>
+                  <strong>客户端更新</strong>
+                  <span>默认不自动更新。你可以选择只检查、自动下载，或自动下载安装。</span>
+                </div>
+                {updateSupported && clientUpdate ? (
+                  <select
+                    className="update-mode-select"
+                    value={clientUpdate.mode}
+                    disabled={!!busy || updateOperationBusy}
+                    onChange={(event) => void changeUpdateMode(event.target.value as AgentUpdateMode)}
+                    aria-label="客户端更新策略"
+                  >
+                    <option value="manual">手动检查</option>
+                    <option value="check">自动检查</option>
+                    <option value="download">有更新自动下载</option>
+                    <option value="install" disabled={!clientUpdate.install_supported}>自动更新</option>
+                  </select>
+                ) : null}
+              </div>
+
+              {!updateSupported ? (
+                <div className="update-unavailable">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</div>
+              ) : !clientUpdate ? (
+                <div className="update-unavailable">正在读取客户端更新状态…</div>
+              ) : (
+                <>
+                  <p className="update-mode-note">
+                    {updateModeDescription(clientUpdate.mode)}
+                    {!clientUpdate.install_supported ? ' 当前平台不会后台安装更新；下载后请使用系统包管理器完成安装。' : ''}
+                  </p>
+                  <div className="update-metrics">
+                    <div><span>当前版本</span><strong>{clientUpdate.current_version || status?.version || '未知'}</strong></div>
+                    <div><span>最新版本</span><strong>{clientUpdate.latest_version || '尚未检查'}</strong></div>
+                    <div><span>状态</span><strong>{updateStatusLabel(clientUpdate)}</strong></div>
+                    <div><span>上次检查</span><strong>{clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'}</strong></div>
+                  </div>
+
+                  {(clientUpdate.status === 'downloading' || clientUpdate.bytes_done || clientUpdate.bytes_total) ? (
+                    <div className="update-progress">
+                      <div className="update-progress-copy">
+                        <span>{clientUpdate.message || '正在处理更新…'}</span>
+                        <strong>
+                          {clientUpdate.bytes_total
+                            ? `${formatBinarySize(clientUpdate.bytes_done || 0)} / ${formatBinarySize(clientUpdate.bytes_total)} · ${updateProgress.toFixed(1)}%`
+                            : clientUpdate.bytes_done
+                              ? formatBinarySize(clientUpdate.bytes_done)
+                              : ''}
+                        </strong>
+                      </div>
+                      {clientUpdate.bytes_total ? (
+                        <div className="update-progress-track"><span style={{ width: `${updateProgress}%` }} /></div>
+                      ) : null}
+                      {clientUpdate.bytes_per_second ? <small>{formatTransferSpeed(clientUpdate.bytes_per_second)}</small> : null}
+                    </div>
+                  ) : null}
+
+                  {clientUpdate.last_error ? <div className="update-error">{clientUpdate.last_error}</div> : null}
+                  {!clientUpdate.last_error && clientUpdate.message ? <div className="update-message">{clientUpdate.message}</div> : null}
+
+                  <div className="update-actions">
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={!!busy || updateOperationBusy}
+                      onClick={() => void checkClientUpdate()}
+                    >
+                      {busy === 'update-check' || clientUpdate.status === 'checking' ? '正在检查…' : '检查更新'}
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={!!busy || updateOperationBusy || !clientUpdate.update_available || clientUpdate.downloaded}
+                      onClick={() => void downloadClientUpdate()}
+                    >
+                      {busy === 'update-download' || clientUpdate.status === 'downloading' ? '正在下载…' : clientUpdate.downloaded ? '已下载' : '下载更新'}
+                    </button>
+                    <button
+                      className="primary"
+                      type="button"
+                      disabled={!!busy || updateOperationBusy || !clientUpdate.update_available || !clientUpdate.install_supported}
+                      onClick={() => void installClientUpdate()}
+                    >
+                      {busy === 'update-install' || clientUpdate.status === 'installing'
+                        ? '正在安装…'
+                        : clientUpdate.downloaded ? '安装更新' : '下载并安装'}
+                    </button>
+                  </div>
+                  <small className="update-footnote">自动策略在 Agent 启动后约 90 秒首次运行，之后约每 6 小时检查一次；切换到自动策略时会立即检查一次。</small>
+                </>
+              )}
+            </div>
             {!settings ? <div className="empty-state">正在加载设置…</div> : (
               <form className="settings-form" onSubmit={saveSettings}>
                 <label>
