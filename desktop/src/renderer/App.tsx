@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert as MuiAlert,
   Box as MuiBox,
   Button as MuiButton,
@@ -146,24 +143,41 @@ function updateModeDescription(mode: AgentUpdateMode) {
 }
 
 export default function YikeCookieHelpGuide() {
+  const [open, setOpen] = useState(false)
+
   return (
-    <Accordion disableGutters elevation={0} sx={{ mt: 0.5, border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
-      <AccordionSummary>
-        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
-          <Typography variant="body2" sx={{ fontWeight: 600 }}>{yikeCookieHelp.title}</Typography>
-          <Typography variant="caption" color="text.secondary">点击展开</Typography>
-        </Stack>
-      </AccordionSummary>
-      <AccordionDetails>
-        <Typography variant="body2">{yikeCookieHelp.summary}</Typography>
-        <ol style={{ margin: '10px 0', paddingLeft: 24 }}>
-          {yikeCookieHelp.steps.map((step) => (
-            <li key={step}><Typography variant="body2">{step}</Typography></li>
-          ))}
-        </ol>
-        <MuiAlert severity="warning">{yikeCookieHelp.security}</MuiAlert>
-      </AccordionDetails>
-    </Accordion>
+    <>
+      <MuiButton
+        type="button"
+        size="small"
+        variant="text"
+        onClick={() => setOpen(true)}
+        sx={{ alignSelf: 'flex-start', minWidth: 0, px: 0.5, mt: 0.25, textTransform: 'none' }}
+      >
+        如何获取 Cookie？
+      </MuiButton>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: { sx: { maxHeight: '72vh' } } }}
+      >
+        <DialogTitle>{yikeCookieHelp.title}</DialogTitle>
+        <DialogContent dividers sx={{ overflowY: 'auto' }}>
+          <Typography variant="body2">{yikeCookieHelp.summary}</Typography>
+          <ol style={{ margin: '12px 0', paddingLeft: 24 }}>
+            {yikeCookieHelp.steps.map((step) => (
+              <li key={step}><Typography variant="body2" sx={{ mb: 0.75 }}>{step}</Typography></li>
+            ))}
+          </ol>
+          <MuiAlert severity="warning">{yikeCookieHelp.security}</MuiAlert>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton onClick={() => setOpen(false)}>关闭</MuiButton>
+        </DialogActions>
+      </Dialog>
+    </>
   )
 }
 

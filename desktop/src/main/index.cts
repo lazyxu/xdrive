@@ -417,6 +417,7 @@ function rebuildTrayMenu() {
     },
     { type: 'separator' },
     { label: '打开 xDrive 桌面版', click: showMainWindow },
+    { label: '设置', click: () => showDesktopView('settings') },
     {
       label: '打开 xDrive 文件夹',
       enabled: agentState.connected && configured,
