@@ -1,4 +1,16 @@
-import type { CreatedFileShare, FileShare, FileVersion, Node, QuotaUsage, StorageStats } from '@xdrive/shared'
+import type {
+  CreateExternalSourceInput,
+  CreatedFileShare,
+  ExternalSource,
+  ExternalSourceCredentialStatus,
+  ExternalSourceRun,
+  FileShare,
+  FileVersion,
+  Node,
+  QuotaUsage,
+  StorageStats,
+  UpdateExternalSourceInput,
+} from '@xdrive/shared'
 
 export {}
 
@@ -112,83 +124,11 @@ declare global {
     failed_files: number
   }
 
-  type AgentSource = {
-    id: number
-    name: string
-    kind: string
-    direction: 'push' | 'pull'
-    sync_mode: 'backup' | 'mirror'
-    run_mode: 'scan' | 'sync'
-    status: 'active' | 'paused'
-    revision: number
-    target_node_id?: number
-    ignore_rules?: string
-    checkpoint?: string
-    last_run_at?: string
-    last_success_at?: string
-    last_error?: string
-    run_requested_at?: string
-    created_at: string
-    updated_at: string
-  }
-
-  type AgentCreateSourceInput = {
-    name: string
-    kind: string
-    direction: 'push' | 'pull'
-    sync_mode: 'backup'
-    run_mode: 'scan' | 'sync'
-    target_node_id: number
-    ignore_rules?: string
-  }
-
-  type AgentUpdateSourceInput = {
-    name?: string
-    run_mode?: 'scan' | 'sync'
-    status?: 'active' | 'paused'
-    target_node_id?: number
-    ignore_rules?: string
-  }
-
-  type AgentSourceRun = {
-    id: string
-    source_id: number
-    source_revision: number
-    target_node_id?: number
-    mode: 'scan' | 'sync'
-    trigger: string
-    status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
-    scanned_items: number
-    scanned_bytes: number
-    ignored_items: number
-    ignored_bytes: number
-    new_items: number
-    new_bytes: number
-    changed_items: number
-    changed_bytes: number
-    moved_items: number
-    unchanged_items: number
-    unchanged_bytes: number
-    missing_items: number
-    missing_bytes: number
-    planned_transfer_items: number
-    planned_transfer_bytes: number
-    created_items: number
-    updated_items: number
-    skipped_items: number
-    transferred_items: number
-    transferred_bytes: number
-    failed_items: number
-    error?: string
-    started_at: string
-    finished_at?: string
-  }
-
-  type AgentSourceCredentialStatus = {
-    configured: boolean
-    key_version?: number
-    updated_at?: string
-  }
+  type AgentSource = ExternalSource
+  type AgentCreateSourceInput = CreateExternalSourceInput
+  type AgentUpdateSourceInput = UpdateExternalSourceInput
+  type AgentSourceRun = ExternalSourceRun
+  type AgentSourceCredentialStatus = ExternalSourceCredentialStatus
 
   type AgentCloudNode = Node
   type AgentCloudQuota = QuotaUsage

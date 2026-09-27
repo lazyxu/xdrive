@@ -1,7 +1,11 @@
 import type {
   AdminUser,
   AuditEvent,
+  CreateExternalSourceInput,
   CreatedFileShare,
+  ExternalSource,
+  ExternalSourceCredentialStatus,
+  ExternalSourceRun,
   FileShare,
   FileVersion,
   MeResult,
@@ -11,6 +15,13 @@ import type {
   StorageHealth,
   StorageHistory,
   StorageStats,
+  UpdateExternalSourceInput,
+} from '../../ui/shared/src'
+
+export type {
+  ExternalSource,
+  ExternalSourceCredentialStatus,
+  ExternalSourceRun,
 } from '../../ui/shared/src'
 
 export interface AuthResult {
@@ -29,66 +40,6 @@ export interface AuthSession {
   accessToken: string
   refreshToken: string
   accessExpiresAt: number
-}
-
-export interface ExternalSource {
-  id: number
-  name: string
-  kind: string
-  direction: 'push' | 'pull'
-  sync_mode: 'backup' | 'mirror'
-  run_mode: 'scan' | 'sync'
-  status: 'active' | 'paused'
-  revision: number
-  target_node_id?: number
-  ignore_rules?: string
-  checkpoint?: string
-  last_run_at?: string
-  last_success_at?: string
-  last_error?: string
-  run_requested_at?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface ExternalSourceRun {
-  id: string
-  source_id: number
-  source_revision: number
-  target_node_id?: number
-  mode: 'scan' | 'sync'
-  trigger: string
-  status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
-  scanned_items: number
-  scanned_bytes: number
-  ignored_items: number
-  ignored_bytes: number
-  new_items: number
-  new_bytes: number
-  changed_items: number
-  changed_bytes: number
-  moved_items: number
-  unchanged_items: number
-  unchanged_bytes: number
-  missing_items: number
-  missing_bytes: number
-  planned_transfer_items: number
-  planned_transfer_bytes: number
-  created_items: number
-  updated_items: number
-  skipped_items: number
-  transferred_items: number
-  transferred_bytes: number
-  failed_items: number
-  error?: string
-  started_at: string
-  finished_at?: string
-}
-
-export interface ExternalSourceCredentialStatus {
-  configured: boolean
-  key_version?: number
-  updated_at?: string
 }
 
 export interface UploadChunkState {
@@ -324,15 +275,7 @@ export class XDriveApi {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }
 
-  createSource(input: {
-    name: string
-    kind: 'synology_photos' | 'yike_photos'
-    direction: 'push' | 'pull'
-    sync_mode: 'backup'
-    run_mode: 'scan' | 'sync'
-    target_node_id: number
-    ignore_rules: string
-  }) {
+  createSource(input: CreateExternalSourceInput) {
     return this.request<ExternalSource>('/api/v1/sources', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -352,13 +295,7 @@ export class XDriveApi {
     return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`)
   }
 
-  updateSource(sourceID: number, revision: number, input: {
-    name?: string
-    run_mode?: 'scan' | 'sync'
-    status?: 'active' | 'paused'
-    target_node_id?: number
-    ignore_rules?: string
-  }) {
+  updateSource(sourceID: number, revision: number, input: UpdateExternalSourceInput) {
     return this.request<ExternalSource>(`/api/v1/sources/${sourceID}`, {
       method: 'PATCH',
       headers: { 'If-Match': `"${revision}"` },

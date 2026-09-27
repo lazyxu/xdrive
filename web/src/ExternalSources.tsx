@@ -2,19 +2,23 @@ import { useCallback, useEffect, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
+import type { XDriveApi } from './api'
+import {
+  externalSourceDefaults,
+  externalSourceKindLabel,
+  externalSourceModeLabel,
+  externalSourceRunStatusLabel,
+  formatExternalSourceTime,
+  formatSize,
+  getExternalSourceState,
+  getExternalSourceTriggerState,
+} from '../../ui/shared/src'
 import type {
   ExternalSource,
-  ExternalSourceCredentialStatus,
-  ExternalSourceRun,
-  XDriveApi,
-} from './api'
-import { formatSize } from '../../ui/shared/src'
-
-type SourceRow = {
-  source: ExternalSource
-  latestRun?: ExternalSourceRun
-  credential?: ExternalSourceCredentialStatus
-}
+  ExternalSourceRow,
+  ExternalSourceStateTone,
+  SupportedExternalSourceKind,
+} from '../../ui/shared/src'
 
 type SourceSettingsValues = {
   name: string
@@ -24,7 +28,7 @@ type SourceSettingsValues = {
   cookie?: string
 }
 type CreateSourceValues = {
-  kind: 'synology_photos' | 'yike_photos'
+  kind: SupportedExternalSourceKind
   name: string
   run_mode: 'scan' | 'sync'
   ignore_rules?: string
@@ -32,70 +36,18 @@ type CreateSourceValues = {
 }
 
 
-function sourceStatus(row: SourceRow): { status: BadgeProps['status']; text: string } {
-  const { source, latestRun, credential } = row
-  if (source.status === 'paused') return { status: 'default', text: '已暂停' }
-  if (latestRun?.status === 'running') return { status: 'processing', text: '运行中' }
-  if (source.run_requested_at) return { status: 'processing', text: '等待执行' }
-  if (source.last_error) return { status: 'error', text: '异常' }
-  if (source.kind === 'yike_photos') {
-    return credential?.configured
-      ? { status: 'success', text: 'Cookie 已配置' }
-      : { status: 'warning', text: 'Cookie 未配置' }
-  }
-  if (source.last_success_at) return { status: 'success', text: '正常' }
-  if (latestRun?.status === 'partial') return { status: 'warning', text: '部分完成' }
-  return { status: 'default', text: '尚未运行' }
+function sourceBadgeStatus(tone: ExternalSourceStateTone): BadgeProps['status'] {
+  if (tone === 'good') return 'success'
+  if (tone === 'warning') return 'warning'
+  if (tone === 'bad') return 'error'
+  if (tone === 'busy') return 'processing'
+  return 'default'
 }
 
-function formatRunTime(value?: string) {
-  if (!value) return '尚无记录'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '尚无记录'
-
-  const now = new Date()
-  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const diffDays = Math.round((day.getTime() - targetDay.getTime()) / 86_400_000)
-  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-
-  if (diffDays === 0) return `今天 ${time}`
-  if (diffDays === 1) return `昨天 ${time}`
-  return date.toLocaleString('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
-
-function sourceMode(source: ExternalSource) {
-  const direction = source.direction === 'push' ? 'Push' : 'Pull'
-  const mode = source.run_mode === 'scan' ? '仅扫描' : '同步'
-  return `${direction} · ${mode}`
-}
-
-function sourceKind(kind: string) {
-  if (kind === 'synology_photos') return '群晖 Photos'
-  if (kind === 'yike_photos') return '一刻相册'
-  return kind
-}
 function shellQuote(value: string) {
   return "'" + value.replace(/'/g, "'\\''") + "'"
 }
 
-
-function runStatusLabel(status: ExternalSourceRun['status']) {
-  const labels: Record<ExternalSourceRun['status'], string> = {
-    running: '运行中',
-    completed: '已完成',
-    partial: '部分完成',
-    failed: '失败',
-    cancelled: '已取消',
-  }
-  return labels[status]
-}
 
 export default function ExternalSourcesPanel({
   open,
@@ -114,10 +66,10 @@ export default function ExternalSourcesPanel({
   onClose: () => void
   onError: (error: unknown) => void
 }) {
-  const [rows, setRows] = useState<SourceRow[]>([])
+  const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [loading, setLoading] = useState(false)
-  const [selected, setSelected] = useState<SourceRow | null>(null)
-  const [setting, setSetting] = useState<SourceRow | null>(null)
+  const [selected, setSelected] = useState<ExternalSourceRow | null>(null)
+  const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
   const [createOpen, setCreateOpen] = useState(false)
@@ -151,20 +103,24 @@ export default function ExternalSourcesPanel({
     if (open) void load()
   }, [open, load])
   const openCreate = () => {
+    const defaults = externalSourceDefaults('synology_photos')
     createForm.setFieldsValue({
-      kind: 'synology_photos',
-      name: '群晖 Photos',
+      kind: defaults.kind,
+      name: defaults.name,
       run_mode: 'scan',
-      ignore_rules: '@eaDir/\n\\#recycle/\n',
+      ignore_rules: defaults.ignoreRules,
       cookie: '',
     })
     setCreateOpen(true)
   }
 
   const changeCreateKind = (kind: CreateSourceValues['kind']) => {
-    createForm.setFieldsValue(kind === 'synology_photos'
-      ? { name: '群晖 Photos', ignore_rules: '@eaDir/\n\\#recycle/\n', cookie: '' }
-      : { name: '一刻相册', ignore_rules: '', cookie: '' })
+    const defaults = externalSourceDefaults(kind)
+    createForm.setFieldsValue({
+      name: defaults.name,
+      ignore_rules: defaults.ignoreRules,
+      cookie: '',
+    })
   }
 
   const createSource = async (values: CreateSourceValues) => {
@@ -188,7 +144,7 @@ export default function ExternalSourcesPanel({
       created = await api.createSource({
         name: values.name.trim(),
         kind: values.kind,
-        direction: values.kind === 'synology_photos' ? 'push' : 'pull',
+        direction: externalSourceDefaults(values.kind).direction,
         sync_mode: 'backup',
         run_mode: values.run_mode,
         target_node_id: defaultTargetNodeID,
@@ -250,7 +206,7 @@ export default function ExternalSourcesPanel({
   }
 
 
-  const triggerNow = async (row: SourceRow) => {
+  const triggerNow = async (row: ExternalSourceRow) => {
     setTriggeringSourceID(row.source.id)
     try {
       await api.triggerSource(row.source.id)
@@ -265,7 +221,7 @@ export default function ExternalSourcesPanel({
     }
   }
 
-  const openSettings = (row: SourceRow) => {
+  const openSettings = (row: ExternalSourceRow) => {
     setSetting(row)
     settingsForm.setFieldsValue({
       name: row.source.name,
@@ -316,7 +272,7 @@ export default function ExternalSourcesPanel({
     }
   }
 
-  const selectedState = selected ? sourceStatus(selected) : null
+  const selectedState = selected ? getExternalSourceState(selected) : null
 
   return (
     <>
@@ -333,7 +289,8 @@ export default function ExternalSourcesPanel({
         ) : (
           <div className="external-source-list">
             {rows.map((row) => {
-              const state = sourceStatus(row)
+              const state = getExternalSourceState(row)
+              const trigger = getExternalSourceTriggerState(row)
               const timeLabel = row.source.run_mode === 'scan' ? '上次扫描' : '上次成功'
               const timeValue = row.source.run_mode === 'scan'
                 ? row.source.last_run_at
@@ -341,23 +298,17 @@ export default function ExternalSourcesPanel({
               const stats = row.latestRun
                 ? `${row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · ${formatSize(row.latestRun.scanned_bytes)}`
                 : '尚无扫描统计'
-              const running = row.latestRun?.status === 'running'
-              const credentialReady = row.source.kind !== 'yike_photos' || row.credential?.configured === true
-              const triggerReady = row.source.status === 'active' &&
-                credentialReady &&
-                !running &&
-                !row.source.run_requested_at
 
               return (
                 <Card key={row.source.id} size="small" className="external-source-card">
                   <div className="external-source-card-header">
                     <div>
                       <Typography.Title level={4} style={{ margin: 0 }}>{row.source.name}</Typography.Title>
-                      <div className="external-source-subtitle">{sourceMode(row.source)}</div>
+                      <div className="external-source-subtitle">{externalSourceModeLabel(row.source)}</div>
                     </div>
-                    <Badge status={state.status} text={state.text} />
+                    <Badge status={sourceBadgeStatus(state.tone)} text={state.label} />
                   </div>
-                  <div className="external-source-time">{timeLabel}：{formatRunTime(timeValue)}</div>
+                  <div className="external-source-time">{timeLabel}：{formatExternalSourceTime(timeValue)}</div>
                   <div className="external-source-card-meta">
                     <div className="external-source-stats">{stats}</div>
                     {row.source.last_error && (
@@ -371,18 +322,10 @@ export default function ExternalSourcesPanel({
                   <div className="external-source-actions">
                     <Space size="small">
                       <Button size="small" onClick={() => setSelected(row)}>查看</Button>
-                      <Tooltip title={
-                        row.source.run_requested_at ? '已提交扫描请求' :
-                        row.source.kind === 'yike_photos' && !row.credential?.configured ? '请先配置 Cookie' :
-                        row.source.status !== 'active' ? '来源已暂停' :
-                        running ? '来源正在运行' :
-                        row.source.kind === 'synology_photos'
-                          ? '提交请求，由群晖 source-agent 下一次任务检查执行'
-                          : '立即请求 Pull worker 扫描此来源'
-                      }>
+                      <Tooltip title={trigger.label}>
                         <Button
                           size="small"
-                          disabled={!triggerReady}
+                          disabled={!trigger.ready}
                           loading={triggeringSourceID === row.source.id}
                           onClick={() => void triggerNow(row)}
                         >
@@ -419,16 +362,16 @@ export default function ExternalSourcesPanel({
               />
             )}
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-              <Descriptions.Item label="来源类型">{sourceKind(selected.source.kind)}</Descriptions.Item>
-              <Descriptions.Item label="工作方式">{sourceMode(selected.source)}</Descriptions.Item>
+              <Descriptions.Item label="来源类型">{externalSourceKindLabel(selected.source.kind)}</Descriptions.Item>
+              <Descriptions.Item label="工作方式">{externalSourceModeLabel(selected.source)}</Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Badge status={selectedState.status} text={selectedState.text} />
+                <Badge status={sourceBadgeStatus(selectedState.tone)} text={selectedState.label} />
               </Descriptions.Item>
               <Descriptions.Item label="目标目录">
                 {selected.source.target_node_id ? `节点 #${selected.source.target_node_id}` : '未配置'}
               </Descriptions.Item>
-              <Descriptions.Item label="上次运行">{formatRunTime(selected.source.last_run_at)}</Descriptions.Item>
-              <Descriptions.Item label="上次成功">{formatRunTime(selected.source.last_success_at)}</Descriptions.Item>
+              <Descriptions.Item label="上次运行">{formatExternalSourceTime(selected.source.last_run_at)}</Descriptions.Item>
+              <Descriptions.Item label="上次成功">{formatExternalSourceTime(selected.source.last_success_at)}</Descriptions.Item>
               {selected.source.kind === 'yike_photos' && (
                 <Descriptions.Item label="Cookie">
                   {selected.credential?.configured ? '已配置' : '未配置'}
@@ -439,8 +382,8 @@ export default function ExternalSourcesPanel({
             <Divider orientation="left">最近一次运行</Divider>
             {selected.latestRun ? (
               <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="运行状态">{runStatusLabel(selected.latestRun.status)}</Descriptions.Item>
-                <Descriptions.Item label="开始时间">{formatRunTime(selected.latestRun.started_at)}</Descriptions.Item>
+                <Descriptions.Item label="运行状态">{externalSourceRunStatusLabel(selected.latestRun.status)}</Descriptions.Item>
+                <Descriptions.Item label="开始时间">{formatExternalSourceTime(selected.latestRun.started_at)}</Descriptions.Item>
                 <Descriptions.Item label="扫描">
                   {selected.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · {formatSize(selected.latestRun.scanned_bytes)}
                 </Descriptions.Item>
