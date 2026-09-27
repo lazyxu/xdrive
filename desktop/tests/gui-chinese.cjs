@@ -26,6 +26,7 @@ test('desktop GUI defaults to Chinese', () => {
     '客户端诊断',
     '客户端设置',
     '客户端更新',
+    '关闭窗口时最小化到系统托盘',
     '手动检查',
     '自动检查',
     '有更新自动下载',
@@ -45,6 +46,8 @@ test('desktop GUI defaults to Chinese', () => {
     '退出 xDrive 桌面版',
     '客户端更新',
     '检查更新',
+    '关闭 xDrive 桌面版',
+    '最小化到托盘',
     '选择 xDrive 同步文件夹',
   ]) {
     assert.ok(main.includes(text), `missing Chinese desktop system label: ${text}`)
