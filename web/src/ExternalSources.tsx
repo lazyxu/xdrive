@@ -7,12 +7,10 @@ import {
   externalSourceCardView,
   externalSourceConnectorProfile,
   externalSourceDefaults,
-  externalSourceKindLabel,
-  externalSourceModeLabel,
-  externalSourceRunStatusLabel,
+  externalSourceDetailView,
+  externalSourceRunDetailView,
   formatExternalSourceTime,
   formatSize,
-  getExternalSourceState,
 } from '../../ui/shared/src'
 import type {
   ExternalSource,
@@ -273,7 +271,8 @@ export default function ExternalSourcesPanel({
     }
   }
 
-  const selectedState = selected ? getExternalSourceState(selected) : null
+  const selectedDetail = selected ? externalSourceDetailView(selected) : null
+  const selectedRunDetail = selected?.latestRun ? externalSourceRunDetailView(selected.latestRun) : null
 
   return (
     <>
@@ -346,54 +345,46 @@ export default function ExternalSourcesPanel({
         footer={null}
         width={720}
       >
-        {selected && selectedState && (
+        {selected && selectedDetail && (
           <>
-            {selected.source.last_error && (
+            {selectedDetail.error && (
               <Alert
                 type="error"
                 showIcon
                 message="最近一次运行异常"
-                description={selected.source.last_error}
+                description={selectedDetail.error}
                 style={{ marginBottom: 16 }}
               />
             )}
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-              <Descriptions.Item label="来源类型">{externalSourceKindLabel(selected.source.kind)}</Descriptions.Item>
-              <Descriptions.Item label="工作方式">{externalSourceModeLabel(selected.source)}</Descriptions.Item>
+              <Descriptions.Item label="来源类型">{selectedDetail.kindLabel}</Descriptions.Item>
+              <Descriptions.Item label="工作方式">{selectedDetail.modeLabel}</Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Badge status={sourceBadgeStatus(selectedState.tone)} text={selectedState.label} />
+                <Badge status={sourceBadgeStatus(selectedDetail.state.tone)} text={selectedDetail.state.label} />
               </Descriptions.Item>
               <Descriptions.Item label="目标目录">
-                {selected.source.target_node_id ? `节点 #${selected.source.target_node_id}` : '未配置'}
+                {selectedDetail.targetNodeID ? `节点 #${selectedDetail.targetNodeID}` : '未配置'}
               </Descriptions.Item>
-              <Descriptions.Item label="上次运行">{formatExternalSourceTime(selected.source.last_run_at)}</Descriptions.Item>
-              <Descriptions.Item label="上次成功">{formatExternalSourceTime(selected.source.last_success_at)}</Descriptions.Item>
-              {externalSourceConnectorProfile(selected.source.kind).credential === 'cookie' && (
-                <Descriptions.Item label="Cookie">
-                  {selected.credential?.configured ? '已配置' : '未配置'}
+              <Descriptions.Item label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</Descriptions.Item>
+              <Descriptions.Item label="上次成功">{formatExternalSourceTime(selectedDetail.lastSuccessAt)}</Descriptions.Item>
+              {selectedDetail.credential && (
+                <Descriptions.Item label={selectedDetail.credential.label}>
+                  {selectedDetail.credential.configured ? '已配置' : '未配置'}
                 </Descriptions.Item>
               )}
             </Descriptions>
 
             <Divider orientation="left">最近一次运行</Divider>
-            {selected.latestRun ? (
+            {selectedRunDetail ? (
               <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="运行状态">{externalSourceRunStatusLabel(selected.latestRun.status)}</Descriptions.Item>
-                <Descriptions.Item label="开始时间">{formatExternalSourceTime(selected.latestRun.started_at)}</Descriptions.Item>
-                <Descriptions.Item label="扫描">
-                  {selected.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · {formatSize(selected.latestRun.scanned_bytes)}
-                </Descriptions.Item>
-                <Descriptions.Item label="计划传输">
-                  {selected.latestRun.planned_transfer_items.toLocaleString('zh-CN')} 项 · {formatSize(selected.latestRun.planned_transfer_bytes)}
-                </Descriptions.Item>
-                <Descriptions.Item label="新增">{selected.latestRun.new_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
-                <Descriptions.Item label="变更">{selected.latestRun.changed_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
-                <Descriptions.Item label="移动">{selected.latestRun.moved_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
-                <Descriptions.Item label="缺失">{selected.latestRun.missing_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
-                <Descriptions.Item label="实际传输">
-                  {selected.latestRun.transferred_items.toLocaleString('zh-CN')} 项 · {formatSize(selected.latestRun.transferred_bytes)}
-                </Descriptions.Item>
-                <Descriptions.Item label="失败">{selected.latestRun.failed_items.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                <Descriptions.Item label="运行状态">{selectedRunDetail.statusLabel}</Descriptions.Item>
+                <Descriptions.Item label="开始时间">{formatExternalSourceTime(selectedRunDetail.startedAt)}</Descriptions.Item>
+                {selectedRunDetail.metrics.map((metric) => (
+                  <Descriptions.Item key={metric.key} label={metric.label}>
+                    {metric.items.toLocaleString('zh-CN')} 项
+                    {metric.bytes === undefined ? '' : ` · ${formatSize(metric.bytes)}`}
+                  </Descriptions.Item>
+                ))}
               </Descriptions>
             ) : (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无运行记录" />

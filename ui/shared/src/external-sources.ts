@@ -138,6 +138,36 @@ export interface ExternalSourceCardView {
   connector: ExternalSourceConnectorProfile
 }
 
+export interface ExternalSourceDetailView {
+  connector: ExternalSourceConnectorProfile
+  kindLabel: string
+  modeLabel: string
+  state: ExternalSourceState
+  targetNodeID?: number
+  lastRunAt?: string
+  lastSuccessAt?: string
+  credential?: {
+    label: 'Cookie'
+    configured: boolean
+  }
+  revision: number
+  ignoreRules?: string
+  error?: string
+}
+
+export interface ExternalSourceRunMetric {
+  key: 'scanned' | 'planned_transfer' | 'transferred' | 'new' | 'changed' | 'moved' | 'missing' | 'failed'
+  label: string
+  items: number
+  bytes?: number
+}
+
+export interface ExternalSourceRunDetailView {
+  statusLabel: string
+  startedAt: string
+  metrics: ExternalSourceRunMetric[]
+}
+
 export function formatExternalSourceTime(value?: string, now = new Date()) {
   if (!value) return '尚无记录'
   const date = new Date(value)
@@ -263,5 +293,41 @@ export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCa
     scannedItems: latestRun?.scanned_items,
     scannedBytes: latestRun?.scanned_bytes,
     connector: externalSourceConnectorProfile(source.kind),
+  }
+}
+
+export function externalSourceDetailView(row: ExternalSourceRow): ExternalSourceDetailView {
+  const connector = externalSourceConnectorProfile(row.source.kind)
+  return {
+    connector,
+    kindLabel: connector.label,
+    modeLabel: externalSourceModeLabel(row.source),
+    state: getExternalSourceState(row),
+    targetNodeID: row.source.target_node_id,
+    lastRunAt: row.source.last_run_at,
+    lastSuccessAt: row.source.last_success_at,
+    credential: connector.credential === 'cookie'
+      ? { label: 'Cookie', configured: row.credential?.configured === true }
+      : undefined,
+    revision: row.source.revision,
+    ignoreRules: row.source.ignore_rules || undefined,
+    error: row.source.last_error || undefined,
+  }
+}
+
+export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSourceRunDetailView {
+  return {
+    statusLabel: externalSourceRunStatusLabel(run.status),
+    startedAt: run.started_at,
+    metrics: [
+      { key: 'scanned', label: '扫描', items: run.scanned_items, bytes: run.scanned_bytes },
+      { key: 'planned_transfer', label: '计划传输', items: run.planned_transfer_items, bytes: run.planned_transfer_bytes },
+      { key: 'transferred', label: '实际传输', items: run.transferred_items, bytes: run.transferred_bytes },
+      { key: 'new', label: '新增', items: run.new_items },
+      { key: 'changed', label: '变更', items: run.changed_items },
+      { key: 'moved', label: '移动', items: run.moved_items },
+      { key: 'missing', label: '缺失', items: run.missing_items },
+      { key: 'failed', label: '失败', items: run.failed_items },
+    ],
   }
 }

@@ -4,12 +4,10 @@ import {
   externalSourceCardView,
   externalSourceConnectorProfile,
   externalSourceDefaults,
-  externalSourceKindLabel,
-  externalSourceModeLabel,
-  externalSourceRunStatusLabel,
+  externalSourceDetailView,
+  externalSourceRunDetailView,
   formatBinarySize,
   formatExternalSourceTime,
-  getExternalSourceState,
 } from '@xdrive/shared'
 import type {
   ExternalSourceRow,
@@ -1203,6 +1201,8 @@ export default function App() {
               <div className="source-list">
                 {sources.map((row) => {
                   const card = externalSourceCardView(row)
+                  const detail = externalSourceDetailView(row)
+                  const runDetail = row.latestRun ? externalSourceRunDetailView(row.latestRun) : null
                   return (
                     <article className="source-card" key={row.source.id}>
                       <div className="source-card-header">
@@ -1321,44 +1321,46 @@ export default function App() {
                       {selectedSourceID === row.source.id && (
                         <div className="source-detail">
                           <div className="source-detail-grid">
-                            <div><span>来源类型</span><strong>{externalSourceKindLabel(row.source.kind)}</strong></div>
-                            <div><span>工作方式</span><strong>{externalSourceModeLabel(row.source)}</strong></div>
-                            <div><span>状态</span><strong>{card.state.label}</strong></div>
-                            <div><span>目标节点</span><strong>{row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}</strong></div>
-                            <div><span>上次运行</span><strong>{formatExternalSourceTime(row.source.last_run_at)}</strong></div>
-                            <div><span>上次成功</span><strong>{formatExternalSourceTime(row.source.last_success_at)}</strong></div>
-                            {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && (
-                              <div><span>Cookie</span><strong>{row.credential?.configured ? '已配置' : '未配置'}</strong></div>
+                            <div><span>来源类型</span><strong>{detail.kindLabel}</strong></div>
+                            <div><span>工作方式</span><strong>{detail.modeLabel}</strong></div>
+                            <div><span>状态</span><strong>{detail.state.label}</strong></div>
+                            <div><span>目标节点</span><strong>{detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置'}</strong></div>
+                            <div><span>上次运行</span><strong>{formatExternalSourceTime(detail.lastRunAt)}</strong></div>
+                            <div><span>上次成功</span><strong>{formatExternalSourceTime(detail.lastSuccessAt)}</strong></div>
+                            {detail.credential && (
+                              <div><span>{detail.credential.label}</span><strong>{detail.credential.configured ? '已配置' : '未配置'}</strong></div>
                             )}
-                            <div><span>配置修订号</span><strong>{row.source.revision}</strong></div>
+                            <div><span>配置修订号</span><strong>{detail.revision}</strong></div>
                           </div>
-                          {row.source.ignore_rules && (
+                          {detail.ignoreRules && (
                             <div className="source-ignore">
                               <span>忽略规则</span>
-                              <pre>{row.source.ignore_rules}</pre>
+                              <pre>{detail.ignoreRules}</pre>
                             </div>
                           )}
                           <div className="source-run-detail">
                             <div className="source-run-heading">
                               <strong>最近一次运行</strong>
-                              <span>{row.latestRun ? externalSourceRunStatusLabel(row.latestRun.status) : '尚无运行记录'}</span>
+                              <span>{runDetail ? runDetail.statusLabel : '尚无运行记录'}</span>
                             </div>
-                            {row.latestRun && (
+                            {runDetail && (
                               <div className="source-run-grid">
-                                <div><span>开始时间</span><strong>{formatExternalSourceTime(row.latestRun.started_at)}</strong></div>
-                                <div><span>扫描</span><strong>{row.latestRun.scanned_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.scanned_bytes)}</strong></div>
-                                <div><span>计划传输</span><strong>{row.latestRun.planned_transfer_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.planned_transfer_bytes)}</strong></div>
-                                <div><span>实际传输</span><strong>{row.latestRun.transferred_items.toLocaleString('zh-CN')} 项 · {formatBinarySize(row.latestRun.transferred_bytes)}</strong></div>
-                                <div><span>新增</span><strong>{row.latestRun.new_items.toLocaleString('zh-CN')} 项</strong></div>
-                                <div><span>变更</span><strong>{row.latestRun.changed_items.toLocaleString('zh-CN')} 项</strong></div>
-                                <div><span>移动</span><strong>{row.latestRun.moved_items.toLocaleString('zh-CN')} 项</strong></div>
-                                <div><span>缺失</span><strong>{row.latestRun.missing_items.toLocaleString('zh-CN')} 项</strong></div>
-                                <div><span>失败</span><strong>{row.latestRun.failed_items.toLocaleString('zh-CN')} 项</strong></div>
+                                <div><span>开始时间</span><strong>{formatExternalSourceTime(runDetail.startedAt)}</strong></div>
+                                {runDetail.metrics.map((metric) => (
+                                  <div key={metric.key}>
+                                    <span>{metric.label}</span>
+                                    <strong>
+                                      {metric.items.toLocaleString('zh-CN')} 项
+                                      {metric.bytes === undefined ? '' : ` · ${formatBinarySize(metric.bytes)}`}
+                                    </strong>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
                         </div>
                       )}
+
                     </article>
                   )
                 })}

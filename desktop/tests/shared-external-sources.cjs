@@ -157,6 +157,81 @@ test('shared source card view derives display data once for both UIs', () => {
   assert.equal(view.trigger.ready, true)
 })
 
+test('shared source detail view keeps connector and credential semantics aligned', () => {
+  const row = {
+    source: source({
+      kind: 'yike_photos',
+      direction: 'pull',
+      run_mode: 'sync',
+      target_node_id: 42,
+      last_run_at: '2026-09-26T17:10:00Z',
+      last_success_at: '2026-09-26T16:00:00Z',
+      ignore_rules: '*.tmp',
+      revision: 7,
+    }),
+    credential: { configured: true },
+  }
+
+  const detail = shared.externalSourceDetailView(row)
+  assert.equal(detail.kindLabel, '一刻相册')
+  assert.equal(detail.modeLabel, 'Pull · 同步')
+  assert.equal(detail.targetNodeID, 42)
+  assert.equal(detail.lastRunAt, '2026-09-26T17:10:00Z')
+  assert.equal(detail.lastSuccessAt, '2026-09-26T16:00:00Z')
+  assert.deepEqual(detail.credential, { label: 'Cookie', configured: true })
+  assert.equal(detail.revision, 7)
+  assert.equal(detail.ignoreRules, '*.tmp')
+})
+
+test('shared run detail view defines one metric order for Web and Desktop', () => {
+  const detail = shared.externalSourceRunDetailView({
+    id: 'run-1',
+    source_id: 1,
+    source_revision: 7,
+    mode: 'sync',
+    trigger: 'manual',
+    status: 'completed',
+    scanned_items: 100,
+    scanned_bytes: 1000,
+    ignored_items: 1,
+    ignored_bytes: 10,
+    new_items: 2,
+    new_bytes: 20,
+    changed_items: 3,
+    changed_bytes: 30,
+    moved_items: 4,
+    unchanged_items: 90,
+    unchanged_bytes: 900,
+    missing_items: 5,
+    missing_bytes: 50,
+    planned_transfer_items: 6,
+    planned_transfer_bytes: 60,
+    created_items: 2,
+    updated_items: 3,
+    skipped_items: 0,
+    transferred_items: 5,
+    transferred_bytes: 50,
+    failed_items: 1,
+    started_at: '2026-09-26T18:00:00Z',
+    finished_at: '2026-09-26T18:05:00Z',
+  })
+
+  assert.equal(detail.statusLabel, '已完成')
+  assert.equal(detail.startedAt, '2026-09-26T18:00:00Z')
+  assert.deepEqual(detail.metrics.map((metric) => metric.key), [
+    'scanned',
+    'planned_transfer',
+    'transferred',
+    'new',
+    'changed',
+    'moved',
+    'missing',
+    'failed',
+  ])
+  assert.deepEqual(detail.metrics[0], { key: 'scanned', label: '扫描', items: 100, bytes: 1000 })
+  assert.deepEqual(detail.metrics[7], { key: 'failed', label: '失败', items: 1 })
+})
+
 test('shared external-source defaults preserve connector-specific setup rules', () => {
   assert.deepEqual(shared.externalSourceDefaults('yike_photos'), {
     kind: 'yike_photos',
