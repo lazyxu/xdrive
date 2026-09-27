@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,8 @@ type API interface {
 	BeginSourceRun(context.Context, uint64, string, string) (client.SyncRun, error)
 	ObserveSourceItems(context.Context, uint64, string, []client.SourceObservation) ([]client.SourcePlan, error)
 	CommitSourceItems(context.Context, uint64, string, []client.SourceCommit) error
+	UpdateSourceRunSummary(context.Context, uint64, string, sourcepkg.Summary) error
+	UpdateSourceRunTransferProgress(context.Context, uint64, string, string, int64, int64) error
 	HeartbeatSourceRun(context.Context, uint64, string) error
 	FinishSourceRun(context.Context, uint64, string, client.FinishSourceRunInput) (client.SyncRun, error)
 }
@@ -121,10 +124,21 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	if err != nil {
 		return client.SyncRun{}, err
 	}
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	normalizeRunError := func(err error) error {
+		if !sourceRunCancellationRequested(err) {
+			return err
+		}
+		cancelRun()
+		return context.Canceled
+	}
 	var summary sourcepkg.Summary
 	var itemErrors []string
 	failRun := func(cause error) (client.SyncRun, error) {
-		summary.AddFailure()
+		if !errors.Is(cause, context.Canceled) {
+			summary.AddFailure()
+		}
 		status := meta.SyncRunStatusFailed
 		if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
 			status = meta.SyncRunStatusCancelled
@@ -149,6 +163,11 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			return failRun(fmt.Errorf("source sync executor is not configured"))
 		}
 		executor = NewExecutor(s.ExecutionAPI, *run.TargetNodeID)
+		executor.Progress = func(progressCtx context.Context, itemPath string, done, total int64) error {
+			return normalizeRunError(s.API.UpdateSourceRunTransferProgress(
+				progressCtx, s.SourceID, run.ID, itemPath, done, total,
+			))
+		}
 	default:
 		return failRun(fmt.Errorf("unsupported source run_mode=%q", run.Mode))
 	}
@@ -190,7 +209,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 		if time.Since(lastHeartbeat) < heartbeatInterval {
 			return nil
 		}
-		if err := s.API.HeartbeatSourceRun(ctx, s.SourceID, run.ID); err != nil {
+		if err := normalizeRunError(s.API.HeartbeatSourceRun(runCtx, s.SourceID, run.ID)); err != nil {
 			return err
 		}
 		lastHeartbeat = time.Now()
@@ -215,9 +234,9 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 				return fmt.Errorf("flush source identity state: %w", err)
 			}
 		}
-		plans, err := s.API.ObserveSourceItems(ctx, s.SourceID, run.ID, batch)
+		plans, err := s.API.ObserveSourceItems(runCtx, s.SourceID, run.ID, batch)
 		if err != nil {
-			return err
+			return normalizeRunError(err)
 		}
 		if len(plans) != len(batch) {
 			return fmt.Errorf("source plan count mismatch: got %d want %d", len(plans), len(batch))
@@ -241,10 +260,10 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			if executor == nil || !executionAction(action) {
 				continue
 			}
-			commit, err := executor.Execute(ctx, plan, item, localPaths[plan.ExternalID])
+			commit, err := executor.Execute(runCtx, plan, item, localPaths[plan.ExternalID])
 			if err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
+				if runCtx.Err() != nil {
+					return runCtx.Err()
 				}
 				summary.AddFailure()
 				appendSourceRunError(&itemErrors, item.ExternalID, item.Path, err)
@@ -253,9 +272,12 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			commits = append(commits, commit)
 		}
 		if len(commits) != 0 {
-			if err := s.commitExecutionResults(ctx, run.ID, commits, &summary, &itemErrors); err != nil {
-				return err
+			if err := s.commitExecutionResults(runCtx, run.ID, commits, &summary, &itemErrors); err != nil {
+				return normalizeRunError(err)
 			}
+		}
+		if err := normalizeRunError(s.API.UpdateSourceRunSummary(runCtx, s.SourceID, run.ID, summary)); err != nil {
+			return err
 		}
 		batch = batch[:0]
 		clear(localItems)
@@ -328,7 +350,7 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			if walkErr != nil {
 				return walkErr
 			}
-			if err := ctx.Err(); err != nil {
+			if err := runCtx.Err(); err != nil {
 				return err
 			}
 			if current == rootPath {
@@ -383,13 +405,16 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	if err := flush(); err != nil {
 		return failRun(fmt.Errorf("flush source observations: %w", err))
 	}
+	if err := normalizeRunError(s.API.UpdateSourceRunSummary(runCtx, s.SourceID, run.ID, summary)); err != nil {
+		return failRun(err)
+	}
 	if s.IdentityStore != nil {
 		if err := s.IdentityStore.Complete(); err != nil {
 			return failRun(fmt.Errorf("complete source identity state: %w", err))
 		}
 	}
 
-	finished, err := s.API.FinishSourceRun(ctx, s.SourceID, run.ID, client.FinishSourceRunInput{
+	finished, err := s.API.FinishSourceRun(runCtx, s.SourceID, run.ID, client.FinishSourceRunInput{
 		Status:            meta.SyncRunStatusCompleted,
 		CompleteInventory: true,
 		Summary:           summary,
@@ -416,12 +441,17 @@ func (s Scanner) commitExecutionResults(
 	}
 	if err := s.API.CommitSourceItems(ctx, s.SourceID, runID, commits); err == nil {
 		return nil
+	} else if sourceRunCancellationRequested(err) {
+		return context.Canceled
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	for _, commit := range commits {
 		if err := s.API.CommitSourceItems(ctx, s.SourceID, runID, []client.SourceCommit{commit}); err != nil {
+			if sourceRunCancellationRequested(err) {
+				return context.Canceled
+			}
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -430,6 +460,13 @@ func (s Scanner) commitExecutionResults(
 		}
 	}
 	return nil
+}
+
+func sourceRunCancellationRequested(err error) bool {
+	var apiErr *client.APIError
+	return errors.As(err, &apiErr) &&
+		apiErr.Status == http.StatusConflict &&
+		apiErr.Msg == "source run cancellation requested"
 }
 
 func appendSourceRunError(dst *[]string, externalID, itemPath string, err error) {

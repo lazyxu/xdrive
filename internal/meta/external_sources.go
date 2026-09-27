@@ -102,43 +102,49 @@ func (SourceItem) TableName() string { return "xd_source_items" }
 // are opaque to xDrive core so pull cursors and push reconciliation tokens can
 // evolve independently of the shared schema.
 type SyncRun struct {
-	ID                   string     `gorm:"size:36;primaryKey"`
-	SourceID             uint64     `gorm:"not null;index;index:idx_xd_sync_runs_source_started"`
-	SourceRevision       uint64     `gorm:"not null;default:1"`
-	TargetNodeID         *uint64    `gorm:"index"`
-	IgnoreRules          string     `gorm:"type:text"`
-	Mode                 string     `gorm:"size:16;not null;default:sync;index"`
-	Trigger              string     `gorm:"size:16;not null;index"`
-	Status               string     `gorm:"size:16;not null;default:running;index"`
-	CheckpointBefore     string     `gorm:"type:text"`
-	CheckpointAfter      string     `gorm:"type:text"`
-	ScannedItems         int64      `gorm:"not null;default:0"`
-	ScannedBytes         int64      `gorm:"not null;default:0"`
-	IgnoredItems         int64      `gorm:"not null;default:0"`
-	IgnoredBytes         int64      `gorm:"not null;default:0"`
-	NewItems             int64      `gorm:"not null;default:0"`
-	NewBytes             int64      `gorm:"not null;default:0"`
-	ChangedItems         int64      `gorm:"not null;default:0"`
-	ChangedBytes         int64      `gorm:"not null;default:0"`
-	MovedItems           int64      `gorm:"not null;default:0"`
-	UnchangedItems       int64      `gorm:"not null;default:0"`
-	UnchangedBytes       int64      `gorm:"not null;default:0"`
-	MissingItems         int64      `gorm:"not null;default:0"`
-	MissingBytes         int64      `gorm:"not null;default:0"`
-	PlannedTransferItems int64      `gorm:"not null;default:0"`
-	PlannedTransferBytes int64      `gorm:"not null;default:0"`
-	CreatedItems         int64      `gorm:"not null;default:0"`
-	UpdatedItems         int64      `gorm:"not null;default:0"`
-	SkippedItems         int64      `gorm:"not null;default:0"`
-	DeletedItems         int64      `gorm:"not null;default:0"`
-	TransferredItems     int64      `gorm:"not null;default:0"`
-	TransferredBytes     int64      `gorm:"not null;default:0"`
-	FailedItems          int64      `gorm:"not null;default:0"`
-	Error                string     `gorm:"type:text"`
-	StartedAt            time.Time  `gorm:"not null;index;index:idx_xd_sync_runs_source_started"`
-	FinishedAt           *time.Time `gorm:"index"`
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                     string     `gorm:"size:36;primaryKey"`
+	SourceID               uint64     `gorm:"not null;index;index:idx_xd_sync_runs_source_started"`
+	SourceRevision         uint64     `gorm:"not null;default:1"`
+	TargetNodeID           *uint64    `gorm:"index"`
+	IgnoreRules            string     `gorm:"type:text"`
+	Mode                   string     `gorm:"size:16;not null;default:sync;index"`
+	Trigger                string     `gorm:"size:16;not null;index"`
+	Status                 string     `gorm:"size:16;not null;default:running;index"`
+	CheckpointBefore       string     `gorm:"type:text"`
+	CheckpointAfter        string     `gorm:"type:text"`
+	ScannedItems           int64      `gorm:"not null;default:0"`
+	ScannedBytes           int64      `gorm:"not null;default:0"`
+	IgnoredItems           int64      `gorm:"not null;default:0"`
+	IgnoredBytes           int64      `gorm:"not null;default:0"`
+	NewItems               int64      `gorm:"not null;default:0"`
+	NewBytes               int64      `gorm:"not null;default:0"`
+	ChangedItems           int64      `gorm:"not null;default:0"`
+	ChangedBytes           int64      `gorm:"not null;default:0"`
+	MovedItems             int64      `gorm:"not null;default:0"`
+	UnchangedItems         int64      `gorm:"not null;default:0"`
+	UnchangedBytes         int64      `gorm:"not null;default:0"`
+	MissingItems           int64      `gorm:"not null;default:0"`
+	MissingBytes           int64      `gorm:"not null;default:0"`
+	PlannedTransferItems   int64      `gorm:"not null;default:0"`
+	PlannedTransferBytes   int64      `gorm:"not null;default:0"`
+	ProcessedTransferItems int64      `gorm:"not null;default:0"`
+	ProcessedTransferBytes int64      `gorm:"not null;default:0"`
+	CreatedItems           int64      `gorm:"not null;default:0"`
+	UpdatedItems           int64      `gorm:"not null;default:0"`
+	SkippedItems           int64      `gorm:"not null;default:0"`
+	DeletedItems           int64      `gorm:"not null;default:0"`
+	TransferredItems       int64      `gorm:"not null;default:0"`
+	TransferredBytes       int64      `gorm:"not null;default:0"`
+	FailedItems            int64      `gorm:"not null;default:0"`
+	ActiveTransferPath     string     `gorm:"size:2048"`
+	ActiveTransferBytes    int64      `gorm:"not null;default:0"`
+	ActiveTransferTotal    int64      `gorm:"not null;default:0"`
+	CancelRequestedAt      *time.Time `gorm:"index"`
+	Error                  string     `gorm:"type:text"`
+	StartedAt              time.Time  `gorm:"not null;index;index:idx_xd_sync_runs_source_started"`
+	FinishedAt             *time.Time `gorm:"index"`
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 
 	Source Source `gorm:"foreignKey:SourceID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }

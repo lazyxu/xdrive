@@ -42,6 +42,7 @@ type Executor struct {
 	API          ExecutionAPI
 	TargetNodeID uint64
 	Heartbeat    func(context.Context) error
+	Progress     func(context.Context, string, int64, int64) error
 	dirCache     map[string]client.Node
 }
 
@@ -82,7 +83,7 @@ func (e *Executor) Execute(ctx context.Context, plan client.SourcePlan, item sou
 		}
 		result, uploadErr := e.API.UploadStreamResumableDigestResult(
 			ctx, parent.ID, name, item.Size, metadataMD5(ref.File.MD5), resumeKey(item),
-			e.open(ref), e.progress(ctx),
+			e.open(ref), e.progress(ctx, item.Path),
 		)
 		if uploadErr != nil {
 			return client.SourceCommit{}, uploadErr
@@ -95,7 +96,7 @@ func (e *Executor) Execute(ctx context.Context, plan client.SourcePlan, item sou
 		}
 		result, uploadErr := e.API.OverwriteStreamResumableDigestResult(
 			ctx, *plan.NodeID, plan.NodeRevision, item.Size, metadataMD5(ref.File.MD5), resumeKey(item),
-			e.open(ref), e.progress(ctx),
+			e.open(ref), e.progress(ctx, item.Path),
 		)
 		if uploadErr != nil {
 			return client.SourceCommit{}, uploadErr
@@ -122,7 +123,7 @@ func (e *Executor) Execute(ctx context.Context, plan client.SourcePlan, item sou
 		}
 		result, uploadErr := e.API.OverwriteStreamResumableDigestResult(
 			ctx, node.ID, node.Revision, item.Size, metadataMD5(ref.File.MD5), resumeKey(item),
-			e.open(ref), e.progress(ctx),
+			e.open(ref), e.progress(ctx, item.Path),
 		)
 		if uploadErr != nil {
 			return client.SourceCommit{}, uploadErr
@@ -143,11 +144,15 @@ func (e *Executor) Execute(ctx context.Context, plan client.SourcePlan, item sou
 	return commit, nil
 }
 
-func (e *Executor) progress(ctx context.Context) client.UploadProgress {
-	if e.Heartbeat == nil {
+func (e *Executor) progress(ctx context.Context, path string) client.UploadProgress {
+	if e.Progress == nil && e.Heartbeat == nil {
 		return nil
 	}
-	return func(_, _ int64) {
+	return func(done, total int64) {
+		if e.Progress != nil {
+			_ = e.Progress(ctx, path, done, total)
+			return
+		}
 		_ = e.Heartbeat(ctx)
 	}
 }

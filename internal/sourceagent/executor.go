@@ -23,6 +23,7 @@ type ExecutionAPI interface {
 type Executor struct {
 	API          ExecutionAPI
 	TargetNodeID uint64
+	Progress     func(context.Context, string, int64, int64) error
 	dirCache     map[string]client.Node
 }
 
@@ -142,7 +143,7 @@ func (e *Executor) executeFile(
 		if existing != nil {
 			return client.Node{}, "", 0, fmt.Errorf("destination file %q already exists", item.Path)
 		}
-		result, err := e.API.UploadFileResumableResult(ctx, parent.ID, localPath, name, nil)
+		result, err := e.API.UploadFileResumableResult(ctx, parent.ID, localPath, name, e.progress(ctx, item.Path))
 		if err != nil {
 			return client.Node{}, "", 0, err
 		}
@@ -155,7 +156,7 @@ func (e *Executor) executeFile(
 		if plan.NodeID == nil || plan.NodeRevision == 0 {
 			return client.Node{}, "", 0, fmt.Errorf("file update is missing node identity")
 		}
-		result, err := e.API.OverwriteFileResumableResult(ctx, *plan.NodeID, plan.NodeRevision, localPath, nil)
+		result, err := e.API.OverwriteFileResumableResult(ctx, *plan.NodeID, plan.NodeRevision, localPath, e.progress(ctx, item.Path))
 		if err != nil {
 			return client.Node{}, "", 0, err
 		}
@@ -182,7 +183,7 @@ func (e *Executor) executeFile(
 		if err != nil {
 			return client.Node{}, "", 0, err
 		}
-		result, err := e.API.OverwriteFileResumableResult(ctx, node.ID, node.Revision, localPath, nil)
+		result, err := e.API.OverwriteFileResumableResult(ctx, node.ID, node.Revision, localPath, e.progress(ctx, item.Path))
 		if err != nil {
 			return client.Node{}, "", 0, err
 		}
@@ -193,6 +194,15 @@ func (e *Executor) executeFile(
 
 	default:
 		return client.Node{}, "", 0, fmt.Errorf("unsupported file action %q", action)
+	}
+}
+
+func (e *Executor) progress(ctx context.Context, itemPath string) client.UploadProgress {
+	if e.Progress == nil {
+		return nil
+	}
+	return func(done, total int64) {
+		_ = e.Progress(ctx, itemPath, done, total)
 	}
 }
 

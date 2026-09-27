@@ -17,6 +17,7 @@ import {
   InputLabel,
   ListItemIcon,
   ListItemText,
+  LinearProgress,
   Menu,
   MenuItem,
   Select,
@@ -378,9 +379,22 @@ export default function App() {
   useEffect(() => {
     if (view !== 'sources' || !agent.connected || !configured) return
     void loadSources()
-    // External Sources load when entering the page or reconnecting. Refresh is explicit.
+    // External Sources load when entering the page or reconnecting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured])
+
+  useEffect(() => {
+    if (
+      view !== 'sources' || !agent.connected || !configured ||
+      !sources.some((row) => row.latestRun?.status === 'running' || row.source.run_requested_at)
+    ) return
+    const timer = window.setInterval(() => {
+      void loadSources(true)
+    }, 1500)
+    return () => window.clearInterval(timer)
+    // Poll only while a Source is active/pending; loadSources is intentionally not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, agent.connected, configured, sources])
 
   useEffect(() => {
     if (view !== 'diagnostics' || !agent.connected || !configured) return
@@ -498,9 +512,11 @@ export default function App() {
     }
   }
 
-  const loadSources = async () => {
-    setBusy('sources')
-    setError('')
+  const loadSources = async (silent = false) => {
+    if (!silent) {
+      setBusy('sources')
+      setError('')
+    }
     try {
       if (!(agent.hello?.capabilities.includes('external-sources') ?? false)) {
         setSources([])
@@ -529,7 +545,7 @@ export default function App() {
       }))
       setSources(rows)
     } finally {
-      setBusy('')
+      if (!silent) setBusy('')
     }
   }
 
@@ -576,6 +592,17 @@ export default function App() {
       success,
     )
     if (data) await loadSources()
+  }
+
+  const cancelSourceRunNow = async (row: ExternalSourceRow) => {
+    const sourceRun = row.latestRun
+    if (!sourceRun || sourceRun.status !== 'running' || sourceRun.cancel_requested_at) return
+    const data = await run(
+      `source-cancel-${sourceRun.id}`,
+      () => window.xdriveDesktop.agent.cancelSourceRun(row.source.id, sourceRun.id),
+      '已请求停止当前运行。',
+    )
+    if (data) await loadSources(true)
   }
 
   const loadSourceTargetDirectory = async (nodeID: number, crumbs: AgentCloudCrumb[]) => {
@@ -1751,6 +1778,19 @@ export default function App() {
                             ? '正在请求…'
                             : externalSourceTriggerActionLabel(row)}
                         </button>
+                        {row.latestRun?.status === 'running' && (
+                          <MuiButton
+                            type="button"
+                            size="small"
+                            color="warning"
+                            variant="outlined"
+                            disabled={!!busy || Boolean(row.latestRun.cancel_requested_at)}
+                            onClick={() => void cancelSourceRunNow(row)}
+                            sx={{ minWidth: 'auto', px: 1.1, py: 0.2, fontSize: 11 }}
+                          >
+                            {row.latestRun.cancel_requested_at || busy === `source-cancel-${row.latestRun.id}` ? '正在取消…' : '停止'}
+                          </MuiButton>
+                        )}
                         <button
                           className="secondary"
                           type="button"
@@ -1882,6 +1922,34 @@ export default function App() {
                               <strong>最近一次运行</strong>
                               <span>{runDetail ? runDetail.statusLabel : '尚无运行记录'}</span>
                             </div>
+                            {runDetail?.progress && (
+                              <MuiBox sx={{ mb: 1.5, p: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+                                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
+                                  <Typography variant="body2">{runDetail.progress.label}</Typography>
+                                  {row.latestRun?.status === 'running' && (
+                                    <MuiButton
+                                      type="button"
+                                      size="small"
+                                      color="warning"
+                                      variant="outlined"
+                                      disabled={!!busy || runDetail.progress.cancelling}
+                                      onClick={() => void cancelSourceRunNow(row)}
+                                    >
+                                      {runDetail.progress.cancelling || busy === `source-cancel-${row.latestRun.id}` ? '正在取消…' : '停止'}
+                                    </MuiButton>
+                                  )}
+                                </Stack>
+                                <LinearProgress
+                                  variant={runDetail.progress.percent === undefined ? 'indeterminate' : 'determinate'}
+                                  value={runDetail.progress.percent ?? 0}
+                                />
+                                {runDetail.progress.activePath && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                                    当前文件：{runDetail.progress.activePath}
+                                  </Typography>
+                                )}
+                              </MuiBox>
+                            )}
                             {runDetail && (
                               <div className="source-run-grid">
                                 <div><span>开始时间</span><strong>{formatExternalSourceTime(runDetail.startedAt)}</strong></div>

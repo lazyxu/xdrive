@@ -294,6 +294,10 @@ export class XDriveApi {
     return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?limit=${bounded}`)
   }
 
+  cancelSourceRun(sourceID: number, runID: string) {
+    return this.request<ExternalSourceRun>(`/api/v1/sources/${sourceID}/runs/${encodeURIComponent(runID)}/cancel`, { method: 'POST' })
+  }
+
   sourceItems(sourceID: number, state = '', limit = 1000, offset = 0) {
     const query = new URLSearchParams()
     if (state) query.set('state', state)

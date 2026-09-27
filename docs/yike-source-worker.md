@@ -203,6 +203,8 @@ run_mode=scan|sync
 
 Sources. `scan` never opens media download streams. `sync` executes the same planner output through the Source execution-commit protocol.
 
+While a run is active, each observation batch persists the current scan/planning summary, and resumable media uploads persist the active Source path plus current/total bytes. Web/Desktop poll that SyncRun and render live progress. A user can request **停止**; xDrive stores `cancel_requested_at`, subsequent heartbeat/progress/observe/commit operations return a stable cancellation signal, and the worker cancels the run context so an active Range download/chunk upload stops promptly. The worker finalizes the run as `cancelled` with `complete_inventory=false`, so cancellation never triggers missing inference and is not counted as a file failure.
+
 For a manual one-shot scan inside the worker container:
 
 ```bash

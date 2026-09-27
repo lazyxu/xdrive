@@ -225,6 +225,77 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	if sameAfter.State != meta.SourceItemStateSynced {
 		t.Fatalf("incomplete scan changed unseen synced item to %q", sameAfter.State)
 	}
+
+	// Running progress is persisted before finish, and a cancel request is
+	// cooperative: heartbeat/worker operations stop, then finish records the
+	// run as cancelled without applying missing inference.
+	run3 := uuid.NewString()
+	begin3 := fmt.Sprintf(`{"run_id":%q,"trigger":"manual"}`, run3)
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
+		token, strings.NewReader(begin3), http.StatusCreated)
+	progressPath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/progress", source.ID, run3)
+	progressBody := `{
+		"summary":{
+			"scanned_items":7,
+			"scanned_bytes":700,
+			"new_items":2,
+			"new_bytes":300,
+			"planned_transfer_items":2,
+			"planned_transfer_bytes":300
+		},
+		"active_path":"Library/big.mp4 [99]",
+		"active_bytes":120,
+		"active_total_bytes":300
+	}`
+	request(t, router, http.MethodPost, progressPath, token, strings.NewReader(progressBody), http.StatusNoContent)
+	get3 := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/runs/%s", source.ID, run3),
+		token, nil, http.StatusOK)
+	var running syncRunDTO
+	if err := json.Unmarshal(get3.Body.Bytes(), &running); err != nil {
+		t.Fatal(err)
+	}
+	if running.ScannedItems != 7 || running.PlannedTransferBytes != 300 ||
+		running.ActiveTransferPath != "Library/big.mp4 [99]" ||
+		running.ActiveTransferBytes != 120 || running.ActiveTransferTotal != 300 {
+		t.Fatalf("unexpected live progress: %+v", running)
+	}
+
+	cancelPath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", source.ID, run3)
+	cancelledReq := request(t, router, http.MethodPost, cancelPath, token, strings.NewReader(`{}`), http.StatusAccepted)
+	var cancelRequested syncRunDTO
+	if err := json.Unmarshal(cancelledReq.Body.Bytes(), &cancelRequested); err != nil {
+		t.Fatal(err)
+	}
+	if cancelRequested.Status != meta.SyncRunStatusRunning || cancelRequested.CancelRequestedAt == nil {
+		t.Fatalf("cancel request did not remain cooperative: %+v", cancelRequested)
+	}
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/heartbeat", source.ID, run3),
+		token, strings.NewReader(`{}`), http.StatusConflict)
+	request(t, router, http.MethodPost, progressPath, token, strings.NewReader(progressBody), http.StatusConflict)
+
+	finish3 := `{
+		"status":"completed",
+		"complete_inventory":true,
+		"summary":{"scanned_items":7,"scanned_bytes":700,"planned_transfer_items":2,"planned_transfer_bytes":300}
+	}`
+	finish3Res := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", source.ID, run3),
+		token, strings.NewReader(finish3), http.StatusOK)
+	var cancelled syncRunDTO
+	if err := json.Unmarshal(finish3Res.Body.Bytes(), &cancelled); err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Status != meta.SyncRunStatusCancelled || cancelled.FinishedAt == nil ||
+		cancelled.ActiveTransferPath != "" || cancelled.ActiveTransferBytes != 0 || cancelled.ActiveTransferTotal != 0 {
+		t.Fatalf("unexpected cancelled run: %+v", cancelled)
+	}
+	var sourceAfterCancel meta.Source
+	if err := db.First(&sourceAfterCancel, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sourceAfterCancel.LastError != "" {
+		t.Fatalf("cancelled run left source error=%q", sourceAfterCancel.LastError)
+	}
+	request(t, router, http.MethodPost, cancelPath, token, strings.NewReader(`{}`), http.StatusOK)
 }
 
 func assertSourcePlans(t *testing.T, plans []sourcePlanDTO, want map[string]string) {
@@ -429,7 +500,8 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if err := db.First(&run, "id = ?", runID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if run.UpdatedItems != 1 || run.TransferredItems != 1 || run.TransferredBytes != 10 {
+	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
+		run.TransferredItems != 1 || run.TransferredBytes != 10 {
 		t.Fatalf("unexpected execution counters: %+v", run)
 	}
 
@@ -438,7 +510,8 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if err := db.First(&run, "id = ?", runID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if run.UpdatedItems != 1 || run.TransferredItems != 1 || run.TransferredBytes != 10 {
+	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
+		run.TransferredItems != 1 || run.TransferredBytes != 10 {
 		t.Fatalf("idempotent commit changed counters: %+v", run)
 	}
 
@@ -486,7 +559,8 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if err := db.First(&run, "id = ?", runID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if run.CreatedItems != 1 || run.UpdatedItems != 1 {
+	if run.CreatedItems != 1 || run.UpdatedItems != 1 ||
+		run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 {
 		t.Fatalf("unexpected create/update counters: %+v", run)
 	}
 

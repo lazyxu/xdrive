@@ -56,7 +56,7 @@ func (f *fakeExecutionAPI) RenameMove(_ context.Context, id, revision uint64, na
 	return node, nil
 }
 
-func (f *fakeExecutionAPI) UploadFileResumableResult(_ context.Context, parentID uint64, _ string, name string, _ client.UploadProgress) (client.UploadResult, error) {
+func (f *fakeExecutionAPI) UploadFileResumableResult(_ context.Context, parentID uint64, _ string, name string, progress client.UploadProgress) (client.UploadResult, error) {
 	f.uploads++
 	result := f.upload
 	if result.Node.ID == 0 {
@@ -69,16 +69,22 @@ func (f *fakeExecutionAPI) UploadFileResumableResult(_ context.Context, parentID
 	result.Node.Type = meta.NodeTypeFile
 	f.nodeTypes[result.Node.ID] = meta.NodeTypeFile
 	f.children[parentID] = append(f.children[parentID], result.Node)
+	if progress != nil {
+		progress(result.TransferredBytes, result.Node.Size)
+	}
 	return result, nil
 }
 
-func (f *fakeExecutionAPI) OverwriteFileResumableResult(_ context.Context, nodeID, revision uint64, _ string, _ client.UploadProgress) (client.UploadResult, error) {
+func (f *fakeExecutionAPI) OverwriteFileResumableResult(_ context.Context, nodeID, revision uint64, _ string, progress client.UploadProgress) (client.UploadResult, error) {
 	f.overwrites++
 	result := f.overwrite
 	if result.Node.ID == 0 {
 		result.Node = client.Node{ID: nodeID, Type: meta.NodeTypeFile, Revision: revision + 1}
 	}
 	f.nodeTypes[nodeID] = meta.NodeTypeFile
+	if progress != nil {
+		progress(result.TransferredBytes, result.Node.Size)
+	}
 	return result, nil
 }
 
@@ -95,11 +101,17 @@ func TestExecutorCreatesParentsAndReportsAcceptedTransferBytes(t *testing.T) {
 
 	api := newFakeExecutionAPI()
 	api.upload = client.UploadResult{
-		Node:             client.Node{ID: 2000, Type: meta.NodeTypeFile, Revision: 1},
+		Node:             client.Node{ID: 2000, Type: meta.NodeTypeFile, Size: 3, Revision: 1},
 		SHA256:           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		TransferredBytes: 3,
 	}
 	executor := NewExecutor(api, 100)
+	var progressPath string
+	var progressDone, progressTotal int64
+	executor.Progress = func(_ context.Context, itemPath string, done, total int64) error {
+		progressPath, progressDone, progressTotal = itemPath, done, total
+		return nil
+	}
 	commit, err := executor.Execute(context.Background(), client.SourcePlan{
 		ExternalID: "file-1", Action: string(sourcepkg.ActionCreate),
 	}, sourcepkg.DiscoveredItem{
@@ -115,6 +127,9 @@ func TestExecutorCreatesParentsAndReportsAcceptedTransferBytes(t *testing.T) {
 	if commit.NodeID != 2000 || commit.NodeRevision != 1 ||
 		commit.SHA256 != api.upload.SHA256 || !commit.Transferred || commit.TransferredBytes != 3 {
 		t.Fatalf("unexpected commit: %+v", commit)
+	}
+	if progressPath != "Personal/Trip/a.jpg" || progressDone != 3 || progressTotal != 3 {
+		t.Fatalf("progress path=%q done=%d total=%d", progressPath, progressDone, progressTotal)
 	}
 }
 

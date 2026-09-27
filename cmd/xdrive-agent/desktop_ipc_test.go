@@ -79,6 +79,9 @@ type fakeDesktopIPCController struct {
 	cloudDeleteRev            uint64
 	cloudSources              []client.Source
 	cloudSourceRuns           []client.SyncRun
+	cloudCancelledRun         client.SyncRun
+	cloudCancelSourceID       uint64
+	cloudCancelRunID          string
 	cloudSourceItems          []client.SourceItem
 	cloudSourceCredential     client.SourceCredentialStatus
 	cloudCredentialTest       client.SourceCredentialTestResult
@@ -251,6 +254,11 @@ func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Sourc
 
 func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error) {
 	return append([]client.SyncRun(nil), f.cloudSourceRuns...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCancelSourceRun(_ context.Context, sourceID uint64, runID string) (client.SyncRun, error) {
+	f.cloudCancelSourceID, f.cloudCancelRunID = sourceID, runID
+	return f.cloudCancelledRun, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error) {
@@ -672,6 +680,11 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			ID: "run-1", SourceID: 9, Mode: "scan", Trigger: "manual",
 			Status: "completed", ScannedItems: 12, ScannedBytes: 34, StartedAt: now,
 		}},
+		cloudCancelledRun: client.SyncRun{
+			ID: "run-live", SourceID: 9, Mode: "sync", Trigger: "manual",
+			Status: "running", ScannedItems: 20, PlannedTransferBytes: 100,
+			CancelRequestedAt: &now, StartedAt: now,
+		},
 		cloudSourceItems: []client.SourceItem{{
 			SourceItemID: 1, ExternalID: "yike:123:2", Kind: "file",
 			Path: "Library/fail.jpg [2]", Size: 20, State: "error", LastError: "download unavailable",
@@ -717,7 +730,19 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		}
 	}
 
-	res := desktopIPCRequest(t, handler, http.MethodPost, "/v1/source-credentials/test", `{"kind":"yike_photos","cookie":"  BDUSS=ephemeral  "}`)
+	res := desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/runs/cancel", `{"source_id":9,"run_id":"run-live"}`)
+	if res.Code != http.StatusAccepted || !strings.Contains(res.Body.String(), "\"cancel_requested_at\"") {
+		t.Fatalf("cancel source run status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudCancelSourceID != 9 || ctrl.cloudCancelRunID != "run-live" {
+		t.Fatalf("cancel source run not forwarded: source=%d run=%q", ctrl.cloudCancelSourceID, ctrl.cloudCancelRunID)
+	}
+	badCancel := desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/runs/cancel", `{"source_id":0,"run_id":""}`)
+	if badCancel.Code != http.StatusBadRequest {
+		t.Fatalf("invalid cancel status=%d body=%s", badCancel.Code, badCancel.Body.String())
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/source-credentials/test", `{"kind":"yike_photos","cookie":"  BDUSS=ephemeral  "}`)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"account_external_id\":\"12345\"") {
 		t.Fatalf("test credential status=%d body=%s", res.Code, res.Body.String())
 	}
