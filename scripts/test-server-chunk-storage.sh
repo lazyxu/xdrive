@@ -3,10 +3,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
-CONFIG_DIR="$TMP/config"
+XDRIVE_HOME="$TMP/xdrive-home"
+CONFIG_DIR="$XDRIVE_HOME/config"
+DATA_DIR="$XDRIVE_HOME/data"
+FILES_DIR="$DATA_DIR/files"
+POSTGRES_DIR="$DATA_DIR/postgres"
 OVERRIDE="$TMP/compose.override.yml"
 PORT="${XD_CHUNK_STORAGE_TEST_PORT:-32081}"
-mkdir -p "$CONFIG_DIR"
+mkdir -p "$CONFIG_DIR" "$FILES_DIR" "$POSTGRES_DIR"
 cp "$ROOT/deploy/docker-compose.yml" "$CONFIG_DIR/docker-compose.yml"
 
 cat > "$CONFIG_DIR/.env" <<EOF
@@ -18,6 +22,11 @@ XD_ALLOWED_ORIGIN=http://localhost:$PORT
 XD_MAX_UPLOAD_BYTES=21474836480
 XD_SERVER_IMAGE=xdrive/server:test
 XD_WEB_IMAGE=xdrive/web:not-used
+XD_DOCKER_MODE=rootful
+XD_SERVER_UID=65532
+XD_SERVER_GID=65532
+XD_FILES_DATA_DIR=$FILES_DIR
+XD_POSTGRES_DATA_DIR=$POSTGRES_DIR
 EOF
 
 cat > "$OVERRIDE" <<EOF
@@ -36,7 +45,15 @@ compose() {
 }
 
 cleanup() {
-  compose down -v --remove-orphans >/dev/null 2>&1 || true
+  compose down --remove-orphans >/dev/null 2>&1 || true
+  if [[ -d "$DATA_DIR" ]]; then
+    docker run --rm \
+      -v "$DATA_DIR:/xdrive-data" \
+      --entrypoint sh \
+      postgres:17-alpine \
+      -c "chown -R $(id -u):$(id -g) /xdrive-data && chmod -R u+rwX /xdrive-data" \
+      >/dev/null 2>&1 || true
+  fi
   rm -rf "$TMP"
 }
 trap cleanup EXIT INT TERM
@@ -47,7 +64,7 @@ trap cleanup EXIT INT TERM
 # service must repair this before the API starts.
 compose create postgres server >/dev/null
 docker run --rm \
-  -v xdrive_file-data:/data \
+  -v "$FILES_DIR:/data" \
   --entrypoint sh \
   postgres:17-alpine \
   -c 'chown 65532:65532 /data && chmod 0750 /data && mkdir -p /data/.xdrive-uploads && chown 0:0 /data/.xdrive-uploads && chmod 0700 /data/.xdrive-uploads'
@@ -71,7 +88,7 @@ fi
 
 staging_stat="$(
   docker run --rm \
-    -v xdrive_file-data:/data \
+    -v "$FILES_DIR:/data" \
     --entrypoint sh \
     postgres:17-alpine \
     -c 'stat -c "%u:%g:%a" /data/.xdrive-uploads'

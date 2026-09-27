@@ -826,6 +826,63 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	}
 }
 
+func TestServerHostLayoutAndRootlessContract(t *testing.T) {
+	root := repositoryRoot(t)
+	compose := readFile(t, filepath.Join(root, "deploy", "docker-compose.yml"))
+	installer := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
+	hostManager := readFile(t, filepath.Join(root, "scripts", "xdrive-server-host.sh"))
+	design := readFile(t, filepath.Join(root, "docs", "server-host-layout.md"))
+
+	requireRaw(t, "server bind-mount layout", compose,
+		`${XD_FILES_DATA_DIR:-../data/files}:/data`,
+		`${XD_POSTGRES_DATA_DIR:-../data/postgres}:/var/lib/postgresql/data`,
+		`${XD_CADDY_DATA_DIR:-../data/caddy/data}:/data`,
+		`${XD_CADDY_CONFIG_DIR:-../data/caddy/config}:/config`,
+		`user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"`,
+	)
+	for _, forbidden := range []string{
+		"postgres-data:/var/lib/postgresql/data",
+		"file-data:/data",
+		"caddy-data:/data",
+		"caddy-config:/config",
+	} {
+		if strings.Contains(compose, forbidden) {
+			t.Errorf("server Compose must not default to legacy named-volume mount %q", forbidden)
+		}
+	}
+
+	requireRaw(t, "server host-layout installer contract", installer,
+		`XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"`,
+		`CONFIG_DIR="$XDRIVE_HOME/config"`,
+		`BIN_DIR="$XDRIVE_HOME/bin"`,
+		`DATA_DIR="$XDRIVE_HOME/data"`,
+		`STATE_DIR="$XDRIVE_HOME/state"`,
+		`DOCKER_MODE="rootless"`,
+		`SERVER_GID=65532`,
+		`configure_data_path XD_FILES_DATA_DIR "$DATA_DIR/files"`,
+		`migrate_legacy_named_volumes`,
+		`legacy Docker named-volume deployment detected`,
+		`finalize_host_layout`,
+	)
+	if strings.Contains(installer, "sudo ") || strings.Contains(installer, "EUID") {
+		t.Fatal("server installer must not require sudo/root")
+	}
+
+	requireRaw(t, "server host manager layout", hostManager,
+		`XDRIVE_HOME="${XD_CONFIG_DIR:-$DEFAULT_XDRIVE_HOME}"`,
+		`CONFIG_DIR="$XDRIVE_HOME/config"`,
+		`BIN_DIR="$XDRIVE_HOME/bin"`,
+	)
+
+	requireRaw(t, "server host-layout design", design,
+		"# Server host layout and Rootless Docker contract",
+		"## Canonical host layout",
+		"## Docker modes",
+		"## Legacy layout migration",
+		"## CI contract",
+	)
+}
+
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

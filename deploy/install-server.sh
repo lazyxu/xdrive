@@ -2,10 +2,22 @@
 set -Eeuo pipefail
 umask 077
 
-CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
+XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
+CONFIG_DIR="$XDRIVE_HOME/config"
+BIN_DIR="$XDRIVE_HOME/bin"
+DATA_DIR="$XDRIVE_HOME/data"
+BACKUP_ROOT="$XDRIVE_HOME/backups"
+SNAPSHOT_BACKUP_DIR="$BACKUP_ROOT/snapshots"
+PRE_UPGRADE_BACKUP_DIR="$BACKUP_ROOT/pre-upgrade"
+PRE_RESTORE_BACKUP_DIR="$BACKUP_ROOT/pre-restore"
+LOG_DIR="$XDRIVE_HOME/logs"
+STATE_DIR="$XDRIVE_HOME/state"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 CADDY_PATH="$CONFIG_DIR/Caddyfile"
 ENV_PATH="$CONFIG_DIR/.env"
+LEGACY_ENV_PATH="$XDRIVE_HOME/.env"
+LEGACY_COMPOSE_PATH="$XDRIVE_HOME/docker-compose.yml"
+LEGACY_CADDY_PATH="$XDRIVE_HOME/Caddyfile"
 SOURCE_REF="${XD_SOURCE_REF:-@SOURCE_REF@}"
 IMAGE_TAG="${XD_IMAGE_TAG:-@IMAGE_TAG@}"
 BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
@@ -15,12 +27,12 @@ REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
 GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
 IMAGE_REGISTRY="${XD_IMAGE_REGISTRY:-@IMAGE_REGISTRY@}"
-STAGING_DIR="$CONFIG_DIR/.install-staging"
-UPGRADE_STATE_DIR="$CONFIG_DIR/.upgrade-transaction"
-INSTALL_LOCK_PATH="$CONFIG_DIR/.install.lock"
-PULL_LOG="$CONFIG_DIR/.install-pull.log"
+STAGING_DIR="$STATE_DIR/install-staging"
+UPGRADE_STATE_DIR="$STATE_DIR/upgrade-transaction"
+INSTALL_LOCK_PATH="$STATE_DIR/install.lock"
+PULL_LOG="$LOG_DIR/install-pull.log"
 HOST_BIN_DIR="${XD_HOST_BIN_DIR:-/usr/local/bin}"
-HOST_MANAGER_PATH="$CONFIG_DIR/xdrive-server"
+HOST_MANAGER_PATH="$BIN_DIR/xdrive-server"
 HOST_MANAGER_LINK="$HOST_BIN_DIR/xdrive-server"
 
 STAGE_TOTAL=9
@@ -33,6 +45,14 @@ UPGRADE_EXISTING=0
 DATABASE_ROLLBACK_REQUIRED=0
 PRE_UPGRADE_BACKUP=""
 PULL_MONITOR_PID=""
+DOCKER_MODE=""
+SERVER_UID=65532
+SERVER_GID=65532
+LEGACY_VOLUME_MIGRATION=0
+LEGACY_FILES_VOLUME=""
+LEGACY_POSTGRES_VOLUME=""
+LEGACY_CADDY_DATA_VOLUME=""
+LEGACY_CADDY_CONFIG_VOLUME=""
 
 stage() {
   STAGE_NO="$1"
@@ -94,16 +114,44 @@ trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+prepare_host_layout() {
+  mkdir -p \
+    "$XDRIVE_HOME" "$CONFIG_DIR" "$BIN_DIR" "$DATA_DIR" \
+    "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" \
+    "$LOG_DIR" "$STATE_DIR"
+  chmod 700 "$XDRIVE_HOME" "$CONFIG_DIR" "$BIN_DIR" "$DATA_DIR" "$BACKUP_ROOT" \
+    "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" \
+    "$LOG_DIR" "$STATE_DIR"
+
+  if [[ ! -f "$ENV_PATH" && -f "$LEGACY_ENV_PATH" ]]; then
+    cp -p "$LEGACY_ENV_PATH" "$ENV_PATH"
+    chmod 600 "$ENV_PATH"
+  fi
+  if [[ ! -f "$COMPOSE_PATH" && -f "$LEGACY_COMPOSE_PATH" ]]; then
+    cp -p "$LEGACY_COMPOSE_PATH" "$COMPOSE_PATH"
+    chmod 600 "$COMPOSE_PATH"
+  fi
+  if [[ ! -f "$CADDY_PATH" && -f "$LEGACY_CADDY_PATH" ]]; then
+    cp -p "$LEGACY_CADDY_PATH" "$CADDY_PATH"
+    chmod 600 "$CADDY_PATH"
+  fi
+  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
+    if [[ ! -f "$BIN_DIR/$legacy_tool" && -f "$XDRIVE_HOME/$legacy_tool" ]]; then
+      cp -p "$XDRIVE_HOME/$legacy_tool" "$BIN_DIR/$legacy_tool"
+      chmod 700 "$BIN_DIR/$legacy_tool"
+    fi
+  done
+}
+
 acquire_install_lock() {
-  mkdir -p "$CONFIG_DIR"
-  chmod 700 "$CONFIG_DIR"
+  prepare_host_layout
   command -v flock >/dev/null 2>&1 || {
     echo "xDrive server installer: flock is required for transactional install/update locking." >&2
     exit 1
   }
   exec 9>"$INSTALL_LOCK_PATH"
   if ! flock -n 9; then
-    echo "xDrive server installer: another install/update is already running for $CONFIG_DIR." >&2
+    echo "xDrive server installer: another install/update is already running for $XDRIVE_HOME." >&2
     exit 75
   fi
   printf '%s\n' "$$" 1>&9
@@ -121,7 +169,7 @@ Channels:
   master  Latest fully successful master snapshot.
   commit  Pin to a specified successfully published master commit.
 
-The selected source and channel are persisted in ~/.xd/.env and reused on later updates.
+The selected source and channel are persisted in ~/.xd/config/.env and reused on later updates.
 USAGE
 }
 
@@ -649,6 +697,18 @@ case "$(uname -m)" in
 esac
 
 need docker
+if ! docker info </dev/null >/dev/null 2>&1; then
+  echo "xDrive server installer: the current user cannot access the Docker daemon." >&2
+  echo "Use Docker Rootless Mode or grant this user Docker access; the installer does not invoke sudo." >&2
+  exit 1
+fi
+docker_security_options="$(docker info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null || true)"
+if printf '%s' "$docker_security_options" | grep -qi rootless; then
+  DOCKER_MODE="rootless"
+else
+  DOCKER_MODE="rootful"
+fi
+echo "Docker mode: $DOCKER_MODE (installer uid=$(id -u), server uid=$SERVER_UID gid=$SERVER_GID)"
 if ! docker compose version </dev/null >/dev/null 2>&1; then
   echo "xDrive server installer: Docker Compose v2 is required (docker compose)." >&2
   exit 1
@@ -720,6 +780,43 @@ env_value() {
     value="${value:1:${#value}-2}"
   fi
   printf '%s\n' "$value"
+}
+
+configure_data_path() {
+  local key="$1" default_path="$2" value
+  value="$(printenv "$key" 2>/dev/null || true)"
+  [[ -n "$value" ]] || value="$(env_value "$key")"
+  [[ -n "$value" ]] || value="$default_path"
+  case "$value" in
+    /*) ;;
+    *) echo "xDrive server installer: $key must be an absolute host path; got $value" >&2; return 1 ;;
+  esac
+  mkdir -p "$value"
+  set_env "$key" "$value"
+}
+
+rootless_low_port_allowed() {
+  local port="$1" limit rootlesskit_path caps
+  limit="$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || echo 1024)"
+  if [[ "$limit" =~ ^[0-9]+$ ]] && (( port >= limit )); then
+    return 0
+  fi
+  rootlesskit_path="$(command -v rootlesskit 2>/dev/null || true)"
+  if [[ -n "$rootlesskit_path" ]] && command -v getcap >/dev/null 2>&1; then
+    caps="$(getcap "$rootlesskit_path" 2>/dev/null || true)"
+    [[ "$caps" == *cap_net_bind_service* ]] && return 0
+  fi
+  return 1
+}
+
+validate_rootless_port() {
+  local name="$1" port="$2"
+  [[ "$DOCKER_MODE" == "rootless" ]] || return 0
+  if (( port < 1024 )) && ! rootless_low_port_allowed "$port"; then
+    echo "xDrive server installer: Rootless Docker cannot bind $name port $port with the current host policy." >&2
+    echo "Use an unprivileged port (recommended: Web 3000, HTTPS 8443) or explicitly enable low-port binding for RootlessKit." >&2
+    return 1
+  fi
 }
 
 managed_container_id() {
@@ -829,7 +926,7 @@ recover_existing_runtime_secrets() {
         cat >&2 <<'MSG'
 xDrive server installer: existing PostgreSQL credentials cannot be reconciled safely.
 The database volume was left untouched. Repair the xdrive role password or restore the
-previous POSTGRES_PASSWORD in ~/.xd/.env, then rerun the installer.
+previous POSTGRES_PASSWORD in ~/.xd/config/.env, then rerun the installer.
 MSG
         return 1
       fi
@@ -958,10 +1055,10 @@ prepare_upgrade_transaction() {
   snapshot_transaction_file ".env" "$ENV_PATH" 600
   snapshot_transaction_file "docker-compose.yml" "$COMPOSE_PATH" 600
   snapshot_transaction_file "Caddyfile" "$CADDY_PATH" 600
-  snapshot_transaction_file "server-backup.sh" "$CONFIG_DIR/server-backup.sh" 700
-  snapshot_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700
-  snapshot_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700
-  snapshot_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700
+  snapshot_transaction_file "server-backup.sh" "$BIN_DIR/server-backup.sh" 700
+  snapshot_transaction_file "server-backup-scheduled.sh" "$BIN_DIR/server-backup-scheduled.sh" 700
+  snapshot_transaction_file "server-restore.sh" "$BIN_DIR/server-restore.sh" 700
+  snapshot_transaction_file "server-verify.sh" "$BIN_DIR/server-verify.sh" 700
   # The read-only doctor and host-side xdrive-server manager are intentionally
   # outside the runtime rollback set. Once published control-plane tools are
   # installed they remain available to diagnose and retry a rolled-back
@@ -995,17 +1092,17 @@ rollback_upgrade() {
   restore_transaction_file ".env" "$ENV_PATH" 600 || ok=0
   restore_transaction_file "docker-compose.yml" "$COMPOSE_PATH" 600 || ok=0
   restore_transaction_file "Caddyfile" "$CADDY_PATH" 600 || ok=0
-  restore_transaction_file "server-backup.sh" "$CONFIG_DIR/server-backup.sh" 700 || ok=0
-  restore_transaction_file "server-backup-scheduled.sh" "$CONFIG_DIR/server-backup-scheduled.sh" 700 || ok=0
-  restore_transaction_file "server-restore.sh" "$CONFIG_DIR/server-restore.sh" 700 || ok=0
-  restore_transaction_file "server-verify.sh" "$CONFIG_DIR/server-verify.sh" 700 || ok=0
+  restore_transaction_file "server-backup.sh" "$BIN_DIR/server-backup.sh" 700 || ok=0
+  restore_transaction_file "server-backup-scheduled.sh" "$BIN_DIR/server-backup-scheduled.sh" 700 || ok=0
+  restore_transaction_file "server-restore.sh" "$BIN_DIR/server-restore.sh" 700 || ok=0
+  restore_transaction_file "server-verify.sh" "$BIN_DIR/server-verify.sh" 700 || ok=0
 
   # Keep the newly installed read-only doctor and host manager across an
   # application rollback. The runtime deployment is restored, but the control
   # plane must stay available so an operator can run
   # xdrive-server update/status/doctor without bootstrapping again.
-  if [[ -f "$CONFIG_DIR/server-doctor.sh" ]]; then
-    chmod 700 "$CONFIG_DIR/server-doctor.sh" || ok=0
+  if [[ -f "$BIN_DIR/server-doctor.sh" ]]; then
+    chmod 700 "$BIN_DIR/server-doctor.sh" || ok=0
   fi
   if [[ -f "$HOST_MANAGER_PATH" ]]; then
     chmod 700 "$HOST_MANAGER_PATH" || ok=0
@@ -1019,7 +1116,7 @@ rollback_upgrade() {
     return 1
   fi
 
-  if [[ "$DATABASE_ROLLBACK_REQUIRED" == "1" ]]; then
+  if [[ "$DATABASE_ROLLBACK_REQUIRED" == "1" && "$LEGACY_VOLUME_MIGRATION" != "1" ]]; then
     if [[ -z "$PRE_UPGRADE_BACKUP" || ! -d "$PRE_UPGRADE_BACKUP" ]]; then
       echo "[xDrive] rollback: pre-upgrade backup is unavailable; refusing to reopen the API." >&2
       ROLLBACK_RUNNING=0
@@ -1027,11 +1124,13 @@ rollback_upgrade() {
     fi
     echo "[xDrive] rollback: restoring database and blobs from $PRE_UPGRADE_BACKUP ..." >&2
     if ! "$UPGRADE_STATE_DIR/rollback-restore.sh" "$PRE_UPGRADE_BACKUP" \
-        --config-dir "$CONFIG_DIR" --yes --no-safety-backup </dev/null >&2; then
+        --config-dir "$XDRIVE_HOME" --yes --no-safety-backup </dev/null >&2; then
       echo "[xDrive] rollback: data restore failed; API remains stopped." >&2
       ROLLBACK_RUNNING=0
       return 1
     fi
+  elif [[ "$LEGACY_VOLUME_MIGRATION" == "1" ]]; then
+    echo "[xDrive] rollback: legacy named volumes were left untouched; database restore is not required." >&2
   else
     echo "[xDrive] rollback: database restore not required for this failure point." >&2
   fi
@@ -1066,10 +1165,132 @@ commit_upgrade_transaction() {
   fi
 }
 
+existing_mount_info() {
+  local service="$1" destination="$2" id type source
+  id="$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq "$service" </dev/null 2>/dev/null | head -n1 || true)"
+  [[ -n "$id" ]] || return 0
+  type="$(docker inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{.Type}}{{end}}{{end}}" </dev/null 2>/dev/null || true)"
+  if [[ "$type" == "volume" ]]; then
+    source="$(docker inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{.Name}}{{end}}{{end}}" </dev/null 2>/dev/null || true)"
+  else
+    source="$(docker inspect "$id" --format "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{.Source}}{{end}}{{end}}" </dev/null 2>/dev/null || true)"
+  fi
+  if [[ -n "$type" && -n "$source" ]]; then
+    printf '%s|%s\n' "$type" "$source"
+  fi
+  return 0
+}
+
+legacy_volume_by_label() {
+  local volume_key="$1"
+  docker volume ls -q \
+    --filter 'label=com.docker.compose.project=xdrive' \
+    --filter "label=com.docker.compose.volume=$volume_key" </dev/null 2>/dev/null | head -n1 || true
+}
+
+capture_legacy_named_volumes() {
+  local info
+  [[ "$UPGRADE_EXISTING" == "1" ]] || return 0
+
+  info="$(existing_mount_info server /data)"
+  if [[ "$info" == volume\|* ]]; then LEGACY_FILES_VOLUME="${info#volume|}"; fi
+  info="$(existing_mount_info postgres /var/lib/postgresql/data)"
+  if [[ "$info" == volume\|* ]]; then LEGACY_POSTGRES_VOLUME="${info#volume|}"; fi
+  info="$(existing_mount_info caddy /data)"
+  if [[ "$info" == volume\|* ]]; then LEGACY_CADDY_DATA_VOLUME="${info#volume|}"; fi
+  info="$(existing_mount_info caddy /config)"
+  if [[ "$info" == volume\|* ]]; then LEGACY_CADDY_CONFIG_VOLUME="${info#volume|}"; fi
+
+  [[ -n "$LEGACY_FILES_VOLUME" ]] || LEGACY_FILES_VOLUME="$(legacy_volume_by_label file-data)"
+  [[ -n "$LEGACY_POSTGRES_VOLUME" ]] || LEGACY_POSTGRES_VOLUME="$(legacy_volume_by_label postgres-data)"
+  [[ -n "$LEGACY_CADDY_DATA_VOLUME" ]] || LEGACY_CADDY_DATA_VOLUME="$(legacy_volume_by_label caddy-data)"
+  [[ -n "$LEGACY_CADDY_CONFIG_VOLUME" ]] || LEGACY_CADDY_CONFIG_VOLUME="$(legacy_volume_by_label caddy-config)"
+
+  if [[ -n "$LEGACY_FILES_VOLUME$LEGACY_POSTGRES_VOLUME$LEGACY_CADDY_DATA_VOLUME$LEGACY_CADDY_CONFIG_VOLUME" ]]; then
+    LEGACY_VOLUME_MIGRATION=1
+    echo "[xDrive] legacy Docker named-volume deployment detected; bind-mount migration will run after backup."
+  fi
+}
+
+copy_legacy_volume() {
+  local volume="$1" target="$2" helper_image="$3" label="$4"
+  [[ -n "$volume" ]] || return 0
+  mkdir -p "$target"
+  echo "[xDrive] migrating $label: $volume -> $target"
+  docker run --rm --entrypoint sh \
+    -v "$volume:/from:ro" \
+    -v "$target:/to" \
+    "$helper_image" \
+    -ec 'find /to -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; cp -a /from/. /to/'
+}
+
+migrate_legacy_named_volumes() {
+  [[ "$LEGACY_VOLUME_MIGRATION" == "1" ]] || return 0
+  local helper_image
+  helper_image="$(env_value XD_POSTGRES_IMAGE)"
+  [[ -n "$helper_image" ]] || helper_image="postgres:17-alpine"
+
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" stop postgres </dev/null >/dev/null 2>&1 || true
+
+  copy_legacy_volume "$LEGACY_FILES_VOLUME" "$(env_value XD_FILES_DATA_DIR)" "$helper_image" "file data"
+  copy_legacy_volume "$LEGACY_POSTGRES_VOLUME" "$(env_value XD_POSTGRES_DATA_DIR)" "$helper_image" "PostgreSQL data"
+  copy_legacy_volume "$LEGACY_CADDY_DATA_VOLUME" "$(env_value XD_CADDY_DATA_DIR)" "$helper_image" "Caddy data"
+  copy_legacy_volume "$LEGACY_CADDY_CONFIG_VOLUME" "$(env_value XD_CADDY_CONFIG_DIR)" "$helper_image" "Caddy config"
+
+  cat > "$STATE_DIR/legacy-volumes-retained" <<EOF
+files=$LEGACY_FILES_VOLUME
+postgres=$LEGACY_POSTGRES_VOLUME
+caddy_data=$LEGACY_CADDY_DATA_VOLUME
+caddy_config=$LEGACY_CADDY_CONFIG_VOLUME
+EOF
+  chmod 600 "$STATE_DIR/legacy-volumes-retained"
+}
+
+finalize_host_layout() {
+  local old target path pair
+  mkdir -p "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" "$LOG_DIR" "$STATE_DIR"
+
+  for old in "$BACKUP_ROOT"/xdrive-backup-*; do
+    [[ -d "$old" ]] || continue
+    target="$SNAPSHOT_BACKUP_DIR/$(basename "$old")"
+    [[ -e "$target" ]] || mv "$old" "$target"
+  done
+
+  for pair in "pre-upgrade-backups|$PRE_UPGRADE_BACKUP_DIR" "pre-restore-backups|$PRE_RESTORE_BACKUP_DIR"; do
+    old="$XDRIVE_HOME/${pair%%|*}"
+    target="${pair#*|}"
+    if [[ -d "$old" ]]; then
+      find "$old" -mindepth 1 -maxdepth 1 -exec mv -n -t "$target" -- {} + 2>/dev/null || true
+      rmdir "$old" 2>/dev/null || true
+    fi
+  done
+
+  if [[ -f "$XDRIVE_HOME/backup.log" ]]; then
+    cat "$XDRIVE_HOME/backup.log" >> "$LOG_DIR/backup.log"
+    rm -f "$XDRIVE_HOME/backup.log"
+  fi
+  if [[ -f "$XDRIVE_HOME/.install-pull.log" ]]; then
+    cat "$XDRIVE_HOME/.install-pull.log" >> "$LOG_DIR/install-pull.log"
+    rm -f "$XDRIVE_HOME/.install-pull.log"
+  fi
+
+  for path in .env docker-compose.yml Caddyfile xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
+    rm -f "$XDRIVE_HOME/$path"
+  done
+  rm -f "$XDRIVE_HOME/.install.lock" "$XDRIVE_HOME/.scheduled-backup.lock"
+  rm -rf "$XDRIVE_HOME/.scheduled-backup.lock.d" "$XDRIVE_HOME/.install-staging"
+  if [[ -d "$XDRIVE_HOME/.upgrade-transaction" && ! -e "$STATE_DIR/legacy-upgrade-transaction" ]]; then
+    mv "$XDRIVE_HOME/.upgrade-transaction" "$STATE_DIR/legacy-upgrade-transaction"
+  fi
+  printf '2\n' > "$STATE_DIR/layout-version"
+  chmod 600 "$STATE_DIR/layout-version"
+}
+
 stage 4 "prepare server configuration"
 if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] \
     && docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq server </dev/null 2>/dev/null | grep -q .; then
   UPGRADE_EXISTING=1
+  capture_legacy_named_volumes
   prepare_upgrade_transaction
 fi
 
@@ -1128,6 +1349,13 @@ ensure_env XD_HTTPS_PORT "${XD_HTTPS_PORT:-8443}"
 ensure_env ALIYUN_ACCESS_KEY_ID "${ALIYUN_ACCESS_KEY_ID:-}"
 ensure_env ALIYUN_ACCESS_KEY_SECRET "${ALIYUN_ACCESS_KEY_SECRET:-}"
 ensure_env XD_POSTGRES_IMAGE "${XD_POSTGRES_IMAGE:-postgres:17-alpine}"
+set_env XD_DOCKER_MODE "$DOCKER_MODE"
+set_env XD_SERVER_UID "$SERVER_UID"
+set_env XD_SERVER_GID "$SERVER_GID"
+configure_data_path XD_FILES_DATA_DIR "$DATA_DIR/files"
+configure_data_path XD_POSTGRES_DATA_DIR "$DATA_DIR/postgres"
+configure_data_path XD_CADDY_DATA_DIR "$DATA_DIR/caddy/data"
+configure_data_path XD_CADDY_CONFIG_DIR "$DATA_DIR/caddy/config"
 ensure_env XD_POSTGRES_MEMORY_LIMIT "${XD_POSTGRES_MEMORY_LIMIT:-1g}"
 ensure_env XD_POSTGRES_CPU_LIMIT "${XD_POSTGRES_CPU_LIMIT:-1.0}"
 ensure_env XD_POSTGRES_PIDS_LIMIT "${XD_POSTGRES_PIDS_LIMIT:-256}"
@@ -1183,7 +1411,10 @@ else
 fi
 domain="$(env_value XD_DOMAIN)"
 https_port="$(env_value XD_HTTPS_PORT)"
+web_port="$(env_value XD_WEB_PORT)"
 validate_port "$https_port"
+validate_rootless_port "Web" "$web_port"
+validate_rootless_port "HTTPS" "$https_port"
 if [[ -z "$domain" && -r /dev/tty && -w /dev/tty && "${XD_NONINTERACTIVE:-0}" != "1" ]]; then
   read -r -p "Public domain for DNS-01 HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
   domain="${input_domain:-}"
@@ -1233,8 +1464,8 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
 
   backup_output=""
   if ! backup_output="$("$STAGING_DIR/server-backup.sh" \
-      --config-dir "$CONFIG_DIR" \
-      --output-dir "$CONFIG_DIR/pre-upgrade-backups" \
+      --config-dir "$XDRIVE_HOME" \
+      --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
       --leave-server-stopped </dev/null)"; then
     echo "$backup_output" >&2
     echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
@@ -1249,6 +1480,7 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   printf '%s\n' "$PRE_UPGRADE_BACKUP" > "$UPGRADE_STATE_DIR/pre-upgrade-backup"
   chmod 600 "$UPGRADE_STATE_DIR/pre-upgrade-backup"
   echo "[xDrive] transaction armed; rollback backup: $PRE_UPGRADE_BACKUP"
+  migrate_legacy_named_volumes
 fi
 
 stage 6 "install deployment files"
@@ -1262,7 +1494,7 @@ set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
 install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
-  install -m 700 "$STAGING_DIR/$maintenance_script" "$CONFIG_DIR/$maintenance_script"
+  install -m 700 "$STAGING_DIR/$maintenance_script" "$BIN_DIR/$maintenance_script"
 done
 install -m 700 "$STAGING_DIR/xdrive-server" "$HOST_MANAGER_PATH"
 if [[ -d "$HOST_BIN_DIR" && -w "$HOST_BIN_DIR" ]]; then
@@ -1270,7 +1502,7 @@ if [[ -d "$HOST_BIN_DIR" && -w "$HOST_BIN_DIR" ]]; then
   echo "Host manager:    $HOST_MANAGER_LINK"
 else
   echo "Host manager:    $HOST_MANAGER_PATH"
-  echo "Add $CONFIG_DIR to PATH to use: xdrive-server"
+  echo "Add $BIN_DIR to PATH to use: xdrive-server"
 fi
 rm -rf "$STAGING_DIR"
 
@@ -1292,7 +1524,7 @@ compose_with_stdin() {
 
 install_backup_schedule() {
   command -v crontab >/dev/null 2>&1 || {
-    echo "Backup schedule: crontab is unavailable; run $CONFIG_DIR/server-backup-scheduled.sh from your scheduler."
+    echo "Backup schedule: crontab is unavailable; run $BIN_DIR/server-backup-scheduled.sh from your scheduler."
     return 0
   }
   local schedule existing tmp
@@ -1302,7 +1534,7 @@ install_backup_schedule() {
   tmp="$(mktemp)"
   printf '%s\n' "$existing" | grep -v '# xdrive-managed-backup$' > "$tmp" || true
   printf '%s XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
-    "$schedule" "$CONFIG_DIR" "$CONFIG_DIR/server-backup-scheduled.sh" "$CONFIG_DIR/backup.log" >> "$tmp"
+    "$schedule" "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" >> "$tmp"
   crontab "$tmp"
   rm -f "$tmp"
   echo "Backup schedule installed: $schedule; retention $(env_value XD_BACKUP_RETENTION_DAYS) days."
@@ -1313,6 +1545,9 @@ echo "xDrive env:     $ENV_PATH"
 
 if [[ "${XD_INSTALL_NO_START:-0}" == "1" ]]; then
   commit_upgrade_transaction
+  if [[ "$UPGRADE_EXISTING" != "1" ]]; then
+    finalize_host_layout
+  fi
   stage 9 "complete"
   echo "Files installed without starting containers."
   exit 0
@@ -1435,6 +1670,7 @@ fi
 
 DATABASE_ROLLBACK_REQUIRED=0
 commit_upgrade_transaction
+finalize_host_layout
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   echo "[xDrive] UPGRADE SUCCESS: $SOURCE_REF is healthy."
 else
@@ -1474,9 +1710,9 @@ if [[ -n "$(env_value XD_DOMAIN)" ]]; then
 else
   echo "xDrive is running in HTTP/private mode on port $(env_value XD_WEB_PORT)."
 fi
-echo "Backup now:      $CONFIG_DIR/server-backup.sh"
-echo "Restore:         $CONFIG_DIR/server-restore.sh"
-echo "Verify storage:  $CONFIG_DIR/server-verify.sh"
+echo "Backup now:      $BIN_DIR/server-backup.sh"
+echo "Restore:         $BIN_DIR/server-restore.sh"
+echo "Verify storage:  $BIN_DIR/server-verify.sh"
 echo "Diagnose server: xdrive-server doctor"
 echo "Update server:   xdrive-server update"
 echo "Update source:   $(env_value XD_UPDATE_SOURCE)"

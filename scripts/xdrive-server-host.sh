@@ -15,8 +15,16 @@ resolve_self() {
 }
 
 SELF_PATH="$(resolve_self)"
-DEFAULT_CONFIG_DIR="$(cd "$(dirname "$SELF_PATH")" && pwd)"
-CONFIG_DIR="${XD_CONFIG_DIR:-$DEFAULT_CONFIG_DIR}"
+SELF_DIR="$(cd "$(dirname "$SELF_PATH")" && pwd)"
+if [[ "$(basename "$SELF_DIR")" == "bin" ]]; then
+  DEFAULT_XDRIVE_HOME="$(cd "$SELF_DIR/.." && pwd)"
+else
+  # Legacy flat installs placed xdrive-server directly in ~/.xd.
+  DEFAULT_XDRIVE_HOME="$SELF_DIR"
+fi
+XDRIVE_HOME="${XD_CONFIG_DIR:-$DEFAULT_XDRIVE_HOME}"
+CONFIG_DIR="$XDRIVE_HOME/config"
+BIN_DIR="$XDRIVE_HOME/bin"
 ENV_PATH="$CONFIG_DIR/.env"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 
@@ -38,8 +46,9 @@ Usage:
   xdrive-server admin disable USER
   xdrive-server version
 
-This command runs on the Docker host. It manages ~/.xd and the xDrive
-containers; it is not the xdrive-server API daemon inside the container.
+This command runs on the Docker host. It manages the xDrive home (default
+~/.xd) and the xDrive containers; it is not the xdrive-server API daemon
+inside the container.
 EOF
 }
 
@@ -152,9 +161,9 @@ update_cmd() (
   echo "[xDrive] installer downloaded and syntax-checked."
 
   if [[ -t 0 && -r /dev/tty && -w /dev/tty ]]; then
-    if bash "$installer" "$@" </dev/tty; then status=0; else status=$?; fi
+    if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$installer" "$@" </dev/tty; then status=0; else status=$?; fi
   else
-    if XD_NONINTERACTIVE=1 bash "$installer" "$@" </dev/null; then status=0; else status=$?; fi
+    if XD_CONFIG_DIR="$XDRIVE_HOME" XD_NONINTERACTIVE=1 bash "$installer" "$@" </dev/null; then status=0; else status=$?; fi
   fi
 
   target_commit="$(env_value XD_RELEASE_COMMIT)"
@@ -168,12 +177,12 @@ update_cmd() (
 )
 
 doctor_cmd() {
-  local doctor="$CONFIG_DIR/server-doctor.sh"
+  local doctor="$BIN_DIR/server-doctor.sh"
   [[ -x "$doctor" ]] || {
     echo "xdrive-server: server doctor is not installed at $doctor" >&2
     return 1
   }
-  XD_CONFIG_DIR="$CONFIG_DIR" exec "$doctor" "$@"
+  XD_CONFIG_DIR="$XDRIVE_HOME" exec "$doctor" "$@"
 }
 
 status_cmd() {
@@ -185,12 +194,12 @@ status_cmd() {
 }
 
 backup_cmd() {
-  local script="$CONFIG_DIR/server-backup.sh" status
+  local script="$BIN_DIR/server-backup.sh" status
   [[ -x "$script" ]] || {
     echo "xdrive-server: backup tool is not installed at $script" >&2
     return 1
   }
-  if XD_CONFIG_DIR="$CONFIG_DIR" "$script" "$@"; then status=0; else status=$?; fi
+  if XD_CONFIG_DIR="$XDRIVE_HOME" "$script" "$@"; then status=0; else status=$?; fi
   if [[ "$status" -eq 0 ]]; then
     record_system_audit system.backup success
   else
@@ -200,12 +209,12 @@ backup_cmd() {
 }
 
 restore_cmd() {
-  local script="$CONFIG_DIR/server-restore.sh" status
+  local script="$BIN_DIR/server-restore.sh" status
   [[ -x "$script" ]] || {
     echo "xdrive-server: restore tool is not installed at $script" >&2
     return 1
   }
-  if XD_CONFIG_DIR="$CONFIG_DIR" "$script" "$@"; then status=0; else status=$?; fi
+  if XD_CONFIG_DIR="$XDRIVE_HOME" "$script" "$@"; then status=0; else status=$?; fi
   if [[ "$status" -eq 0 ]]; then
     record_system_audit system.restore success
   else
@@ -215,7 +224,7 @@ restore_cmd() {
 }
 
 verify_cmd() {
-  local script="$CONFIG_DIR/server-verify.sh" status repair=0 dry_run=0 arg
+  local script="$BIN_DIR/server-verify.sh" status repair=0 dry_run=0 arg
   [[ -x "$script" ]] || {
     echo "xdrive-server: verify tool is not installed at $script" >&2
     return 1
@@ -224,7 +233,7 @@ verify_cmd() {
     [[ "$arg" == "--repair" ]] && repair=1
     [[ "$arg" == "--dry-run" ]] && dry_run=1
   done
-  if XD_CONFIG_DIR="$CONFIG_DIR" "$script" "$@"; then status=0; else status=$?; fi
+  if XD_CONFIG_DIR="$XDRIVE_HOME" "$script" "$@"; then status=0; else status=$?; fi
   if [[ "$repair" == "1" && "$dry_run" != "1" ]]; then
     if [[ "$status" -eq 0 ]]; then
       record_system_audit system.storage_repair success

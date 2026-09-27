@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
+XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 COMPOSE_PATH=""
 ENV_PATH=""
 ONLINE=0
@@ -25,7 +25,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config-dir) CONFIG_DIR="$2"; shift 2 ;;
+    --config-dir) XDRIVE_HOME="$2"; shift 2 ;;
     --online) ONLINE=1; shift ;;
     --repair) REPAIR=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -43,6 +43,7 @@ if [[ "$ONLINE" == "1" && "$REPAIR" == "1" ]]; then
   exit 2
 fi
 
+CONFIG_DIR="$XDRIVE_HOME/config"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 ENV_PATH="$CONFIG_DIR/.env"
 [[ -f "$COMPOSE_PATH" ]] || { echo "missing $COMPOSE_PATH" >&2; exit 1; }

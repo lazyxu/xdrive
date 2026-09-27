@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
+XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 BACKUP_DIR=""
 ASSUME_YES=0
 SAFETY_BACKUP=1
@@ -20,7 +20,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config-dir) CONFIG_DIR="$2"; shift 2 ;;
+    --config-dir) XDRIVE_HOME="$2"; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
     --no-safety-backup) SAFETY_BACKUP=0; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -43,6 +43,7 @@ done
 [[ -n "$BACKUP_DIR" ]] || { usage >&2; exit 2; }
 [[ -d "$BACKUP_DIR" ]] || { echo "backup directory not found: $BACKUP_DIR" >&2; exit 1; }
 BACKUP_DIR="$(cd "$BACKUP_DIR" && pwd)"
+CONFIG_DIR="$XDRIVE_HOME/config"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 ENV_PATH="$CONFIG_DIR/.env"
 [[ -f "$COMPOSE_PATH" ]] || { echo "missing $COMPOSE_PATH" >&2; exit 1; }
@@ -75,7 +76,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "$SAFETY_BACKUP" == "1" ]]; then
   echo "Creating pre-restore safety backup..."
-  "$SCRIPT_DIR/server-backup.sh"     --config-dir "$CONFIG_DIR"     --output-dir "$CONFIG_DIR/pre-restore-backups"     --allow-inconsistent
+  "$SCRIPT_DIR/server-backup.sh"     --config-dir "$XDRIVE_HOME"     --output-dir "$XDRIVE_HOME/backups/pre-restore"     --allow-inconsistent
 fi
 
 compose() {

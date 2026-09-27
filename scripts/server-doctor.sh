@@ -2,9 +2,12 @@
 set -u
 umask 077
 
-CONFIG_DIR="${XD_CONFIG_DIR:-$HOME/.xd}"
-COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
-ENV_PATH="$CONFIG_DIR/.env"
+XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
+CONFIG_DIR=""
+DATA_DIR=""
+STATE_DIR=""
+COMPOSE_PATH=""
+ENV_PATH=""
 STRICT=0
 PASS_COUNT=0
 WARN_COUNT=0
@@ -22,12 +25,18 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config-dir) CONFIG_DIR="$2"; COMPOSE_PATH="$2/docker-compose.yml"; ENV_PATH="$2/.env"; shift 2 ;;
+    --config-dir) XDRIVE_HOME="$2"; shift 2 ;;
     --strict) STRICT=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+CONFIG_DIR="$XDRIVE_HOME/config"
+DATA_DIR="$XDRIVE_HOME/data"
+STATE_DIR="$XDRIVE_HOME/state"
+COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
+ENV_PATH="$CONFIG_DIR/.env"
 
 safe_path() {
   local value="$1"
@@ -125,13 +134,27 @@ volume_report() {
 
 echo "xDrive server diagnostic report"
 echo "generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "home:   $(safe_path "$XDRIVE_HOME")"
 echo "config: $(safe_path "$CONFIG_DIR")"
 echo "redaction: passwords, JWTs, access/refresh tokens, Authorization headers and home paths are redacted"
 echo
 
 if command -v docker >/dev/null 2>&1; then
   record PASS "Docker" "$(docker --version </dev/null 2>/dev/null || echo installed)"
+  if docker info </dev/null >/dev/null 2>&1; then
+    security_options="$(docker info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null || true)"
+    if printf '%s' "$security_options" | grep -qi rootless; then
+      docker_mode="rootless"
+    else
+      docker_mode="rootful"
+    fi
+    record PASS "Docker access" "user=$(id -un 2>/dev/null || id -u) uid=$(id -u) mode=$docker_mode; usable without sudo"
+  else
+    docker_mode="unknown"
+    record FAIL "Docker access" "current user cannot query the Docker daemon without sudo"
+  fi
 else
+  docker_mode="unavailable"
   record FAIL "Docker" "docker command not found"
 fi
 
@@ -175,7 +198,7 @@ fi
 record PASS "release state" "$release_detail"
 
 if command -v flock >/dev/null 2>&1; then
-  exec 8>"$CONFIG_DIR/.install.lock"
+  exec 8>"$STATE_DIR/install.lock"
   if flock -n 8; then
     record PASS "install/update lock" "free"
     flock -u 8
@@ -187,8 +210,8 @@ else
   record WARN "install/update lock" "flock command unavailable"
 fi
 
-if [[ -d "$CONFIG_DIR/.upgrade-transaction" ]]; then
-  record WARN "rollback state" "unfinished transaction state exists at $(safe_path "$CONFIG_DIR/.upgrade-transaction")"
+if [[ -d "$STATE_DIR/upgrade-transaction" ]]; then
+  record WARN "rollback state" "unfinished transaction state exists at $(safe_path "$STATE_DIR/upgrade-transaction")"
 else
   record PASS "rollback state" "no unfinished transaction"
 fi
@@ -227,11 +250,48 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
 
   volume_report postgres /var/lib/postgresql/data
   volume_report server /data
+  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+    volume_report caddy /data
+    volume_report caddy /config
+  fi
+fi
+
+files_dir="$(env_value XD_FILES_DATA_DIR)"
+postgres_dir="$(env_value XD_POSTGRES_DATA_DIR)"
+caddy_data_dir="$(env_value XD_CADDY_DATA_DIR)"
+caddy_config_dir="$(env_value XD_CADDY_CONFIG_DIR)"
+[[ -n "$files_dir" ]] || files_dir="$DATA_DIR/files"
+[[ -n "$postgres_dir" ]] || postgres_dir="$DATA_DIR/postgres"
+[[ -n "$caddy_data_dir" ]] || caddy_data_dir="$DATA_DIR/caddy/data"
+[[ -n "$caddy_config_dir" ]] || caddy_config_dir="$DATA_DIR/caddy/config"
+for data_pair in   "files|$files_dir"   "postgres|$postgres_dir"   "caddy-data|$caddy_data_dir"   "caddy-config|$caddy_config_dir"; do
+  data_name="${data_pair%%|*}"
+  data_path="${data_pair#*|}"
+  if [[ -d "$data_path" ]]; then
+    record PASS "$data_name path" "$(safe_path "$data_path")"
+  else
+    record WARN "$data_name path" "$(safe_path "$data_path") is missing"
+  fi
+done
+
+legacy_flat=0
+for legacy_path in "$XDRIVE_HOME/.env" "$XDRIVE_HOME/docker-compose.yml" "$XDRIVE_HOME/Caddyfile" "$XDRIVE_HOME/xdrive-server"; do
+  [[ -e "$legacy_path" ]] && legacy_flat=1
+done
+if [[ "$legacy_flat" == "1" ]]; then
+  record WARN "legacy host layout" "flat files remain under $(safe_path "$XDRIVE_HOME"); current layout uses config/ and bin/"
+else
+  record PASS "host layout" "canonical config/bin/data/backups/logs/state layout"
+fi
+
+legacy_volumes="$(docker volume ls -q --filter 'label=com.docker.compose.project=xdrive' 2>/dev/null | grep -E '(_|^)(postgres-data|file-data|caddy-data|caddy-config)$' || true)"
+if [[ -n "$legacy_volumes" ]]; then
+  record WARN "legacy volumes" "$(printf '%s' "$legacy_volumes" | tr '\n' ' ') retained for migration safety"
 fi
 
 if command -v df >/dev/null 2>&1; then
-  df_line="$(df -hP "$CONFIG_DIR" 2>/dev/null | tail -n1 || true)"
-  [[ -n "$df_line" ]] && record PASS "config disk" "$df_line" || record WARN "config disk" "unable to read filesystem usage"
+  df_line="$(df -hP "$XDRIVE_HOME" 2>/dev/null | tail -n1 || true)"
+  [[ -n "$df_line" ]] && record PASS "xDrive disk" "$df_line" || record WARN "xDrive disk" "unable to read filesystem usage"
   docker_root="$(docker info --format '{{.DockerRootDir}}' </dev/null 2>/dev/null || true)"
   if [[ -n "$docker_root" ]]; then
     root_line="$(df -hP "$docker_root" 2>/dev/null | tail -n1 || true)"

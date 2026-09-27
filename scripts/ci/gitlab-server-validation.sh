@@ -32,6 +32,10 @@ bash -n scripts/test-server-installer-transaction.sh
 bash scripts/test-server-installer-transaction.sh
 bash -n scripts/test-server-installer-pipe.sh
 bash scripts/test-server-installer-pipe.sh
+bash -n scripts/test-server-rootless-layout.sh
+bash scripts/test-server-rootless-layout.sh
+bash -n scripts/test-server-legacy-layout-migration.sh
+bash scripts/test-server-legacy-layout-migration.sh
 bash -n scripts/xdrive-server-host.sh
 bash -n scripts/test-xdrive-server-host.sh
 bash scripts/test-xdrive-server-host.sh
@@ -113,6 +117,13 @@ grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
 grep -q 'target_tag="edge"' .github/workflows/release.yml
 grep -q 'xdrive-caddy' .github/workflows/release.yml
 grep -q '8443}:443/tcp' deploy/docker-compose.yml
+grep -Fq '${XD_FILES_DATA_DIR:-../data/files}:/data' deploy/docker-compose.yml
+grep -Fq '${XD_POSTGRES_DATA_DIR:-../data/postgres}:/var/lib/postgresql/data' deploy/docker-compose.yml
+if grep -Eq '(postgres-data:/var/lib/postgresql/data|file-data:/data|caddy-data:/data|caddy-config:/config)' deploy/docker-compose.yml; then
+  echo "server Compose must default to host bind mounts, not named data volumes" >&2
+  exit 1
+fi
+grep -q '^# Server host layout and Rootless Docker contract' docs/server-host-layout.md
 grep -q 'dns alidns' deploy/Caddyfile
 if grep -q 'docker/build-push-action@v6' .github/workflows/release.yml; then
   echo "release must publish exact tested server images without docker rebuild" >&2

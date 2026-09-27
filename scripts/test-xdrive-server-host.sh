@@ -24,7 +24,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$TMP/bin" "$TMP/config" "$TMP/state"
+mkdir -p "$TMP/bin" "$TMP/home/config" "$TMP/home/bin" "$TMP/state"
 
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -87,7 +87,7 @@ esac
 SH
 chmod +x "$TMP/bin/docker"
 
-cat > "$TMP/config/server-backup.sh" <<'SH'
+cat > "$TMP/home/bin/server-backup.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${TEST_BACKUP_FAIL:-0}" == "1" ]]; then
@@ -96,38 +96,38 @@ if [[ "${TEST_BACKUP_FAIL:-0}" == "1" ]]; then
 fi
 echo "/tmp/mock-xdrive-backup"
 SH
-chmod +x "$TMP/config/server-backup.sh"
+chmod +x "$TMP/home/bin/server-backup.sh"
 
-cat > "$TMP/config/server-restore.sh" <<'SH'
+cat > "$TMP/home/bin/server-restore.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" > "$TEST_STATE/restore-args"
 echo "mock restore complete"
 SH
-chmod +x "$TMP/config/server-restore.sh"
+chmod +x "$TMP/home/bin/server-restore.sh"
 
-cat > "$TMP/config/server-doctor.sh" <<'SH'
+cat > "$TMP/home/bin/server-doctor.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" > "$TEST_STATE/doctor-args"
 echo "mock doctor"
 SH
-chmod +x "$TMP/config/server-doctor.sh"
+chmod +x "$TMP/home/bin/server-doctor.sh"
 
-cat > "$TMP/config/server-verify.sh" <<'SH'
+cat > "$TMP/home/bin/server-verify.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" > "$TEST_STATE/verify-args"
 echo "mock verify"
 SH
-chmod +x "$TMP/config/server-verify.sh"
+chmod +x "$TMP/home/bin/server-verify.sh"
 
-printf 'XD_DOMAIN=\n' > "$TMP/config/.env"
-printf 'name: xdrive\nservices: {}\n' > "$TMP/config/docker-compose.yml"
+printf 'XD_DOMAIN=\n' > "$TMP/home/config/.env"
+printf 'name: xdrive\nservices: {}\n' > "$TMP/home/config/docker-compose.yml"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 XD_INSTALLER_URL="https://example.invalid/install-server.sh" \
 bash "$HOST" update --channel master --commit 0123456789ab >"$TMP/update.out" 2>"$TMP/update.err"
 
@@ -143,7 +143,7 @@ grep -q -- 'audit record --action system.update --result success' "$TMP/state/au
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab.out" 2>"$TMP/update-gitlab.err"
 
 grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-url"
@@ -152,14 +152,14 @@ grep -q 'downloading host installer from gitlab' "$TMP/update-gitlab.out"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" backup >"$TMP/backup.out"
 grep -q '/tmp/mock-xdrive-backup' "$TMP/backup.out"
 grep -q -- 'audit record --action system.backup --result success' "$TMP/state/audit-calls"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" restore /tmp/backup --yes >"$TMP/restore.out"
 grep -q '^/tmp/backup --yes$' "$TMP/state/restore-args"
 grep -q -- 'audit record --action system.restore --result success' "$TMP/state/audit-calls"
@@ -168,7 +168,7 @@ set +e
 TEST_BACKUP_FAIL=1 \
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" backup >/dev/null 2>"$TMP/backup-fail.err"
 backup_fail_status=$?
 set -e
@@ -178,28 +178,28 @@ grep -q -- 'audit record --action system.backup --result failure' "$TMP/state/au
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" doctor --strict >"$TMP/doctor.out"
 grep -q '^--strict$' "$TMP/state/doctor-args"
 grep -q 'mock doctor' "$TMP/doctor.out"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" verify --repair --dry-run >"$TMP/verify.out"
 grep -q '^--repair --dry-run$' "$TMP/state/verify-args"
 grep -q 'mock verify' "$TMP/verify.out"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" verify --repair >"$TMP/verify-repair.out"
 grep -q '^--repair$' "$TMP/state/verify-args"
 grep -q -- 'audit record --action system.storage_repair --result success' "$TMP/state/audit-calls"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" admin list >"$TMP/admin-list.out"
 grep -q 'USERNAME' "$TMP/admin-list.out"
 grep -q 'LAST_LOGIN' "$TMP/admin-list.out"
@@ -212,7 +212,7 @@ fi
 printf '%s\n' 'super-secret-new-password' | \
   TEST_STATE="$TMP/state" \
   PATH="$TMP/bin:/usr/bin:/bin" \
-  XD_CONFIG_DIR="$TMP/config" \
+  XD_CONFIG_DIR="$TMP/home" \
   bash "$HOST" admin reset-password admin --password-stdin \
     >"$TMP/admin-reset.out" 2>"$TMP/admin-reset.err"
 
@@ -226,7 +226,7 @@ fi
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" admin disable user-a >"$TMP/admin-disable.out"
 grep -q 'disabled user-a' "$TMP/admin-disable.out"
 grep -q -- 'admin disable user-a' "$TMP/state/docker-args"
@@ -237,7 +237,7 @@ fi
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/config" \
+XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" admin enable admin >"$TMP/admin-enable.out"
 grep -q 'enabled admin' "$TMP/admin-enable.out"
 grep -q -- 'admin enable admin' "$TMP/state/docker-args"
@@ -249,7 +249,7 @@ fi
 before="$(wc -l < "$TMP/state/docker-args")"
 if TEST_STATE="$TMP/state" \
   PATH="$TMP/bin:/usr/bin:/bin" \
-  XD_CONFIG_DIR="$TMP/config" \
+  XD_CONFIG_DIR="$TMP/home" \
   bash "$HOST" admin reset-password admin --password exposed-secret >/dev/null 2>"$TMP/password-arg.err"; then
   echo "--password unexpectedly accepted" >&2
   exit 1

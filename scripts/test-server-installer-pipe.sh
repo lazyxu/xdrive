@@ -93,6 +93,10 @@ if [[ "$stdin_target" == pipe:* ]]; then
   exit 98
 fi
 
+if [[ "$1" == "info" ]]; then
+  if [[ "$args" == *"--format"* ]]; then echo '[]'; fi
+  exit 0
+fi
 if [[ "$1" == "compose" && "$2" == "version" ]]; then exit 0; fi
 if [[ "$1" == "inspect" ]]; then exit 1; fi
 if [[ "$1" == "ps" ]]; then exit 0; fi

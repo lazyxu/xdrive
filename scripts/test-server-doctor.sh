@@ -5,9 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCTOR="$ROOT/scripts/server-doctor.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/config" "$TMP/state"
+mkdir -p "$TMP/bin" "$TMP/home/config" "$TMP/home/data/files" "$TMP/home/data/postgres" "$TMP/home/data/caddy/data" "$TMP/home/data/caddy/config" "$TMP/home/state" "$TMP/state"
 
-cat > "$TMP/config/.env" <<'EOF'
+cat > "$TMP/home/config/.env" <<'EOF'
 POSTGRES_PASSWORD=super-secret-db-password
 XD_JWT_SECRET=super-secret-jwt
 ALIYUN_ACCESS_KEY_SECRET=super-secret-alidns
@@ -18,8 +18,8 @@ XD_DOMAIN=drive.example.test
 XD_HTTPS_PORT=8443
 XD_HTTPS_BIND=0.0.0.0
 EOF
-chmod 600 "$TMP/config/.env"
-printf 'name: xdrive\nservices: {}\n' > "$TMP/config/docker-compose.yml"
+chmod 600 "$TMP/home/config/.env"
+printf 'name: xdrive\nservices: {}\n' > "$TMP/home/config/docker-compose.yml"
 
 cat > "$TMP/bin/docker" <<'SH'
 #!/usr/bin/env bash
@@ -27,7 +27,10 @@ set -euo pipefail
 args="$*"
 if [[ "$1" == "--version" ]]; then echo "Docker version test"; exit 0; fi
 if [[ "$1" == "compose" && "$2" == "version" ]]; then echo "Docker Compose version v2.test"; exit 0; fi
-if [[ "$1" == "info" ]]; then echo "/"; exit 0; fi
+if [[ "$1" == "info" ]]; then
+  if [[ "$args" == *"--format"* ]]; then echo '[]'; else echo "/"; fi
+  exit 0
+fi
 if [[ "$1" == "inspect" ]]; then
   if [[ "$args" == *".State.Status"* ]]; then echo "running"; exit 0; fi
   if [[ "$args" == *".State.Health"* ]]; then echo "healthy"; exit 0; fi
@@ -92,11 +95,14 @@ echo '/dev/test 100G 20G 80G 20% /'
 SH
 chmod +x "$TMP/bin/df"
 
-TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/config" \
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
   bash "$DOCTOR" >"$TMP/report" 2>"$TMP/err"
 
 grep -q '^xDrive server diagnostic report' "$TMP/report"
 grep -q '\[PASS\] Docker' "$TMP/report"
+grep -q '\[PASS\] Docker access' "$TMP/report"
+grep -q 'mode=rootful; usable without sudo' "$TMP/report"
+grep -q '\[PASS\] host layout' "$TMP/report"
 grep -q '\[PASS\] PostgreSQL auth' "$TMP/report"
 grep -q '\[PASS\] CAS metadata health' "$TMP/report"
 grep -q '\[PASS\] TLS/local HTTPS' "$TMP/report"
@@ -108,12 +114,12 @@ grep -q 'https://ghcr.io/v2/' "$TMP/state/curl-args"
 grep -q 'https://pkg-containers.githubusercontent.com/' "$TMP/state/curl-args"
 grep -q 'summary:' "$TMP/report"
 
-cat >> "$TMP/config/.env" <<'EOF'
+cat >> "$TMP/home/config/.env" <<'EOF'
 XD_UPDATE_SOURCE=gitlab
 XD_IMAGE_REGISTRY=registry.gitlab.example/xuliang/xdrive
 EOF
 : > "$TMP/state/curl-args"
-TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/config" \
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
   bash "$DOCTOR" >"$TMP/report-gitlab" 2>"$TMP/err-gitlab"
 grep -q 'source=gitlab channel=master' "$TMP/report-gitlab"
 grep -q 'http://gitlab.t-fluid.com:1080/xuliang/xdrive' "$TMP/state/curl-args"
