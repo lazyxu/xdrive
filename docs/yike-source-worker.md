@@ -69,10 +69,10 @@ Use `?state=active` or `?state=missing` on the collection list when needed. Coll
 Read all persisted SourceItems for this Yike Source through:
 
 ```http
-GET /api/v1/sources/<source-id>/items?state=active&limit=200&offset=0
+GET /api/v1/sources/<source-id>/items?state=error&limit=200&offset=0
 ```
 
-The endpoint is owner-scoped. `state` is optional and accepts `active` or `missing`; pagination defaults to 200 rows, accepts `limit=1..1000`, and requires a non-negative `offset`.
+The endpoint is owner-scoped. `state` is optional and accepts `pending`, `synced`, `missing`, `ignored`, or `error`; pagination defaults to 200 rows, accepts `limit=1..1000`, and requires a non-negative `offset`. Error items include a bounded `last_error` and are automatically reconsidered on the next scan.
 
 Each item returns the normal Source identity/state fields plus connector-neutral `metadata` when available:
 
@@ -178,6 +178,8 @@ XD_SOURCE_PULL_INTERVAL=6h
 This prevents container restarts from triggering repeated full-library scans against the private Yike API. Use `xdrive-server worker --once` for an intentional immediate scan of all eligible Sources.
 
 The minimum accepted interval is one minute. The default is intentionally conservative because Yike discovery uses a private API and each run performs a full reconciliation scan.
+
+Read-only Yike API GETs use bounded transient retries: at most three attempts for transport failures, HTTP 429, and HTTP 5xx responses. Backoff starts at 500 ms; a valid `Retry-After` header is preferred when it is at most 30 seconds. Longer rate-limit delays are returned to the Source run instead of blocking the single Pull worker. Authentication failures and Yike business-level errno responses are not retried.
 
 The worker schedules active, credentialed:
 
