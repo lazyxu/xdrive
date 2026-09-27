@@ -52,12 +52,7 @@ func TestLiveYikeReadOnly(t *testing.T) {
 
 	albums, err := client.ListAlbumsPage(ctx, "")
 	if err != nil {
-		// Some accounts return the connector's known "no shared albums" business
-		// code instead of an empty list. Treat that as a valid empty inventory.
-		if !strings.Contains(err.Error(), "50820") {
-			t.Fatalf("list albums: %v", err)
-		}
-		return
+		t.Fatalf("list albums: %v", err)
 	}
 	if len(albums.List) > 0 {
 		if _, err := client.ListAlbumFilesPage(ctx, albums.List[0].AlbumID, ""); err != nil {

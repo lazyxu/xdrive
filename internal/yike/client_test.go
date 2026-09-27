@@ -623,8 +623,11 @@ func TestSharedAlbumDownloadRetriesTransientFailure(t *testing.T) {
 	}
 }
 
-func TestAPIErrnoIsReturned(t *testing.T) {
+func TestListAlbumsTreatsNoSharedAlbumsAsEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/youai/album/v1/list" {
+			t.Fatalf("path=%q", r.URL.Path)
+		}
 		_, _ = w.Write([]byte(`{"errno":50820}`))
 	}))
 	defer server.Close()
@@ -632,9 +635,18 @@ func TestAPIErrnoIsReturned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.ListAlbumsPage(context.Background(), ""); err == nil ||
-		!strings.Contains(err.Error(), "50820") {
-		t.Fatalf("unexpected errno error: %v", err)
+	albums, err := client.ListAlbumsPage(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(albums.List) != 0 || albums.HasMore != 0 || albums.Cursor != "" {
+		t.Fatalf("albums=%+v", albums)
+	}
+}
+
+func TestNoSharedAlbumsErrorRemainsTypedOutsideAlbumList(t *testing.T) {
+	if err := (apiEnvelope{Errno: 50820}).Err(); !errors.Is(err, ErrNoAlbums) {
+		t.Fatalf("error=%v want ErrNoAlbums", err)
 	}
 }
 
