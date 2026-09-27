@@ -60,7 +60,7 @@ func usage() {
 Usage:
   xdrive-source-agent login --server https://drive.example.com --username USER [--password PASS]
   xdrive-source-agent password --current CURRENT --new NEW
-  xdrive-source-agent setup --personal /volume1/homes/USER/Photos --shared /volume1/photo [--mode scan|sync] [--target Photos/Synology] [--ignore-file FILE]
+  xdrive-source-agent setup [--source-id ID] --personal /volume1/homes/USER/Photos --shared /volume1/photo [--name NAME] [--mode scan|sync] [--target Photos/Synology] [--ignore-file FILE]
   xdrive-source-agent status
   xdrive-source-agent run [--trigger scheduled|manual|reconcile] [--due] [--interval 6h]
   xdrive-source-agent logout
@@ -153,8 +153,9 @@ func passwordCmd(args []string) error {
 
 func setup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
-	name := fs.String("name", "Synology Photos", "source display name")
-	targetPath := fs.String("target", "Photos/Synology", "xDrive target directory path")
+	sourceID := fs.Uint64("source-id", 0, "bind to an existing xDrive Source id")
+	name := fs.String("name", "", "source display name (existing source name is preserved when omitted)")
+	targetPath := fs.String("target", "", "xDrive target directory path (existing source target is preserved when omitted)")
 	personal := fs.String("personal", "", "Synology Photos Personal Space filesystem root")
 	shared := fs.String("shared", "", "Synology Photos Shared Space filesystem root")
 	ignoreFile := fs.String("ignore-file", "", "gitignore-style source ignore rules file")
@@ -192,39 +193,22 @@ func setup(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	target, err := ensureRemoteDir(ctx, cli, *targetPath)
+	remote, err := resolveSetupSource(ctx, cli, cfg.SourceID, *sourceID, *name)
 	if err != nil {
 		return err
 	}
+	if remote.ID != 0 && (remote.Kind != sourceagent.SynologyKind || remote.Direction != meta.SourceDirectionPush) {
+		return fmt.Errorf("source %d is not a Synology Photos push source", remote.ID)
+	}
+
 	rules, err := loadIgnoreRules(*ignoreFile)
 	if err != nil {
 		return err
 	}
-
-	var remote client.Source
-	if cfg.SourceID != 0 {
-		remote, err = cli.Source(ctx, cfg.SourceID)
-		if err != nil && !isNotFound(err) {
-			return err
-		}
-	}
-	if remote.ID == 0 {
-		sources, listErr := cli.Sources(ctx)
-		if listErr != nil {
-			return listErr
-		}
-		for _, candidate := range sources {
-			if strings.EqualFold(candidate.Name, strings.TrimSpace(*name)) &&
-				candidate.Kind == sourceagent.SynologyKind &&
-				candidate.Direction == meta.SourceDirectionPush {
-				remote = candidate
-				break
-			}
-		}
-	}
 	if remote.ID != 0 && strings.TrimSpace(*ignoreFile) == "" {
 		rules = remote.IgnoreRules
 	}
+
 	effectiveMode := *runMode
 	if effectiveMode == "" {
 		effectiveMode = meta.SourceRunModeScan
@@ -233,23 +217,28 @@ func setup(args []string) error {
 		}
 	}
 
+	sourceName := setupSourceName(remote, *name)
+	targetID, targetValue := setupTarget(remote, *targetPath)
+	if targetID == 0 {
+		target, targetErr := ensureRemoteDir(ctx, cli, targetValue)
+		if targetErr != nil {
+			return targetErr
+		}
+		targetID = target.ID
+	}
+
 	if remote.ID == 0 {
 		remote, err = cli.CreateSource(ctx, client.CreateSourceInput{
-			Name: strings.TrimSpace(*name), Kind: sourceagent.SynologyKind,
+			Name: sourceName, Kind: sourceagent.SynologyKind,
 			Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
-			RunMode: effectiveMode, TargetNodeID: target.ID, IgnoreRules: rules,
+			RunMode: effectiveMode, TargetNodeID: targetID, IgnoreRules: rules,
 		})
 		if err != nil {
 			return err
 		}
 	} else {
-		if remote.Kind != sourceagent.SynologyKind || remote.Direction != meta.SourceDirectionPush {
-			return fmt.Errorf("source %d is not a Synology Photos push source", remote.ID)
-		}
 		mode := effectiveMode
 		active := meta.SourceStatusActive
-		sourceName := strings.TrimSpace(*name)
-		targetID := target.ID
 		remote, err = cli.UpdateSource(ctx, remote.ID, remote.Revision, client.UpdateSourceInput{
 			Name: &sourceName, RunMode: &mode, Status: &active,
 			TargetNodeID: &targetID, IgnoreRules: &rules,
@@ -269,7 +258,7 @@ func setup(args []string) error {
 	if err := sourceagentconfig.Save(cfg); err != nil {
 		return err
 	}
-	fmt.Printf("source: %s (%d)\nmode: %s\ntarget node: %d\n", remote.Name, remote.ID, remote.RunMode, target.ID)
+	fmt.Printf("source: %s (%d)\nmode: %s\ntarget node: %d\n", remote.Name, remote.ID, remote.RunMode, targetID)
 	if cfg.PersonalRoot != "" {
 		fmt.Printf("personal: %s\n", cfg.PersonalRoot)
 	}
@@ -278,6 +267,64 @@ func setup(args []string) error {
 	}
 	fmt.Println("setup complete; use xdrive-source-agent run from DSM Task Scheduler")
 	return nil
+}
+
+type setupSourceAPI interface {
+	Source(context.Context, uint64) (client.Source, error)
+	Sources(context.Context) ([]client.Source, error)
+}
+
+func resolveSetupSource(ctx context.Context, api setupSourceAPI, configuredID, requestedID uint64, requestedName string) (client.Source, error) {
+	preferredID := requestedID
+	if preferredID == 0 {
+		preferredID = configuredID
+	}
+	if preferredID != 0 {
+		remote, err := api.Source(ctx, preferredID)
+		if err == nil {
+			return remote, nil
+		}
+		if requestedID != 0 || !isNotFound(err) {
+			return client.Source{}, err
+		}
+	}
+
+	lookupName := strings.TrimSpace(requestedName)
+	if lookupName == "" {
+		lookupName = "Synology Photos"
+	}
+	sources, err := api.Sources(ctx)
+	if err != nil {
+		return client.Source{}, err
+	}
+	for _, candidate := range sources {
+		if strings.EqualFold(candidate.Name, lookupName) &&
+			candidate.Kind == sourceagent.SynologyKind &&
+			candidate.Direction == meta.SourceDirectionPush {
+			return candidate, nil
+		}
+	}
+	return client.Source{}, nil
+}
+
+func setupSourceName(remote client.Source, requestedName string) string {
+	if value := strings.TrimSpace(requestedName); value != "" {
+		return value
+	}
+	if remote.ID != 0 && strings.TrimSpace(remote.Name) != "" {
+		return strings.TrimSpace(remote.Name)
+	}
+	return "Synology Photos"
+}
+
+func setupTarget(remote client.Source, requestedTarget string) (uint64, string) {
+	if value := strings.TrimSpace(requestedTarget); value != "" {
+		return 0, value
+	}
+	if remote.ID != 0 && remote.TargetNodeID != nil && *remote.TargetNodeID != 0 {
+		return *remote.TargetNodeID, ""
+	}
+	return 0, "Photos/Synology"
 }
 
 func status() error {
