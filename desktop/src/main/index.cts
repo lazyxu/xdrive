@@ -17,6 +17,12 @@ import {
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
+import {
+  desktopShortcutActionFromArgs,
+  desktopShortcutShowsWindow,
+  windowsUserTasks,
+  type DesktopShortcutAction,
+} from './desktop_shortcuts.cjs'
 import { trayStatusIconBase64, trayStatusKind } from './tray_status.cjs'
 import {
   defaultDesktopPreferences,
@@ -84,7 +90,9 @@ let agentUpdateState: AgentUpdateState | null = null
 let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
 let updateMonitor: AbortController | null = null
-const backgroundLaunch = process.argv.includes('--background')
+const startupDesktopAction = desktopShortcutActionFromArgs(process.argv)
+const backgroundLaunch = process.argv.includes('--background') ||
+  (startupDesktopAction !== null && !desktopShortcutShowsWindow(startupDesktopAction))
 const desktopPreferencesName = 'desktop-settings.json'
 
 async function loadDesktopPreferences(): Promise<DesktopPreferences> {
@@ -242,6 +250,31 @@ function showDesktopView(view: DesktopViewTarget) {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoading()) return
   mainWindow.webContents.send('desktop:navigate', view)
   pendingDesktopView = null
+}
+
+async function performDesktopShortcutAction(action: DesktopShortcutAction) {
+  if (action === 'transfers' || action === 'settings') {
+    showDesktopView(action)
+    return
+  }
+
+  const result = await runAgentAction(async () => {
+    await requireAgentLifecycle().ensureRunning()
+    if (action === 'open-folder') return requireAgentClient().openFolder()
+    return requireAgentClient().syncNow()
+  }, action === 'sync-now')
+
+  if (!result.ok) {
+    showDesktopView('overview')
+    showDesktopNotification('xDrive', result.error.message, 'overview')
+  }
+}
+
+function registerWindowsUserTasks() {
+  if (process.platform !== 'win32' || !app.isPackaged) return
+  if (!app.setUserTasks(windowsUserTasks(process.execPath))) {
+    console.error('failed to register Windows taskbar user tasks')
+  }
 }
 
 function updateTaskbarProgress() {
@@ -1165,7 +1198,12 @@ const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
+    const action = desktopShortcutActionFromArgs(commandLine)
+    if (action) {
+      void app.whenReady().then(() => performDesktopShortcutAction(action))
+      return
+    }
     if (mainWindow) showMainWindow()
     else void app.whenReady().then(showMainWindow)
   })
@@ -1178,6 +1216,7 @@ if (!primaryInstance) {
   void app.whenReady().then(async () => {
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
     Menu.setApplicationMenu(null)
+    registerWindowsUserTasks()
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
 
     desktopPreferences = await loadDesktopPreferences()
@@ -1193,6 +1232,7 @@ if (!primaryInstance) {
     startAgentMonitor()
     startTransferMonitor()
     startUpdateMonitor()
+    if (startupDesktopAction) await performDesktopShortcutAction(startupDesktopAction)
   })
   app.on('activate', () => {
     if (mainWindow) showMainWindow()
