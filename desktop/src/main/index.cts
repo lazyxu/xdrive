@@ -15,6 +15,7 @@ import {
 } from 'electron'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
+import { desktopTaskbarProgress } from './taskbar_progress.cjs'
 import {
   AgentIPCClient,
   AgentIPCError,
@@ -46,6 +47,8 @@ import {
 
 const TRAY_ICON_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA20lEQVR42uWX4RGDIAyFNTPYDdrJ2rHsZHYD3UF/9Y6zCbxAQrwrfw35Hgk8ZBj+fYy5j/fnuluBPu/bCAuwBJeEUE84l596wjkORW9C6r36M09dgWWeTGKqWvBNnAMgMWoByzz9JOQAXExJCCTg8dqKpZZA0lx1C0qJaudQa0KpzKjg6/iAZVk17aqqQA6g3StVAhAfcBMQ6oThm1A6btLxNBWg7S06h1oSpStH7LrpLjgDOCAXY3YXpADEB9ys2M0Jpf9279/za/lAryqkHEKfUF4vo/C3Yfg4ANVHcjg82WLtAAAAAElFTkSuQmCC'
 
+type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+
 type AgentConnectionState = {
   connected: boolean
   hello?: AgentHello
@@ -58,6 +61,7 @@ type DesktopResult<T> =
   | { ok: false; error: { code: string; message: string; status?: number } }
 
 let mainWindow: BrowserWindow | null = null
+let pendingDesktopView: DesktopViewTarget | null = null
 let tray: Tray | null = null
 let quitting = false
 let agentClient: AgentIPCClient | null = null
@@ -151,6 +155,24 @@ function showMainWindow() {
   mainWindow.focus()
 }
 
+function showDesktopView(view: DesktopViewTarget) {
+  pendingDesktopView = view
+  showMainWindow()
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoading()) return
+  mainWindow.webContents.send('desktop:navigate', view)
+  pendingDesktopView = null
+}
+
+function updateTaskbarProgress() {
+  if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return
+  const progress = desktopTaskbarProgress(agentUpdateState, agentTransfers, agentState.status)
+  if (!progress) {
+    mainWindow.setProgressBar(-1)
+    return
+  }
+  mainWindow.setProgressBar(progress.value, { mode: progress.mode })
+}
+
 function createMainWindow(showOnReady = true) {
   const win = new BrowserWindow({
     width: 1120,
@@ -192,7 +214,14 @@ function createMainWindow(showOnReady = true) {
   win.once('ready-to-show', () => {
     if (showOnReady) win.show()
   })
-  win.webContents.once('did-finish-load', () => win.webContents.send('agent:state', agentState))
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.send('agent:state', agentState)
+    if (pendingDesktopView) {
+      win.webContents.send('desktop:navigate', pendingDesktopView)
+      pendingDesktopView = null
+    }
+    updateTaskbarProgress()
+  })
 }
 
 function statusLabel() {
@@ -275,22 +304,47 @@ function createTray() {
   rebuildTrayMenu()
 }
 
+function showDesktopNotification(title: string, body: string, view?: DesktopViewTarget) {
+  if (!Notification.isSupported()) return
+  const notification = new Notification({ title, body })
+  notification.on('click', () => {
+    if (view) showDesktopView(view)
+    else showMainWindow()
+  })
+  notification.show()
+}
+
 function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnectionState) {
-  if (!previous.connected || !next.connected || !previous.status || !next.status || !Notification.isSupported()) return
+  if (!previous.connected || !next.connected || !previous.status || !next.status) return
 
   const before = previous.status
   const after = next.status
   if (after.conflict_count > before.conflict_count) {
-    new Notification({
-      title: 'xDrive 冲突',
-      body: `${after.conflict_count} 个未解决冲突需要处理。`,
-    }).show()
+    showDesktopNotification('xDrive 冲突', `${after.conflict_count} 个未解决冲突需要处理。`, 'conflicts')
   } else if (before.sync_status === '正在同步' && after.sync_status === '同步正常') {
-    new Notification({ title: 'xDrive', body: '同步已完成。' }).show()
+    showDesktopNotification('xDrive', '同步已完成。', 'transfers')
   }
 
   if (before.auth_status !== after.auth_status && (after.auth_status === '登录已过期' || after.auth_status === '账户已禁用')) {
-    new Notification({ title: 'xDrive', body: 'xDrive 登录状态需要处理，请打开 xDrive 桌面版重新登录。' }).show()
+    showDesktopNotification('xDrive', 'xDrive 登录状态需要处理，请打开 xDrive 桌面版重新登录。')
+  }
+}
+
+function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUpdateState | null) {
+  if (!next) return
+  if (next.status === 'available' && previous?.status !== 'available') {
+    showDesktopNotification(
+      'xDrive 有可用更新',
+      next.latest_version ? `发现新版本 ${next.latest_version}。` : '发现新的 xDrive 客户端版本。',
+      'settings',
+    )
+  }
+  if (next.status === 'downloaded' && previous?.status !== 'downloaded') {
+    showDesktopNotification(
+      'xDrive 更新已下载',
+      next.latest_version ? `版本 ${next.latest_version} 已下载并通过校验，可开始安装。` : '客户端更新已下载并通过校验，可开始安装。',
+      'settings',
+    )
   }
 }
 
@@ -300,21 +354,26 @@ function publishAgentState(next: AgentConnectionState) {
   if (changed) notifyAgentTransition(previous, next)
   agentState = next
   rebuildTrayMenu()
+  updateTaskbarProgress()
   if (changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent:state', next)
 }
 
 function publishAgentTransfers(next: AgentTransfers) {
   const changed = JSON.stringify(agentTransfers) !== JSON.stringify(next)
   agentTransfers = next
+  updateTaskbarProgress()
   if (changed && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('agent:transfers', next)
   }
 }
 
 function publishAgentUpdate(next: AgentUpdateState | null) {
-  const changed = JSON.stringify(agentUpdateState) !== JSON.stringify(next)
+  const previous = agentUpdateState
+  const changed = JSON.stringify(previous) !== JSON.stringify(next)
+  if (changed) notifyUpdateTransition(previous, next)
   agentUpdateState = next
   if (changed) rebuildTrayMenu()
+  updateTaskbarProgress()
 }
 
 function withDesktopCompatibility(report: AgentDiagnosticReport, hello: AgentHello): AgentDiagnosticReport {

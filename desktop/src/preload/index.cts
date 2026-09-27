@@ -90,5 +90,10 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),
+  onNavigate: (callback: (view: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, view: string) => callback(view)
+    ipcRenderer.on('desktop:navigate', handler)
+    return () => ipcRenderer.removeListener('desktop:navigate', handler)
+  },
   agent,
 }))
