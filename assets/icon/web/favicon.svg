@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">xDrive master app icon</title>
+  <desc id="desc">Rounded blue square with an interwoven white and icy-blue x/infinity symbol.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2EA7FF"/>
+      <stop offset="0.48" stop-color="#1787FA"/>
+      <stop offset="1" stop-color="#0E67F2"/>
+    </linearGradient>
+    <radialGradient id="bgGlow" cx="34%" cy="18%" r="88%">
+      <stop offset="0" stop-color="#4CC3FF" stop-opacity="0.35"/>
+      <stop offset="0.55" stop-color="#2A93FF" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#0E67F2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="strokeWhite" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.70" stop-color="#FBFDFF"/>
+      <stop offset="1" stop-color="#EAF9FF"/>
+    </linearGradient>
+    <linearGradient id="strokeIce" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E8FAFF"/>
+      <stop offset="0.55" stop-color="#DDF6FF"/>
+      <stop offset="1" stop-color="#F7FCFF"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0064E6" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="220" fill="url(#bg)"/>
+  <rect x="48" y="48" width="928" height="928" rx="220" fill="url(#bgGlow)"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="78" filter="url(#softShadow)">
+    <path d="M 690 356 L 405 647 C 357 696 271 704 213 656 C 156 608 157 517 213 469 C 244 443 282 429 326 429" stroke="url(#strokeIce)"/>
+    <path d="M 334 356 L 619 647 C 667 696 753 704 811 656 C 868 608 867 517 811 469 C 780 443 742 429 698 429" stroke="url(#strokeWhite)"/>
+  </g>
+  <path d="M 486 510 L 538 563" stroke="#FFFFFF" stroke-width="80" stroke-linecap="round" opacity="0.92"/>
+  <path d="M 538 510 L 486 563" stroke="#E7F9FF" stroke-width="80" stroke-linecap="round" opacity="0.78"/>
+</svg>
