@@ -219,6 +219,8 @@ Yike dlink
 
 The worker does not download the complete media object to a temporary file. The upload resume key is derived from the stable external ID plus size, modified time, and remote revision, so a restarted worker can reuse chunks already accepted by xDrive. Each remote stream re-acquires a fresh Yike download link before opening, which avoids depending on an expired dlink.
 
+Media downloads have no fixed total-file deadline, so large or slow files can continue for as long as data is making progress. The connector does enforce a 30-second response-header timeout and a 60-second read-idle watchdog; a connection that stops producing bytes is cancelled and recorded as a per-item failure, then retried on a later Source run.
+
 Pure `move` plans rename/move the existing xDrive Node without downloading content. `move_update` moves the Node first and then overwrites it through the resumable stream path.
 
 Shared media uses the read-only direct album download endpoint. If that direct link is unavailable, only that item remains pending and the run becomes `partial`; other media continue. xDrive never calls Yike `copyfile`, `addfile`, delete, or other mutation endpoints to make a shared item downloadable.

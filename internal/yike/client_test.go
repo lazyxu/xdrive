@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestClientRejectsInvalidCookie(t *testing.T) {
@@ -299,6 +300,100 @@ func TestOpenDownloadFallsBackWhenRangeIgnored(t *testing.T) {
 	}
 	if string(got) != "defghij" {
 		t.Fatalf("download=%q", got)
+	}
+}
+
+func TestOpenDownloadResponseHeaderTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.downloadHeaderTimeout = 20 * time.Millisecond
+	client.downloadIdleTimeout = time.Second
+
+	started := time.Now()
+	_, err = client.OpenDownload(context.Background(), DownloadLink{URL: server.URL + "/media"}, 0)
+	if err == nil {
+		t.Fatal("media response-header stall was accepted")
+	}
+	if time.Since(started) > time.Second {
+		t.Fatalf("response-header timeout took too long: %s", time.Since(started))
+	}
+}
+
+func TestOpenDownloadIdleTimeoutCancelsStalledBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "2")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.downloadHeaderTimeout = time.Second
+	client.downloadIdleTimeout = 25 * time.Millisecond
+
+	body, err := client.OpenDownload(context.Background(), DownloadLink{URL: server.URL + "/media"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+
+	started := time.Now()
+	_, err = body.Read(make([]byte, 1))
+	if err == nil || !strings.Contains(err.Error(), "stalled") {
+		t.Fatalf("idle read error=%v", err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatalf("idle timeout took too long: %s", time.Since(started))
+	}
+}
+
+func TestOpenDownloadIdleTimeoutResetsWhenDataArrives(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "3")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		for _, b := range []byte("abc") {
+			_, _ = w.Write([]byte{b})
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.downloadHeaderTimeout = time.Second
+	client.downloadIdleTimeout = 50 * time.Millisecond
+
+	body, err := client.OpenDownload(context.Background(), DownloadLink{URL: server.URL + "/media"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	data, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "abc" {
+		t.Fatalf("download=%q", data)
 	}
 }
 
