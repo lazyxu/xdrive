@@ -43,6 +43,7 @@ test('desktop GUI defaults to Chinese', () => {
 
   for (const text of [
     '打开 xDrive 桌面版',
+    '设置',
     '打开 xDrive 文件夹',
     '立即同步',
     '暂停同步',
@@ -110,7 +111,9 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('yikeConnectorNotice'), 'missing Yike private-API notice')
   assert.ok(renderer.includes('yikeManagedTargetLabel'), 'missing Yike managed target label')
   assert.ok(renderer.includes('固定逻辑目录'), 'missing Yike managed target explanation')
-  assert.ok(renderer.includes('点击展开'), 'missing Yike Cookie guide affordance')
+  assert.ok(renderer.includes('如何获取 Cookie？'), 'missing compact Yike Cookie help action')
+  assert.ok(renderer.includes("maxHeight: '72vh'"), 'Yike Cookie help dialog must stay viewport-bounded')
+  assert.equal(renderer.includes('<Accordion'), false, 'Yike Cookie help must not expand inline')
   assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
   assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')
   assert.ok(renderer.includes('自动回滚失败'), 'missing Yike rollback failure fallback')
