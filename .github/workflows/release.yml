@@ -147,6 +147,7 @@ jobs:
             release_channel="master"
             release_commit="$GITHUB_SHA"
           fi
+          caddy_build_id="$(sha256sum deploy/Caddy.Dockerfile | cut -c1-16)"
           sed \
             -e "s|@SOURCE_REF@|$source_ref|g" \
             -e "s|@IMAGE_TAG@|$image_tag|g" \
@@ -154,6 +155,7 @@ jobs:
             -e "s|@RELEASE_CHANNEL@|$release_channel|g" \
             -e "s|@RELEASE_COMMIT@|$release_commit|g" \
             -e "s|@UPDATE_SOURCE@|github|g" \
+            -e "s|@CADDY_BUILD_ID@|$caddy_build_id|g" \
             deploy/install-server.sh > release/xdrive-server-install.sh
           chmod +x release/xdrive-server-install.sh
           cp deploy/docker-compose.yml release/docker-compose.yml

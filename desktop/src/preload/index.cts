@@ -68,6 +68,7 @@ const agent = Object.freeze({
   checkUpdate: () => ipcRenderer.invoke('agent:check-update'),
   downloadUpdate: () => ipcRenderer.invoke('agent:download-update'),
   installUpdate: () => ipcRenderer.invoke('agent:install-update'),
+  cancelUpdate: () => ipcRenderer.invoke('agent:cancel-update'),
   setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => ipcRenderer.invoke('agent:set-sync-rule', path, mode),
   getFileAvailability: (path: string) => ipcRenderer.invoke('agent:get-file-availability', path),
   setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') =>

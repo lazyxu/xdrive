@@ -196,6 +196,7 @@ export default function App() {
   const [syncMenuAnchor, setSyncMenuAnchor] = useState<HTMLElement | null>(null)
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [clientUpdate, setClientUpdate] = useState<AgentUpdateState | null>(null)
+  const [updateCancelling, setUpdateCancelling] = useState(false)
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
@@ -265,6 +266,7 @@ export default function App() {
   const completedTransfers = transfers.transfers.filter((item) => item.state === 'completed')
   const failedTransfers = transfers.transfers.filter((item) => item.state === 'failed')
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
+  const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
   const updateOperationBusy = clientUpdate?.status === 'checking' || clientUpdate?.status === 'downloading' || clientUpdate?.status === 'installing'
   const updateProgress = clientUpdate?.bytes_total
@@ -915,14 +917,19 @@ export default function App() {
     const data = await run('update-check', () => window.xdriveDesktop.agent.checkUpdate())
     if (!data) return
     setClientUpdate(data)
-    setNotice(data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
+    setNotice(data.message === '更新操作已取消。'
+      ? '更新操作已取消。'
+      : data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
   }
 
   const downloadClientUpdate = async () => {
     const data = await run('update-download', () => window.xdriveDesktop.agent.downloadUpdate())
     if (!data) return
     setClientUpdate(data)
-    setNotice(data.downloaded ? '更新已下载并通过校验，等待安装。' : '当前已是最新版本。')
+    setNotice(data.message === '更新操作已取消。'
+      ? '更新操作已取消。'
+      : data.downloaded ? '更新已下载并通过校验，等待安装。'
+        : data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
   }
 
   const installClientUpdate = async () => {
@@ -930,7 +937,26 @@ export default function App() {
     const data = await run('update-install', () => window.xdriveDesktop.agent.installUpdate())
     if (!data) return
     setClientUpdate(data)
-    setNotice(data.status === 'installing' ? '更新安装已启动，xDrive 将完成验证并重启。' : '当前已是最新版本。')
+    setNotice(data.message === '更新操作已取消。'
+      ? '更新操作已取消。'
+      : data.status === 'installing' ? '更新安装已启动，xDrive 将完成验证并重启。'
+        : data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
+  }
+
+  const cancelClientUpdate = async () => {
+    setUpdateCancelling(true)
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.cancelUpdate()
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setClientUpdate(result.data)
+      setNotice('更新操作已取消。')
+    } finally {
+      setUpdateCancelling(false)
+    }
   }
 
   const loadStorage = async () => {
@@ -2647,6 +2673,16 @@ export default function App() {
                         ? '正在安装…'
                         : clientUpdate.downloaded ? '安装更新' : '下载并安装'}
                     </button>
+                    {updateCancelSupported && (clientUpdate.status === 'checking' || clientUpdate.status === 'downloading') ? (
+                      <button
+                        className="secondary"
+                        type="button"
+                        disabled={updateCancelling}
+                        onClick={() => void cancelClientUpdate()}
+                      >
+                        {updateCancelling ? '正在取消…' : '取消'}
+                      </button>
+                    ) : null}
                   </div>
                   <small className="update-footnote">自动策略在 Agent 启动后约 90 秒首次运行，之后约每 6 小时检查一次；切换到自动策略时会立即检查一次。</small>
                 </>

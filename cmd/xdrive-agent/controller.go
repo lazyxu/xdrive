@@ -1011,6 +1011,10 @@ func (c *agentController) InstallClientUpdate(ctx context.Context) (clientUpdate
 	return c.updates.Install(ctx)
 }
 
+func (c *agentController) CancelClientUpdate() (clientUpdateState, error) {
+	return c.updates.Cancel()
+}
+
 func (c *agentController) SyncNow() error {
 	cfg, err := userconfig.Load()
 	if err != nil {

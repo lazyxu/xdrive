@@ -45,6 +45,7 @@ type fakeDesktopIPCController struct {
 	updateChecks              int
 	updateDownloads           int
 	updateInstalls            int
+	updateCancels             int
 	rulePath                  string
 	ruleMode                  string
 	filePath                  string
@@ -174,6 +175,11 @@ func (f *fakeDesktopIPCController) DownloadClientUpdate(context.Context) (client
 
 func (f *fakeDesktopIPCController) InstallClientUpdate(context.Context) (clientUpdateState, error) {
 	f.updateInstalls++
+	return f.updateState, f.err
+}
+
+func (f *fakeDesktopIPCController) CancelClientUpdate() (clientUpdateState, error) {
+	f.updateCancels++
 	return f.updateState, f.err
 }
 
@@ -538,6 +544,7 @@ func TestDesktopIPCActions(t *testing.T) {
 		{http.MethodPost, "/v1/update/check", ""},
 		{http.MethodPost, "/v1/update/download", ""},
 		{http.MethodPost, "/v1/update/install", ""},
+		{http.MethodPost, "/v1/update/cancel", ""},
 		{http.MethodPut, "/v1/settings/sync-rule", `{"path":"Projects/Archive","mode":"exclude"}`},
 		{http.MethodGet, "/v1/file-availability?path=%2Ftmp%2Fxdrive%2Fa.txt", ""},
 		{http.MethodPost, "/v1/file-availability", `{"path":"/tmp/xdrive/a.txt","action":"keep"}`},
@@ -565,9 +572,9 @@ func TestDesktopIPCActions(t *testing.T) {
 	if ctrl.updateMount == nil || *ctrl.updateMount != mountPath || ctrl.updateCache == nil || *ctrl.updateCache != cache {
 		t.Fatalf("settings update not forwarded: mount=%v cache=%v", ctrl.updateMount, ctrl.updateCache)
 	}
-	if ctrl.updateMode != userconfig.UpdateModeDownload || ctrl.updateSource != userconfig.UpdateSourceGitLab || ctrl.updateChecks != 1 || ctrl.updateDownloads != 1 || ctrl.updateInstalls != 1 {
-		t.Fatalf("update actions not forwarded: mode=%q source=%q check=%d download=%d install=%d",
-			ctrl.updateMode, ctrl.updateSource, ctrl.updateChecks, ctrl.updateDownloads, ctrl.updateInstalls)
+	if ctrl.updateMode != userconfig.UpdateModeDownload || ctrl.updateSource != userconfig.UpdateSourceGitLab || ctrl.updateChecks != 1 || ctrl.updateDownloads != 1 || ctrl.updateInstalls != 1 || ctrl.updateCancels != 1 {
+		t.Fatalf("update actions not forwarded: mode=%q source=%q check=%d download=%d install=%d cancel=%d",
+			ctrl.updateMode, ctrl.updateSource, ctrl.updateChecks, ctrl.updateDownloads, ctrl.updateInstalls, ctrl.updateCancels)
 	}
 	if ctrl.rulePath != "Projects/Archive" || ctrl.ruleMode != "exclude" {
 		t.Fatalf("sync rule not forwarded: path=%q mode=%q", ctrl.rulePath, ctrl.ruleMode)

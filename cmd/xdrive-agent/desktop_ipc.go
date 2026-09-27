@@ -63,6 +63,7 @@ var desktopIPCCapabilities = []string{
 	"sync-control",
 	"settings",
 	"client-update",
+	"client-update-cancel",
 	"selective-sync",
 	"file-availability",
 	"storage-tree",
@@ -135,6 +136,7 @@ type desktopIPCController interface {
 	CheckClientUpdate(context.Context) (clientUpdateState, error)
 	DownloadClientUpdate(context.Context) (clientUpdateState, error)
 	InstallClientUpdate(context.Context) (clientUpdateState, error)
+	CancelClientUpdate() (clientUpdateState, error)
 	SetSelectiveSyncRule(path, mode string) error
 	StorageTree(context.Context) (agentStorageTreeNode, error)
 	CacheStats() (mount.CacheStats, error)
@@ -341,6 +343,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/update/check", h.checkUpdate)
 	mux.HandleFunc("POST /v1/update/download", h.downloadUpdate)
 	mux.HandleFunc("POST /v1/update/install", h.installUpdate)
+	mux.HandleFunc("POST /v1/update/cancel", h.cancelUpdate)
 	mux.HandleFunc("PUT /v1/settings/sync-rule", h.setSyncRule)
 	mux.HandleFunc("GET /v1/storage-tree", h.storageTree)
 	mux.HandleFunc("GET /v1/cache", h.cacheStats)
@@ -636,6 +639,15 @@ func (h *desktopIPCHandler) downloadUpdate(w http.ResponseWriter, r *http.Reques
 
 func (h *desktopIPCHandler) installUpdate(w http.ResponseWriter, r *http.Request) {
 	state, err := h.ctrl.InstallClientUpdate(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, state)
+}
+
+func (h *desktopIPCHandler) cancelUpdate(w http.ResponseWriter, _ *http.Request) {
+	state, err := h.ctrl.CancelClientUpdate()
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
