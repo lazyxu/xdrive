@@ -25,6 +25,13 @@ fi
 XDRIVE_HOME="${XD_CONFIG_DIR:-$DEFAULT_XDRIVE_HOME}"
 CONFIG_DIR="$XDRIVE_HOME/config"
 BIN_DIR="$XDRIVE_HOME/bin"
+DATA_DIR="$XDRIVE_HOME/data"
+BACKUP_DIR="$XDRIVE_HOME/backups"
+LOG_DIR="$XDRIVE_HOME/logs"
+STATE_DIR="$XDRIVE_HOME/state"
+LEGACY_VOLUMES_RECORD="$STATE_DIR/legacy-volumes-retained"
+HOST_BIN_DIR="${XD_HOST_BIN_DIR:-/usr/local/bin}"
+HOST_MANAGER_LINK="$HOST_BIN_DIR/xdrive-server"
 ENV_PATH="$CONFIG_DIR/.env"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 
@@ -39,6 +46,8 @@ Usage:
   xdrive-server backup [server-backup.sh options...]
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
+  xdrive-server cleanup legacy-volumes [--yes]
+  xdrive-server uninstall [--purge-data] [--purge-backups] --yes
   xdrive-server admin list
   xdrive-server admin reset-password USER [--no-must-change]
   xdrive-server admin reset-password USER --password-stdin [--no-must-change]
@@ -244,6 +253,253 @@ verify_cmd() {
   return "$status"
 }
 
+remove_backup_schedule() {
+  command -v crontab >/dev/null 2>&1 || return 0
+  local current tmp
+  current="$(crontab -l 2>/dev/null || true)"
+  [[ -n "$current" ]] || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-crontab.XXXXXX")"
+  printf '%s\n' "$current" | grep -v '# xdrive-managed-backup$' > "$tmp" || true
+  crontab "$tmp"
+  rm -f "$tmp"
+}
+
+legacy_volume_candidates() {
+  [[ -f "$LEGACY_VOLUMES_RECORD" ]] || return 0
+  awk -F= '
+    $1 ~ /^(files|postgres|caddy_data|caddy_config)$/ && length($2) > 0 {
+      print $2
+    }
+  ' "$LEGACY_VOLUMES_RECORD" | awk 'NF && !seen[$0]++'
+}
+
+cleanup_legacy_volumes_cmd() {
+  local confirm=0 arg volume attached remaining=0
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) confirm=1 ;;
+      *) echo "usage: xdrive-server cleanup legacy-volumes [--yes]" >&2; return 2 ;;
+    esac
+  done
+
+  mapfile -t volumes < <(legacy_volume_candidates)
+  if [[ "${#volumes[@]}" -eq 0 ]]; then
+    echo "No retained legacy xDrive volumes are recorded."
+    rm -f "$LEGACY_VOLUMES_RECORD"
+    return 0
+  fi
+
+  echo "Retained legacy Docker volumes:"
+  printf '  %s\n' "${volumes[@]}"
+  if [[ "$confirm" != "1" ]]; then
+    echo "No changes made. Rerun with --yes after confirming the bind-mounted deployment and backups are healthy."
+    return 2
+  fi
+
+  for volume in "${volumes[@]}"; do
+    if ! docker volume inspect "$volume" </dev/null >/dev/null 2>&1; then
+      echo "[xDrive] legacy volume already absent: $volume"
+      continue
+    fi
+    attached="$(docker ps -aq --filter "volume=$volume" </dev/null 2>/dev/null || true)"
+    if [[ -n "$attached" ]]; then
+      echo "xdrive-server: refusing to remove legacy volume $volume because container(s) still reference it: $attached" >&2
+      remaining=1
+      continue
+    fi
+    echo "[xDrive] removing retained legacy volume: $volume"
+    if ! docker volume rm "$volume" </dev/null; then
+      remaining=1
+    fi
+  done
+
+  for volume in "${volumes[@]}"; do
+    if docker volume inspect "$volume" </dev/null >/dev/null 2>&1; then
+      remaining=1
+    fi
+  done
+  if [[ "$remaining" == "0" ]]; then
+    rm -f "$LEGACY_VOLUMES_RECORD"
+    echo "Legacy xDrive volumes cleaned up."
+    if [[ -f "$STATE_DIR/runtime-uninstalled" ]]; then
+      local purge_all=0
+      grep -q '^purge_all=1$' "$STATE_DIR/runtime-uninstalled" && purge_all=1
+      rm -f "$STATE_DIR/runtime-uninstalled"
+      rm -f "$BIN_DIR/xdrive-server"
+      rmdir "$BIN_DIR" "$STATE_DIR" 2>/dev/null || true
+      if [[ "$purge_all" == "1" ]]; then
+        rm -f "$ENV_PATH"
+        rmdir "$CONFIG_DIR" "$DATA_DIR/caddy" "$DATA_DIR" "$BACKUP_DIR" "$LOG_DIR" "$XDRIVE_HOME" 2>/dev/null || true
+        echo "xDrive fully uninstalled after legacy-volume cleanup."
+      else
+        echo "Retained cleanup manager removed."
+      fi
+    fi
+    return 0
+  fi
+  echo "xdrive-server: one or more retained legacy volumes remain; the record was kept at $LEGACY_VOLUMES_RECORD" >&2
+  return 1
+}
+
+cleanup_cmd() {
+  local target="${1:-}"
+  [[ -n "$target" ]] || {
+    echo "usage: xdrive-server cleanup legacy-volumes [--yes]" >&2
+    return 2
+  }
+  shift || true
+  case "$target" in
+    legacy-volumes) cleanup_legacy_volumes_cmd "$@" ;;
+    *) echo "xdrive-server: unknown cleanup target: $target" >&2; return 2 ;;
+  esac
+}
+
+canonical_path() {
+  local path="$1"
+  if command -v readlink >/dev/null 2>&1; then
+    readlink -m "$path" 2>/dev/null && return 0
+  fi
+  printf '%s\n' "$path"
+}
+
+validate_purge_path() {
+  local label="$1" path="$2" resolved home_resolved
+  [[ -n "$path" && "$path" == /* ]] || {
+    echo "xdrive-server: refusing to purge $label because its path is not absolute: $path" >&2
+    return 1
+  }
+  resolved="$(canonical_path "$path")"
+  home_resolved="$(canonical_path "$XDRIVE_HOME")"
+  case "$resolved" in
+    /|/home|/root|/usr|/etc|/var|/var/lib|/opt|"$HOME"|"$home_resolved"|"$CONFIG_DIR"|"$BACKUP_DIR"|"$BIN_DIR"|"$LOG_DIR"|"$STATE_DIR")
+      echo "xdrive-server: refusing dangerous purge path for $label: $resolved" >&2
+      return 1
+      ;;
+  esac
+}
+
+purge_container_owned_dir() {
+  local label="$1" path="$2" helper_image
+  [[ -e "$path" ]] || return 0
+  validate_purge_path "$label" "$path"
+  helper_image="$(env_value XD_POSTGRES_IMAGE)"
+  [[ -n "$helper_image" ]] || helper_image="postgres:17-alpine"
+  echo "[xDrive] purging $label: $path"
+  docker run --rm --entrypoint sh \
+    -v "$path:/xdrive-purge" \
+    "$helper_image" \
+    -ec 'find /xdrive-purge -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +' </dev/null
+  rmdir "$path" 2>/dev/null || true
+}
+
+remove_host_manager_link() {
+  [[ -L "$HOST_MANAGER_LINK" ]] || return 0
+  local target
+  target="$(readlink -f "$HOST_MANAGER_LINK" 2>/dev/null || true)"
+  if [[ "$target" != "$SELF_PATH" && "$target" != "$(canonical_path "$BIN_DIR/xdrive-server")" ]]; then
+    echo "xdrive-server: leaving unrelated symlink $HOST_MANAGER_LINK -> $target" >&2
+    return 0
+  fi
+  if [[ -w "$HOST_BIN_DIR" ]]; then
+    rm -f "$HOST_MANAGER_LINK"
+  else
+    echo "xdrive-server: warning: cannot remove $HOST_MANAGER_LINK without write permission; remove that symlink manually." >&2
+  fi
+}
+
+uninstall_cmd() {
+  local purge_data=0 purge_backups=0 confirm=0 arg
+  local files_dir postgres_dir caddy_data_dir caddy_config_dir
+  for arg in "$@"; do
+    case "$arg" in
+      --purge-data) purge_data=1 ;;
+      --purge-backups) purge_backups=1 ;;
+      --yes) confirm=1 ;;
+      *) echo "usage: xdrive-server uninstall [--purge-data] [--purge-backups] --yes" >&2; return 2 ;;
+    esac
+  done
+  if [[ "$confirm" != "1" ]]; then
+    echo "xdrive-server: uninstall requires --yes. Data and backups are preserved unless their purge flags are also supplied." >&2
+    return 2
+  fi
+
+  files_dir="$(env_value XD_FILES_DATA_DIR)"
+  postgres_dir="$(env_value XD_POSTGRES_DATA_DIR)"
+  caddy_data_dir="$(env_value XD_CADDY_DATA_DIR)"
+  caddy_config_dir="$(env_value XD_CADDY_CONFIG_DIR)"
+  [[ -n "$files_dir" ]] || files_dir="$DATA_DIR/files"
+  [[ -n "$postgres_dir" ]] || postgres_dir="$DATA_DIR/postgres"
+  [[ -n "$caddy_data_dir" ]] || caddy_data_dir="$DATA_DIR/caddy/data"
+  [[ -n "$caddy_config_dir" ]] || caddy_config_dir="$DATA_DIR/caddy/config"
+
+  if [[ "$purge_data" == "1" ]]; then
+    validate_purge_path "file data" "$files_dir"
+    validate_purge_path "PostgreSQL data" "$postgres_dir"
+    validate_purge_path "Caddy data" "$caddy_data_dir"
+    validate_purge_path "Caddy config" "$caddy_config_dir"
+  fi
+
+  if [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]]; then
+    echo "[xDrive] stopping and removing xDrive containers and network..."
+    compose down --remove-orphans
+  else
+    echo "[xDrive] no active Compose deployment found; cleaning host control files only."
+  fi
+
+  remove_backup_schedule
+  remove_host_manager_link
+
+  if [[ "$purge_data" == "1" ]]; then
+    purge_container_owned_dir "file data" "$files_dir"
+    purge_container_owned_dir "PostgreSQL data" "$postgres_dir"
+    purge_container_owned_dir "Caddy data" "$caddy_data_dir"
+    purge_container_owned_dir "Caddy config" "$caddy_config_dir"
+    rmdir "$DATA_DIR/caddy" "$DATA_DIR" 2>/dev/null || true
+  fi
+  if [[ "$purge_backups" == "1" ]]; then
+    echo "[xDrive] purging backups: $BACKUP_DIR"
+    rm -rf "$BACKUP_DIR"
+  fi
+
+  rm -f "$CONFIG_DIR/docker-compose.yml" "$CONFIG_DIR/Caddyfile"
+  rm -rf "$LOG_DIR"
+
+  if [[ -f "$LEGACY_VOLUMES_RECORD" ]]; then
+    local retained_tmp manager_tmp purge_all=0
+    [[ "$purge_data" == "1" && "$purge_backups" == "1" ]] && purge_all=1
+    retained_tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-legacy-volumes.XXXXXX")"
+    manager_tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-manager.XXXXXX")"
+    cp "$LEGACY_VOLUMES_RECORD" "$retained_tmp"
+    cp "$BIN_DIR/xdrive-server" "$manager_tmp"
+    rm -rf "$STATE_DIR" "$BIN_DIR"
+    mkdir -p "$STATE_DIR" "$BIN_DIR"
+    chmod 700 "$STATE_DIR" "$BIN_DIR"
+    mv "$retained_tmp" "$LEGACY_VOLUMES_RECORD"
+    mv "$manager_tmp" "$BIN_DIR/xdrive-server"
+    chmod 600 "$LEGACY_VOLUMES_RECORD"
+    chmod 700 "$BIN_DIR/xdrive-server"
+    printf 'purge_all=%s\n' "$purge_all" > "$STATE_DIR/runtime-uninstalled"
+    chmod 600 "$STATE_DIR/runtime-uninstalled"
+    echo "[xDrive] retained legacy-volume record: $LEGACY_VOLUMES_RECORD"
+    echo "[xDrive] cleanup-only manager retained at $BIN_DIR/xdrive-server"
+    echo "[xDrive] run '$BIN_DIR/xdrive-server cleanup legacy-volumes --yes' when you are ready to remove the old volumes."
+  else
+    rm -rf "$STATE_DIR" "$BIN_DIR"
+  fi
+
+  if [[ "$purge_data" == "1" && "$purge_backups" == "1" && ! -f "$LEGACY_VOLUMES_RECORD" ]]; then
+    rm -f "$ENV_PATH"
+    rmdir "$CONFIG_DIR" "$DATA_DIR/caddy" "$DATA_DIR" "$BACKUP_DIR" "$LOG_DIR" "$XDRIVE_HOME" 2>/dev/null || true
+    echo "xDrive fully uninstalled; runtime, data, backups, and retained configuration were removed."
+    return 0
+  fi
+
+  echo "xDrive runtime uninstalled."
+  [[ -f "$ENV_PATH" ]] && echo "Retained configuration/secrets: $ENV_PATH"
+  [[ "$purge_data" != "1" ]] && echo "Retained data: $files_dir, $postgres_dir, $caddy_data_dir, $caddy_config_dir"
+  [[ "$purge_backups" != "1" ]] && echo "Retained backups: $BACKUP_DIR"
+}
+
 admin_cmd() {
   [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || {
     echo "xdrive-server: no xDrive deployment found in $CONFIG_DIR" >&2
@@ -331,6 +587,8 @@ case "$cmd" in
   backup) backup_cmd "$@" ;;
   restore) restore_cmd "$@" ;;
   verify) verify_cmd "$@" ;;
+  cleanup) cleanup_cmd "$@" ;;
+  uninstall) uninstall_cmd "$@" ;;
   admin) admin_cmd "$@" ;;
   version) version_cmd ;;
   -h|--help|help) usage ;;

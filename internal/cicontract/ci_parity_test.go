@@ -832,6 +832,9 @@ func TestServerHostLayoutAndRootlessContract(t *testing.T) {
 	installer := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
 	hostManager := readFile(t, filepath.Join(root, "scripts", "xdrive-server-host.sh"))
 	design := readFile(t, filepath.Join(root, "docs", "server-host-layout.md"))
+	uninstallTest := readFile(t, filepath.Join(root, "scripts", "test-server-uninstall.sh"))
+	githubCI := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	gitlabValidation := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-validation.sh"))
 
 	requireRaw(t, "server bind-mount layout", compose,
 		`${XD_FILES_DATA_DIR:-../data/files}:/data`,
@@ -872,6 +875,13 @@ func TestServerHostLayoutAndRootlessContract(t *testing.T) {
 		`XDRIVE_HOME="${XD_CONFIG_DIR:-$DEFAULT_XDRIVE_HOME}"`,
 		`CONFIG_DIR="$XDRIVE_HOME/config"`,
 		`BIN_DIR="$XDRIVE_HOME/bin"`,
+		`LEGACY_VOLUMES_RECORD="$STATE_DIR/legacy-volumes-retained"`,
+		`xdrive-server cleanup legacy-volumes [--yes]`,
+		`xdrive-server uninstall [--purge-data] [--purge-backups] --yes`,
+		`compose down --remove-orphans`,
+		`docker volume rm "$volume"`,
+		`purge_container_owned_dir`,
+		`uninstall requires --yes`,
 	)
 
 	requireRaw(t, "server host-layout design", design,
@@ -879,7 +889,21 @@ func TestServerHostLayoutAndRootlessContract(t *testing.T) {
 		"## Canonical host layout",
 		"## Docker modes",
 		"## Legacy layout migration",
+		"## Uninstall and retained-data contract",
+		"### Legacy named-volume cleanup",
 		"## CI contract",
+	)
+	requireRaw(t, "server uninstall validation", uninstallTest,
+		"uninstall --yes",
+		"cleanup legacy-volumes --yes",
+		"uninstall --purge-data --purge-backups --yes",
+		"refusing dangerous purge path",
+	)
+	requireRaw(t, "GitHub server uninstall CI", githubCI,
+		"bash scripts/test-server-uninstall.sh",
+	)
+	requireRaw(t, "GitLab server uninstall CI", gitlabValidation,
+		"bash scripts/test-server-uninstall.sh",
 	)
 }
 
