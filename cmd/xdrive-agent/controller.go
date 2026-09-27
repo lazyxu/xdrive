@@ -37,6 +37,7 @@ type agentSnapshot struct {
 	HasConflict        bool
 	ConflictCount      int
 	Version            string
+	ServerBuild        client.VersionInfo
 }
 
 type agentRecoveryRequest struct {
@@ -193,19 +194,44 @@ func (c *agentController) Run() {
 	defer mount.SetEventSink(nil)
 
 	var (
-		running       bool
-		currentKey    string
-		mountCancel   context.CancelFunc
-		mountDone     chan error
-		lastAuthCheck time.Time
-		conflictKey   string
-		explorerRoot  string
+		running                bool
+		currentKey             string
+		mountCancel            context.CancelFunc
+		mountDone              chan error
+		lastAuthCheck          time.Time
+		lastServerVersionCheck time.Time
+		serverVersionKey       string
+		conflictKey            string
+		explorerRoot           string
 	)
 
 	stopMount := func() {
 		if mountCancel != nil {
 			mountCancel()
 		}
+	}
+
+	refreshServerBuild := func(d desiredMount) {
+		if serverVersionKey != d.key {
+			serverVersionKey = d.key
+			lastServerVersionCheck = time.Time{}
+			c.setSnapshot(func(s *agentSnapshot) { s.ServerBuild = client.VersionInfo{} })
+		}
+		if !lastServerVersionCheck.IsZero() && time.Since(lastServerVersionCheck) < time.Minute {
+			return
+		}
+		lastServerVersionCheck = time.Now()
+		cli, err := userconfig.NewClient(d.cfg)
+		if err != nil {
+			return
+		}
+		go func() {
+			versionCtx, versionCancel := context.WithTimeout(c.ctx, 8*time.Second)
+			defer versionCancel()
+			if build, versionErr := cli.ServerVersion(versionCtx); versionErr == nil {
+				c.setSnapshot(func(s *agentSnapshot) { s.ServerBuild = build })
+			}
+		}()
 	}
 
 	startMount := func(d desiredMount) {
@@ -255,6 +281,8 @@ func (c *agentController) Run() {
 				}
 			})
 			conflictKey = ""
+			serverVersionKey = ""
+			lastServerVersionCheck = time.Time{}
 			c.setSnapshot(func(s *agentSnapshot) {
 				s.HasConflict = false
 				s.ConflictCount = 0
@@ -281,6 +309,7 @@ func (c *agentController) Run() {
 				s.AuthStatus = "已登录"
 			}
 		})
+		refreshServerBuild(d)
 
 		nextConflictKey := d.cfg.Server + "\x00" + d.cfg.Username
 		if nextConflictKey != conflictKey {
@@ -532,10 +561,12 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
-	resp, err := client.New(server, "").Login(ctx, username, password)
+	publicClient := client.New(server, "")
+	resp, err := publicClient.Login(ctx, username, password)
 	if err != nil {
 		return err
 	}
+	serverBuild, _ := publicClient.ServerVersion(ctx)
 
 	sessionID := ""
 	var syncRules []userconfig.SyncRule
@@ -579,6 +610,9 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 		}
 		s.Paused = false
 		s.LastError = ""
+		if serverBuild.Version != "" {
+			s.ServerBuild = serverBuild
+		}
 	})
 	c.refreshConflictSnapshot()
 	c.wakeNow()

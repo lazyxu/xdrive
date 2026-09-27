@@ -11,6 +11,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"github.com/lazyxu/xdrive/internal/version"
 	"gorm.io/gorm"
 )
 
@@ -36,6 +37,7 @@ func (s *Server) Router() *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.GET("/healthz", s.healthz)
 	v1.GET("/readyz", s.readyz)
+	v1.GET("/version", s.versionInfo)
 	v1.POST("/auth/login", s.login)
 	v1.POST("/auth/refresh", s.refresh)
 	v1.POST("/auth/logout", s.logout)
@@ -115,6 +117,11 @@ func (s *Server) Router() *gin.Engine {
 
 func (s *Server) healthz(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (s *Server) versionInfo(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, version.Metadata())
 }
 
 type storageReadinessChecker interface {

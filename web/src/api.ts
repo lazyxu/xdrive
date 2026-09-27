@@ -9,6 +9,7 @@ import type {
   ExternalSourceItem,
   ExternalSourceRun,
   FileShare,
+  BuildInfo,
   FileVersion,
   MeResult,
   Node,
@@ -26,6 +27,8 @@ export type {
   ExternalSourceItem,
   ExternalSourceRun,
 } from '../../ui/shared/src'
+
+export type { BuildInfo }
 
 export interface AuthResult {
   token: string
@@ -174,6 +177,14 @@ export class XDriveApi {
     }
     if (response.status === 204) return undefined as T
     return response.json() as Promise<T>
+  }
+
+  async serverVersion() {
+    const response = await fetch(`${API_BASE}/api/v1/version`, { cache: 'no-store' })
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText || 'Server version unavailable')
+    }
+    return response.json() as Promise<BuildInfo>
   }
 
   login(username: string, password: string) {

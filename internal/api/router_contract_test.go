@@ -23,6 +23,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/metrics", suite: "observability"},
 		{method: "GET", path: "/api/v1/healthz", suite: "observability"},
 		{method: "GET", path: "/api/v1/readyz", suite: "observability"},
+		{method: "GET", path: "/api/v1/version", suite: "version"},
 		{method: "POST", path: "/api/v1/auth/login", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/refresh", suite: "auth"},
 		{method: "POST", path: "/api/v1/auth/logout", suite: "auth"},
@@ -126,8 +127,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 	if len(missing) != 0 || len(unexpected) != 0 {
 		t.Fatalf("API coverage manifest drift: missing registered routes=%v unexpected registered routes=%v", missing, unexpected)
 	}
-	if len(manifest) != 69 {
-		t.Fatalf("coverage manifest has %d endpoints, want 69", len(manifest))
+	if len(manifest) != 70 {
+		t.Fatalf("coverage manifest has %d endpoints, want 70", len(manifest))
 	}
 }
 
@@ -138,6 +139,7 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 		"GET /metrics":                       {},
 		"GET /api/v1/healthz":                {},
 		"GET /api/v1/readyz":                 {},
+		"GET /api/v1/version":                {},
 		"POST /api/v1/auth/login":            {},
 		"POST /api/v1/auth/refresh":          {},
 		"POST /api/v1/auth/logout":           {},

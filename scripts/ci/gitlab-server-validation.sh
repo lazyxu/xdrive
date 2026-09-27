@@ -58,6 +58,9 @@ bash -n scripts/ci/check-go-min-version.sh
 bash -n scripts/ci/client-artifact-version.sh
 bash -n scripts/ci/test-client-artifact-version.sh
 bash scripts/ci/test-client-artifact-version.sh
+bash -n scripts/ci/build-metadata.sh
+bash -n scripts/ci/test-build-metadata.sh
+bash scripts/ci/test-build-metadata.sh
 bash -n scripts/ci/gitlab-release-version.sh
 bash -n scripts/ci/gitlab-release-assets.sh
 bash -n scripts/ci/gitlab-server-images.sh

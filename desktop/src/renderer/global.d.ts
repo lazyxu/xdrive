@@ -11,13 +11,14 @@ import type {
   Node,
   QuotaUsage,
   StorageStats,
+  BuildInfo,
   UpdateExternalSourceInput,
 } from '@xdrive/shared'
 
 export {}
 
 declare global {
-  type DesktopInfo = { version: string; platform: string; arch: string }
+  type DesktopInfo = BuildInfo & { platform: string; arch: string }
   type DesktopStartup = { start_at_login: boolean }
   type DesktopPreferences = { start_at_login: boolean; close_to_tray: boolean }
   type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
@@ -47,6 +48,7 @@ declare global {
     has_conflict: boolean
     conflict_count: number
     version: string
+    server_build?: BuildInfo
   }
 
   type AgentConnectionState = {

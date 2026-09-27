@@ -175,3 +175,13 @@ export interface AuditEvent {
   metadata?: Record<string, unknown>
   created_at: string
 }
+
+
+export interface BuildInfo {
+  version: string
+  channel?: string
+  commit?: string
+  commit_message?: string
+  commit_time?: string
+  build_time?: string
+}

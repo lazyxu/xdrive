@@ -18,6 +18,7 @@ import {
   type OpenDialogOptions,
 } from 'electron'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
+import { desktopBuildInfo } from './build_metadata.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { trayTransferPresentation } from './tray_transfers.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
@@ -799,7 +800,12 @@ function startUpdateMonitor() {
 }
 
 function registerIPCHandlers() {
-  ipcMain.handle('desktop:get-info', () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch }))
+  ipcMain.handle('desktop:get-info', () => ({
+    ...desktopBuildInfo,
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+  }))
   ipcMain.handle('desktop:get-startup', () => ({ start_at_login: desktopPreferences.start_at_login }))
   ipcMain.handle('desktop:get-preferences', () => publicDesktopPreferences())
   ipcMain.handle('desktop:set-startup', async (_event, enabled: unknown) => {

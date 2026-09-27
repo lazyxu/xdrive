@@ -707,11 +707,14 @@ admin_cmd() {
 
 version_cmd() {
   local channel commit image
-  channel="$(env_value XD_RELEASE_CHANNEL)"
-  commit="$(env_value XD_RELEASE_COMMIT)"
+  if ! compose exec -T server xdrive-server version 2>/dev/null; then
+    channel="$(env_value XD_RELEASE_CHANNEL)"
+    commit="$(env_value XD_RELEASE_COMMIT)"
+    printf 'server version: unavailable\n'
+    printf 'channel: %s\n' "${channel:-unknown}"
+    [[ -n "$commit" ]] && printf 'commit: %s\n' "$commit"
+  fi
   image="$(env_value XD_SERVER_IMAGE)"
-  printf 'channel: %s\n' "${channel:-unknown}"
-  [[ -n "$commit" ]] && printf 'commit: %s\n' "${commit:0:12}"
   [[ -n "$image" ]] && printf 'server image: %s\n' "$image"
 }
 

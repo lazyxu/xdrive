@@ -52,6 +52,7 @@ import {
   yikeManagedTargetLabel,
 } from '@xdrive/shared'
 import type {
+  BuildInfo,
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRow,
@@ -67,6 +68,28 @@ function platformLabel(platform: string) {
   if (platform === 'linux') return 'Linux'
   if (platform === 'darwin') return 'macOS'
   return platform || '未知'
+}
+
+function buildInfoTime(value?: string) {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+}
+
+function BuildInfoCard({ title, info }: { title: string; info?: BuildInfo | null }) {
+  return (
+    <MuiBox sx={{ flex: '1 1 360px', minWidth: 0, border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>{title}</Typography>
+      <Stack spacing={0.75}>
+        <Typography variant="body2"><strong>版本：</strong>{info?.version || '未知'}</Typography>
+        <Typography variant="body2"><strong>通道：</strong>{info?.channel || '—'}</Typography>
+        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}><strong>Commit：</strong>{info?.commit || '—'}</Typography>
+        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}><strong>Commit message：</strong>{info?.commit_message || '—'}</Typography>
+        <Typography variant="body2"><strong>Commit 时间：</strong>{buildInfoTime(info?.commit_time)}</Typography>
+        <Typography variant="body2"><strong>构建时间：</strong>{buildInfoTime(info?.build_time)}</Typography>
+      </Stack>
+    </MuiBox>
+  )
 }
 
 function cacheGiB(bytes: number) {
@@ -1465,6 +1488,12 @@ export default function App() {
             spacing={0.75}
             sx={{ flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}
           >
+            <Tooltip title={info?.commit ? `${info.commit.slice(0, 12)}${info.commit_message ? ` · ${info.commit_message}` : ''}` : 'Desktop 构建信息'}>
+              <Chip size="small" variant="outlined" label={`Desktop ${info?.version || '—'}`} />
+            </Tooltip>
+            <Tooltip title={status?.server_build?.commit ? `${status.server_build.commit.slice(0, 12)}${status.server_build.commit_message ? ` · ${status.server_build.commit_message}` : ''}` : 'Server 构建信息'}>
+              <Chip size="small" variant="outlined" label={`Server ${status?.server_build?.version || '—'}`} />
+            </Tooltip>
             <Chip
               aria-label="同步状态"
               clickable
@@ -2599,6 +2628,10 @@ export default function App() {
                 {busy === 'restart-agent' ? '正在重启 Agent…' : '重启 Agent'}
               </button>
             </div>
+            <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ mb: 2 }}>
+              <BuildInfoCard title="Desktop 构建信息" info={info} />
+              <BuildInfoCard title="Server 构建信息" info={status?.server_build} />
+            </Stack>
             <Stack spacing={0.5} sx={{ mb: 2 }}>
               <FormControlLabel
                 control={(

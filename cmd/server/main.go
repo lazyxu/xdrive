@@ -16,6 +16,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"github.com/lazyxu/xdrive/internal/version"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -41,6 +42,11 @@ func main() {
 			return
 		case "healthcheck":
 			if err := runHealthcheck(os.Args[2:]); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "version":
+			if err := runVersionCommand(os.Args[2:]); err != nil {
 				log.Fatal(err)
 			}
 			return
@@ -159,6 +165,30 @@ func runHealthcheck(args []string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("health endpoint returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func runVersionCommand(args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: xdrive-server version")
+	}
+	info := version.Metadata()
+	fmt.Printf("server version: %s\n", info.Version)
+	if info.Channel != "" {
+		fmt.Printf("channel: %s\n", info.Channel)
+	}
+	if info.Commit != "" {
+		fmt.Printf("commit: %s\n", info.Commit)
+	}
+	if info.CommitMessage != "" {
+		fmt.Printf("commit message: %s\n", info.CommitMessage)
+	}
+	if info.CommitTime != "" {
+		fmt.Printf("commit time: %s\n", info.CommitTime)
+	}
+	if info.BuildTime != "" {
+		fmt.Printf("build time: %s\n", info.BuildTime)
 	}
 	return nil
 }

@@ -37,7 +37,7 @@ import {
 } from 'antd'
 import type { UploadProps } from 'antd'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
-import type { AuthResult, AuthSession } from './api'
+import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type { FileVersion, MeResult, Node, QuotaUsage } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
@@ -69,6 +69,7 @@ function initialSession(): AuthSession {
 function App() {
   const [session, setSession] = useState<AuthSession>(initialSession)
   const [username, setUsername] = useState(() => localStorage.getItem(USER_KEY) ?? '')
+  const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
 
   const publicShareToken = useMemo(() => {
     const match = window.location.hash.match(/^#\/s\/([^/]+)\/?$/)
@@ -103,6 +104,21 @@ function App() {
     [session.accessToken, session.refreshToken, session.accessExpiresAt, persistSession],
   )
 
+  useEffect(() => {
+    let active = true
+    const refresh = () => {
+      void api.serverVersion()
+        .then((build) => { if (active) setServerBuild(build) })
+        .catch(() => { if (active) setServerBuild(null) })
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 60_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [api])
+
   const signOut = () => {
     void api.logout().finally(clearSession)
   }
@@ -112,17 +128,17 @@ function App() {
   }
 
   if (!session.accessToken) {
-    return <AuthView api={api} onAuthenticated={(result) => {
+    return <AuthView api={api} serverBuild={serverBuild} onAuthenticated={(result) => {
       persistSession(sessionFromAuth(result))
       localStorage.setItem(USER_KEY, result.username)
       setUsername(result.username)
     }} />
   }
 
-  return <FileManager api={api} username={username} onAuthExpired={clearSession} onLogout={signOut} />
+  return <FileManager api={api} username={username} serverBuild={serverBuild} onAuthExpired={clearSession} onLogout={signOut} />
 }
 
-function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (result: AuthResult) => void }) {
+function AuthView({ api, serverBuild, onAuthenticated }: { api: XDriveApi; serverBuild: BuildInfo | null; onAuthenticated: (result: AuthResult) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -146,6 +162,7 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
           <div>
             <Typography.Title level={2} style={{ margin: 0 }}>xDrive</Typography.Title>
             <Typography.Text type="secondary">将云端文件挂载为本地磁盘。</Typography.Text>
+            <div style={{ marginTop: 6 }}><Tag>Server {serverBuild?.version || '未知'}</Tag></div>
           </div>
         </div>
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 18 }} />}
@@ -166,7 +183,7 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
   )
 }
 
-function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveApi; username: string; onAuthExpired: () => void; onLogout: () => void }) {
+function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { api: XDriveApi; username: string; serverBuild: BuildInfo | null; onAuthExpired: () => void; onLogout: () => void }) {
   const [modal, modalContext] = Modal.useModal()
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [quota, setQuota] = useState<QuotaUsage | null>(null)
@@ -272,6 +289,9 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
           </div>
           <Space>
+            <Tooltip title={serverBuild?.commit ? `${serverBuild.commit.slice(0, 12)}${serverBuild.commit_message ? ` · ${serverBuild.commit_message}` : ''}` : 'Server 构建信息'}>
+              <Tag>Server {serverBuild?.version || '未知'}</Tag>
+            </Tooltip>
             <Typography.Text className="username">{username}</Typography.Text>
             <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">退出登录</Button>
           </Space>
@@ -442,6 +462,9 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
             <Button type="text" icon={<CloudSyncOutlined />} onClick={() => setSourcesOpen(true)} className="logout-button">
               外部来源
             </Button>
+            <Tooltip title={serverBuild?.commit ? `${serverBuild.commit.slice(0, 12)}${serverBuild.commit_message ? ` · ${serverBuild.commit_message}` : ''}` : 'Server 构建信息'}>
+              <Tag>Server {serverBuild?.version || '未知'}</Tag>
+            </Tooltip>
             <Typography.Text className="username">{username}</Typography.Text>
             <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">退出登录</Button>
           </Space>
