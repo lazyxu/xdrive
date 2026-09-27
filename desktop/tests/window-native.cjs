@@ -13,6 +13,7 @@ test('desktop remembers window state and exposes configurable close behavior', (
   assert.ok(main.includes('screen.getAllDisplays()'), 'missing visible-display restore validation')
   assert.equal(main.includes("win.on('minimize', () => win.hide())"), false, 'minimize should remain a normal taskbar minimize')
   assert.ok(main.includes('关闭窗口后，xDrive 是否继续在后台同步？'), 'missing first-close explanation')
+  assert.ok(main.includes("'Icon=xdrive'"), 'Linux autostart entry should use the installed xDrive application icon')
   assert.ok(main.includes("ipcMain.handle('desktop:set-close-to-tray'"), 'missing close-behavior IPC')
   assert.ok(renderer.includes('关闭窗口时最小化到系统托盘'), 'missing close-behavior setting')
 })
