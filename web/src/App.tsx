@@ -46,6 +46,7 @@ import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
 import StorageStatsModal from './StorageStatsModal'
 import ExternalSourcesPanel from './ExternalSources'
+import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const { Header, Content } = Layout
 const ACCESS_KEY = 'xdrive.access_token'
@@ -141,7 +142,7 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
     <div className="auth-shell">
       <Card className="auth-card">
         <div className="brand-lockup">
-          <img className="brand-mark" src="/xdrive-icon-master.svg" alt="" aria-hidden="true" />
+          <img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" />
           <div>
             <Typography.Title level={2} style={{ margin: 0 }}>xDrive</Typography.Title>
             <Typography.Text type="secondary">将云端文件挂载为本地磁盘。</Typography.Text>
@@ -267,7 +268,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       <Layout className="app-shell">
         <Header className="topbar">
           <div className="brand-lockup compact">
-            <img className="brand-mark small" src="/xdrive-icon-master.svg" alt="" aria-hidden="true" />
+            <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
             <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
           </div>
           <Space>
@@ -414,7 +415,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       <Layout className="app-shell">
         <Header className="topbar">
           <div className="brand-lockup compact">
-            <img className="brand-mark small" src="/xdrive-icon-master.svg" alt="" aria-hidden="true" />
+            <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
             <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
           </div>
           <Space>

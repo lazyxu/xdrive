@@ -17,6 +17,14 @@ test('application icon has one SVG source of truth and platform wiring', () => {
   const masterRef = '../assets/icon/master/xdrive-icon-master.svg'
   assert.equal(builder.split(masterRef).length - 1, 2, 'Windows and Linux Desktop builds must both use the master SVG')
 
+  const desktopRenderer = text('desktop/src/renderer/App.tsx')
+  assert.ok(
+    desktopRenderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"),
+    'Desktop brand lockups must import the approved master SVG directly',
+  )
+  const desktopBrandUses = desktopRenderer.match(/src=\{xDriveBrandIcon\}/g) || []
+  assert.ok(desktopBrandUses.length >= 4, 'Desktop auth/sidebar brand lockups must use the shared master icon')
+
   const web = text('web/index.html')
   assert.ok(web.includes('href="/favicon.svg"'), 'Web must expose the generated SVG favicon')
   assert.ok(web.includes('href="/favicon.ico"'), 'Web must expose the multi-size ICO favicon')
@@ -24,6 +32,13 @@ test('application icon has one SVG source of truth and platform wiring', () => {
   assert.ok(web.includes('href="/site.webmanifest"'), 'Web must expose the manifest')
   assert.ok(text('web/vite.config.ts').includes("publicDir: '../assets/icon/web'"), 'Vite must serve generated Web icon derivatives')
   assert.ok(read('assets/icon/web/favicon.svg').equals(read('assets/icon/master/xdrive-icon-master.svg')), 'Web SVG favicon must remain byte-identical to the master SVG')
+  const webRenderer = text('web/src/App.tsx')
+  assert.ok(
+    webRenderer.includes("import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'"),
+    'Web brand lockups must import the approved master SVG directly',
+  )
+  assert.equal((webRenderer.match(/src=\{xDriveBrandIcon\}/g) || []).length, 3, 'Web brand lockups must all use the master icon')
+  assert.ok(text('web/Dockerfile').includes('COPY assets/icon/ /app/assets/icon/'), 'Web Docker build must copy shared icon assets')
 
   const linuxDesktop = text('packaging/linux/xdrive.desktop')
   assert.ok(linuxDesktop.includes('\nIcon=xdrive\n'), 'Linux launcher must resolve the installed xDrive icon')

@@ -5,6 +5,7 @@ COPY web/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 COPY ui/shared/ /app/ui/shared/
+COPY assets/icon/ /app/assets/icon/
 RUN npm run build
 
 FROM nginx:1.27-alpine

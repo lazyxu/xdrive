@@ -51,4 +51,18 @@ for (const asset of ['/favicon.ico', '/favicon.svg', '/apple-touch-icon.png', '/
 const vite = fs.readFileSync(path.join(repo, 'web', 'vite.config.ts'), 'utf8')
 assert(vite.includes("publicDir: '../assets/icon/web'"), 'Vite must serve the generated Web icon directory')
 
+const appSource = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8')
+assert(
+  appSource.includes("import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'"),
+  'Web brand lockups must import the approved master SVG directly',
+)
+assert((appSource.match(/src=\{xDriveBrandIcon\}/g) || []).length === 3, 'Web must use the shared master icon in all three brand lockups')
+assert(!appSource.includes('src="/xdrive-icon-master.svg"'), 'Web must not reference a stale public master-icon path')
+
+const dockerfile = fs.readFileSync(path.join(repo, 'web', 'Dockerfile'), 'utf8')
+assert(
+  dockerfile.includes('COPY assets/icon/ /app/assets/icon/'),
+  'Web Docker build must copy shared icon assets before Vite resolves the master SVG and public derivatives',
+)
+
 console.log('xDrive Web icon assets passed validation')
