@@ -37,7 +37,9 @@ The default xDrive server home is:
 └── state/
     ├── install.lock
     ├── scheduled-backup.lock
-    └── upgrade-transaction/
+    ├── upgrade-transaction/
+    ├── layout-version
+    └── legacy-volumes-retained
 ```
 
 The top level is intentionally limited to stable subsystem directories. New persistent files must be placed in the appropriate directory instead of accumulating in `~/.xd/`.
@@ -110,6 +112,8 @@ Contains short-lived or transactional host-management state.
 - `install.lock`: exclusive install/update lock.
 - `scheduled-backup.lock`: scheduled backup overlap protection.
 - `upgrade-transaction/`: rollback state retained only while an upgrade is armed or when rollback itself fails.
+- `layout-version`: host-layout schema marker.
+- `legacy-volumes-retained`: exact legacy named-volume IDs retained after a successful migration until explicit cleanup.
 
 No user content is stored under `state/`.
 
@@ -213,6 +217,65 @@ Migration is transactional.
 
 Legacy named volumes are not automatically deleted after a successful migration. Keeping them avoids irreversible data loss. A later explicit cleanup feature may remove them after the operator confirms the bind-mounted deployment and backups are healthy.
 
+## Uninstall and retained-data contract
+
+Uninstall is intentionally conservative. Runtime removal and data destruction are separate operations.
+
+```text
+xdrive-server uninstall --yes
+```
+
+removes the xDrive containers/network, managed backup schedule, installed Compose/Caddy files, host maintenance tools, operational logs, and transient transaction state. It preserves:
+
+- `config/.env`, because retained databases/backups may still require PostgreSQL, JWT, and connector-encryption secrets;
+- all configured live data directories;
+- `backups/`;
+- any `legacy-volumes-retained` record.
+
+To remove live data explicitly:
+
+```text
+xdrive-server uninstall --purge-data --yes
+```
+
+To remove backups explicitly:
+
+```text
+xdrive-server uninstall --purge-backups --yes
+```
+
+A complete uninstall requires both destructive flags:
+
+```text
+xdrive-server uninstall --purge-data --purge-backups --yes
+```
+
+Container-owned bind directories are cleared through a short-lived Docker helper rather than host-side `sudo rm -rf`. The purge implementation refuses obviously dangerous paths such as `/`, the user's home, the xDrive home itself, and core system directories.
+
+If retained legacy named volumes still exist, the uninstall leaves only a cleanup-capable `~/.xd/bin/xdrive-server` plus the exact volume record. This allows:
+
+```text
+~/.xd/bin/xdrive-server cleanup legacy-volumes --yes
+```
+
+after runtime uninstall. Once all recorded volumes are gone, that temporary cleanup manager and its retained state remove themselves. A full-purge uninstall is finalized at that point as well.
+
+### Legacy named-volume cleanup
+
+Legacy cleanup never guesses xDrive volume names. Candidates come only from `state/legacy-volumes-retained`, which was written by a successful migration.
+
+```text
+xdrive-server cleanup legacy-volumes
+```
+
+prints the exact candidates and makes no changes. Deletion requires:
+
+```text
+xdrive-server cleanup legacy-volumes --yes
+```
+
+Before removal each candidate is checked through Docker. Any volume still referenced by a container is refused and remains recorded. Missing volumes are treated as already cleaned. The record is deleted only when every recorded volume is absent.
+
 ## Backup and restore invariants
 
 Backups are storage-backend neutral. They must work whether `/data` and PostgreSQL are backed by a bind mount or a legacy named volume.
@@ -248,6 +311,9 @@ Normal CI must verify at least:
 - legacy named-volume data is copied before the new deployment is opened;
 - rollback keeps the old named-volume deployment usable;
 - backup/restore tests use the bind-mounted layout;
-- GitHub and GitLab server validation enforce the same layout contract.
+- GitHub and GitLab server validation enforce the same layout contract;
+- uninstall without purge flags preserves `.env`, data and backups;
+- destructive uninstall requires `--yes` and purges container-owned bind trees through Docker;
+- legacy-volume cleanup reads only the migration record, refuses in-use volumes, and requires `--yes`.
 
 A real Rootless Docker smoke test may additionally be run on a compatible runner, but mandatory CI must not assume that every Docker-executor runner permits nested user namespaces.

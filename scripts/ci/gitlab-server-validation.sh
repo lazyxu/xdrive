@@ -36,6 +36,8 @@ bash -n scripts/test-server-rootless-layout.sh
 bash scripts/test-server-rootless-layout.sh
 bash -n scripts/test-server-legacy-layout-migration.sh
 bash scripts/test-server-legacy-layout-migration.sh
+bash -n scripts/test-server-uninstall.sh
+bash scripts/test-server-uninstall.sh
 bash -n scripts/xdrive-server-host.sh
 bash -n scripts/test-xdrive-server-host.sh
 bash scripts/test-xdrive-server-host.sh

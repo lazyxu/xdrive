@@ -129,6 +129,10 @@ xdrive-server restore BACKUP_DIR --yes
 xdrive-server verify
 xdrive-server verify --repair --dry-run
 xdrive-server verify --repair
+xdrive-server cleanup legacy-volumes
+xdrive-server cleanup legacy-volumes --yes
+xdrive-server uninstall --yes
+xdrive-server uninstall --purge-data --purge-backups --yes
 xdrive-server admin list
 xdrive-server admin reset-password admin
 xdrive-server admin enable admin
@@ -147,6 +151,8 @@ Persistent server state uses host bind mounts under `~/.xd/data` by default:
 ```
 
 Configuration, host tools, backups, logs, and transaction state are separated into `config/`, `bin/`, `backups/`, `logs/`, and `state/`. Existing flat `~/.xd` deployments and Docker named volumes are migrated transactionally on upgrade; legacy named volumes are retained instead of being deleted automatically. See [`docs/server-host-layout.md`](docs/server-host-layout.md) for the full contract.
+
+Uninstall is deliberately conservative. `xdrive-server uninstall --yes` removes the running Compose deployment and host control files but preserves `config/.env`, live data, and backups. Destructive data or backup removal requires `--purge-data` and/or `--purge-backups`, and all uninstall paths require `--yes`. Legacy Docker volumes retained after migration are removed only from the exact `state/legacy-volumes-retained` record via `xdrive-server cleanup legacy-volumes --yes`; volume names are never guessed.
 
 The host manager downloads the bootstrap installer from the selected update source to a temporary file, validates it with `bash -n`, and then runs that file with stdin detached from any download pipe. `--source github|gitlab` is independent from `--channel stable|master|commit`; both are persisted in `~/.xd/config/.env`. GitLab defaults to `http://gitlab.t-fluid.com:1080/xuliang/xdrive`. The installer resolves the selected successfully published release/commit and uses immutable `sha-<commit>` images for master/commit channels. Switching providers is explicit: xDrive does not silently fall back from one provider to the other.
 
