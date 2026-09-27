@@ -9,6 +9,7 @@ import {
   Menu,
   nativeImage,
   Notification,
+  powerMonitor,
   screen,
   session,
   Tray,
@@ -672,6 +673,12 @@ function startTransferMonitor() {
   })()
 }
 
+function restartDesktopMonitors() {
+  startAgentMonitor()
+  startTransferMonitor()
+  startUpdateMonitor()
+}
+
 function startUpdateMonitor() {
   updateMonitor?.abort()
   const monitor = new AbortController()
@@ -1229,9 +1236,10 @@ if (!primaryInstance) {
     registerIPCHandlers()
     createMainWindow(!backgroundLaunch)
     createTray()
-    startAgentMonitor()
-    startTransferMonitor()
-    startUpdateMonitor()
+    restartDesktopMonitors()
+    powerMonitor.on('resume', () => {
+      restartDesktopMonitors()
+    })
     if (startupDesktopAction) await performDesktopShortcutAction(startupDesktopAction)
   })
   app.on('activate', () => {
