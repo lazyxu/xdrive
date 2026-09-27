@@ -43,6 +43,8 @@ test('desktop GUI defaults to Chinese', () => {
     '立即同步',
     '暂停同步',
     '退出 xDrive 桌面版',
+    '客户端更新',
+    '检查更新',
     '选择 xDrive 同步文件夹',
   ]) {
     assert.ok(main.includes(text), `missing Chinese desktop system label: ${text}`)

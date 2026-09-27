@@ -14,6 +14,7 @@ import {
   type OpenDialogOptions,
 } from 'electron'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
+import { trayUpdatePresentation } from './tray_update.cjs'
 import {
   AgentIPCClient,
   AgentIPCError,
@@ -63,8 +64,10 @@ let agentClient: AgentIPCClient | null = null
 let agentLifecycle: AgentLifecycle | null = null
 let agentState: AgentConnectionState = { connected: false, error: 'Connecting to xdrive-agent…' }
 let agentTransfers: AgentTransfers = { revision: 0, transfers: [] }
+let agentUpdateState: AgentUpdateState | null = null
 let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
+let updateMonitor: AbortController | null = null
 const backgroundLaunch = process.argv.includes('--background')
 const desktopPreferencesName = 'desktop-settings.json'
 
@@ -205,9 +208,36 @@ function rebuildTrayMenu() {
   if (!tray) return
   const status = agentState.status
   const configured = !!status?.configured
+  const update = trayUpdatePresentation(agentUpdateState)
+  const updateSupported = agentState.connected && (agentState.hello?.capabilities.includes('client-update') ?? false)
   tray.setToolTip(`xDrive — ${statusLabel()}`)
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: statusLabel(), enabled: false },
+    {
+      label: `客户端更新 · ${update.headline}`,
+      enabled: updateSupported,
+      submenu: [
+        ...(agentUpdateState?.current_version
+          ? [{ label: `当前版本 ${agentUpdateState.current_version}`, enabled: false }]
+          : []),
+        { label: update.headline, enabled: false },
+        ...(update.detail ? [{ label: update.detail, enabled: false }] : []),
+        { type: 'separator' as const },
+        {
+          label: '检查更新',
+          enabled: updateSupported && !update.busy,
+          click: () => {
+            void runAgentAction(async () => {
+              const hello = await requireAgentLifecycle().ensureRunning()
+              requireAgentCapability(hello, 'client-update')
+              const next = await requireAgentClient().checkUpdate()
+              publishAgentUpdate(next)
+              return next
+            }, false)
+          },
+        },
+      ],
+    },
     { type: 'separator' },
     { label: '打开 xDrive 桌面版', click: showMainWindow },
     {
@@ -279,6 +309,12 @@ function publishAgentTransfers(next: AgentTransfers) {
   if (changed && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('agent:transfers', next)
   }
+}
+
+function publishAgentUpdate(next: AgentUpdateState | null) {
+  const changed = JSON.stringify(agentUpdateState) !== JSON.stringify(next)
+  agentUpdateState = next
+  if (changed) rebuildTrayMenu()
 }
 
 function withDesktopCompatibility(report: AgentDiagnosticReport, hello: AgentHello): AgentDiagnosticReport {
@@ -440,6 +476,32 @@ function startTransferMonitor() {
         if (monitor.signal.aborted) return
         requireAgentClient().invalidate()
         await wait(1_000, monitor.signal)
+      }
+    }
+  })()
+}
+
+function startUpdateMonitor() {
+  updateMonitor?.abort()
+  const monitor = new AbortController()
+  updateMonitor = monitor
+  void (async () => {
+    while (!monitor.signal.aborted) {
+      try {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        if (!hello.capabilities.includes('client-update')) {
+          publishAgentUpdate(null)
+          await wait(30_000, monitor.signal)
+          continue
+        }
+        const state = await requireAgentClient().updateState()
+        publishAgentUpdate(state)
+        const active = state.status === 'checking' || state.status === 'downloading' || state.status === 'installing'
+        await wait(active ? 1_000 : 15_000, monitor.signal)
+      } catch {
+        if (monitor.signal.aborted) return
+        publishAgentUpdate(null)
+        await wait(5_000, monitor.signal)
       }
     }
   })()
@@ -760,7 +822,9 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:get-update', () => runAgentAction<AgentUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'client-update')
-    return requireAgentClient().updateState()
+    const next = await requireAgentClient().updateState()
+    publishAgentUpdate(next)
+    return next
   }, false))
   ipcMain.handle('agent:set-update-mode', (_event, mode: unknown) => {
     if (mode !== 'manual' && mode !== 'check' && mode !== 'download' && mode !== 'install') {
@@ -769,23 +833,31 @@ function registerIPCHandlers() {
     return runAgentAction<AgentUpdateState>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'client-update')
-      return requireAgentClient().setUpdateMode(mode as AgentUpdateMode)
+      const next = await requireAgentClient().setUpdateMode(mode as AgentUpdateMode)
+      publishAgentUpdate(next)
+      return next
     }, false)
   })
   ipcMain.handle('agent:check-update', () => runAgentAction<AgentUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'client-update')
-    return requireAgentClient().checkUpdate()
+    const next = await requireAgentClient().checkUpdate()
+    publishAgentUpdate(next)
+    return next
   }, false))
   ipcMain.handle('agent:download-update', () => runAgentAction<AgentUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'client-update')
-    return requireAgentClient().downloadUpdate()
+    const next = await requireAgentClient().downloadUpdate()
+    publishAgentUpdate(next)
+    return next
   }, false))
   ipcMain.handle('agent:install-update', () => runAgentAction<AgentUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'client-update')
-    return requireAgentClient().installUpdate()
+    const next = await requireAgentClient().installUpdate()
+    publishAgentUpdate(next)
+    return next
   }, false))
   ipcMain.handle('agent:set-sync-rule', (_event, path: unknown, mode: unknown) => {
     if (typeof path !== 'string' || !path.trim() || (mode !== 'exclude' && mode !== 'always-local' && mode !== 'default')) {
@@ -885,6 +957,7 @@ if (!primaryInstance) {
     quitting = true
     agentMonitor?.abort()
     transferMonitor?.abort()
+    updateMonitor?.abort()
   })
   void app.whenReady().then(async () => {
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
@@ -903,6 +976,7 @@ if (!primaryInstance) {
     createTray()
     startAgentMonitor()
     startTransferMonitor()
+    startUpdateMonitor()
   })
   app.on('activate', () => {
     if (mainWindow) showMainWindow()
