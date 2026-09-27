@@ -99,6 +99,12 @@ test('desktop Yike source exposes connection testing', () => {
   assert.ok(renderer.includes('测试连接'), 'missing Yike connection test action')
 })
 
+test('desktop external sources expose per-file failures', () => {
+  assert.ok(renderer.includes('getSourceItems'), 'missing Source item query')
+  assert.ok(renderer.includes('查看失败项'), 'missing per-file failure action')
+  assert.ok(renderer.includes('下一次扫描会自动重试'), 'missing retry guidance')
+})
+
 test('desktop GUI does not regress to key English labels', () => {
   for (const text of [
     'AGENT CONNECTION',

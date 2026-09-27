@@ -4,12 +4,16 @@ import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, 
 import type { BadgeProps } from 'antd'
 import {
   Alert as MuiAlert,
+  Box as MuiBox,
   Button as MuiButton,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Stack,
+  Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
 import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
@@ -27,6 +31,7 @@ import {
 import type {
   ExternalSource,
   ExternalSourceCredentialTestResult,
+  ExternalSourceItem,
   ExternalSourceRow,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
@@ -77,6 +82,10 @@ export default function ExternalSourcesPanel({
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<ExternalSourceRow | null>(null)
+  const [failedItems, setFailedItems] = useState<ExternalSourceItem[]>([])
+  const [failedItemsLoading, setFailedItemsLoading] = useState(false)
+  const [failedItemsOpen, setFailedItemsOpen] = useState(false)
+  const [failedItemsLimitReached, setFailedItemsLimitReached] = useState(false)
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
@@ -351,6 +360,30 @@ export default function ExternalSourcesPanel({
     }
   }
 
+  const openDetails = async (row: ExternalSourceRow) => {
+    setSelected(row)
+    setFailedItems([])
+    setFailedItemsOpen(false)
+    setFailedItemsLimitReached(false)
+    setFailedItemsLoading(true)
+    try {
+      const items = await api.sourceItems(row.source.id, 'error', 1000, 0)
+      setFailedItems(items)
+      setFailedItemsLimitReached(items.length >= 1000)
+    } catch (error) {
+      onError(error)
+    } finally {
+      setFailedItemsLoading(false)
+    }
+  }
+
+  const closeDetails = () => {
+    setSelected(null)
+    setFailedItems([])
+    setFailedItemsOpen(false)
+    setFailedItemsLimitReached(false)
+  }
+
   const selectedDetail = selected ? externalSourceDetailView(selected) : null
   const selectedRunDetail = selected?.latestRun ? externalSourceRunDetailView(selected.latestRun) : null
 
@@ -396,7 +429,7 @@ export default function ExternalSourcesPanel({
                   </div>
                   <div className="external-source-actions">
                     <Space size="small">
-                      <Button size="small" onClick={() => setSelected(row)}>查看</Button>
+                      <Button size="small" disabled={failedItemsLoading} onClick={() => void openDetails(row)}>查看</Button>
                       {row.source.kind === 'synology_photos' && (
                         <MuiButton
                           size="small"
@@ -431,7 +464,7 @@ export default function ExternalSourcesPanel({
       <Modal
         title={selected ? `${selected.source.name} · 来源详情` : '来源详情'}
         open={!!selected}
-        onCancel={() => setSelected(null)}
+        onCancel={closeDetails}
         footer={null}
         width={720}
       >
@@ -479,9 +512,60 @@ export default function ExternalSourcesPanel({
             ) : (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无运行记录" />
             )}
+
+            {failedItemsLoading && (
+              <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
+                正在检查逐文件失败记录…
+              </MuiTypography>
+            )}
+            {!failedItemsLoading && failedItems.length > 0 && (
+              <MuiAlert
+                severity="error"
+                sx={{ mt: 2 }}
+                action={(
+                  <MuiButton color="inherit" size="small" onClick={() => setFailedItemsOpen(true)}>
+                    查看失败项（{failedItems.length}）
+                  </MuiButton>
+                )}
+              >
+                当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
+              </MuiAlert>
+            )}
           </>
         )}
       </Modal>
+
+      <Dialog open={failedItemsOpen && failedItems.length > 0} onClose={() => setFailedItemsOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>失败文件</DialogTitle>
+        <DialogContent dividers>
+          {failedItemsLimitReached && (
+            <MuiAlert severity="info" sx={{ mb: 2 }}>
+              当前最多显示前 1000 个失败项。
+            </MuiAlert>
+          )}
+          <Stack spacing={1.5}>
+            {failedItems.map((item) => (
+              <MuiBox key={item.source_item_id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                  <MuiTypography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                    {item.path || item.external_id}
+                  </MuiTypography>
+                  <Chip size="small" label={formatSize(item.size)} />
+                </Stack>
+                <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
+                  外部 ID：{item.external_id}
+                </MuiTypography>
+                <MuiAlert severity="error" sx={{ mt: 1 }}>
+                  {item.last_error || '未提供具体错误原因'}
+                </MuiAlert>
+              </MuiBox>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton onClick={() => setFailedItemsOpen(false)}>关闭</MuiButton>
+        </DialogActions>
+      </Dialog>
 
       <Modal
         title="添加外部来源"

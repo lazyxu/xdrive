@@ -58,6 +58,20 @@ export interface ExternalSourceRun {
   finished_at?: string
 }
 
+export interface ExternalSourceItem {
+  source_item_id: number
+  external_id: string
+  node_id?: number
+  kind: string
+  path: string
+  size: number
+  modified_at?: string
+  sha256?: string
+  remote_revision?: string
+  state: 'pending' | 'synced' | 'missing' | 'ignored' | 'error' | string
+  last_error?: string
+}
+
 export interface ExternalSourceCredentialStatus {
   configured: boolean
   key_version?: number

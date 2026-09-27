@@ -153,6 +153,7 @@ type desktopIPCController interface {
 	CloudRevokeShare(context.Context, uint64) error
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error)
+	CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
 	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
 	CloudTestSourceCredential(context.Context, string, string) (client.SourceCredentialTestResult, error)
 	CloudTestStoredSourceCredential(context.Context, uint64) (client.SourceCredentialTestResult, error)
@@ -361,6 +362,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("DELETE /v1/sources", h.deleteSource)
 	mux.HandleFunc("POST /v1/sources/trigger", h.triggerSource)
 	mux.HandleFunc("GET /v1/sources/runs", h.sourceRuns)
+	mux.HandleFunc("GET /v1/sources/items", h.sourceItems)
 	mux.HandleFunc("POST /v1/source-credentials/test", h.testSourceCredential)
 	mux.HandleFunc("GET /v1/sources/credential", h.sourceCredentialStatus)
 	mux.HandleFunc("POST /v1/sources/credential/test", h.testStoredSourceCredential)
@@ -975,6 +977,39 @@ func (h *desktopIPCHandler) sourceRuns(w http.ResponseWriter, r *http.Request) {
 		limit = value
 	}
 	items, err := h.ctrl.CloudSourceRuns(r.Context(), sourceID, limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) sourceItems(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	limit := 1000
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 1000 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 1000")
+			return
+		}
+		limit = value
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offset", "offset must be zero or greater")
+			return
+		}
+		offset = value
+	}
+	items, err := h.ctrl.CloudSourceItems(r.Context(), sourceID, state, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

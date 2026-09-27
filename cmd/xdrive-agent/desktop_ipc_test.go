@@ -78,6 +78,7 @@ type fakeDesktopIPCController struct {
 	cloudDeleteRev            uint64
 	cloudSources              []client.Source
 	cloudSourceRuns           []client.SyncRun
+	cloudSourceItems          []client.SourceItem
 	cloudSourceCredential     client.SourceCredentialStatus
 	cloudCredentialTest       client.SourceCredentialTestResult
 	cloudTestCredentialKind   string
@@ -243,6 +244,10 @@ func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Sourc
 
 func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error) {
 	return append([]client.SyncRun(nil), f.cloudSourceRuns...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error) {
+	return append([]client.SourceItem(nil), f.cloudSourceItems...), f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error) {
@@ -658,6 +663,10 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			ID: "run-1", SourceID: 9, Mode: "scan", Trigger: "manual",
 			Status: "completed", ScannedItems: 12, ScannedBytes: 34, StartedAt: now,
 		}},
+		cloudSourceItems: []client.SourceItem{{
+			SourceItemID: 1, ExternalID: "yike:123:2", Kind: "file",
+			Path: "Library/fail.jpg [2]", Size: 20, State: "error", LastError: "download unavailable",
+		}},
 		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
 		cloudCredentialTest: client.SourceCredentialTestResult{
 			Valid: true, Kind: "yike_photos", AccountExternalID: "12345", AccountName: "Test User",
@@ -675,6 +684,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	}{
 		{"/v1/sources", "\"一刻相册\""},
 		{"/v1/sources/runs?source_id=9&limit=5", "\"scanned_items\":12"},
+		{"/v1/sources/items?source_id=9&state=error&limit=1000&offset=0", "\"last_error\":\"download unavailable\""},
 		{"/v1/sources/credential?source_id=9", "\"configured\":true"},
 	}
 	for _, tc := range cases {
@@ -687,6 +697,9 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	for _, path := range []string{
 		"/v1/sources/runs?source_id=0",
 		"/v1/sources/runs?source_id=9&limit=201",
+		"/v1/sources/items?source_id=0",
+		"/v1/sources/items?source_id=9&limit=1001",
+		"/v1/sources/items?source_id=9&offset=-1",
 		"/v1/sources/credential?source_id=bad",
 	} {
 		res := desktopIPCRequest(t, handler, http.MethodGet, path, "")

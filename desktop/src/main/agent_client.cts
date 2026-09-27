@@ -184,6 +184,20 @@ export type AgentSourceRun = {
   finished_at?: string
 }
 
+export type AgentSourceItem = {
+  source_item_id: number
+  external_id: string
+  node_id?: number
+  kind: string
+  path: string
+  size: number
+  modified_at?: string
+  sha256?: string
+  remote_revision?: string
+  state: string
+  last_error?: string
+}
+
 export type AgentSourceCredentialStatus = {
   configured: boolean
   key_version?: number
@@ -465,6 +479,16 @@ export class AgentIPCClient {
   sourceRuns(sourceID: number, limit = 1) {
     const query = new URLSearchParams({ source_id: String(sourceID), limit: String(limit) })
     return this.request<AgentSourceRun[]>('GET', `/v1/sources/runs?${query.toString()}`)
+  }
+
+  sourceItems(sourceID: number, state = '', limit = 1000, offset = 0) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      limit: String(limit),
+      offset: String(offset),
+    })
+    if (state) query.set('state', state)
+    return this.request<AgentSourceItem[]>('GET', `/v1/sources/items?${query.toString()}`)
   }
 
   sourceCredentialStatus(sourceID: number) {

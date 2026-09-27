@@ -213,6 +213,14 @@ func (c *agentController) CloudSourceRuns(ctx context.Context, sourceID uint64, 
 	return cli.SourceRuns(ctx, sourceID, limit)
 }
 
+func (c *agentController) CloudSourceItems(ctx context.Context, sourceID uint64, state string, limit, offset int) ([]client.SourceItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.SourceItems(ctx, sourceID, state, limit, offset)
+}
+
 func (c *agentController) CloudSourceCredentialStatus(ctx context.Context, sourceID uint64) (client.SourceCredentialStatus, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

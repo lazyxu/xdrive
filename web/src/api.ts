@@ -6,6 +6,7 @@ import type {
   ExternalSource,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialTestResult,
+  ExternalSourceItem,
   ExternalSourceRun,
   FileShare,
   FileVersion,
@@ -22,6 +23,7 @@ import type {
 export type {
   ExternalSource,
   ExternalSourceCredentialStatus,
+  ExternalSourceItem,
   ExternalSourceRun,
 } from '../../ui/shared/src'
 
@@ -290,6 +292,14 @@ export class XDriveApi {
   sourceRuns(sourceID: number, limit = 1) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?limit=${bounded}`)
+  }
+
+  sourceItems(sourceID: number, state = '', limit = 1000, offset = 0) {
+    const query = new URLSearchParams()
+    if (state) query.set('state', state)
+    query.set('limit', String(Math.min(1000, Math.max(1, Math.trunc(limit)))))
+    if (offset > 0) query.set('offset', String(Math.trunc(offset)))
+    return this.request<ExternalSourceItem[]>(`/api/v1/sources/${sourceID}/items?${query.toString()}`)
   }
 
   sourceCredentialStatus(sourceID: number) {
