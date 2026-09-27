@@ -16,6 +16,7 @@ type SourceItemMetadata struct {
 	SourceID        uint64     `gorm:"not null;index"`
 	OriginalPath    string     `gorm:"size:4096"`
 	OwnerExternalID string     `gorm:"size:128;index"`
+	CapturedAt      *time.Time `gorm:"index"`
 	RemoteCreatedAt *time.Time `gorm:"index"`
 	ContentMD5      string     `gorm:"size:32;index"`
 	ThumbnailURL    string     `gorm:"type:text"`

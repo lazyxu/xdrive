@@ -335,6 +335,11 @@ func appendResultError(result *Result, externalID, itemPath string, err error) {
 }
 
 func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {
+	var capturedAt *time.Time
+	if file.ShootTime > 0 {
+		value := time.Unix(file.ShootTime, 0).UTC()
+		capturedAt = &value
+	}
 	var createdAt *time.Time
 	if file.CTime > 0 {
 		value := time.Unix(file.CTime, 0).UTC()
@@ -352,6 +357,7 @@ func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {
 		ItemExternalID:  externalID,
 		OriginalPath:    strings.TrimSpace(file.Path),
 		OwnerExternalID: strconv.FormatInt(ownerUK, 10),
+		CapturedAt:      capturedAt,
 		RemoteCreatedAt: createdAt,
 		ContentMD5:      metadataMD5(file.MD5),
 		ThumbnailURL:    thumbnailURL,

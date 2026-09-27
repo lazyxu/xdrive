@@ -13,6 +13,7 @@ import (
 type sourceItemMetadataDTO struct {
 	OriginalPath    string     `json:"original_path,omitempty"`
 	OwnerExternalID string     `json:"owner_external_id,omitempty"`
+	CapturedAt      *time.Time `json:"captured_at,omitempty"`
 	RemoteCreatedAt *time.Time `json:"remote_created_at,omitempty"`
 	ContentMD5      string     `json:"content_md5,omitempty"`
 	ThumbnailURL    string     `json:"thumbnail_url,omitempty"`
@@ -51,6 +52,7 @@ type sourceItemRow struct {
 	MetadataSourceItemID *uint64
 	OriginalPath         string
 	OwnerExternalID      string
+	CapturedAt           *time.Time
 	RemoteCreatedAt      *time.Time
 	ContentMD5           string
 	ThumbnailURL         string
@@ -76,6 +78,7 @@ func (r sourceItemRow) dto() sourceItemDTO {
 		out.Metadata = &sourceItemMetadataDTO{
 			OriginalPath:    r.OriginalPath,
 			OwnerExternalID: r.OwnerExternalID,
+			CapturedAt:      r.CapturedAt,
 			RemoteCreatedAt: r.RemoteCreatedAt,
 			ContentMD5:      r.ContentMD5,
 			ThumbnailURL:    r.ThumbnailURL,
@@ -158,6 +161,7 @@ const sourceItemSelect = `si.id AS source_item_id,
 	sm.source_item_id AS metadata_source_item_id,
 	COALESCE(sm.original_path, '') AS original_path,
 	COALESCE(sm.owner_external_id, '') AS owner_external_id,
+	sm.captured_at,
 	sm.remote_created_at,
 	COALESCE(sm.content_md5, '') AS content_md5,
 	COALESCE(sm.thumbnail_url, '') AS thumbnail_url,

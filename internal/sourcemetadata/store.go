@@ -26,6 +26,7 @@ type Snapshot struct {
 	ItemExternalID  string
 	OriginalPath    string
 	OwnerExternalID string
+	CapturedAt      *time.Time
 	RemoteCreatedAt *time.Time
 	ContentMD5      string
 	ThumbnailURL    string
@@ -80,6 +81,7 @@ func ApplySnapshot(
 				SourceID:        sourceID,
 				OriginalPath:    snapshot.OriginalPath,
 				OwnerExternalID: snapshot.OwnerExternalID,
+				CapturedAt:      snapshot.CapturedAt,
 				RemoteCreatedAt: snapshot.RemoteCreatedAt,
 				ContentMD5:      snapshot.ContentMD5,
 				ThumbnailURL:    snapshot.ThumbnailURL,
@@ -99,6 +101,7 @@ func ApplySnapshot(
 					"source_id":         gorm.Expr("EXCLUDED.source_id"),
 					"original_path":     gorm.Expr("EXCLUDED.original_path"),
 					"owner_external_id": gorm.Expr("EXCLUDED.owner_external_id"),
+					"captured_at":       gorm.Expr("EXCLUDED.captured_at"),
 					"remote_created_at": gorm.Expr("EXCLUDED.remote_created_at"),
 					"content_md5":       gorm.Expr("EXCLUDED.content_md5"),
 					"thumbnail_url":     gorm.Expr("EXCLUDED.thumbnail_url"),

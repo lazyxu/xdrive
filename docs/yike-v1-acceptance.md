@@ -36,6 +36,7 @@ Use a Yike account whose test set includes photos and videos. Complete every blo
 - [ ] `sync` mode downloads normal photos and videos into the managed Yike target.
 - [ ] At least one large video completes through resumable upload without worker-local full-file staging.
 - [ ] Root-library media and own albums are traversed successfully.
+- [ ] For media exposing Yike `shoot_time`, Source metadata preserves it as `captured_at` independently from remote `ctime`.
 - [ ] Joined/shared albums are traversed when the account has them.
 - [ ] One media object belonging to multiple albums produces one SourceItem/xDrive file, with multiple collection memberships rather than duplicate content.
 - [ ] Chinese names, spaces and names containing Windows-reserved characters are mapped to valid deterministic xDrive paths.

@@ -9,11 +9,13 @@ import (
 )
 
 func TestValidateSnapshotsNormalizesMetadata(t *testing.T) {
+	captured := time.Date(2020, 5, 6, 7, 8, 9, 0, time.UTC)
 	created := time.Date(2026, 9, 26, 1, 2, 3, 0, time.UTC)
 	snapshots := []Snapshot{{
 		ItemExternalID:  " yike:123:1 ",
 		OriginalPath:    " /DCIM/A.JPG ",
 		OwnerExternalID: " 123 ",
+		CapturedAt:      &captured,
 		RemoteCreatedAt: &created,
 		ContentMD5:      strings.Repeat("A", 32),
 		ThumbnailURL:    " https://thumb.example/a ",
@@ -25,6 +27,8 @@ func TestValidateSnapshotsNormalizesMetadata(t *testing.T) {
 	if got.ItemExternalID != "yike:123:1" ||
 		got.OriginalPath != "/DCIM/A.JPG" ||
 		got.OwnerExternalID != "123" ||
+		got.CapturedAt == nil || !got.CapturedAt.Equal(captured) ||
+		got.RemoteCreatedAt == nil || !got.RemoteCreatedAt.Equal(created) ||
 		got.ContentMD5 != strings.Repeat("a", 32) ||
 		got.ThumbnailURL != "https://thumb.example/a" {
 		t.Fatalf("normalized snapshot=%+v", got)

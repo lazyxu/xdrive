@@ -136,6 +136,7 @@ type SourceCollection struct {
 type SourceItemMetadata struct {
 	OriginalPath    string     `json:"original_path,omitempty"`
 	OwnerExternalID string     `json:"owner_external_id,omitempty"`
+	CapturedAt      *time.Time `json:"captured_at,omitempty"`
 	RemoteCreatedAt *time.Time `json:"remote_created_at,omitempty"`
 	ContentMD5      string     `json:"content_md5,omitempty"`
 	ThumbnailURL    string     `json:"thumbnail_url,omitempty"`

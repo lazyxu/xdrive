@@ -78,7 +78,8 @@ Each item returns the normal Source identity/state fields plus connector-neutral
 
 - `original_path`: original remote path reported by Yike;
 - `owner_external_id`: Yike owner UK for the media;
-- `remote_created_at`: remote creation time;
+- `captured_at`: media capture time from Yike `shoot_time` when exposed;
+- `remote_created_at`: remote creation/upload time from Yike `ctime`;
 - `content_md5`: validated remote MD5 when exposed by Yike;
 - `thumbnail_url`: refreshable preview hint from the latest scan;
 - `pair_group_id` / `pair_role`: reserved explicit paired-media fields.
