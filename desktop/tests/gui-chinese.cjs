@@ -79,6 +79,13 @@ test('desktop keeps sync controls global instead of repeating page status action
   assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
 })
 
+test('desktop gates CfAPI-only storage controls by platform', () => {
+  assert.ok(renderer.includes("const storagePoliciesSupported = info?.platform === 'win32'"), 'missing Windows storage capability gate')
+  assert.ok(renderer.includes('Linux FUSE 模式不提供 Windows CfAPI'), 'missing Linux FUSE storage explanation')
+  assert.ok(renderer.includes('FUSE 按需访问'), 'missing Linux read-only storage state')
+  assert.ok(renderer.includes("storagePoliciesSupported ? '管理存储' : '查看存储'"), 'missing platform-aware storage action')
+})
+
 test('desktop external sources expose safe source deletion', () => {
   assert.ok(renderer.includes('删除来源'), 'missing source delete action')
   assert.ok(renderer.includes('已同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
