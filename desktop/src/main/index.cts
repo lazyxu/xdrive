@@ -17,6 +17,7 @@ import {
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
+import { trayStatusIconBase64, trayStatusKind } from './tray_status.cjs'
 import {
   defaultDesktopPreferences,
   normalizeDesktopPreferences,
@@ -53,7 +54,6 @@ import {
   type AgentTransfers,
 } from './agent_client.cjs'
 
-const TRAY_ICON_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA20lEQVR42uWX4RGDIAyFNTPYDdrJ2rHsZHYD3UF/9Y6zCbxAQrwrfw35Hgk8ZBj+fYy5j/fnuluBPu/bCAuwBJeEUE84l596wjkORW9C6r36M09dgWWeTGKqWvBNnAMgMWoByzz9JOQAXExJCCTg8dqKpZZA0lx1C0qJaudQa0KpzKjg6/iAZVk17aqqQA6g3StVAhAfcBMQ6oThm1A6btLxNBWg7S06h1oSpStH7LrpLjgDOCAXY3YXpADEB9ys2M0Jpf9279/za/lAryqkHEKfUF4vo/C3Yfg4ANVHcjg82WLtAAAAAElFTkSuQmCC'
 
 type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
@@ -320,8 +320,21 @@ function statusLabel() {
   return status.sync_status || status.auth_status
 }
 
+function trayStatusImage() {
+  const kind = trayStatusKind(agentState.connected, agentState.status, agentTransfers, agentUpdateState)
+  return nativeImage
+    .createFromBuffer(Buffer.from(trayStatusIconBase64(kind), 'base64'))
+    .resize({ width: process.platform === 'win32' ? 16 : 22, height: process.platform === 'win32' ? 16 : 22 })
+}
+
+function updateTrayIcon() {
+  if (!tray) return
+  tray.setImage(trayStatusImage())
+}
+
 function rebuildTrayMenu() {
   if (!tray) return
+  updateTrayIcon()
   const status = agentState.status
   const configured = !!status?.configured
   const update = trayUpdatePresentation(agentUpdateState)
@@ -383,10 +396,7 @@ function rebuildTrayMenu() {
 }
 
 function createTray() {
-  const trayIcon = nativeImage
-    .createFromBuffer(Buffer.from(TRAY_ICON_BASE64, 'base64'))
-    .resize({ width: process.platform === 'win32' ? 16 : 22, height: process.platform === 'win32' ? 16 : 22 })
-  tray = new Tray(trayIcon)
+  tray = new Tray(trayStatusImage())
   tray.on('click', showMainWindow)
   rebuildTrayMenu()
 }
@@ -448,6 +458,7 @@ function publishAgentState(next: AgentConnectionState) {
 function publishAgentTransfers(next: AgentTransfers) {
   const changed = JSON.stringify(agentTransfers) !== JSON.stringify(next)
   agentTransfers = next
+  updateTrayIcon()
   updateTaskbarProgress()
   if (changed && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('agent:transfers', next)

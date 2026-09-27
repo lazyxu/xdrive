@@ -1,0 +1,47 @@
+import type { AgentStatus, AgentTransfers, AgentUpdateState } from './agent_client.cjs'
+
+export type TrayStatusKind = 'normal' | 'syncing' | 'paused' | 'conflict' | 'offline'
+
+const icons: Record<TrayStatusKind, string> = {
+  normal: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACfElEQVR4nIVTS0hUYRg93//fO497xxkfEdJkplKGQRupRRCM0jZaCZXTbEpaNFYupOVtXLbLMaJNLZSCFoJhOT1AdyI2uilDU6OpFMmGxLkzztzH38J5OJr0rT5+zjnwnfMfYOdogkETDPuNJhiEIAhB+2KKwP+9lURKip5ry0+V0OzdPEEqgse396bRjbON7/U3h7VYdUGE0PGCAx3wVCw9YcrBEIwULH21Wx9qHYAmJAQAtJHZMPznDPmU11yVa6yk/nnz43T7r97AGkNLh0ALBMz0HIxNCDNncI8/qgbjYUTILJCZV4nBtKpFFjB/rySyqzM5AKDifRGy1WA8zD3+qDC2DHIqsplY7PL3nJi2hWdCWJaPKS7KfV0YSYSaLwHY2j6hZJKECJlqMB7m3rqonc6AV9mi6vyBLS473UyRkV1eGEmEmq+A8TQsk0AkdjstAYBycep6Ze+afnwsbbW8S5tNE4ZV/3x+CIAHjAOaVkxEKhMIAIgAteFjUwJKTiLhcLhYLjmXdW0ML30AkMIjU8YNMgqU0gnjQtph2FvY8ELmpC+kkZpct5hL4Zb+45Y+2BotnAsArGhiG5kNL/XTzKvEhGV5SZHJWJl/tjE62cNcChdmxuSqv18Nzm6nk/87BE0w3IM4+ipzjrv4MGy7mtxFtzsB6OrVeDdX/P3CyhrEJdnKrN/RvyUfIhCwGU6CADCC0cc8jhpyFsmXwbiOx0LWB1ujlv6zm7gsgyQQd953Or7UoY/ZKJSjfmCqtnEs9enI4GIMgLvM7Xw6aufM7Yqu70l3+4ML5X3IL4duRmvg81UChD2Ny5fJeSrcsNv/MpE96fwLswP7F+dPKervzZRDAAAAAElFTkSuQmCC',
+  syncing: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACw0lEQVR4nIWTSWhTQRzGv5n3YmqSqk1RwUpxO6VuIC2i4nLyJCIa8FBEcTlIFRfEBSRuoIiIoicRvejBolWkVCtivYlgiCjWupWqrUva1LQvL3mZN+99HprWVhC/0zB832+Yb/4DjFaCEglK/EsJSpACpPinZ8T4v70/kD/EyNbO66FNqYOlgDlibhtaz24eWDLrsd06PfEwOgwRiDcaQByR8k/XZGjKJrg5ePb3XfaNRZeRoImVAFYJvbDFrs2XBR4Y5YFK3Wd/MN4mV3TsXf5DIhYnYiB0vh2uBWrlGpGqS+H6ZAOOCy1XCT21KVv3TZqPMkVU/uxVqru7O9lx9bJFQIqR+x0Xfrg+2WBEqi7RdVxZFgp43R+35+KzX8SmTXq6tEJMmFsuiobvFjYEfxyeWj3zrhAiPbokEwDC9cmGCTvTLN/ymebuLu/QK2cgrahIzyKZI5nnkDIkL/7dtAkAE9c932bu+2lf71TFUsAiaZcAOZKD2qNDkmMBbTQFADT2zzvSXuwnabt6KNyT1fmzj3Lq6H1LJb+oAsmcRw6OCQNAtDFbF3uiBvoU1fDJTS8LTnR/2p9/KsNl534xuDvNY82WImmPGZKaFrt2cqvq355SPslBknbPL7dQsT/tn2yxOayHb4oM7enlnVTBMZGgxDFwRm1+uRs0m3wlKmoiVAAkADa9LBq2A1EdlXA9IJv3sTo2DpsXB3HhScGUqIEAIAXcE8bEQCVdF6aniwAEAPTmiIXVJurrymA5PoqaSH3VeNbpwpAUEnH4AHy/q2OjztjvnO9dtzaYnw8ACAHw1y4Ieq97NNreK0TDEtMrDIwPAK+/eVgzL+iN+Rhzdl2cDCAAlsB/q9WEfrUXgXQLIcsS+vbqmCAABSAAKdLEoVJAByLL69MtuwfzZuVn/8kAw+w6g8wGQ6ccGPXQOsEvwNybg6hfAeA7ILHT/Pr/mMZ46fHIjgG6SG0gu3IuqlUx+lJpzj9CMlhiN9tKc7WH7h1cc6czqW5ICEWqt4b0TEh8DeBPIWoDSbvZb7WbOB3Sx6P59vmv7sIVS+Bdb0atschY3RwAAAAAASUVORK5CYI=',
+  paused: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACzklEQVR4nIVTQW9UZRQ99/veK5PpTGFakQiNEdEFUzFGAwtJkCb8ARImcVFJjLJpikaiAXUx4kZ2SmAlhrIwEbtQNA0Fo+LOGJ3UsKg1VDIlo5ShJbTzvjfz3vd977gotpSEeFY3N+ee5J5zL3A/qlSoUuFhqFKBFJDyUM4K8f96qyKrioXXro/mD04evTcQrJCvLNfbxhdffPJ7c7m/eqn3PxFBZUwDFRSKf51V+UcPwkbw5uZh8/kLp1FlgL0ABsU9d9HsjHPhhC6GfW7eXNN/1F6afmvPnEK5QpRBuHgKtgW61OrCllPdQ7URHBenBsVt+ururn9U8N1Cgr5bt9O00WjUpj873SKgZGW/45J1D9VGdGHLKdqOVbl86Bszh6LKtt/Kmzf8tLskPc8UJdGZbR9YN/fupse3fi0izftNCgCge6g20jPcZPHVWQZv1P2xq53FZsqUdC3SRqSNuYwFkicfdDoAgPX7f3k9OHLLjF5PE5Ix6VqWNJaMLBl5conedUhyrcAVBgIAY3d2vDeV3CFpvHctRxof/R0nU5+mydVPUjc/2SYZkX5pzTAA9I7d3VX+MV2cT5mStuVIY+vfdMwXT2fRmRyjMzmacxuZTJ5ISZpgxcRBcQMXzc6mDi/tLqHYF2aRQ6Alaqj057e7wEyC7YcA0chu/wr3+4lQlcrZ8ul+AD4xHu+x68KJLJPSQAEWyBQA+hvjGu2mSH4zwmePoOv596F6d4D0cDPnA4UBCAAlsB/q9WEfrUXgXQLIcsS+vbqmCAABSAAKdLEoVJAByLL69MtuwfzZuVn/8kAw+w6g8wGQ6ccGPXQOsEvwNybg6hfAeA7ILHT/Pr/mMZ46fHIjgG6SG0gu3IuqlUx+lJpzj9CMlhiN9tKc7WH7h1cc6czqW5ICEWqt4b0TEh8DeBPIWoDSbvZb7WbOB3Sx6P59vmv7sIVS+Bdb0atschY3RwAAAABJRU5ErkJggg==',
+  conflict: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAC1UlEQVR4nIVTTWtUZxg97/veO06TScyYUUFDsSoIEwtCULD1I/kFUnDAxaBIdFOSgoL0YzPavVA/F1LrphuzcDbiR0iwi24CHQQRGzHGpImdTNKbj7nzTu7c+773dBEbkxbpWT08nOfA8zznAGtRoESBEh9CgRKkACk+yFkl/l/vvch7xVTv+J2mk0+/fjfgrJKfrNS77i99tnNIP+4oPNr0j4hAbkABOaRaXv8km7acRFSD1eV+/XPXdRTooBtAjzD7Huj99aT7ULW47eYv/Ur9Xjo6eu7IjEQ2R2RBmPoLRD5owkiltl9rzpf6cEkY2SPM1nuLB/6UzqDXQHtlLgynp6dLoz9e9wlIsbrfJRE350t9KrX9GqMgkskm106Pna3ldv2W3db2y+dp0bq3RTRUHC0f3zDz7daPPykKIWbXHskBgOZ8qa/1y1m2nJ6k89WE/eZZsDQbMiSNT5oaGdW5Ao/klX9f2gGAjV+MnHHOV/Sd8bBBsk5rfENqS9YsWSNZpTEBSa4XeEJHAMDA/KffvWjMk9Q2Mr4ldVSp1Bdu3Qq9y5fD4PnzZZI1WluVa4fRI0x6YPFANpP69fzuRAqxieEoGQwPq/KxY8nGyIhLz3Nn8vnk4s2bCUip1pmk84Hev/lxOH/2aRiTtmpIHZbLy38cPhxPHTpEqzVJcqa3l2/27KEeHg5WrHsR3HG/fiTa4D6MY5HuTCECKAXA5aEhFXueEJkMYC1gLWQ6DaEUasWiI9EJAUAKRN+rjW47owiONQ0AAgAYBBCJBOK5OZipKYBENDYGkUwirteFRA4xgDieGD1hPP0yKE/cPe5MXgBUkwTi5MGDFlJCuC6cjg7AcaAyGcS+j4+6u+26YOzuv7IZQDPJNpLeu1f5CzduhBPZLBeuXqVfLHKyq4uV/n5Da/V/0qWUAkBB8geSpLVVkloPDgblU6fM21zOLty+HZLUJPXfk+q+LHIADwsAAAAASUVORK5CYII=',
+  offline: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAC6ElEQVR4nIVTS2hUZxg9/2Myk5mJJo0x1BRpTVaJgljiwkJiNlm0Cyl1sNgQCJpFa1QqiImb0W7ciBKSXUtsSyk20PRBm1SrpI31kcdUTUFTqzZC0DyakMzMvTNz7/3vcRGbRyH0wAcfH+cc+A7fB6xEnBJxSqyFOCVIAVKsyVki/t9s2WTZMXrg8YVw4+0TLwR6idy/2Jf/sLBryxXr0ivxn17610Qg1q2AGKIFj7pkeGMj3DSM9eyw9cXrnYhTYzeAOuFt77Wq7VCgTxUEir1/rL/U/UTt2Ic1kxKVMaIShGffg5sCPcdV0bKOSEOiBaeFJ+uEV9ozv/Op1JdncyiemnGciYmJxNgnnSkCUiztd1r4kYZEi4qWddDNujIUDpiJh83pWPlI5abCX94oEuu2Foic8t3M3uBkW+nm174RQkyvDEkDQKQh0bLug2kWND2hPjJuWkezC9MOHdKkSJMmPZuLmCXZ/t+kNQCsf3vwoD42ZV147ORI2iRTJC2S6ReVNMZkSXK1QT+1AIDuuW0n7+XmSFrGLIqTqbT9fd9V59Mve5wHD8czJNPGmKRcKUad8Iq653dWboj+dqwiLwr4vpSQQ4lRZVl2KBQMBu7+MRaIn2kPfX7x2zwppVp1JFW9VnXJJWeu+bbjk0yStBaSqczk1IzPFXjw6G82HWrjtZsjWY04JU6Br1bbNW5Q9/iOKKqK0gF8CUgOXB9SecGgqN+4AZ5nIKXA5rJNyA8F0ffzr1qiCgKAFHA/UusDxXRdaOPlAAgAsDNZnOvswrWbI1BKwhgfSim8WV8LpbWQiMEH4PvjY+96s9af2WfjX+3VT44DMgzA37F9m4lEwvj4s244joNAQENrhbfqd6Nx3x6z6jEqDreXAIiQLCQ563kmSzJ18esfnT3732frqbO8Pvg7bTvDgRvDnmXb1vJbkgJCUCkFYzxB4jyAowBSANSt4Tvqu94rWiklmt57x7xcWuKGw/l4DkSYp5GP6IeGAAAAAElFTkSuQmCC',
+}
+
+export function trayStatusKind(
+  connected: boolean,
+  status: AgentStatus | undefined,
+  transfers: AgentTransfers,
+  update: AgentUpdateState | null,
+): TrayStatusKind {
+  if (!connected || !status) return 'offline'
+  if (status.has_conflict || status.conflict_count > 0) return 'conflict'
+  if (status.paused) return 'paused'
+  if (
+    status.last_error ||
+    status.auth_status === '登录已过期' ||
+    status.auth_status === '账户已禁用' ||
+    status.auth_status === '需要重新登录' ||
+    status.sync_status === '连接失败' ||
+    status.sync_status === '凭证不可用' ||
+    status.sync_status === '需要重新登录'
+  ) {
+    return 'offline'
+  }
+  if (
+    update?.status === 'checking' ||
+    update?.status === 'downloading' ||
+    update?.status === 'installing' ||
+    transfers.transfers.some((item) => item.state === 'running' || item.state === 'retrying') ||
+    status.sync_status.startsWith('正在')
+  ) {
+    return 'syncing'
+  }
+  return 'normal'
+}
+
+export function trayStatusIconBase64(kind: TrayStatusKind) {
+  return icons[kind]
+}
