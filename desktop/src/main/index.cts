@@ -44,6 +44,7 @@ import {
   type AgentUpdateSourceInput,
   type AgentSourceRun,
   type AgentSourceCredentialStatus,
+  type AgentSourceCredentialTestResult,
   type AgentFileAvailability,
   type AgentSettings,
   type AgentUpdateMode,
@@ -724,6 +725,25 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
     }
     return requireAgentClient().sourceCredentialStatus(sourceID)
+  }, false))
+  ipcMain.handle('agent:test-source-credential', (_event, kind: unknown, cookie: unknown) => runAgentAction<AgentSourceCredentialTestResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof kind !== 'string' || !kind.trim() ||
+      typeof cookie !== 'string' || !cookie.trim()
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Source kind and non-empty Cookie are required.')
+    }
+    return requireAgentClient().testSourceCredential(kind.trim(), cookie.trim())
+  }, false))
+  ipcMain.handle('agent:test-stored-source-credential', (_event, sourceID: unknown) => runAgentAction<AgentSourceCredentialTestResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
+    }
+    return requireAgentClient().testStoredSourceCredential(sourceID)
   }, false))
   ipcMain.handle('agent:set-source-credential', (_event, sourceID: unknown, cookie: unknown) => runAgentAction<AgentSourceCredentialStatus>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

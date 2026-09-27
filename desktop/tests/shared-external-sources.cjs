@@ -283,3 +283,13 @@ test('shared external-source defaults preserve connector-specific setup rules', 
   assert.equal(shared.externalSourceKindLabel('yike_photos'), '一刻相册')
   assert.equal(shared.externalSourceRunStatusLabel('partial'), '部分完成')
 })
+
+
+test('shared Yike credential test messages are actionable', () => {
+  assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_auth_failed'), '一刻相册登录已失效，请重新获取 Cookie')
+  assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_rate_limited'), '一刻相册请求过于频繁，请稍后重试')
+  assert.equal(
+    shared.externalSourceCredentialTestSuccessLabel({ valid: true, kind: 'yike_photos', account_name: 'Alice', account_external_id: '123' }),
+    '连接成功：Alice（123）',
+  )
+})
