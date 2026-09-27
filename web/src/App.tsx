@@ -141,7 +141,7 @@ function AuthView({ api, onAuthenticated }: { api: XDriveApi; onAuthenticated: (
     <div className="auth-shell">
       <Card className="auth-card">
         <div className="brand-lockup">
-          <div className="brand-mark">x</div>
+          <img className="brand-mark" src="/xdrive-icon-master.svg" alt="" aria-hidden="true" />
           <div>
             <Typography.Title level={2} style={{ margin: 0 }}>xDrive</Typography.Title>
             <Typography.Text type="secondary">将云端文件挂载为本地磁盘。</Typography.Text>
@@ -267,7 +267,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       <Layout className="app-shell">
         <Header className="topbar">
           <div className="brand-lockup compact">
-            <div className="brand-mark small">x</div>
+            <img className="brand-mark small" src="/xdrive-icon-master.svg" alt="" aria-hidden="true" />
             <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
           </div>
           <Space>
@@ -414,7 +414,7 @@ function FileManager({ api, username, onAuthExpired, onLogout }: { api: XDriveAp
       <Layout className="app-shell">
         <Header className="topbar">
           <div className="brand-lockup compact">
-            <div className="brand-mark small">x</div>
+            <img className="brand-mark small" src="/xdrive-icon-master.svg" alt="" aria-hidden="true" />
             <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
           </div>
           <Space>
