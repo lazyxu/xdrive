@@ -157,6 +157,7 @@ async function applyStartAtLogin(enabled: boolean) {
       'Type=Application',
       'Name=xDrive 桌面版',
       'Comment=在后台启动 xDrive',
+      'Icon=xdrive',
       `Exec=${quoteDesktopExec(process.execPath)} --background`,
       'Terminal=false',
       'X-GNOME-Autostart-enabled=true',
