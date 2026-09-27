@@ -295,16 +295,60 @@ monitor_host_rx() {
   done
 }
 
+pull_process_running() {
+  local pid_file="$1" pid=""
+  [[ -s "$pid_file" ]] || return 1
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+terminate_pull_process() {
+  local pid_file="$1" pid=""
+  [[ -s "$pid_file" ]] || return 0
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 1
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+}
+
 render_pull_json() {
-  local service="$1" line id text current total
+  local service="$1" pid_file="$2" line id text current total
   local now sum_current sum_total rate pct elapsed started
   local last_print=0 previous_time previous_current=0
+  local last_progress_at last_progress_current=0 last_stall_print=0 stalled_for
   declare -A layer_current=()
   declare -A layer_total=()
 
   started="$(date +%s)"
   previous_time="$started"
-  while IFS= read -r line; do
+  last_progress_at="$started"
+
+  while true; do
+    line=""
+    if ! IFS= read -r -t 1 line; then
+      now="$(date +%s)"
+      stalled_for=$(( now - last_progress_at ))
+      if pull_process_running "$pid_file"; then
+        if (( stalled_for >= pull_stall_timeout )); then
+          echo "[xDrive] pull $service stalled: no download progress for ${stalled_for}s; terminating this Docker pull so it can retry." >&2
+          terminate_pull_process "$pid_file"
+          return 75
+        fi
+        if (( stalled_for >= pull_stall_log_interval && now - last_stall_print >= pull_stall_log_interval )); then
+          echo "[xDrive] pull $service waiting: no byte progress for ${stalled_for}s; retry threshold ${pull_stall_timeout}s." >&2
+          last_stall_print="$now"
+        fi
+        continue
+      fi
+      break
+    fi
+
     id="$(printf '%s\n' "$line" | sed -n 's/.*"id":[[:space:]]*"\([^"]*\)".*/\1/p')"
     text="$(printf '%s\n' "$line" | sed -n 's/.*"text":[[:space:]]*"\([^"]*\)".*/\1/p')"
     current="$(printf '%s\n' "$line" | sed -n 's/.*"current":[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
@@ -335,6 +379,33 @@ render_pull_json() {
     (( sum_total > 0 )) || continue
 
     now="$(date +%s)"
+    if (( sum_current > last_progress_current )); then
+      last_progress_current="$sum_current"
+      last_progress_at="$now"
+      last_stall_print=0
+    fi
+    stalled_for=$(( now - last_progress_at ))
+
+    if (( stalled_for >= pull_stall_timeout && sum_current < sum_total )); then
+      echo "[xDrive] pull $service stalled at $(format_bytes "$sum_current") / $(format_bytes "$sum_total"): no byte progress for ${stalled_for}s; terminating this Docker pull so it can retry." >&2
+      terminate_pull_process "$pid_file"
+      return 75
+    fi
+
+    if (( sum_current == previous_current && sum_current < sum_total )); then
+      if (( stalled_for < pull_stall_log_interval || now - last_stall_print < pull_stall_log_interval )); then
+        continue
+      fi
+      elapsed=$(( now - started ))
+      pct=$(( sum_current * 100 / sum_total ))
+      printf '[xDrive] pull %-8s | %s / %s (%d%%) | stalled %ss | elapsed %ss\n' \
+        "$service" "$(format_bytes "$sum_current")" "$(format_bytes "$sum_total")" "$pct" "$stalled_for" "$elapsed"
+      last_stall_print="$now"
+      last_print="$now"
+      previous_time="$now"
+      continue
+    fi
+
     if (( now - last_print < 2 && sum_current < sum_total )); then
       continue
     fi
@@ -357,11 +428,26 @@ pull_json_supported() {
 }
 
 pull_service_json() {
-  local service="$1" statuses
-  compose --progress json pull "$service" 2>&1 |
+  local service="$1" statuses pid_file
+  pid_file="$LOG_DIR/.pull-${service}-pid"
+  rm -f "$pid_file"
+
+  (
+    printf '%s\n' "$BASHPID" > "$pid_file"
+    if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+      exec docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
+    else
+      exec docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
+    fi
+  ) 2>&1 |
     tee -a "$PULL_LOG" |
-    render_pull_json "$service"
+    render_pull_json "$service" "$pid_file"
+
   statuses=("${PIPESTATUS[@]}")
+  rm -f "$pid_file"
+  if [[ "${statuses[2]:-0}" -ne 0 ]]; then
+    return "${statuses[2]}"
+  fi
   return "${statuses[0]}"
 }
 
@@ -379,7 +465,7 @@ pull_service_plain() {
 }
 
 pull_service_with_retry() {
-  local service="$1" attempt retry_wait
+  local service="$1" attempt retry_wait pull_rc
   for attempt in $(seq 1 "$pull_attempts"); do
     printf '[xDrive] pull %s attempt %s/%s...\n' "$service" "$attempt" "$pull_attempts"
     printf '\n===== pull %s attempt %s/%s at %s =====\n' \
@@ -389,6 +475,11 @@ pull_service_with_retry() {
       if pull_service_json "$service"; then
         printf '[xDrive] pull %s complete.\n' "$service"
         return 0
+      else
+        pull_rc=$?
+        if [[ "$pull_rc" -eq 75 ]]; then
+          echo "[xDrive] pull $service attempt $attempt stalled; retry will reuse completed Docker layers." >&2
+        fi
       fi
     else
       if pull_service_plain "$service"; then
@@ -1588,14 +1679,30 @@ chmod 600 "$PULL_LOG"
 pull_started="$(date +%s)"
 pull_attempts="${XD_PULL_ATTEMPTS:-3}"
 pull_retry_delay="${XD_PULL_RETRY_DELAY_SECONDS:-5}"
+pull_stall_timeout="${XD_PULL_STALL_TIMEOUT_SECONDS:-60}"
+pull_stall_log_interval="${XD_PULL_STALL_LOG_INTERVAL_SECONDS:-15}"
 case "$pull_attempts" in
   ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_ATTEMPTS must be an integer." >&2; exit 2 ;;
 esac
 case "$pull_retry_delay" in
   ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_RETRY_DELAY_SECONDS must be an integer." >&2; exit 2 ;;
 esac
+case "$pull_stall_timeout" in
+  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be an integer." >&2; exit 2 ;;
+esac
+case "$pull_stall_log_interval" in
+  ''|*[!0-9]*) echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be an integer." >&2; exit 2 ;;
+esac
 if (( pull_attempts < 1 || pull_attempts > 10 )); then
   echo "xDrive server installer: XD_PULL_ATTEMPTS must be between 1 and 10." >&2
+  exit 2
+fi
+if (( pull_stall_timeout < 2 || pull_stall_timeout > 3600 )); then
+  echo "xDrive server installer: XD_PULL_STALL_TIMEOUT_SECONDS must be between 2 and 3600." >&2
+  exit 2
+fi
+if (( pull_stall_log_interval < 1 || pull_stall_log_interval > pull_stall_timeout )); then
+  echo "xDrive server installer: XD_PULL_STALL_LOG_INTERVAL_SECONDS must be between 1 and the stall timeout." >&2
   exit 2
 fi
 
@@ -1603,6 +1710,7 @@ pull_progress_mode="plain"
 if pull_json_supported; then
   pull_progress_mode="json"
   echo "[xDrive] Docker Compose JSON progress available; showing real downloaded/total bytes per service."
+  echo "[xDrive] pull stall protection: retry after ${pull_stall_timeout}s without byte progress; stalled output every ${pull_stall_log_interval}s."
 else
   echo "[xDrive] Docker Compose JSON progress unavailable; falling back to host RX rate." >&2
 fi

@@ -9,7 +9,7 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "server transactional upgrade test failed (exit $status)" >&2
-    for file in locked.out locked.err upgrade.out upgrade.err state/docker-calls state/server-ps-count; do
+    for file in locked.out locked.err upgrade.out upgrade.err stall.out stall.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -191,6 +191,12 @@ case "$1" in
       echo "failed to copy: read tcp: connection reset by peer" >&2
       exit 1
     fi
+    if [[ "$mode" == "stall-once" && "$service" == "server" && "$count" -eq 1 && "$progress_mode" == "json" ]]; then
+      printf '%s\n' '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","details":"1 KiB","current":1024,"total":4096,"percent":25}'
+      /usr/bin/sleep 3
+      printf '%s\n' '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","details":"1 KiB","current":1024,"total":4096,"percent":25}'
+      exit 0
+    fi
     if [[ "$progress_mode" == "json" ]]; then
       printf '%s\n' \
         '{"id":"layer-a","parent_id":"Image mock","status":"working","text":"Downloading","details":"1 KiB","current":1024,"total":4096,"percent":25}' \
@@ -301,6 +307,36 @@ if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP
   echo "raw Docker JSON progress leaked into user output" >&2
   exit 1
 fi
+
+# A pull that stops advancing must be aborted and retried instead of printing
+# 0 B/s forever. Completed Docker layers are reused by the next attempt.
+# Run this on an isolated deployment copy so a successful watchdog recovery
+# cannot mutate the rollback fixture used by the following failure scenario.
+cp -a "$TMP/config" "$TMP/stall-config"
+mkdir -p "$TMP/stall-state" "$TMP/stall-host-bin"
+sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$TMP/stall-config/.env" "$TMP/stall-config/config/.env"
+set +e
+TEST_STATE="$TMP/stall-state" \
+TEST_PULL_MODE=stall-once \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/stall-config" \
+XD_HOST_BIN_DIR="$TMP/stall-host-bin" \
+XD_NONINTERACTIVE=1 \
+XD_BUILT_CADDY_ID=test-caddy-build \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_PULL_STALL_TIMEOUT_SECONDS=2 \
+XD_PULL_STALL_LOG_INTERVAL_SECONDS=1 \
+bash "$INSTALLER" --channel master >"$TMP/stall.out" 2>"$TMP/stall.err"
+stall_status=$?
+set -e
+[[ "$stall_status" -eq 0 ]]
+[[ "$(cat "$TMP/stall-state/pull-count-server")" == "2" ]]
+grep -q 'pull server stalled' "$TMP/stall.err"
+grep -q 'attempt 1 stalled; retry will reuse completed Docker layers' "$TMP/stall.err"
+grep -q 'pull server attempt 2/3' "$TMP/stall.out"
+grep -q 'pull server complete.' "$TMP/stall.out"
 
 # Reproduce the production failure point: all image-pull attempts fail before
 # any new application container or migration is started. Rollback must restore
