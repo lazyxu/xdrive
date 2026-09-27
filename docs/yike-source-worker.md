@@ -87,7 +87,7 @@ The same metadata object is included in collection-item reads. Missing media kee
 
 ## Configure a Source
 
-Yike uses a server-managed xDrive **logical Node** target. Clients do not choose a target directory. Create the Source with `target_node_id=0` (or omit it when calling the REST API):
+Yike uses a server-managed xDrive **logical Node** target. Clients do not choose a target directory. Create the Source with `target_node_id=0`:
 
 ```json
 {
@@ -109,7 +109,7 @@ The Source remains paused and has no target until its Cookie is validated. On th
    └─ uid_<百度UID>_<账号名称>/
 ```
 
-For example: `来源/一刻相册/uid_12345_张三/`. Invalid filename characters in the nickname are replaced safely. This hierarchy exists only in `xd_nodes`; file content still uses xDrive's content-addressed storage (CAS), so the managed folder does not duplicate physical blobs or change deduplication semantics. The target cannot be changed through the Source update API.
+For example: `来源/一刻相册/uid_12345_张三/`. Invalid filename characters in the account name are replaced safely. This hierarchy exists only in `xd_nodes`; file content still uses xDrive's content-addressed storage (CAS), so the managed folder does not duplicate physical blobs or change deduplication semantics. The target cannot be changed through the Source update API.
 
 The first version supports only `backup` semantics. A media object that disappears from Yike becomes `missing`; its xDrive data is never deleted or trashed.
 
@@ -167,7 +167,7 @@ Body:
 }
 ```
 
-The response contains only credential status metadata. The Cookie is encrypted with the versioned connector keyring and is never returned by GET. For a new Yike Source, target-directory creation, Source binding/activation, and encrypted credential persistence occur in one database transaction.
+The response contains only credential status metadata. The Cookie is encrypted with the versioned connector keyring and is never returned by GET. For a new Yike Source, target-directory creation, Source binding/activation, and encrypted credential persistence occur in one database transaction. Clearing the Cookie automatically pauses the Source and clears any pending manual request; storing a new valid Cookie for the same UID reactivates it and keeps the existing managed target. Once media has been imported, a Cookie belonging to a different UID is rejected.
 
 ## Worker schedule
 

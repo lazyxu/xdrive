@@ -40,14 +40,28 @@ func (s *FlexibleStringList) UnmarshalJSON(data []byte) error {
 		}
 		return nil
 	case '[':
-		var values []string
-		if err := json.Unmarshal(data, &values); err != nil {
+		var rawValues []json.RawMessage
+		if err := json.Unmarshal(data, &rawValues); err != nil {
 			return err
 		}
-		*s = FlexibleStringList(values)
+		values := make(FlexibleStringList, 0, len(rawValues))
+		for _, raw := range rawValues {
+			var value string
+			if err := json.Unmarshal(raw, &value); err == nil && value != "" {
+				values = append(values, value)
+			}
+		}
+		*s = values
 		return nil
 	default:
-		return fmt.Errorf("expected string, string array, or null")
+		// Thumbnail metadata is optional and has changed shape in the private
+		// Yike API. Ignore unknown-but-valid JSON instead of failing a full scan.
+		var ignored any
+		if err := json.Unmarshal(data, &ignored); err != nil {
+			return err
+		}
+		*s = nil
+		return nil
 	}
 }
 

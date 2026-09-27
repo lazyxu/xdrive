@@ -806,6 +806,7 @@ function App() {
     )
     if (data) {
       setSourceEditCookie('')
+      setSourceEditStatus('paused')
       await loadSources()
     }
   }
@@ -1845,7 +1846,10 @@ function App() {
                             <div><span>来源类型</span><strong>{detail.kindLabel}</strong></div>
                             <div><span>工作方式</span><strong>{detail.modeLabel}</strong></div>
                             <div><span>状态</span><strong>{detail.state.label}</strong></div>
-                            <div><span>目标节点</span><strong>{detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置'}</strong></div>
+                            <div>
+                              <span>目标目录</span>
+                              <strong>{row.source.kind === 'yike_photos' ? yikeManagedTargetLabel : (detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置')}</strong>
+                            </div>
                             <div><span>上次运行</span><strong>{formatExternalSourceTime(detail.lastRunAt)}</strong></div>
                             <div><span>上次成功</span><strong>{formatExternalSourceTime(detail.lastSuccessAt)}</strong></div>
                             {detail.credential && (

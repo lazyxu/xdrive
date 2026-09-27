@@ -78,6 +78,9 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatalf("unexpected managed Yike source: %+v", yikeManaged)
 	}
 	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,
+		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
+		map[string]string{"If-Match": `"1"`})
+	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,
 		strings.NewReader(`{"target_node_id":`+fmt.Sprint(rootA.ID)+`}`), http.StatusBadRequest,
 		map[string]string{"If-Match": `"1"`})
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,
