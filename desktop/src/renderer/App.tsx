@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert as MuiAlert,
   Box as MuiBox,
   Button as MuiButton,
@@ -40,6 +43,7 @@ import {
   externalSourceRunDetailView,
   formatBinarySize,
   formatExternalSourceTime,
+  yikeCookieHelp,
 } from '@xdrive/shared'
 import type {
   ExternalSourceCredentialTestResult,
@@ -134,7 +138,29 @@ function updateModeDescription(mode: AgentUpdateMode) {
   return '不在后台检查更新；只有点击“检查更新”时才访问更新服务。'
 }
 
-export default function App() {
+export default function YikeCookieHelpGuide() {
+  return (
+    <Accordion disableGutters elevation={0} sx={{ mt: 0.5, border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
+      <AccordionSummary>
+        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>{yikeCookieHelp.title}</Typography>
+          <Typography variant="caption" color="text.secondary">点击展开</Typography>
+        </Stack>
+      </AccordionSummary>
+      <AccordionDetails>
+        <Typography variant="body2">{yikeCookieHelp.summary}</Typography>
+        <ol style={{ margin: '10px 0', paddingLeft: 24 }}>
+          {yikeCookieHelp.steps.map((step) => (
+            <li key={step}><Typography variant="body2">{step}</Typography></li>
+          ))}
+        </ol>
+        <MuiAlert severity="warning">{yikeCookieHelp.security}</MuiAlert>
+      </AccordionDetails>
+    </Accordion>
+  )
+}
+
+function App() {
   const [info, setInfo] = useState<DesktopInfo | null>(null)
   const [desktopPreferences, setDesktopPreferences] = useState<DesktopPreferences>({
     start_at_login: true,
@@ -1586,6 +1612,7 @@ export default function App() {
                       required
                     />
                     <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
+                    <YikeCookieHelpGuide />
                     <MuiButton
                       type="button"
                       size="small"
@@ -1745,6 +1772,7 @@ export default function App() {
                                 placeholder={row.credential?.configured ? '留空则保持当前 Cookie' : '当前未配置，请粘贴 Cookie'}
                               />
                               <small>已保存的 Cookie 不会回读到桌面渲染进程。</small>
+                              <YikeCookieHelpGuide />
                               <MuiButton
                                 type="button"
                                 size="small"

@@ -3,6 +3,9 @@ import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert as MuiAlert,
   Box as MuiBox,
   Button as MuiButton,
@@ -27,6 +30,7 @@ import {
   externalSourceRunDetailView,
   formatExternalSourceTime,
   formatSize,
+  yikeCookieHelp,
 } from '../../ui/shared/src'
 import type {
   ExternalSource,
@@ -52,6 +56,28 @@ type CreateSourceValues = {
   cookie?: string
 }
 
+
+function YikeCookieHelpGuide() {
+  return (
+    <Accordion disableGutters elevation={0} sx={{ mt: 1, border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
+      <AccordionSummary>
+        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+          <MuiTypography variant="body2" sx={{ fontWeight: 600 }}>{yikeCookieHelp.title}</MuiTypography>
+          <MuiTypography variant="caption" color="text.secondary">点击展开</MuiTypography>
+        </Stack>
+      </AccordionSummary>
+      <AccordionDetails>
+        <MuiTypography variant="body2">{yikeCookieHelp.summary}</MuiTypography>
+        <ol style={{ margin: '10px 0', paddingLeft: 24 }}>
+          {yikeCookieHelp.steps.map((step) => (
+            <li key={step}><MuiTypography variant="body2">{step}</MuiTypography></li>
+          ))}
+        </ol>
+        <MuiAlert severity="warning">{yikeCookieHelp.security}</MuiAlert>
+      </AccordionDetails>
+    </Accordion>
+  )
+}
 
 function sourceBadgeStatus(tone: ExternalSourceStateTone): BadgeProps['status'] {
   if (tone === 'good') return 'success'
@@ -627,7 +653,8 @@ export default function ExternalSourcesPanel({
           )}
           {createKind === 'yike_photos' && (
             <div style={{ marginTop: -12, marginBottom: 16 }}>
-              <MuiButton size="small" variant="outlined" disabled={testingCreateCredential} onClick={() => void testCreateCookie()}>
+              <YikeCookieHelpGuide />
+              <MuiButton size="small" variant="outlined" disabled={testingCreateCredential} onClick={() => void testCreateCookie()} sx={{ mt: 1 }}>
                 {testingCreateCredential ? '正在测试…' : '测试连接'}
               </MuiButton>
               {createCredentialTest && (
@@ -715,8 +742,10 @@ export default function ExternalSourcesPanel({
                   />
                 </Form.Item>
                 <div style={{ marginTop: -12, marginBottom: 16 }}>
+                  <YikeCookieHelpGuide />
                   <MuiButton
                     size="small"
+                    sx={{ mt: 1 }}
                     variant="outlined"
                     disabled={testingSettingsCredential}
                     onClick={() => void testSettingsCookie()}
