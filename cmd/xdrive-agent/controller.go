@@ -18,7 +18,6 @@ import (
 	"github.com/lazyxu/xdrive/internal/diagnostics"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
-	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
 )
@@ -54,6 +53,7 @@ type agentController struct {
 	snapshotRevision uint64
 	snapshotChanged  chan struct{}
 	transfers        *transfer.Manager
+	updates          *clientUpdateManager
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
@@ -65,6 +65,7 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		snapshotRevision: 1,
 		snapshotChanged:  make(chan struct{}),
 		transfers:        transfer.NewManager(transfer.DefaultHistoryLimit),
+		updates:          newClientUpdateManager(ctx),
 		snap: agentSnapshot{
 			AuthStatus: "未登录",
 			SyncStatus: "等待登录",
@@ -131,7 +132,8 @@ func (c *agentController) wakeNow() {
 }
 
 func (c *agentController) Run() {
-	updateReady := startAutoUpdate(c.ctx)
+	go c.updates.Run()
+	updateReady := c.updates.InstallStarted()
 	mount.SetEventSink(func(event mount.Event) {
 		switch event.Kind {
 		case mount.EventSyncStarted:
@@ -965,23 +967,24 @@ func (c *agentController) OpenFolder() error {
 	return openFolderPlatform(root)
 }
 
-func (c *agentController) CheckUpdate() (string, bool) {
-	current := version.String()
-	channel, commit, err := xupdate.AutomaticTarget(current)
-	if err != nil {
-		return "检查更新失败：" + err.Error(), false
-	}
-	if channel == "" {
-		return "当前开发构建未绑定自动更新通道；可使用 xd update --channel master 手动切换。", false
-	}
-	started, result, err := xupdate.InstallTarget(context.Background(), current, channel, commit)
-	if err != nil {
-		return "检查更新失败：" + err.Error(), false
-	}
-	if !started {
-		return fmt.Sprintf("当前已是 %s 通道最新版本 %s。", channel, current), false
-	}
-	return fmt.Sprintf("已验证 %s 通道的 %s，正在启动更新安装。", channel, result.Latest), true
+func (c *agentController) UpdateState() clientUpdateState {
+	return c.updates.Snapshot()
+}
+
+func (c *agentController) SetUpdateMode(mode string) (clientUpdateState, error) {
+	return c.updates.SetMode(mode)
+}
+
+func (c *agentController) CheckClientUpdate(ctx context.Context) (clientUpdateState, error) {
+	return c.updates.Check(ctx)
+}
+
+func (c *agentController) DownloadClientUpdate(ctx context.Context) (clientUpdateState, error) {
+	return c.updates.Download(ctx)
+}
+
+func (c *agentController) InstallClientUpdate(ctx context.Context) (clientUpdateState, error) {
+	return c.updates.Install(ctx)
 }
 
 func (c *agentController) SyncNow() error {

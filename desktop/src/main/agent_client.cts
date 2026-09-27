@@ -33,6 +33,25 @@ export type AgentSettings = {
   sync_rules: Array<{ path: string; mode: string }>
 }
 
+export type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
+
+export type AgentUpdateState = {
+  mode: AgentUpdateMode
+  status: 'idle' | 'checking' | 'available' | 'up_to_date' | 'downloading' | 'downloaded' | 'installing' | 'error' | string
+  current_version: string
+  latest_version?: string
+  channel?: string
+  update_available: boolean
+  downloaded: boolean
+  install_supported: boolean
+  last_checked_at?: string
+  message?: string
+  last_error?: string
+  bytes_done?: number
+  bytes_total?: number
+  bytes_per_second?: number
+}
+
 export type AgentFileAvailability = {
   Path: string
   Mode: string
@@ -394,6 +413,26 @@ export class AgentIPCClient {
 
   updateSettings(input: { mount_path?: string; cache_limit_bytes?: number }) {
     return this.request<AgentSettings>('PATCH', '/v1/settings', input)
+  }
+
+  updateState() {
+    return this.request<AgentUpdateState>('GET', '/v1/update')
+  }
+
+  setUpdateMode(mode: AgentUpdateMode) {
+    return this.request<AgentUpdateState>('PATCH', '/v1/update/settings', { mode })
+  }
+
+  checkUpdate() {
+    return this.request<AgentUpdateState>('POST', '/v1/update/check', undefined, 90_000)
+  }
+
+  downloadUpdate() {
+    return this.request<AgentUpdateState>('POST', '/v1/update/download', undefined, 30 * 60_000)
+  }
+
+  installUpdate() {
+    return this.request<AgentUpdateState>('POST', '/v1/update/install', undefined, 30 * 60_000)
   }
 
   setSyncRule(path: string, mode: 'exclude' | 'always-local' | 'default') {

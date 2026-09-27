@@ -33,7 +33,6 @@ mkdir -p \
   "$PKG_ROOT/opt/xdrive-desktop" \
   "$PKG_ROOT/usr/bin" \
   "$PKG_ROOT/usr/lib/systemd/user" \
-  "$PKG_ROOT/usr/lib/systemd/system" \
   "$PKG_ROOT/usr/share/applications" \
   "$PKG_ROOT/usr/share/doc/xdrive-client"
 
@@ -68,8 +67,6 @@ else
 fi
 
 install -m 0644 "$ROOT/packaging/linux/xdrive-agent.service" "$PKG_ROOT/usr/lib/systemd/user/xdrive-agent.service"
-install -m 0644 "$ROOT/packaging/linux/xdrive-update.service" "$PKG_ROOT/usr/lib/systemd/system/xdrive-update.service"
-install -m 0644 "$ROOT/packaging/linux/xdrive-update.timer" "$PKG_ROOT/usr/lib/systemd/system/xdrive-update.timer"
 install -m 0644 "$ROOT/packaging/linux/xdrive.desktop" "$PKG_ROOT/usr/share/applications/xdrive.desktop"
 install -m 0644 "$ROOT/README.md" "$PKG_ROOT/usr/share/doc/xdrive-client/README.md"
 install -m 0644 "$ROOT/LICENSE" "$PKG_ROOT/usr/share/doc/xdrive-client/LICENSE"
@@ -90,7 +87,7 @@ Provides: xdrive-desktop
 Homepage: https://github.com/lazyxu/xdrive
 Description: xDrive Linux desktop client
  Mount an xDrive server as a local filesystem using FUSE.
- Includes xDrive Desktop, xd, the background agent, and the channel-aware automatic updater.
+ Includes xDrive Desktop, xd, the background agent, and user-controlled update tooling.
 CONTROL
 
 cat > "$PKG_ROOT/DEBIAN/postinst" <<'POSTINST'
@@ -110,12 +107,14 @@ if [ "$actual_version" != "$expected_version" ]; then
 fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl enable --now xdrive-update.timer >/dev/null 2>&1 || true
+  # Legacy packages enabled a root-level automatic update timer. Update policy
+  # is now user-controlled from Desktop, so upgrades must turn the old timer off.
+  systemctl disable --now xdrive-update.timer >/dev/null 2>&1 || true
 fi
 printf '%s\n' 'xDrive Desktop, background agent, and xd CLI installed and verified.'
 printf '%s\n' 'Open xDrive Desktop from the applications menu, or login with xd from a terminal.'
 printf '%s\n' 'The Desktop starts at login by default and keeps the background agent healthy.'
-printf '%s\n' 'Updates are checked automatically: stable builds follow stable; snapshot builds follow master.'
+printf '%s\n' 'Client update checks are user-controlled from Desktop; background auto-update is disabled by default.'
 printf '%s\n' 'Pin a commit with XD_UPDATE_CHANNEL=commit and XD_UPDATE_COMMIT=<sha>.'
 exit 0
 POSTINST

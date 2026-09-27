@@ -37,6 +37,8 @@ import {
   type AgentSourceCredentialStatus,
   type AgentFileAvailability,
   type AgentSettings,
+  type AgentUpdateMode,
+  type AgentUpdateState,
   type AgentStatus,
   type AgentTransfers,
 } from './agent_client.cjs'
@@ -755,6 +757,36 @@ function registerIPCHandlers() {
     }
     return runAgentAction<AgentSettings>(() => requireAgentClient().updateSettings(update))
   })
+  ipcMain.handle('agent:get-update', () => runAgentAction<AgentUpdateState>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'client-update')
+    return requireAgentClient().updateState()
+  }, false))
+  ipcMain.handle('agent:set-update-mode', (_event, mode: unknown) => {
+    if (mode !== 'manual' && mode !== 'check' && mode !== 'download' && mode !== 'install') {
+      return { ok: false, error: { code: 'invalid_input', message: 'A valid client update mode is required.' } }
+    }
+    return runAgentAction<AgentUpdateState>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'client-update')
+      return requireAgentClient().setUpdateMode(mode as AgentUpdateMode)
+    }, false)
+  })
+  ipcMain.handle('agent:check-update', () => runAgentAction<AgentUpdateState>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'client-update')
+    return requireAgentClient().checkUpdate()
+  }, false))
+  ipcMain.handle('agent:download-update', () => runAgentAction<AgentUpdateState>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'client-update')
+    return requireAgentClient().downloadUpdate()
+  }, false))
+  ipcMain.handle('agent:install-update', () => runAgentAction<AgentUpdateState>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'client-update')
+    return requireAgentClient().installUpdate()
+  }, false))
   ipcMain.handle('agent:set-sync-rule', (_event, path: unknown, mode: unknown) => {
     if (typeof path !== 'string' || !path.trim() || (mode !== 'exclude' && mode !== 'always-local' && mode !== 'default')) {
       return { ok: false, error: { code: 'invalid_input', message: 'A sync-rule path and valid mode are required.' } }
