@@ -211,6 +211,7 @@ export default function App() {
   const completedTransfers = transfers.transfers.filter((item) => item.state === 'completed')
   const failedTransfers = transfers.transfers.filter((item) => item.state === 'failed')
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
+  const storagePoliciesSupported = info?.platform === 'win32'
   const updateOperationBusy = clientUpdate?.status === 'checking' || clientUpdate?.status === 'downloading' || clientUpdate?.status === 'installing'
   const updateProgress = clientUpdate?.bytes_total
     ? Math.max(0, Math.min(100, ((clientUpdate.bytes_done || 0) * 100) / clientUpdate.bytes_total))
@@ -886,14 +887,18 @@ export default function App() {
           </button>
           <div className="storage-folder">
             <strong>{node.name}</strong>
-            <span>{node.file_count} file{node.file_count === 1 ? '' : 's'} · {formatBinarySize(node.total_bytes)}</span>
-            {inherited && <small>继承策略：{effectiveLabel}</small>}
+            <span>{node.file_count} 个文件 · {formatBinarySize(node.total_bytes)}</span>
+            {storagePoliciesSupported && inherited && <small>继承策略：{effectiveLabel}</small>}
           </div>
-          <div className="storage-modes" role="group" aria-label={`${node.name} 的存储策略`}>
-            <button className={node.mode === 'default' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'default')}>默认</button>
-            <button className={node.mode === 'exclude' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'exclude')}>不同步</button>
-            <button className={node.mode === 'always-local' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'always-local')}>始终保留</button>
-          </div>
+          {storagePoliciesSupported ? (
+            <div className="storage-modes" role="group" aria-label={`${node.name} 的存储策略`}>
+              <button className={node.mode === 'default' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'default')}>默认</button>
+              <button className={node.mode === 'exclude' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'exclude')}>不同步</button>
+              <button className={node.mode === 'always-local' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'always-local')}>始终保留</button>
+            </div>
+          ) : (
+            <Chip size="small" variant="outlined" label="FUSE 按需访问" />
+          )}
         </div>
         {expanded && children.map((child) => renderStorageNode(child, depth + 1))}
       </div>
@@ -2132,15 +2137,25 @@ export default function App() {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">存储策略</p>
-                <h2>选择此设备保留的内容</h2>
-                <p className="storage-note">策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。</p>
+                <h2>{storagePoliciesSupported ? '选择此设备保留的内容' : 'Linux FUSE 挂载'}</h2>
+                <p className="storage-note">
+                  {storagePoliciesSupported
+                    ? '策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。'
+                    : 'Linux 当前使用 FUSE 远程挂载；目录在此处只读展示，文件内容在打开时按需获取。'}
+                </p>
               </div>
               <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadStorage()}>
                 {busy === 'storage' ? '正在刷新…' : '刷新'}
               </button>
             </div>
 
-            {cacheStats ? (
+            {!storagePoliciesSupported ? (
+              <MuiAlert severity="info" sx={{ mb: 2 }}>
+                Linux FUSE 模式不提供 Windows CfAPI 的“不同步”“始终保留”或持久化本地缓存语义；这些策略只在 Windows 客户端可配置。
+              </MuiAlert>
+            ) : null}
+
+            {storagePoliciesSupported ? (cacheStats ? (
               <div className="cache-card">
                 <div className="cache-metrics">
                   <div><span>已使用</span><strong>{formatBinarySize(cacheStats.used_bytes)}</strong><small>{cacheStats.cached_files} 个缓存文件</small></div>
@@ -2159,10 +2174,13 @@ export default function App() {
                   <div className="cache-unavailable">{cacheStats.reason || '当前平台不支持持久化本地缓存管理。'}</div>
                 )}
               </div>
-            ) : <div className="empty-state">正在加载缓存用量…</div>}
+            ) : <div className="empty-state">正在加载缓存用量…</div>) : null}
 
             <div className="storage-tree-header">
-              <div><strong>云端文件夹</strong><span>默认 / 不同步 / 始终保留</span></div>
+              <div>
+                <strong>云端文件夹</strong>
+                <span>{storagePoliciesSupported ? '默认 / 不同步 / 始终保留' : '只读目录视图 · FUSE 按需访问'}</span>
+              </div>
               {storageTree && <span>{storageTree.file_count} 个文件 · {formatBinarySize(storageTree.total_bytes)}</span>}
             </div>
             {!storageTree ? (
@@ -2439,10 +2457,16 @@ export default function App() {
                 <div className="settings-divider" />
                 <div className="setting-link-row">
                   <div>
-                    <strong>文件夹存储策略</strong>
-                    <span>可在“存储”页面的云端目录树中选择“默认”“不同步”或“始终保留”。</span>
+                    <strong>{storagePoliciesSupported ? '文件夹存储策略' : 'Linux FUSE 存储模式'}</strong>
+                    <span>
+                      {storagePoliciesSupported
+                        ? '可在“存储”页面的云端目录树中选择“默认”“不同步”或“始终保留”。'
+                        : 'Linux 使用 FUSE 远程挂载；“存储”页面提供只读目录视图，不提供 Windows CfAPI 的选择性同步和固定保留。'}
+                    </span>
                   </div>
-                  <button className="secondary" type="button" onClick={() => setView('files')}>管理存储</button>
+                  <button className="secondary" type="button" onClick={() => setView('files')}>
+                    {storagePoliciesSupported ? '管理存储' : '查看存储'}
+                  </button>
                 </div>
                 <div className="settings-divider" />
                 <div className="form-actions">
