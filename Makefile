@@ -1,4 +1,4 @@
-.PHONY: test fmt build build-linux-client build-windows-binaries web-build server-install
+.PHONY: test fmt build icons build-linux-client build-windows-binaries web-build server-install
 
 test:
 	go test ./...
@@ -8,6 +8,9 @@ fmt:
 
 build:
 	go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater
+
+icons:
+	node scripts/generate-icon-assets.mjs
 
 build-linux-client:
 	bash scripts/build-linux-deb.sh 0.0.0+dev dist
