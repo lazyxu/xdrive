@@ -1,6 +1,6 @@
 # xDrive tray/status icons
 
-These five 16 × 16 PNG files are the canonical operational tray assets used by xDrive Desktop:
+These five 16 × 16 PNG files are generated operational variants of `../master/xdrive-icon-master.svg`:
 
 - normal
 - syncing
@@ -8,6 +8,6 @@ These five 16 × 16 PNG files are the canonical operational tray assets used by 
 - conflict
 - offline
 
-They intentionally remain separate from `../master/xdrive-icon-master.svg`: the master SVG is the application brand icon, while these images communicate runtime state at very small sizes.
+The application master remains the single source of truth. `scripts/generate-icon-assets.mjs` renders the master at tray scale and adds only a small status badge for the non-normal states. Do not hand-edit these PNGs; run `make icons` after changing the master or the tray variant rules.
 
-Electron Builder copies this directory to `resources/tray-icons/` in packaged builds. Do not duplicate the image bytes in TypeScript or platform packaging folders.
+Electron Builder copies this directory to `resources/tray-icons/` in packaged builds. Development builds read the same generated files directly from `assets/icon/tray/`.

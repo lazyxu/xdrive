@@ -132,9 +132,18 @@ try {
             throw "building xd.exe failed"
         }
 
-        go build -trimpath -ldflags="-s -w -H=windowsgui $VersionFlag" -o (Join-Path $Source "xdrive-agent.exe") ./cmd/xdrive-agent
-        if ($LASTEXITCODE -ne 0) {
-            throw "building xdrive-agent.exe failed"
+        $AgentResource = Join-Path $Root "cmd\xdrive-agent\rsrc_windows_amd64.syso"
+        go run github.com/tc-hib/go-winres@v0.3.3 make --in packaging/windows/xdrive-agent-winres.json --arch amd64 --out cmd/xdrive-agent/rsrc
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $AgentResource)) {
+            throw "generating xdrive-agent.exe icon resources failed"
+        }
+        try {
+            go build -trimpath -ldflags="-s -w -H=windowsgui $VersionFlag" -o (Join-Path $Source "xdrive-agent.exe") ./cmd/xdrive-agent
+            if ($LASTEXITCODE -ne 0) {
+                throw "building xdrive-agent.exe failed"
+            }
+        } finally {
+            Remove-Item $AgentResource -Force -ErrorAction SilentlyContinue
         }
     }
 

@@ -297,6 +297,12 @@ function desktopWindowBackground() {
   return nativeTheme.shouldUseDarkColors ? '#0f141d' : '#f5f7fb'
 }
 
+function desktopRuntimeIconPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'app-icon.png')
+    : path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'web', 'pwa-192.png')
+}
+
 function createMainWindow(showOnReady = true) {
   const restoredBounds = resolveWindowBounds(
     desktopPreferences.window_bounds,
@@ -308,6 +314,7 @@ function createMainWindow(showOnReady = true) {
     minHeight: 600,
     show: false,
     title: 'xDrive 桌面版',
+    icon: desktopRuntimeIconPath(),
     backgroundColor: desktopWindowBackground(),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),

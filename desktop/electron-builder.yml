@@ -12,6 +12,8 @@ extraResources:
     to: tray-icons
     filter:
       - "*.png"
+  - from: ../assets/icon/web/pwa-192.png
+    to: app-icon.png
 win:
   executableName: xdrive-desktop
   icon: ../assets/icon/master/xdrive-icon-master.svg

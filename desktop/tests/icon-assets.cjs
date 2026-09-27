@@ -54,11 +54,28 @@ test('application icon has one SVG source of truth and platform wiring', () => {
   assert.ok(installer.includes('SetupIconFile={#SourceDir}\\icons\\app.ico'), 'Windows installer must use the generated app.ico')
   assert.ok(installer.includes('UninstallDisplayIcon={app}\\desktop\\xdrive-desktop.exe'), 'Windows Apps & Features must use the Desktop app icon')
   assert.ok(text('scripts/build-windows-installer.ps1').includes('assets\\icon\\windows\\app.ico'), 'Windows packaging must copy the generated app.ico')
+  assert.ok(
+    text('packaging/windows/xdrive-agent-winres.json').includes('../../assets/icon/windows/app.ico'),
+    'Windows background agent must embed the generated app.ico',
+  )
+  assert.ok(
+    text('scripts/build-client-core.sh').includes('go run github.com/tc-hib/go-winres@v0.3.3'),
+    'prebuilt Windows agent must generate icon resources before go build',
+  )
+  assert.ok(
+    text('scripts/build-windows-installer.ps1').includes('go run github.com/tc-hib/go-winres@v0.3.3'),
+    'direct Windows installer builds must generate agent icon resources before go build',
+  )
+
+  assert.ok(builder.includes('../assets/icon/web/pwa-192.png'), 'Desktop package must include a master-derived runtime window icon')
+  const desktopMain = text('desktop/src/main/index.cts')
+  assert.ok(desktopMain.includes("path.join(process.resourcesPath, 'app-icon.png')"), 'Packaged Desktop window must use the packaged master-derived icon')
+  assert.ok(desktopMain.includes("'assets', 'icon', 'web', 'pwa-192.png'"), 'Development Desktop window must use a master-derived icon')
 })
 
 test('generated icon derivatives match the recorded source contract', () => {
   const contract = JSON.parse(text('assets/icon/generated-assets.json'))
-  assert.equal(contract.version, 1, 'unexpected generated icon contract version')
+  assert.equal(contract.version, 2, 'unexpected generated icon contract version')
   assert.equal(contract.source.path, 'assets/icon/master/xdrive-icon-master.svg')
   assert.equal(
     contract.source.git_blob_sha,
@@ -74,6 +91,11 @@ test('generated icon derivatives match the recorded source contract', () => {
     'assets/icon/web/pwa-512.png',
     'assets/icon/web/site.webmanifest',
     'assets/icon/windows/app.ico',
+    'assets/icon/tray/tray-normal.png',
+    'assets/icon/tray/tray-syncing.png',
+    'assets/icon/tray/tray-paused.png',
+    'assets/icon/tray/tray-conflict.png',
+    'assets/icon/tray/tray-offline.png',
   ]
   assert.deepEqual(Object.keys(contract.generated), expectedPaths, 'generated icon contract file list changed unexpectedly')
   for (const relative of expectedPaths) {
@@ -83,6 +105,19 @@ test('generated icon derivatives match the recorded source contract', () => {
       `${relative} drifted from the generated icon contract; run make icons`,
     )
   }
+})
+
+test('generated tray icons are 16x16 master-derived contract assets', () => {
+  for (const kind of ['normal', 'syncing', 'paused', 'conflict', 'offline']) {
+    const data = read(`assets/icon/tray/tray-${kind}.png`)
+    assert.ok(data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), `tray-${kind}.png: invalid PNG signature`)
+    assert.equal(data.readUInt32BE(16), 16, `tray-${kind}.png: expected 16px width`)
+    assert.equal(data.readUInt32BE(20), 16, `tray-${kind}.png: expected 16px height`)
+  }
+
+  const generator = text('scripts/generate-icon-assets.mjs')
+  assert.ok(generator.includes('function trayVariantSvg'), 'tray variants must be produced by the shared icon generator')
+  assert.ok(generator.includes("const trayKinds = ['normal', 'syncing', 'paused', 'conflict', 'offline']"), 'generator must own all tray states')
 })
 
 test('generated Windows ICO contains the required icon frames', () => {
@@ -117,5 +152,6 @@ test('icon derivatives have one-command regeneration tooling', () => {
   assert.ok(generator.includes("[16, 32, 48, 64, 256]"), 'icon generator must build every Windows ICO frame')
   assert.ok(generator.includes("[16, 32, 48]"), 'icon generator must build every favicon ICO frame')
   assert.ok(generator.includes('generated-assets.json'), 'icon generator must write the generated asset drift contract')
+  assert.ok(generator.includes('trayVariantSvg'), 'icon generator must derive tray variants from the master')
   assert.ok(text('Makefile').includes('icons:\n\tnode scripts/generate-icon-assets.mjs'), 'Makefile must expose the one-command icon generator')
 })

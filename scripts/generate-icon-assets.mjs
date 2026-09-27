@@ -10,6 +10,7 @@ const repoRoot = process.env.XDRIVE_REPO_ROOT ? path.resolve(process.env.XDRIVE_
 const masterPath = path.join(repoRoot, 'assets', 'icon', 'master', 'xdrive-icon-master.svg')
 const webDir = path.join(repoRoot, 'assets', 'icon', 'web')
 const windowsDir = path.join(repoRoot, 'assets', 'icon', 'windows')
+const trayDir = path.join(repoRoot, 'assets', 'icon', 'tray')
 const generatedManifestPath = path.join(repoRoot, 'assets', 'icon', 'generated-assets.json')
 
 function gitBlobSha(data) {
@@ -57,6 +58,39 @@ function rendererCompatibleSvg(svg) {
       </feMerge>`)
 }
 
+function trayVariantSvg(svg, kind) {
+  const badges = {
+    normal: '',
+    syncing: `
+  <g aria-label="syncing status">
+    <circle cx="790" cy="790" r="150" fill="#FFFFFF" stroke="#1787FA" stroke-width="34"/>
+    <path d="M 716 788 A 78 78 0 0 1 835 726" fill="none" stroke="#1787FA" stroke-width="38" stroke-linecap="round"/>
+    <path d="M 834 726 L 824 665 L 884 690" fill="#1787FA"/>
+    <path d="M 864 792 A 78 78 0 0 1 745 853" fill="none" stroke="#1787FA" stroke-width="38" stroke-linecap="round"/>
+    <path d="M 746 853 L 756 914 L 696 889" fill="#1787FA"/>
+  </g>`,
+    paused: `
+  <g aria-label="paused status">
+    <circle cx="790" cy="790" r="150" fill="#FFFFFF" stroke="#1787FA" stroke-width="34"/>
+    <rect x="730" y="714" width="42" height="152" rx="18" fill="#1787FA"/>
+    <rect x="808" y="714" width="42" height="152" rx="18" fill="#1787FA"/>
+  </g>`,
+    conflict: `
+  <g aria-label="conflict status">
+    <circle cx="790" cy="790" r="150" fill="#E5484D" stroke="#FFFFFF" stroke-width="34"/>
+    <path d="M 790 706 L 790 812" stroke="#FFFFFF" stroke-width="42" stroke-linecap="round"/>
+    <circle cx="790" cy="862" r="24" fill="#FFFFFF"/>
+  </g>`,
+    offline: `
+  <g aria-label="offline status">
+    <circle cx="790" cy="790" r="150" fill="#667085" stroke="#FFFFFF" stroke-width="34"/>
+    <path d="M 705 875 L 875 705" stroke="#FFFFFF" stroke-width="42" stroke-linecap="round"/>
+  </g>`,
+  }
+  if (!(kind in badges)) throw new Error(`Unknown tray icon kind: ${kind}`)
+  return svg.replace('</svg>', `${badges[kind]}\n</svg>`)
+}
+
 function renderSvg(renderer, sourceSvg, size, outputPath) {
   let args
   if (path.basename(renderer).toLowerCase().startsWith('inkscape')) {
@@ -99,12 +133,14 @@ function buildIco(outputPath, frames) {
 if (!fs.existsSync(masterPath)) throw new Error(`Missing master SVG: ${masterPath}`)
 fs.mkdirSync(webDir, { recursive: true })
 fs.mkdirSync(windowsDir, { recursive: true })
+fs.mkdirSync(trayDir, { recursive: true })
 
 const renderer = resolveRenderer()
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-icons-'))
 try {
   const sourceSvg = path.join(tempDir, 'xdrive-icon-render.svg')
-  fs.writeFileSync(sourceSvg, rendererCompatibleSvg(fs.readFileSync(masterPath, 'utf8')), 'utf8')
+  const compatibleMasterSvg = rendererCompatibleSvg(fs.readFileSync(masterPath, 'utf8'))
+  fs.writeFileSync(sourceSvg, compatibleMasterSvg, 'utf8')
 
   const sizes = [16, 32, 48, 64, 180, 192, 256, 512]
   const rendered = new Map()
@@ -125,6 +161,13 @@ try {
   fs.writeFileSync(path.join(webDir, 'apple-touch-icon.png'), rendered.get(180))
   fs.writeFileSync(path.join(webDir, 'pwa-192.png'), rendered.get(192))
   fs.writeFileSync(path.join(webDir, 'pwa-512.png'), rendered.get(512))
+  const trayKinds = ['normal', 'syncing', 'paused', 'conflict', 'offline']
+  for (const kind of trayKinds) {
+    const traySvgPath = path.join(tempDir, `tray-${kind}.svg`)
+    const trayPngPath = path.join(trayDir, `tray-${kind}.png`)
+    fs.writeFileSync(traySvgPath, trayVariantSvg(compatibleMasterSvg, kind), 'utf8')
+    renderSvg(renderer, traySvgPath, 16, trayPngPath)
+  }
 
   buildIco(path.join(webDir, 'favicon.ico'), [16, 32, 48].map((size) => ({ size, data: rendered.get(size) })))
   buildIco(path.join(windowsDir, 'app.ico'), [16, 32, 48, 64, 256].map((size) => ({ size, data: rendered.get(size) })))
@@ -151,9 +194,14 @@ try {
     'assets/icon/web/pwa-512.png',
     'assets/icon/web/site.webmanifest',
     'assets/icon/windows/app.ico',
+    'assets/icon/tray/tray-normal.png',
+    'assets/icon/tray/tray-syncing.png',
+    'assets/icon/tray/tray-paused.png',
+    'assets/icon/tray/tray-conflict.png',
+    'assets/icon/tray/tray-offline.png',
   ]
   const generatedAssets = {
-    version: 1,
+    version: 2,
     source: {
       path: sourceRelative,
       git_blob_sha: gitBlobSha(fs.readFileSync(path.join(repoRoot, sourceRelative))),
@@ -170,6 +218,7 @@ try {
   console.log(`Generated xDrive icon derivatives from ${path.relative(repoRoot, masterPath)} using ${renderer}.`)
   console.log('Web: favicon.svg, favicon.ico, apple-touch-icon.png, pwa-192.png, pwa-512.png, site.webmanifest')
   console.log('Windows: app.ico (16/32/48/64/256)')
+  console.log('Tray: tray-normal/syncing/paused/conflict/offline.png (16x16, master-derived)')
   console.log('Contract: assets/icon/generated-assets.json')
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true })

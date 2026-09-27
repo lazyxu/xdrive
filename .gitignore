@@ -6,6 +6,7 @@
 *.dylib
 *.test
 *.out
+cmd/xdrive-agent/rsrc_windows_*.syso
 coverage.*
 *.coverprofile
 profile.cov
