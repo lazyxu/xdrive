@@ -13,24 +13,29 @@ For every code change in this repository, use this workflow by default:
    Do **not** inspect, wait on, merge, rebase, or otherwise manage unrelated branches/PRs/MRs merely because they exist. Unrelated work may proceed independently unless it creates an actual merge conflict or changes a dependency required by the current task.
    Do not start a fresh implementation while an older viable half-finished branch for the same or directly related work is still unresolved.
 3. After reconciling the current task's related branches, create a new short-lived branch from the latest `origin/master` only when no related existing branch should be continued.
+   - Every short-lived work branch must carry **exactly one work commit above its selected base at all times after the first commit is created**. Do not accumulate follow-up, fixup, or "temporary" commits with the intention of squashing them later.
+   - After the first commit, fold every subsequent change into that same work commit with `git commit --amend` (and force-push only the non-`master` work branch when needed). Keep the branch single-commit throughout development, review fixes, and pre-merge reconciliation.
    - For closely related dependent phases, do **not** wait for an upstream PR/MR to merge before continuing. Pull/reuse the active work branch directly, or create a short-lived stacked branch from its current tested head when that is the fastest safe path.
-   - A stacked/dependent branch is temporary. Before it becomes merge-ready, reconcile it against the latest `origin/master`, preserve unrelated work that landed meanwhile, and squash it to exactly one commit relative to `origin/master`.
+   - A stacked/dependent branch must likewise add exactly one work commit above its immediate dependency branch. After the dependency lands, rebase/reconstruct that one commit onto the latest `origin/master`; never use a late squash as normal cleanup.
    - Do not block implementation merely because a related PR is waiting on CI/review when the dependency branch is available and its current tree is suitable for continued work.
-4. Make the requested change only on that branch.
+4. Make the requested change only on that branch, preserving the one-work-commit invariant.
 5. Add or update relevant tests.
 6. Run the applicable local tests and require them to pass before opening or updating the PR/MR.
-7. Before the first PR/MR validation push, fetch `origin` again. Rebase onto `origin/master` only if `master` has actually advanced; do not perform no-op rebases merely to retrigger CI.
-8. Before the final PR push, squash the work branch to exactly one commit relative to `origin/master`. Verify with:
+7. Before the first PR/MR validation push, fetch `origin` again. Rebase the existing single work commit onto `origin/master` only if `master` has actually advanced; do not perform no-op rebases merely to retrigger CI. Finish amend/rebase cleanup **before** the first full PR/MR validation whenever possible.
+8. Before the first full PR/MR validation, verify that the work branch is already exactly one commit relative to its merge base; do **not** plan a final squash after CI. For a normal branch based on `origin/master`, verify with:
 
    ```bash
    git rev-list --count origin/master..HEAD
    ```
 
-   The result must be `1`. Do not merge a multi-commit work branch into `master`.
-9. Push the branch and open or update the PR (or the corresponding GitLab MR when validating the GitLab mirror). The PR/MR CI run is the authoritative full validation for that source tree. Once it is green, do not push, rebase, amend, or otherwise retrigger CI unless the source tree must change.
+   The result must be `1`. A result greater than `1` is a workflow violation to fix before full PR/MR validation, not an expected pre-merge cleanup step. The purpose of keeping the branch single-commit from the start is to avoid a late squash/force-push that causes an otherwise unnecessary additional CI run.
+9. Push the branch and open or update the PR (or the corresponding GitLab MR when validating the GitLab mirror). The PR/MR CI run is the authoritative full validation for that source tree. Once it is green, do not push, rebase, amend, squash, or otherwise retrigger CI unless the source tree must change.
 10. If `origin/master` advances after CI is green, rebase only when required by repository rules or to resolve an actual conflict. A required rebase changes the tested commit and therefore requires the PR/MR CI to run again.
-11. Merge the single-commit PR/MR into `master` using a linear-history merge.
-12. After the merge succeeds, delete the merged remote branch.
+11. Merge the already-single-commit PR/MR into `master` using a linear-history merge. Prefer rebase/linear merge semantics; do not rely on squash merge to repair a multi-commit work branch.
+12. After the merge succeeds, delete the merged remote branch through the repository cleanup automation:
+   - GitHub: `.github/workflows/cleanup-merged-branches.yml` runs on pushes to `master` and safely removes redundant merged branches, including rebase-merged PR branches whose original head SHA no longer appears in `master` history.
+   - If an automatic cleanup run is missed or delayed, use that workflow's `workflow_dispatch` entry point instead of requiring a locally authenticated branch-delete command.
+   - Verify the merged branch is gone after cleanup; do not leave superseded task branches around.
 13. Keep long-lived branches to a minimum.
 
 
@@ -46,7 +51,7 @@ For every code change in this repository, use this workflow by default:
 
 - Full CI runs for GitHub pull requests or GitLab merge requests targeting `master`, and also for direct pushes to `master` on both providers. Ordinary pushes to short-lived feature/fix branches do not run full CI.
 - GitHub `workflow_dispatch` and a GitLab Web/Run pipeline are the equivalent manual full-CI entry points.
-- A successful PR/MR CI run is the pre-merge test gate. The subsequent `master` push intentionally runs the same full CI again on each provider as post-merge/mirror verification.
+- A successful PR/MR CI run is the pre-merge test gate. Keep the branch single-commit before that run so no late squash is needed solely for history cleanup; avoid duplicate PR/MR CI caused by post-validation amend/squash operations. The subsequent `master` push intentionally runs the same full CI again on each provider as post-merge/mirror verification.
 - Client packaging follows **Build Once / Test Exact Artifact / Publish Exact Artifact**. `desktop-linux`, `desktop-windows`, and `build-client-core` build the reusable client components; `package-linux-client` and `package-windows-client` assemble the only user-facing installers independently of ordinary source/server/web tests, so installer production continues even if an unrelated test fails. Exact-artifact tests wait for and consume only their corresponding installer artifacts. Publishing must consume those artifacts byte-for-byte and must never rebuild Electron or the client installer.
 - There is exactly one user-facing installer per platform: `xdrive-linux-amd64.deb` on Linux and `xDriveSetup-amd64.exe` on Windows. Do not reintroduce `xdrive-desktop-linux-amd64.deb`, `xDriveDesktopSetup-amd64.exe`, or a second Linux client installer filename.
 - Release jobs should not rerun test suites that are already required by the full CI. Server images follow **Build Once / Test Exact Image / Publish Exact Image**: `server-image`, `web`, and `caddy-image` build versioned candidate images during CI, validate them, and persist exact image artifacts; `server-backup` imports the exact server image instead of rebuilding it; release publication imports those same image artifacts, pushes immutable registry tags, and only then promotes them to `edge`/`latest`. The publish phase may build deployment assets, but it must not rebuild client installers or server images.
@@ -81,10 +86,10 @@ For every code change in this repository, use this workflow by default:
 - Never use `git push --force`, `git push -f`, or `git push --force-with-lease` against `master`.
 - Repository branch protection/rulesets for `master` must keep force pushes and branch deletion disabled.
 - Normal changes must arrive through a tested short-lived branch/PR; do not bypass required CI checks.
-- Force-pushing a work branch is allowed only when needed to squash/rebase that branch before merge, and only after verifying the target is not `master`.
+- Force-pushing a work branch is allowed only when needed to amend/rebase while preserving the branch's single-work-commit invariant, and only after verifying the target is not `master`. Do not accumulate multiple commits and use a late squash as the normal workflow.
 
 Do not merge known failing or untested changes into `master`.
 
-When multiple related unmerged branches exist, prefer dependency order. Dependent follow-on work may continue directly from the upstream work branch without waiting for its PR/MR to merge. Unrelated branches and PRs/MRs are outside the current task's workflow and must not block or reorder the work unless they create a real conflict or alter a required dependency. Before a dependent branch is made merge-ready, rebase/reconstruct it onto the latest `master`, keep only its own delta, squash it to exactly one commit, and require its own PR/MR CI to pass. Avoid rebasing an already-green PR solely to create another CI run.
+When multiple related unmerged branches exist, prefer dependency order. Dependent follow-on work may continue directly from the upstream work branch without waiting for its PR/MR to merge. Unrelated branches and PRs/MRs are outside the current task's workflow and must not block or reorder the work unless they create a real conflict or alter a required dependency. A dependent branch must contain exactly one work commit above its immediate dependency throughout development. Before it is made merge-ready after the dependency lands, rebase/reconstruct that same single commit onto the latest `master`, keep only its own delta, and require its own PR/MR CI to pass. Avoid rebasing or amending an already-green PR solely to create another CI run.
 
-Prefer small, focused branches and a single final commit to minimize conflicts and keep `master` history reviewable.
+Prefer small, focused branches that remain single-commit from their first commit through merge, minimizing conflicts, avoiding late-squash CI churn, and keeping `master` history reviewable.
