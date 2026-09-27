@@ -12,41 +12,50 @@ import (
 )
 
 type Source struct {
-	ID             uint64     `json:"id"`
-	Name           string     `json:"name"`
-	Kind           string     `json:"kind"`
-	Direction      string     `json:"direction"`
-	SyncMode       string     `json:"sync_mode"`
-	RunMode        string     `json:"run_mode"`
-	Status         string     `json:"status"`
-	Revision       uint64     `json:"revision"`
-	TargetNodeID   *uint64    `json:"target_node_id,omitempty"`
-	IgnoreRules    string     `json:"ignore_rules,omitempty"`
-	Checkpoint     string     `json:"checkpoint,omitempty"`
-	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
-	LastSuccessAt  *time.Time `json:"last_success_at,omitempty"`
-	LastError      string     `json:"last_error,omitempty"`
-	RunRequestedAt *time.Time `json:"run_requested_at,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                 uint64     `json:"id"`
+	Name               string     `json:"name"`
+	Kind               string     `json:"kind"`
+	Direction          string     `json:"direction"`
+	SyncMode           string     `json:"sync_mode"`
+	RunMode            string     `json:"run_mode"`
+	Status             string     `json:"status"`
+	ScheduleType       string     `json:"schedule_type,omitempty"`
+	ScheduleExpression string     `json:"schedule_expression,omitempty"`
+	ScheduleTimezone   string     `json:"schedule_timezone,omitempty"`
+	Revision           uint64     `json:"revision"`
+	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
+	IgnoreRules        string     `json:"ignore_rules,omitempty"`
+	Checkpoint         string     `json:"checkpoint,omitempty"`
+	LastRunAt          *time.Time `json:"last_run_at,omitempty"`
+	LastSuccessAt      *time.Time `json:"last_success_at,omitempty"`
+	LastError          string     `json:"last_error,omitempty"`
+	RunRequestedAt     *time.Time `json:"run_requested_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 type CreateSourceInput struct {
-	Name         string `json:"name"`
-	Kind         string `json:"kind"`
-	Direction    string `json:"direction"`
-	SyncMode     string `json:"sync_mode,omitempty"`
-	RunMode      string `json:"run_mode,omitempty"`
-	TargetNodeID uint64 `json:"target_node_id"`
-	IgnoreRules  string `json:"ignore_rules,omitempty"`
+	Name               string `json:"name"`
+	Kind               string `json:"kind"`
+	Direction          string `json:"direction"`
+	SyncMode           string `json:"sync_mode,omitempty"`
+	RunMode            string `json:"run_mode,omitempty"`
+	ScheduleType       string `json:"schedule_type,omitempty"`
+	ScheduleExpression string `json:"schedule_expression,omitempty"`
+	ScheduleTimezone   string `json:"schedule_timezone,omitempty"`
+	TargetNodeID       uint64 `json:"target_node_id"`
+	IgnoreRules        string `json:"ignore_rules,omitempty"`
 }
 
 type UpdateSourceInput struct {
-	Name         *string `json:"name,omitempty"`
-	RunMode      *string `json:"run_mode,omitempty"`
-	Status       *string `json:"status,omitempty"`
-	TargetNodeID *uint64 `json:"target_node_id,omitempty"`
-	IgnoreRules  *string `json:"ignore_rules,omitempty"`
+	Name               *string `json:"name,omitempty"`
+	RunMode            *string `json:"run_mode,omitempty"`
+	Status             *string `json:"status,omitempty"`
+	ScheduleType       *string `json:"schedule_type,omitempty"`
+	ScheduleExpression *string `json:"schedule_expression,omitempty"`
+	ScheduleTimezone   *string `json:"schedule_timezone,omitempty"`
+	TargetNodeID       *uint64 `json:"target_node_id,omitempty"`
+	IgnoreRules        *string `json:"ignore_rules,omitempty"`
 }
 
 type SyncRun struct {

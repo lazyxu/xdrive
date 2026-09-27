@@ -16,7 +16,9 @@ import {
   DialogContentText,
   DialogTitle,
   LinearProgress,
+  MenuItem,
   Stack,
+  TextField,
   Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
@@ -41,6 +43,7 @@ import type {
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRow,
+  ExternalSourceScheduleType,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
 } from '../../ui/shared/src'
@@ -49,6 +52,9 @@ type SourceSettingsValues = {
   name: string
   run_mode: 'scan' | 'sync'
   status: 'active' | 'paused'
+  schedule_type: ExternalSourceScheduleType
+  schedule_expression: string
+  schedule_timezone: string
   ignore_rules?: string
   cookie?: string
 }
@@ -56,6 +62,9 @@ type CreateSourceValues = {
   kind: SupportedExternalSourceKind
   name: string
   run_mode: 'scan' | 'sync'
+  schedule_type: ExternalSourceScheduleType
+  schedule_expression: string
+  schedule_timezone: string
   ignore_rules?: string
   cookie?: string
 }
@@ -119,6 +128,9 @@ export default function ExternalSourcesPanel({
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
+  const settingsScheduleType = Form.useWatch('schedule_type', settingsForm) ?? 'interval'
+  const settingsScheduleExpression = Form.useWatch('schedule_expression', settingsForm) ?? '6h'
+  const settingsScheduleTimezone = Form.useWatch('schedule_timezone', settingsForm) ?? 'UTC'
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
@@ -134,6 +146,9 @@ export default function ExternalSourcesPanel({
   const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
   const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [createForm] = Form.useForm<CreateSourceValues>()
+  const createScheduleType = Form.useWatch('schedule_type', createForm) ?? 'interval'
+  const createScheduleExpression = Form.useWatch('schedule_expression', createForm) ?? '6h'
+  const createScheduleTimezone = Form.useWatch('schedule_timezone', createForm) ?? 'UTC'
   const createKind = Form.useWatch('kind', createForm)
 
   const load = useCallback(async (silent = false) => {
@@ -184,6 +199,9 @@ export default function ExternalSourcesPanel({
       kind: defaults.kind,
       name: defaults.name,
       run_mode: 'scan',
+      schedule_type: defaults.scheduleType,
+      schedule_expression: defaults.scheduleExpression,
+      schedule_timezone: defaults.scheduleTimezone,
       ignore_rules: defaults.ignoreRules,
       cookie: '',
     })
@@ -196,6 +214,9 @@ export default function ExternalSourcesPanel({
     const defaults = externalSourceDefaults(kind)
     createForm.setFieldsValue({
       name: defaults.name,
+      schedule_type: defaults.scheduleType,
+      schedule_expression: defaults.scheduleExpression,
+      schedule_timezone: defaults.scheduleTimezone,
       ignore_rules: defaults.ignoreRules,
       cookie: '',
     })
@@ -252,6 +273,9 @@ export default function ExternalSourcesPanel({
         direction: externalSourceDefaults(values.kind).direction,
         sync_mode: 'backup',
         run_mode: values.run_mode,
+        schedule_type: values.schedule_type,
+        schedule_expression: values.schedule_expression.trim(),
+        schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
         target_node_id: values.kind === 'yike_photos' ? 0 : (defaultTargetNodeID ?? 0),
         ignore_rules: values.ignore_rules ?? '',
       })
@@ -329,6 +353,9 @@ export default function ExternalSourcesPanel({
       name: row.source.name,
       run_mode: row.source.run_mode,
       status: row.source.status,
+      schedule_type: row.source.schedule_type ?? 'interval',
+      schedule_expression: row.source.schedule_expression || '6h',
+      schedule_timezone: row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind).scheduleTimezone,
       ignore_rules: row.source.ignore_rules ?? '',
       cookie: '',
     })
@@ -372,6 +399,9 @@ export default function ExternalSourcesPanel({
         name: values.name.trim(),
         run_mode: values.run_mode,
         status: values.status,
+        schedule_type: values.schedule_type,
+        schedule_expression: values.schedule_expression.trim(),
+        schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
         ignore_rules: values.ignore_rules ?? '',
       })
       if (externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && pendingCookie) {
@@ -576,6 +606,7 @@ export default function ExternalSourcesPanel({
                   ? yikeManagedTargetLabel
                   : selectedDetail.targetNodeID ? `节点 #${selectedDetail.targetNodeID}` : '未配置'}
               </Descriptions.Item>
+              <Descriptions.Item label="调度">{selectedDetail.scheduleLabel}</Descriptions.Item>
               <Descriptions.Item label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</Descriptions.Item>
               <Descriptions.Item label="上次成功">{formatExternalSourceTime(selectedDetail.lastSuccessAt)}</Descriptions.Item>
               {selectedDetail.credential && (
@@ -737,6 +768,38 @@ export default function ExternalSourcesPanel({
               ]}
             />
           </Form.Item>
+          <Form.Item name="schedule_type" hidden><Input /></Form.Item>
+          <Form.Item name="schedule_expression" hidden><Input /></Form.Item>
+          <Form.Item name="schedule_timezone" hidden><Input /></Form.Item>
+          <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5, mb: 2 }}>
+            <TextField
+              select
+              size="small"
+              label="调度方式"
+              value={createScheduleType}
+              onChange={(event) => createForm.setFieldValue('schedule_type', event.target.value as ExternalSourceScheduleType)}
+            >
+              <MenuItem value="interval">固定间隔</MenuItem>
+              <MenuItem value="cron">Cron</MenuItem>
+            </TextField>
+            <TextField
+              size="small"
+              label={createScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
+              value={createScheduleExpression}
+              onChange={(event) => createForm.setFieldValue('schedule_expression', event.target.value)}
+              helperText={createScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
+            />
+            {createScheduleType === 'cron' && (
+              <TextField
+                size="small"
+                label="时区"
+                value={createScheduleTimezone}
+                onChange={(event) => createForm.setFieldValue('schedule_timezone', event.target.value)}
+                helperText="IANA 时区，例如 Asia/Shanghai"
+                sx={{ gridColumn: { sm: '2 / 3' } }}
+              />
+            )}
+          </MuiBox>
           <Form.Item name="ignore_rules" label="忽略规则">
             <Input.TextArea rows={5} placeholder="每行一条 gitignore 风格规则" />
           </Form.Item>
@@ -820,6 +883,38 @@ export default function ExternalSourcesPanel({
                 ]}
               />
             </Form.Item>
+            <Form.Item name="schedule_type" hidden><Input /></Form.Item>
+            <Form.Item name="schedule_expression" hidden><Input /></Form.Item>
+            <Form.Item name="schedule_timezone" hidden><Input /></Form.Item>
+            <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5, mb: 2 }}>
+              <TextField
+                select
+                size="small"
+                label="调度方式"
+                value={settingsScheduleType}
+                onChange={(event) => settingsForm.setFieldValue('schedule_type', event.target.value as ExternalSourceScheduleType)}
+              >
+                <MenuItem value="interval">固定间隔</MenuItem>
+                <MenuItem value="cron">Cron</MenuItem>
+              </TextField>
+              <TextField
+                size="small"
+                label={settingsScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
+                value={settingsScheduleExpression}
+                onChange={(event) => settingsForm.setFieldValue('schedule_expression', event.target.value)}
+                helperText={settingsScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
+              />
+              {settingsScheduleType === 'cron' && (
+                <TextField
+                  size="small"
+                  label="时区"
+                  value={settingsScheduleTimezone}
+                  onChange={(event) => settingsForm.setFieldValue('schedule_timezone', event.target.value)}
+                  helperText="IANA 时区，例如 Asia/Shanghai"
+                  sx={{ gridColumn: { sm: '2 / 3' } }}
+                />
+              )}
+            </MuiBox>
             <Form.Item name="ignore_rules" label="忽略规则">
               <Input.TextArea
                 rows={6}

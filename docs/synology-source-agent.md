@@ -155,7 +155,12 @@ For normal scheduling, use the due gate:
 ./xdrive-source-agent run --due --interval 6h
 ```
 
-With `--due`, the agent first reads the Source state and exits without traversing the Photos roots when the last run is newer than the requested interval. A pending manual request created by the Web **立即扫描** action overrides that interval and is executed with `trigger=manual`. Paused Sources are skipped by the due gate.
+Web/Desktop store the schedule on the Source itself. Supported schedules are:
+
+- `interval`, such as `30m`, `6h`, or `24h`;
+- standard five-field `cron`, such as `0 3 * * *`, with an IANA timezone such as `Asia/Shanghai`.
+
+With `--due`, the agent reads the Source schedule and exits without traversing the Photos roots until that Source is due. A pending manual request created by the Web **立即扫描** action always overrides the schedule and runs with `trigger=manual`. Paused Sources are skipped. `--interval` is retained only as the compatibility fallback for Sources created before per-Source schedules existed; newly created Sources default to `interval=6h`.
 
 A run:
 
@@ -185,8 +190,10 @@ export XD_SOURCE_AGENT_CONFIG_DIR=/volume1/@appdata/xdrive-source-agent
 
 The one-minute task is a lightweight control-plane check. It performs a real Photos traversal only when either:
 
-- the normal six-hour interval is due; or
-- xDrive has a pending manual run request from the Web UI.
+- that Source's configured interval/cron schedule is due; or
+- xDrive has a pending manual run request from the Web/Desktop UI.
+
+The `--interval 6h` value shown above is only the legacy fallback for Sources without explicit schedule fields; it does not override a configured per-Source schedule.
 
 This keeps the NAS as the initiator of the Push connection while allowing a Web request to start on the next Task Scheduler invocation. The pending request remains visible in xDrive until an agent run actually starts.
 

@@ -789,20 +789,24 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources",
-		`{"name":"群晖 Photos","kind":"synology_photos","direction":"push","sync_mode":"backup","run_mode":"scan","target_node_id":7}`)
+		`{"name":"群晖 Photos","kind":"synology_photos","direction":"push","sync_mode":"backup","run_mode":"scan","schedule_type":"cron","schedule_expression":"0 3 * * *","schedule_timezone":"Asia/Shanghai","target_node_id":7}`)
 	if res.Code != http.StatusCreated || !strings.Contains(res.Body.String(), "\"id\":10") {
 		t.Fatalf("create source status=%d body=%s", res.Code, res.Body.String())
 	}
-	if ctrl.cloudCreateInput.Name != "群晖 Photos" || ctrl.cloudCreateInput.TargetNodeID != 7 {
+	if ctrl.cloudCreateInput.Name != "群晖 Photos" || ctrl.cloudCreateInput.TargetNodeID != 7 ||
+		ctrl.cloudCreateInput.ScheduleType != "cron" || ctrl.cloudCreateInput.ScheduleExpression != "0 3 * * *" ||
+		ctrl.cloudCreateInput.ScheduleTimezone != "Asia/Shanghai" {
 		t.Fatalf("create input not forwarded: %+v", ctrl.cloudCreateInput)
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodPatch, "/v1/sources",
-		`{"source_id":9,"revision":3,"update":{"run_mode":"sync","status":"active"}}`)
+		`{"source_id":9,"revision":3,"update":{"run_mode":"sync","status":"active","schedule_type":"interval","schedule_expression":"12h","schedule_timezone":""}}`)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"revision\":4") {
 		t.Fatalf("update source status=%d body=%s", res.Code, res.Body.String())
 	}
-	if ctrl.cloudUpdateID != 9 || ctrl.cloudUpdateRevision != 3 || ctrl.cloudUpdateInput.RunMode == nil || *ctrl.cloudUpdateInput.RunMode != "sync" {
+	if ctrl.cloudUpdateID != 9 || ctrl.cloudUpdateRevision != 3 || ctrl.cloudUpdateInput.RunMode == nil || *ctrl.cloudUpdateInput.RunMode != "sync" ||
+		ctrl.cloudUpdateInput.ScheduleType == nil || *ctrl.cloudUpdateInput.ScheduleType != "interval" ||
+		ctrl.cloudUpdateInput.ScheduleExpression == nil || *ctrl.cloudUpdateInput.ScheduleExpression != "12h" {
 		t.Fatalf("update input not forwarded: id=%d revision=%d input=%+v", ctrl.cloudUpdateID, ctrl.cloudUpdateRevision, ctrl.cloudUpdateInput)
 	}
 

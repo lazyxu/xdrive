@@ -19,6 +19,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"github.com/lazyxu/xdrive/internal/sourcemetadata"
+	"github.com/lazyxu/xdrive/internal/sourceschedule"
 	"github.com/lazyxu/xdrive/internal/yike"
 	"github.com/lazyxu/xdrive/internal/yikesync"
 	"gorm.io/gorm"
@@ -74,17 +75,24 @@ func (r *Runner) loadSources(ctx context.Context, dueOnly bool, now time.Time, i
 		Model(&meta.Source{}).
 		Where("xd_sources.kind = ? AND xd_sources.direction = ? AND xd_sources.status = ? AND xd_sources.sync_mode = ?",
 			yikesync.SourceKind, meta.SourceDirectionPull, meta.SourceStatusActive, meta.SourceSyncModeBackup)
-	if dueOnly {
-		query = query.Where(
-			"xd_sources.run_requested_at IS NOT NULL OR xd_sources.last_run_at IS NULL OR xd_sources.last_run_at <= ?",
-			now.Add(-interval),
-		)
-	}
 	var sources []meta.Source
 	if err := query.Order("xd_sources.id ASC").Find(&sources).Error; err != nil {
 		return nil, err
 	}
-	return sources, nil
+	if !dueOnly {
+		return sources, nil
+	}
+	due := make([]meta.Source, 0, len(sources))
+	for _, source := range sources {
+		isDue, err := sourceschedule.Due(source, now, interval)
+		if err != nil {
+			return nil, fmt.Errorf("source %d schedule: %w", source.ID, err)
+		}
+		if isDue {
+			due = append(due, source)
+		}
+	}
+	return due, nil
 }
 
 func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time.Time) (RunAllReport, error) {

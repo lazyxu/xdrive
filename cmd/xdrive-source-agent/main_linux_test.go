@@ -148,6 +148,30 @@ func TestResolveRunTriggerDueSchedule(t *testing.T) {
 	}
 }
 
+func TestResolveRunTriggerUsesPerSourceCron(t *testing.T) {
+	last := time.Date(2026, 9, 26, 19, 30, 0, 0, time.UTC)
+	source := client.Source{
+		Status: meta.SourceStatusActive, LastRunAt: &last,
+		ScheduleType: "cron", ScheduleExpression: "0 3 * * *", ScheduleTimezone: "Asia/Shanghai",
+	}
+	before := time.Date(2026, 9, 27, 18, 59, 59, 0, time.UTC)
+	trigger, run, err := resolveRunTrigger(source, meta.SyncRunTriggerScheduled, true, 6*time.Hour, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run || trigger != meta.SyncRunTriggerScheduled {
+		t.Fatalf("early cron trigger=%q run=%t", trigger, run)
+	}
+	at := time.Date(2026, 9, 27, 19, 0, 0, 0, time.UTC)
+	trigger, run, err = resolveRunTrigger(source, meta.SyncRunTriggerScheduled, true, 6*time.Hour, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run || trigger != meta.SyncRunTriggerScheduled {
+		t.Fatalf("due cron trigger=%q run=%t", trigger, run)
+	}
+}
+
 func TestResolveRunTriggerDueSkipsPausedButExplicitRunStillRuns(t *testing.T) {
 	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	trigger, run, err := resolveRunTrigger(client.Source{
@@ -282,5 +306,19 @@ func TestSetupSourceNamePreservesExistingName(t *testing.T) {
 	}
 	if got := setupSourceName(client.Source{}, ""); got != "Synology Photos" {
 		t.Fatalf("new-source default name=%q", got)
+	}
+}
+
+func TestSourceScheduleText(t *testing.T) {
+	if got := sourceScheduleText(client.Source{ScheduleType: "interval", ScheduleExpression: "6h"}); got != "every 6h" {
+		t.Fatalf("interval schedule text=%q", got)
+	}
+	if got := sourceScheduleText(client.Source{
+		ScheduleType: "cron", ScheduleExpression: "0 3 * * *", ScheduleTimezone: "Asia/Shanghai",
+	}); got != "cron 0 3 * * * (Asia/Shanghai)" {
+		t.Fatalf("cron schedule text=%q", got)
+	}
+	if got := sourceScheduleText(client.Source{}); got != "legacy fallback" {
+		t.Fatalf("legacy schedule text=%q", got)
 	}
 }

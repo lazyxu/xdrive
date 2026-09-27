@@ -2,6 +2,7 @@ export type SupportedExternalSourceKind = 'synology_photos' | 'yike_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceStatus = 'active' | 'paused'
+export type ExternalSourceScheduleType = 'interval' | 'cron'
 export type ExternalSourceRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
 
 export interface ExternalSource {
@@ -12,6 +13,9 @@ export interface ExternalSource {
   sync_mode: 'backup' | 'mirror'
   run_mode: ExternalSourceRunMode
   status: ExternalSourceStatus
+  schedule_type?: ExternalSourceScheduleType
+  schedule_expression?: string
+  schedule_timezone?: string
   revision: number
   target_node_id?: number
   ignore_rules?: string
@@ -103,6 +107,9 @@ export interface CreateExternalSourceInput {
   direction: ExternalSourceDirection
   sync_mode: 'backup'
   run_mode: ExternalSourceRunMode
+  schedule_type?: ExternalSourceScheduleType
+  schedule_expression?: string
+  schedule_timezone?: string
   target_node_id: number
   ignore_rules?: string
 }
@@ -111,6 +118,9 @@ export interface UpdateExternalSourceInput {
   name?: string
   run_mode?: ExternalSourceRunMode
   status?: ExternalSourceStatus
+  schedule_type?: ExternalSourceScheduleType
+  schedule_expression?: string
+  schedule_timezone?: string
   target_node_id?: number
   ignore_rules?: string
 }
@@ -142,6 +152,9 @@ export interface ExternalSourceDefaults {
   name: string
   direction: ExternalSourceDirection
   ignoreRules: string
+  scheduleType: ExternalSourceScheduleType
+  scheduleExpression: string
+  scheduleTimezone: string
 }
 
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
@@ -193,6 +206,7 @@ export interface ExternalSourceDetailView {
   targetNodeID?: number
   lastRunAt?: string
   lastSuccessAt?: string
+  scheduleLabel: string
   credential?: {
     label: 'Cookie'
     configured: boolean
@@ -246,6 +260,24 @@ export function formatExternalSourceTime(value?: string, now = new Date()) {
 
 export function externalSourceModeLabel(source: Pick<ExternalSource, 'direction' | 'run_mode'>) {
   return `${source.direction === 'push' ? 'Push' : 'Pull'} · ${source.run_mode === 'scan' ? '仅扫描' : '同步'}`
+}
+
+export function externalSourceScheduleLabel(source: Pick<ExternalSource, 'schedule_type' | 'schedule_expression' | 'schedule_timezone'>) {
+  if (source.schedule_type === 'cron' && source.schedule_expression) {
+    return `Cron ${source.schedule_expression} · ${source.schedule_timezone || 'UTC'}`
+  }
+  if (source.schedule_type === 'interval' && source.schedule_expression) {
+    return `每 ${source.schedule_expression}`
+  }
+  return '兼容默认间隔'
+}
+
+export function defaultExternalSourceTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
 }
 
 export function externalSourceConnectorProfile(kind: string): ExternalSourceConnectorProfile {
@@ -340,6 +372,9 @@ export function externalSourceDefaults(kind: SupportedExternalSourceKind): Exter
     name: profile.defaultName,
     direction: profile.direction,
     ignoreRules: profile.defaultIgnoreRules,
+    scheduleType: 'interval',
+    scheduleExpression: '6h',
+    scheduleTimezone: defaultExternalSourceTimezone(),
   }
 }
 
@@ -368,6 +403,7 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
     targetNodeID: row.source.target_node_id,
     lastRunAt: row.source.last_run_at,
     lastSuccessAt: row.source.last_success_at,
+    scheduleLabel: externalSourceScheduleLabel(row.source),
     credential: connector.credential === 'cookie'
       ? { label: 'Cookie', configured: row.credential?.configured === true }
       : undefined,

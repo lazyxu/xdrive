@@ -45,6 +45,24 @@ function source(overrides = {}) {
   }
 }
 
+test('shared external-source defaults and schedule labels stay connector-neutral', () => {
+  const defaults = shared.externalSourceDefaults('synology_photos')
+  assert.equal(defaults.scheduleType, 'interval')
+  assert.equal(defaults.scheduleExpression, '6h')
+  assert.ok(defaults.scheduleTimezone)
+
+  assert.equal(shared.externalSourceScheduleLabel(source({
+    schedule_type: 'interval',
+    schedule_expression: '6h',
+  })), '每 6h')
+  assert.equal(shared.externalSourceScheduleLabel(source({
+    schedule_type: 'cron',
+    schedule_expression: '0 3 * * *',
+    schedule_timezone: 'Asia/Shanghai',
+  })), 'Cron 0 3 * * * · Asia/Shanghai')
+  assert.equal(shared.externalSourceScheduleLabel(source()), '兼容默认间隔')
+})
+
 test('shared external-source state ordering is connector neutral', () => {
   assert.deepEqual(
     shared.getExternalSourceState({ source: source({ status: 'paused' }) }),
@@ -340,17 +358,24 @@ test('shared Synology DSM guide binds the exact Source and keeps secrets out of 
 })
 
 test('shared external-source defaults preserve connector-specific setup rules', () => {
+  const scheduleTimezone = shared.defaultExternalSourceTimezone()
   assert.deepEqual(shared.externalSourceDefaults('yike_photos'), {
     kind: 'yike_photos',
     name: '一刻相册',
     direction: 'pull',
     ignoreRules: '',
+    scheduleType: 'interval',
+    scheduleExpression: '6h',
+    scheduleTimezone,
   })
   assert.deepEqual(shared.externalSourceDefaults('synology_photos'), {
     kind: 'synology_photos',
     name: '群晖 Photos',
     direction: 'push',
     ignoreRules: '@eaDir/\n\\#recycle/\n',
+    scheduleType: 'interval',
+    scheduleExpression: '6h',
+    scheduleTimezone,
   })
   assert.equal(shared.externalSourceModeLabel(source()), 'Push · 仅扫描')
   assert.equal(shared.externalSourceKindLabel('yike_photos'), '一刻相册')

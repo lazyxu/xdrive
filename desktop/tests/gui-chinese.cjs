@@ -124,6 +124,16 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('自动回滚失败'), 'missing Yike rollback failure fallback')
 })
 
+test('desktop external sources expose per-Source scheduling', () => {
+  for (const text of ['调度方式', '固定间隔', 'Cron', 'Cron 表达式', '运行间隔', 'IANA 时区']) {
+    assert.ok(renderer.includes(text), `missing Source schedule UI label: ${text}`)
+  }
+  assert.ok(renderer.includes('schedule_type: sourceCreateScheduleType'), 'missing create schedule payload')
+  assert.ok(renderer.includes('schedule_type: sourceEditScheduleType'), 'missing update schedule payload')
+  assert.ok(renderer.includes('detail.scheduleLabel'), 'missing Source schedule detail label')
+  assert.ok(main.includes('schedule_expression'), 'Electron main does not forward Source schedule fields')
+})
+
 test('desktop external sources expose live progress and cooperative cancellation', () => {
   assert.ok(renderer.includes('LinearProgress'), 'missing Source live progress bar')
   assert.ok(renderer.includes('当前文件：'), 'missing active Source file label')

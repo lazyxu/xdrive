@@ -23,6 +23,7 @@ import {
   Select,
   Stack,
   Switch,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -54,6 +55,7 @@ import type {
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRow,
+  ExternalSourceScheduleType,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
 } from '@xdrive/shared'
@@ -206,6 +208,9 @@ export default function App() {
   const [sourceEditName, setSourceEditName] = useState('')
   const [sourceEditRunMode, setSourceEditRunMode] = useState<'scan' | 'sync'>('scan')
   const [sourceEditStatus, setSourceEditStatus] = useState<'active' | 'paused'>('active')
+  const [sourceEditScheduleType, setSourceEditScheduleType] = useState<ExternalSourceScheduleType>('interval')
+  const [sourceEditScheduleExpression, setSourceEditScheduleExpression] = useState('6h')
+  const [sourceEditScheduleTimezone, setSourceEditScheduleTimezone] = useState('UTC')
   const [sourceEditIgnoreRules, setSourceEditIgnoreRules] = useState('')
   const [sourceEditCookie, setSourceEditCookie] = useState('')
   const [sourceCreateOpen, setSourceCreateOpen] = useState(false)
@@ -213,6 +218,9 @@ export default function App() {
   const [sourceCreateKind, setSourceCreateKind] = useState<SupportedExternalSourceKind>(initialSourceDefaults.kind)
   const [sourceCreateName, setSourceCreateName] = useState(initialSourceDefaults.name)
   const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>('scan')
+  const [sourceCreateScheduleType, setSourceCreateScheduleType] = useState<ExternalSourceScheduleType>(initialSourceDefaults.scheduleType)
+  const [sourceCreateScheduleExpression, setSourceCreateScheduleExpression] = useState(initialSourceDefaults.scheduleExpression)
+  const [sourceCreateScheduleTimezone, setSourceCreateScheduleTimezone] = useState(initialSourceDefaults.scheduleTimezone)
   const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState(initialSourceDefaults.ignoreRules)
   const [sourceCreateCookie, setSourceCreateCookie] = useState('')
   const [sourceCreateCredentialTest, setSourceCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
@@ -629,6 +637,9 @@ export default function App() {
     setSourceCreateKind(defaults.kind)
     setSourceCreateName(defaults.name)
     setSourceCreateRunMode('scan')
+    setSourceCreateScheduleType(defaults.scheduleType)
+    setSourceCreateScheduleExpression(defaults.scheduleExpression)
+    setSourceCreateScheduleTimezone(defaults.scheduleTimezone)
     setSourceCreateIgnoreRules(defaults.ignoreRules)
     setSourceCreateCookie('')
     setSourceCreateCredentialTest(null)
@@ -651,6 +662,9 @@ export default function App() {
     const defaults = externalSourceDefaults(kind)
     setSourceCreateKind(defaults.kind)
     setSourceCreateName(defaults.name)
+    setSourceCreateScheduleType(defaults.scheduleType)
+    setSourceCreateScheduleExpression(defaults.scheduleExpression)
+    setSourceCreateScheduleTimezone(defaults.scheduleTimezone)
     setSourceCreateIgnoreRules(defaults.ignoreRules)
     if (kind === 'synology_photos') setSourceCreateCookie('')
     setSourceCreateCredentialTest(null)
@@ -717,6 +731,9 @@ export default function App() {
         direction: externalSourceDefaults(sourceCreateKind).direction,
         sync_mode: 'backup',
         run_mode: sourceCreateRunMode,
+        schedule_type: sourceCreateScheduleType,
+        schedule_expression: sourceCreateScheduleExpression.trim(),
+        schedule_timezone: sourceCreateScheduleType === 'cron' ? sourceCreateScheduleTimezone.trim() : '',
         target_node_id: sourceCreateKind === 'yike_photos' ? 0 : (target?.id ?? 0),
         ignore_rules: sourceCreateIgnoreRules,
       })
@@ -761,6 +778,9 @@ export default function App() {
     setSourceEditName(row.source.name)
     setSourceEditRunMode(row.source.run_mode)
     setSourceEditStatus(row.source.status)
+    setSourceEditScheduleType(row.source.schedule_type ?? 'interval')
+    setSourceEditScheduleExpression(row.source.schedule_expression || '6h')
+    setSourceEditScheduleTimezone(row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind).scheduleTimezone)
     setSourceEditIgnoreRules(row.source.ignore_rules || '')
     setSourceEditCookie('')
     setSourceEditCredentialTest(null)
@@ -814,6 +834,9 @@ export default function App() {
         name,
         run_mode: sourceEditRunMode,
         status: sourceEditStatus,
+        schedule_type: sourceEditScheduleType,
+        schedule_expression: sourceEditScheduleExpression.trim(),
+        schedule_timezone: sourceEditScheduleType === 'cron' ? sourceEditScheduleTimezone.trim() : '',
         ignore_rules: sourceEditIgnoreRules,
       })
       if (!updated.ok) {
@@ -1639,6 +1662,17 @@ export default function App() {
                   </label>
                 </div>
 
+                <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '180px 1fr' }, gap: 1.5, mb: 1.5 }}>
+                  <TextField select size="small" label="调度方式" value={sourceCreateScheduleType} onChange={(event) => setSourceCreateScheduleType(event.target.value as ExternalSourceScheduleType)}>
+                    <MenuItem value="interval">固定间隔</MenuItem>
+                    <MenuItem value="cron">Cron</MenuItem>
+                  </TextField>
+                  <TextField size="small" label={sourceCreateScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceCreateScheduleExpression} onChange={(event) => setSourceCreateScheduleExpression(event.target.value)} helperText={sourceCreateScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
+                  {sourceCreateScheduleType === 'cron' && (
+                    <TextField size="small" label="时区" value={sourceCreateScheduleTimezone} onChange={(event) => setSourceCreateScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
+                  )}
+                </MuiBox>
+
                 {sourceCreateKind === 'yike_photos' ? (
                   <MuiAlert severity="info" sx={{ mb: 1.5 }}>
                     固定逻辑目录：{yikeManagedTargetLabel}。连接成功后自动创建；底层文件仍使用 xDrive CAS 存储。
@@ -1856,6 +1890,16 @@ export default function App() {
                               </select>
                             </label>
                           </div>
+                          <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '180px 1fr' }, gap: 1.5, mb: 1.5 }}>
+                            <TextField select size="small" label="调度方式" value={sourceEditScheduleType} onChange={(event) => setSourceEditScheduleType(event.target.value as ExternalSourceScheduleType)}>
+                              <MenuItem value="interval">固定间隔</MenuItem>
+                              <MenuItem value="cron">Cron</MenuItem>
+                            </TextField>
+                            <TextField size="small" label={sourceEditScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceEditScheduleExpression} onChange={(event) => setSourceEditScheduleExpression(event.target.value)} helperText={sourceEditScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
+                            {sourceEditScheduleType === 'cron' && (
+                              <TextField size="small" label="时区" value={sourceEditScheduleTimezone} onChange={(event) => setSourceEditScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
+                            )}
+                          </MuiBox>
                           <label className="source-settings-wide">
                             <span>忽略规则</span>
                             <textarea
@@ -1930,6 +1974,7 @@ export default function App() {
                               <span>目标目录</span>
                               <strong>{row.source.kind === 'yike_photos' ? yikeManagedTargetLabel : (detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置')}</strong>
                             </div>
+                            <div><span>调度</span><strong>{detail.scheduleLabel}</strong></div>
                             <div><span>上次运行</span><strong>{formatExternalSourceTime(detail.lastRunAt)}</strong></div>
                             <div><span>上次成功</span><strong>{formatExternalSourceTime(detail.lastSuccessAt)}</strong></div>
                             {detail.credential && (

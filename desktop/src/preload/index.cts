@@ -21,6 +21,9 @@ const agent = Object.freeze({
     direction: 'push' | 'pull'
     sync_mode: 'backup'
     run_mode: 'scan' | 'sync'
+    schedule_type?: 'interval' | 'cron'
+    schedule_expression?: string
+    schedule_timezone?: string
     target_node_id: number
     ignore_rules?: string
   }) => ipcRenderer.invoke('agent:create-source', input),
@@ -28,6 +31,9 @@ const agent = Object.freeze({
     name?: string
     run_mode?: 'scan' | 'sync'
     status?: 'active' | 'paused'
+    schedule_type?: 'interval' | 'cron'
+    schedule_expression?: string
+    schedule_timezone?: string
     target_node_id?: number
     ignore_rules?: string
   }) => ipcRenderer.invoke('agent:update-source', sourceID, revision, input),

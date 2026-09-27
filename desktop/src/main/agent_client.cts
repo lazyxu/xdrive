@@ -122,6 +122,9 @@ export type AgentSource = {
   sync_mode: 'backup' | 'mirror'
   run_mode: 'scan' | 'sync'
   status: 'active' | 'paused'
+  schedule_type?: 'interval' | 'cron'
+  schedule_expression?: string
+  schedule_timezone?: string
   revision: number
   target_node_id?: number
   ignore_rules?: string
@@ -140,6 +143,9 @@ export type AgentCreateSourceInput = {
   direction: 'push' | 'pull'
   sync_mode: 'backup'
   run_mode: 'scan' | 'sync'
+  schedule_type?: 'interval' | 'cron'
+  schedule_expression?: string
+  schedule_timezone?: string
   target_node_id: number
   ignore_rules?: string
 }
@@ -148,6 +154,9 @@ export type AgentUpdateSourceInput = {
   name?: string
   run_mode?: 'scan' | 'sync'
   status?: 'active' | 'paused'
+  schedule_type?: 'interval' | 'cron'
+  schedule_expression?: string
+  schedule_timezone?: string
   target_node_id?: number
   ignore_rules?: string
 }

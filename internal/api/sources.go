@@ -10,28 +10,32 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
+	"github.com/lazyxu/xdrive/internal/sourceschedule"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type sourceDTO struct {
-	ID             uint64     `json:"id"`
-	Name           string     `json:"name"`
-	Kind           string     `json:"kind"`
-	Direction      string     `json:"direction"`
-	SyncMode       string     `json:"sync_mode"`
-	RunMode        string     `json:"run_mode"`
-	Status         string     `json:"status"`
-	Revision       uint64     `json:"revision"`
-	TargetNodeID   *uint64    `json:"target_node_id,omitempty"`
-	IgnoreRules    string     `json:"ignore_rules,omitempty"`
-	Checkpoint     string     `json:"checkpoint,omitempty"`
-	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
-	LastSuccessAt  *time.Time `json:"last_success_at,omitempty"`
-	LastError      string     `json:"last_error,omitempty"`
-	RunRequestedAt *time.Time `json:"run_requested_at,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                 uint64     `json:"id"`
+	Name               string     `json:"name"`
+	Kind               string     `json:"kind"`
+	Direction          string     `json:"direction"`
+	SyncMode           string     `json:"sync_mode"`
+	RunMode            string     `json:"run_mode"`
+	Status             string     `json:"status"`
+	ScheduleType       string     `json:"schedule_type,omitempty"`
+	ScheduleExpression string     `json:"schedule_expression,omitempty"`
+	ScheduleTimezone   string     `json:"schedule_timezone,omitempty"`
+	Revision           uint64     `json:"revision"`
+	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
+	IgnoreRules        string     `json:"ignore_rules,omitempty"`
+	Checkpoint         string     `json:"checkpoint,omitempty"`
+	LastRunAt          *time.Time `json:"last_run_at,omitempty"`
+	LastSuccessAt      *time.Time `json:"last_success_at,omitempty"`
+	LastError          string     `json:"last_error,omitempty"`
+	RunRequestedAt     *time.Time `json:"run_requested_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 type syncRunDTO struct {
@@ -81,6 +85,7 @@ func toSourceDTO(source meta.Source) sourceDTO {
 	return sourceDTO{
 		ID: source.ID, Name: source.Name, Kind: source.Kind, Direction: source.Direction,
 		SyncMode: source.SyncMode, RunMode: source.RunMode, Status: source.Status,
+		ScheduleType: source.ScheduleType, ScheduleExpression: source.ScheduleExpression, ScheduleTimezone: source.ScheduleTimezone,
 		Revision: source.Revision, TargetNodeID: source.TargetNodeID, IgnoreRules: source.IgnoreRules,
 		Checkpoint: source.Checkpoint, LastRunAt: source.LastRunAt, LastSuccessAt: source.LastSuccessAt,
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
@@ -125,13 +130,16 @@ func (s *Server) listSources(c *gin.Context) {
 
 func (s *Server) createSource(c *gin.Context) {
 	var req struct {
-		Name         string `json:"name"`
-		Kind         string `json:"kind"`
-		Direction    string `json:"direction"`
-		SyncMode     string `json:"sync_mode"`
-		RunMode      string `json:"run_mode"`
-		TargetNodeID uint64 `json:"target_node_id"`
-		IgnoreRules  string `json:"ignore_rules"`
+		Name               string `json:"name"`
+		Kind               string `json:"kind"`
+		Direction          string `json:"direction"`
+		SyncMode           string `json:"sync_mode"`
+		RunMode            string `json:"run_mode"`
+		ScheduleType       string `json:"schedule_type"`
+		ScheduleExpression string `json:"schedule_expression"`
+		ScheduleTimezone   string `json:"schedule_timezone"`
+		TargetNodeID       uint64 `json:"target_node_id"`
+		IgnoreRules        string `json:"ignore_rules"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
@@ -158,6 +166,15 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	if !meta.ValidSourceRunMode(req.RunMode) {
 		fail(c, http.StatusBadRequest, "invalid run_mode")
+		return
+	}
+	if strings.TrimSpace(req.ScheduleType) == "" && strings.TrimSpace(req.ScheduleExpression) == "" && strings.TrimSpace(req.ScheduleTimezone) == "" {
+		req.ScheduleType = sourceschedule.TypeInterval
+		req.ScheduleExpression = sourceschedule.DefaultIntervalExpression
+	}
+	schedule, err := sourceschedule.Normalize(req.ScheduleType, req.ScheduleExpression, req.ScheduleTimezone)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	isYike := req.Kind == yikeSourceKind
@@ -197,6 +214,7 @@ func (s *Server) createSource(c *gin.Context) {
 	source := meta.Source{
 		OwnerID: userID(c), Name: req.Name, Kind: req.Kind, Direction: req.Direction,
 		SyncMode: meta.SourceSyncModeBackup, RunMode: req.RunMode, Status: status,
+		ScheduleType: schedule.Type, ScheduleExpression: schedule.Expression, ScheduleTimezone: schedule.Timezone,
 		Revision: 1, TargetNodeID: target, IgnoreRules: req.IgnoreRules,
 	}
 	if err := s.DB.Create(&source).Error; err != nil {
@@ -237,11 +255,14 @@ func (s *Server) updateSource(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name         *string `json:"name"`
-		RunMode      *string `json:"run_mode"`
-		Status       *string `json:"status"`
-		TargetNodeID *uint64 `json:"target_node_id"`
-		IgnoreRules  *string `json:"ignore_rules"`
+		Name               *string `json:"name"`
+		RunMode            *string `json:"run_mode"`
+		Status             *string `json:"status"`
+		ScheduleType       *string `json:"schedule_type"`
+		ScheduleExpression *string `json:"schedule_expression"`
+		ScheduleTimezone   *string `json:"schedule_timezone"`
+		TargetNodeID       *uint64 `json:"target_node_id"`
+		IgnoreRules        *string `json:"ignore_rules"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
@@ -302,6 +323,27 @@ func (s *Server) updateSource(c *gin.Context) {
 				}
 			}
 			updates["status"] = status
+		}
+		if req.ScheduleType != nil || req.ScheduleExpression != nil || req.ScheduleTimezone != nil {
+			scheduleType := current.ScheduleType
+			expression := current.ScheduleExpression
+			timezone := current.ScheduleTimezone
+			if req.ScheduleType != nil {
+				scheduleType = strings.TrimSpace(*req.ScheduleType)
+			}
+			if req.ScheduleExpression != nil {
+				expression = strings.TrimSpace(*req.ScheduleExpression)
+			}
+			if req.ScheduleTimezone != nil {
+				timezone = strings.TrimSpace(*req.ScheduleTimezone)
+			}
+			schedule, err := sourceschedule.Normalize(scheduleType, expression, timezone)
+			if err != nil || schedule.Type == "" {
+				return errInvalidSourceConfig
+			}
+			updates["schedule_type"] = schedule.Type
+			updates["schedule_expression"] = schedule.Expression
+			updates["schedule_timezone"] = schedule.Timezone
 		}
 		if req.TargetNodeID != nil {
 			if current.Kind == yikeSourceKind {
