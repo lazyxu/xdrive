@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
+import { Button as MuiButton } from '@mui/material'
 import type { XDriveApi } from './api'
+import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -43,10 +45,6 @@ function sourceBadgeStatus(tone: ExternalSourceStateTone): BadgeProps['status'] 
   return 'default'
 }
 
-function shellQuote(value: string) {
-  return "'" + value.replace(/'/g, "'\\''") + "'"
-}
-
 
 export default function ExternalSourcesPanel({
   open,
@@ -74,6 +72,8 @@ export default function ExternalSourcesPanel({
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
+  const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
+  const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [createForm] = Form.useForm<CreateSourceValues>()
   const createKind = Form.useWatch('kind', createForm)
 
@@ -101,6 +101,13 @@ export default function ExternalSourcesPanel({
   useEffect(() => {
     if (open) void load()
   }, [open, load])
+  const openSynologyGuide = (source: ExternalSource) => {
+    setGuideSource(source)
+    void api.me()
+      .then((me) => setGuideUsername(me.username))
+      .catch(() => setGuideUsername(undefined))
+  }
+
   const openCreate = () => {
     const defaults = externalSourceDefaults('synology_photos')
     createForm.setFieldsValue({
@@ -125,10 +132,6 @@ export default function ExternalSourcesPanel({
   const createSource = async (values: CreateSourceValues) => {
     if (!defaultTargetNodeID) {
       message.error('当前目标文件夹尚未加载，请稍后重试')
-      return
-    }
-    if (values.kind === 'synology_photos' && !defaultTargetPath) {
-      message.error('群晖来源不能直接使用“我的文件”根目录，请先进入一个目标文件夹')
       return
     }
     const cookie = values.cookie?.trim() ?? ''
@@ -171,36 +174,7 @@ export default function ExternalSourcesPanel({
     setCreating(false)
 
     if (values.kind === 'synology_photos') {
-      const command =
-        'xdrive-source-agent setup --name ' + shellQuote(created.name) +
-        ' --target ' + shellQuote(defaultTargetPath) +
-        ' --personal /volume1/homes/USERNAME/Photos --mode ' + created.run_mode
-      Modal.info({
-        title: '群晖来源已添加',
-        width: 720,
-        content: (
-          <div style={{ marginTop: 16 }}>
-            <Alert
-              type="success"
-              showIcon
-              message="xDrive Source 已创建"
-              description="下一步在群晖 DSM 上配置 xdrive-source-agent。Agent 会按相同来源名称复用这个 Source，不会重复创建。"
-              style={{ marginBottom: 16 }}
-            />
-            <Typography.Paragraph>
-              将命令中的 <Typography.Text code>USERNAME</Typography.Text> 替换为 DSM 用户名：
-            </Typography.Paragraph>
-            <Typography.Paragraph code copyable={{ text: command }}>{command}</Typography.Paragraph>
-            <Typography.Paragraph type="secondary">
-              如需同时扫描共享空间，在命令后追加 <Typography.Text code>--shared /volume1/photo</Typography.Text>。
-            </Typography.Paragraph>
-            <Typography.Paragraph type="secondary">
-              建议 DSM Task Scheduler 每分钟执行 <Typography.Text code>xdrive-source-agent run --due --interval 6h</Typography.Text>。
-              平时仍按 6 小时间隔扫描；Web 点击“立即扫描”后，下一次任务检查会立即执行，不会每分钟全盘扫描。
-            </Typography.Paragraph>
-          </div>
-        ),
-      })
+      openSynologyGuide(created)
     }
   }
 
@@ -317,6 +291,16 @@ export default function ExternalSourcesPanel({
                   <div className="external-source-actions">
                     <Space size="small">
                       <Button size="small" onClick={() => setSelected(row)}>查看</Button>
+                      {row.source.kind === 'synology_photos' && (
+                        <MuiButton
+                          size="small"
+                          variant="outlined"
+                          onClick={() => openSynologyGuide(row.source)}
+                          sx={{ minWidth: 'auto', px: 1.25, py: 0.25, fontSize: 12 }}
+                        >
+                          DSM 配置
+                        </MuiButton>
+                      )}
                       <Tooltip title={card.trigger.label}>
                         <Button
                           size="small"
@@ -421,15 +405,6 @@ export default function ExternalSourcesPanel({
               ]}
             />
           </Form.Item>
-          {createKind === 'synology_photos' && !defaultTargetPath && (
-            <Alert
-              type="warning"
-              showIcon
-              message="请先进入一个目标文件夹"
-              description="群晖 DSM setup 需要根目录下的相对目标路径，因此不能直接绑定“我的文件”根目录。"
-              style={{ marginBottom: 16 }}
-            />
-          )}
           <Form.Item name="name" label="来源名称" rules={[{ required: true, whitespace: true, max: 128 }]}>
             <Input />
           </Form.Item>
@@ -460,7 +435,6 @@ export default function ExternalSourcesPanel({
               type="primary"
               htmlType="submit"
               loading={creating}
-              disabled={createKind === 'synology_photos' && !defaultTargetPath}
             >
               添加来源
             </Button>
@@ -555,6 +529,14 @@ export default function ExternalSourcesPanel({
           </Form>
         )}
       </Modal>
+
+      <SynologyDsmGuideDialog
+        open={!!guideSource}
+        source={guideSource}
+        serverURL={window.location.origin}
+        username={guideUsername}
+        onClose={() => setGuideSource(null)}
+      />
     </>
   )
 }

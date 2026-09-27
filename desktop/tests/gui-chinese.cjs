@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..')
 const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const synologyGuide = fs.readFileSync(path.join(root, 'src', 'renderer', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
 
@@ -45,6 +46,10 @@ test('desktop GUI defaults to Chinese', () => {
     '选择 xDrive 同步文件夹',
   ]) {
     assert.ok(main.includes(text), `missing Chinese desktop system label: ${text}`)
+  }
+
+  for (const text of ['群晖 DSM 配置', 'DSM 操作示意图', '上一步', '下一步', '完成']) {
+    assert.ok(synologyGuide.includes(text), `missing Chinese Synology guide label: ${text}`)
   }
 
   assert.match(html, /<html lang="zh-CN">/)

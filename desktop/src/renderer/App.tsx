@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Button as MuiButton } from '@mui/material'
+import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -128,6 +130,7 @@ export default function App() {
   const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>('scan')
   const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState(initialSourceDefaults.ignoreRules)
   const [sourceCreateCookie, setSourceCreateCookie] = useState('')
+  const [synologyGuideSource, setSynologyGuideSource] = useState<AgentSource | null>(null)
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
   const [sourceTargetDirectories, setSourceTargetDirectories] = useState<AgentCloudNode[]>([])
   const [sourceTargetLoading, setSourceTargetLoading] = useState(false)
@@ -230,6 +233,7 @@ export default function App() {
       setSourceEditCookie('')
       setSourceCreateOpen(false)
       setSourceCreateCookie('')
+      setSynologyGuideSource(null)
       setSourceTargetCrumbs([])
       setSourceTargetDirectories([])
       setStorageTree(null)
@@ -513,9 +517,12 @@ export default function App() {
 
       setSourceCreateOpen(false)
       setSourceCreateCookie('')
-      setNotice(sourceCreateKind === 'synology_photos'
-        ? '群晖来源已添加。下一步请在 NAS 上配置 xdrive-source-agent，并使用相同来源名称复用该 Source。'
-        : '一刻相册来源已添加，Cookie 已安全保存。')
+      if (sourceCreateKind === 'synology_photos') {
+        setSynologyGuideSource(created.data)
+        setNotice('群晖来源已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
+      } else {
+        setNotice('一刻相册来源已添加，Cookie 已安全保存。')
+      }
       await loadSources()
     } finally {
       setBusy('')
@@ -1305,6 +1312,17 @@ export default function App() {
                         >
                           {selectedSourceID === row.source.id ? '收起' : '查看'}
                         </button>
+                        {row.source.kind === 'synology_photos' && (
+                          <MuiButton
+                            size="small"
+                            variant="outlined"
+                            disabled={!!busy}
+                            onClick={() => setSynologyGuideSource(row.source)}
+                            sx={{ minWidth: 'auto', px: 1.1, py: 0.2, fontSize: 11 }}
+                          >
+                            DSM 配置
+                          </MuiButton>
+                        )}
                         <button
                           className="secondary"
                           type="button"
@@ -2088,6 +2106,14 @@ export default function App() {
           </section>
         )}
       </main>
+
+      <SynologyDsmGuideDialog
+        open={!!synologyGuideSource}
+        source={synologyGuideSource}
+        serverURL={status?.server}
+        username={status?.username}
+        onClose={() => setSynologyGuideSource(null)}
+      />
     </div>
   )
 }

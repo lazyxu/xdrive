@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="680" viewBox="0 0 1120 680">
+  <rect width="1120" height="680" rx="22" fill="#eef3f8"/>
+  <rect x="42" y="36" width="1036" height="608" rx="18" fill="#fff" stroke="#cad5e3"/>
+  <rect x="42" y="36" width="1036" height="58" rx="18" fill="#f5f8fb"/>
+  <text x="78" y="72" font-family="Arial, sans-serif" font-size="21" fill="#24364b">创建任务 · 计划</text>
+  <rect x="82" y="124" width="956" height="62" rx="10" fill="#f8fafc"/>
+  <rect x="100" y="140" width="110" height="34" rx="8" fill="#edf2f7"/><text x="126" y="163" font-family="Arial" font-size="15" fill="#6c7d90">常规</text>
+  <rect x="224" y="140" width="110" height="34" rx="8" fill="#dceafb"/><text x="250" y="163" font-family="Arial" font-size="15" fill="#2165b5">计划</text>
+  <rect x="348" y="140" width="120" height="34" rx="8" fill="#edf2f7"/><text x="370" y="163" font-family="Arial" font-size="15" fill="#6c7d90">任务设置</text>
+  <text x="102" y="234" font-family="Arial" font-size="17" fill="#32465b">日期</text>
+  <rect x="230" y="206" width="300" height="44" rx="8" fill="#fff" stroke="#bcc9d8"/><text x="250" y="234" font-family="Arial" font-size="16" fill="#32465b">每天</text>
+  <text x="102" y="306" font-family="Arial" font-size="17" fill="#32465b">首次运行时间</text>
+  <rect x="230" y="278" width="300" height="44" rx="8" fill="#fff" stroke="#bcc9d8"/><text x="250" y="306" font-family="Arial" font-size="16" fill="#32465b">00:00</text>
+  <text x="102" y="378" font-family="Arial" font-size="17" fill="#32465b">重复</text>
+  <rect x="230" y="350" width="300" height="44" rx="8" fill="#e8f2ff" stroke="#89b8ec"/><text x="250" y="378" font-family="Arial" font-size="16" fill="#1e63b5">每 1 分钟</text>
+  <rect x="574" y="334" width="408" height="90" rx="12" fill="#fff4f2" stroke="#f2b8ae"/>
+  <text x="598" y="367" font-family="Arial" font-size="17" fill="#b23a2f">关键设置</text>
+  <text x="598" y="394" font-family="Arial" font-size="15" fill="#6f4a46">每天执行 + 每 1 分钟重复</text>
+  <text x="598" y="417" font-family="Arial" font-size="13" fill="#7c6864">每分钟只做轻量 due/manual 检查，不会全盘扫描。</text>
+  <text x="104" y="574" font-family="Arial" font-size="14" fill="#8391a2">真实全盘扫描仍由 --interval 6h 控制；“立即扫描”请求会在下一次分钟检查时触发。</text>
+</svg>
