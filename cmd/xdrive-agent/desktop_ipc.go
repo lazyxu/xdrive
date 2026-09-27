@@ -154,6 +154,8 @@ type desktopIPCController interface {
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error)
 	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
+	CloudTestSourceCredential(context.Context, string, string) (client.SourceCredentialTestResult, error)
+	CloudTestStoredSourceCredential(context.Context, uint64) (client.SourceCredentialTestResult, error)
 	CloudPutSourceCredential(context.Context, uint64, string) (client.SourceCredentialStatus, error)
 	CloudDeleteSourceCredential(context.Context, uint64) error
 	CloudCreateSource(context.Context, client.CreateSourceInput) (client.Source, error)
@@ -359,7 +361,9 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("DELETE /v1/sources", h.deleteSource)
 	mux.HandleFunc("POST /v1/sources/trigger", h.triggerSource)
 	mux.HandleFunc("GET /v1/sources/runs", h.sourceRuns)
+	mux.HandleFunc("POST /v1/source-credentials/test", h.testSourceCredential)
 	mux.HandleFunc("GET /v1/sources/credential", h.sourceCredentialStatus)
+	mux.HandleFunc("POST /v1/sources/credential/test", h.testStoredSourceCredential)
 	mux.HandleFunc("PUT /v1/sources/credential", h.putSourceCredential)
 	mux.HandleFunc("DELETE /v1/sources/credential", h.deleteSourceCredential)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
@@ -976,6 +980,47 @@ func (h *desktopIPCHandler) sourceRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) testSourceCredential(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Kind   string `json:"kind"`
+		Cookie string `json:"cookie"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Kind = strings.TrimSpace(input.Kind)
+	input.Cookie = strings.TrimSpace(input.Cookie)
+	if input.Kind == "" || input.Cookie == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_credential", "kind and cookie are required")
+		return
+	}
+	result, err := h.ctrl.CloudTestSourceCredential(r.Context(), input.Kind, input.Cookie)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) testStoredSourceCredential(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SourceID uint64 `json:"source_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.SourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	result, err := h.ctrl.CloudTestStoredSourceCredential(r.Context(), input.SourceID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) sourceCredentialStatus(w http.ResponseWriter, r *http.Request) {

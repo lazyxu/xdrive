@@ -103,6 +103,40 @@ Create one xDrive target directory first, then create a Source using the existin
 
 The first version supports only `backup` semantics. A media object that disappears from Yike becomes `missing`; its xDrive data is never deleted or trashed.
 
+## Test the Cookie
+
+Web and Desktop can validate a Yike Cookie before it is persisted. The authenticated API is:
+
+```http
+POST /api/v1/source-credentials/test
+Content-Type: application/json
+Authorization: Bearer <xdrive-access-token>
+```
+
+with:
+
+```json
+{
+  "kind": "yike_photos",
+  "payload": {
+    "cookie": "BDUSS=...; ..."
+  }
+}
+```
+
+The test is ephemeral: xDrive calls the read-only Yike user-info endpoint and does not write the supplied Cookie to PostgreSQL. A successful response may include the Yike account name and external account ID, but never returns the Cookie.
+
+For an existing Source, the already encrypted credential can be tested without exposing it to the browser or Desktop renderer:
+
+```http
+POST /api/v1/sources/<source-id>/credential/test
+Authorization: Bearer <xdrive-access-token>
+```
+
+Yike authentication, rate-limit, timeout, and service-unavailable failures are classified into stable error codes. Web/Desktop translate those codes into actionable Chinese messages, and the Pull worker stores the same classes as friendly Source errors such as “一刻相册登录已失效，请更新 Cookie”.
+
+Creating a Yike Source and replacing its Cookie both validate the candidate Cookie before persisting it.
+
 ## Store the Cookie
 
 Submit the signed-in Yike Web Cookie once through:

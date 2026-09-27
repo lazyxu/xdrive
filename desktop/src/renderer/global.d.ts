@@ -3,6 +3,7 @@ import type {
   CreatedFileShare,
   ExternalSource,
   ExternalSourceCredentialStatus,
+  ExternalSourceCredentialTestResult,
   ExternalSourceRun,
   FileShare,
   FileVersion,
@@ -150,6 +151,7 @@ declare global {
   type AgentUpdateSourceInput = UpdateExternalSourceInput
   type AgentSourceRun = ExternalSourceRun
   type AgentSourceCredentialStatus = ExternalSourceCredentialStatus
+  type AgentSourceCredentialTestResult = ExternalSourceCredentialTestResult
 
   type AgentCloudNode = Node
   type AgentCloudQuota = QuotaUsage
@@ -222,6 +224,8 @@ declare global {
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>
+        testSourceCredential: (kind: string, cookie: string) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
+        testStoredSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
         setSourceCredential: (sourceID: number, cookie: string) => Promise<DesktopResult<AgentSourceCredentialStatus>>
         deleteSourceCredential: (sourceID: number) => Promise<DesktopResult<{ ok: boolean }>>
         createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>

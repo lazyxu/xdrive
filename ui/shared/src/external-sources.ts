@@ -64,6 +64,13 @@ export interface ExternalSourceCredentialStatus {
   updated_at?: string
 }
 
+export interface ExternalSourceCredentialTestResult {
+  valid: boolean
+  kind: string
+  account_external_id?: string
+  account_name?: string
+}
+
 export interface ExternalSourceRow {
   source: ExternalSource
   latestRun?: ExternalSourceRun
@@ -330,4 +337,29 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
       { key: 'failed', label: '失败', items: run.failed_items },
     ],
   }
+}
+
+
+export function externalSourceCredentialTestErrorLabel(code: string) {
+  const normalized = String(code || '').trim()
+  const labels: Record<string, string> = {
+    yike_auth_failed: '一刻相册登录已失效，请重新获取 Cookie',
+    yike_rate_limited: '一刻相册请求过于频繁，请稍后重试',
+    yike_timeout: '连接一刻相册超时，请稍后重试',
+    yike_unavailable: '一刻相册服务暂时不可用，请稍后重试',
+    yike_connection_failed: '无法连接一刻相册，请检查网络后重试',
+    invalid_source_credential: 'Cookie 格式无效，请重新获取',
+    source_credential_not_configured: '尚未配置一刻相册 Cookie',
+    unsupported_source_credential_kind: '当前来源不支持连接测试',
+  }
+  return labels[normalized] || normalized || '连接测试失败'
+}
+
+export function externalSourceCredentialTestSuccessLabel(result: ExternalSourceCredentialTestResult) {
+  const name = result.account_name?.trim()
+  const id = result.account_external_id?.trim()
+  if (name && id) return `连接成功：${name}（${id}）`
+  if (name) return `连接成功：${name}`
+  if (id) return `连接成功：账号 ${id}`
+  return '连接成功'
 }
