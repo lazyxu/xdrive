@@ -351,6 +351,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"release/core/",
 	)
 
+	requireRaw(t, "GitHub preinstalled Buildx contract", githubRaw,
+		"docker buildx version",
+	)
 	requireRaw(t, "GitHub build-once contract", githubRaw,
 		"package-linux-client:",
 		"package-windows-client:",
@@ -744,6 +747,12 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	)
 	if strings.Contains(githubRelease, "${{ matrix.") {
 		t.Errorf("GitHub release server image publication must use one runner instead of a matrix")
+	}
+	requireRaw(t, "GitHub release Buildx contract", githubRelease,
+		"docker buildx imagetools create",
+	)
+	if strings.Contains(githubRelease, "docker/setup-buildx-action@") {
+		t.Errorf("GitHub release must use the Buildx already validated on ubuntu-latest instead of setup-buildx-action")
 	}
 	requireRaw(t, "GitHub rolling snapshot recreation", githubRelease,
 		"gh release delete snapshot --repo \"$repo\" -y",
