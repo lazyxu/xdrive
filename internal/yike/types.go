@@ -6,7 +6,8 @@ import (
 )
 
 type UserInfo struct {
-	YouaID string `json:"youa_id"`
+	YouaID   string `json:"youa_id"`
+	Nickname string `json:"nickname,omitempty"`
 }
 
 type Page struct {

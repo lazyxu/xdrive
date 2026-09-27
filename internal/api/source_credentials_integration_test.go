@@ -18,6 +18,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
+	"github.com/lazyxu/xdrive/internal/yike"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -71,17 +72,73 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var credentialTestErr error
+	var testedKind string
+	var testedPayload json.RawMessage
 	server := &Server{
 		DB:               db,
 		Auth:             auth.New("source-credential-test-secret", time.Hour),
 		RefreshTTL:       24 * time.Hour,
 		AllowedOrigin:    "http://localhost",
 		ConnectorSecrets: ringV1,
+		credentialTest: func(_ context.Context, kind string, payload json.RawMessage) (sourceCredentialTestDTO, error) {
+			testedKind = kind
+			testedPayload = append(testedPayload[:0], payload...)
+			if credentialTestErr != nil {
+				return sourceCredentialTestDTO{}, credentialTestErr
+			}
+			return sourceCredentialTestDTO{
+				Valid: true, Kind: kind, AccountExternalID: "12345", AccountName: "Test User",
+			}, nil
+		},
 	}
 	router := server.Router()
 
 	tokenA := createTestUser(t, db, router, "credential-alice", "password-a")
 	tokenB := createTestUser(t, db, router, "credential-bob", "password-b")
+
+	testBody := `{"kind":"yike_photos","payload":{"cookie":"BDUSS=ephemeral-cookie"}}`
+	testRes := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
+		strings.NewReader(testBody), http.StatusOK, map[string]string{"Content-Type": "application/json"})
+	if strings.Contains(testRes.Body.String(), "ephemeral-cookie") || strings.Contains(testRes.Body.String(), "BDUSS") {
+		t.Fatalf("credential test response leaked plaintext: %s", testRes.Body.String())
+	}
+	var tested sourceCredentialTestDTO
+	if err := json.Unmarshal(testRes.Body.Bytes(), &tested); err != nil {
+		t.Fatal(err)
+	}
+	if !tested.Valid || tested.Kind != "yike_photos" || tested.AccountExternalID != "12345" || tested.AccountName != "Test User" {
+		t.Fatalf("unexpected credential test result: %+v", tested)
+	}
+	if testedKind != "yike_photos" || string(testedPayload) != `{"cookie":"BDUSS=ephemeral-cookie"}` {
+		t.Fatalf("credential test input kind=%q payload=%s", testedKind, testedPayload)
+	}
+	var preStoreCount int64
+	if err := db.Model(&meta.SourceCredential{}).Count(&preStoreCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if preStoreCount != 0 {
+		t.Fatalf("ephemeral credential test persisted %d credential rows", preStoreCount)
+	}
+
+	for _, tc := range []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{yike.ErrAuthentication, http.StatusUnprocessableEntity, "yike_auth_failed"},
+		{yike.ErrRateLimited, http.StatusTooManyRequests, "yike_rate_limited"},
+		{yike.ErrUnavailable, http.StatusBadGateway, "yike_unavailable"},
+		{context.DeadlineExceeded, http.StatusGatewayTimeout, "yike_timeout"},
+	} {
+		credentialTestErr = tc.err
+		res := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
+			strings.NewReader(testBody), tc.status, map[string]string{"Content-Type": "application/json"})
+		if !strings.Contains(res.Body.String(), tc.code) {
+			t.Fatalf("credential test error=%v response=%s", tc.err, res.Body.String())
+		}
+	}
+	credentialTestErr = nil
 
 	var userA meta.User
 	if err := db.Where("username = ?", "credential-alice").First(&userA).Error; err != nil {
@@ -111,6 +168,11 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if strings.Contains(statusRes.Body.String(), "cookie") {
 		t.Fatalf("credential status leaked plaintext: %s", statusRes.Body.String())
 	}
+	storedTestPath := fmt.Sprintf("/api/v1/sources/%d/credential/test", source.ID)
+	missingStored := request(t, router, http.MethodPost, storedTestPath, tokenA, nil, http.StatusConflict)
+	if !strings.Contains(missingStored.Body.String(), "source_credential_not_configured") {
+		t.Fatalf("missing stored credential response=%s", missingStored.Body.String())
+	}
 
 	body := `{"payload":{"cookie":"BDUSS=top-secret-cookie"}}`
 	requestWithHeaders(t, router, http.MethodPut, statusPath, tokenB, strings.NewReader(body), http.StatusNotFound,
@@ -128,6 +190,16 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if !status.Configured || status.KeyVersion != 1 || status.UpdatedAt == nil {
 		t.Fatalf("unexpected credential status: %+v", status)
 	}
+
+	testedPayload = nil
+	storedTestRes := request(t, router, http.MethodPost, storedTestPath, tokenA, nil, http.StatusOK)
+	if strings.Contains(storedTestRes.Body.String(), "top-secret-cookie") || strings.Contains(storedTestRes.Body.String(), "BDUSS") {
+		t.Fatalf("stored credential test response leaked plaintext: %s", storedTestRes.Body.String())
+	}
+	if string(testedPayload) != `{"cookie":"BDUSS=top-secret-cookie"}` {
+		t.Fatalf("stored credential test payload=%s", testedPayload)
+	}
+	request(t, router, http.MethodPost, storedTestPath, tokenB, nil, http.StatusNotFound)
 
 	var row meta.SourceCredential
 	if err := db.First(&row, "source_id = ?", source.ID).Error; err != nil {
