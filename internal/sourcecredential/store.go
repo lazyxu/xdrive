@@ -16,6 +16,11 @@ type VersionCount struct {
 	Count      int64
 }
 
+type VerifyReport struct {
+	Scanned  int64
+	Verified int64
+}
+
 type RewrapReport struct {
 	ActiveVersion uint32
 	Scanned       int64
@@ -85,6 +90,46 @@ func Status(ctx context.Context, db *gorm.DB) ([]VersionCount, error) {
 		return nil, err
 	}
 	return rows, nil
+}
+
+func VerifyAll(ctx context.Context, db *gorm.DB, keyring *connectorsecret.Keyring) (VerifyReport, error) {
+	report := VerifyReport{}
+	if db == nil {
+		return report, fmt.Errorf("source credential storage is unavailable")
+	}
+
+	var rows []meta.SourceCredential
+	if err := db.WithContext(ctx).Order("source_id ASC").Find(&rows).Error; err != nil {
+		return report, err
+	}
+	if len(rows) == 0 {
+		return report, nil
+	}
+	if keyring == nil {
+		return report, fmt.Errorf("connector secret keyring is unavailable")
+	}
+
+	for _, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
+		report.Scanned++
+
+		var source meta.Source
+		if err := db.WithContext(ctx).Where("id = ?", row.SourceID).First(&source).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return report, fmt.Errorf("credential source %d is missing", row.SourceID)
+			}
+			return report, err
+		}
+		plaintext, err := keyring.Open(source.ID, source.Kind, row.KeyVersion, row.Ciphertext)
+		if err != nil {
+			return report, fmt.Errorf("source %d credential: %w", source.ID, err)
+		}
+		clear(plaintext)
+		report.Verified++
+	}
+	return report, nil
 }
 
 func RewrapAll(ctx context.Context, db *gorm.DB, keyring *connectorsecret.Keyring, dryRun bool) (RewrapReport, error) {

@@ -245,6 +245,25 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatalf("rewrapped plaintext=%q", plain)
 	}
 
+	verifyReport, err := sourcecredential.VerifyAll(context.Background(), db, rotated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verifyReport.Scanned != 1 || verifyReport.Verified != 1 {
+		t.Fatalf("unexpected verify report: %+v", verifyReport)
+	}
+	wrongRing, err := connectorsecret.NewKeyring(2, map[uint32]string{
+		1: keyV1,
+		2: strings.Repeat("33", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sourcecredential.VerifyAll(context.Background(), db, wrongRing); err == nil ||
+		!strings.Contains(err.Error(), "decrypt connector credential") {
+		t.Fatalf("wrong connector key unexpectedly verified: %v", err)
+	}
+
 	server.ConnectorSecrets = rotated
 	getRes := request(t, router, http.MethodGet, statusPath, tokenA, nil, http.StatusOK)
 	if strings.Contains(getRes.Body.String(), "top-secret-cookie") || strings.Contains(getRes.Body.String(), "BDUSS") {
