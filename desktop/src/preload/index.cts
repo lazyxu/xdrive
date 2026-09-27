@@ -8,6 +8,7 @@ const agent = Object.freeze({
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
   getSourceRuns: (sourceID: number, limit = 1) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit),
+  getSourceItems: (sourceID: number, state = 'error', limit = 1000, offset = 0) => ipcRenderer.invoke('agent:get-source-items', sourceID, state, limit, offset),
   getSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:get-source-credential', sourceID),
   testSourceCredential: (kind: string, cookie: string) => ipcRenderer.invoke('agent:test-source-credential', kind, cookie),
   testStoredSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:test-stored-source-credential', sourceID),

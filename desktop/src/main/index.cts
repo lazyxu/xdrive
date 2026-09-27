@@ -44,6 +44,7 @@ import {
   type AgentCreateSourceInput,
   type AgentUpdateSourceInput,
   type AgentSourceRun,
+  type AgentSourceItem,
   type AgentSourceCredentialStatus,
   type AgentSourceCredentialTestResult,
   type AgentFileAvailability,
@@ -728,6 +729,23 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source run limit must be between 1 and 200.')
     }
     return requireAgentClient().sourceRuns(sourceID, requestedLimit)
+  }, false))
+  ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof state !== 'string' ||
+      typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000 ||
+      typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid Source item query is required.')
+    }
+    const normalizedState = state.trim()
+    if (normalizedState && !['pending', 'synced', 'missing', 'ignored', 'error'].includes(normalizedState)) {
+      throw new AgentIPCError('invalid_input', 0, 'Source item state is invalid.')
+    }
+    return requireAgentClient().sourceItems(sourceID, normalizedState, limit, offset)
   }, false))
   ipcMain.handle('agent:get-source-credential', (_event, sourceID: unknown) => runAgentAction<AgentSourceCredentialStatus>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

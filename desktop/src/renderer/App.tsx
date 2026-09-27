@@ -43,6 +43,7 @@ import {
 } from '@xdrive/shared'
 import type {
   ExternalSourceCredentialTestResult,
+  ExternalSourceItem,
   ExternalSourceRow,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
@@ -167,6 +168,11 @@ export default function App() {
   const [sourceCreateCookie, setSourceCreateCookie] = useState('')
   const [sourceCreateCredentialTest, setSourceCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [sourceEditCredentialTest, setSourceEditCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
+  const [sourceFailedItems, setSourceFailedItems] = useState<ExternalSourceItem[]>([])
+  const [sourceFailedItemsSourceID, setSourceFailedItemsSourceID] = useState<number | null>(null)
+  const [sourceFailedItemsLoadingID, setSourceFailedItemsLoadingID] = useState<number | null>(null)
+  const [sourceFailedItemsOpen, setSourceFailedItemsOpen] = useState(false)
+  const [sourceFailedItemsLimitReached, setSourceFailedItemsLimitReached] = useState(false)
   const [sourceDeleteTarget, setSourceDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [synologyGuideSource, setSynologyGuideSource] = useState<AgentSource | null>(null)
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -477,6 +483,38 @@ export default function App() {
       setSources(rows)
     } finally {
       setBusy('')
+    }
+  }
+
+  const toggleSourceDetails = async (row: ExternalSourceRow) => {
+    const sourceID = row.source.id
+    if (selectedSourceID === sourceID) {
+      setSelectedSourceID(null)
+      setSourceFailedItems([])
+      setSourceFailedItemsSourceID(null)
+      setSourceFailedItemsOpen(false)
+      setSourceFailedItemsLimitReached(false)
+      return
+    }
+
+    setSelectedSourceID(sourceID)
+    setSourceFailedItems([])
+    setSourceFailedItemsSourceID(null)
+    setSourceFailedItemsOpen(false)
+    setSourceFailedItemsLimitReached(false)
+    setSourceFailedItemsLoadingID(sourceID)
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.getSourceItems(sourceID, 'error', 1000, 0)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setSourceFailedItems(result.data)
+      setSourceFailedItemsSourceID(sourceID)
+      setSourceFailedItemsLimitReached(result.data.length >= 1000)
+    } finally {
+      setSourceFailedItemsLoadingID(null)
     }
   }
 
@@ -1587,6 +1625,7 @@ export default function App() {
                   const card = externalSourceCardView(row)
                   const detail = externalSourceDetailView(row)
                   const runDetail = row.latestRun ? externalSourceRunDetailView(row.latestRun) : null
+                  const failedItems = sourceFailedItemsSourceID === row.source.id ? sourceFailedItems : []
                   return (
                     <article className="source-card" key={row.source.id}>
                       <div className="source-card-header">
@@ -1612,9 +1651,12 @@ export default function App() {
                         <button
                           className="secondary"
                           type="button"
-                          onClick={() => setSelectedSourceID((current) => current === row.source.id ? null : row.source.id)}
+                          disabled={sourceFailedItemsLoadingID !== null}
+                          onClick={() => void toggleSourceDetails(row)}
                         >
-                          {selectedSourceID === row.source.id ? '收起' : '查看'}
+                          {sourceFailedItemsLoadingID === row.source.id
+                            ? '正在检查…'
+                            : selectedSourceID === row.source.id ? '收起' : '查看'}
                         </button>
                         {row.source.kind === 'synology_photos' && (
                           <MuiButton
@@ -1782,6 +1824,22 @@ export default function App() {
                               </div>
                             )}
                           </div>
+                          {sourceFailedItemsLoadingID === row.source.id && (
+                            <Typography variant="caption" color="text.secondary">正在检查逐文件失败记录…</Typography>
+                          )}
+                          {failedItems.length > 0 && (
+                            <MuiAlert
+                              severity="error"
+                              sx={{ mt: 1.5 }}
+                              action={(
+                                <MuiButton color="inherit" size="small" onClick={() => setSourceFailedItemsOpen(true)}>
+                                  查看失败项（{failedItems.length}）
+                                </MuiButton>
+                              )}
+                            >
+                              当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
+                            </MuiAlert>
+                          )}
                         </div>
                       )}
 
@@ -2480,6 +2538,34 @@ export default function App() {
           </section>
         )}
       </main>
+
+      <Dialog open={sourceFailedItemsOpen && sourceFailedItems.length > 0} onClose={() => setSourceFailedItemsOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>失败文件</DialogTitle>
+        <DialogContent dividers>
+          {sourceFailedItemsLimitReached && (
+            <MuiAlert severity="info" sx={{ mb: 2 }}>当前最多显示前 1000 个失败项。</MuiAlert>
+          )}
+          <Stack spacing={1.5}>
+            {sourceFailedItems.map((item) => (
+              <MuiBox key={item.source_item_id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                  <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                    {item.path || item.external_id}
+                  </Typography>
+                  <Chip size="small" label={formatBinarySize(item.size)} />
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
+                  外部 ID：{item.external_id}
+                </Typography>
+                <MuiAlert severity="error" sx={{ mt: 1 }}>{item.last_error || '未提供具体错误原因'}</MuiAlert>
+              </MuiBox>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton onClick={() => setSourceFailedItemsOpen(false)}>关闭</MuiButton>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={!!sourceDeleteTarget} onClose={() => busy.startsWith('source-delete-') ? undefined : setSourceDeleteTarget(null)}>
         <DialogTitle>删除外部来源？</DialogTitle>

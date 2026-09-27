@@ -417,6 +417,10 @@ test('external sources use dedicated agent endpoints', async (t) => {
       json(res, 200, [{ id: 'run-1', source_id: 9, source_revision: 1, mode: 'scan', trigger: 'manual', status: 'completed', scanned_items: 12, scanned_bytes: 34, ignored_items: 0, ignored_bytes: 0, new_items: 0, new_bytes: 0, changed_items: 0, changed_bytes: 0, moved_items: 0, unchanged_items: 12, unchanged_bytes: 34, missing_items: 0, missing_bytes: 0, planned_transfer_items: 0, planned_transfer_bytes: 0, created_items: 0, updated_items: 0, skipped_items: 0, transferred_items: 0, transferred_bytes: 0, failed_items: 0, started_at: new Date(0).toISOString(), finished_at: new Date(0).toISOString() }])
       return
     }
+    if (url.pathname === '/v1/sources/items') {
+      json(res, 200, [{ source_item_id: 1, external_id: 'yike:123:2', kind: 'file', path: 'Library/fail.jpg [2]', size: 20, state: 'error', last_error: 'download unavailable' }])
+      return
+    }
     if (url.pathname === '/v1/sources/credential') {
       json(res, 200, { configured: true, key_version: 2 })
       return
@@ -426,10 +430,12 @@ test('external sources use dedicated agent endpoints', async (t) => {
 
   assert.equal((await client.sources())[0].name, '一刻相册')
   assert.equal((await client.sourceRuns(9, 5))[0].scanned_items, 12)
+  assert.equal((await client.sourceItems(9, 'error', 1000, 0))[0].last_error, 'download unavailable')
   assert.equal((await client.sourceCredentialStatus(9)).key_version, 2)
   assert.deepEqual(seen, [
     '/v1/sources',
     '/v1/sources/runs?source_id=9&limit=5',
+    '/v1/sources/items?source_id=9&limit=1000&offset=0&state=error',
     '/v1/sources/credential?source_id=9',
   ])
 })
