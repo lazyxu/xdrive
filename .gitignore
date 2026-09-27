@@ -1,3 +1,5 @@
+.cache
+
 # Go binaries and tests
 *.exe
 *.exe~
