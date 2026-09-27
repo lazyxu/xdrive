@@ -33,6 +33,15 @@ For every code change in this repository, use this workflow by default:
 12. After the merge succeeds, delete the merged remote branch.
 13. Keep long-lived branches to a minimum.
 
+
+## UI policy
+
+- Use **MUI (Material UI)** for all newly implemented Web and Desktop renderer UI. Prefer MUI layout, form, feedback, dialog, navigation, and display components over introducing new Ant Design or bespoke HTML/CSS component patterns.
+- Existing Ant Design and bespoke Desktop UI does **not** need a one-shot migration. When a task materially touches an existing UI surface, opportunistically migrate the touched controls/components to MUI when doing so is low-risk and keeps the PR focused.
+- Keep `ui/shared` framework-neutral for shared models, view-models, formatting, state derivation, and cross-surface behavior. Web/Desktop rendering remains app-local unless the repository later adopts a shared React package with explicit dependency ownership.
+- Do not duplicate cross-surface Source/status/formatting rules in Web and Desktop. Put framework-neutral semantics in `ui/shared`, then render them with MUI in each app.
+- When waiting on GitHub/GitLab CI for the current PR, use that time to **plan** the next small feature: inspect the relevant interfaces, tests, dependency chain, and branch strategy. Do not modify or open the next feature branch until the current small feature is merged, unless the work is an explicitly approved stacked dependency.
+
 ## CI policy
 
 - Full CI runs for GitHub pull requests or GitLab merge requests targeting `master`, and also for direct pushes to `master` on both providers. Ordinary pushes to short-lived feature/fix branches do not run full CI.
