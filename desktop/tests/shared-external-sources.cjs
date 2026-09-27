@@ -4,8 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 
-function loadSharedExternalSources() {
-  const filename = path.join(__dirname, '..', '..', 'ui', 'shared', 'src', 'external-sources.ts')
+function loadSharedModule(filename) {
   const source = fs.readFileSync(filename, 'utf8')
   const output = ts.transpileModule(source, {
     compilerOptions: {
@@ -18,6 +17,14 @@ function loadSharedExternalSources() {
   const execute = new Function('exports', 'module', 'require', output)
   execute(mod.exports, mod, require)
   return mod.exports
+}
+
+function loadSharedExternalSources() {
+  const root = path.join(__dirname, '..', '..', 'ui', 'shared', 'src')
+  return {
+    ...loadSharedModule(path.join(root, 'external-sources.ts')),
+    ...loadSharedModule(path.join(root, 'synology-dsm-guide.ts')),
+  }
 }
 
 const shared = loadSharedExternalSources()
@@ -230,6 +237,33 @@ test('shared run detail view defines one metric order for Web and Desktop', () =
   ])
   assert.deepEqual(detail.metrics[0], { key: 'scanned', label: '扫描', items: 100, bytes: 1000 })
   assert.deepEqual(detail.metrics[7], { key: 'failed', label: '失败', items: 1 })
+})
+
+test('shared Synology DSM guide binds the exact Source and keeps secrets out of scheduled task', () => {
+  const guide = shared.synologyDsmSetupGuide({
+    sourceID: 42,
+    sourceName: '家庭照片',
+    serverURL: 'https://drive.example.com',
+    xdriveUsername: 'alice',
+  })
+
+  assert.equal(guide.sourceID, 42)
+  assert.match(guide.subtitle, /Source #42/)
+  const bind = guide.steps.find((step) => step.id === 'bind')
+  assert.ok(bind)
+  assert.match(bind.command, /setup --source-id 42/)
+  assert.equal(bind.command.includes('--target'), false)
+  assert.equal(bind.command.includes('--name'), false)
+
+  const scheduler = guide.steps.find((step) => step.id === 'task-script')
+  assert.ok(scheduler)
+  assert.match(scheduler.command, /run --due --interval 6h/)
+  assert.equal(scheduler.command.includes('XD_PASSWORD'), false)
+
+  assert.deepEqual(
+    guide.steps.filter((step) => step.visual).map((step) => step.visual),
+    ['task-create', 'task-schedule', 'task-script'],
+  )
 })
 
 test('shared external-source defaults preserve connector-specific setup rules', () => {

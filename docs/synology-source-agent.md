@@ -81,7 +81,20 @@ export XD_NEW_PASSWORD='new-password'
 
 ## Setup
 
-Example with both Synology Photos spaces:
+When the Source was created from the xDrive Web/Desktop UI, bind the NAS agent to that exact Source ID:
+
+```bash
+./xdrive-source-agent setup \
+  --source-id 42 \
+  --personal /volume1/homes/alice/Photos \
+  --shared /volume1/photo
+```
+
+With `--source-id`, setup preserves the Source name, target node, current run mode, and existing ignore rules unless those values are explicitly overridden. This avoids duplicate Sources and avoids reconstructing the UI-selected target path on DSM.
+
+The Web/Desktop External Sources UI includes a **DSM 配置** guide with the generated Source ID, copyable commands, and DSM Task Scheduler diagrams.
+
+For a CLI-created Source, setup can still create or reuse by name/path:
 
 ```bash
 ./xdrive-source-agent setup \
