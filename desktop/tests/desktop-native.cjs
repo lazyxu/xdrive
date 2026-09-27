@@ -21,6 +21,7 @@ test('desktop native feedback wires taskbar progress and clickable navigation', 
   assert.ok(main.includes("path.join(process.resourcesPath, 'tray-icons')"), 'missing packaged tray icon resource path')
   assert.ok(main.includes("path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'tray')"), 'missing development tray icon resource path')
   assert.ok(main.includes("{ label: '设置', click: () => showDesktopView('settings') }"), 'missing tray settings shortcut')
+  assert.ok(main.includes("label: '打开传输中心'"), 'missing tray transfer center shortcut')
   assert.ok(main.includes("showDesktopNotification('xDrive 冲突'"), 'missing clickable conflict notification')
   assert.ok(main.includes("'settings'"), 'missing update notification target')
   assert.ok(main.includes("'desktop:navigate'"), 'missing main-process navigation event')

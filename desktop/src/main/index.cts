@@ -18,6 +18,7 @@ import {
 } from 'electron'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
+import { trayTransferPresentation } from './tray_transfers.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
 import { editContextMenuTemplate } from './edit_context_menu.cjs'
 import {
@@ -407,6 +408,7 @@ function rebuildTrayMenu() {
   const status = agentState.status
   const configured = !!status?.configured
   const update = trayUpdatePresentation(agentUpdateState)
+  const transfer = trayTransferPresentation(agentTransfers)
   const updateSupported = agentState.connected && (agentState.hello?.capabilities.includes('client-update') ?? false)
   tray.setToolTip(`xDrive — ${statusLabel()}`)
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -434,6 +436,22 @@ function rebuildTrayMenu() {
             }, false)
           },
         },
+      ],
+    },
+    {
+      label: transfer.label,
+      submenu: [
+        ...(transfer.items.length > 0
+          ? transfer.items.map((item) => ({ label: item.label, enabled: false }))
+          : [{ label: transfer.failed > 0 ? '当前没有进行中的传输' : '当前没有传输任务', enabled: false }]),
+        ...(transfer.extraActive > 0
+          ? [{ label: `另有 ${transfer.extraActive} 个进行中任务`, enabled: false }]
+          : []),
+        ...(transfer.failed > 0
+          ? [{ label: `${transfer.failed} 个失败任务需要处理`, enabled: false }]
+          : []),
+        { type: 'separator' as const },
+        { label: '打开传输中心', click: () => showDesktopView('transfers') },
       ],
     },
     { type: 'separator' },
@@ -528,7 +546,7 @@ function publishAgentState(next: AgentConnectionState) {
 function publishAgentTransfers(next: AgentTransfers) {
   const changed = JSON.stringify(agentTransfers) !== JSON.stringify(next)
   agentTransfers = next
-  updateTrayIcon()
+  rebuildTrayMenu()
   updateTaskbarProgress()
   if (changed && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('agent:transfers', next)
