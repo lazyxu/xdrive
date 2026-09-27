@@ -93,12 +93,16 @@ test('desktop external sources expose safe source deletion', () => {
   assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
 })
 
-test('desktop Yike source exposes connection testing', () => {
+test('desktop Yike source exposes connection testing and V1 recovery UX', () => {
   assert.ok(renderer.includes('testSourceCredential'), 'missing candidate Cookie test')
   assert.ok(renderer.includes('testStoredSourceCredential'), 'missing stored Cookie test')
   assert.ok(renderer.includes('测试连接'), 'missing Yike connection test action')
   assert.ok(renderer.includes('YikeCookieHelpGuide'), 'missing Yike Cookie acquisition guide')
+  assert.ok(renderer.includes('yikeConnectorNotice'), 'missing Yike private-API notice')
   assert.ok(renderer.includes('点击展开'), 'missing Yike Cookie guide affordance')
+  assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
+  assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')
+  assert.ok(renderer.includes('自动回滚失败'), 'missing Yike rollback failure fallback')
 })
 
 test('desktop external sources expose per-file failures', () => {

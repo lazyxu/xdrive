@@ -45,6 +45,16 @@ type sourceCredentialStatusDTO struct {
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
 }
 
+func (s *Server) testSourceCredentialPayload(ctx context.Context, kind string, payload json.RawMessage) (sourceCredentialTestDTO, error) {
+	tester := s.credentialTest
+	if tester == nil {
+		tester = defaultSourceCredentialTester
+	}
+	testCtx, cancel := context.WithTimeout(ctx, sourceCredentialTestTimeout)
+	defer cancel()
+	return tester(testCtx, kind, append(json.RawMessage(nil), payload...))
+}
+
 func (s *Server) testSourceCredential(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSourceCredentialPayloadBytes+4096)
 	var req struct {
@@ -79,13 +89,7 @@ func (s *Server) testSourceCredential(c *gin.Context) {
 		return
 	}
 
-	tester := s.credentialTest
-	if tester == nil {
-		tester = defaultSourceCredentialTester
-	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), sourceCredentialTestTimeout)
-	defer cancel()
-	result, err := tester(ctx, req.Kind, append(json.RawMessage(nil), compact.Bytes()...))
+	result, err := s.testSourceCredentialPayload(c.Request.Context(), req.Kind, compact.Bytes())
 	if err != nil {
 		writeSourceCredentialTestError(c, err)
 		return
@@ -170,13 +174,7 @@ func (s *Server) testStoredSourceCredential(c *gin.Context) {
 	}
 	defer clear(plaintext)
 
-	tester := s.credentialTest
-	if tester == nil {
-		tester = defaultSourceCredentialTester
-	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), sourceCredentialTestTimeout)
-	defer cancel()
-	result, err := tester(ctx, source.Kind, json.RawMessage(plaintext))
+	result, err := s.testSourceCredentialPayload(c.Request.Context(), source.Kind, json.RawMessage(plaintext))
 	if err != nil {
 		writeSourceCredentialTestError(c, err)
 		return
@@ -253,6 +251,16 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 	if compact.Len() > maxSourceCredentialPayloadBytes {
 		fail(c, http.StatusBadRequest, "credential payload exceeds 64 KiB")
 		return
+	}
+
+	// Yike credentials are bearer-style web session cookies. Validate them again
+	// at the persistence boundary so non-UI/API callers cannot store an already
+	// invalid session and leave a Source looking configured but unusable.
+	if source.Kind == "yike_photos" {
+		if _, err := s.testSourceCredentialPayload(c.Request.Context(), source.Kind, compact.Bytes()); err != nil {
+			writeSourceCredentialTestError(c, err)
+			return
+		}
 	}
 
 	if err := sourcecredential.Put(c.Request.Context(), s.DB, s.ConnectorSecrets, source, compact.Bytes()); err != nil {

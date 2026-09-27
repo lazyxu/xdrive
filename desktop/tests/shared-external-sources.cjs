@@ -117,6 +117,18 @@ test('shared external-source trigger gating matches connector execution model', 
   )
 })
 
+test('shared trigger action label promotes retries without hiding pending state', () => {
+  assert.equal(shared.externalSourceTriggerActionLabel({ source: source() }), '立即扫描')
+  assert.equal(shared.externalSourceTriggerActionLabel({
+    source: source(),
+    latestRun: { failed_items: 3 },
+  }), '重试失败项')
+  assert.equal(shared.externalSourceTriggerActionLabel({
+    source: source({ run_requested_at: '2026-09-26T01:00:00Z' }),
+    latestRun: { failed_items: 3 },
+  }), '已请求')
+})
+
 test('shared connector profiles own credential and trigger semantics', () => {
   assert.deepEqual(shared.externalSourceConnectorProfile('synology_photos'), {
     kind: 'synology_photos',
@@ -152,6 +164,7 @@ test('shared source card view derives display data once for both UIs', () => {
       status: 'completed',
       scanned_items: 128493,
       scanned_bytes: 2800000000000,
+      failed_items: 2,
     },
   }
   const view = shared.externalSourceCardView(row)
@@ -160,6 +173,7 @@ test('shared source card view derives display data once for both UIs', () => {
   assert.equal(view.lastActivityAt, '2026-09-26T18:32:00Z')
   assert.equal(view.scannedItems, 128493)
   assert.equal(view.scannedBytes, 2800000000000)
+  assert.equal(view.failedItems, 2)
   assert.equal(view.connector.manualTriggerExecutor, 'source_agent')
   assert.equal(view.trigger.ready, true)
 })
@@ -296,6 +310,8 @@ test('shared Yike credential test messages are actionable', () => {
 
 
 test('shared Yike Cookie guide gives the full-header workflow', () => {
+  assert.match(shared.yikeConnectorNotice, /未公开接口/)
+  assert.match(shared.yikeConnectorNotice, /不会上传、删除或修改/)
   assert.equal(shared.yikeCookieHelp.title, '如何获取 Cookie')
   assert.equal(shared.yikeCookieHelp.steps.length, 8)
   assert.match(shared.yikeCookieHelp.summary, /完整 Cookie/)

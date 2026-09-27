@@ -135,7 +135,7 @@ Authorization: Bearer <xdrive-access-token>
 
 Yike authentication, rate-limit, timeout, and service-unavailable failures are classified into stable error codes. Web/Desktop translate those codes into actionable Chinese messages, and the Pull worker stores the same classes as friendly Source errors such as “一刻相册登录已失效，请更新 Cookie”.
 
-Creating a Yike Source and replacing its Cookie both validate the candidate Cookie before persisting it.
+Creating a Yike Source and replacing its Cookie both validate the candidate Cookie before persisting it. The credential write endpoint also re-validates Yike candidates at the server persistence boundary, so callers cannot bypass the check by skipping the Web/Desktop “测试连接” step. A failed replacement leaves the previously encrypted credential unchanged.
 
 ## Store the Cookie
 
@@ -198,6 +198,10 @@ For a manual one-shot scan inside the worker container:
 docker compose --env-file ~/.xd/.env -f ~/.xd/docker-compose.yml \
   exec -T worker xdrive-server worker --once
 ```
+
+## V1 release acceptance
+
+Before treating a build as release-ready for Yike Photos, run the real-account acceptance checklist in `docs/yike-v1-acceptance.md`. For a credential-safe protocol smoke test, export the Cookie only in the local process environment and run `scripts/test-yike-live.sh`; it performs read-only account/list/download-link requests and never mutates Yike.
 
 ## Safety
 

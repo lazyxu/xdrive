@@ -138,6 +138,8 @@ export interface ExternalSourceDefaults {
   ignoreRules: string
 }
 
+export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
+
 export const yikeCookieHelp = {
   title: '如何获取 Cookie',
   summary: '请从你自己已登录的一刻相册网页版中复制 photo.baidu.com 请求的完整 Cookie 请求头值；不要只复制某一个字段，也不要包含 Cookie: 前缀。',
@@ -172,6 +174,7 @@ export interface ExternalSourceCardView {
   lastActivityAt?: string
   scannedItems?: number
   scannedBytes?: number
+  failedItems?: number
   connector: ExternalSourceConnectorProfile
 }
 
@@ -309,6 +312,12 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
   return { ready: true, label: '立即请求 Pull worker 扫描此来源' }
 }
 
+export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
+  if (row.source.run_requested_at) return '已请求'
+  if ((row.latestRun?.failed_items ?? 0) > 0) return '重试失败项'
+  return '立即扫描'
+}
+
 export function externalSourceDefaults(kind: SupportedExternalSourceKind): ExternalSourceDefaults {
   const profile = externalSourceConnectorProfile(kind)
   return {
@@ -329,6 +338,7 @@ export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCa
     lastActivityAt: source.run_mode === 'scan' ? source.last_run_at : source.last_success_at,
     scannedItems: latestRun?.scanned_items,
     scannedBytes: latestRun?.scanned_bytes,
+    failedItems: latestRun?.failed_items,
     connector: externalSourceConnectorProfile(source.kind),
   }
 }

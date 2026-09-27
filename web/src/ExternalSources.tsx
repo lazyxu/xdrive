@@ -28,8 +28,10 @@ import {
   externalSourceDefaults,
   externalSourceDetailView,
   externalSourceRunDetailView,
+  externalSourceTriggerActionLabel,
   formatExternalSourceTime,
   formatSize,
+  yikeConnectorNotice,
   yikeCookieHelp,
 } from '../../ui/shared/src'
 import type {
@@ -145,6 +147,9 @@ export default function ExternalSourcesPanel({
         return { source, latestRun: runs[0], credential }
       }))
       setRows(next)
+      setSelected((current) => current
+        ? next.find((row) => row.source.id === current.source.id) ?? current
+        : null)
     } catch (error) {
       onError(error)
     } finally {
@@ -252,7 +257,16 @@ export default function ExternalSourcesPanel({
       } catch (error) {
         credentialSaved = false
         onError(error)
-        message.warning('来源已创建，但 Cookie 保存失败；请在“设置”中重新配置')
+        try {
+          await api.deleteSource(created.id, created.revision)
+          message.warning('Cookie 保存失败，刚创建的一刻相册来源已自动撤销；请检查后重试')
+          await load()
+          setCreating(false)
+          return
+        } catch (rollbackError) {
+          onError(rollbackError)
+          message.warning('来源已创建，但 Cookie 保存失败且自动回滚失败；请在“设置”中重新配置 Cookie')
+        }
       }
     }
 
@@ -412,6 +426,7 @@ export default function ExternalSourcesPanel({
 
   const selectedDetail = selected ? externalSourceDetailView(selected) : null
   const selectedRunDetail = selected?.latestRun ? externalSourceRunDetailView(selected.latestRun) : null
+  const selectedCard = selected ? externalSourceCardView(selected) : null
 
   return (
     <>
@@ -431,7 +446,7 @@ export default function ExternalSourcesPanel({
               const card = externalSourceCardView(row)
               const stats = card.scannedItems === undefined || card.scannedBytes === undefined
                 ? '尚无扫描统计'
-                : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatSize(card.scannedBytes)}`
+                : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatSize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
 
               return (
                 <Card key={row.source.id} size="small" className="external-source-card">
@@ -473,7 +488,7 @@ export default function ExternalSourcesPanel({
                           loading={triggeringSourceID === row.source.id}
                           onClick={() => void triggerNow(row)}
                         >
-                          {row.source.run_requested_at ? '已请求' : '立即扫描'}
+                          {externalSourceTriggerActionLabel(row)}
                         </Button>
                       </Tooltip>
                       <Button size="small" onClick={() => openSettings(row)}>设置</Button>
@@ -549,9 +564,19 @@ export default function ExternalSourcesPanel({
                 severity="error"
                 sx={{ mt: 2 }}
                 action={(
-                  <MuiButton color="inherit" size="small" onClick={() => setFailedItemsOpen(true)}>
-                    查看失败项（{failedItems.length}）
-                  </MuiButton>
+                  <Stack direction="row" spacing={0.5}>
+                    <MuiButton color="inherit" size="small" onClick={() => setFailedItemsOpen(true)}>
+                      查看失败项（{failedItems.length}）
+                    </MuiButton>
+                    <MuiButton
+                      color="inherit"
+                      size="small"
+                      disabled={!selectedCard?.trigger.ready || triggeringSourceID === selected.source.id}
+                      onClick={() => void triggerNow(selected)}
+                    >
+                      {triggeringSourceID === selected.source.id ? '正在请求…' : '立即重试'}
+                    </MuiButton>
+                  </Stack>
                 )}
               >
                 当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
@@ -653,6 +678,7 @@ export default function ExternalSourcesPanel({
           )}
           {createKind === 'yike_photos' && (
             <div style={{ marginTop: -12, marginBottom: 16 }}>
+              <MuiAlert severity="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</MuiAlert>
               <YikeCookieHelpGuide />
               <MuiButton size="small" variant="outlined" disabled={testingCreateCredential} onClick={() => void testCreateCookie()} sx={{ mt: 1 }}>
                 {testingCreateCredential ? '正在测试…' : '测试连接'}
