@@ -142,7 +142,7 @@ function updateModeDescription(mode: AgentUpdateMode) {
   return '不在后台检查更新；只有点击“检查更新”时才访问更新服务。'
 }
 
-export default function YikeCookieHelpGuide() {
+function YikeCookieHelpGuide() {
   const [open, setOpen] = useState(false)
 
   return (
@@ -181,7 +181,7 @@ export default function YikeCookieHelpGuide() {
   )
 }
 
-function App() {
+export default function App() {
   const [info, setInfo] = useState<DesktopInfo | null>(null)
   const [desktopPreferences, setDesktopPreferences] = useState<DesktopPreferences>({
     start_at_login: true,
