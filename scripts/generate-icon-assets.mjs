@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -9,6 +10,16 @@ const repoRoot = process.env.XDRIVE_REPO_ROOT ? path.resolve(process.env.XDRIVE_
 const masterPath = path.join(repoRoot, 'assets', 'icon', 'master', 'xdrive-icon-master.svg')
 const webDir = path.join(repoRoot, 'assets', 'icon', 'web')
 const windowsDir = path.join(repoRoot, 'assets', 'icon', 'windows')
+const generatedManifestPath = path.join(repoRoot, 'assets', 'icon', 'generated-assets.json')
+
+function gitBlobSha(data) {
+  const payload = Buffer.isBuffer(data) ? data : Buffer.from(data)
+  return crypto
+    .createHash('sha1')
+    .update(`blob ${payload.length}\0`)
+    .update(payload)
+    .digest('hex')
+}
 
 function commandAvailable(command, args = ['--version']) {
   const result = spawnSync(command, args, { stdio: 'ignore' })
@@ -131,9 +142,35 @@ try {
   }
   fs.writeFileSync(path.join(webDir, 'site.webmanifest'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
+  const sourceRelative = 'assets/icon/master/xdrive-icon-master.svg'
+  const generatedRelativePaths = [
+    'assets/icon/web/favicon.svg',
+    'assets/icon/web/favicon.ico',
+    'assets/icon/web/apple-touch-icon.png',
+    'assets/icon/web/pwa-192.png',
+    'assets/icon/web/pwa-512.png',
+    'assets/icon/web/site.webmanifest',
+    'assets/icon/windows/app.ico',
+  ]
+  const generatedAssets = {
+    version: 1,
+    source: {
+      path: sourceRelative,
+      git_blob_sha: gitBlobSha(fs.readFileSync(path.join(repoRoot, sourceRelative))),
+    },
+    generated: Object.fromEntries(
+      generatedRelativePaths.map((relative) => [
+        relative,
+        gitBlobSha(fs.readFileSync(path.join(repoRoot, relative))),
+      ]),
+    ),
+  }
+  fs.writeFileSync(generatedManifestPath, `${JSON.stringify(generatedAssets, null, 2)}\n`, 'utf8')
+
   console.log(`Generated xDrive icon derivatives from ${path.relative(repoRoot, masterPath)} using ${renderer}.`)
   console.log('Web: favicon.svg, favicon.ico, apple-touch-icon.png, pwa-192.png, pwa-512.png, site.webmanifest')
   console.log('Windows: app.ico (16/32/48/64/256)')
+  console.log('Contract: assets/icon/generated-assets.json')
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true })
 }

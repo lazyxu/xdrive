@@ -1,11 +1,17 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const read = (relative) => fs.readFileSync(path.join(repoRoot, relative))
 const text = (relative) => read(relative).toString('utf8')
+const gitBlobSha = (buffer) => crypto
+  .createHash('sha1')
+  .update(`blob ${buffer.length}\0`)
+  .update(buffer)
+  .digest('hex')
 
 test('application icon has one SVG source of truth and platform wiring', () => {
   const master = text('assets/icon/master/xdrive-icon-master.svg')
@@ -50,6 +56,35 @@ test('application icon has one SVG source of truth and platform wiring', () => {
   assert.ok(text('scripts/build-windows-installer.ps1').includes('assets\\icon\\windows\\app.ico'), 'Windows packaging must copy the generated app.ico')
 })
 
+test('generated icon derivatives match the recorded source contract', () => {
+  const contract = JSON.parse(text('assets/icon/generated-assets.json'))
+  assert.equal(contract.version, 1, 'unexpected generated icon contract version')
+  assert.equal(contract.source.path, 'assets/icon/master/xdrive-icon-master.svg')
+  assert.equal(
+    contract.source.git_blob_sha,
+    gitBlobSha(read(contract.source.path)),
+    'master icon changed without regenerating derivatives; run make icons',
+  )
+
+  const expectedPaths = [
+    'assets/icon/web/favicon.svg',
+    'assets/icon/web/favicon.ico',
+    'assets/icon/web/apple-touch-icon.png',
+    'assets/icon/web/pwa-192.png',
+    'assets/icon/web/pwa-512.png',
+    'assets/icon/web/site.webmanifest',
+    'assets/icon/windows/app.ico',
+  ]
+  assert.deepEqual(Object.keys(contract.generated), expectedPaths, 'generated icon contract file list changed unexpectedly')
+  for (const relative of expectedPaths) {
+    assert.equal(
+      contract.generated[relative],
+      gitBlobSha(read(relative)),
+      `${relative} drifted from the generated icon contract; run make icons`,
+    )
+  }
+})
+
 test('generated Windows ICO contains the required icon frames', () => {
   const ico = read('assets/icon/windows/app.ico')
   assert.equal(ico.readUInt16LE(0), 0, 'ICO reserved field')
@@ -81,5 +116,6 @@ test('icon derivatives have one-command regeneration tooling', () => {
   assert.ok(generator.includes('[16, 32, 48, 64, 180, 192, 256, 512]'), 'icon generator must render every required derivative size')
   assert.ok(generator.includes("[16, 32, 48, 64, 256]"), 'icon generator must build every Windows ICO frame')
   assert.ok(generator.includes("[16, 32, 48]"), 'icon generator must build every favicon ICO frame')
+  assert.ok(generator.includes('generated-assets.json'), 'icon generator must write the generated asset drift contract')
   assert.ok(text('Makefile').includes('icons:\n\tnode scripts/generate-icon-assets.mjs'), 'Makefile must expose the one-command icon generator')
 })
