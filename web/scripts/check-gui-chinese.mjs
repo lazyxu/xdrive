@@ -30,8 +30,8 @@ const forbidText = (source, values, label) => {
 }
 
 requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹', '版本历史'], '文件管理器')
-requireText(files.app, ['src="/xdrive-icon-master.svg"'], 'xDrive 品牌图标')
-if ((files.app.match(/src="\/xdrive-icon-master\.svg"/g) || []).length !== 3) {
+requireText(files.app, ['src={xDriveBrandIcon}'], 'xDrive 品牌图标')
+if ((files.app.match(/src=\{xDriveBrandIcon\}/g) || []).length !== 3) {
   throw new Error('Web 应在登录页和两个导航品牌位统一使用主应用图标')
 }
 if (files.app.includes('<div className="brand-mark">x</div>') || files.app.includes('<div className="brand-mark small">x</div>')) {
