@@ -15,6 +15,7 @@ for arch in amd64 arm64; do
   chmod +x "release/xdrive-source-agent-linux-$arch"
 done
 
+caddy_build_id="$(sha256sum deploy/Caddy.Dockerfile | cut -c1-16)"
 sed \
   -e "s|@SOURCE_REF@|$XDRIVE_SOURCE_REF|g" \
   -e "s|@IMAGE_TAG@|$XDRIVE_IMAGE_TAG|g" \
@@ -22,6 +23,7 @@ sed \
   -e "s|@RELEASE_CHANNEL@|$XDRIVE_RELEASE_CHANNEL|g" \
   -e "s|@RELEASE_COMMIT@|$XDRIVE_RELEASE_COMMIT|g" \
   -e "s|@UPDATE_SOURCE@|gitlab|g" \
+  -e "s|@CADDY_BUILD_ID@|$caddy_build_id|g" \
   deploy/install-server.sh > release/xdrive-server-install.sh
 chmod +x release/xdrive-server-install.sh
 

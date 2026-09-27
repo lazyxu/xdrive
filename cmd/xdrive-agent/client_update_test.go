@@ -11,12 +11,14 @@ import (
 )
 
 type fakeClientUpdateBackend struct {
-	result       xupdate.Result
-	checkN       int
-	downloadN    int
-	installN     int
-	installStart bool
-	lastSource   string
+	result          xupdate.Result
+	checkN          int
+	downloadN       int
+	installN        int
+	installStart    bool
+	lastSource      string
+	blockDownload   bool
+	downloadStarted chan struct{}
 }
 
 func (f *fakeClientUpdateBackend) Target(string) (string, string, error) {
@@ -29,10 +31,17 @@ func (f *fakeClientUpdateBackend) Check(_ context.Context, _ string, _ string, _
 	return f.result, nil
 }
 
-func (f *fakeClientUpdateBackend) Download(_ context.Context, _ xupdate.Result, progress xupdate.ProgressFunc) (string, error) {
+func (f *fakeClientUpdateBackend) Download(ctx context.Context, _ xupdate.Result, progress xupdate.ProgressFunc) (string, error) {
 	f.downloadN++
 	if progress != nil {
 		progress(xupdate.ProgressEvent{Step: 3, Stage: "download", Current: 50, Total: 100, BytesPerSecond: 10})
+	}
+	if f.blockDownload {
+		if f.downloadStarted != nil {
+			close(f.downloadStarted)
+		}
+		<-ctx.Done()
+		return "", ctx.Err()
 	}
 	return filepath.Join("cache", "installer.exe"), nil
 }
@@ -241,5 +250,66 @@ func TestClientUpdateManagerSourcePersistsAndSelectsBackend(t *testing.T) {
 	}
 	if backend.lastSource != userconfig.UpdateSourceGitLab {
 		t.Fatalf("backend source=%q", backend.lastSource)
+	}
+}
+
+func TestClientUpdateManagerCancelDownload(t *testing.T) {
+	started := make(chan struct{})
+	backend := &fakeClientUpdateBackend{
+		blockDownload:   true,
+		downloadStarted: started,
+		result: xupdate.Result{
+			Latest:          "snapshot-cancel123456",
+			Channel:         "master",
+			UpdateAvailable: true,
+			Asset:           xupdate.Asset{Name: "xDriveSetup-amd64.exe", Size: 100},
+		},
+	}
+	manager := testUpdateManager(t, backend)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := manager.Download(context.Background())
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("download did not start")
+	}
+
+	state, err := manager.Cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != clientUpdateStatusAvailable || state.LastError != "" || state.Message != "更新操作已取消。" {
+		t.Fatalf("cancel state=%+v", state)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("download returned error after cancellation: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancel did not stop the in-flight download")
+	}
+
+	state = manager.Snapshot()
+	if state.Status != clientUpdateStatusAvailable || state.LastError != "" {
+		t.Fatalf("final state=%+v", state)
+	}
+}
+
+func TestClientUpdateManagerRejectsCancelAfterInstallStarted(t *testing.T) {
+	backend := &fakeClientUpdateBackend{}
+	manager := testUpdateManager(t, backend)
+	manager.mu.Lock()
+	manager.state.Status = clientUpdateStatusInstall
+	manager.mu.Unlock()
+
+	if _, err := manager.Cancel(); err == nil {
+		t.Fatal("installing update should not be cancellable")
 	}
 }

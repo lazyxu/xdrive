@@ -468,6 +468,10 @@ export class AgentIPCClient {
     return this.request<AgentUpdateState>('POST', '/v1/update/install', undefined, 30 * 60_000)
   }
 
+  cancelUpdate() {
+    return this.request<AgentUpdateState>('POST', '/v1/update/cancel')
+  }
+
   setSyncRule(path: string, mode: 'exclude' | 'always-local' | 'default') {
     return this.request<AgentSettings>('PUT', '/v1/settings/sync-rule', { path, mode })
   }

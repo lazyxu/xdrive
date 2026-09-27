@@ -29,6 +29,7 @@ set +e
 PATH="/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config" \
 XD_NONINTERACTIVE=1 \
+XD_BUILT_CADDY_ID=test-caddy-build \
 bash "$INSTALLER" --channel master >"$TMP/locked.out" 2>"$TMP/locked.err"
 locked_status=$?
 set -e
@@ -233,7 +234,10 @@ XD_RELEASE_COMMIT=
 XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold
 XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-oldoldoldold
 XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-oldoldoldold
-XD_DOMAIN=
+XD_CADDY_BUILD_ID=test-caddy-build
+XD_DOMAIN=drive.example.test
+ALIYUN_ACCESS_KEY_ID=test-key
+ALIYUN_ACCESS_KEY_SECRET=test-secret
 XD_WEB_BIND=0.0.0.0
 XD_WEB_PORT=3000
 XD_HTTPS_BIND=0.0.0.0
@@ -257,6 +261,7 @@ XD_HOST_BIN_DIR="$TMP/host-bin" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
+XD_BUILT_CADDY_ID=test-caddy-build \
 bash "$INSTALLER" --channel master >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"
 status=$?
 set -e
@@ -278,6 +283,9 @@ test ! -d "$TMP/config/state/upgrade-transaction"
 [[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
 [[ "$(cat "$TMP/state/pull-count-server")" == "1" ]]
 [[ "$(cat "$TMP/state/pull-count-web")" == "1" ]]
+test ! -f "$TMP/state/pull-count-caddy"
+grep -q 'Caddy component unchanged (test-caddy-build)' "$TMP/upgrade.out"
+grep -q 'Caddy image unchanged; skip pull.' "$TMP/upgrade.out"
 grep -q 'pull postgres attempt 3/3' "$TMP/upgrade.out"
 grep -q 'pull postgres failed; retrying' "$TMP/upgrade.err"
 grep -q 'pull postgres.*1.0 KiB / 4.0 KiB (25%)' "$TMP/upgrade.out"
@@ -309,6 +317,7 @@ XD_HOST_BIN_DIR="$TMP/host-bin" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
+XD_BUILT_CADDY_ID=test-caddy-build \
 bash "$INSTALLER" --channel master >"$TMP/pull-fail.out" 2>"$TMP/pull-fail.err"
 pull_fail_status=$?
 set -e

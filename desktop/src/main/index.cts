@@ -1173,6 +1173,13 @@ function registerIPCHandlers() {
     publishAgentUpdate(next)
     return next
   }, false))
+  ipcMain.handle('agent:cancel-update', () => runAgentAction<AgentUpdateState>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'client-update-cancel')
+    const next = await requireAgentClient().cancelUpdate()
+    publishAgentUpdate(next)
+    return next
+  }, false))
   ipcMain.handle('agent:set-sync-rule', (_event, path: unknown, mode: unknown) => {
     if (typeof path !== 'string' || !path.trim() || (mode !== 'exclude' && mode !== 'always-local' && mode !== 'default')) {
       return { ok: false, error: { code: 'invalid_input', message: 'A sync-rule path and valid mode are required.' } }

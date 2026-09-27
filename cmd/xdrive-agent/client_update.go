@@ -29,7 +29,10 @@ const (
 	clientUpdateInterval     = 6 * time.Hour
 )
 
-var errClientUpdateBusy = errors.New("client update operation is already running")
+var (
+	errClientUpdateBusy           = errors.New("client update operation is already running")
+	errClientUpdateNotCancellable = errors.New("client update operation is not cancellable")
+)
 
 type clientUpdateState struct {
 	Mode             string  `json:"mode"`
@@ -83,11 +86,13 @@ type clientUpdateManager struct {
 	ctx     context.Context
 	backend clientUpdateBackend
 
-	mu      sync.RWMutex
-	state   clientUpdateState
-	wake    chan struct{}
-	op      chan struct{}
-	install chan struct{}
+	mu       sync.RWMutex
+	state    clientUpdateState
+	wake     chan struct{}
+	op       chan struct{}
+	install  chan struct{}
+	opMu     sync.Mutex
+	opCancel context.CancelFunc
 }
 
 func newClientUpdateManager(ctx context.Context) *clientUpdateManager {
@@ -234,10 +239,11 @@ func (m *clientUpdateManager) runConfiguredMode() {
 }
 
 func (m *clientUpdateManager) Check(ctx context.Context) (clientUpdateState, error) {
-	if !m.acquire() {
+	opCtx, ok := m.beginOperation(ctx)
+	if !ok {
 		return m.Snapshot(), errClientUpdateBusy
 	}
-	defer m.release()
+	defer m.endOperation()
 
 	channel, commit, err := m.target()
 	if err != nil {
@@ -245,18 +251,22 @@ func (m *clientUpdateManager) Check(ctx context.Context) (clientUpdateState, err
 	}
 	source := m.Snapshot().Source
 	m.setOperation(clientUpdateStatusChecking, "正在检查更新…", channel)
-	result, err := m.backend.Check(ctx, version.String(), channel, commit, source)
+	result, err := m.backend.Check(opCtx, version.String(), channel, commit, source)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return m.cancelled()
+		}
 		return m.failChecked(err)
 	}
 	return m.applyCheckResult(result), nil
 }
 
 func (m *clientUpdateManager) Download(ctx context.Context) (clientUpdateState, error) {
-	if !m.acquire() {
+	opCtx, ok := m.beginOperation(ctx)
+	if !ok {
 		return m.Snapshot(), errClientUpdateBusy
 	}
-	defer m.release()
+	defer m.endOperation()
 
 	channel, commit, err := m.target()
 	if err != nil {
@@ -264,8 +274,11 @@ func (m *clientUpdateManager) Download(ctx context.Context) (clientUpdateState, 
 	}
 	source := m.Snapshot().Source
 	m.setOperation(clientUpdateStatusChecking, "正在检查更新…", channel)
-	result, err := m.backend.Check(ctx, version.String(), channel, commit, source)
+	result, err := m.backend.Check(opCtx, version.String(), channel, commit, source)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return m.cancelled()
+		}
 		return m.failChecked(err)
 	}
 	m.markChecked(result)
@@ -282,8 +295,11 @@ func (m *clientUpdateManager) Download(ctx context.Context) (clientUpdateState, 
 	m.state.BytesPerSecond = 0
 	m.mu.Unlock()
 
-	path, err := m.backend.Download(ctx, result, m.progress)
+	path, err := m.backend.Download(opCtx, result, m.progress)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return m.cancelled()
+		}
 		return m.fail(err)
 	}
 	if path == "" {
@@ -304,10 +320,11 @@ func (m *clientUpdateManager) Install(ctx context.Context) (clientUpdateState, e
 	if !m.Snapshot().InstallSupported {
 		return m.Snapshot(), fmt.Errorf("当前平台不支持后台自动安装；请下载更新后使用系统包管理器安装")
 	}
-	if !m.acquire() {
+	opCtx, ok := m.beginOperation(ctx)
+	if !ok {
 		return m.Snapshot(), errClientUpdateBusy
 	}
-	defer m.release()
+	defer m.endOperation()
 
 	channel, commit, err := m.target()
 	if err != nil {
@@ -315,8 +332,11 @@ func (m *clientUpdateManager) Install(ctx context.Context) (clientUpdateState, e
 	}
 	source := m.Snapshot().Source
 	m.setOperation(clientUpdateStatusChecking, "正在检查更新…", channel)
-	started, result, err := m.backend.Install(ctx, version.String(), channel, commit, source, m.progress)
+	started, result, err := m.backend.Install(opCtx, version.String(), channel, commit, source, m.progress)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return m.cancelled()
+		}
 		return m.failChecked(err)
 	}
 	m.markChecked(result)
@@ -357,6 +377,56 @@ func (m *clientUpdateManager) target() (string, string, error) {
 		return "", "", fmt.Errorf("当前构建未绑定更新通道")
 	}
 	return channel, commit, nil
+}
+
+func (m *clientUpdateManager) Cancel() (clientUpdateState, error) {
+	state := m.Snapshot()
+	if state.Status != clientUpdateStatusChecking && state.Status != clientUpdateStatusDownload {
+		return state, errClientUpdateNotCancellable
+	}
+	m.opMu.Lock()
+	cancel := m.opCancel
+	m.opMu.Unlock()
+	if cancel == nil {
+		return state, errClientUpdateNotCancellable
+	}
+	cancel()
+	return m.cancelled()
+}
+
+func (m *clientUpdateManager) beginOperation(parent context.Context) (context.Context, bool) {
+	if !m.acquire() {
+		return nil, false
+	}
+	ctx, cancel := context.WithCancel(parent)
+	m.opMu.Lock()
+	m.opCancel = cancel
+	m.opMu.Unlock()
+	return ctx, true
+}
+
+func (m *clientUpdateManager) endOperation() {
+	m.opMu.Lock()
+	if m.opCancel != nil {
+		m.opCancel()
+		m.opCancel = nil
+	}
+	m.opMu.Unlock()
+	m.release()
+}
+
+func (m *clientUpdateManager) cancelled() (clientUpdateState, error) {
+	m.mu.Lock()
+	if m.state.UpdateAvailable {
+		m.state.Status = clientUpdateStatusAvailable
+	} else {
+		m.state.Status = clientUpdateStatusIdle
+	}
+	m.state.Message = "更新操作已取消。"
+	m.state.LastError = ""
+	m.state.BytesPerSecond = 0
+	m.mu.Unlock()
+	return m.Snapshot(), nil
 }
 
 func (m *clientUpdateManager) acquire() bool {

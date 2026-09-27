@@ -271,6 +271,7 @@ declare global {
         checkUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         downloadUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         installUpdate: () => Promise<DesktopResult<AgentUpdateState>>
+        cancelUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => Promise<DesktopResult<AgentSettings>>
         getFileAvailability: (path: string) => Promise<DesktopResult<AgentFileAvailability>>
         setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') => Promise<DesktopResult<AgentFileAvailability | { ok: boolean }>>

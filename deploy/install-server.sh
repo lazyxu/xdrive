@@ -23,6 +23,7 @@ IMAGE_TAG="${XD_IMAGE_TAG:-@IMAGE_TAG@}"
 BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
 BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
 BUILT_SOURCE="${XD_BUILT_SOURCE:-@UPDATE_SOURCE@}"
+BUILT_CADDY_ID="${XD_BUILT_CADDY_ID:-@CADDY_BUILD_ID@}"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
 GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
@@ -1379,6 +1380,8 @@ ensure_env XD_LOG_MAX_FILES "${XD_LOG_MAX_FILES:-5}"
 ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
 previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
+previous_caddy_image="$(existing_env_value XD_CADDY_IMAGE)"
+previous_caddy_build_id="$(existing_env_value XD_CADDY_BUILD_ID)"
 ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"
 ensure_env XD_RELEASE_COMMIT "${requested_commit:-}"
@@ -1495,7 +1498,17 @@ stage 6 "install deployment files"
 # server/Web version that owns the current database and blob layout.
 set_env XD_SERVER_IMAGE "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 set_env XD_WEB_IMAGE "$IMAGE_REGISTRY/xdrive-web:$IMAGE_TAG"
-set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+target_caddy_image="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+caddy_image_changed=1
+if [[ -n "$previous_caddy_image" && -n "$previous_caddy_build_id" && "$BUILT_CADDY_ID" != "@CADDY_BUILD_ID@" && "$previous_caddy_build_id" == "$BUILT_CADDY_ID" ]]; then
+  target_caddy_image="$previous_caddy_image"
+  caddy_image_changed=0
+  echo "[xDrive] Caddy component unchanged ($BUILT_CADDY_ID); retaining $previous_caddy_image."
+fi
+set_env XD_CADDY_IMAGE "$target_caddy_image"
+if [[ "$BUILT_CADDY_ID" != "@CADDY_BUILD_ID@" ]]; then
+  set_env XD_CADDY_BUILD_ID "$BUILT_CADDY_ID"
+fi
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
 install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
@@ -1596,7 +1609,11 @@ fi
 
 pull_services=(postgres server web)
 if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-  pull_services+=(caddy)
+  if [[ "${caddy_image_changed:-1}" == "1" ]]; then
+    pull_services+=(caddy)
+  else
+    echo "[xDrive] Caddy image unchanged; skip pull."
+  fi
 fi
 for pull_service in "${pull_services[@]}"; do
   pull_service_with_retry "$pull_service"
