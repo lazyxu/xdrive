@@ -158,9 +158,10 @@ For normal scheduling, use the due gate:
 Web/Desktop store the schedule on the Source itself. Supported schedules are:
 
 - `interval`, such as `30m`, `6h`, or `24h`;
-- standard five-field `cron`, such as `0 3 * * *`, with an IANA timezone such as `Asia/Shanghai`.
+- standard five-field `cron`, such as `0 3 * * *`, with an IANA timezone such as `Asia/Shanghai`;
+- `manual`, which never starts from the scheduled due gate and runs only after Web/Desktop **立即扫描** creates a pending manual request.
 
-With `--due`, the agent reads the Source schedule and exits without traversing the Photos roots until that Source is due. A pending manual request created by the Web **立即扫描** action always overrides the schedule and runs with `trigger=manual`. Paused Sources are skipped. `--interval` is retained only as the compatibility fallback for Sources created before per-Source schedules existed; newly created Sources default to `interval=6h`.
+With `--due`, the agent reads the Source schedule and exits without traversing the Photos roots until that Source is due. A pending manual request created by the Web/Desktop **立即扫描** action always overrides interval/cron and is the only way a `manual` Source becomes due. Paused Sources are skipped. `--interval` is retained only as the compatibility fallback for Sources created before per-Source schedules existed; newly created Sources default to `interval=6h`.
 
 A run:
 
@@ -192,6 +193,8 @@ The one-minute task is a lightweight control-plane check. It performs a real Pho
 
 - that Source's configured interval/cron schedule is due; or
 - xDrive has a pending manual run request from the Web/Desktop UI.
+
+A Source configured as `manual` never runs merely because this one-minute DSM task fires; it remains idle until a manual request exists.
 
 The `--interval 6h` value shown above is only the legacy fallback for Sources without explicit schedule fields; it does not override a configured per-Source schedule.
 

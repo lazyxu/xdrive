@@ -21,7 +21,7 @@ const agent = Object.freeze({
     direction: 'push' | 'pull'
     sync_mode: 'backup'
     run_mode: 'scan' | 'sync'
-    schedule_type?: 'interval' | 'cron'
+    schedule_type?: 'interval' | 'cron' | 'manual'
     schedule_expression?: string
     schedule_timezone?: string
     target_node_id: number
@@ -31,7 +31,7 @@ const agent = Object.freeze({
     name?: string
     run_mode?: 'scan' | 'sync'
     status?: 'active' | 'paused'
-    schedule_type?: 'interval' | 'cron'
+    schedule_type?: 'interval' | 'cron' | 'manual'
     schedule_expression?: string
     schedule_timezone?: string
     target_node_id?: number

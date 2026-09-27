@@ -183,15 +183,21 @@ The worker checks for due Sources on startup and then every:
 XD_SOURCE_WORKER_POLL_INTERVAL=1m
 ```
 
-A Source is actually scanned only when its previous `LastRunAt` is older than:
+Each Source owns its own persistent schedule. Web/Desktop can configure:
+
+- `interval`, for example `30m`, `6h`, or `24h`;
+- standard five-field `cron`, for example `0 3 * * *`, with an IANA timezone such as `Asia/Shanghai`;
+- `manual`, which never becomes due from the worker poll and runs only after Web/Desktop **立即扫描** creates a pending manual request.
+
+New Sources default to `interval=6h`. Older Sources created before per-Source scheduling may have empty schedule fields; only those legacy Sources fall back to:
 
 ```text
 XD_SOURCE_PULL_INTERVAL=6h
 ```
 
-This prevents container restarts from triggering repeated full-library scans against the private Yike API. Use `xdrive-server worker --once` for an intentional immediate scan of all eligible Sources.
+The worker poll interval is only a lightweight wake-up cadence. A poll does not imply a Yike library scan: interval/cron Sources run only when their own schedule is due, while manual Sources stay idle until explicitly requested. A pending manual request always overrides interval/cron on the next poll. This also prevents container restarts from causing repeated full-library scans against the private Yike API.
 
-The minimum accepted interval is one minute. The default is intentionally conservative because Yike discovery uses a private API and each run performs a full reconciliation scan.
+The minimum interval is one minute. Use `xdrive-server worker --once` only for an intentional administrative run of all eligible active Sources.
 
 Read-only Yike API GETs use bounded transient retries: at most three attempts for transport failures, HTTP 429, and HTTP 5xx responses. Backoff starts at 500 ms; a valid `Retry-After` header is preferred when it is at most 30 seconds. Longer rate-limit delays are returned to the Source run instead of blocking the single Pull worker. Authentication failures and Yike business-level errno responses are not retried.
 

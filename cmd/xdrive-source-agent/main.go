@@ -379,6 +379,8 @@ func sourceScheduleText(source client.Source) string {
 		return fmt.Sprintf("cron %s (%s)", source.ScheduleExpression, timezone)
 	case sourceschedule.TypeInterval:
 		return "every " + source.ScheduleExpression
+	case sourceschedule.TypeManual:
+		return "manual only"
 	default:
 		return "legacy fallback"
 	}

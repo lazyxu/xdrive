@@ -963,7 +963,7 @@ function registerIPCHandlers() {
       (value.direction !== 'push' && value.direction !== 'pull') ||
       value.sync_mode !== 'backup' ||
       (value.run_mode !== 'scan' && value.run_mode !== 'sync') ||
-      (value.schedule_type !== undefined && value.schedule_type !== 'interval' && value.schedule_type !== 'cron') ||
+      (value.schedule_type !== undefined && value.schedule_type !== 'interval' && value.schedule_type !== 'cron' && value.schedule_type !== 'manual') ||
       (value.schedule_expression !== undefined && typeof value.schedule_expression !== 'string') ||
       (value.schedule_timezone !== undefined && typeof value.schedule_timezone !== 'string') ||
       typeof value.target_node_id !== 'number' || !Number.isSafeInteger(value.target_node_id) ||
@@ -1000,7 +1000,7 @@ function registerIPCHandlers() {
       (value.name !== undefined && (typeof value.name !== 'string' || !value.name.trim())) ||
       (value.run_mode !== undefined && value.run_mode !== 'scan' && value.run_mode !== 'sync') ||
       (value.status !== undefined && value.status !== 'active' && value.status !== 'paused') ||
-      (value.schedule_type !== undefined && value.schedule_type !== 'interval' && value.schedule_type !== 'cron') ||
+      (value.schedule_type !== undefined && value.schedule_type !== 'interval' && value.schedule_type !== 'cron' && value.schedule_type !== 'manual') ||
       (value.schedule_expression !== undefined && typeof value.schedule_expression !== 'string') ||
       (value.schedule_timezone !== undefined && typeof value.schedule_timezone !== 'string') ||
       (value.target_node_id !== undefined && (typeof value.target_node_id !== 'number' || !Number.isSafeInteger(value.target_node_id) || value.target_node_id <= 0)) ||

@@ -60,6 +60,9 @@ test('shared external-source defaults and schedule labels stay connector-neutral
     schedule_expression: '0 3 * * *',
     schedule_timezone: 'Asia/Shanghai',
   })), 'Cron 0 3 * * * · Asia/Shanghai')
+  assert.equal(shared.externalSourceScheduleLabel(source({
+    schedule_type: 'manual',
+  })), '仅手动')
   assert.equal(shared.externalSourceScheduleLabel(source()), '兼容默认间隔')
 })
 
