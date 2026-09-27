@@ -3,6 +3,7 @@ import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
 import {
+  Alert as MuiAlert,
   Button as MuiButton,
   Dialog,
   DialogActions,
@@ -15,6 +16,8 @@ import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
+  externalSourceCredentialTestErrorLabel,
+  externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
   externalSourceRunDetailView,
@@ -23,6 +26,7 @@ import {
 } from '../../ui/shared/src'
 import type {
   ExternalSource,
+  ExternalSourceCredentialTestResult,
   ExternalSourceRow,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
@@ -79,6 +83,12 @@ export default function ExternalSourcesPanel({
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
+  const [testingCreateCredential, setTestingCreateCredential] = useState(false)
+  const [createCredentialTest, setCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
+  const [createCredentialTestError, setCreateCredentialTestError] = useState('')
+  const [testingSettingsCredential, setTestingSettingsCredential] = useState(false)
+  const [settingsCredentialTest, setSettingsCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
+  const [settingsCredentialTestError, setSettingsCredentialTestError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
   const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
@@ -126,6 +136,8 @@ export default function ExternalSourcesPanel({
       ignore_rules: defaults.ignoreRules,
       cookie: '',
     })
+    setCreateCredentialTest(null)
+    setCreateCredentialTestError('')
     setCreateOpen(true)
   }
 
@@ -136,6 +148,30 @@ export default function ExternalSourcesPanel({
       ignore_rules: defaults.ignoreRules,
       cookie: '',
     })
+    setCreateCredentialTest(null)
+    setCreateCredentialTestError('')
+  }
+
+  const testCreateCookie = async () => {
+    const cookie = String(createForm.getFieldValue('cookie') ?? '').trim()
+    if (!cookie) {
+      setCreateCredentialTest(null)
+      setCreateCredentialTestError('请先填写一刻相册 Cookie')
+      return null
+    }
+    setTestingCreateCredential(true)
+    setCreateCredentialTestError('')
+    try {
+      const result = await api.testSourceCredential('yike_photos', { cookie })
+      setCreateCredentialTest(result)
+      return result
+    } catch (error) {
+      setCreateCredentialTest(null)
+      setCreateCredentialTestError(externalSourceCredentialTestErrorLabel(error instanceof Error ? error.message : String(error)))
+      return null
+    } finally {
+      setTestingCreateCredential(false)
+    }
   }
 
   const createSource = async (values: CreateSourceValues) => {
@@ -150,6 +186,13 @@ export default function ExternalSourcesPanel({
     }
 
     setCreating(true)
+    if (values.kind === 'yike_photos') {
+      const tested = await testCreateCookie()
+      if (!tested) {
+        setCreating(false)
+        return
+      }
+    }
     let created: ExternalSource
     try {
       created = await api.createSource({
@@ -212,11 +255,41 @@ export default function ExternalSourcesPanel({
       ignore_rules: row.source.ignore_rules ?? '',
       cookie: '',
     })
+    setSettingsCredentialTest(null)
+    setSettingsCredentialTestError('')
+  }
+
+  const testSettingsCookie = async () => {
+    if (!setting) return null
+    const cookie = String(settingsForm.getFieldValue('cookie') ?? '').trim()
+    setTestingSettingsCredential(true)
+    setSettingsCredentialTestError('')
+    try {
+      const result = cookie
+        ? await api.testSourceCredential('yike_photos', { cookie })
+        : await api.testStoredSourceCredential(setting.source.id)
+      setSettingsCredentialTest(result)
+      return result
+    } catch (error) {
+      setSettingsCredentialTest(null)
+      setSettingsCredentialTestError(externalSourceCredentialTestErrorLabel(error instanceof Error ? error.message : String(error)))
+      return null
+    } finally {
+      setTestingSettingsCredential(false)
+    }
   }
 
   const saveSettings = async (values: SourceSettingsValues) => {
     if (!setting) return
     setSavingSettings(true)
+    const pendingCookie = values.cookie?.trim() ?? ''
+    if (externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && pendingCookie) {
+      const tested = await testSettingsCookie()
+      if (!tested) {
+        setSavingSettings(false)
+        return
+      }
+    }
     try {
       await api.updateSource(setting.source.id, setting.source.revision, {
         name: values.name.trim(),
@@ -224,8 +297,8 @@ export default function ExternalSourcesPanel({
         status: values.status,
         ignore_rules: values.ignore_rules ?? '',
       })
-      if (externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && values.cookie?.trim()) {
-        await api.setSourceCredential(setting.source.id, { cookie: values.cookie.trim() })
+      if (externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && pendingCookie) {
+        await api.setSourceCredential(setting.source.id, { cookie: pendingCookie })
       }
       message.success('来源设置已保存')
       setSetting(null)
@@ -457,8 +530,27 @@ export default function ExternalSourcesPanel({
               rules={[{ required: true, whitespace: true, message: '请填写一刻相册 Cookie' }]}
               extra="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
             >
-              <Input.Password autoComplete="off" />
+              <Input.Password
+                autoComplete="off"
+                onChange={() => {
+                  setCreateCredentialTest(null)
+                  setCreateCredentialTestError('')
+                }}
+              />
             </Form.Item>
+          )}
+          {createKind === 'yike_photos' && (
+            <div style={{ marginTop: -12, marginBottom: 16 }}>
+              <MuiButton size="small" variant="outlined" disabled={testingCreateCredential} onClick={() => void testCreateCookie()}>
+                {testingCreateCredential ? '正在测试…' : '测试连接'}
+              </MuiButton>
+              {createCredentialTest && (
+                <MuiAlert severity="success" sx={{ mt: 1 }}>
+                  {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
+                </MuiAlert>
+              )}
+              {createCredentialTestError && <MuiAlert severity="error" sx={{ mt: 1 }}>{createCredentialTestError}</MuiAlert>}
+            </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button onClick={() => { setCreateOpen(false); createForm.resetFields() }}>取消</Button>
@@ -530,8 +622,28 @@ export default function ExternalSourcesPanel({
                   <Input.Password
                     autoComplete="off"
                     placeholder="留空则保持当前 Cookie 不变"
+                    onChange={() => {
+                      setSettingsCredentialTest(null)
+                      setSettingsCredentialTestError('')
+                    }}
                   />
                 </Form.Item>
+                <div style={{ marginTop: -12, marginBottom: 16 }}>
+                  <MuiButton
+                    size="small"
+                    variant="outlined"
+                    disabled={testingSettingsCredential}
+                    onClick={() => void testSettingsCookie()}
+                  >
+                    {testingSettingsCredential ? '正在测试…' : '测试连接'}
+                  </MuiButton>
+                  {settingsCredentialTest && (
+                    <MuiAlert severity="success" sx={{ mt: 1 }}>
+                      {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
+                    </MuiAlert>
+                  )}
+                  {settingsCredentialTestError && <MuiAlert severity="error" sx={{ mt: 1 }}>{settingsCredentialTestError}</MuiAlert>}
+                </div>
                 {setting.credential?.configured && (
                   <Popconfirm
                     title="清除已保存的 Cookie？"

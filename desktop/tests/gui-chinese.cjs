@@ -83,6 +83,12 @@ test('desktop external sources expose safe source deletion', () => {
   assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
 })
 
+test('desktop Yike source exposes connection testing', () => {
+  assert.ok(renderer.includes('testSourceCredential'), 'missing candidate Cookie test')
+  assert.ok(renderer.includes('testStoredSourceCredential'), 'missing stored Cookie test')
+  assert.ok(renderer.includes('测试连接'), 'missing Yike connection test action')
+})
+
 test('desktop GUI does not regress to key English labels', () => {
   for (const text of [
     'AGENT CONNECTION',
