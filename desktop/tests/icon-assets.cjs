@@ -18,8 +18,12 @@ test('application icon has one SVG source of truth and platform wiring', () => {
   assert.equal(builder.split(masterRef).length - 1, 2, 'Windows and Linux Desktop builds must both use the master SVG')
 
   const web = text('web/index.html')
-  assert.ok(web.includes('href="/xdrive-icon-master.svg"'), 'Web must use the shared master SVG favicon')
-  assert.ok(text('web/vite.config.ts').includes("publicDir: '../assets/icon/master'"), 'Vite must serve the shared icon source')
+  assert.ok(web.includes('href="/favicon.svg"'), 'Web must expose the generated SVG favicon')
+  assert.ok(web.includes('href="/favicon.ico"'), 'Web must expose the multi-size ICO favicon')
+  assert.ok(web.includes('href="/apple-touch-icon.png"'), 'Web must expose the Apple Touch icon')
+  assert.ok(web.includes('href="/site.webmanifest"'), 'Web must expose the manifest')
+  assert.ok(text('web/vite.config.ts').includes("publicDir: '../assets/icon/web'"), 'Vite must serve generated Web icon derivatives')
+  assert.ok(read('assets/icon/web/favicon.svg').equals(read('assets/icon/master/xdrive-icon-master.svg')), 'Web SVG favicon must remain byte-identical to the master SVG')
 
   const linuxDesktop = text('packaging/linux/xdrive.desktop')
   assert.ok(linuxDesktop.includes('\nIcon=xdrive\n'), 'Linux launcher must resolve the installed xDrive icon')
