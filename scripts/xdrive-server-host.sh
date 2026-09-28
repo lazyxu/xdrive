@@ -41,7 +41,9 @@ Usage:
   xdrive-server update [--source github|gitlab] [--channel stable|master]
   xdrive-server doctor [--strict]
   xdrive-server status [--summary-only]
-  xdrive-server backup [server-backup.sh options...]
+  xdrive-server backup [create] [server-backup.sh options...]
+  xdrive-server backup list
+  xdrive-server backup verify [BACKUP_DIR]
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
   xdrive-server migrate-user USER
@@ -357,7 +359,107 @@ status_cmd() {
   fi
 }
 
-backup_cmd() {
+backup_manifest_value() {
+  local manifest="$1" key="$2"
+  [[ -f "$manifest" ]] || return 0
+  sed -nE 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$manifest" | head -n1
+}
+
+latest_snapshot_backup() {
+  local root="$BACKUP_DIR/snapshots"
+  [[ -d "$root" ]] || return 1
+  find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print | sort -r | head -n1
+}
+
+backup_list_cmd() {
+  [[ $# -eq 0 ]] || {
+    echo "usage: xdrive-server backup list" >&2
+    return 2
+  }
+  local root="$BACKUP_DIR/snapshots" dir name size created channel commit consistent status found=0 required
+  if [[ ! -d "$root" ]]; then
+    echo "No snapshot backups found in $root"
+    return 0
+  fi
+  printf '%-26s %-20s %-9s %-10s %-14s %s\n' "BACKUP" "CREATED_UTC" "SIZE" "CHANNEL" "COMMIT" "STATUS"
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    found=1
+    name="$(basename "$dir")"
+    size="$(du -sh "$dir" 2>/dev/null | awk '{print $1}' || true)"
+    created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
+    channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
+    commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
+    consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" 2>/dev/null | head -n1 || true)"
+    status="complete"
+    for required in database.dump blobs.tar verify.json manifest.json SHA256SUMS.txt; do
+      if [[ ! -f "$dir/$required" ]]; then
+        status="incomplete"
+        break
+      fi
+    done
+    if [[ "$status" == "complete" && "$consistent" == "false" ]]; then
+      status="inconsistent"
+    fi
+    [[ -n "$created" ]] || created="-"
+    [[ -n "$size" ]] || size="-"
+    [[ -n "$channel" ]] || channel="-"
+    [[ -n "$commit" ]] || commit="-"
+    [[ "$commit" == "-" ]] || commit="${commit:0:12}"
+    printf '%-26s %-20s %-9s %-10s %-14s %s\n' "$name" "$created" "$size" "$channel" "$commit" "$status"
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print | sort -r)
+  [[ "$found" == "1" ]] || echo "No snapshot backups found in $root"
+}
+
+backup_verify_cmd() {
+  [[ $# -le 1 ]] || {
+    echo "usage: xdrive-server backup verify [BACKUP_DIR]" >&2
+    return 2
+  }
+  command -v sha256sum >/dev/null 2>&1 || {
+    echo "xdrive-server: sha256sum is required to verify backups" >&2
+    return 1
+  }
+  local dir="${1:-}" required created channel commit consistent
+  if [[ -z "$dir" ]]; then
+    dir="$(latest_snapshot_backup || true)"
+    [[ -n "$dir" ]] || {
+      echo "xdrive-server: no snapshot backup is available to verify" >&2
+      return 1
+    }
+  fi
+  [[ -d "$dir" ]] || {
+    echo "xdrive-server: backup directory not found: $dir" >&2
+    return 1
+  }
+  dir="$(cd "$dir" && pwd)"
+  for required in database.dump blobs.tar verify.json manifest.json SHA256SUMS.txt; do
+    [[ -f "$dir/$required" ]] || {
+      echo "xdrive-server: backup is missing $required: $dir" >&2
+      return 1
+    }
+  done
+  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$dir/manifest.json" || {
+    echo "xdrive-server: unsupported backup format: $dir" >&2
+    return 1
+  }
+  (
+    cd "$dir"
+    sha256sum -c SHA256SUMS.txt
+  )
+  created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
+  channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
+  commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
+  consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" | head -n1 || true)"
+  echo "Backup verified: $dir"
+  [[ -n "$created" ]] && echo "  created: $created"
+  [[ -n "$channel" ]] && echo "  release: $channel${commit:+ / ${commit:0:12}}"
+  if [[ "$consistent" == "false" ]]; then
+    echo "  warning: this backup was created with consistency_verified=false" >&2
+  fi
+}
+
+backup_create_cmd() {
   local script="$BIN_DIR/server-backup.sh" status
   [[ -x "$script" ]] || {
     echo "xdrive-server: backup tool is not installed at $script" >&2
@@ -370,6 +472,27 @@ backup_cmd() {
     record_system_audit system.backup failure
   fi
   return "$status"
+}
+
+backup_cmd() {
+  local subcommand="${1:-}"
+  case "$subcommand" in
+    list)
+      shift
+      backup_list_cmd "$@"
+      ;;
+    verify)
+      shift
+      backup_verify_cmd "$@"
+      ;;
+    create)
+      shift
+      backup_create_cmd "$@"
+      ;;
+    *)
+      backup_create_cmd "$@"
+      ;;
+  esac
 }
 
 restore_cmd() {

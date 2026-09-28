@@ -41,6 +41,7 @@ ENV_PATH="$CONFIG_DIR/.env"
 [[ -f "$ENV_PATH" ]] || { echo "missing $ENV_PATH" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
+command -v df >/dev/null 2>&1 || { echo "df is required" >&2; exit 1; }
 
 if [[ -z "$OUTPUT_ROOT" ]]; then
   OUTPUT_ROOT="$XDRIVE_HOME/backups/snapshots"
@@ -50,6 +51,11 @@ OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd)"
 
 compose() {
   docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+}
+
+env_value() {
+  local key="$1"
+  grep "^${key}=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\r' || true
 }
 
 wait_postgres() {
@@ -126,6 +132,28 @@ fi
 postgres_id="$(compose ps -q postgres | head -n1)"
 postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </dev/null)"
 
+blob_bytes="$(docker run --rm --entrypoint sh \
+  -v "$data_source:/data:ro" \
+  "$postgres_image" \
+  -c "du -sk /data | awk '{print \$1 * 1024}'" </dev/null)"
+database_bytes="$(compose exec -T postgres psql -U xdrive -d postgres -Atqc "SELECT pg_database_size('xdrive')" | tr -d '\r')"
+available_bytes="$(df -PB1 "$OUTPUT_ROOT" | awk 'NR==2 {print $4}')"
+for pair in "blob_bytes=$blob_bytes" "database_bytes=$database_bytes" "available_bytes=$available_bytes"; do
+  value="${pair#*=}"
+  [[ "$value" =~ ^[0-9]+$ ]] || {
+    echo "backup space preflight failed: invalid ${pair%%=*} value: $value" >&2
+    exit 1
+  }
+done
+estimated_source_bytes=$(( blob_bytes + database_bytes ))
+required_bytes=$(( estimated_source_bytes + estimated_source_bytes / 10 + 64 * 1024 * 1024 ))
+echo "[xDrive] backup space preflight: source≈$estimated_source_bytes bytes, required≈$required_bytes bytes, available=$available_bytes bytes" >&2
+if (( available_bytes < required_bytes )); then
+  echo "backup aborted: insufficient free space in $OUTPUT_ROOT" >&2
+  echo "required approximately $required_bytes bytes; available $available_bytes bytes." >&2
+  exit 1
+fi
+
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 final_dir="$OUTPUT_ROOT/xdrive-backup-$stamp"
 partial_dir="$final_dir.partial"
@@ -156,6 +184,10 @@ docker run --rm --entrypoint sh \
 created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 server_image="$(compose config --images | grep 'xdrive-server' | head -n1 || true)"
 caddy_image="$(compose config --images | grep 'xdrive-caddy' | head -n1 || true)"
+release_channel="$(env_value XD_RELEASE_CHANNEL)"
+release_commit="$(env_value XD_RELEASE_COMMIT)"
+update_source="$(env_value XD_UPDATE_SOURCE)"
+docker_mode="$(env_value XD_DOCKER_MODE)"
 cat > "$partial_dir/manifest.json" <<EOF
 {
   "format_version": 1,
@@ -164,13 +196,22 @@ cat > "$partial_dir/manifest.json" <<EOF
   "blobs": {"file": "blobs.tar", "format": "tar"},
   "consistency_verified": $([[ "$verify_status" == "0" ]] && echo true || echo false),
   "server_image": "$server_image",
-  "caddy_image": "$caddy_image"
+  "caddy_image": "$caddy_image",
+  "release_channel": "$release_channel",
+  "release_commit": "$release_commit",
+  "update_source": "$update_source",
+  "docker_mode": "$docker_mode",
+  "estimated_blob_bytes": $blob_bytes,
+  "estimated_database_bytes": $database_bytes,
+  "preflight_required_bytes": $required_bytes,
+  "preflight_available_bytes": $available_bytes
 }
 EOF
 
 (
   cd "$partial_dir"
   sha256sum database.dump blobs.tar verify.json manifest.json > SHA256SUMS.txt
+  sha256sum -c SHA256SUMS.txt >/dev/null
 )
 
 mv "$partial_dir" "$final_dir"
