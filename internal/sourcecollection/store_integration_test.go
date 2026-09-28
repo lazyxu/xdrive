@@ -44,7 +44,7 @@ func TestApplySnapshotUpdatesMembershipsAndMarksMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{},
+		&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 	); err != nil {
 		t.Fatal(err)

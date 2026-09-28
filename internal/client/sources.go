@@ -58,6 +58,17 @@ type UpdateSourceInput struct {
 	IgnoreRules        *string `json:"ignore_rules,omitempty"`
 }
 
+type SourceRunFailure struct {
+	ID           uint64    `json:"id"`
+	SourceItemID uint64    `json:"source_item_id"`
+	ExternalID   string    `json:"external_id"`
+	Kind         string    `json:"kind"`
+	Path         string    `json:"path"`
+	Size         int64     `json:"size"`
+	Error        string    `json:"error"`
+	FailedAt     time.Time `json:"failed_at"`
+}
+
 type SyncRun struct {
 	ID                     string     `json:"id"`
 	SourceID               uint64     `json:"source_id"`
@@ -302,6 +313,23 @@ func (c *Client) DeleteSourceCredential(ctx context.Context, id uint64) error {
 func (c *Client) SourceRun(ctx context.Context, id uint64, runID string) (SyncRun, error) {
 	var out SyncRun
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/runs/%s", id, url.PathEscape(runID)), nil, &out)
+	return out, err
+}
+
+func (c *Client) SourceRunFailures(ctx context.Context, id uint64, runID string, limit, offset int) ([]SourceRunFailure, error) {
+	var out []SourceRunFailure
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	path := fmt.Sprintf("/api/v1/sources/%d/runs/%s/failures", id, url.PathEscape(runID))
+	if query := values.Encode(); query != "" {
+		path += "?" + query
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 

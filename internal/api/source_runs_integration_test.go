@@ -28,7 +28,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -36,7 +36,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -359,7 +359,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -468,6 +468,29 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if failedItem.State != meta.SourceItemStateError || failedItem.LastError != "download unavailable" {
 		t.Fatalf("unexpected failed source item: %+v", failedItem)
+	}
+	var historyCount int64
+	if err := db.Model(&meta.SourceRunFailure{}).Where("run_id = ?", runID).Count(&historyCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if historyCount != 1 {
+		t.Fatalf("duplicate failure report created %d history rows", historyCount)
+	}
+	var failedRun meta.SyncRun
+	if err := db.First(&failedRun, "id = ?", runID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failedRun.FailedItems != 1 {
+		t.Fatalf("run failed_items=%d want=1 after persisted failure", failedRun.FailedItems)
+	}
+	failureHistoryRes := request(t, router, http.MethodGet, failurePath+"?limit=20&offset=0", token, nil, http.StatusOK)
+	var failureHistory []sourceRunFailureDTO
+	if err := json.Unmarshal(failureHistoryRes.Body.Bytes(), &failureHistory); err != nil {
+		t.Fatal(err)
+	}
+	if len(failureHistory) != 1 || failureHistory[0].ExternalID != "leftpending" ||
+		failureHistory[0].Path != "leftpending" || failureHistory[0].Error != "download unavailable" {
+		t.Fatalf("unexpected run failure history: %+v", failureHistory)
 	}
 
 	// Simulate the executor restoring source content. Generic node/file mutation
@@ -637,7 +660,25 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if failedItem.State != meta.SourceItemStatePending || failedItem.LastError != "" {
 		t.Fatalf("retry did not clear source item error: %+v", failedItem)
 	}
+	oldHistoryRes := request(t, router, http.MethodGet, failurePath+"?limit=20&offset=0", token, nil, http.StatusOK)
+	failureHistory = nil
+	if err := json.Unmarshal(oldHistoryRes.Body.Bytes(), &failureHistory); err != nil {
+		t.Fatal(err)
+	}
+	if len(failureHistory) != 1 || failureHistory[0].Error != "download unavailable" {
+		t.Fatalf("old run failure history changed after retry: %+v", failureHistory)
+	}
 	retryFinish := `{"status":"failed","complete_inventory":false,"error":"test cleanup","summary":{}}`
 	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", source.ID, retryRunID),
 		token, strings.NewReader(retryFinish), http.StatusOK)
+	retryFailurePath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/failures", source.ID, retryRunID)
+	retryHistoryRes := request(t, router, http.MethodGet, retryFailurePath+"?limit=20&offset=0", token, nil, http.StatusOK)
+	var retryHistory []sourceRunFailureDTO
+	if err := json.Unmarshal(retryHistoryRes.Body.Bytes(), &retryHistory); err != nil {
+		t.Fatal(err)
+	}
+	if len(retryHistory) != 1 || retryHistory[0].ExternalID != "leftpending" ||
+		retryHistory[0].Error != "source item remained pending when run finished" {
+		t.Fatalf("pending item did not get run failure snapshot: %+v", retryHistory)
+	}
 }

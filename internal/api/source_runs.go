@@ -121,7 +121,7 @@ func sourceRunSummaryUpdates(summary sourcepkg.Summary) map[string]any {
 		"planned_transfer_items": summary.PlannedTransferItems,
 		"planned_transfer_bytes": summary.PlannedTransferBytes,
 		"skipped_items":          summary.IgnoredItems + summary.UnchangedItems,
-		"failed_items":           summary.FailedItems,
+		"failed_items":           gorm.Expr("GREATEST(failed_items, ?)", summary.FailedItems),
 	}
 }
 
@@ -692,6 +692,17 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 				(item.State != meta.SourceItemStatePending && item.State != meta.SourceItemStateError) {
 				return errSourceExecutionConflict
 			}
+			history := meta.SourceRunFailure{
+				RunID: runID, SourceID: sourceID, SourceItemID: item.ID,
+				ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
+				Error: failure.Error, FailedAt: now,
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "run_id"}, {Name: "source_item_id"}},
+				DoNothing: true,
+			}).Create(&history).Error; err != nil {
+				return err
+			}
 			if item.State == meta.SourceItemStateError && item.LastError == failure.Error {
 				continue
 			}
@@ -703,7 +714,12 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 				return err
 			}
 		}
+		var failureCount int64
+		if err := tx.Model(&meta.SourceRunFailure{}).Where("run_id = ?", run.ID).Count(&failureCount).Error; err != nil {
+			return err
+		}
 		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Updates(map[string]any{
+			"failed_items":          gorm.Expr("GREATEST(failed_items, ?)", failureCount),
 			"active_transfer_path":  "",
 			"active_transfer_bytes": 0,
 			"active_transfer_total": 0,
@@ -972,18 +988,42 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 
 		if run.Mode == meta.SourceRunModeSync {
-			var unresolvedItems int64
-			if err := tx.Model(&meta.SourceItem{}).
-				Where("source_id = ? AND last_seen_run_id = ? AND state IN ?",
-					sourceID, runID, []string{meta.SourceItemStatePending, meta.SourceItemStateError}).
-				Count(&unresolvedItems).Error; err != nil {
+			var unresolved []meta.SourceItem
+			if err := tx.Where("source_id = ? AND last_seen_run_id = ? AND state IN ?",
+				sourceID, runID, []string{meta.SourceItemStatePending, meta.SourceItemStateError}).
+				Find(&unresolved).Error; err != nil {
 				return err
 			}
+			for _, item := range unresolved {
+				errorText := strings.TrimSpace(item.LastError)
+				if errorText == "" {
+					errorText = "source item remained pending when run finished"
+				}
+				history := meta.SourceRunFailure{
+					RunID: runID, SourceID: sourceID, SourceItemID: item.ID,
+					ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
+					Error: errorText, FailedAt: now,
+				}
+				if err := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "run_id"}, {Name: "source_item_id"}},
+					DoNothing: true,
+				}).Create(&history).Error; err != nil {
+					return err
+				}
+			}
+			unresolvedItems := int64(len(unresolved))
 			if unresolvedItems > summary.FailedItems {
 				summary.FailedItems = unresolvedItems
 			}
 		}
 
+		var historicalFailures int64
+		if err := tx.Model(&meta.SourceRunFailure{}).Where("run_id = ?", runID).Count(&historicalFailures).Error; err != nil {
+			return err
+		}
+		if historicalFailures > summary.FailedItems {
+			summary.FailedItems = historicalFailures
+		}
 		if status == meta.SyncRunStatusCompleted && summary.FailedItems > 0 {
 			status = meta.SyncRunStatusPartial
 		}

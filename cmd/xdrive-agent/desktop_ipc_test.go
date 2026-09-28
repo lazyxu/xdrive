@@ -80,6 +80,7 @@ type fakeDesktopIPCController struct {
 	cloudDeleteRev            uint64
 	cloudSources              []client.Source
 	cloudSourceRuns           []client.SyncRun
+	cloudSourceRunFailures    []client.SourceRunFailure
 	cloudCancelledRun         client.SyncRun
 	cloudCancelSourceID       uint64
 	cloudCancelRunID          string
@@ -260,6 +261,10 @@ func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Sourc
 
 func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error) {
 	return append([]client.SyncRun(nil), f.cloudSourceRuns...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSourceRunFailures(context.Context, uint64, string, int, int) ([]client.SourceRunFailure, error) {
+	return append([]client.SourceRunFailure(nil), f.cloudSourceRunFailures...), f.err
 }
 
 func (f *fakeDesktopIPCController) CloudCancelSourceRun(_ context.Context, sourceID uint64, runID string) (client.SyncRun, error) {
@@ -695,6 +700,10 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			ID: "run-1", SourceID: 9, Mode: "scan", Trigger: "manual",
 			Status: "completed", ScannedItems: 12, ScannedBytes: 34, StartedAt: now,
 		}},
+		cloudSourceRunFailures: []client.SourceRunFailure{{
+			ID: 7, SourceItemID: 1, ExternalID: "yike:123:2", Kind: "file",
+			Path: "Library/fail.jpg [2]", Size: 20, Error: "download unavailable", FailedAt: now,
+		}},
 		cloudCancelledRun: client.SyncRun{
 			ID: "run-live", SourceID: 9, Mode: "sync", Trigger: "manual",
 			Status: "running", ScannedItems: 20, PlannedTransferBytes: 100,
@@ -721,6 +730,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	}{
 		{"/v1/sources", "\"一刻相册\""},
 		{"/v1/sources/runs?source_id=9&limit=5", "\"scanned_items\":12"},
+		{"/v1/sources/runs/failures?source_id=9&run_id=run-1&limit=20&offset=0", "\"error\":\"download unavailable\""},
 		{"/v1/sources/items?source_id=9&state=error&limit=1000&offset=0", "\"last_error\":\"download unavailable\""},
 		{"/v1/sources/credential?source_id=9", "\"configured\":true"},
 	}
@@ -734,6 +744,10 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	for _, path := range []string{
 		"/v1/sources/runs?source_id=0",
 		"/v1/sources/runs?source_id=9&limit=201",
+		"/v1/sources/runs/failures?source_id=0&run_id=run-1",
+		"/v1/sources/runs/failures?source_id=9&run_id=",
+		"/v1/sources/runs/failures?source_id=9&run_id=run-1&limit=1001",
+		"/v1/sources/runs/failures?source_id=9&run_id=run-1&offset=-1",
 		"/v1/sources/items?source_id=0",
 		"/v1/sources/items?source_id=9&limit=1001",
 		"/v1/sources/items?source_id=9&offset=-1",

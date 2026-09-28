@@ -61,7 +61,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
 	); err != nil {
 		t.Fatal(err)
 	}

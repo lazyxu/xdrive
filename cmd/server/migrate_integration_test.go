@@ -199,6 +199,14 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Create(&run).Error; err != nil {
 		t.Fatal(err)
 	}
+	failure := meta.SourceRunFailure{
+		RunID: run.ID, SourceID: source.ID, SourceItemID: item.ID,
+		ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
+		Error: "historical failure", FailedAt: now,
+	}
+	if err := db.Create(&failure).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	keyring, err := connectorsecret.NewKeyring(1, map[uint32]string{
 		1: strings.Repeat("11", 32),
@@ -277,11 +285,14 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Delete(&source).Error; err != nil {
 		t.Fatal(err)
 	}
-	var itemCount, runCount, credentialCount, collectionCount, membershipCount, metadataCount int64
+	var itemCount, runCount, failureCount, credentialCount, collectionCount, membershipCount, metadataCount int64
 	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&itemCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", source.ID).Count(&runCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.SourceRunFailure{}).Where("source_id = ?", source.ID).Count(&failureCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).Count(&credentialCount).Error; err != nil {
@@ -296,8 +307,80 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	if err := db.Model(&meta.SourceItemMetadata{}).Where("source_id = ?", source.ID).Count(&metadataCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if itemCount != 0 || runCount != 0 || credentialCount != 0 || collectionCount != 0 || membershipCount != 0 || metadataCount != 0 {
-		t.Fatalf("source cascade cleanup failed: items=%d runs=%d credentials=%d collections=%d memberships=%d metadata=%d",
-			itemCount, runCount, credentialCount, collectionCount, membershipCount, metadataCount)
+	if itemCount != 0 || runCount != 0 || failureCount != 0 || credentialCount != 0 || collectionCount != 0 || membershipCount != 0 || metadataCount != 0 {
+		t.Fatalf("source cascade cleanup failed: items=%d runs=%d failures=%d credentials=%d collections=%d memberships=%d metadata=%d",
+			itemCount, runCount, failureCount, credentialCount, collectionCount, membershipCount, metadataCount)
+	}
+}
+
+func TestMigrateBackfillsRecoverableSourceRunFailures(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "migrate_source_failures_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error
+	}()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}); err != nil {
+		t.Fatal(err)
+	}
+	user := meta.User{Username: "migrate-source-failure-user", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := meta.Source{
+		OwnerID: user.ID, Name: "Legacy source", Kind: "yike_photos", Direction: meta.SourceDirectionPull,
+		SyncMode: meta.SourceSyncModeBackup, RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1,
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.NewString()
+	started := time.Now().UTC().Add(-time.Minute)
+	run := meta.SyncRun{
+		ID: runID, SourceID: source.ID, SourceRevision: 1, Mode: meta.SourceRunModeSync,
+		Trigger: meta.SyncRunTriggerManual, Status: meta.SyncRunStatusPartial, FailedItems: 1, StartedAt: started,
+	}
+	if err := db.Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := meta.SourceItem{
+		SourceID: source.ID, ExternalID: "legacy-file", Kind: meta.SourceItemKindFile,
+		Path: "Library/legacy.jpg", Size: 123, State: meta.SourceItemStateError,
+		LastSeenRunID: runID, LastSeenAt: started, LastError: "legacy download failed",
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var failure meta.SourceRunFailure
+	if err := db.Where("run_id = ? AND source_item_id = ?", runID, item.ID).First(&failure).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failure.Path != item.Path || failure.Error != item.LastError || failure.ExternalID != item.ExternalID {
+		t.Fatalf("unexpected backfilled source run failure: %+v", failure)
 	}
 }

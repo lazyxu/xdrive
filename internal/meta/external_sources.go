@@ -154,6 +154,30 @@ type SyncRun struct {
 
 func (SyncRun) TableName() string { return "xd_sync_runs" }
 
+// SourceRunFailure is an immutable per-run snapshot of one failed source item.
+// It preserves the file path and error that belonged to the run even if the
+// SourceItem later succeeds and clears its current LastError.
+type SourceRunFailure struct {
+	ID           uint64    `gorm:"primaryKey"`
+	RunID        string    `gorm:"size:36;not null;index;uniqueIndex:idx_xd_source_run_failures_run_item"`
+	SourceID     uint64    `gorm:"not null;index"`
+	SourceItemID uint64    `gorm:"not null;index;uniqueIndex:idx_xd_source_run_failures_run_item"`
+	ExternalID   string    `gorm:"size:512;not null"`
+	Kind         string    `gorm:"size:16;not null"`
+	Path         string    `gorm:"size:2048"`
+	Size         int64     `gorm:"not null;default:0"`
+	Error        string    `gorm:"type:text;not null"`
+	FailedAt     time.Time `gorm:"not null;index"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+
+	Run        SyncRun    `gorm:"foreignKey:RunID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Source     Source     `gorm:"foreignKey:SourceID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	SourceItem SourceItem `gorm:"foreignKey:SourceItemID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (SourceRunFailure) TableName() string { return "xd_source_run_failures" }
+
 func ValidSourceName(name string) bool {
 	if name == "" || name != strings.TrimSpace(name) || len([]byte(name)) > 128 || !utf8.ValidString(name) {
 		return false
