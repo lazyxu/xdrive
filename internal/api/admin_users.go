@@ -74,7 +74,11 @@ func (s *Server) adminListUsers(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "load storage capacity failed")
 		return
 	}
+	quotaStarted := time.Now()
 	usages, err := quotaUsagesForUsers(s.DB, users)
+	if s.obs != nil {
+		s.obs.observeInternalOperation("quota_admin_batch", time.Since(quotaStarted))
+	}
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "load user quota usage failed")
 		return
