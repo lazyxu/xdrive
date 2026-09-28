@@ -27,8 +27,8 @@ chmod +x release/xdrive-server-install.sh
 
 cp deploy/docker-compose.yml release/docker-compose.yml
 cp deploy/.env.example release/xdrive.env.example
-cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh release/
+cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh scripts/server-migrate-user.sh release/
 cp scripts/xdrive-server-host.sh release/xdrive-server
-chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh release/server-doctor.sh release/xdrive-server
+chmod +x release/server-backup.sh release/server-backup-scheduled.sh release/server-restore.sh release/server-verify.sh release/server-doctor.sh release/server-migrate-user.sh release/xdrive-server
 
 echo "Collected GitLab source-agent and server deployment assets for $XDRIVE_RELEASE_TAG"

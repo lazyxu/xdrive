@@ -113,7 +113,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	if err := json.Unmarshal(beginRes.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
 	}
-	if run.ID != runID || run.Mode != meta.SourceRunModeScan || run.SourceRevision != source.Revision ||
+	if run.ID != runID || run.RunNumber != 1 || run.Mode != meta.SourceRunModeScan || run.SourceRevision != source.Revision ||
 		run.TargetNodeID == nil || *run.TargetNodeID != target.ID || run.IgnoreRules != "@eaDir/\n" {
 		t.Fatalf("unexpected run snapshot: %+v", run)
 	}
@@ -644,8 +644,15 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	// A later run retries an error item and clears its previous error when observed.
 	retryRunID := uuid.NewString()
 	retryBegin := fmt.Sprintf(`{"run_id":%q,"trigger":"scheduled"}`, retryRunID)
-	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
+	retryBeginRes := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
 		token, strings.NewReader(retryBegin), http.StatusCreated)
+	var retryRun syncRunDTO
+	if err := json.Unmarshal(retryBeginRes.Body.Bytes(), &retryRun); err != nil {
+		t.Fatal(err)
+	}
+	if retryRun.RunNumber != 2 {
+		t.Fatalf("retry run number=%d want=2", retryRun.RunNumber)
+	}
 	retryObserve := `{"items":[{"external_id":"leftpending","kind":"directory","path":"leftpending","size":0}]}`
 	retryObservePath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/observe", source.ID, retryRunID)
 	retryRes := request(t, router, http.MethodPost, retryObservePath, token, strings.NewReader(retryObserve), http.StatusOK)

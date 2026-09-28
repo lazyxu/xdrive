@@ -26,6 +26,7 @@ server-backup-scheduled.sh
 server-restore.sh
 server-verify.sh
 server-doctor.sh
+server-migrate-user.sh
 xdrive-server
 docker-compose.yml
 xdrive.env.example

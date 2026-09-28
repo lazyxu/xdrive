@@ -465,3 +465,76 @@ func TestMigrateBackfillsRecoverableSourceRunFailures(t *testing.T) {
 		t.Fatalf("unexpected backfilled source run failure: %+v", failure)
 	}
 }
+
+func TestMigrateBackfillsStableSourceRunNumbers(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "migrate_source_run_numbers_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error
+	}()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	user := meta.User{Username: "run-number-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := meta.Source{
+		OwnerID: user.ID, Name: "Run Number Source", Kind: "test_connector",
+		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive, Revision: 1,
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 9, 28, 1, 0, 0, 0, time.UTC)
+	runs := []meta.SyncRun{
+		{ID: uuid.NewString(), SourceID: source.ID, Mode: meta.SourceRunModeScan, Trigger: meta.SyncRunTriggerManual, Status: meta.SyncRunStatusCompleted, StartedAt: base.Add(2 * time.Hour)},
+		{ID: uuid.NewString(), SourceID: source.ID, Mode: meta.SourceRunModeScan, Trigger: meta.SyncRunTriggerManual, Status: meta.SyncRunStatusCompleted, StartedAt: base},
+		{ID: uuid.NewString(), SourceID: source.ID, Mode: meta.SourceRunModeScan, Trigger: meta.SyncRunTriggerScheduled, Status: meta.SyncRunStatusFailed, StartedAt: base.Add(time.Hour)},
+	}
+	if err := db.Create(&runs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var ordered []meta.SyncRun
+	if err := db.Where("source_id = ?", source.ID).Order("started_at ASC").Find(&ordered).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(ordered) != 3 || ordered[0].RunNumber != 1 || ordered[1].RunNumber != 2 || ordered[2].RunNumber != 3 {
+		t.Fatalf("unexpected run numbers: %+v", ordered)
+	}
+	duplicate := meta.SyncRun{
+		ID: uuid.NewString(), SourceID: source.ID, RunNumber: 3,
+		Mode: meta.SourceRunModeScan, Trigger: meta.SyncRunTriggerManual,
+		Status: meta.SyncRunStatusCompleted, StartedAt: base.Add(3 * time.Hour),
+	}
+	if err := db.Create(&duplicate).Error; err == nil {
+		t.Fatal("duplicate per-source run number was accepted")
+	}
+}

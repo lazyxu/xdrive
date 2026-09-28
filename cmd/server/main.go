@@ -197,6 +197,32 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name ON xd_sources(owner_id, lower(name))`).Error; err != nil {
 		return err
 	}
+	if err := db.Exec(`
+		WITH maxima AS (
+			SELECT source_id, COALESCE(MAX(run_number), 0) AS max_run_number
+			FROM xd_sync_runs
+			GROUP BY source_id
+		),
+		ranked AS (
+			SELECT r.id,
+				m.max_run_number + ROW_NUMBER() OVER (
+					PARTITION BY r.source_id
+					ORDER BY r.started_at ASC, r.created_at ASC, r.id ASC
+				) AS run_number
+			FROM xd_sync_runs AS r
+			JOIN maxima AS m ON m.source_id = r.source_id
+			WHERE r.run_number = 0
+		)
+		UPDATE xd_sync_runs AS r
+		SET run_number = ranked.run_number
+		FROM ranked
+		WHERE r.id = ranked.id
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sync_runs_source_run_number ON xd_sync_runs(source_id, run_number) WHERE run_number > 0`).Error; err != nil {
+		return err
+	}
 	return db.Exec(`
 		INSERT INTO xd_source_run_failures
 			(run_id, source_id, source_item_id, external_id, kind, path, size, error, failed_at, created_at, updated_at)

@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/lazyxu/xdrive/internal/sourcewake"
 )
 
 func TestSourcePullInterval(t *testing.T) {
@@ -69,6 +74,42 @@ func TestSourceWorkerPollInterval(t *testing.T) {
 	for _, value := range []string{"broken", "5s", "0s", "-1m"} {
 		if _, err := sourceWorkerPollInterval(value); err == nil {
 			t.Fatalf("invalid poll interval %q was accepted", value)
+		}
+	}
+}
+
+func TestSourceRunWakeupsReceivesPostgresNotification(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wakeups := sourceRunWakeups(ctx, dsn)
+
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }()
+
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case _, ok := <-wakeups:
+			if !ok {
+				t.Fatal("wakeup listener closed before notification")
+			}
+			return
+		case <-ticker.C:
+			if _, err := conn.Exec(ctx, "SELECT pg_notify($1, $2)", sourcewake.PostgreSQLChannel, "42"); err != nil {
+				t.Fatal(err)
+			}
+		case <-deadline.C:
+			t.Fatal("timed out waiting for source wakeup notification")
 		}
 	}
 }

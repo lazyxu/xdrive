@@ -72,7 +72,7 @@ dir="$output/xdrive-backup-pipe-test"
 mkdir -p "$dir"
 printf "%s\n" "$dir"
 ' ;;
-  */scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 ' ;;
@@ -154,6 +154,7 @@ set +e
 ) | TEST_STATE="$TMP/state" \
     PATH="$TMP/bin:/usr/bin:/bin" \
     XD_CONFIG_DIR="$TMP/config" \
+    XD_SHELL_RC_PATH="$TMP/config.bashrc" \
     XD_NONINTERACTIVE=1 \
     XD_INSTALL_NO_START=1 \
     bash -s -- --channel master >"$TMP/out" 2>"$TMP/err"

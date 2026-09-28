@@ -129,6 +129,17 @@ test('shared external-source trigger gating matches connector execution model', 
     shared.getExternalSourceTriggerState({
       source: source({ kind: 'yike_photos', direction: 'pull' }),
       credential: { configured: true },
+    }),
+    {
+      ready: true,
+      label: '立即唤醒 Pull worker 扫描此来源；定时轮询作为兜底',
+    },
+  )
+
+  assert.deepEqual(
+    shared.getExternalSourceTriggerState({
+      source: source({ kind: 'yike_photos', direction: 'pull' }),
+      credential: { configured: true },
       latestRun: { status: 'running' },
     }),
     {
