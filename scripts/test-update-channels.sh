@@ -117,10 +117,17 @@ exit 1
 SH
 chmod +x "$TMP/bin/docker"
 
+cat > "$TMP/bin/flock" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$TMP/bin/flock"
+
 run_case() {
   local name="$1"
   shift
   local cfg="$TMP/$name"
+  local installer="${XDRIVE_TEST_INSTALLER:-$INSTALLER}"
   mkdir -p "$cfg"
   if ! XDRIVE_TEST_STATE="$TMP/state" \
     PATH="$TMP/bin:/usr/bin:/bin" \
@@ -128,7 +135,7 @@ run_case() {
     XD_SHELL_RC_PATH="$cfg.bashrc" \
     XD_NONINTERACTIVE=1 \
     XD_INSTALL_NO_START=1 \
-      bash "$INSTALLER" "$@" >"$TMP/$name.out" 2>"$TMP/$name.err"; then
+      bash "$installer" "$@" >"$TMP/$name.out" 2>"$TMP/$name.err"; then
     echo "update-channel case failed: $name" >&2
     cat "$TMP/$name.out" >&2 || true
     cat "$TMP/$name.err" >&2 || true
@@ -197,6 +204,29 @@ run_case gitlab-stable --source gitlab --channel stable
 [[ "$(env_value "$TMP/gitlab-stable" XD_RELEASE_CHANNEL)" == "stable" ]]
 [[ "$(env_value "$TMP/gitlab-stable" XD_SERVER_IMAGE)" == "registry.gitlab.example/xuliang/xdrive/xdrive-server:$STABLE_TAG" ]]
 grep -q "Resolved stable release: $STABLE_TAG" "$TMP/gitlab-stable.out"
+
+BAKED_GITLAB_INSTALLER="$TMP/xdrive-server-install-gitlab.sh"
+sed \
+  -e "s|@SOURCE_REF@|$FULL_SHA|g" \
+  -e "s|@IMAGE_TAG@|sha-$SHORT_SHA|g" \
+  -e 's|@IMAGE_REGISTRY@|registry.gitlab.example/xuliang/xdrive|g' \
+  -e 's|@RELEASE_CHANNEL@|master|g' \
+  -e "s|@RELEASE_COMMIT@|$FULL_SHA|g" \
+  -e 's|@UPDATE_SOURCE@|gitlab|g' \
+  "$INSTALLER" > "$BAKED_GITLAB_INSTALLER"
+chmod +x "$BAKED_GITLAB_INSTALLER"
+
+XDRIVE_TEST_INSTALLER="$BAKED_GITLAB_INSTALLER" run_case gitlab-baked
+[[ "$(env_value "$TMP/gitlab-baked" XD_UPDATE_SOURCE)" == "gitlab" ]]
+[[ "$(env_value "$TMP/gitlab-baked" XD_RELEASE_CHANNEL)" == "master" ]]
+[[ "$(env_value "$TMP/gitlab-baked" XD_RELEASE_COMMIT)" == "$FULL_SHA" ]]
+[[ "$(env_value "$TMP/gitlab-baked" XD_IMAGE_REGISTRY)" == "registry.gitlab.example/xuliang/xdrive" ]]
+[[ "$(env_value "$TMP/gitlab-baked" XD_SERVER_IMAGE)" == "registry.gitlab.example/xuliang/xdrive/xdrive-server:sha-$SHORT_SHA" ]]
+grep -q "Using packaged release source: $FULL_SHA" "$TMP/gitlab-baked.out"
+if grep -q 'Resolved latest fully published' "$TMP/gitlab-baked.out"; then
+  echo "baked GitLab installer must use its packaged release without re-resolving the channel" >&2
+  exit 1
+fi
 
 
 

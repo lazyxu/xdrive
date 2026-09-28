@@ -34,6 +34,10 @@ PULL_LOG="$LOG_DIR/install-pull.log"
 HOST_MANAGER_PATH="$BIN_DIR/xdrive-server"
 SHELL_RC_PATH=""
 
+is_template_placeholder() {
+  [[ "$1" =~ ^@[A-Z_]+@$ ]]
+}
+
 STAGE_TOTAL=9
 STAGE_NO=0
 CURRENT_STAGE="startup"
@@ -264,7 +268,7 @@ if [[ -z "$requested_source" ]]; then
   requested_source="$(existing_env_value XD_UPDATE_SOURCE)"
 fi
 if [[ -z "$requested_source" ]]; then
-  if [[ "$BUILT_SOURCE" != "@UPDATE_SOURCE@" && -n "$BUILT_SOURCE" ]]; then
+  if [[ -n "$BUILT_SOURCE" ]] && ! is_template_placeholder "$BUILT_SOURCE"; then
     requested_source="$BUILT_SOURCE"
   else
     requested_source="github"
@@ -287,7 +291,7 @@ if [[ -z "$requested_channel" ]]; then
   esac
 fi
 if [[ -z "$requested_channel" ]]; then
-  if [[ "$BUILT_CHANNEL" != "@RELEASE_CHANNEL@" && -n "$BUILT_CHANNEL" ]]; then
+  if [[ -n "$BUILT_CHANNEL" ]] && ! is_template_placeholder "$BUILT_CHANNEL"; then
     requested_channel="$BUILT_CHANNEL"
   else
     # The raw master bootstrap is a template, not a stable release artifact.
@@ -735,7 +739,7 @@ resolve_install_source() {
 }
 
 artifact_is_template=false
-if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" || "$BUILT_SOURCE" == "@UPDATE_SOURCE@" ]]; then
+if is_template_placeholder "$SOURCE_REF" || is_template_placeholder "$IMAGE_TAG" || is_template_placeholder "$BUILT_SOURCE"; then
   artifact_is_template=true
 fi
 
@@ -748,13 +752,13 @@ fi
 if [[ "$needs_source_resolution" == "true" ]]; then
   resolve_install_source "$requested_channel"
 else
-  if [[ "$requested_channel" == "master" && -z "$requested_commit" && "$BUILT_COMMIT" != "@RELEASE_COMMIT@" ]]; then
+  if [[ "$requested_channel" == "master" && -z "$requested_commit" && -n "$BUILT_COMMIT" ]] && ! is_template_placeholder "$BUILT_COMMIT"; then
     requested_commit="$BUILT_COMMIT"
   fi
   echo "Using packaged release source: $SOURCE_REF"
 fi
 
-if [[ "$SOURCE_REF" == "@SOURCE_REF@" || "$IMAGE_TAG" == "@IMAGE_TAG@" ]]; then
+if is_template_placeholder "$SOURCE_REF" || is_template_placeholder "$IMAGE_TAG"; then
   echo "xDrive server installer: release source resolution left template placeholders unresolved." >&2
   exit 1
 fi
@@ -1459,10 +1463,10 @@ ensure_env XD_RELEASE_COMMIT "${requested_commit:-}"
 # A registry baked into a provider-specific release is only that provider's
 # default. When the user explicitly switches providers, discard the baked
 # default unless XD_IMAGE_REGISTRY was explicitly supplied at runtime.
-if [[ -z "${XD_IMAGE_REGISTRY:-}" && "$BUILT_SOURCE" != "@UPDATE_SOURCE@" && "$requested_source" != "$BUILT_SOURCE" ]]; then
+if [[ -z "${XD_IMAGE_REGISTRY:-}" && "$requested_source" != "$BUILT_SOURCE" ]] && ! is_template_placeholder "$BUILT_SOURCE"; then
   IMAGE_REGISTRY=""
 fi
-if [[ -z "$IMAGE_REGISTRY" || "$IMAGE_REGISTRY" == "@IMAGE_REGISTRY@" ]]; then
+if [[ -z "$IMAGE_REGISTRY" ]] || is_template_placeholder "$IMAGE_REGISTRY"; then
   existing_registry="$(existing_env_value XD_IMAGE_REGISTRY)"
   if [[ -n "${XD_IMAGE_REGISTRY:-}" ]]; then
     IMAGE_REGISTRY="$XD_IMAGE_REGISTRY"
