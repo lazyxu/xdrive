@@ -153,6 +153,7 @@ export default function AdminUsersPanel({
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             可用 {formatBytes(user.available_bytes)}
             {user.quota_bytes === 0 ? '（服务器磁盘）' : ''}
+            {user.reserved_bytes > 0 ? ` · 上传预占 ${formatBytes(user.reserved_bytes)}` : ''}
             {' · '}文件 {formatBytes(user.logical_file_bytes)} · 回收站 {formatBytes(user.trash_bytes)} · 历史版本 {formatBytes(user.history_bytes)}
           </Typography.Text>
         </Space>

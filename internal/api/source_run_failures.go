@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -67,4 +68,39 @@ func (s *Server) listSourceRunFailures(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+const (
+	defaultSourceRunFailureRetention = 180 * 24 * time.Hour
+	sourceRunFailureCleanupBatchSize = 1000
+)
+
+func (s *Server) cleanupSourceRunFailureHistory(ctx context.Context) error {
+	retention := s.SourceRunFailureRetention
+	if retention <= 0 {
+		retention = defaultSourceRunFailureRetention
+	}
+	cutoff := time.Now().UTC().Add(-retention)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var ids []uint64
+		if err := s.DB.WithContext(ctx).Model(&meta.SourceRunFailure{}).
+			Where("failed_at < ?", cutoff).
+			Order("id ASC").Limit(sourceRunFailureCleanupBatchSize).
+			Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		if err := s.DB.WithContext(ctx).Where("id IN ?", ids).
+			Delete(&meta.SourceRunFailure{}).Error; err != nil {
+			return err
+		}
+		if len(ids) < sourceRunFailureCleanupBatchSize {
+			return nil
+		}
+	}
 }

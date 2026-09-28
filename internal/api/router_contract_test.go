@@ -58,6 +58,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "DELETE", path: "/api/v1/shares/:id", suite: "shares"},
 		{method: "POST", path: "/api/v1/source-credentials/test", suite: "sources"},
 		{method: "GET", path: "/api/v1/sources", suite: "sources"},
+		{method: "GET", path: "/api/v1/sources/overview", suite: "sources"},
 		{method: "POST", path: "/api/v1/sources", suite: "sources"},
 		{method: "GET", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "PATCH", path: "/api/v1/sources/:id", suite: "sources"},
@@ -88,6 +89,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/admin/storage/history", suite: "storage-intelligence"},
 		{method: "GET", path: "/api/v1/admin/storage/staging", suite: "storage-intelligence"},
 		{method: "POST", path: "/api/v1/admin/storage/staging/cleanup", suite: "storage-intelligence"},
+		{method: "GET", path: "/api/v1/admin/storage/staging/cleanup-runs", suite: "storage-intelligence"},
+		{method: "GET", path: "/api/v1/admin/storage/staging/cleanup-runs/:runID/failures", suite: "storage-intelligence"},
 		{method: "POST", path: "/api/v1/admin/users", suite: "admin"},
 		{method: "PATCH", path: "/api/v1/admin/users/:id", suite: "admin"},
 		{method: "DELETE", path: "/api/v1/admin/users/:id", suite: "admin"},
@@ -130,8 +133,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 	if len(missing) != 0 || len(unexpected) != 0 {
 		t.Fatalf("API coverage manifest drift: missing registered routes=%v unexpected registered routes=%v", missing, unexpected)
 	}
-	if len(manifest) != 73 {
-		t.Fatalf("coverage manifest has %d endpoints, want 73", len(manifest))
+	if len(manifest) != 76 {
+		t.Fatalf("coverage manifest has %d endpoints, want 76", len(manifest))
 	}
 }
 

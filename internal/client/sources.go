@@ -34,6 +34,12 @@ type Source struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
+type SourceOverview struct {
+	Source     Source                  `json:"source"`
+	LatestRun  *SyncRun                `json:"latest_run,omitempty"`
+	Credential *SourceCredentialStatus `json:"credential,omitempty"`
+}
+
 type CreateSourceInput struct {
 	Name               string `json:"name"`
 	Kind               string `json:"kind"`
@@ -115,6 +121,12 @@ type SyncRun struct {
 func (c *Client) Sources(ctx context.Context) ([]Source, error) {
 	var out []Source
 	err := c.json(ctx, http.MethodGet, "/api/v1/sources", nil, &out)
+	return out, err
+}
+
+func (c *Client) SourceOverview(ctx context.Context) ([]SourceOverview, error) {
+	var out []SourceOverview
+	err := c.json(ctx, http.MethodGet, "/api/v1/sources/overview", nil, &out)
 	return out, err
 }
 

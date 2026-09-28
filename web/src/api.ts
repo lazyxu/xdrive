@@ -7,6 +7,7 @@ import type {
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
+  ExternalSourceOverview,
   ExternalSourceRun,
   ExternalSourceRunFailure,
   FileShare,
@@ -19,6 +20,8 @@ import type {
   StorageHealth,
   StorageHistory,
   StorageStats,
+  StagingCleanupFailure,
+  StagingCleanupRun,
   UploadStagingCleanup,
   UploadStagingDetail,
   UpdateExternalSourceInput,
@@ -28,6 +31,7 @@ export type {
   ExternalSource,
   ExternalSourceCredentialStatus,
   ExternalSourceItem,
+  ExternalSourceOverview,
   ExternalSourceRun,
   ExternalSourceRunFailure,
 } from '../../ui/shared/src'
@@ -230,12 +234,28 @@ export class XDriveApi {
     return this.request<StorageHistory>(`/api/v1/admin/storage/history?days=${days}`)
   }
 
-  adminUploadStaging(limit = 50, offset = 0) {
+  adminUploadStaging(limit = 50, cursor = '') {
+    const query = new URLSearchParams({
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+    })
+    if (cursor) query.set('cursor', cursor)
+    return this.request<UploadStagingDetail>(`/api/v1/admin/storage/staging?${query.toString()}`)
+  }
+
+  adminStagingCleanupRuns(limit = 20, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<StagingCleanupRun[]>(`/api/v1/admin/storage/staging/cleanup-runs?${query.toString()}`)
+  }
+
+  adminStagingCleanupFailures(runID: number, limit = 100, offset = 0) {
     const query = new URLSearchParams({
       limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
       offset: String(Math.max(0, Math.trunc(offset))),
     })
-    return this.request<UploadStagingDetail>(`/api/v1/admin/storage/staging?${query.toString()}`)
+    return this.request<StagingCleanupFailure[]>(`/api/v1/admin/storage/staging/cleanup-runs/${runID}/failures?${query.toString()}`)
   }
 
   adminCleanupUploadStaging() {
@@ -306,6 +326,10 @@ export class XDriveApi {
 
   sources() {
     return this.request<ExternalSource[]>('/api/v1/sources')
+  }
+
+  sourceOverview() {
+    return this.request<ExternalSourceOverview[]>('/api/v1/sources/overview')
   }
 
   createSource(input: CreateExternalSourceInput) {

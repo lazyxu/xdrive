@@ -22,6 +22,7 @@ type userDTO struct {
 	MustChangePassword bool       `json:"must_change_password"`
 	QuotaBytes         int64      `json:"quota_bytes"`
 	PhysicalUsedBytes  int64      `json:"physical_used_bytes"`
+	ReservedBytes      int64      `json:"reserved_bytes"`
 	AvailableBytes     int64      `json:"available_bytes"`
 	LogicalFileBytes   int64      `json:"logical_file_bytes"`
 	TrashBytes         int64      `json:"trash_bytes"`
@@ -53,7 +54,8 @@ func userDTOWithQuota(db *gorm.DB, user meta.User, diskAvailableBytes int64) (us
 	}
 	dto := toUserDTO(user)
 	dto.PhysicalUsedBytes = usage.PhysicalUsedBytes
-	dto.AvailableBytes = effectiveAvailableBytes(user.QuotaBytes, usage.PhysicalUsedBytes, diskAvailableBytes)
+	dto.ReservedBytes = usage.ReservedBytes
+	dto.AvailableBytes = effectiveAvailableBytes(user.QuotaBytes, usage.PhysicalUsedBytes+usage.ReservedBytes, diskAvailableBytes)
 	dto.LogicalFileBytes = usage.LogicalFileBytes
 	dto.TrashBytes = usage.TrashBytes
 	dto.HistoryBytes = usage.HistoryBytes
@@ -72,13 +74,22 @@ func (s *Server) adminListUsers(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "load storage capacity failed")
 		return
 	}
+	usages, err := quotaUsagesForUsers(s.DB, users)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load user quota usage failed")
+		return
+	}
 	out := make([]userDTO, 0, len(users))
 	for _, user := range users {
-		dto, err := userDTOWithQuota(s.DB, user, capacity.AvailableBytes)
-		if err != nil {
-			fail(c, http.StatusInternalServerError, "load user quota usage failed")
-			return
-		}
+		usage := usages[user.ID]
+		dto := toUserDTO(user)
+		dto.PhysicalUsedBytes = usage.PhysicalUsedBytes
+		dto.ReservedBytes = usage.ReservedBytes
+		dto.AvailableBytes = effectiveAvailableBytes(user.QuotaBytes, usage.PhysicalUsedBytes+usage.ReservedBytes, capacity.AvailableBytes)
+		dto.LogicalFileBytes = usage.LogicalFileBytes
+		dto.TrashBytes = usage.TrashBytes
+		dto.HistoryBytes = usage.HistoryBytes
+		dto.OverQuota = usage.OverQuota
 		out = append(out, dto)
 	}
 	c.JSON(http.StatusOK, out)
@@ -246,6 +257,11 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 		}
 		if err := tx.First(&updated, target.ID).Error; err != nil {
 			return err
+		}
+		if req.QuotaBytes != nil && target.QuotaBytes != updated.QuotaBytes {
+			if err := s.rebuildUserQuotaReservations(tx, target.ID, updated.QuotaBytes); err != nil {
+				return err
+			}
 		}
 		if req.Role != nil && target.Role != updated.Role {
 			if err := recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminRoleChange, target, auditpkg.ResultSuccess, map[string]any{

@@ -38,6 +38,12 @@ type sourceDTO struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
+type sourceOverviewDTO struct {
+	Source     sourceDTO                  `json:"source"`
+	LatestRun  *syncRunDTO                `json:"latest_run,omitempty"`
+	Credential *sourceCredentialStatusDTO `json:"credential,omitempty"`
+}
+
 type syncRunDTO struct {
 	ID                     string     `json:"id"`
 	SourceID               uint64     `json:"source_id"`
@@ -125,6 +131,76 @@ func (s *Server) listSources(c *gin.Context) {
 	for _, source := range sources {
 		out = append(out, toSourceDTO(source))
 	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (s *Server) listSourceOverview(c *gin.Context) {
+	var sources []meta.Source
+	if err := s.DB.Where("owner_id = ?", userID(c)).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "list sources failed")
+		return
+	}
+	out := make([]sourceOverviewDTO, 0, len(sources))
+	if len(sources) == 0 {
+		c.JSON(http.StatusOK, out)
+		return
+	}
+
+	sourceIDs := make([]uint64, 0, len(sources))
+	yikeIDs := make([]uint64, 0)
+	for _, source := range sources {
+		sourceIDs = append(sourceIDs, source.ID)
+		if source.Kind == yikeSourceKind {
+			yikeIDs = append(yikeIDs, source.ID)
+		}
+	}
+
+	var latestRuns []meta.SyncRun
+	if err := s.DB.Raw(`
+		SELECT DISTINCT ON (source_id) *
+		FROM xd_sync_runs
+		WHERE source_id IN ?
+		ORDER BY source_id, started_at DESC, id DESC
+	`, sourceIDs).Scan(&latestRuns).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "load latest source runs failed")
+		return
+	}
+	latestBySource := make(map[uint64]meta.SyncRun, len(latestRuns))
+	for _, run := range latestRuns {
+		latestBySource[run.SourceID] = run
+	}
+
+	credentialBySource := make(map[uint64]meta.SourceCredential, len(yikeIDs))
+	if len(yikeIDs) != 0 {
+		var credentials []meta.SourceCredential
+		if err := s.DB.Where("source_id IN ?", yikeIDs).Find(&credentials).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "load source credentials failed")
+			return
+		}
+		for _, credential := range credentials {
+			credentialBySource[credential.SourceID] = credential
+		}
+	}
+
+	for _, source := range sources {
+		row := sourceOverviewDTO{Source: toSourceDTO(source)}
+		if run, ok := latestBySource[source.ID]; ok {
+			dto := toSyncRunDTO(run)
+			row.LatestRun = &dto
+		}
+		if source.Kind == yikeSourceKind {
+			status := sourceCredentialStatusDTO{}
+			if credential, ok := credentialBySource[source.ID]; ok {
+				updated := credential.UpdatedAt
+				status.Configured = true
+				status.KeyVersion = credential.KeyVersion
+				status.UpdatedAt = &updated
+			}
+			row.Credential = &status
+		}
+		out = append(out, row)
+	}
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, out)
 }
 
