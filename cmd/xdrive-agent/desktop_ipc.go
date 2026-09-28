@@ -1458,7 +1458,14 @@ func writeDesktopIPCControllerError(w http.ResponseWriter, err error) {
 		if code == "" {
 			code = "server_error"
 		}
-		writeDesktopIPCError(w, status, code, err.Error())
+		message := err.Error()
+		switch code {
+		case "quota_exceeded":
+			message = "用户存储配额不足。请永久删除回收站内容，或联系管理员提高配额。"
+		case "storage_capacity_exceeded":
+			message = "服务器存储空间不足。请释放服务器磁盘空间后重试。"
+		}
+		writeDesktopIPCError(w, status, code, message)
 		return
 	}
 	writeDesktopIPCError(w, http.StatusBadRequest, "operation_failed", err.Error())

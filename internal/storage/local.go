@@ -146,6 +146,48 @@ func (l *Local) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+func (l *Local) Promote(ctx context.Context, sourceKey, targetKey string, expectedSize int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	source, err := l.resolve(sourceKey)
+	if err != nil {
+		return err
+	}
+	target, err := l.resolve(targetKey)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() != expectedSize {
+		return fmt.Errorf("source content size mismatch")
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+		return err
+	}
+	if existing, err := os.Stat(target); err == nil {
+		if existing.Mode().IsRegular() && existing.Size() == expectedSize {
+			return nil
+		}
+		if err := os.Remove(target); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(source, target); err != nil {
+		if existing, statErr := os.Stat(target); statErr == nil &&
+			existing.Mode().IsRegular() && existing.Size() == expectedSize {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) (int64, error) {
 	buf := make([]byte, 128*1024)
 	var total int64

@@ -226,6 +226,10 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
         message.error('存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。')
         return
       }
+      if (err.status === 507 && err.message.includes('storage_capacity_exceeded')) {
+        message.error('服务器存储空间不足。请释放服务器磁盘空间后重试。')
+        return
+      }
     }
     message.error(err instanceof Error ? err.message : '请求失败')
   }, [onAuthExpired])

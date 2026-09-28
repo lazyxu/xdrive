@@ -66,10 +66,11 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := storage.NewLocal(t.TempDir())
+	localStore, err := storage.NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	store := &capacityOverrideLocal{Local: localStore, availableOverride: -1}
 	router := (&Server{
 		DB: db, Store: store,
 		Auth:           auth.New("chunk-upload-integration-secret", time.Hour),
@@ -320,6 +321,28 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 		t.Fatalf("stale finalize overwrote current file: %q", current.Body.String())
 	}
 
+	// Physical-capacity admission rejects new chunk writes and finalize
+	// assembly before the underlying filesystem is exhausted.
+	capacityData := []byte("capacity-check")
+	capacityHash := sha256Hex(capacityData)
+	capacityBody := fmt.Sprintf(
+		`{"parent_id":%d,"name":"capacity.bin","size":%d,"chunk_size":%d,"sha256":%q,"resume_key":"capacity-%s"}`,
+		root.ID, len(capacityData), chunkSize, capacityHash, capacityHash,
+	)
+	capacityInit := request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(capacityBody), http.StatusCreated)
+	var capacitySession uploadSessionDTO
+	if err := json.Unmarshal(capacityInit.Body.Bytes(), &capacitySession); err != nil {
+		t.Fatal(err)
+	}
+	store.availableOverride = 1
+	putPart(capacitySession.ID, 0, capacityData, capacityHash, http.StatusInsufficientStorage)
+	store.availableOverride = -1
+	putPart(capacitySession.ID, 0, capacityData, capacityHash, http.StatusCreated)
+	store.availableOverride = int64(len(capacityData) - 1)
+	request(t, router, http.MethodPost, "/api/v1/uploads/"+capacitySession.ID+"/finalize", token, strings.NewReader(`{}`), http.StatusInsufficientStorage)
+	store.availableOverride = -1
+	request(t, router, http.MethodPost, "/api/v1/uploads/"+capacitySession.ID+"/finalize", token, strings.NewReader(`{}`), http.StatusOK)
+
 	// Abort removes upload rows and temporary part blobs.
 	abortData := []byte("abort-me")
 	abortHash := sha256Hex(abortData)
@@ -344,6 +367,25 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	if _, err := store.Open(context.Background(), abortPart.StorageKey); err == nil {
 		t.Fatal("aborted upload part blob survived")
 	}
+}
+
+type capacityOverrideLocal struct {
+	*storage.Local
+	availableOverride int64
+}
+
+func (s *capacityOverrideLocal) Capacity(ctx context.Context) (storage.Capacity, error) {
+	capacity, err := s.Local.Capacity(ctx)
+	if err != nil {
+		return storage.Capacity{}, err
+	}
+	if s.availableOverride >= 0 {
+		capacity.AvailableBytes = s.availableOverride
+		if capacity.TotalBytes < capacity.AvailableBytes {
+			capacity.TotalBytes = capacity.AvailableBytes
+		}
+	}
+	return capacity, nil
 }
 
 func sha256Hex(data []byte) string {

@@ -347,6 +347,12 @@ func (s *Server) uploadFile(c *gin.Context) {
 }
 
 func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart.FileHeader) {
+	if err := s.ensureStorageWriteCapacity(c.Request.Context(), fh.Size); err != nil {
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "storage capacity check failed")
+		}
+		return
+	}
 	r, err := fh.Open()
 	if err != nil {
 		fail(c, http.StatusBadRequest, "cannot read upload")
@@ -369,7 +375,9 @@ func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart
 	casKey, _ := storage.ContentAddressedKey(contentHash)
 	if err := s.ensureContentBlobObject(c.Request.Context(), key, casKey, size); err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
-		fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		}
 		return
 	}
 	var (
@@ -463,6 +471,14 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	}
 	newKey := storageKey(userID(c), logical, uuid.NewString())
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.MaxUploadBytes)
+	if c.Request.ContentLength > 0 {
+		if err := s.ensureStorageWriteCapacity(c.Request.Context(), c.Request.ContentLength); err != nil {
+			if !writeStorageCapacityError(c, err) {
+				fail(c, http.StatusInternalServerError, "storage capacity check failed")
+			}
+			return
+		}
+	}
 	h := sha256.New()
 	size, err := s.Store.Put(c.Request.Context(), newKey, io.TeeReader(c.Request.Body, h))
 	if err != nil {
@@ -474,7 +490,9 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	casKey, _ := storage.ContentAddressedKey(contentHash)
 	if err := s.ensureContentBlobObject(c.Request.Context(), newKey, casKey, size); err != nil {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
-		fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		}
 		return
 	}
 	var (

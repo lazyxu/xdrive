@@ -1018,3 +1018,28 @@ func TestDesktopIPCDiscoveryFileOwnership(t *testing.T) {
 		t.Fatalf("owned discovery still exists: %v", err)
 	}
 }
+
+func TestDesktopIPCTranslatesStorage507Errors(t *testing.T) {
+	tests := []struct {
+		code string
+		want string
+	}{
+		{code: "quota_exceeded", want: "用户存储配额不足"},
+		{code: "storage_capacity_exceeded", want: "服务器存储空间不足"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.code, func(t *testing.T) {
+			ctrl := &fakeDesktopIPCController{
+				revision: 1,
+				err:      &client.APIError{Status: http.StatusInsufficientStorage, Msg: tc.code},
+			}
+			handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+			res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/cloud/quota", "")
+			if res.Code != http.StatusInsufficientStorage ||
+				!strings.Contains(res.Body.String(), `"error":"`+tc.code+`"`) ||
+				!strings.Contains(res.Body.String(), tc.want) {
+				t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+			}
+		})
+	}
+}
