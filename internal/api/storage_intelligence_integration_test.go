@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -65,7 +66,8 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := storage.NewLocal(t.TempDir())
+	storageRoot := t.TempDir()
+	store, err := storage.NewLocal(storageRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +104,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if statsA.Scope != "self" {
 		t.Fatalf("scope=%q", statsA.Scope)
 	}
-	if statsA.DiskTotalBytes != nil || statsA.DiskUsedBytes != nil || statsA.DiskAvailableBytes != nil || statsA.XDrivePhysicalBytes != nil {
-		t.Fatalf("self storage stats leaked global disk capacity: %#v", statsA)
+	if statsA.DiskTotalBytes != nil || statsA.DiskUsedBytes != nil || statsA.DiskAvailableBytes != nil ||
+		statsA.XDrivePhysicalBytes != nil || statsA.UploadStaging != nil {
+		t.Fatalf("self storage stats leaked global disk/staging capacity: %#v", statsA)
 	}
 	if statsA.CASBlobCount != 2 {
 		t.Fatalf("user A CAS blob count=%d want=2", statsA.CASBlobCount)
@@ -160,6 +163,109 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	if *global.XDrivePhysicalBytes != global.CASPhysicalBytes+global.LegacyPhysicalBytes {
 		t.Fatalf("xdrive physical=%d want=%d", *global.XDrivePhysicalBytes, global.CASPhysicalBytes+global.LegacyPhysicalBytes)
+	}
+
+	stagingNow := time.Now().UTC()
+	activeSession := meta.UploadSession{
+		ID: "staging-active", OwnerID: adminUser.ID,
+		TotalSize: 20, ChunkSize: 10, ChunkCount: 2,
+		Status: meta.UploadStatusActive, ReservedBytes: 40,
+		ExpiresAt: stagingNow.Add(time.Hour),
+	}
+	expiredSession := meta.UploadSession{
+		ID: "staging-expired", OwnerID: adminUser.ID,
+		TotalSize: 7, ChunkSize: 7, ChunkCount: 1,
+		Status: meta.UploadStatusActive, ReservedBytes: 14,
+		ExpiresAt: stagingNow.Add(-time.Hour),
+	}
+	if err := db.Create(&activeSession).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&expiredSession).Error; err != nil {
+		t.Fatal(err)
+	}
+	knownKey := storage.UploadStagingDir + "/admin/staging-active/known"
+	expiredKey := storage.UploadStagingDir + "/admin/staging-expired/expired"
+	oldOrphanKey := storage.UploadStagingDir + "/orphan/old"
+	recentKey := storage.UploadStagingDir + "/orphan/recent"
+	for key, body := range map[string]string{
+		knownKey:     "known",
+		expiredKey:   "expired",
+		oldOrphanKey: "orphan-old",
+		recentKey:    "recent",
+	} {
+		if _, err := store.Put(context.Background(), key, strings.NewReader(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldTime := stagingNow.Add(-2 * time.Hour)
+	if err := os.Chtimes(filepath.Join(storageRoot, filepath.FromSlash(oldOrphanKey)), oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&[]meta.UploadPart{
+		{SessionID: activeSession.ID, PartIndex: 0, Size: 5, SHA256: strings.Repeat("a", 64), StorageKey: knownKey},
+		{SessionID: activeSession.ID, PartIndex: 1, Size: 9, SHA256: strings.Repeat("b", 64), StorageKey: storage.UploadStagingDir + "/admin/staging-active/missing"},
+		{SessionID: expiredSession.ID, PartIndex: 0, Size: 7, SHA256: strings.Repeat("c", 64), StorageKey: expiredKey},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	request(t, router, http.MethodGet, "/api/v1/admin/storage/staging", tokenA, nil, http.StatusForbidden)
+	request(t, router, http.MethodPost, "/api/v1/admin/storage/staging/cleanup", tokenA, strings.NewReader(`{}`), http.StatusForbidden)
+	stagingRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/staging?limit=20&offset=0", adminToken, nil, http.StatusOK)
+	var staging uploadStagingDetailDTO
+	if err := json.Unmarshal(stagingRes.Body.Bytes(), &staging); err != nil {
+		t.Fatal(err)
+	}
+	if !staging.Stats.Supported ||
+		staging.Stats.ActiveSessions != 1 ||
+		staging.Stats.ReservedBytes != 40 ||
+		staging.Stats.StagingFiles != 4 ||
+		staging.Stats.StagingBytes != 28 ||
+		staging.Stats.OrphanFiles != 1 ||
+		staging.Stats.OrphanBytes != 10 ||
+		staging.Stats.RecentUntrackedFiles != 1 ||
+		staging.Stats.RecentUntrackedBytes != 6 ||
+		staging.Stats.MissingPartFiles != 1 ||
+		staging.Stats.MissingPartBytes != 9 ||
+		staging.Stats.ExpiredSessions != 1 ||
+		staging.Stats.ExpiredStagingFiles != 1 ||
+		staging.Stats.ExpiredStagingBytes != 7 ||
+		staging.Stats.ReclaimableFiles != 2 ||
+		staging.Stats.ReclaimableBytes != 17 {
+		t.Fatalf("unexpected staging stats: %+v", staging.Stats)
+	}
+	if len(staging.Orphans) != 1 || staging.Orphans[0].Key != oldOrphanKey {
+		t.Fatalf("unexpected staging orphans: %+v", staging.Orphans)
+	}
+
+	globalWithStaging := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
+	if globalWithStaging.UploadStaging == nil || globalWithStaging.UploadStaging.StagingBytes != 28 {
+		t.Fatalf("global stats missing staging: %#v", globalWithStaging)
+	}
+	wantWithStaging := globalWithStaging.CASPhysicalBytes + globalWithStaging.LegacyPhysicalBytes + 28
+	if globalWithStaging.XDrivePhysicalBytes == nil || *globalWithStaging.XDrivePhysicalBytes != wantWithStaging {
+		t.Fatalf("xdrive physical with staging=%v want=%d", globalWithStaging.XDrivePhysicalBytes, wantWithStaging)
+	}
+
+	cleanupRes := request(t, router, http.MethodPost, "/api/v1/admin/storage/staging/cleanup", adminToken, strings.NewReader(`{}`), http.StatusOK)
+	var cleanup uploadStagingCleanupDTO
+	if err := json.Unmarshal(cleanupRes.Body.Bytes(), &cleanup); err != nil {
+		t.Fatal(err)
+	}
+	if cleanup.DeletedFiles != 2 || cleanup.DeletedBytes != 17 || cleanup.FailedFiles != 0 {
+		t.Fatalf("unexpected staging cleanup: %+v", cleanup)
+	}
+	if cleanup.Stats.OrphanFiles != 0 || cleanup.Stats.ExpiredSessions != 0 ||
+		cleanup.Stats.RecentUntrackedFiles != 1 || cleanup.Stats.MissingPartFiles != 1 ||
+		cleanup.Stats.StagingFiles != 2 || cleanup.Stats.StagingBytes != 11 {
+		t.Fatalf("unexpected staging stats after cleanup: %+v", cleanup.Stats)
+	}
+	if _, err := store.Open(context.Background(), recentKey); err != nil {
+		t.Fatalf("recent untracked staging was deleted: %v", err)
+	}
+	if _, err := store.Open(context.Background(), knownKey); err != nil {
+		t.Fatalf("active staging was deleted: %v", err)
 	}
 
 	healthRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/health", adminToken, nil, http.StatusOK)

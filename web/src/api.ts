@@ -19,6 +19,8 @@ import type {
   StorageHealth,
   StorageHistory,
   StorageStats,
+  UploadStagingCleanup,
+  UploadStagingDetail,
   UpdateExternalSourceInput,
 } from '../../ui/shared/src'
 
@@ -226,6 +228,21 @@ export class XDriveApi {
 
   adminStorageHistory(days = 30) {
     return this.request<StorageHistory>(`/api/v1/admin/storage/history?days=${days}`)
+  }
+
+  adminUploadStaging(limit = 50, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<UploadStagingDetail>(`/api/v1/admin/storage/staging?${query.toString()}`)
+  }
+
+  adminCleanupUploadStaging() {
+    return this.request<UploadStagingCleanup>('/api/v1/admin/storage/staging/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
   }
 
   async changePassword(currentPassword: string, newPassword: string) {

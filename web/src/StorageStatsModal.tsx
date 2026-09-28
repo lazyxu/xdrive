@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Col, Modal, Row, Space, Statistic, Table, Typography } from 'antd'
+import { Alert, Button, Col, Modal, Popconfirm, Row, Space, Statistic, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type {
   StorageDecision,
@@ -8,6 +8,8 @@ import type {
   StorageHistoryPoint,
   StorageSizeBucket,
   StorageStats,
+  UploadStagingDetail,
+  UploadStagingFile,
 } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
@@ -17,6 +19,14 @@ const columns: ColumnsType<StorageSizeBucket> = [
   { title: '数量', dataIndex: 'count', key: 'count', align: 'right', render: (value: number) => value.toLocaleString() },
   { title: '物理容量', dataIndex: 'bytes', key: 'bytes', align: 'right', render: (value: number) => formatSize(value) },
 ]
+
+const stagingColumns: ColumnsType<UploadStagingFile> = [
+  { title: 'Staging 文件', dataIndex: 'key', key: 'key', ellipsis: true },
+  { title: '大小', dataIndex: 'size', key: 'size', align: 'right', width: 120, render: (value: number) => formatSize(value) },
+  { title: '最后修改', dataIndex: 'modified_at', key: 'modified_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
+]
+
+const STAGING_PAGE_SIZE = 20
 
 const historyColumns: ColumnsType<StorageHistoryPoint> = [
   {
@@ -121,6 +131,11 @@ export default function StorageStatsModal({
   const [stats, setStats] = useState<StorageStats | null>(null)
   const [health, setHealth] = useState<StorageHealth | null>(null)
   const [history, setHistory] = useState<StorageHistory | null>(null)
+  const [staging, setStaging] = useState<UploadStagingDetail | null>(null)
+  const [stagingPage, setStagingPage] = useState(1)
+  const [stagingLoading, setStagingLoading] = useState(false)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [stagingNotice, setStagingNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -132,6 +147,9 @@ export default function StorageStatsModal({
     setStats(null)
     setHealth(null)
     setHistory(null)
+    setStaging(null)
+    setStagingPage(1)
+    setStagingNotice('')
     const request = scope === 'global' ? api.adminStorageStats() : api.storageStats()
     const healthRequest = scope === 'global'
       ? api.adminStorageHealth().catch(() => null)
@@ -139,17 +157,58 @@ export default function StorageStatsModal({
     const historyRequest = scope === 'global'
       ? api.adminStorageHistory(30).catch(() => null)
       : Promise.resolve(null)
-    void Promise.all([request, healthRequest, historyRequest])
-      .then(([value, healthValue, historyValue]) => {
+    const stagingRequest = scope === 'global'
+      ? api.adminUploadStaging(STAGING_PAGE_SIZE, 0).catch(() => null)
+      : Promise.resolve(null)
+    void Promise.all([request, healthRequest, historyRequest, stagingRequest])
+      .then(([value, healthValue, historyValue, stagingValue]) => {
         if (!active) return
         setStats(value)
         setHealth(healthValue)
         setHistory(historyValue)
+        setStaging(stagingValue)
       })
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [api, open, scope])
+
+  const loadStagingPage = async (page: number) => {
+    if (scope !== 'global') return
+    const nextPage = Math.max(1, Math.trunc(page))
+    setStagingLoading(true)
+    try {
+      const value = await api.adminUploadStaging(STAGING_PAGE_SIZE, (nextPage - 1) * STAGING_PAGE_SIZE)
+      setStaging(value)
+      setStagingPage(nextPage)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载上传临时空间失败')
+    } finally {
+      setStagingLoading(false)
+    }
+  }
+
+  const cleanupStaging = async () => {
+    setCleanupLoading(true)
+    setStagingNotice('')
+    try {
+      const result = await api.adminCleanupUploadStaging()
+      let notice = '已清理 ' + result.deleted_files.toLocaleString() + ' 个临时文件，共 ' + formatSize(result.deleted_bytes)
+      if (result.failed_files > 0) notice += '；失败 ' + result.failed_files.toLocaleString() + ' 个'
+      setStagingNotice(notice)
+      const [nextStats, nextStaging] = await Promise.all([
+        api.adminStorageStats(),
+        api.adminUploadStaging(STAGING_PAGE_SIZE, 0),
+      ])
+      setStats(nextStats)
+      setStaging(nextStaging)
+      setStagingPage(1)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '清理上传临时空间失败')
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
 
   const firstHistory = history?.samples[0]
   const lastHistory = history?.samples[history.samples.length - 1]
@@ -198,6 +257,80 @@ export default function StorageStatsModal({
                 </Row>
               </>
             )}
+
+          {scope === 'global' && staging && (
+            <>
+              <Typography.Title level={5} style={{ margin: 0 }}>上传临时空间</Typography.Title>
+              {stagingNotice && <Alert type="success" showIcon message={stagingNotice} />}
+              {!staging.stats.supported && (
+                <Alert type="info" showIcon message="当前存储后端不支持 staging 文件系统扫描，仅显示数据库侧会话信息。" />
+              )}
+              {(staging.stats.orphan_files > 0 || staging.stats.missing_part_files > 0 || staging.stats.recent_untracked_files > 0) && (
+                <Alert
+                  type={staging.stats.missing_part_files > 0 || staging.stats.orphan_files > 0 ? 'warning' : 'info'}
+                  showIcon
+                  message={
+                    'orphan ' + staging.stats.orphan_files.toLocaleString() +
+                    ' · 近期未登记 ' + staging.stats.recent_untracked_files.toLocaleString() +
+                    ' · 缺失 part ' + staging.stats.missing_part_files.toLocaleString()
+                  }
+                  description="只有数据库无引用且超过 1 小时的临时文件才会作为 orphan 清理；近期未登记文件不会删除。"
+                />
+              )}
+              <Row gutter={[16, 16]}>
+                <Col xs={12} md={6}><Statistic title="活跃 Upload Session" value={staging.stats.active_sessions} /></Col>
+                <Col xs={12} md={6}><Statistic title="容量 Reservation" value={formatSize(staging.stats.reserved_bytes)} /></Col>
+                <Col xs={12} md={6}><Statistic title="Staging 实际占用" value={formatSize(staging.stats.staging_bytes)} /></Col>
+                <Col xs={12} md={6}><Statistic title="Staging 文件" value={staging.stats.staging_files} /></Col>
+                <Col xs={12} md={6}><Statistic title="已登记 Part" value={staging.stats.part_files} suffix={'/ ' + formatSize(staging.stats.part_bytes)} /></Col>
+                <Col xs={12} md={6}><Statistic title="近期未登记" value={staging.stats.recent_untracked_files} suffix={'/ ' + formatSize(staging.stats.recent_untracked_bytes)} /></Col>
+                <Col xs={12} md={6}><Statistic title="可回收临时空间" value={formatSize(staging.stats.reclaimable_bytes)} /></Col>
+                <Col xs={12} md={6}><Statistic title="Orphan" value={staging.stats.orphan_files} suffix={'/ ' + formatSize(staging.stats.orphan_bytes)} /></Col>
+                <Col xs={12} md={6}><Statistic title="过期 Session" value={staging.stats.expired_sessions} /></Col>
+                <Col xs={12} md={6}><Statistic title="缺失 Part" value={staging.stats.missing_part_files} suffix={'/ ' + formatSize(staging.stats.missing_part_bytes)} /></Col>
+              </Row>
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                Reservation 表示活跃 resumable 上传未来仍可能需要写入的峰值空间，不等于当前物理占用；Staging 实际占用已计入 xDrive 物理占用。
+              </Typography.Paragraph>
+              <Space wrap>
+                <Button loading={stagingLoading} onClick={() => void loadStagingPage(1)}>刷新 staging</Button>
+                <Popconfirm
+                  title="清理可回收上传临时数据？"
+                  description="将清理过期 UploadSession 及超过 1 小时、数据库无引用的 orphan staging 文件。"
+                  okText="清理"
+                  cancelText="取消"
+                  onConfirm={() => void cleanupStaging()}
+                >
+                  <Button
+                    danger
+                    loading={cleanupLoading}
+                    disabled={staging.stats.reclaimable_files <= 0 && staging.stats.expired_sessions <= 0}
+                  >
+                    清理可回收临时数据
+                  </Button>
+                </Popconfirm>
+              </Space>
+              {staging.orphans.length > 0 && (
+                <div>
+                  <Typography.Title level={5}>Orphan staging</Typography.Title>
+                  <Table<UploadStagingFile>
+                    rowKey="key"
+                    size="small"
+                    dataSource={staging.orphans}
+                    columns={stagingColumns}
+                    pagination={false}
+                    loading={stagingLoading}
+                    scroll={{ x: 680 }}
+                  />
+                  <Space style={{ marginTop: 12 }}>
+                    <Button size="small" disabled={stagingLoading || stagingPage <= 1} onClick={() => void loadStagingPage(stagingPage - 1)}>上一页</Button>
+                    <Typography.Text type="secondary">第 {stagingPage} 页 · 每页 {STAGING_PAGE_SIZE} 条</Typography.Text>
+                    <Button size="small" disabled={stagingLoading || !staging.has_more} onClick={() => void loadStagingPage(stagingPage + 1)}>下一页</Button>
+                  </Space>
+                </div>
+              )}
+            </>
+          )}
 
           {scope === 'global' && history && (
             <>

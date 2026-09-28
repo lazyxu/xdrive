@@ -75,12 +75,55 @@ export interface StorageSizeBucket {
   bytes: number
 }
 
+export interface UploadStagingStats {
+  supported: boolean
+  active_sessions: number
+  reserved_bytes: number
+  part_files: number
+  part_bytes: number
+  staging_files: number
+  staging_bytes: number
+  orphan_files: number
+  orphan_bytes: number
+  recent_untracked_files: number
+  recent_untracked_bytes: number
+  missing_part_files: number
+  missing_part_bytes: number
+  expired_sessions: number
+  expired_staging_files: number
+  expired_staging_bytes: number
+  reclaimable_files: number
+  reclaimable_bytes: number
+  orphan_grace_seconds: number
+  generated_at: string
+}
+
+export interface UploadStagingFile {
+  key: string
+  size: number
+  modified_at: string
+}
+
+export interface UploadStagingDetail {
+  stats: UploadStagingStats
+  orphans: UploadStagingFile[]
+  has_more: boolean
+}
+
+export interface UploadStagingCleanup {
+  deleted_files: number
+  deleted_bytes: number
+  failed_files: number
+  stats: UploadStagingStats
+}
+
 export interface StorageStats {
   scope: 'self' | 'global'
   disk_total_bytes?: number
   disk_used_bytes?: number
   disk_available_bytes?: number
   xdrive_physical_bytes?: number
+  upload_staging?: UploadStagingStats
   cas_blob_count: number
   cas_physical_bytes: number
   cas_logical_referenced_bytes: number

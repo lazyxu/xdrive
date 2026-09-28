@@ -27,6 +27,7 @@ type storageStatsDTO struct {
 	DiskUsedBytes             *int64                 `json:"disk_used_bytes,omitempty"`
 	DiskAvailableBytes        *int64                 `json:"disk_available_bytes,omitempty"`
 	XDrivePhysicalBytes       *int64                 `json:"xdrive_physical_bytes,omitempty"`
+	UploadStaging             *uploadStagingStatsDTO `json:"upload_staging,omitempty"`
 	CASBlobCount              int64                  `json:"cas_blob_count"`
 	CASPhysicalBytes          int64                  `json:"cas_physical_bytes"`
 	CASLogicalReferencedBytes int64                  `json:"cas_logical_referenced_bytes"`
@@ -98,17 +99,23 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "load storage capacity failed")
 		return
 	}
+	staging, err := s.loadUploadStagingInventory(ctx)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load upload staging failed")
+		return
+	}
 	diskTotal := capacity.TotalBytes
 	diskAvailable := capacity.AvailableBytes
 	diskUsed := diskTotal - diskAvailable
 	if diskUsed < 0 {
 		diskUsed = 0
 	}
-	xdrivePhysical := stats.CASPhysicalBytes + stats.LegacyPhysicalBytes
+	xdrivePhysical := stats.CASPhysicalBytes + stats.LegacyPhysicalBytes + staging.Stats.StagingBytes
 	stats.DiskTotalBytes = &diskTotal
 	stats.DiskUsedBytes = &diskUsed
 	stats.DiskAvailableBytes = &diskAvailable
 	stats.XDrivePhysicalBytes = &xdrivePhysical
+	stats.UploadStaging = &staging.Stats
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
 }

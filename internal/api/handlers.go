@@ -347,7 +347,7 @@ func (s *Server) uploadFile(c *gin.Context) {
 }
 
 func (s *Server) uploadMultipart(c *gin.Context, parent meta.Node, fh *multipart.FileHeader) {
-	if err := s.ensureStorageWriteCapacity(c.Request.Context(), fh.Size); err != nil {
+	if err := s.ensureStorageWriteCapacityWithReservations(c.Request.Context(), fh.Size, ""); err != nil {
 		if !writeStorageCapacityError(c, err) {
 			fail(c, http.StatusInternalServerError, "storage capacity check failed")
 		}
@@ -472,7 +472,7 @@ func (s *Server) overwriteFile(c *gin.Context) {
 	newKey := storageKey(userID(c), logical, uuid.NewString())
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, s.MaxUploadBytes)
 	if c.Request.ContentLength > 0 {
-		if err := s.ensureStorageWriteCapacity(c.Request.Context(), c.Request.ContentLength); err != nil {
+		if err := s.ensureStorageWriteCapacityWithReservations(c.Request.Context(), c.Request.ContentLength, ""); err != nil {
 			if !writeStorageCapacityError(c, err) {
 				fail(c, http.StatusInternalServerError, "storage capacity check failed")
 			}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 const ContentBlobDir = ".xdrive-blobs"
@@ -61,4 +62,15 @@ type CapacityReporter interface {
 
 type ContentPromoter interface {
 	Promote(context.Context, string, string, int64) error
+}
+
+type StagingFile struct {
+	Key        string
+	Size       int64
+	ModifiedAt time.Time
+}
+
+type StagingInspector interface {
+	ListStaging(context.Context) ([]StagingFile, error)
+	DeleteStaging(context.Context, string) error
 }

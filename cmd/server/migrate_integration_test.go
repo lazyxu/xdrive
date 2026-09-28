@@ -97,6 +97,87 @@ func TestMigrateConvertsStorageKeyIndexesToNonUnique(t *testing.T) {
 	}
 }
 
+func TestMigrateBackfillsUploadReservations(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "migrate_upload_reservation_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error
+	}()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	user := meta.User{Username: "reservation-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	active := meta.UploadSession{
+		ID: "active-reservation", OwnerID: user.ID,
+		TotalSize: 100, ChunkSize: 40, ChunkCount: 3,
+		Status: meta.UploadStatusActive, ReservedBytes: 0, ExpiresAt: now.Add(time.Hour),
+	}
+	expired := meta.UploadSession{
+		ID: "expired-reservation", OwnerID: user.ID,
+		TotalSize: 100, ChunkSize: 100, ChunkCount: 1,
+		Status: meta.UploadStatusActive, ReservedBytes: 999, ExpiresAt: now.Add(-time.Hour),
+	}
+	finalized := meta.UploadSession{
+		ID: "finalized-reservation", OwnerID: user.ID,
+		TotalSize: 100, ChunkSize: 100, ChunkCount: 1,
+		Status: meta.UploadStatusFinalized, ReservedBytes: 999, ExpiresAt: now.Add(time.Hour),
+	}
+	if err := db.Create(&[]meta.UploadSession{active, expired, finalized}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.UploadPart{
+		SessionID: active.ID, PartIndex: 0, Size: 40,
+		SHA256: strings.Repeat("a", 64), StorageKey: ".xdrive-uploads/active/part",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var gotActive, gotExpired, gotFinalized meta.UploadSession
+	if err := db.First(&gotActive, "id = ?", active.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&gotExpired, "id = ?", expired.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&gotFinalized, "id = ?", finalized.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotActive.ReservedBytes != 160 {
+		t.Fatalf("active reserved_bytes=%d want=160", gotActive.ReservedBytes)
+	}
+	if gotExpired.ReservedBytes != 0 || gotFinalized.ReservedBytes != 0 {
+		t.Fatalf("inactive reservations not cleared: expired=%d finalized=%d", gotExpired.ReservedBytes, gotFinalized.ReservedBytes)
+	}
+}
+
 func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {

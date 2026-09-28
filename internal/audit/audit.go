@@ -25,6 +25,7 @@ const (
 	ActionAdminPasswordReset     = "admin.user.password_reset"
 	ActionAdminSessionRevoke     = "admin.user.sessions_revoke"
 	ActionAdminUserDelete        = "admin.user.delete"
+	ActionAdminStorageCleanup    = "admin.storage.cleanup"
 	ActionPermanentDelete        = "file.permanent_delete"
 	ActionVersionRestore         = "file.version_restore"
 	ActionBackup                 = "system.backup"
