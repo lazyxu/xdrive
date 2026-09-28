@@ -802,12 +802,13 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	githubRelease := readFile(t, filepath.Join(root, ".github", "workflows", "release.yml"))
 	gitlabRelease := readFile(t, filepath.Join(root, "infra", "ci", "gitlab-release.yml"))
 	installerTemplate := readFile(t, filepath.Join(root, "deploy", "install-server.sh"))
+	gitlabPublishRelease := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-publish-release.sh"))
 	gitlabReleaseScripts := strings.Join([]string{
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-version.sh")),
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-release-assets.sh")),
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-images.sh")),
 		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-promote-images.sh")),
-		readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-publish-release.sh")),
+		gitlabPublishRelease,
 	}, "\n")
 
 	releaseAssets := []string{
@@ -833,6 +834,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		if !strings.Contains(gitlabRelease+"\n"+gitlabReleaseScripts, asset) {
 			t.Errorf("GitLab release contract is missing asset %q", asset)
 		}
+	}
+	if strings.Contains(gitlabPublishRelease, "\nCaddyfile\n") {
+		t.Error("GitLab release must not publish provider-only Caddyfile outside the shared release asset set")
 	}
 
 	for _, imageName := range []string{"xdrive-server", "xdrive-caddy"} {

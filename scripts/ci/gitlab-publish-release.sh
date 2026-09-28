@@ -28,7 +28,6 @@ server-verify.sh
 server-doctor.sh
 xdrive-server
 docker-compose.yml
-Caddyfile
 xdrive.env.example
 "
 
