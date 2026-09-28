@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SERVER_ARTIFACT="${1:-$ROOT/dist/server-image}"
-WEB_ARTIFACT="${2:-$ROOT/dist/web-image}"
+CADDY_ARTIFACT="${2:-$ROOT/dist/caddy-image}"
 TAG="${XDRIVE_ROOTLESS_E2E_TAG:-rootless-e2e}"
 REGISTRY_PORT="${XDRIVE_ROOTLESS_REGISTRY_PORT:-35000}"
 WEB_PORT="${XDRIVE_ROOTLESS_WEB_PORT:-33080}"
@@ -63,7 +63,7 @@ for cmd in docker dockerd-rootless.sh rootlesskit newuidmap newgidmap slirp4netn
   }
 done
 [[ -d "$SERVER_ARTIFACT" ]] || { echo "missing server image artifact: $SERVER_ARTIFACT" >&2; exit 1; }
-[[ -d "$WEB_ARTIFACT" ]] || { echo "missing web image artifact: $WEB_ARTIFACT" >&2; exit 1; }
+[[ -d "$CADDY_ARTIFACT" ]] || { echo "missing Caddy/Web image artifact: $CADDY_ARTIFACT" >&2; exit 1; }
 
 user_name="$(id -un)"
 subuid_count="$(awk -F: -v u="$user_name" '$1==u {sum += $3} END {print sum+0}' /etc/subuid 2>/dev/null || echo 0)"
@@ -121,7 +121,7 @@ fi
 echo "[rootless-e2e] Docker cgroup driver: $cgroup_driver"
 
 bash "$ROOT/scripts/ci/import-docker-image.sh" "$SERVER_ARTIFACT" xdrive/server:test
-bash "$ROOT/scripts/ci/import-docker-image.sh" "$WEB_ARTIFACT" xdrive/web:test
+bash "$ROOT/scripts/ci/import-docker-image.sh" "$CADDY_ARTIFACT" xdrive/caddy:test
 
 docker run -d --name xdrive-rootless-e2e-registry \
   --network host \
@@ -130,7 +130,7 @@ docker run -d --name xdrive-rootless-e2e-registry \
 
 registry="127.0.0.1:$REGISTRY_PORT"
 docker tag xdrive/server:test "$registry/xdrive-server:$TAG"
-docker tag xdrive/web:test "$registry/xdrive-web:$TAG"
+docker tag xdrive/caddy:test "$registry/xdrive-caddy:$TAG"
 
 registry_ready=0
 for _ in $(seq 1 30); do
@@ -145,7 +145,7 @@ done
   docker logs xdrive-rootless-e2e-registry >&2 || true
   exit 1
 }
-docker push "$registry/xdrive-web:$TAG" >/dev/null
+docker push "$registry/xdrive-caddy:$TAG" >/dev/null
 
 REAL_CURL="$(command -v curl)"
 cat > "$FAKE_BIN/curl" <<'SH'
@@ -225,20 +225,28 @@ grep -q '^Services$' "$status_log"
 
 env_path="$XDRIVE_HOME/config/.env"
 compose_path="$XDRIVE_HOME/config/docker-compose.yml"
-web_id="$(docker compose --env-file "$env_path" -f "$compose_path" ps -q web)"
-web_healthy=0
+caddy_id="$(docker compose --env-file "$env_path" -f "$compose_path" ps -q caddy)"
+caddy_healthy=0
 for _ in $(seq 1 45); do
-  web_health="$(docker inspect "$web_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' 2>/dev/null || true)"
-  if [[ "$web_health" == "healthy" ]]; then
-    web_healthy=1
+  caddy_health="$(docker inspect "$caddy_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' 2>/dev/null || true)"
+  if [[ "$caddy_health" == "healthy" ]]; then
+    caddy_healthy=1
     break
   fi
   sleep 1
 done
-if [[ "$web_healthy" != "1" ]]; then
-  echo "rootless Web container health did not converge to healthy" >&2
-  docker inspect "$web_id" --format '{{json .State}}' >&2 || true
-  docker logs "$web_id" >&2 || true
+if [[ "$caddy_healthy" != "1" ]]; then
+  echo "rootless Caddy/Web container health did not converge to healthy" >&2
+  docker inspect "$caddy_id" --format '{{json .State}}' >&2 || true
+  docker logs "$caddy_id" >&2 || true
+  exit 1
+fi
+
+for container in xdrive-postgres xdrive-server xdrive-worker xdrive-caddy; do
+  docker inspect "$container" >/dev/null
+done
+if docker ps -a --format '{{.Names}}' | grep -qx 'xdrive-web-1'; then
+  echo "legacy xdrive-web-1 container survived Web -> Caddy migration" >&2
   exit 1
 fi
 
@@ -254,7 +262,7 @@ grep -Eq 'Docker mode[[:space:]]+rootless$' "$doctor_log"
 grep -q 'doctor result: usable' "$doctor_log"
 
 if ! /usr/bin/curl -fsS "http://127.0.0.1:$WEB_PORT/api/v1/readyz" >/dev/null; then
-  echo "rootless xDrive Web/API readiness endpoint is unreachable" >&2
+  echo "rootless xDrive Caddy/Web/API readiness endpoint is unreachable" >&2
   exit 1
 fi
 

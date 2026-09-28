@@ -313,7 +313,9 @@ caddy-image:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
   stage: test
-  needs: []
+  needs:
+    - job: web
+      artifacts: true
   resource_group: xdrive-caddy-image
   tags:
     - linux
@@ -447,17 +449,13 @@ web:
   stage: test
   needs: []
   cache:
-    key: "xdrive-ci-tools-$CI_RUNNER_EXECUTABLE_ARCH"
+    key: "xdrive-web-$CI_RUNNER_EXECUTABLE_ARCH"
     paths:
-      - .cache/ci-tools/
       - .cache/npm/
     policy: pull-push
     when: always
   tags:
     - linux
-  before_script:
-    - *ensure_linux_fetch_tools
-    - *install_docker_cli_only
   script:
     - |
       set -euo pipefail
@@ -466,22 +464,16 @@ web:
         echo "Node.js 22 is required; found $(node --version)." >&2
         exit 1
       fi
-      command -v docker >/dev/null
-      docker info >/dev/null
-      source scripts/ci/client-artifact-version.sh
       cd web
       npm ci --no-audit --no-fund
       npm run lint
       npm run build
-      cd ..
-      docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f web/Dockerfile -t xdrive/web:test .
-      bash scripts/ci/export-docker-image.sh xdrive/web:test dist/web-image
   artifacts:
-    name: "xdrive-web-image-$CI_COMMIT_SHORT_SHA"
+    name: "xdrive-web-dist-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
     when: on_success
     paths:
-      - dist/web-image/
+      - web/dist/
 
 final-gate:
   image: $XDRIVE_CI_GO_IMAGE

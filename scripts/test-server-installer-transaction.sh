@@ -29,7 +29,6 @@ set +e
 PATH="/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config" \
 XD_NONINTERACTIVE=1 \
-XD_BUILT_CADDY_ID=test-caddy-build \
 bash "$INSTALLER" --channel master >"$TMP/locked.out" 2>"$TMP/locked.err"
 locked_status=$?
 set -e
@@ -267,7 +266,6 @@ XD_HOST_BIN_DIR="$TMP/host-bin" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
-XD_BUILT_CADDY_ID=test-caddy-build \
 bash "$INSTALLER" --channel master >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"
 status=$?
 set -e
@@ -288,10 +286,8 @@ grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 test ! -d "$TMP/config/state/upgrade-transaction"
 [[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
 [[ "$(cat "$TMP/state/pull-count-server")" == "1" ]]
-[[ "$(cat "$TMP/state/pull-count-web")" == "1" ]]
-test ! -f "$TMP/state/pull-count-caddy"
-grep -q 'Caddy component unchanged (test-caddy-build)' "$TMP/upgrade.out"
-grep -q 'Caddy image unchanged; skip pull.' "$TMP/upgrade.out"
+test ! -f "$TMP/state/pull-count-web"
+[[ "$(cat "$TMP/state/pull-count-caddy")" == "1" ]]
 grep -q 'pull postgres attempt 3/3' "$TMP/upgrade.out"
 grep -q 'pull postgres failed; retrying' "$TMP/upgrade.err"
 grep -q 'pull postgres.*1.0 KiB / 4.0 KiB (25%)' "$TMP/upgrade.out"
@@ -323,7 +319,6 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/stall-config" \
 XD_HOST_BIN_DIR="$TMP/stall-host-bin" \
 XD_NONINTERACTIVE=1 \
-XD_BUILT_CADDY_ID=test-caddy-build \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_PULL_STALL_TIMEOUT_SECONDS=2 \
@@ -353,7 +348,6 @@ XD_HOST_BIN_DIR="$TMP/host-bin" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
-XD_BUILT_CADDY_ID=test-caddy-build \
 bash "$INSTALLER" --channel master >"$TMP/pull-fail.out" 2>"$TMP/pull-fail.err"
 pull_fail_status=$?
 set -e

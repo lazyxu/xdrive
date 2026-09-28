@@ -83,14 +83,17 @@ if [[ "$1" == "compose" ]]; then
     case "${3:-}" in
       server) echo server-id ;;
       postgres) echo postgres-id ;;
-      caddy) ;;
+      caddy) echo caddy-id ;;
+      worker) echo worker-id ;;
     esac
     exit 0
   fi
   if [[ "${1:-}" == "ps" ]]; then
     echo "NAME              STATUS"
-    echo "xdrive-server-1   running"
-    echo "xdrive-postgres-1 running"
+    echo "xdrive-server   running"
+    echo "xdrive-worker   running"
+    echo "xdrive-postgres running"
+    echo "xdrive-caddy    running"
     exit 0
   fi
 fi
@@ -133,6 +136,9 @@ TEST_HOME="$HOME_DIR" TEST_DOCKER_ROOT="$TMP/docker-root" PATH="$TMP/bin:/usr/bi
 
 grep -q '^xDrive installation environment$' "$TMP/status"
 grep -q '^Services$' "$TMP/status"
-grep -q 'xdrive-server-1' "$TMP/status"
+grep -q 'xdrive-server' "$TMP/status"
+grep -q 'xdrive-worker' "$TMP/status"
+grep -q 'xdrive-postgres' "$TMP/status"
+grep -q 'xdrive-caddy' "$TMP/status"
 
 echo "server status environment-summary tests passed"

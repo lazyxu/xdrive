@@ -87,14 +87,14 @@ bash "$tmp" --channel stable
 bash "$tmp" --channel master
 ```
 
-For weak/regionally constrained registry connectivity, xDrive can use an alternate registry namespace for its own three images:
+For weak/regionally constrained registry connectivity, xDrive can use an alternate registry namespace for its two runtime images:
 
 ```bash
 XD_IMAGE_REGISTRY=registry.example.com/xdrive \
 bash "$tmp" --channel master
 ```
 
-The value is persisted as `XD_IMAGE_REGISTRY` and produces `<registry>/xdrive-server`, `<registry>/xdrive-web`, and `<registry>/xdrive-caddy`. PostgreSQL defaults to `postgres:17-alpine` and can be redirected separately with `XD_POSTGRES_IMAGE`. Docker pulls are performed by the **Docker daemon**, so a shell-level `HTTPS_PROXY` is not sufficient on many hosts; configure the Docker daemon proxy when a proxy is required.
+The value is persisted as `XD_IMAGE_REGISTRY` and produces `<registry>/xdrive-server` and `<registry>/xdrive-caddy`. The Caddy image contains the exact CI-tested React Web build. PostgreSQL defaults to `postgres:17-alpine` and can be redirected separately with `XD_POSTGRES_IMAGE`. Docker pulls are performed by the **Docker daemon**, so a shell-level `HTTPS_PROXY` is not sufficient on many hosts; configure the Docker daemon proxy when a proxy is required.
 
 For a fully non-interactive public deployment, export the deployment variables before executing the downloaded installer:
 
@@ -136,7 +136,9 @@ xdrive-server admin enable admin
 xdrive-server admin disable USER
 ```
 
-The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. `xdrive-server status` starts with an installation-environment summary showing rootful/rootless Docker mode, Docker context/root, every resolved persistent host path, per-path filesystem usage, active bind mounts, release source/channel, and retained legacy volumes; it then prints the normal Compose service table. Use `status --summary-only` when only the deployment environment is needed. The installer prints the same summary after a successful install, and `doctor` embeds it at the top of the diagnostic report. The `xdrive-server` executable inside `xdrive-server-1` remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
+The long-running server deployment uses four fixed container names: `xdrive-postgres`, `xdrive-server`, `xdrive-worker`, and `xdrive-caddy`. Caddy directly serves the React SPA and proxies `/api/*` to the Server; there is no separate `xdrive-web` runtime container.
+
+The host-side `xdrive-server` command runs **outside Docker** and controls `~/.xd` plus Docker Compose. `xdrive-server status` starts with an installation-environment summary showing rootful/rootless Docker mode, Docker context/root, every resolved persistent host path, per-path filesystem usage, active bind mounts, release source/channel, and retained legacy volumes; it then prints the normal Compose service table. Use `status --summary-only` when only the deployment environment is needed. The installer prints the same summary after a successful install, and `doctor` embeds it at the top of the diagnostic report. The `xdrive-server` executable inside the fixed-name `xdrive-server` container remains the API daemon. The API container is not given `/var/run/docker.sock` or host-management privileges.
 
 Persistent server state uses host bind mounts under `~/.xd/data` by default:
 
@@ -406,7 +408,7 @@ The official Compose file uses:
 
 ```text
 ghcr.io/lazyxu/xdrive-server
-ghcr.io/lazyxu/xdrive-web
+ghcr.io/lazyxu/xdrive-caddy
 ```
 
 The installer pulls these images anonymously. If a server gets `denied` from GHCR, verify that both container packages allow public/read access, or authenticate that server first with `docker login ghcr.io`.
@@ -993,7 +995,6 @@ server-verify.sh
 server-doctor.sh
 xdrive-server
 docker-compose.yml
-Caddyfile
 xdrive.env.example
 SHA256SUMS.txt
 ```
@@ -1051,8 +1052,10 @@ scripts/
   test-xdrive-server-host.sh
   test-server-doctor.sh
 deploy/
-  Caddy.Dockerfile          Caddy + AliDNS DNS-01 module
-  Caddyfile
+  Caddy.Dockerfile          merged React Web + Caddy/AliDNS edge image
+  Caddyfile                 HTTPS/AliDNS edge config embedded in the image
+  Caddyfile.http            HTTP/private-mode config embedded in the image
+  Caddyfile.common          shared SPA + /api routing snippet
   docker-compose.yml
   install-server.sh
 .github/workflows/

@@ -12,7 +12,7 @@ source scripts/ci/gitlab-release-version.sh
 
 printf '%s' "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
 
-for name in xdrive-server xdrive-web xdrive-caddy; do
+for name in xdrive-server xdrive-caddy; do
   source_image="$CI_REGISTRY_IMAGE/$name:$XDRIVE_IMAGE_TAG"
   target_image="$CI_REGISTRY_IMAGE/$name:$XDRIVE_PROMOTION_TAG"
   docker pull "$source_image"

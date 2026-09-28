@@ -155,7 +155,7 @@ docker run --rm --entrypoint sh \
 
 created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 server_image="$(compose config --images | grep 'xdrive-server' | head -n1 || true)"
-web_image="$(compose config --images | grep 'xdrive-web' | head -n1 || true)"
+caddy_image="$(compose config --images | grep 'xdrive-caddy' | head -n1 || true)"
 cat > "$partial_dir/manifest.json" <<EOF
 {
   "format_version": 1,
@@ -164,7 +164,7 @@ cat > "$partial_dir/manifest.json" <<EOF
   "blobs": {"file": "blobs.tar", "format": "tar"},
   "consistency_verified": $([[ "$verify_status" == "0" ]] && echo true || echo false),
   "server_image": "$server_image",
-  "web_image": "$web_image"
+  "caddy_image": "$caddy_image"
 }
 EOF
 

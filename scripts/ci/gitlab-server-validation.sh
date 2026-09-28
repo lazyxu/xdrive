@@ -11,7 +11,6 @@ command -v curl >/dev/null
 export POSTGRES_PASSWORD=ci-postgres-password
 export XD_JWT_SECRET=ci-jwt-secret-that-is-long-enough
 export XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:edge
-export XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:edge
 export XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:edge
 
 bash -n deploy/install-server.sh
@@ -116,8 +115,17 @@ rm -f "$generated"
 
 grep -q 'pattern: xdrive-\*-image' .github/workflows/release.yml
 grep -q 'load_exact xdrive-server-image xdrive/server:test' .github/workflows/release.yml
-grep -q 'load_exact xdrive-web-image xdrive/web:test' .github/workflows/release.yml
 grep -q 'load_exact xdrive-caddy-image xdrive/caddy:test' .github/workflows/release.yml
+if grep -q 'xdrive-web-image\|xdrive/web:test\|xdrive-web:' .github/workflows/release.yml deploy/docker-compose.yml scripts/ci/gitlab-server-images.sh; then
+  echo "runtime Web image/container must be removed after Web -> Caddy merge" >&2
+  exit 1
+fi
+grep -q 'container_name: xdrive-postgres' deploy/docker-compose.yml
+grep -q 'container_name: xdrive-server' deploy/docker-compose.yml
+grep -q 'container_name: xdrive-worker' deploy/docker-compose.yml
+grep -q 'container_name: xdrive-caddy' deploy/docker-compose.yml
+grep -q 'COPY web/dist/ /srv/' deploy/Caddy.Dockerfile
+grep -q 'reverse_proxy server:8080' deploy/Caddyfile.common
 grep -q 'Load and verify exact images tested by CI' .github/workflows/release.yml
 grep -q 'Push exact tested images in parallel' .github/workflows/release.yml
 grep -q 'docker push "$remote" &' .github/workflows/release.yml
