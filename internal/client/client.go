@@ -24,6 +24,7 @@ type Client struct {
 
 	sessionMu        sync.RWMutex
 	refreshMu        sync.Mutex
+	sharedRefreshMu  *sync.Mutex
 	refreshToken     string
 	accessExpiresAt  time.Time
 	refreshExpiresAt time.Time

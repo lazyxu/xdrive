@@ -300,9 +300,12 @@ export class XDriveApi {
     return this.request<ExternalSource>(`/api/v1/sources/${sourceID}/trigger`, { method: 'POST' })
   }
 
-  sourceRuns(sourceID: number, limit = 1) {
-    const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
-    return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?limit=${bounded}`)
+  sourceRuns(sourceID: number, limit = 1, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?${query.toString()}`)
   }
 
   cancelSourceRun(sourceID: number, runID: string) {

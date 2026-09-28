@@ -359,7 +359,7 @@ func status() error {
 	if cfg.SharedRoot != "" {
 		fmt.Printf("shared: %s\n", cfg.SharedRoot)
 	}
-	runs, err := cli.SourceRuns(ctx, source.ID, 1)
+	runs, err := cli.SourceRuns(ctx, source.ID, 1, 0)
 	if err == nil && len(runs) != 0 {
 		run := runs[0]
 		fmt.Printf("last run: %s %s; scanned %d (%s), ignored %d, new %d, changed %d, moved %d, missing %d\n",

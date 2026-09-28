@@ -870,7 +870,7 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'external-sources')
     return requireAgentClient().sources()
   }, false))
-  ipcMain.handle('agent:get-source-runs', (_event, sourceID: unknown, limit: unknown) => runAgentAction<AgentSourceRun[]>(async () => {
+  ipcMain.handle('agent:get-source-runs', (_event, sourceID: unknown, limit: unknown, offset: unknown) => runAgentAction<AgentSourceRun[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')
     if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
@@ -880,7 +880,11 @@ function registerIPCHandlers() {
     if (typeof requestedLimit !== 'number' || !Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 200) {
       throw new AgentIPCError('invalid_input', 0, 'Source run limit must be between 1 and 200.')
     }
-    return requireAgentClient().sourceRuns(sourceID, requestedLimit)
+    const requestedOffset = offset === undefined ? 0 : offset
+    if (typeof requestedOffset !== 'number' || !Number.isSafeInteger(requestedOffset) || requestedOffset < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source run offset must be zero or greater.')
+    }
+    return requireAgentClient().sourceRuns(sourceID, requestedLimit, requestedOffset)
   }, false))
   ipcMain.handle('agent:cancel-source-run', (_event, sourceID: unknown, runID: unknown) => runAgentAction<AgentSourceRun>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

@@ -258,7 +258,7 @@ func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Sourc
 	return append([]client.Source(nil), f.cloudSources...), f.err
 }
 
-func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error) {
+func (f *fakeDesktopIPCController) CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error) {
 	return append([]client.SyncRun(nil), f.cloudSourceRuns...), f.err
 }
 

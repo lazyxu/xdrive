@@ -156,7 +156,7 @@ type desktopIPCController interface {
 	CloudCreateShare(context.Context, uint64, client.CreateShareInput) (agentCreatedShare, error)
 	CloudRevokeShare(context.Context, uint64) error
 	CloudSources(context.Context) ([]client.Source, error)
-	CloudSourceRuns(context.Context, uint64, int) ([]client.SyncRun, error)
+	CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error)
 	CloudCancelSourceRun(context.Context, uint64, string) (client.SyncRun, error)
 	CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
 	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
@@ -1008,7 +1008,16 @@ func (h *desktopIPCHandler) sourceRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = value
 	}
-	items, err := h.ctrl.CloudSourceRuns(r.Context(), sourceID, limit)
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offset", "offset must be zero or greater")
+			return
+		}
+		offset = value
+	}
+	items, err := h.ctrl.CloudSourceRuns(r.Context(), sourceID, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

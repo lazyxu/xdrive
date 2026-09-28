@@ -217,6 +217,17 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := db.Create(&activeRun).Error; err != nil {
 		t.Fatal(err)
 	}
+	pagedRes := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/runs?limit=1&offset=1", created.ID),
+		tokenA, nil, http.StatusOK)
+	var pagedRuns []syncRunDTO
+	if err := json.Unmarshal(pagedRes.Body.Bytes(), &pagedRuns); err != nil {
+		t.Fatal(err)
+	}
+	if len(pagedRuns) != 1 || pagedRuns[0].ID != run.ID {
+		t.Fatalf("unexpected paged source runs: %+v", pagedRuns)
+	}
+	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/runs?offset=-1", created.ID),
+		tokenA, nil, http.StatusBadRequest)
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", created.ID), tokenA,
 		nil, http.StatusConflict, map[string]string{"If-Match": `"2"`})
 	activeFinished := now.Add(3 * time.Minute)

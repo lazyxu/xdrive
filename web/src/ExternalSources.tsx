@@ -43,6 +43,7 @@ import type {
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRow,
+  ExternalSourceRun,
   ExternalSourceScheduleType,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
@@ -58,6 +59,8 @@ type SourceSettingsValues = {
   ignore_rules?: string
   cookie?: string
 }
+const SOURCE_HISTORY_PAGE_SIZE = 20
+
 type CreateSourceValues = {
   kind: SupportedExternalSourceKind
   name: string
@@ -125,6 +128,10 @@ export default function ExternalSourcesPanel({
   const [failedItemsLoading, setFailedItemsLoading] = useState(false)
   const [failedItemsOpen, setFailedItemsOpen] = useState(false)
   const [failedItemsLimitReached, setFailedItemsLimitReached] = useState(false)
+  const [historyRuns, setHistoryRuns] = useState<ExternalSourceRun[]>([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyHasNext, setHistoryHasNext] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
@@ -186,6 +193,33 @@ export default function ExternalSourcesPanel({
     }, 1500)
     return () => window.clearInterval(timer)
   }, [open, rows, load])
+  const loadRunHistory = useCallback(async (sourceID: number, page: number, silent = false) => {
+    const nextPage = Math.max(1, Math.trunc(page))
+    if (!silent) setHistoryLoading(true)
+    try {
+      const offset = (nextPage - 1) * SOURCE_HISTORY_PAGE_SIZE
+      const runs = await api.sourceRuns(sourceID, SOURCE_HISTORY_PAGE_SIZE + 1, offset)
+      setHistoryRuns(runs.slice(0, SOURCE_HISTORY_PAGE_SIZE))
+      setHistoryHasNext(runs.length > SOURCE_HISTORY_PAGE_SIZE)
+      setHistoryPage(nextPage)
+    } catch (error) {
+      onError(error)
+    } finally {
+      if (!silent) setHistoryLoading(false)
+    }
+  }, [api, onError])
+
+  useEffect(() => {
+    if (
+      !open || !selected || historyPage !== 1 ||
+      (selected.latestRun?.status !== 'running' && !selected.source.run_requested_at)
+    ) return
+    const timer = window.setInterval(() => {
+      void loadRunHistory(selected.source.id, 1, true)
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [open, selected, historyPage, loadRunHistory])
+
   const openSynologyGuide = (source: ExternalSource) => {
     setGuideSource(source)
     void api.me()
@@ -468,7 +502,11 @@ export default function ExternalSourcesPanel({
     setFailedItems([])
     setFailedItemsOpen(false)
     setFailedItemsLimitReached(false)
+    setHistoryRuns([])
+    setHistoryPage(1)
+    setHistoryHasNext(false)
     setFailedItemsLoading(true)
+    void loadRunHistory(row.source.id, 1)
     try {
       const items = await api.sourceItems(row.source.id, 'error', 1000, 0)
       setFailedItems(items)
@@ -485,10 +523,12 @@ export default function ExternalSourcesPanel({
     setFailedItems([])
     setFailedItemsOpen(false)
     setFailedItemsLimitReached(false)
+    setHistoryRuns([])
+    setHistoryPage(1)
+    setHistoryHasNext(false)
   }
 
   const selectedDetail = selected ? externalSourceDetailView(selected) : null
-  const selectedRunDetail = selected?.latestRun ? externalSourceRunDetailView(selected.latestRun) : null
   const selectedCard = selected ? externalSourceCardView(selected) : null
 
   return (
@@ -523,7 +563,7 @@ export default function ExternalSourcesPanel({
                   <div className="external-source-time">{card.lastActivityLabel}：{formatExternalSourceTime(card.lastActivityAt)}</div>
                   <div className="external-source-card-meta">
                     <div className="external-source-stats">{stats}</div>
-                    {row.source.last_error && (
+                    {row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' && (
                       <Space size={4}>
                         <Typography.Text type="danger" ellipsis={{ tooltip: row.source.last_error }} style={{ maxWidth: 360 }}>
                           {row.source.last_error}
@@ -616,48 +656,110 @@ export default function ExternalSourcesPanel({
               )}
             </Descriptions>
 
-            <Divider orientation="left">最近一次运行</Divider>
-            {selectedRunDetail?.progress && (
-              <MuiBox sx={{ mb: 2, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
-                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
-                  <MuiTypography variant="body2">{selectedRunDetail.progress.label}</MuiTypography>
-                  {selected?.latestRun?.status === 'running' && (
-                    <MuiButton
+            <Divider orientation="left">同步历史</Divider>
+            <Spin spinning={historyLoading}>
+              {historyRuns.length > 0 ? (
+                <Stack spacing={1}>
+                  {historyRuns.map((run, index) => {
+                    const runDetail = externalSourceRunDetailView(run)
+                    const canCancel = run.status === 'running' && selected.latestRun?.id === run.id
+                    return (
+                      <Accordion key={run.id} disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
+                        <AccordionSummary>
+                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ width: '100%', pr: 1 }}>
+                            <MuiBox>
+                              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                                <MuiTypography variant="body2" sx={{ fontWeight: 700 }}>
+                                  #{(historyPage - 1) * SOURCE_HISTORY_PAGE_SIZE + index + 1} · {runDetail.statusLabel}
+                                </MuiTypography>
+                                <Chip size="small" label={runDetail.modeLabel} />
+                                <Chip size="small" label={runDetail.triggerLabel} />
+                              </Stack>
+                              <MuiTypography variant="caption" color="text.secondary">
+                                {formatExternalSourceTime(runDetail.startedAt)}
+                                {runDetail.finishedAt ? ' → ' + formatExternalSourceTime(runDetail.finishedAt) : ' → 进行中'}
+                                {' · ' + runDetail.durationLabel}
+                              </MuiTypography>
+                            </MuiBox>
+                            <Stack direction="row" spacing={1}>
+                              <MuiTypography variant="caption">成功 {runDetail.successItems.toLocaleString('zh-CN')}</MuiTypography>
+                              <MuiTypography variant="caption" color={runDetail.failedItems > 0 ? 'error' : 'text.secondary'}>
+                                失败 {runDetail.failedItems.toLocaleString('zh-CN')}
+                              </MuiTypography>
+                            </Stack>
+                          </Stack>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          {runDetail.progress && (
+                            <MuiBox sx={{ mb: 1.5 }}>
+                              <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
+                                <MuiTypography variant="body2">{runDetail.progress.label}</MuiTypography>
+                                {canCancel && (
+                                  <MuiButton
+                                    size="small"
+                                    color="warning"
+                                    variant="outlined"
+                                    disabled={runDetail.progress.cancelling || cancellingRunID === run.id}
+                                    onClick={() => void cancelRun(selected)}
+                                  >
+                                    {runDetail.progress.cancelling || cancellingRunID === run.id ? '正在取消…' : '停止'}
+                                  </MuiButton>
+                                )}
+                              </Stack>
+                              <LinearProgress
+                                variant={runDetail.progress.percent === undefined ? 'indeterminate' : 'determinate'}
+                                value={runDetail.progress.percent ?? 0}
+                              />
+                              {runDetail.progress.activePath && (
+                                <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                                  当前文件：{runDetail.progress.activePath}
+                                </MuiTypography>
+                              )}
+                            </MuiBox>
+                          )}
+                          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+                            <Descriptions.Item label="运行 ID"><Typography.Text copyable>{run.id}</Typography.Text></Descriptions.Item>
+                            <Descriptions.Item label="耗时">{runDetail.durationLabel}</Descriptions.Item>
+                            <Descriptions.Item label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</Descriptions.Item>
+                            <Descriptions.Item label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</Descriptions.Item>
+                            <Descriptions.Item label="成功项">{runDetail.successItems.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                            <Descriptions.Item label="失败项">{runDetail.failedItems.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                            {runDetail.metrics.map((metric) => (
+                              <Descriptions.Item key={metric.key} label={metric.label}>
+                                {metric.items.toLocaleString('zh-CN')} 项
+                                {metric.bytes === undefined ? '' : ' · ' + formatSize(metric.bytes)}
+                              </Descriptions.Item>
+                            ))}
+                          </Descriptions>
+                          <MuiAlert severity={runDetail.error ? 'error' : 'success'} sx={{ mt: 1.5 }}>
+                            运行日志：{runDetail.error || '无错误日志'}
+                          </MuiAlert>
+                        </AccordionDetails>
+                      </Accordion>
+                    )
+                  })}
+                  <Stack direction="row" spacing={1} justifyContent="center" alignItems="center" sx={{ pt: 0.5 }}>
+                    <Button
                       size="small"
-                      color="warning"
-                      variant="outlined"
-                      disabled={selectedRunDetail.progress.cancelling || cancellingRunID === selected.latestRun.id}
-                      onClick={() => void cancelRun(selected)}
+                      disabled={historyLoading || historyPage <= 1}
+                      onClick={() => void loadRunHistory(selected.source.id, historyPage - 1)}
                     >
-                      {selectedRunDetail.progress.cancelling || cancellingRunID === selected.latestRun.id ? '正在取消…' : '停止'}
-                    </MuiButton>
-                  )}
+                      上一页
+                    </Button>
+                    <Typography.Text type="secondary">第 {historyPage} 页 · 每页 {SOURCE_HISTORY_PAGE_SIZE} 条</Typography.Text>
+                    <Button
+                      size="small"
+                      disabled={historyLoading || !historyHasNext}
+                      onClick={() => void loadRunHistory(selected.source.id, historyPage + 1)}
+                    >
+                      下一页
+                    </Button>
+                  </Stack>
                 </Stack>
-                <LinearProgress
-                  variant={selectedRunDetail.progress.percent === undefined ? 'indeterminate' : 'determinate'}
-                  value={selectedRunDetail.progress.percent ?? 0}
-                />
-                {selectedRunDetail.progress.activePath && (
-                  <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                    当前文件：{selectedRunDetail.progress.activePath}
-                  </MuiTypography>
-                )}
-              </MuiBox>
-            )}
-            {selectedRunDetail ? (
-              <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="运行状态">{selectedRunDetail.statusLabel}</Descriptions.Item>
-                <Descriptions.Item label="开始时间">{formatExternalSourceTime(selectedRunDetail.startedAt)}</Descriptions.Item>
-                {selectedRunDetail.metrics.map((metric) => (
-                  <Descriptions.Item key={metric.key} label={metric.label}>
-                    {metric.items.toLocaleString('zh-CN')} 项
-                    {metric.bytes === undefined ? '' : ` · ${formatSize(metric.bytes)}`}
-                  </Descriptions.Item>
-                ))}
-              </Descriptions>
-            ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无运行记录" />
-            )}
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={historyLoading ? '正在加载运行历史' : '尚无运行记录'} />
+              )}
+            </Spin>
 
             {failedItemsLoading && (
               <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>

@@ -234,7 +234,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			return err
 		}
 		if err := tx.Model(&meta.Source{}).Where("id = ?", source.ID).
-			Updates(map[string]any{"last_run_at": now, "run_requested_at": nil, "updated_at": now}).Error; err != nil {
+			Updates(map[string]any{"last_run_at": now, "run_requested_at": nil, "last_error": "", "updated_at": now}).Error; err != nil {
 			return err
 		}
 		created = true
@@ -991,7 +991,14 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		finished := now
 		run.Status = status
 		run.CheckpointAfter = req.Checkpoint
-		run.Error = req.Error
+		runError := strings.TrimSpace(req.Error)
+		if runError == "" && status == meta.SyncRunStatusPartial {
+			runError = fmt.Sprintf("%d source items failed", summary.FailedItems)
+		}
+		if runError == "" && status == meta.SyncRunStatusFailed {
+			runError = "source run " + status
+		}
+		run.Error = runError
 		run.ActiveTransferPath = ""
 		run.ActiveTransferBytes = 0
 		run.ActiveTransferTotal = 0
@@ -1011,14 +1018,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		} else if status == meta.SyncRunStatusCancelled {
 			sourceUpdates["last_error"] = ""
 		} else {
-			msg := req.Error
-			if msg == "" && status == meta.SyncRunStatusPartial {
-				msg = fmt.Sprintf("%d source items failed", summary.FailedItems)
-			}
-			if msg == "" {
-				msg = "source run " + status
-			}
-			sourceUpdates["last_error"] = msg
+			sourceUpdates["last_error"] = run.Error
 		}
 		if err := tx.Model(&meta.Source{}).Where("id = ?", source.ID).Updates(sourceUpdates).Error; err != nil {
 			return err
