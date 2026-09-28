@@ -233,7 +233,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"bash scripts/test-server-chunk-storage.sh",
 		"bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image",
 		"bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image",
-		"bash scripts/ci/export-docker-image.sh xdrive/web:test dist/web-image",
 		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
 		"-f deploy/Caddy.Dockerfile",
 		"-t xdrive/caddy:test .",
@@ -245,7 +244,6 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"npm ci --no-audit --no-fund",
 		"npm run lint",
 		"npm run build",
-		"docker build --build-arg \"VERSION=$XDRIVE_RELEASE_VERSION\" -f web/Dockerfile -t xdrive/web:test .",
 	} {
 		if !strings.Contains(githubText, command) {
 			t.Errorf("GitHub CI is missing parity command %q", command)
@@ -354,7 +352,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobTextContains(t, gitlab, "server-validation",
 		"bash scripts/ci/install-docker-cli.sh",
 	)
-	for _, jobName := range []string{"server-image", "caddy-image", "server-backup", "web"} {
+	for _, jobName := range []string{"server-image", "caddy-image", "server-backup"} {
 		assertGitLabJobTextContains(t, gitlab, jobName,
 			"bash scripts/ci/install-docker-cli.sh --docker-only",
 		)
@@ -443,15 +441,16 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go-windows",
 		"server-validation",
 		"server-image",
-		"caddy-image",
 		"web",
 	} {
 		assertGitHubJobNeeds(t, github, job, nil)
 		assertGitLabJobNeeds(t, gitlab, job, nil)
 	}
+	assertGitHubJobNeeds(t, github, "caddy-image", []string{"web"})
+	assertGitLabJobNeeds(t, gitlab, "caddy-image", []string{"web"})
 	assertGitHubJobNeeds(t, github, "server-backup", []string{"server-image"})
 	assertGitLabJobNeeds(t, gitlab, "server-backup", []string{"server-image"})
-	assertGitHubJobNeeds(t, github, "server-rootless-e2e", []string{"server-image", "web"})
+	assertGitHubJobNeeds(t, github, "server-rootless-e2e", []string{"server-image", "caddy-image"})
 	assertGitHubJobNeeds(t, github, "test-linux-artifact", []string{"package-linux-client"})
 	assertGitHubJobNeeds(t, github, "test-source-agent-artifact", []string{"build-source-agent"})
 	assertGitHubJobNeeds(t, github, "test-windows-rollback-artifact", []string{"package-windows-client"})
@@ -500,10 +499,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 
 	requireRaw(t, "GitHub exact server image artifact contract", githubRaw,
 		"name: xdrive-server-image",
-		"name: xdrive-web-image",
+		"name: xdrive-web-dist",
 		"name: xdrive-caddy-image",
 		"path: dist/server-image",
-		"path: dist/web-image",
+		"path: web/dist",
 		"path: dist/caddy-image",
 		"compression-level: 0",
 		"bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test",
@@ -511,7 +510,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "GitHub real Rootless Docker gate", githubRaw,
 		"server-rootless-e2e:",
 		"runs-on: ubuntu-24.04",
-		"needs: [server-image, web]",
+		"needs: [server-image, caddy-image]",
 		"https://get.docker.com/rootless",
 		"FORCE_ROOTLESS_INSTALL=1",
 		"SKIP_IPTABLES=1",
@@ -521,12 +520,12 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"loginctl enable-linger",
 		`systemctl restart "user@$user_id.service"`,
 		"DBUS_SESSION_BUS_ADDRESS",
-		"bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/web-image",
+		"bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/caddy-image",
 		"- server-rootless-e2e",
 	)
 	requireRaw(t, "GitLab exact server image artifact contract", gitlabRaw,
 		"dist/server-image/",
-		"dist/web-image/",
+		"web/dist/",
 		"dist/caddy-image/",
 		"- job: server-image",
 		"artifacts: true",
@@ -824,7 +823,6 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"server-doctor.sh",
 		"xdrive-server",
 		"docker-compose.yml",
-		"Caddyfile",
 		"xdrive.env.example",
 		"SHA256SUMS.txt",
 	}
@@ -837,12 +835,18 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		}
 	}
 
-	for _, imageName := range []string{"xdrive-server", "xdrive-web", "xdrive-caddy"} {
+	for _, imageName := range []string{"xdrive-server", "xdrive-caddy"} {
 		if !strings.Contains(githubRelease, imageName) {
 			t.Errorf("GitHub release contract is missing image %q", imageName)
 		}
 		if !strings.Contains(gitlabReleaseScripts, imageName) {
 			t.Errorf("GitLab release contract is missing image %q", imageName)
+		}
+	}
+
+	for _, retired := range []string{"xdrive-web", "xdrive-web-image", "xdrive/web:test"} {
+		if strings.Contains(githubRelease+"\n"+gitlabReleaseScripts, retired) {
+			t.Errorf("retired Web runtime image leaked into release contract: %q", retired)
 		}
 	}
 
@@ -892,7 +896,6 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"Verify single-installer distribution contract",
 		"pattern: xdrive-*-image",
 		"load_exact xdrive-server-image xdrive/server:test",
-		"load_exact xdrive-web-image xdrive/web:test",
 		"load_exact xdrive-caddy-image xdrive/caddy:test",
 		"Load and verify exact images tested by CI",
 		"Push exact tested images in parallel",
@@ -939,7 +942,6 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"promote-server-images:",
 		"publish-release:",
 		"- job: server-image",
-		"- job: web",
 		"- job: caddy-image",
 		"- job: package-linux-client",
 		"- job: package-windows-client",

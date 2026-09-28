@@ -143,13 +143,17 @@ env_value() {
 run_case stable --channel stable
 [[ "$(env_value "$TMP/stable" XD_RELEASE_CHANNEL)" == "stable" ]]
 [[ "$(env_value "$TMP/stable" XD_SERVER_IMAGE)" == "ghcr.io/lazyxu/xdrive-server:$STABLE_TAG" ]]
-[[ "$(env_value "$TMP/stable" XD_WEB_IMAGE)" == "ghcr.io/lazyxu/xdrive-web:$STABLE_TAG" ]]
+[[ "$(env_value "$TMP/stable" XD_CADDY_IMAGE)" == "ghcr.io/lazyxu/xdrive-caddy:$STABLE_TAG" ]]
 grep -q "Resolved stable release: $STABLE_TAG" "$TMP/stable.out"
 
 run_case master --channel master
 [[ "$(env_value "$TMP/master" XD_RELEASE_CHANNEL)" == "master" ]]
 [[ "$(env_value "$TMP/master" XD_SERVER_IMAGE)" == "ghcr.io/lazyxu/xdrive-server:sha-$SHORT_SHA" ]]
-[[ "$(env_value "$TMP/master" XD_WEB_IMAGE)" == "ghcr.io/lazyxu/xdrive-web:sha-$SHORT_SHA" ]]
+[[ "$(env_value "$TMP/master" XD_CADDY_IMAGE)" == "ghcr.io/lazyxu/xdrive-caddy:sha-$SHORT_SHA" ]]
+if grep -q '^XD_WEB_IMAGE=' "$TMP/master/config/.env"; then
+  echo "master channel must not persist XD_WEB_IMAGE" >&2
+  exit 1
+fi
 [[ "$(env_value "$TMP/master" XD_RELEASE_COMMIT)" == "$FULL_SHA" ]]
 grep -q "Resolved latest fully published master snapshot: $SHORT_SHA" "$TMP/master.out"
 
@@ -177,7 +181,6 @@ run_case mirror --channel master
 unset XD_IMAGE_REGISTRY
 [[ "$(env_value "$TMP/mirror" XD_IMAGE_REGISTRY)" == "registry.example.test/team" ]]
 [[ "$(env_value "$TMP/mirror" XD_SERVER_IMAGE)" == "registry.example.test/team/xdrive-server:sha-$SHORT_SHA" ]]
-[[ "$(env_value "$TMP/mirror" XD_WEB_IMAGE)" == "registry.example.test/team/xdrive-web:sha-$SHORT_SHA" ]]
 [[ "$(env_value "$TMP/mirror" XD_CADDY_IMAGE)" == "registry.example.test/team/xdrive-caddy:sha-$SHORT_SHA" ]]
 
 run_case gitlab-master --source gitlab --channel master

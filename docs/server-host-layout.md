@@ -12,8 +12,7 @@ The default xDrive server home is:
 ~/.xd/
 ├── config/
 │   ├── .env
-│   ├── docker-compose.yml
-│   └── Caddyfile
+│   └── docker-compose.yml
 ├── bin/
 │   ├── xdrive-server
 │   ├── server-backup.sh
@@ -53,8 +52,7 @@ For backward compatibility, the historical environment variable `XD_CONFIG_DIR` 
 Contains declarative deployment configuration only.
 
 - `.env`: secrets, release source/channel, image names, resource limits and host data paths.
-- `docker-compose.yml`: installed Compose definition.
-- `Caddyfile`: installed reverse-proxy configuration.
+- `docker-compose.yml`: installed Compose definition. The Caddy/Web configuration and React build are embedded in the versioned `xdrive-caddy` image.
 
 The directory is private to the installing user. `.env` is always mode `0600`.
 
@@ -181,7 +179,7 @@ If `/usr/local/bin` is not writable, the supported command remains `~/.xd/bin/xd
 
 ## Legacy layout migration
 
-Existing installations may use the historical flat layout:
+Existing installations may use the historical flat layout. Historical Caddyfile files are retained only long enough for transactional rollback while upgrading to the merged Caddy/Web image:
 
 ```text
 ~/.xd/.env

@@ -89,22 +89,14 @@ env_value() {
 }
 
 compose() {
-  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  fi
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 container_report() {
   local service="$1" id state health image
   id="$(compose ps -q "$service" 2>/dev/null | head -n1 || true)"
   if [[ -z "$id" ]]; then
-    if [[ "$service" == "caddy" && -z "$(env_value XD_DOMAIN)" ]]; then
-      record PASS "container $service" "not enabled in HTTP/private mode"
-    else
-      record FAIL "container $service" "container not found"
-    fi
+    record FAIL "container $service" "container not found"
     return
   fi
   state="$(docker inspect "$id" --format '{{.State.Status}}' </dev/null 2>/dev/null || true)"
@@ -227,7 +219,7 @@ else
 fi
 
 if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>&1; then
-  for service in postgres server web caddy; do
+  for service in postgres server worker caddy; do
     container_report "$service"
   done
 
@@ -260,10 +252,8 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
 
   volume_report postgres /var/lib/postgresql/data
   volume_report server /data
-  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-    volume_report caddy /data
-    volume_report caddy /config
-  fi
+  volume_report caddy /data
+  volume_report caddy /config
 fi
 
 files_dir="$(env_value XD_FILES_DATA_DIR)"
@@ -379,8 +369,7 @@ fi
 echo
 echo "---- recent container logs (last 100 lines, redacted) ----"
 if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>&1; then
-  services=(postgres server web)
-  [[ -n "$domain" ]] && services+=(caddy)
+  services=(postgres server worker caddy)
   compose logs --tail=100 --no-color "${services[@]}" 2>&1 | redact_stream || true
 else
   echo "logs unavailable because Docker/Compose configuration is incomplete"

@@ -1,0 +1,5 @@
+import /etc/caddy/Caddyfile.common
+
+:80 {
+	import xdrive_app
+}

@@ -333,7 +333,6 @@ jobs:
           POSTGRES_PASSWORD: ci-postgres-password
           XD_JWT_SECRET: ci-jwt-secret-that-is-long-enough
           XD_SERVER_IMAGE: ghcr.io/lazyxu/xdrive-server:edge
-          XD_WEB_IMAGE: ghcr.io/lazyxu/xdrive-web:edge
           XD_CADDY_IMAGE: ghcr.io/lazyxu/xdrive-caddy:edge
         run: |
           bash -n deploy/install-server.sh
@@ -430,19 +429,24 @@ jobs:
             -e 's|@RELEASE_CHANNEL@|master|g' \
             -e 's|@RELEASE_COMMIT@|0123456789abcdef0123456789abcdef01234567|g' \
             -e 's|@UPDATE_SOURCE@|github|g' \
-            -e 's|@CADDY_BUILD_ID@|test-caddy-build|g' \
             deploy/install-server.sh > "$generated"
           bash -n "$generated"
           grep -q 'sha-0123456789ab' "$generated"
           grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
           grep -q 'BUILT_SOURCE="${XD_BUILT_SOURCE:-github}"' "$generated"
-          grep -q 'BUILT_CADDY_ID="${XD_BUILT_CADDY_ID:-test-caddy-build}"' "$generated"
           rm -f "$generated"
 
           grep -q 'pattern: xdrive-\*-image' .github/workflows/release.yml
           grep -q 'load_exact xdrive-server-image xdrive/server:test' .github/workflows/release.yml
-          grep -q 'load_exact xdrive-web-image xdrive/web:test' .github/workflows/release.yml
           grep -q 'load_exact xdrive-caddy-image xdrive/caddy:test' .github/workflows/release.yml
+          if grep -q 'xdrive-web-image\|xdrive/web:test\|xdrive-web:' .github/workflows/release.yml deploy/docker-compose.yml; then
+            echo "runtime Web image/container must be removed after Web -> Caddy merge" >&2
+            exit 1
+          fi
+          grep -q 'container_name: xdrive-postgres' deploy/docker-compose.yml
+          grep -q 'container_name: xdrive-server' deploy/docker-compose.yml
+          grep -q 'container_name: xdrive-worker' deploy/docker-compose.yml
+          grep -q 'container_name: xdrive-caddy' deploy/docker-compose.yml
           grep -q 'Load and verify exact images tested by CI' .github/workflows/release.yml
           grep -q 'Push exact tested images in parallel' .github/workflows/release.yml
           grep -q 'docker push "$remote" &' .github/workflows/release.yml
@@ -532,7 +536,7 @@ jobs:
           compression-level: 0
 
   server-rootless-e2e:
-    needs: [server-image, web]
+    needs: [server-image, caddy-image]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -543,8 +547,8 @@ jobs:
           path: dist/server-image
       - uses: actions/download-artifact@v4
         with:
-          name: xdrive-web-image
-          path: dist/web-image
+          name: xdrive-caddy-image
+          path: dist/caddy-image
       - name: Install Rootless Docker prerequisites
         shell: bash
         run: |
@@ -613,21 +617,30 @@ jobs:
           grep "^$user_name:" /etc/subgid
       - name: Real Rootless Docker install/status/doctor E2E
         shell: bash
-        run: bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/web-image
+        run: bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/caddy-image
 
   caddy-image:
+    needs: web
     runs-on: ubuntu-latest
     # Dockerfile defaults keep GitHub on official Go infrastructure; GitLab
     # overrides the same build arguments for its runner network.
     steps:
       - uses: actions/checkout@v4
-      - name: Build and validate exact Caddy image
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-web-dist
+          path: web/dist
+      - name: Build and validate exact Caddy/Web image
         shell: bash
         run: |
           set -euo pipefail
           source scripts/ci/client-artifact-version.sh
+          test -f web/dist/index.html
           docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
           docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
+          docker run --rm xdrive/caddy:test test -f /srv/index.html
+          docker run --rm xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.http --adapter caddyfile
+          docker run --rm -e XD_DOMAIN=drive.example.test -e ALIYUN_ACCESS_KEY_ID=test -e ALIYUN_ACCESS_KEY_SECRET=test xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
           bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image
       - uses: actions/upload-artifact@v4
         with:
@@ -867,21 +880,12 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
-      - name: Build and validate exact web image
-        working-directory: .
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/ci/client-artifact-version.sh
-          docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f web/Dockerfile -t xdrive/web:test .
-          bash scripts/ci/export-docker-image.sh xdrive/web:test dist/web-image
       - uses: actions/upload-artifact@v4
         with:
-          name: xdrive-web-image
-          path: dist/web-image
+          name: xdrive-web-dist
+          path: web/dist
           if-no-files-found: error
           retention-days: 2
-          compression-level: 0
 
 
   final-gate:

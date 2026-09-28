@@ -59,10 +59,10 @@ assert(
 assert((appSource.match(/src=\{xDriveBrandIcon\}/g) || []).length === 3, 'Web must use the shared master icon in all three brand lockups')
 assert(!appSource.includes('src="/xdrive-icon-master.svg"'), 'Web must not reference a stale public master-icon path')
 
-const dockerfile = fs.readFileSync(path.join(repo, 'web', 'Dockerfile'), 'utf8')
+const caddyDockerfile = fs.readFileSync(path.join(repo, 'deploy', 'Caddy.Dockerfile'), 'utf8')
 assert(
-  dockerfile.includes('COPY assets/icon/ /app/assets/icon/'),
-  'Web Docker build must copy shared icon assets before Vite resolves the master SVG and public derivatives',
+  caddyDockerfile.includes('COPY web/dist/ /srv/'),
+  'Merged Caddy/Web image must copy the CI-built Web dist into /srv',
 )
 
 console.log('xDrive Web icon assets passed validation')

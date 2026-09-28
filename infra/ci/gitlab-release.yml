@@ -52,7 +52,6 @@ release-assets:
       - release/server-doctor.sh
       - release/xdrive-server
       - release/docker-compose.yml
-      - release/Caddyfile
       - release/xdrive.env.example
 
 publish-server-images:
@@ -65,8 +64,6 @@ publish-server-images:
     - job: final-gate
       artifacts: false
     - job: server-image
-      artifacts: true
-    - job: web
       artifacts: true
     - job: caddy-image
       artifacts: true
