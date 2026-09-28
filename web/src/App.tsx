@@ -223,7 +223,7 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
         return
       }
       if (err.status === 507 && err.message.includes('quota_exceeded')) {
-        message.error('存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。')
+        message.error('剩余存储配额不足（包含进行中上传的预占空间）。请释放空间、等待/取消其他上传，或联系管理员提高配额。')
         return
       }
       if (err.status === 507 && err.message.includes('storage_capacity_exceeded')) {
@@ -461,11 +461,12 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
                 title={
                   quota.quota_bytes === 0
                     ? `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)} · 服务器磁盘可用 ${formatSize(quota.disk_available_bytes ?? quota.available_bytes)} · 点击查看 CAS 统计`
-                    : `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)} · 可用空间 ${formatSize(quota.available_bytes)} · 点击查看 CAS 统计`
+                    : `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)}${quota.reserved_bytes > 0 ? ` · 上传预占 ${formatSize(quota.reserved_bytes)}` : ''} · 可用空间 ${formatSize(quota.available_bytes)} · 点击查看 CAS 统计`
                 }
               >
                 <Button type="text" icon={<DatabaseOutlined />} onClick={() => setStorageStatsScope('self')} className="logout-button">
-                  存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)} · 可用 {formatSize(quota.available_bytes)}
+                  存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}
+                  {quota.reserved_bytes > 0 ? ` · 上传预占 ${formatSize(quota.reserved_bytes)}` : ''} · 可用 {formatSize(quota.available_bytes)}
                 </Button>
               </Tooltip>
             )}

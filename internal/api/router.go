@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,15 +17,19 @@ import (
 )
 
 type Server struct {
-	DB               *gorm.DB
-	Store            storage.Store
-	Auth             auth.Manager
-	RefreshTTL       time.Duration
-	AllowedOrigin    string
-	MaxUploadBytes   int64
-	ConnectorSecrets *connectorsecret.Keyring
-	credentialTest   sourceCredentialTester
-	obs              *serverObservability
+	DB                        *gorm.DB
+	Store                     storage.Store
+	Auth                      auth.Manager
+	RefreshTTL                time.Duration
+	AllowedOrigin             string
+	MaxUploadBytes            int64
+	SourceRunFailureRetention time.Duration
+	ConnectorSecrets          *connectorsecret.Keyring
+	credentialTest            sourceCredentialTester
+	obs                       *serverObservability
+	stagingCacheMu            sync.Mutex
+	stagingCacheAt            time.Time
+	stagingCache              uploadStagingInventory
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -77,6 +82,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/source-credentials/test", s.testSourceCredential)
 
 	authed.GET("/sources", s.listSources)
+	authed.GET("/sources/overview", s.listSourceOverview)
 	authed.POST("/sources", s.createSource)
 	authed.GET("/sources/:id", s.getSource)
 	authed.PATCH("/sources/:id", s.updateSource)
@@ -110,6 +116,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/storage/history", s.adminStorageHistory)
 	admin.GET("/storage/staging", s.adminUploadStaging)
 	admin.POST("/storage/staging/cleanup", s.adminCleanupUploadStaging)
+	admin.GET("/storage/staging/cleanup-runs", s.adminStagingCleanupRuns)
+	admin.GET("/storage/staging/cleanup-runs/:runID/failures", s.adminStagingCleanupFailures)
 	admin.POST("/users", s.adminCreateUser)
 	admin.PATCH("/users/:id", s.adminUpdateUser)
 	admin.DELETE("/users/:id", s.adminDeleteUser)

@@ -56,6 +56,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{},
+		&meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -209,6 +210,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	server.invalidateUploadStagingSnapshot()
 
 	request(t, router, http.MethodGet, "/api/v1/admin/storage/staging", tokenA, nil, http.StatusForbidden)
 	request(t, router, http.MethodPost, "/api/v1/admin/storage/staging/cleanup", tokenA, strings.NewReader(`{}`), http.StatusForbidden)
@@ -256,6 +258,25 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if cleanup.DeletedFiles != 2 || cleanup.DeletedBytes != 17 || cleanup.FailedFiles != 0 {
 		t.Fatalf("unexpected staging cleanup: %+v", cleanup)
 	}
+	if cleanup.RunID == 0 {
+		t.Fatal("staging cleanup did not persist a run id")
+	}
+	cleanupRunsRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/staging/cleanup-runs?limit=20&offset=0", adminToken, nil, http.StatusOK)
+	var cleanupRuns []stagingCleanupRunDTO
+	if err := json.Unmarshal(cleanupRunsRes.Body.Bytes(), &cleanupRuns); err != nil {
+		t.Fatal(err)
+	}
+	if len(cleanupRuns) == 0 || cleanupRuns[0].ID != cleanup.RunID || cleanupRuns[0].Status != meta.StagingCleanupStatusSuccess {
+		t.Fatalf("unexpected staging cleanup history: %+v", cleanupRuns)
+	}
+	cleanupFailuresRes := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/admin/storage/staging/cleanup-runs/%d/failures?limit=20&offset=0", cleanup.RunID), adminToken, nil, http.StatusOK)
+	var cleanupFailures []stagingCleanupFailureDTO
+	if err := json.Unmarshal(cleanupFailuresRes.Body.Bytes(), &cleanupFailures); err != nil {
+		t.Fatal(err)
+	}
+	if len(cleanupFailures) != 0 {
+		t.Fatalf("successful cleanup unexpectedly has failures: %+v", cleanupFailures)
+	}
 	if cleanup.Stats.OrphanFiles != 0 || cleanup.Stats.ExpiredSessions != 0 ||
 		cleanup.Stats.RecentUntrackedFiles != 1 || cleanup.Stats.MissingPartFiles != 1 ||
 		cleanup.Stats.StagingFiles != 2 || cleanup.Stats.StagingBytes != 11 {
@@ -266,6 +287,32 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	if _, err := store.Open(context.Background(), knownKey); err != nil {
 		t.Fatalf("active staging was deleted: %v", err)
+	}
+
+	failedOrphanKey := storage.UploadStagingDir + "/orphan/delete-fails"
+	if _, err := store.Put(context.Background(), failedOrphanKey, strings.NewReader("cannot-delete")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(storageRoot, filepath.FromSlash(failedOrphanKey)), oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	server.Store = &stagingDeleteFailStore{Local: store, failKey: failedOrphanKey}
+	server.invalidateUploadStagingSnapshot()
+	failedCleanupRes := request(t, router, http.MethodPost, "/api/v1/admin/storage/staging/cleanup", adminToken, strings.NewReader(`{}`), http.StatusOK)
+	var failedCleanup uploadStagingCleanupDTO
+	if err := json.Unmarshal(failedCleanupRes.Body.Bytes(), &failedCleanup); err != nil {
+		t.Fatal(err)
+	}
+	if failedCleanup.RunID == 0 || failedCleanup.FailedFiles != 1 {
+		t.Fatalf("expected one persisted cleanup failure: %+v", failedCleanup)
+	}
+	failedRunRes := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/admin/storage/staging/cleanup-runs/%d/failures?limit=20&offset=0", failedCleanup.RunID), adminToken, nil, http.StatusOK)
+	var failedDetails []stagingCleanupFailureDTO
+	if err := json.Unmarshal(failedRunRes.Body.Bytes(), &failedDetails); err != nil {
+		t.Fatal(err)
+	}
+	if len(failedDetails) != 1 || failedDetails[0].StorageKey != failedOrphanKey || !strings.Contains(failedDetails[0].Error, "forced staging delete failure") {
+		t.Fatalf("unexpected cleanup failure details: %+v", failedDetails)
 	}
 
 	healthRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/health", adminToken, nil, http.StatusOK)
@@ -348,4 +395,16 @@ func storageBucketByKey(stats storageStatsDTO, key string) storageSizeBucketDTO 
 		}
 	}
 	return storageSizeBucketDTO{}
+}
+
+type stagingDeleteFailStore struct {
+	*storage.Local
+	failKey string
+}
+
+func (s *stagingDeleteFailStore) DeleteStaging(ctx context.Context, key string) error {
+	if key == s.failKey {
+		return fmt.Errorf("forced staging delete failure")
+	}
+	return s.Local.DeleteStaging(ctx, key)
 }

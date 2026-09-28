@@ -17,6 +17,7 @@ type Config struct {
 	StorageRoot                  string
 	AllowedOrigin                string
 	MaxUploadBytes               int64
+	SourceRunFailureRetention    time.Duration
 	ConnectorSecretActiveVersion string
 	ConnectorSecretKeys          string
 	ConnectorSecretLegacyKey     string
@@ -40,6 +41,7 @@ func Load() (Config, error) {
 		StorageRoot:                  env("XD_STORAGE_ROOT", "./data"),
 		AllowedOrigin:                env("XD_ALLOWED_ORIGIN", "http://localhost:5173"),
 		MaxUploadBytes:               20 << 30,
+		SourceRunFailureRetention:    180 * 24 * time.Hour,
 		ConnectorSecretActiveVersion: strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_ACTIVE_VERSION")),
 		ConnectorSecretKeys:          strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEYS")),
 		ConnectorSecretLegacyKey:     strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEY")),
@@ -67,6 +69,13 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid XD_MAX_UPLOAD_BYTES %q", v)
 		}
 		cfg.MaxUploadBytes = n
+	}
+	if v := strings.TrimSpace(os.Getenv("XD_SOURCE_RUN_FAILURE_RETENTION_DAYS")); v != "" {
+		days, err := strconv.Atoi(v)
+		if err != nil || days < 0 || days > 3650 {
+			return Config{}, fmt.Errorf("invalid XD_SOURCE_RUN_FAILURE_RETENTION_DAYS %q", v)
+		}
+		cfg.SourceRunFailureRetention = time.Duration(days) * 24 * time.Hour
 	}
 	return cfg, nil
 }

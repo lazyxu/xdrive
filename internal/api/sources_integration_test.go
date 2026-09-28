@@ -128,6 +128,14 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if len(sourcesA) != 1 || sourcesA[0].ID != created.ID {
 		t.Fatalf("unexpected owner source list: %+v", sourcesA)
 	}
+	overviewRes := request(t, router, http.MethodGet, "/api/v1/sources/overview", tokenA, nil, http.StatusOK)
+	var overview []sourceOverviewDTO
+	if err := json.Unmarshal(overviewRes.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	if len(overview) != 1 || overview[0].Source.ID != created.ID || overview[0].LatestRun != nil || overview[0].Credential != nil {
+		t.Fatalf("unexpected source overview: %+v", overview)
+	}
 	listB := request(t, router, http.MethodGet, "/api/v1/sources", tokenB, nil, http.StatusOK)
 	var sourcesB []sourceDTO
 	if err := json.Unmarshal(listB.Body.Bytes(), &sourcesB); err != nil {

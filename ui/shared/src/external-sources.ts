@@ -106,6 +106,12 @@ export interface ExternalSourceCredentialTestResult {
   account_name?: string
 }
 
+export interface ExternalSourceOverview {
+  source: ExternalSource
+  latest_run?: ExternalSourceRun
+  credential?: ExternalSourceCredentialStatus
+}
+
 export interface ExternalSourceRow {
   source: ExternalSource
   latestRun?: ExternalSourceRun

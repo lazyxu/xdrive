@@ -88,11 +88,12 @@ func main() {
 	}
 	srv := &api.Server{
 		DB: db, Store: store,
-		Auth:             auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
-		RefreshTTL:       cfg.RefreshTokenTTL,
-		AllowedOrigin:    cfg.AllowedOrigin,
-		MaxUploadBytes:   cfg.MaxUploadBytes,
-		ConnectorSecrets: connectorSecrets,
+		Auth:                      auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
+		RefreshTTL:                cfg.RefreshTokenTTL,
+		AllowedOrigin:             cfg.AllowedOrigin,
+		MaxUploadBytes:            cfg.MaxUploadBytes,
+		SourceRunFailureRetention: cfg.SourceRunFailureRetention,
+		ConnectorSecrets:          connectorSecrets,
 	}
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
 	defer janitorCancel()
@@ -105,7 +106,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`UPDATE xd_nodes SET revision = 1 WHERE revision = 0`).Error; err != nil {
@@ -134,6 +135,42 @@ func migrate(db *gorm.DB) error {
 		)
 		WHERE s.status = 'active' AND s.expires_at > NOW()
 	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE xd_upload_sessions
+		SET quota_reserved_bytes = 0
+		WHERE status <> 'active' OR expires_at <= NOW()
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE xd_upload_sessions AS s
+		SET quota_reserved_bytes = CASE
+			WHEN u.quota_bytes <= 0 THEN 0
+			WHEN s.sha256 <> '' AND EXISTS (
+				SELECT 1
+				FROM (
+					SELECT f.storage_key
+					FROM xd_files f
+					JOIN xd_nodes n ON n.id = f.node_id
+					WHERE n.owner_id = s.owner_id
+					UNION ALL
+					SELECT v.storage_key
+					FROM xd_file_versions v
+					JOIN xd_nodes n ON n.id = v.node_id
+					WHERE n.owner_id = s.owner_id
+				) refs
+				WHERE refs.storage_key = '.xdrive-blobs/sha256/' || substring(lower(s.sha256), 1, 2) || '/' || lower(s.sha256)
+			) THEN 0
+			ELSE s.total_size
+		END
+		FROM xd_users u
+		WHERE u.id = s.owner_id AND s.status = 'active' AND s.expires_at > NOW()
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_upload_sessions_owner_active_quota ON xd_upload_sessions(owner_id, expires_at) WHERE status = 'active' AND quota_reserved_bytes > 0`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`DROP INDEX IF EXISTS idx_xd_files_storage_key`).Error; err != nil {

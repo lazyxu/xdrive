@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Col, Modal, Popconfirm, Row, Space, Statistic, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { Accordion, AccordionDetails, AccordionSummary, Chip, Stack, Typography as MuiTypography } from '@mui/material'
 import type {
   StorageDecision,
   StorageHealth,
@@ -8,6 +9,8 @@ import type {
   StorageHistoryPoint,
   StorageSizeBucket,
   StorageStats,
+  StagingCleanupFailure,
+  StagingCleanupRun,
   UploadStagingDetail,
   UploadStagingFile,
 } from '../../ui/shared/src'
@@ -133,9 +136,13 @@ export default function StorageStatsModal({
   const [history, setHistory] = useState<StorageHistory | null>(null)
   const [staging, setStaging] = useState<UploadStagingDetail | null>(null)
   const [stagingPage, setStagingPage] = useState(1)
+  const [stagingCursors, setStagingCursors] = useState<string[]>([''])
   const [stagingLoading, setStagingLoading] = useState(false)
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const [stagingNotice, setStagingNotice] = useState('')
+  const [cleanupRuns, setCleanupRuns] = useState<StagingCleanupRun[]>([])
+  const [cleanupFailures, setCleanupFailures] = useState<Record<number, StagingCleanupFailure[]>>({})
+  const [cleanupFailureLoading, setCleanupFailureLoading] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -149,7 +156,10 @@ export default function StorageStatsModal({
     setHistory(null)
     setStaging(null)
     setStagingPage(1)
+    setStagingCursors([''])
     setStagingNotice('')
+    setCleanupRuns([])
+    setCleanupFailures({})
     const request = scope === 'global' ? api.adminStorageStats() : api.storageStats()
     const healthRequest = scope === 'global'
       ? api.adminStorageHealth().catch(() => null)
@@ -158,15 +168,20 @@ export default function StorageStatsModal({
       ? api.adminStorageHistory(30).catch(() => null)
       : Promise.resolve(null)
     const stagingRequest = scope === 'global'
-      ? api.adminUploadStaging(STAGING_PAGE_SIZE, 0).catch(() => null)
+      ? api.adminUploadStaging(STAGING_PAGE_SIZE, '').catch(() => null)
       : Promise.resolve(null)
-    void Promise.all([request, healthRequest, historyRequest, stagingRequest])
-      .then(([value, healthValue, historyValue, stagingValue]) => {
+    const cleanupRunsRequest = scope === 'global'
+      ? api.adminStagingCleanupRuns(20, 0).catch(() => [])
+      : Promise.resolve([])
+    void Promise.all([request, healthRequest, historyRequest, stagingRequest, cleanupRunsRequest])
+      .then(([value, healthValue, historyValue, stagingValue, cleanupRunValues]) => {
         if (!active) return
         setStats(value)
         setHealth(healthValue)
         setHistory(historyValue)
         setStaging(stagingValue)
+        setCleanupRuns(cleanupRunValues)
+        if (stagingValue?.next_cursor) setStagingCursors(['', stagingValue.next_cursor])
       })
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
@@ -176,15 +191,36 @@ export default function StorageStatsModal({
   const loadStagingPage = async (page: number) => {
     if (scope !== 'global') return
     const nextPage = Math.max(1, Math.trunc(page))
+    const cursor = nextPage === 1 ? '' : stagingCursors[nextPage - 1]
+    if (cursor === undefined) return
     setStagingLoading(true)
     try {
-      const value = await api.adminUploadStaging(STAGING_PAGE_SIZE, (nextPage - 1) * STAGING_PAGE_SIZE)
+      const value = await api.adminUploadStaging(STAGING_PAGE_SIZE, cursor)
       setStaging(value)
       setStagingPage(nextPage)
+      setStagingCursors((current) => {
+        const next = [...current]
+        next[nextPage - 1] = cursor
+        if (value.next_cursor) next[nextPage] = value.next_cursor
+        return next.slice(0, value.next_cursor ? nextPage + 1 : nextPage)
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载上传临时空间失败')
     } finally {
       setStagingLoading(false)
+    }
+  }
+
+  const loadCleanupFailures = async (run: StagingCleanupRun) => {
+    if (run.failed_files <= 0 || cleanupFailures[run.id] !== undefined) return
+    setCleanupFailureLoading(run.id)
+    try {
+      const failures = await api.adminStagingCleanupFailures(run.id, 100, 0)
+      setCleanupFailures((current) => ({ ...current, [run.id]: failures }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载 staging 清理失败明细失败')
+    } finally {
+      setCleanupFailureLoading((current) => current === run.id ? null : current)
     }
   }
 
@@ -196,13 +232,17 @@ export default function StorageStatsModal({
       let notice = '已清理 ' + result.deleted_files.toLocaleString() + ' 个临时文件，共 ' + formatSize(result.deleted_bytes)
       if (result.failed_files > 0) notice += '；失败 ' + result.failed_files.toLocaleString() + ' 个'
       setStagingNotice(notice)
-      const [nextStats, nextStaging] = await Promise.all([
+      const [nextStats, nextStaging, nextCleanupRuns] = await Promise.all([
         api.adminStorageStats(),
-        api.adminUploadStaging(STAGING_PAGE_SIZE, 0),
+        api.adminUploadStaging(STAGING_PAGE_SIZE, ''),
+        api.adminStagingCleanupRuns(20, 0),
       ])
       setStats(nextStats)
       setStaging(nextStaging)
+      setCleanupRuns(nextCleanupRuns)
+      setCleanupFailures({})
       setStagingPage(1)
+      setStagingCursors(nextStaging.next_cursor ? ['', nextStaging.next_cursor] : [''])
     } catch (err) {
       setError(err instanceof Error ? err.message : '清理上传临时空间失败')
     } finally {
@@ -329,6 +369,75 @@ export default function StorageStatsModal({
                   </Space>
                 </div>
               )}
+            </>
+          )}
+
+          {scope === 'global' && cleanupRuns.length > 0 && (
+            <>
+              <Typography.Title level={5} style={{ margin: 0 }}>最近 staging 清理</Typography.Title>
+              <Stack spacing={1}>
+                {cleanupRuns.map((run) => (
+                  <Accordion
+                    key={run.id}
+                    disableGutters
+                    onChange={(_, expanded) => {
+                      if (expanded) void loadCleanupFailures(run)
+                    }}
+                  >
+                    <AccordionSummary>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} sx={{ width: '100%' }}>
+                        <MuiTypography variant="body2" sx={{ fontWeight: 600 }}>
+                          {new Date(run.started_at).toLocaleString()}
+                        </MuiTypography>
+                        <Chip
+                          size="small"
+                          label={run.trigger === 'manual' ? '手动' : '自动'}
+                          variant="outlined"
+                        />
+                        <Chip
+                          size="small"
+                          label={run.status === 'success' ? '成功' : run.status === 'partial' ? '部分失败' : '失败'}
+                          color={run.status === 'success' ? 'success' : run.status === 'partial' ? 'warning' : 'error'}
+                        />
+                        <MuiTypography variant="body2" color="text.secondary">
+                          删除 {run.deleted_files.toLocaleString()} 个 / {formatSize(run.deleted_bytes)}
+                          {run.failed_files > 0 ? ` · 失败 ${run.failed_files.toLocaleString()} 个` : ''}
+                        </MuiTypography>
+                      </Stack>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      {run.error && (
+                        <MuiTypography variant="body2" color="error" sx={{ mb: 1 }}>
+                          {run.error}
+                        </MuiTypography>
+                      )}
+                      {run.failed_files <= 0 ? (
+                        <MuiTypography variant="body2" color="text.secondary">本次没有文件级失败。</MuiTypography>
+                      ) : cleanupFailureLoading === run.id && cleanupFailures[run.id] === undefined ? (
+                        <MuiTypography variant="body2" color="text.secondary">正在加载失败文件…</MuiTypography>
+                      ) : (
+                        <Stack spacing={1}>
+                          {(cleanupFailures[run.id] ?? []).map((failure) => (
+                            <div key={failure.id}>
+                              <MuiTypography variant="body2" sx={{ wordBreak: 'break-all' }}>
+                                {failure.storage_key} · {formatSize(failure.size)}
+                              </MuiTypography>
+                              <MuiTypography variant="caption" color="error" sx={{ wordBreak: 'break-word' }}>
+                                {failure.error}
+                              </MuiTypography>
+                            </div>
+                          ))}
+                          {(cleanupFailures[run.id]?.length ?? 0) < run.failed_files && (
+                            <MuiTypography variant="caption" color="text.secondary">
+                              当前显示前 {cleanupFailures[run.id]?.length ?? 0} 条，完整失败数量为 {run.failed_files.toLocaleString()}。
+                            </MuiTypography>
+                          )}
+                        </Stack>
+                      )}
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </Stack>
             </>
           )}
 

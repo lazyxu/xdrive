@@ -157,24 +157,25 @@ const (
 )
 
 type UploadSession struct {
-	ID               string  `gorm:"size:36;primaryKey"`
-	OwnerID          uint64  `gorm:"not null;index"`
-	ParentID         *uint64 `gorm:"index"`
-	NodeID           *uint64 `gorm:"index"`
-	Name             string  `gorm:"size:255"`
-	ExpectedRevision uint64
-	TotalSize        int64  `gorm:"not null"`
-	ChunkSize        int64  `gorm:"not null"`
-	ChunkCount       int    `gorm:"not null"`
-	SHA256           string `gorm:"size:64;index"`
-	ExpectedMD5      string `gorm:"size:32;index"`
-	ResumeKey        string `gorm:"size:128;index"`
-	Status           string `gorm:"size:16;not null;index"`
-	ReservedBytes    int64  `gorm:"not null;default:0"`
-	ResultNodeID     *uint64
-	ExpiresAt        time.Time `gorm:"not null;index"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                 string  `gorm:"size:36;primaryKey"`
+	OwnerID            uint64  `gorm:"not null;index"`
+	ParentID           *uint64 `gorm:"index"`
+	NodeID             *uint64 `gorm:"index"`
+	Name               string  `gorm:"size:255"`
+	ExpectedRevision   uint64
+	TotalSize          int64  `gorm:"not null"`
+	ChunkSize          int64  `gorm:"not null"`
+	ChunkCount         int    `gorm:"not null"`
+	SHA256             string `gorm:"size:64;index"`
+	ExpectedMD5        string `gorm:"size:32;index"`
+	ResumeKey          string `gorm:"size:128;index"`
+	Status             string `gorm:"size:16;not null;index"`
+	ReservedBytes      int64  `gorm:"not null;default:0"`
+	QuotaReservedBytes int64  `gorm:"not null;default:0"`
+	ResultNodeID       *uint64
+	ExpiresAt          time.Time `gorm:"not null;index"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 func (UploadSession) TableName() string { return "xd_upload_sessions" }
@@ -193,6 +194,45 @@ type UploadPart struct {
 }
 
 func (UploadPart) TableName() string { return "xd_upload_parts" }
+
+const (
+	StagingCleanupTriggerManual  = "manual"
+	StagingCleanupTriggerJanitor = "janitor"
+
+	StagingCleanupStatusSuccess = "success"
+	StagingCleanupStatusPartial = "partial"
+	StagingCleanupStatusFailed  = "failed"
+)
+
+type StagingCleanupRun struct {
+	ID           uint64     `gorm:"primaryKey"`
+	Trigger      string     `gorm:"size:16;not null;index"`
+	Status       string     `gorm:"size:16;not null;index"`
+	DeletedFiles int64      `gorm:"not null;default:0"`
+	DeletedBytes int64      `gorm:"not null;default:0"`
+	FailedFiles  int64      `gorm:"not null;default:0"`
+	Error        string     `gorm:"type:text"`
+	StartedAt    time.Time  `gorm:"not null;index"`
+	FinishedAt   *time.Time `gorm:"index"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (StagingCleanupRun) TableName() string { return "xd_staging_cleanup_runs" }
+
+type StagingCleanupFailure struct {
+	ID         uint64    `gorm:"primaryKey"`
+	RunID      uint64    `gorm:"not null;index"`
+	StorageKey string    `gorm:"size:1024;not null"`
+	Size       int64     `gorm:"not null;default:0"`
+	Error      string    `gorm:"type:text;not null"`
+	FailedAt   time.Time `gorm:"not null;index"`
+	CreatedAt  time.Time
+
+	Run StagingCleanupRun `gorm:"foreignKey:RunID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (StagingCleanupFailure) TableName() string { return "xd_staging_cleanup_failures" }
 
 var reservedWindowsNames = map[string]struct{}{
 	"CON": {}, "PRN": {}, "AUX": {}, "NUL": {},

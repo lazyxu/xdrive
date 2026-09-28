@@ -172,15 +172,11 @@ export default function ExternalSourcesPanel({
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const sources = await api.sources()
-      const next = await Promise.all(sources.map(async (source) => {
-        const [runs, credential] = await Promise.all([
-          api.sourceRuns(source.id, 1),
-          externalSourceConnectorProfile(source.kind).credential === 'cookie'
-            ? api.sourceCredentialStatus(source.id)
-            : Promise.resolve(undefined),
-        ])
-        return { source, latestRun: runs[0], credential }
+      const overview = await api.sourceOverview()
+      const next: ExternalSourceRow[] = overview.map((item) => ({
+        source: item.source,
+        latestRun: item.latest_run,
+        credential: item.credential,
       }))
       setRows(next)
       setSelected((current) => current

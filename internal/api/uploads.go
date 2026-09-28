@@ -55,21 +55,22 @@ type uploadPartDTO struct {
 }
 
 type uploadSessionDTO struct {
-	ID               string          `json:"id"`
-	ParentID         *uint64         `json:"parent_id,omitempty"`
-	NodeID           *uint64         `json:"node_id,omitempty"`
-	Name             string          `json:"name,omitempty"`
-	Size             int64           `json:"size"`
-	ChunkSize        int64           `json:"chunk_size"`
-	ChunkCount       int             `json:"chunk_count"`
-	SHA256           string          `json:"sha256,omitempty"`
-	MD5              string          `json:"md5,omitempty"`
-	ResumeKey        string          `json:"resume_key,omitempty"`
-	ExpectedRevision uint64          `json:"expected_revision,omitempty"`
-	Status           string          `json:"status"`
-	ExpiresAt        time.Time       `json:"expires_at"`
-	Received         []uploadPartDTO `json:"received_chunks"`
-	Result           *nodeDTO        `json:"result,omitempty"`
+	ID                 string          `json:"id"`
+	ParentID           *uint64         `json:"parent_id,omitempty"`
+	NodeID             *uint64         `json:"node_id,omitempty"`
+	Name               string          `json:"name,omitempty"`
+	Size               int64           `json:"size"`
+	ChunkSize          int64           `json:"chunk_size"`
+	ChunkCount         int             `json:"chunk_count"`
+	SHA256             string          `json:"sha256,omitempty"`
+	MD5                string          `json:"md5,omitempty"`
+	ResumeKey          string          `json:"resume_key,omitempty"`
+	ExpectedRevision   uint64          `json:"expected_revision,omitempty"`
+	Status             string          `json:"status"`
+	QuotaReservedBytes int64           `json:"quota_reserved_bytes"`
+	ExpiresAt          time.Time       `json:"expires_at"`
+	Received           []uploadPartDTO `json:"received_chunks"`
+	Result             *nodeDTO        `json:"result,omitempty"`
 }
 
 func (s *Server) createUploadSession(c *gin.Context) {
@@ -172,7 +173,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				} else if req.SHA256 != "" {
 					quotaKey, _ = storage.ContentAddressedKey(req.SHA256)
 				}
-				if _, err := s.ensureQuotaForStorageKey(s.DB, uid, existing.TotalSize, quotaKey, false); err != nil {
+				if _, err := s.ensureQuotaForStorageKeyExcludingSession(s.DB, uid, existing.TotalSize, quotaKey, existing.ID, false); err != nil {
 					if !writeQuotaError(c, err) {
 						fail(c, http.StatusInternalServerError, "quota check failed")
 					}
@@ -193,18 +194,29 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					updates["expected_md5"] = req.MD5
 					existing.ExpectedMD5 = req.MD5
 				}
+				var quotaReservation int64
 				if err := s.DB.Transaction(func(tx *gorm.DB) error {
+					var err error
+					quotaReservation, err = s.reserveUploadQuota(tx, uid, existing.ID, existing.TotalSize, quotaKey)
+					if err != nil {
+						return err
+					}
+					updates["quota_reserved_bytes"] = quotaReservation
 					if err := s.reserveUploadCapacity(c.Request.Context(), tx, existing.ID, requiredReservation); err != nil {
 						return err
 					}
 					return tx.Model(&meta.UploadSession{}).Where("id = ? AND status = ?", existing.ID, meta.UploadStatusActive).Updates(updates).Error
 				}); err != nil {
+					if writeQuotaError(c, err) {
+						return
+					}
 					if !writeStorageCapacityError(c, err) {
 						fail(c, http.StatusInternalServerError, "reserve upload capacity failed")
 					}
 					return
 				}
 				existing.ReservedBytes = requiredReservation
+				existing.QuotaReservedBytes = quotaReservation
 				s.writeUploadSession(c, existing, http.StatusOK)
 				return
 			}
@@ -312,6 +324,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	requiredReservation := uploadReservationBytes(session.TotalSize, reusable)
 	session.ReservedBytes = requiredReservation
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		quotaReservation, err := s.reserveUploadQuota(tx, uid, "", session.TotalSize, quotaKey)
+		if err != nil {
+			return err
+		}
+		session.QuotaReservedBytes = quotaReservation
 		if err := s.reserveUploadCapacity(c.Request.Context(), tx, "", requiredReservation); err != nil {
 			return err
 		}
@@ -323,6 +340,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		if writeQuotaError(c, err) {
+			return
+		}
 		if !writeStorageCapacityError(c, err) {
 			fail(c, http.StatusInternalServerError, "create upload session failed")
 		}
@@ -500,7 +520,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	if session.SHA256 != "" {
 		preflightKey, _ = storage.ContentAddressedKey(session.SHA256)
 	}
-	if _, err := s.ensureQuotaForStorageKey(s.DB, session.OwnerID, session.TotalSize, preflightKey, false); err != nil {
+	if _, err := s.ensureQuotaForStorageKeyExcludingSession(s.DB, session.OwnerID, session.TotalSize, preflightKey, session.ID, false); err != nil {
 		if !writeQuotaError(c, err) {
 			fail(c, http.StatusInternalServerError, "quota check failed")
 		}
@@ -619,8 +639,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
 		}
-		if _, err := s.ensureQuotaForStorageKey(
-			tx, currentSession.OwnerID, currentSession.TotalSize, casKey, true,
+		if _, err := s.ensureQuotaForStorageKeyExcludingSession(
+			tx, currentSession.OwnerID, currentSession.TotalSize, casKey, currentSession.ID, true,
 		); err != nil {
 			return err
 		}
@@ -694,7 +714,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		resultID := result.ID
 		if err := tx.Model(&meta.UploadSession{}).Where("id = ?", currentSession.ID).Updates(map[string]any{
 			"status": meta.UploadStatusFinalized, "result_node_id": resultID,
-			"sha256": actualHash, "reserved_bytes": 0, "updated_at": now,
+			"sha256": actualHash, "reserved_bytes": 0, "quota_reserved_bytes": 0, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
@@ -764,7 +784,7 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 		Size: session.TotalSize, ChunkSize: session.ChunkSize, ChunkCount: session.ChunkCount,
 		SHA256: session.SHA256, MD5: session.ExpectedMD5,
 		ResumeKey: session.ResumeKey, ExpectedRevision: session.ExpectedRevision,
-		Status: session.Status, ExpiresAt: session.ExpiresAt,
+		Status: session.Status, QuotaReservedBytes: session.QuotaReservedBytes, ExpiresAt: session.ExpiresAt,
 		Received: make([]uploadPartDTO, 0, len(parts)),
 	}
 	for _, part := range parts {
@@ -903,7 +923,7 @@ func (s *Server) StartUploadJanitor(ctx context.Context) {
 }
 
 func (s *Server) runStorageJanitorPass(ctx context.Context) {
-	if _, err := s.cleanupUploadStaging(ctx); err != nil {
+	if _, err := s.cleanupUploadStaging(ctx, meta.StagingCleanupTriggerJanitor); err != nil {
 		s.ensureObservability()
 		s.obs.logger.Warn("upload_staging_cleanup_failed", "error", err)
 	}
@@ -911,19 +931,47 @@ func (s *Server) runStorageJanitorPass(ctx context.Context) {
 		s.ensureObservability()
 		s.obs.logger.Warn("content_blob_gc_failed", "error", err)
 	}
+	if err := s.cleanupSourceRunFailureHistory(ctx); err != nil {
+		s.ensureObservability()
+		s.obs.logger.Warn("source_run_failure_retention_failed", "error", err)
+	}
+	if err := s.cleanupStagingCleanupHistory(ctx); err != nil {
+		s.ensureObservability()
+		s.obs.logger.Warn("staging_cleanup_history_retention_failed", "error", err)
+	}
 }
 
+const (
+	expiredUploadCleanupBatchSize  = 128
+	expiredUploadCleanupMaxBatches = 16
+)
+
 func (s *Server) cleanupExpiredUploads(ctx context.Context, uid uint64) error {
-	var sessions []meta.UploadSession
-	q := s.DB.Where("status IN ? AND expires_at < ?", []string{meta.UploadStatusActive, meta.UploadStatusFinalized}, time.Now())
-	if uid != 0 {
-		q = q.Where("owner_id = ?", uid)
-	}
-	if err := q.Limit(128).Find(&sessions).Error; err != nil {
-		return err
-	}
-	for _, session := range sessions {
-		_ = s.abortUploadSessionData(ctx, session)
+	for batch := 0; batch < expiredUploadCleanupMaxBatches; batch++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var sessions []meta.UploadSession
+		q := s.DB.WithContext(ctx).
+			Where("status IN ? AND expires_at < ?", []string{meta.UploadStatusActive, meta.UploadStatusFinalized}, time.Now()).
+			Order("expires_at ASC, id ASC")
+		if uid != 0 {
+			q = q.Where("owner_id = ?", uid)
+		}
+		if err := q.Limit(expiredUploadCleanupBatchSize).Find(&sessions).Error; err != nil {
+			return err
+		}
+		if len(sessions) == 0 {
+			return nil
+		}
+		for _, session := range sessions {
+			if err := s.abortUploadSessionData(ctx, session); err != nil {
+				return err
+			}
+		}
+		if len(sessions) < expiredUploadCleanupBatchSize {
+			return nil
+		}
 	}
 	return nil
 }

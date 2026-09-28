@@ -149,40 +149,21 @@ func TestUserQuotaCountsCurrentTrashAndHistory(t *testing.T) {
 	if err := json.Unmarshal(initRes.Body.Bytes(), &pending); err != nil {
 		t.Fatal(err)
 	}
+	if pending.QuotaReservedBytes != int64(len(pendingData)) {
+		t.Fatalf("quota reservation=%d want=%d", pending.QuotaReservedBytes, len(pendingData))
+	}
 	requestWithHeaders(t, router, http.MethodPut, fmt.Sprintf("/api/v1/uploads/%s/chunks/0", pending.ID),
 		userSession.AccessToken, bytes.NewReader(pendingData), http.StatusCreated,
 		map[string]string{"Content-Type": "application/octet-stream", "X-Chunk-SHA256": pendingHash})
-	// In-progress chunks are temporary staging data, not retained quota usage.
+	// Staging chunks are not retained usage, but the active session reserves its
+	// future retained bytes so another write cannot consume the same quota.
 	assertQuotaUsage(t, router, userSession.AccessToken, quotaUsageDTO{
-		QuotaBytes: 30, PhysicalUsedBytes: 13, LogicalFileBytes: 7, HistoryBytes: 6,
+		QuotaBytes: 30, PhysicalUsedBytes: 13, ReservedBytes: 10, LogicalFileBytes: 7, HistoryBytes: 6,
 	})
 
-	second := uploadQuotaTestFile(t, router, userSession.AccessToken, root.ID, "two.txt", "12345678", http.StatusCreated)
-	assertQuotaUsage(t, router, userSession.AccessToken, quotaUsageDTO{
-		QuotaBytes: 30, PhysicalUsedBytes: 21, LogicalFileBytes: 15, HistoryBytes: 6,
-	})
+	uploadQuotaTestFile(t, router, userSession.AccessToken, root.ID, "two.txt", "12345678", http.StatusInsufficientStorage)
 
-	// The session was admitted when space existed, but finalize is authoritative.
-	request(t, router, http.MethodPost, "/api/v1/uploads/"+pending.ID+"/finalize", userSession.AccessToken,
-		strings.NewReader(`{}`), http.StatusInsufficientStorage)
-
-	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", second.ID), userSession.AccessToken,
-		nil, http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", second.Revision)})
-	assertQuotaUsage(t, router, userSession.AccessToken, quotaUsageDTO{
-		QuotaBytes: 30, PhysicalUsedBytes: 21, LogicalFileBytes: 7, TrashBytes: 8, HistoryBytes: 6,
-	})
-	// Recycle-bin moves do not free quota.
-	request(t, router, http.MethodPost, "/api/v1/uploads/"+pending.ID+"/finalize", userSession.AccessToken,
-		strings.NewReader(`{}`), http.StatusInsufficientStorage)
-
-	trash = quotaTrash(t, router, userSession.AccessToken)
-	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/trash/%d", second.ID), userSession.AccessToken,
-		nil, http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", trash[second.ID].Revision)})
-	assertQuotaUsage(t, router, userSession.AccessToken, quotaUsageDTO{
-		QuotaBytes: 30, PhysicalUsedBytes: 13, LogicalFileBytes: 7, HistoryBytes: 6,
-	})
-
-	// Permanent deletion freed the eight retained bytes, so the existing session can finalize.
+	// Finalize excludes this session's own reservation and consumes it atomically.
 	finalRes := request(t, router, http.MethodPost, "/api/v1/uploads/"+pending.ID+"/finalize", userSession.AccessToken,
 		strings.NewReader(`{}`), http.StatusOK)
 	var finalized uploadSessionDTO
@@ -293,6 +274,7 @@ func assertQuotaUsage(t *testing.T, h http.Handler, token string, want quotaUsag
 	got := quotaUsageForTest(t, h, token)
 	if got.QuotaBytes != want.QuotaBytes ||
 		got.PhysicalUsedBytes != want.PhysicalUsedBytes ||
+		got.ReservedBytes != want.ReservedBytes ||
 		got.LogicalFileBytes != want.LogicalFileBytes ||
 		got.TrashBytes != want.TrashBytes ||
 		got.HistoryBytes != want.HistoryBytes ||
@@ -306,7 +288,7 @@ func assertQuotaUsage(t *testing.T, h http.Handler, token string, want quotaUsag
 		if got.DiskAvailableBytes != nil {
 			t.Fatalf("limited quota leaked disk_available_bytes=%d", *got.DiskAvailableBytes)
 		}
-		remaining := got.QuotaBytes - got.PhysicalUsedBytes
+		remaining := got.QuotaBytes - got.PhysicalUsedBytes - got.ReservedBytes
 		if remaining < 0 {
 			remaining = 0
 		}

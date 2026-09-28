@@ -60,6 +60,7 @@ export interface MeResult {
 export interface QuotaUsage {
   quota_bytes: number
   physical_used_bytes: number
+  reserved_bytes: number
   available_bytes: number
   disk_available_bytes?: number
   logical_file_bytes: number
@@ -108,13 +109,35 @@ export interface UploadStagingDetail {
   stats: UploadStagingStats
   orphans: UploadStagingFile[]
   has_more: boolean
+  next_cursor?: string
 }
 
 export interface UploadStagingCleanup {
+  run_id: number
   deleted_files: number
   deleted_bytes: number
   failed_files: number
   stats: UploadStagingStats
+}
+
+export interface StagingCleanupRun {
+  id: number
+  trigger: 'manual' | 'janitor' | string
+  status: 'success' | 'partial' | 'failed' | string
+  deleted_files: number
+  deleted_bytes: number
+  failed_files: number
+  error?: string
+  started_at: string
+  finished_at?: string
+}
+
+export interface StagingCleanupFailure {
+  id: number
+  storage_key: string
+  size: number
+  error: string
+  failed_at: string
 }
 
 export interface StorageStats {
@@ -200,6 +223,7 @@ export interface AdminUser {
   must_change_password: boolean
   quota_bytes: number
   physical_used_bytes: number
+  reserved_bytes: number
   available_bytes: number
   logical_file_bytes: number
   trash_bytes: number
