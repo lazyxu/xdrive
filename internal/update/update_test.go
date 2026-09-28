@@ -122,8 +122,14 @@ func TestCheckStableAndDownloadVerified(t *testing.T) {
 }
 
 func TestCheckMasterSnapshot(t *testing.T) {
-	const assetName = "xDriveSetup-amd64.exe"
-	const sha = "0123456789abcdef0123456789abcdef01234567"
+	const (
+		assetName = "xDriveSetup-amd64.exe"
+		target    = "0123456789abcdef0123456789abcdef01234567"
+		older     = "1111111111111111111111111111111111111111"
+		newer     = "2222222222222222222222222222222222222222"
+		divergent = "3333333333333333333333333333333333333333"
+		common    = "4444444444444444444444444444444444444444"
+	)
 
 	var server *httptest.Server
 	mux := http.NewServeMux()
@@ -138,7 +144,24 @@ func TestCheckMasterSnapshot(t *testing.T) {
 	})
 	mux.HandleFunc("/repos/lazyxu/xdrive/git/ref/tags/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"object": map[string]string{"sha": sha, "type": "commit"},
+			"object": map[string]string{"sha": target, "type": "commit"},
+		})
+	})
+	mux.HandleFunc("/repos/lazyxu/xdrive/compare/", func(w http.ResponseWriter, r *http.Request) {
+		var mergeBase string
+		switch {
+		case strings.Contains(r.URL.Path, older+"..."+target):
+			mergeBase = older
+		case strings.Contains(r.URL.Path, newer+"..."+target):
+			mergeBase = target
+		case strings.Contains(r.URL.Path, divergent+"..."+target):
+			mergeBase = common
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"merge_base_commit": map[string]string{"sha": mergeBase},
 		})
 	})
 	server = httptest.NewServer(mux)
@@ -147,22 +170,50 @@ func TestCheckMasterSnapshot(t *testing.T) {
 	checker := Checker{Repository: "lazyxu/xdrive", APIBase: server.URL, HTTP: server.Client()}
 	oldCommit := version.Commit
 	t.Cleanup(func() { version.Commit = oldCommit })
-	version.Commit = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-	result, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
+
+	version.Commit = older
+	forward, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.UpdateAvailable || result.Latest != "snapshot" || result.Commit != sha {
-		t.Fatalf("unexpected result: %+v", result)
+	if !forward.UpdateAvailable || forward.Latest != "snapshot" || forward.Commit != target {
+		t.Fatalf("forward snapshot=%+v", forward)
 	}
 
-	version.Commit = sha
+	version.Commit = target
 	current, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if current.UpdateAvailable {
 		t.Fatalf("same snapshot reported update: %+v", current)
+	}
+
+	version.Commit = newer
+	stale, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.UpdateAvailable {
+		t.Fatalf("older snapshot target must not downgrade current build: %+v", stale)
+	}
+
+	version.Commit = divergent
+	forked, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forked.UpdateAvailable {
+		t.Fatalf("divergent snapshot target must not replace current build: %+v", forked)
+	}
+
+	version.Commit = ""
+	legacy, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !legacy.UpdateAvailable {
+		t.Fatalf("legacy snapshot without commit must keep an upgrade path: %+v", legacy)
 	}
 
 	dev, err := checker.CheckChannel(context.Background(), "dev", assetName, ChannelMaster)

@@ -188,7 +188,10 @@ func checkGitLabTarget(ctx context.Context, current, assetName, channel string) 
 		if normalizeFullCommit(publishedCommit.ID) != result.Commit {
 			return result, fmt.Errorf("gitlab snapshot commit lookup did not match %s", result.Commit)
 		}
-		result.UpdateAvailable = !sameSnapshot(current, version.Metadata().Commit, result.Commit)
+		result.UpdateAvailable, err = gitLabSnapshotUpdateAvailable(ctx, checker, projectAPI, current, result.Commit)
+		if err != nil {
+			return result, err
+		}
 	}
 
 	result.ReleaseName = strings.TrimSpace(release.Name)
@@ -245,6 +248,47 @@ func gitLabCommitByRef(ctx context.Context, checker Checker, projectAPI, ref, cu
 	var commit gitLabCommit
 	requestURL := projectAPI + "/repository/commits/" + url.PathEscape(ref)
 	if err := checker.getJSONWithRetry(ctx, requestURL, current, "GitLab commit metadata", &commit); err != nil {
+		return commit, err
+	}
+	return commit, nil
+}
+
+func gitLabSnapshotUpdateAvailable(ctx context.Context, checker Checker, projectAPI, current, targetCommit string) (bool, error) {
+	if !IsSnapshotVersion(current) {
+		return true, nil
+	}
+	currentCommit := normalizeFullCommit(version.Metadata().Commit)
+	if currentCommit == "" {
+		// Preserve the upgrade path for legacy snapshot builds whose Agent did
+		// not embed a commit identifier.
+		return true, nil
+	}
+	targetCommit = normalizeFullCommit(targetCommit)
+	if targetCommit == "" {
+		return false, fmt.Errorf("gitlab snapshot target has invalid commit")
+	}
+	if currentCommit == targetCommit {
+		return false, nil
+	}
+
+	mergeBase, err := gitLabMergeBase(ctx, checker, projectAPI, currentCommit, targetCommit, current)
+	if err != nil {
+		return false, fmt.Errorf("verify gitlab snapshot ancestry: %w", err)
+	}
+	mergeBaseCommit := normalizeFullCommit(mergeBase.ID)
+	if mergeBaseCommit == "" {
+		return false, fmt.Errorf("gitlab snapshot ancestry response has invalid merge base")
+	}
+	return mergeBaseCommit == currentCommit, nil
+}
+
+func gitLabMergeBase(ctx context.Context, checker Checker, projectAPI, currentCommit, targetCommit, current string) (gitLabCommit, error) {
+	var commit gitLabCommit
+	query := url.Values{}
+	query.Add("refs[]", currentCommit)
+	query.Add("refs[]", targetCommit)
+	requestURL := projectAPI + "/repository/merge_base?" + query.Encode()
+	if err := checker.getJSONWithRetry(ctx, requestURL, current, "GitLab snapshot ancestry", &commit); err != nil {
 		return commit, err
 	}
 	return commit, nil

@@ -35,6 +35,8 @@ func TestGitLabSourceStableAndMasterAreSeparated(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.Contains(r.URL.Path, "/repository/merge_base"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})
 		case strings.Contains(r.URL.Path, "/repository/commits/"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": full})
 		case strings.Contains(r.URL.Path, "/releases/snapshot"):
@@ -95,6 +97,10 @@ func TestGitLabSourceMasterPrefersPublishedCommitMarker(t *testing.T) {
 	)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/repository/merge_base") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": staleTag})
+			return
+		}
 		if strings.Contains(r.URL.Path, "/repository/commits/") {
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": published})
 			return
@@ -121,6 +127,65 @@ func TestGitLabSourceMasterPrefersPublishedCommitMarker(t *testing.T) {
 	}
 	if result.Commit != published || !result.UpdateAvailable {
 		t.Fatalf("master=%+v", result)
+	}
+}
+
+func TestGitLabSnapshotRejectsOlderTargetAndAllowsLegacyUpgrade(t *testing.T) {
+	const (
+		target    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		newer     = "cccccccccccccccccccccccccccccccccccccccc"
+		divergent = "dddddddddddddddddddddddddddddddddddddddd"
+		common    = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/repository/merge_base"):
+			mergeBase := target
+			if refs := r.URL.Query()["refs[]"]; len(refs) == 2 && refs[0] == divergent {
+				mergeBase = common
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": mergeBase})
+		case strings.Contains(r.URL.Path, "/repository/commits/"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": target})
+		case strings.Contains(r.URL.Path, "/releases/snapshot"):
+			_ = json.NewEncoder(w).Encode(gitLabTestRelease("snapshot", "2026-09-28T12:00:00Z", target, server.URL))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("XD_UPDATE_GITLAB_BASE_URL", server.URL)
+	t.Setenv("XD_UPDATE_GITLAB_PROJECT", "xuliang/xdrive")
+	oldCommit := version.Commit
+	t.Cleanup(func() { version.Commit = oldCommit })
+
+	version.Commit = newer
+	stale, err := CheckAssetTargetFromSource(context.Background(), "snapshot", "pkg.bin", ChannelMaster, SourceGitLab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.UpdateAvailable {
+		t.Fatalf("older GitLab snapshot target must not downgrade current build: %+v", stale)
+	}
+
+	version.Commit = divergent
+	forked, err := CheckAssetTargetFromSource(context.Background(), "snapshot", "pkg.bin", ChannelMaster, SourceGitLab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forked.UpdateAvailable {
+		t.Fatalf("divergent GitLab snapshot target must not replace current build: %+v", forked)
+	}
+
+	version.Commit = ""
+	legacy, err := CheckAssetTargetFromSource(context.Background(), "snapshot", "pkg.bin", ChannelMaster, SourceGitLab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !legacy.UpdateAvailable {
+		t.Fatalf("legacy GitLab snapshot without commit must keep an upgrade path: %+v", legacy)
 	}
 }
 

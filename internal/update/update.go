@@ -99,6 +99,12 @@ type commitResponse struct {
 	SHA string `json:"sha"`
 }
 
+type compareResponse struct {
+	MergeBaseCommit struct {
+		SHA string `json:"sha"`
+	} `json:"merge_base_commit"`
+}
+
 func DefaultChecker() Checker {
 	repo := strings.TrimSpace(os.Getenv("XD_UPDATE_REPOSITORY"))
 	if repo == "" {
@@ -213,7 +219,10 @@ func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel st
 		}
 		result.Commit = sha
 		result.Latest = "snapshot"
-		result.UpdateAvailable = !sameSnapshot(current, version.Metadata().Commit, sha)
+		result.UpdateAvailable, err = c.snapshotUpdateAvailable(ctx, current, sha)
+		if err != nil {
+			return result, err
+		}
 	}
 
 	for _, a := range rel.Assets {
@@ -402,13 +411,37 @@ func (c Checker) snapshotCommit(ctx context.Context, current string) (string, er
 	return sha, nil
 }
 
-func sameSnapshot(current, currentCommit, targetCommit string) bool {
+func (c Checker) snapshotUpdateAvailable(ctx context.Context, current, targetCommit string) (bool, error) {
 	if !IsSnapshotVersion(current) {
-		return false
+		return true, nil
 	}
-	currentCommit = strings.ToLower(strings.TrimSpace(currentCommit))
-	targetCommit = strings.ToLower(strings.TrimSpace(targetCommit))
-	return len(currentCommit) == 40 && currentCommit == targetCommit
+	currentCommit := normalizeFullCommit(version.Metadata().Commit)
+	if currentCommit == "" {
+		// Legacy snapshot builds did not embed the commit. Keep allowing them to
+		// move forward so affected clients can install a metadata-aware build.
+		return true, nil
+	}
+	targetCommit = normalizeFullCommit(targetCommit)
+	if targetCommit == "" {
+		return false, fmt.Errorf("snapshot target has invalid commit")
+	}
+	if currentCommit == targetCommit {
+		return false, nil
+	}
+
+	requestURL := fmt.Sprintf("%s/repos/%s/compare/%s...%s",
+		c.APIBase, c.Repository, currentCommit, targetCommit)
+	var comparison compareResponse
+	if err := c.getJSONWithRetry(ctx, requestURL, current, "snapshot ancestry", &comparison); err != nil {
+		return false, fmt.Errorf("verify snapshot ancestry: %w", err)
+	}
+	mergeBase := normalizeFullCommit(comparison.MergeBaseCommit.SHA)
+	if mergeBase == "" {
+		return false, fmt.Errorf("snapshot ancestry response has invalid merge base")
+	}
+	// Only move forward. If the target is older or on a divergent history, the
+	// current commit cannot be the merge base and no update is offered.
+	return mergeBase == currentCommit, nil
 }
 
 // Compare compares release versions of the form vMAJOR.MINOR.PATCH.
