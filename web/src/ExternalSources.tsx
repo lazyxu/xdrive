@@ -62,6 +62,21 @@ type SourceSettingsValues = {
 }
 const SOURCE_HISTORY_PAGE_SIZE = 20
 const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
+const SOURCE_RUNNING_POLL_MS = 2000
+const SOURCE_REQUESTED_POLL_MS = 5000
+
+function sourceActivityPollDelay(rows: ExternalSourceRow[]) {
+  if (rows.some((row) => row.latestRun?.status === 'running')) return SOURCE_RUNNING_POLL_MS
+  if (rows.some((row) => row.source.run_requested_at)) return SOURCE_REQUESTED_POLL_MS
+  return null
+}
+
+function selectedSourcePollDelay(row: ExternalSourceRow | null) {
+  if (!row) return null
+  if (row.latestRun?.status === 'running') return SOURCE_RUNNING_POLL_MS
+  if (row.source.run_requested_at) return SOURCE_REQUESTED_POLL_MS
+  return null
+}
 
 type SourceRunFailurePage = {
   items: ExternalSourceRunFailure[]
@@ -258,11 +273,37 @@ export default function ExternalSourcesPanel({
   }, [open, load])
 
   useEffect(() => {
-    if (!open || !rows.some((row) => row.latestRun?.status === 'running' || row.source.run_requested_at)) return
-    const timer = window.setInterval(() => {
-      void load(true)
-    }, 1500)
-    return () => window.clearInterval(timer)
+    const delay = sourceActivityPollDelay(rows)
+    if (!open || delay === null) return
+
+    let stopped = false
+    let timer = 0
+    const tick = async () => {
+      if (stopped) return
+      if (document.visibilityState === 'visible') {
+        await load(true)
+      }
+      if (!stopped && document.visibilityState === 'visible') {
+        timer = window.setTimeout(() => { void tick() }, delay)
+      }
+    }
+    const schedule = (immediate = false) => {
+      window.clearTimeout(timer)
+      if (stopped || document.visibilityState !== 'visible') return
+      timer = window.setTimeout(() => { void tick() }, immediate ? 0 : delay)
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') schedule(true)
+      else window.clearTimeout(timer)
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    schedule()
+    return () => {
+      stopped = true
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [open, rows, load])
   const loadRunHistory = useCallback(async (sourceID: number, page: number, silent = false) => {
     const nextPage = Math.max(1, Math.trunc(page))
@@ -281,14 +322,37 @@ export default function ExternalSourcesPanel({
   }, [api, onError])
 
   useEffect(() => {
-    if (
-      !open || !selected || historyPage !== 1 ||
-      (selected.latestRun?.status !== 'running' && !selected.source.run_requested_at)
-    ) return
-    const timer = window.setInterval(() => {
-      void loadRunHistory(selected.source.id, 1, true)
-    }, 1500)
-    return () => window.clearInterval(timer)
+    const delay = selectedSourcePollDelay(selected)
+    if (!open || !selected || historyPage !== 1 || delay === null) return
+
+    let stopped = false
+    let timer = 0
+    const tick = async () => {
+      if (stopped) return
+      if (document.visibilityState === 'visible') {
+        await loadRunHistory(selected.source.id, 1, true)
+      }
+      if (!stopped && document.visibilityState === 'visible') {
+        timer = window.setTimeout(() => { void tick() }, delay)
+      }
+    }
+    const schedule = (immediate = false) => {
+      window.clearTimeout(timer)
+      if (stopped || document.visibilityState !== 'visible') return
+      timer = window.setTimeout(() => { void tick() }, immediate ? 0 : delay)
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') schedule(true)
+      else window.clearTimeout(timer)
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    schedule()
+    return () => {
+      stopped = true
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [open, selected, historyPage, loadRunHistory])
 
   const openSynologyGuide = (source: ExternalSource) => {
