@@ -608,21 +608,21 @@ gitlab_api_base() {
   printf '%s/api/v4/projects/%s\n' "${GITLAB_BASE_URL%/}" "$(gitlab_project_key)"
 }
 
-resolve_gitlab_ref_commit() {
-  local ref="$1" json full
-  [[ -n "$ref" ]] || {
-    echo "xDrive server installer: GitLab ref is required." >&2
-    return 1
-  }
-  if ! json="$(fetch_stdout "$(gitlab_api_base)/repository/commits/$ref")"; then
-    echo "xDrive server installer: could not resolve GitLab ref $ref." >&2
+resolve_gitlab_snapshot_commit() {
+  local json full
+  if ! json="$(fetch_stdout "$(gitlab_api_base)/releases/snapshot")"; then
+    echo "xDrive server installer: rolling GitLab snapshot is not fully published yet." >&2
     return 1
   fi
-  full="$(printf '%s\n' "$json" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{40}"' | head -n1 | grep -oE '[0-9a-fA-F]{40}' | tr '[:upper:]' '[:lower:]' || true)"
+  full="$(printf '%s\n' "$json" | grep -oE 'XDRIVE_RELEASE_COMMIT=[0-9a-fA-F]{40}' | head -n1 | cut -d= -f2 | tr '[:upper:]' '[:lower:]' || true)"
   [[ ${#full} -eq 40 ]] || {
-    echo "xDrive server installer: GitLab ref $ref did not resolve to a full commit SHA." >&2
+    echo "xDrive server installer: GitLab snapshot release does not identify its published commit." >&2
     return 1
   }
+  if ! fetch_stdout "$(gitlab_api_base)/repository/commits/$full" >/dev/null; then
+    echo "xDrive server installer: GitLab snapshot commit $full is unavailable." >&2
+    return 1
+  fi
   printf '%s\n' "$full"
 }
 
@@ -643,11 +643,6 @@ resolve_gitlab_latest_stable_tag() {
     return 1
   }
   printf '%s\n' "$tag"
-}
-
-verify_gitlab_release() {
-  local tag="$1"
-  fetch_stdout "$(gitlab_api_base)/releases/$tag" >/dev/null
 }
 
 resolve_gitlab_registry() {
@@ -705,11 +700,7 @@ resolve_install_source() {
   case "$channel" in
     master)
       if [[ "$requested_source" == "gitlab" ]]; then
-        verify_gitlab_release snapshot || {
-          echo "xDrive server installer: rolling GitLab snapshot is not fully published yet." >&2
-          return 1
-        }
-        full="$(resolve_gitlab_ref_commit snapshot)"
+        full="$(resolve_gitlab_snapshot_commit)"
         SOURCE_REF="$full"
         IMAGE_TAG="sha-${full:0:12}"
         BUILT_CHANNEL="master"

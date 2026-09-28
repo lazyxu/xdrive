@@ -6,10 +6,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/lazyxu/xdrive/internal/version"
 )
+
+var gitLabReleaseCommitMarker = regexp.MustCompile(`(?:^|[^A-Za-z0-9_])XDRIVE_RELEASE_COMMIT=([0-9a-fA-F]{40})(?:$|[^A-Za-z0-9_])`)
 
 const (
 	SourceGitHub = "github"
@@ -178,6 +181,13 @@ func checkGitLabTarget(ctx context.Context, current, assetName, channel string) 
 		if result.Commit == "" {
 			return result, fmt.Errorf("gitlab snapshot release does not identify its commit")
 		}
+		publishedCommit, err := gitLabCommitByRef(ctx, checker, projectAPI, result.Commit, current)
+		if err != nil {
+			return result, fmt.Errorf("gitlab snapshot commit %s is unavailable: %w", result.Commit, err)
+		}
+		if normalizeFullCommit(publishedCommit.ID) != result.Commit {
+			return result, fmt.Errorf("gitlab snapshot commit lookup did not match %s", result.Commit)
+		}
 		result.UpdateAvailable = !sameSnapshot(current, version.Metadata().Commit, result.Commit)
 	}
 
@@ -231,8 +241,24 @@ func gitLabReleaseByTag(ctx context.Context, checker Checker, projectAPI, tag, c
 	return release, nil
 }
 
+func gitLabCommitByRef(ctx context.Context, checker Checker, projectAPI, ref, current string) (gitLabCommit, error) {
+	var commit gitLabCommit
+	requestURL := projectAPI + "/repository/commits/" + url.PathEscape(ref)
+	if err := checker.getJSONWithRetry(ctx, requestURL, current, "GitLab commit metadata", &commit); err != nil {
+		return commit, err
+	}
+	return commit, nil
+}
+
 func gitLabReleaseCommit(release gitLabRelease) string {
-	full := strings.ToLower(strings.TrimSpace(release.Commit.ID))
+	if match := gitLabReleaseCommitMarker.FindStringSubmatch(release.Description); len(match) == 2 {
+		return normalizeFullCommit(match[1])
+	}
+	return normalizeFullCommit(release.Commit.ID)
+}
+
+func normalizeFullCommit(value string) string {
+	full := strings.ToLower(strings.TrimSpace(value))
 	if len(full) != 40 {
 		return ""
 	}

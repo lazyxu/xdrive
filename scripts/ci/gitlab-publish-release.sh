@@ -12,7 +12,7 @@ if [ -n "${CI_COMMIT_TAG:-}" ]; then
 else
   release_tag="snapshot"
   release_name="xDrive snapshot $short_sha"
-  release_notes="Rolling development snapshot from master at $CI_COMMIT_SHA."
+  release_notes="Rolling development snapshot from master at $CI_COMMIT_SHA. XDRIVE_RELEASE_COMMIT=$CI_COMMIT_SHA"
 fi
 
 files="
@@ -53,14 +53,14 @@ unset GITLAB_TOKEN GITLAB_ACCESS_TOKEN OAUTH_TOKEN || true
 export GLAB_ENABLE_CI_AUTOLOGIN=true
 
 if [ "$release_tag" = "snapshot" ]; then
-  # Replace the rolling development release/tag and remove legacy snapshot-<sha> objects.
+  # GitLab 17.x job tokens can manage releases but cannot mutate repository
+  # tags. The release commit marker above is therefore the authoritative
+  # rolling snapshot commit; the original snapshot tag is only its identity.
   glab api --method DELETE "projects/$CI_PROJECT_ID/releases/snapshot" >/dev/null 2>&1 || true
-  glab api --method DELETE "projects/$CI_PROJECT_ID/repository/tags/snapshot" >/dev/null 2>&1 || true
 
   legacy_tags="$(glab api --paginate "projects/$CI_PROJECT_ID/releases?per_page=100"     --jq '.[] | .tag_name' 2>/dev/null | grep -E '^snapshot-[0-9a-fA-F]{7,40}$' || true)"
   for legacy_tag in $legacy_tags; do
     glab api --method DELETE "projects/$CI_PROJECT_ID/releases/$legacy_tag" >/dev/null 2>&1 || true
-    glab api --method DELETE "projects/$CI_PROJECT_ID/repository/tags/$legacy_tag" >/dev/null 2>&1 || true
   done
 
   package_ids="$(glab api --paginate "projects/$CI_PROJECT_ID/packages?package_type=generic&per_page=100"     --jq '.[] | select(.name == "xdrive-build-packages") | "\(.id)|\(.version)"' 2>/dev/null     | grep -E '\|snapshot(-[0-9a-fA-F]{7,40})?$'     | cut -d'|' -f1 || true)"

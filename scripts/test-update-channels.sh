@@ -37,6 +37,11 @@ emit() {
 }
 
 case "$url" in
+  */api/v4/projects/xuliang%2Fxdrive/repository/commits/snapshot)
+    emit '{
+  "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}'
+    ;;
   */api/v4/projects/xuliang%2Fxdrive/repository/commits/*)
     emit '{
   "id": "abcdef0123456789abcdef0123456789abcdef01"
@@ -45,6 +50,7 @@ case "$url" in
   */api/v4/projects/xuliang%2Fxdrive/releases/snapshot)
     emit '{
   "tag_name": "snapshot",
+  "description": "Rolling development snapshot. XDRIVE_RELEASE_COMMIT=abcdef0123456789abcdef0123456789abcdef01",
   "commit": {"id":"abcdef0123456789abcdef0123456789abcdef01"}
 }'
     ;;

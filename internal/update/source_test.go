@@ -35,6 +35,8 @@ func TestGitLabSourceStableAndMasterAreSeparated(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.Contains(r.URL.Path, "/repository/commits/"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": full})
 		case strings.Contains(r.URL.Path, "/releases/snapshot"):
 			_ = json.NewEncoder(w).Encode(gitLabTestRelease("snapshot", "2026-09-27T12:00:00Z", full, server.URL))
 		case strings.Contains(r.URL.Path, "/releases"):
@@ -83,6 +85,42 @@ func TestGitLabSourceStableAndMasterAreSeparated(t *testing.T) {
 	}
 	if current.UpdateAvailable {
 		t.Fatalf("same snapshot reported update: %+v", current)
+	}
+}
+
+func TestGitLabSourceMasterPrefersPublishedCommitMarker(t *testing.T) {
+	const (
+		published = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		staleTag  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/repository/commits/") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": published})
+			return
+		}
+		if !strings.Contains(r.URL.Path, "/releases/snapshot") {
+			http.NotFound(w, r)
+			return
+		}
+		release := gitLabTestRelease("snapshot", "2026-09-28T12:00:00Z", staleTag, server.URL)
+		release["description"] = "Rolling development snapshot. XDRIVE_RELEASE_COMMIT=" + published
+		_ = json.NewEncoder(w).Encode(release)
+	}))
+	defer server.Close()
+
+	t.Setenv("XD_UPDATE_GITLAB_BASE_URL", server.URL)
+	t.Setenv("XD_UPDATE_GITLAB_PROJECT", "xuliang/xdrive")
+	oldCommit := version.Commit
+	version.Commit = staleTag
+	t.Cleanup(func() { version.Commit = oldCommit })
+
+	result, err := CheckAssetTargetFromSource(context.Background(), "snapshot", "pkg.bin", ChannelMaster, SourceGitLab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Commit != published || !result.UpdateAvailable {
+		t.Fatalf("master=%+v", result)
 	}
 }
 

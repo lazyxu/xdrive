@@ -967,6 +967,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
 		"XDRIVE_RELEASE_TAG=\"snapshot\"",
 		"0.0.0-snapshot.$short_sha",
+		"XDRIVE_RELEASE_COMMIT=$CI_COMMIT_SHA",
 		"XDRIVE_PROMOTION_TAG=\"edge\"",
 		"XDRIVE_PROMOTION_TAG=\"latest\"",
 		"--use-package-registry",
@@ -978,6 +979,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"pids=(",
 		"Published exact CI-tested GitLab server images",
 	)
+	if strings.Contains(gitlabPublishRelease, "repository/tags/") {
+		t.Error("GitLab 17.x CI job tokens must not attempt unsupported repository tag mutation during release publication")
+	}
 	for _, legacy := range []string{
 		"xdrive-client-linux-amd64.deb",
 		"xdrive-desktop-linux-amd64.deb",
