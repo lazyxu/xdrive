@@ -178,6 +178,19 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					}
 					return
 				}
+				var received []meta.UploadPart
+				if err := s.DB.Where("session_id = ?", existing.ID).Find(&received).Error; err != nil {
+					fail(c, http.StatusInternalServerError, "load upload chunks failed")
+					return
+				}
+				if err := s.ensureStorageWriteCapacity(
+					c.Request.Context(), resumableUploadRemainingPeakBytes(existing.TotalSize, received),
+				); err != nil {
+					if !writeStorageCapacityError(c, err) {
+						fail(c, http.StatusInternalServerError, "storage capacity check failed")
+					}
+					return
+				}
 				updates := map[string]any{}
 				if existing.SHA256 == "" && req.SHA256 != "" {
 					updates["sha256"] = req.SHA256
@@ -293,6 +306,14 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, "prepare reusable chunks failed")
 			return
 		}
+	}
+	if err := s.ensureStorageWriteCapacity(
+		c.Request.Context(), resumableUploadRemainingPeakBytes(session.TotalSize, reusable),
+	); err != nil {
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "storage capacity check failed")
+		}
+		return
 	}
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&session).Error; err != nil {
@@ -807,6 +828,32 @@ func (s *Server) reusableUploadParts(ctx context.Context, session meta.UploadSes
 		})
 	}
 	return parts, nil
+}
+
+func resumableUploadRemainingPeakBytes(totalSize int64, received []meta.UploadPart) int64 {
+	if totalSize <= 0 {
+		return 0
+	}
+	receivedBytes := int64(0)
+	for _, part := range received {
+		if part.Size <= 0 {
+			continue
+		}
+		if receivedBytes > totalSize-part.Size {
+			receivedBytes = totalSize
+			break
+		}
+		receivedBytes += part.Size
+	}
+	if receivedBytes > totalSize {
+		receivedBytes = totalSize
+	}
+	remainingUpload := totalSize - receivedBytes
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if remainingUpload > maxInt64-totalSize {
+		return maxInt64
+	}
+	return totalSize + remainingUpload
 }
 
 func expectedPartSize(session meta.UploadSession, index int) int64 {
