@@ -6,6 +6,7 @@ import type {
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRun,
+  ExternalSourceRunFailure,
   FileShare,
   FileVersion,
   Node,
@@ -159,6 +160,7 @@ declare global {
   type AgentCreateSourceInput = CreateExternalSourceInput
   type AgentUpdateSourceInput = UpdateExternalSourceInput
   type AgentSourceRun = ExternalSourceRun
+  type AgentSourceRunFailure = ExternalSourceRunFailure
   type AgentSourceItem = ExternalSourceItem
   type AgentSourceCredentialStatus = ExternalSourceCredentialStatus
   type AgentSourceCredentialTestResult = ExternalSourceCredentialTestResult
@@ -234,6 +236,7 @@ declare global {
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
+        getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>
         cancelSourceRun: (sourceID: number, runID: string) => Promise<DesktopResult<AgentSourceRun>>
         getSourceItems: (sourceID: number, state?: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceItem[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>

@@ -175,6 +175,17 @@ export type AgentUpdateSourceInput = {
   ignore_rules?: string
 }
 
+export type AgentSourceRunFailure = {
+  id: number
+  source_item_id: number
+  external_id: string
+  kind: string
+  path: string
+  size: number
+  error: string
+  failed_at: string
+}
+
 export type AgentSourceRun = {
   id: string
   source_id: number
@@ -522,6 +533,16 @@ export class AgentIPCClient {
       offset: String(offset),
     })
     return this.request<AgentSourceRun[]>('GET', `/v1/sources/runs?${query.toString()}`)
+  }
+
+  sourceRunFailures(sourceID: number, runID: string, limit = 20, offset = 0) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      run_id: runID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentSourceRunFailure[]>('GET', `/v1/sources/runs/failures?${query.toString()}`)
   }
 
   cancelSourceRun(sourceID: number, runID: string) {

@@ -8,6 +8,7 @@ import type {
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRun,
+  ExternalSourceRunFailure,
   FileShare,
   BuildInfo,
   FileVersion,
@@ -26,6 +27,7 @@ export type {
   ExternalSourceCredentialStatus,
   ExternalSourceItem,
   ExternalSourceRun,
+  ExternalSourceRunFailure,
 } from '../../ui/shared/src'
 
 export type { BuildInfo }
@@ -306,6 +308,16 @@ export class XDriveApi {
       offset: String(Math.max(0, Math.trunc(offset))),
     })
     return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?${query.toString()}`)
+  }
+
+  sourceRunFailures(sourceID: number, runID: string, limit = 20, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(1000, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<ExternalSourceRunFailure[]>(
+      `/api/v1/sources/${sourceID}/runs/${encodeURIComponent(runID)}/failures?${query.toString()}`,
+    )
   }
 
   cancelSourceRun(sourceID: number, runID: string) {

@@ -57,12 +57,22 @@ import type {
   ExternalSourceItem,
   ExternalSourceRow,
   ExternalSourceRun,
+  ExternalSourceRunFailure,
   ExternalSourceScheduleType,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
 } from '@xdrive/shared'
 
 const SOURCE_HISTORY_PAGE_SIZE = 20
+const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
+
+type SourceRunFailurePage = {
+  items: ExternalSourceRunFailure[]
+  page: number
+  hasNext: boolean
+  loading: boolean
+  loaded: boolean
+}
 
 type View = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
@@ -260,6 +270,7 @@ export default function App() {
   const [sourceHistoryPage, setSourceHistoryPage] = useState(1)
   const [sourceHistoryHasNext, setSourceHistoryHasNext] = useState(false)
   const [sourceHistoryLoading, setSourceHistoryLoading] = useState(false)
+  const [sourceRunFailurePages, setSourceRunFailurePages] = useState<Record<string, SourceRunFailurePage>>({})
   const [sourceDeleteTarget, setSourceDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [synologyGuideSource, setSynologyGuideSource] = useState<AgentSource | null>(null)
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -572,6 +583,51 @@ export default function App() {
     }
   }
 
+  const loadSourceRunFailures = async (sourceID: number, runID: string, page = 1) => {
+    const nextPage = Math.max(1, Math.trunc(page))
+    setSourceRunFailurePages((current) => ({
+      ...current,
+      [runID]: {
+        items: current[runID]?.items ?? [],
+        page: current[runID]?.page ?? nextPage,
+        hasNext: current[runID]?.hasNext ?? false,
+        loading: true,
+        loaded: current[runID]?.loaded ?? false,
+      },
+    }))
+    const offset = (nextPage - 1) * SOURCE_RUN_FAILURE_PAGE_SIZE
+    const result = await window.xdriveDesktop.agent.getSourceRunFailures(
+      sourceID,
+      runID,
+      SOURCE_RUN_FAILURE_PAGE_SIZE + 1,
+      offset,
+    )
+    if (!result.ok) {
+      setError(result.error.message)
+      setSourceRunFailurePages((current) => ({
+        ...current,
+        [runID]: {
+          items: current[runID]?.items ?? [],
+          page: current[runID]?.page ?? nextPage,
+          hasNext: current[runID]?.hasNext ?? false,
+          loading: false,
+          loaded: current[runID]?.loaded ?? false,
+        },
+      }))
+      return
+    }
+    setSourceRunFailurePages((current) => ({
+      ...current,
+      [runID]: {
+        items: result.data.slice(0, SOURCE_RUN_FAILURE_PAGE_SIZE),
+        page: nextPage,
+        hasNext: result.data.length > SOURCE_RUN_FAILURE_PAGE_SIZE,
+        loading: false,
+        loaded: true,
+      },
+    }))
+  }
+
   const loadSourceHistory = async (sourceID: number, page: number, silent = false) => {
     const nextPage = Math.max(1, Math.trunc(page))
     if (!silent) setSourceHistoryLoading(true)
@@ -638,6 +694,7 @@ export default function App() {
       setSourceHistoryRuns([])
       setSourceHistoryPage(1)
       setSourceHistoryHasNext(false)
+      setSourceRunFailurePages({})
       return
     }
 
@@ -649,6 +706,7 @@ export default function App() {
     setSourceHistoryRuns([])
     setSourceHistoryPage(1)
     setSourceHistoryHasNext(false)
+    setSourceRunFailurePages({})
     setSourceFailedItemsLoadingID(sourceID)
     setError('')
     void loadSourceHistory(sourceID, 1)
@@ -2088,8 +2146,19 @@ export default function App() {
                                 {sourceHistoryRuns.map((run, index) => {
                                   const historyDetail = externalSourceRunDetailView(run)
                                   const canCancel = run.status === 'running' && row.latestRun?.id === run.id
+                                  const failurePage = sourceRunFailurePages[run.id]
                                   return (
-                                    <MuiBox key={run.id} component="details" sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                                    <MuiBox
+                                      key={run.id}
+                                      component="details"
+                                      onToggle={(event) => {
+                                        const details = event.currentTarget as HTMLDetailsElement
+                                        if (details.open && run.failed_items > 0 && !failurePage?.loaded && !failurePage?.loading) {
+                                          void loadSourceRunFailures(row.source.id, run.id, 1)
+                                        }
+                                      }}
+                                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
+                                    >
                                       <MuiBox component="summary" sx={{ cursor: 'pointer', p: 1.25 }}>
                                         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ width: '100%', pr: 1 }}>
                                           <MuiBox>
@@ -2165,6 +2234,60 @@ export default function App() {
                                         <MuiAlert severity={historyDetail.error ? 'error' : 'success'} sx={{ mt: 1.25 }}>
                                           运行日志：{historyDetail.error || '无错误日志'}
                                         </MuiAlert>
+                                        {historyDetail.failedItems > 0 && (
+                                          <MuiBox sx={{ mt: 1.25 }}>
+                                            <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>本次失败文件</Typography>
+                                            {failurePage?.loading && !failurePage.loaded ? (
+                                              <Typography variant="caption" color="text.secondary">正在加载失败文件…</Typography>
+                                            ) : failurePage?.loaded && failurePage.items.length > 0 ? (
+                                              <Stack spacing={0.75}>
+                                                {failurePage.items.map((failure) => (
+                                                  <MuiBox key={failure.id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                                                    <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="flex-start">
+                                                      <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
+                                                        {failure.path || failure.external_id}
+                                                      </Typography>
+                                                      <Chip size="small" label={formatBinarySize(failure.size)} />
+                                                    </Stack>
+                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                                                      {failure.external_id} · {formatExternalSourceTime(failure.failed_at)}
+                                                    </Typography>
+                                                    <MuiAlert severity="error" sx={{ mt: 0.75 }}>{failure.error}</MuiAlert>
+                                                  </MuiBox>
+                                                ))}
+                                                <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
+                                                  <MuiButton
+                                                    type="button"
+                                                    size="small"
+                                                    variant="outlined"
+                                                    disabled={failurePage.loading || failurePage.page <= 1}
+                                                    onClick={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page - 1)}
+                                                  >
+                                                    上一页
+                                                  </MuiButton>
+                                                  <Typography variant="caption" color="text.secondary">
+                                                    失败项第 {failurePage.page} 页 · 每页 {SOURCE_RUN_FAILURE_PAGE_SIZE} 条
+                                                  </Typography>
+                                                  <MuiButton
+                                                    type="button"
+                                                    size="small"
+                                                    variant="outlined"
+                                                    disabled={failurePage.loading || !failurePage.hasNext}
+                                                    onClick={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page + 1)}
+                                                  >
+                                                    下一页
+                                                  </MuiButton>
+                                                </Stack>
+                                              </Stack>
+                                            ) : failurePage?.loaded ? (
+                                              <MuiAlert severity="warning">
+                                                该历史 Run 记录了 {historyDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
+                                              </MuiAlert>
+                                            ) : (
+                                              <Typography variant="caption" color="text.secondary">展开后加载本次失败文件明细。</Typography>
+                                            )}
+                                          </MuiBox>
+                                        )}
                                       </MuiBox>
                                     </MuiBox>
                                   )

@@ -68,6 +68,17 @@ export interface ExternalSourceRun {
   finished_at?: string
 }
 
+export interface ExternalSourceRunFailure {
+  id: number
+  source_item_id: number
+  external_id: string
+  kind: string
+  path: string
+  size: number
+  error: string
+  failed_at: string
+}
+
 export interface ExternalSourceItem {
   source_item_id: number
   external_id: string

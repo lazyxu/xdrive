@@ -147,6 +147,9 @@ test('desktop external sources expose per-file failures', () => {
   assert.ok(renderer.includes('getSourceItems'), 'missing Source item query')
   assert.ok(renderer.includes('查看失败项'), 'missing per-file failure action')
   assert.ok(renderer.includes('下一次扫描会自动重试'), 'missing retry guidance')
+  assert.ok(renderer.includes('getSourceRunFailures'), 'missing historical Source failure query')
+  assert.ok(renderer.includes('本次失败文件'), 'missing historical per-run failure section')
+  assert.ok(renderer.includes('没有可恢复的逐文件失败快照'), 'missing legacy history fallback')
 })
 
 test('desktop GUI does not regress to key English labels', () => {

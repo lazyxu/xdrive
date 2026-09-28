@@ -44,6 +44,7 @@ import type {
   ExternalSourceItem,
   ExternalSourceRow,
   ExternalSourceRun,
+  ExternalSourceRunFailure,
   ExternalSourceScheduleType,
   ExternalSourceStateTone,
   SupportedExternalSourceKind,
@@ -60,6 +61,15 @@ type SourceSettingsValues = {
   cookie?: string
 }
 const SOURCE_HISTORY_PAGE_SIZE = 20
+const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
+
+type SourceRunFailurePage = {
+  items: ExternalSourceRunFailure[]
+  page: number
+  hasNext: boolean
+  loading: boolean
+  loaded: boolean
+}
 
 type CreateSourceValues = {
   kind: SupportedExternalSourceKind
@@ -132,6 +142,7 @@ export default function ExternalSourcesPanel({
   const [historyPage, setHistoryPage] = useState(1)
   const [historyHasNext, setHistoryHasNext] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [runFailurePages, setRunFailurePages] = useState<Record<string, SourceRunFailurePage>>({})
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
@@ -179,6 +190,46 @@ export default function ExternalSourcesPanel({
       onError(error)
     } finally {
       if (!silent) setLoading(false)
+    }
+  }, [api, onError])
+
+  const loadRunFailures = useCallback(async (sourceID: number, runID: string, page = 1) => {
+    const nextPage = Math.max(1, Math.trunc(page))
+    setRunFailurePages((current) => ({
+      ...current,
+      [runID]: {
+        items: current[runID]?.items ?? [],
+        page: current[runID]?.page ?? nextPage,
+        hasNext: current[runID]?.hasNext ?? false,
+        loading: true,
+        loaded: current[runID]?.loaded ?? false,
+      },
+    }))
+    try {
+      const offset = (nextPage - 1) * SOURCE_RUN_FAILURE_PAGE_SIZE
+      const failures = await api.sourceRunFailures(sourceID, runID, SOURCE_RUN_FAILURE_PAGE_SIZE + 1, offset)
+      setRunFailurePages((current) => ({
+        ...current,
+        [runID]: {
+          items: failures.slice(0, SOURCE_RUN_FAILURE_PAGE_SIZE),
+          page: nextPage,
+          hasNext: failures.length > SOURCE_RUN_FAILURE_PAGE_SIZE,
+          loading: false,
+          loaded: true,
+        },
+      }))
+    } catch (error) {
+      setRunFailurePages((current) => ({
+        ...current,
+        [runID]: {
+          items: current[runID]?.items ?? [],
+          page: current[runID]?.page ?? nextPage,
+          hasNext: current[runID]?.hasNext ?? false,
+          loading: false,
+          loaded: current[runID]?.loaded ?? false,
+        },
+      }))
+      onError(error)
     }
   }, [api, onError])
 
@@ -505,6 +556,7 @@ export default function ExternalSourcesPanel({
     setHistoryRuns([])
     setHistoryPage(1)
     setHistoryHasNext(false)
+    setRunFailurePages({})
     setFailedItemsLoading(true)
     void loadRunHistory(row.source.id, 1)
     try {
@@ -526,6 +578,7 @@ export default function ExternalSourcesPanel({
     setHistoryRuns([])
     setHistoryPage(1)
     setHistoryHasNext(false)
+    setRunFailurePages({})
   }
 
   const selectedDetail = selected ? externalSourceDetailView(selected) : null
@@ -663,8 +716,19 @@ export default function ExternalSourcesPanel({
                   {historyRuns.map((run, index) => {
                     const runDetail = externalSourceRunDetailView(run)
                     const canCancel = run.status === 'running' && selected.latestRun?.id === run.id
+                    const failurePage = runFailurePages[run.id]
                     return (
-                      <Accordion key={run.id} disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
+                      <Accordion
+                        key={run.id}
+                        disableGutters
+                        elevation={0}
+                        onChange={(_, expanded) => {
+                          if (expanded && run.failed_items > 0 && !failurePage?.loaded && !failurePage?.loading) {
+                            void loadRunFailures(selected.source.id, run.id, 1)
+                          }
+                        }}
+                        sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}
+                      >
                         <AccordionSummary>
                           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ width: '100%', pr: 1 }}>
                             <MuiBox>
@@ -734,6 +798,60 @@ export default function ExternalSourcesPanel({
                           <MuiAlert severity={runDetail.error ? 'error' : 'success'} sx={{ mt: 1.5 }}>
                             运行日志：{runDetail.error || '无错误日志'}
                           </MuiAlert>
+                          {runDetail.failedItems > 0 && (
+                            <MuiBox sx={{ mt: 1.5 }}>
+                              <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                                本次失败文件
+                              </MuiTypography>
+                              {failurePage?.loading && !failurePage.loaded ? (
+                                <Spin size="small" />
+                              ) : failurePage?.loaded && failurePage.items.length > 0 ? (
+                                <Stack spacing={0.75}>
+                                  {failurePage.items.map((failure) => (
+                                    <MuiBox key={failure.id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                                      <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="flex-start">
+                                        <MuiTypography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                                          {failure.path || failure.external_id}
+                                        </MuiTypography>
+                                        <Chip size="small" label={formatSize(failure.size)} />
+                                      </Stack>
+                                      <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                                        {failure.external_id} · {formatExternalSourceTime(failure.failed_at)}
+                                      </MuiTypography>
+                                      <MuiAlert severity="error" sx={{ mt: 0.75 }}>{failure.error}</MuiAlert>
+                                    </MuiBox>
+                                  ))}
+                                  <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
+                                    <Button
+                                      size="small"
+                                      disabled={failurePage.loading || failurePage.page <= 1}
+                                      onClick={() => void loadRunFailures(selected.source.id, run.id, failurePage.page - 1)}
+                                    >
+                                      上一页
+                                    </Button>
+                                    <Typography.Text type="secondary">
+                                      失败项第 {failurePage.page} 页 · 每页 {SOURCE_RUN_FAILURE_PAGE_SIZE} 条
+                                    </Typography.Text>
+                                    <Button
+                                      size="small"
+                                      disabled={failurePage.loading || !failurePage.hasNext}
+                                      onClick={() => void loadRunFailures(selected.source.id, run.id, failurePage.page + 1)}
+                                    >
+                                      下一页
+                                    </Button>
+                                  </Stack>
+                                </Stack>
+                              ) : failurePage?.loaded ? (
+                                <MuiAlert severity="warning">
+                                  该历史 Run 记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
+                                </MuiAlert>
+                              ) : (
+                                <MuiTypography variant="caption" color="text.secondary">
+                                  展开后加载本次失败文件明细。
+                                </MuiTypography>
+                              )}
+                            </MuiBox>
+                          )}
                         </AccordionDetails>
                       </Accordion>
                     )

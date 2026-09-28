@@ -105,7 +105,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceCredential{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`UPDATE xd_nodes SET revision = 1 WHERE revision = 0`).Error; err != nil {
@@ -138,7 +138,19 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
 		return err
 	}
-	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name ON xd_sources(owner_id, lower(name))`).Error
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sources_owner_name ON xd_sources(owner_id, lower(name))`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		INSERT INTO xd_source_run_failures
+			(run_id, source_id, source_item_id, external_id, kind, path, size, error, failed_at, created_at, updated_at)
+		SELECT si.last_seen_run_id, si.source_id, si.id, si.external_id, si.kind, si.path, si.size,
+			si.last_error, COALESCE(si.updated_at, NOW()), NOW(), NOW()
+		FROM xd_source_items AS si
+		JOIN xd_sync_runs AS r ON r.id = si.last_seen_run_id AND r.source_id = si.source_id
+		WHERE si.state = 'error' AND si.last_error <> '' AND si.last_seen_run_id <> ''
+		ON CONFLICT (run_id, source_item_id) DO NOTHING
+	`).Error
 }
 
 func runHealthcheck(args []string) error {
