@@ -89,7 +89,7 @@ services: {}
     emit 'example.invalid { respond "ok" }
 '
     ;;
-  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '
@@ -125,6 +125,7 @@ run_case() {
   if ! XDRIVE_TEST_STATE="$TMP/state" \
     PATH="$TMP/bin:/usr/bin:/bin" \
     XD_CONFIG_DIR="$cfg" \
+    XD_SHELL_RC_PATH="$cfg.bashrc" \
     XD_NONINTERACTIVE=1 \
     XD_INSTALL_NO_START=1 \
       bash "$INSTALLER" "$@" >"$TMP/$name.out" 2>"$TMP/$name.err"; then
@@ -204,6 +205,7 @@ XD_IMAGE_REGISTRY=https://registry.example.test/team \
   XDRIVE_TEST_STATE="$TMP/state" \
   PATH="$TMP/bin:/usr/bin:/bin" \
   XD_CONFIG_DIR="$TMP/invalid-registry" \
+  XD_SHELL_RC_PATH="$TMP/invalid-registry.bashrc" \
   XD_NONINTERACTIVE=1 \
   XD_INSTALL_NO_START=1 \
   bash "$INSTALLER" --channel master >"$TMP/invalid-registry.out" 2>"$TMP/invalid-registry.err"

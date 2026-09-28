@@ -4,7 +4,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALLER="$ROOT/deploy/install-server.sh"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+cleanup() {
+  local status=$?
+  if [[ "$status" -ne 0 ]]; then
+    echo "server installer bootstrap test failed (exit $status)" >&2
+    for file in ok.out ok.err fail.out fail.err upgrade.out upgrade.err state/urls state/docker-calls; do
+      if [[ -f "$TMP/$file" ]]; then
+        echo "===== $file =====" >&2
+        cat "$TMP/$file" >&2 || true
+      fi
+    done
+  fi
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
 
 MASTER_SHA="0123456789abcdef0123456789abcdef01234567"
 MASTER_SHORT="${MASTER_SHA:0:12}"
@@ -90,6 +103,7 @@ printf "%s\n" "$dir"
 '
     ;;
   */0123456789abcdef0123456789abcdef01234567/scripts/server-backup-scheduled.sh|\
+  */0123456789abcdef0123456789abcdef01234567/scripts/server-migrate-user.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-restore.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-verify.sh|\
   */0123456789abcdef0123456789abcdef01234567/scripts/server-doctor.sh|\
@@ -125,6 +139,7 @@ chmod +x "$TMP/bin-ok/docker"
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin-ok:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config-ok" \
+XD_SHELL_RC_PATH="$TMP/config-ok.bashrc" \
 XD_NONINTERACTIVE=1 \
 XD_INSTALL_NO_START=1 \
 bash "$INSTALLER" >"$TMP/ok.out" 2>"$TMP/ok.err"
@@ -157,7 +172,10 @@ if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-ok/config/.env"; then
 fi
 grep -q "/$MASTER_SHA/deploy/docker-compose.yml$" "$TMP/state/urls"
 test -x "$TMP/config-ok/bin/xdrive-server"
+test -x "$TMP/config-ok/bin/server-migrate-user.sh"
 test -x "$TMP/config-ok/bin/server-backup.sh"
+grep -q '# >>> xDrive server PATH >>>' "$TMP/config-ok.bashrc"
+grep -Fq "$TMP/config-ok/bin" "$TMP/config-ok.bashrc"
 test -f "$TMP/config-ok/state/layout-version"
 test "$(cat "$TMP/config-ok/state/layout-version")" = "2"
 test ! -e "$TMP/config-ok/.env"
@@ -183,6 +201,7 @@ chmod +x "$TMP/bin-fail/curl"
 set +e
 PATH="$TMP/bin-fail:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config-fail" \
+XD_SHELL_RC_PATH="$TMP/config-fail.bashrc" \
 XD_NONINTERACTIVE=1 \
 XD_INSTALL_NO_START=1 \
 bash "$INSTALLER" >"$TMP/fail.out" 2>"$TMP/fail.err"
@@ -295,6 +314,7 @@ rm -f "$TMP/state/password-repaired" "$TMP/state/docker-calls"
 if ! TEST_STATE="$TMP/state" \
 PATH="$TMP/bin-upgrade:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config-upgrade" \
+XD_SHELL_RC_PATH="$TMP/config-upgrade.bashrc" \
 XD_NONINTERACTIVE=1 \
 XD_INSTALL_NO_START=1 \
 bash "$INSTALLER" >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"; then

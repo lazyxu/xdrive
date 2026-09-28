@@ -78,6 +78,7 @@ type SourceRunFailure struct {
 type SyncRun struct {
 	ID                     string     `json:"id"`
 	SourceID               uint64     `json:"source_id"`
+	RunNumber              int64      `json:"run_number"`
 	SourceRevision         uint64     `json:"source_revision"`
 	TargetNodeID           *uint64    `json:"target_node_id,omitempty"`
 	IgnoreRules            string     `json:"ignore_rules,omitempty"`

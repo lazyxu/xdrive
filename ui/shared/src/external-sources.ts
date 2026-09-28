@@ -31,6 +31,7 @@ export interface ExternalSource {
 export interface ExternalSourceRun {
   id: string
   source_id: number
+  run_number: number
   source_revision: number
   target_node_id?: number
   mode: ExternalSourceRunMode
@@ -396,7 +397,7 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
   if (connector.manualTriggerExecutor === 'source_agent') {
     return { ready: true, label: '提交请求，由群晖 source-agent 下一次任务检查执行' }
   }
-  return { ready: true, label: '立即请求 Pull worker 扫描此来源' }
+  return { ready: true, label: '立即唤醒 Pull worker 扫描此来源；定时轮询作为兜底' }
 }
 
 export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {

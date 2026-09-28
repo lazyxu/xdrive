@@ -11,6 +11,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/sourceschedule"
+	"github.com/lazyxu/xdrive/internal/sourcewake"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -47,6 +48,7 @@ type sourceOverviewDTO struct {
 type syncRunDTO struct {
 	ID                     string     `json:"id"`
 	SourceID               uint64     `json:"source_id"`
+	RunNumber              int64      `json:"run_number"`
 	SourceRevision         uint64     `json:"source_revision"`
 	TargetNodeID           *uint64    `json:"target_node_id,omitempty"`
 	IgnoreRules            string     `json:"ignore_rules,omitempty"`
@@ -101,7 +103,7 @@ func toSourceDTO(source meta.Source) sourceDTO {
 
 func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 	return syncRunDTO{
-		ID: run.ID, SourceID: run.SourceID, SourceRevision: run.SourceRevision,
+		ID: run.ID, SourceID: run.SourceID, RunNumber: run.RunNumber, SourceRevision: run.SourceRevision,
 		TargetNodeID: run.TargetNodeID, IgnoreRules: run.IgnoreRules,
 		Mode: run.Mode, Trigger: run.Trigger, Status: run.Status,
 		CheckpointBefore: run.CheckpointBefore, CheckpointAfter: run.CheckpointAfter,
@@ -504,6 +506,11 @@ func (s *Server) triggerSource(c *gin.Context) {
 			"updated_at":       now,
 		}).Error; err != nil {
 			return err
+		}
+		if source.Kind == yikeSourceKind && source.Direction == meta.SourceDirectionPull {
+			if err := sourcewake.Notify(tx, source.ID); err != nil {
+				return err
+			}
 		}
 		source.RunRequestedAt = &now
 		source.UpdatedAt = now

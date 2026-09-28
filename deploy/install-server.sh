@@ -31,9 +31,8 @@ STAGING_DIR="$STATE_DIR/install-staging"
 UPGRADE_STATE_DIR="$STATE_DIR/upgrade-transaction"
 INSTALL_LOCK_PATH="$STATE_DIR/install.lock"
 PULL_LOG="$LOG_DIR/install-pull.log"
-HOST_BIN_DIR="${XD_HOST_BIN_DIR:-/usr/local/bin}"
 HOST_MANAGER_PATH="$BIN_DIR/xdrive-server"
-HOST_MANAGER_LINK="$HOST_BIN_DIR/xdrive-server"
+SHELL_RC_PATH=""
 
 STAGE_TOTAL=9
 STAGE_NO=0
@@ -135,12 +134,73 @@ prepare_host_layout() {
     cp -p "$LEGACY_CADDY_PATH" "$CADDY_PATH"
     chmod 600 "$CADDY_PATH"
   fi
-  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
+  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
     if [[ ! -f "$BIN_DIR/$legacy_tool" && -f "$XDRIVE_HOME/$legacy_tool" ]]; then
       cp -p "$XDRIVE_HOME/$legacy_tool" "$BIN_DIR/$legacy_tool"
       chmod 700 "$BIN_DIR/$legacy_tool"
     fi
   done
+}
+
+detect_shell_rc() {
+  local shell_name
+  if [[ -n "${XD_SHELL_RC_PATH:-}" ]]; then
+    printf '%s\n' "$XD_SHELL_RC_PATH"
+    return
+  fi
+  shell_name="$(basename "${SHELL:-bash}")"
+  case "$shell_name" in
+    zsh) printf '%s\n' "$HOME/.zshrc" ;;
+    bash) printf '%s\n' "$HOME/.bashrc" ;;
+    *) printf '%s\n' "$HOME/.profile" ;;
+  esac
+}
+
+escape_double_quoted_shell_value() {
+  printf '%s' "$1" | sed 's/[\\$"`]/\\&/g'
+}
+
+configure_user_command_path() {
+  local rc tmp escaped begin end
+  rc="$(detect_shell_rc)"
+  begin="# >>> xDrive server PATH >>>"
+  end="# <<< xDrive server PATH <<<"
+  mkdir -p "$(dirname "$rc")"
+  touch "$rc"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-shell-rc.XXXXXX")"
+  awk -v begin="$begin" -v end="$end" '
+    $0 == begin { skip=1; next }
+    $0 == end { skip=0; next }
+    !skip { print }
+  ' "$rc" > "$tmp"
+  escaped="$(escape_double_quoted_shell_value "$BIN_DIR")"
+  {
+    printf '\n%s\n' "$begin"
+    printf 'export PATH="%s:$PATH"\n' "$escaped"
+    printf '%s\n' "$end"
+  } >> "$tmp"
+  cat "$tmp" > "$rc"
+  rm -f "$tmp"
+  SHELL_RC_PATH="$rc"
+
+  case ":${PATH:-}:" in
+    *":$BIN_DIR:"*) ;;
+    *) export PATH="$BIN_DIR:${PATH:-}" ;;
+  esac
+}
+
+remove_legacy_system_manager_link() {
+  local legacy="/usr/local/bin/xdrive-server" target=""
+  [[ -L "$legacy" ]] || return 0
+  target="$(readlink -f "$legacy" 2>/dev/null || true)"
+  [[ "$target" == "$HOST_MANAGER_PATH" ]] || return 0
+  if [[ -w "$(dirname "$legacy")" ]]; then
+    rm -f "$legacy"
+    echo "[xDrive] removed legacy system-wide command link: $legacy"
+  else
+    echo "[xDrive] legacy system-wide command link remains at $legacy; it is no longer used." >&2
+    echo "[xDrive] remove it later with an account that can write /usr/local/bin: rm -f '$legacy'" >&2
+  fi
 }
 
 acquire_install_lock() {
@@ -746,15 +806,15 @@ if [[ "$requested_source" == "gitlab" ]]; then
 else
   raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
 fi
-fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/7 docker-compose.yml"
+fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/8 docker-compose.yml"
 asset_no=1
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
   asset_no=$((asset_no + 1))
-  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/7 $maintenance_script"
+  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/8 $maintenance_script"
   chmod 700 "$STAGING_DIR/$maintenance_script"
 done
 asset_no=$((asset_no + 1))
-fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/7 xdrive-server"
+fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/8 xdrive-server"
 chmod 700 "$STAGING_DIR/xdrive-server"
 chmod 600 "$STAGING_DIR/docker-compose.yml"
 
@@ -1132,9 +1192,6 @@ rollback_upgrade() {
   fi
   if [[ -f "$HOST_MANAGER_PATH" ]]; then
     chmod 700 "$HOST_MANAGER_PATH" || ok=0
-    if [[ -d "$HOST_BIN_DIR" && -w "$HOST_BIN_DIR" ]]; then
-      ln -sfn "$HOST_MANAGER_PATH" "$HOST_MANAGER_LINK" || ok=0
-    fi
     echo "[xDrive] rollback: retaining host manager and doctor for retry/recovery." >&2
   fi
   if [[ "$ok" != "1" ]]; then
@@ -1300,7 +1357,7 @@ finalize_host_layout() {
     rm -f "$XDRIVE_HOME/.install-pull.log"
   fi
 
-  for path in .env docker-compose.yml Caddyfile xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
+  for path in .env docker-compose.yml Caddyfile xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
     rm -f "$XDRIVE_HOME/$path"
   done
   rm -f "$XDRIVE_HOME/.install.lock" "$XDRIVE_HOME/.scheduled-backup.lock"
@@ -1514,17 +1571,15 @@ unset_env XD_WEB_PIDS_LIMIT
 unset_env XD_CADDY_BUILD_ID
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$BIN_DIR/$maintenance_script"
 done
 install -m 700 "$STAGING_DIR/xdrive-server" "$HOST_MANAGER_PATH"
-if [[ -d "$HOST_BIN_DIR" && -w "$HOST_BIN_DIR" ]]; then
-  ln -sfn "$HOST_MANAGER_PATH" "$HOST_MANAGER_LINK"
-  echo "Host manager:    $HOST_MANAGER_LINK"
-else
-  echo "Host manager:    $HOST_MANAGER_PATH"
-  echo "Add $BIN_DIR to PATH to use: xdrive-server"
-fi
+configure_user_command_path
+remove_legacy_system_manager_link
+echo "Host manager:    $HOST_MANAGER_PATH"
+echo "User PATH file:  $SHELL_RC_PATH"
+echo "Current terminal: run: source \"$SHELL_RC_PATH\""
 rm -rf "$STAGING_DIR"
 
 compose() {
@@ -1753,4 +1808,7 @@ echo "Update server:   xdrive-server update"
 echo "Update source:   $(env_value XD_UPDATE_SOURCE)"
 echo "Release channel: $(env_value XD_RELEASE_CHANNEL)${requested_commit:+ ($requested_commit)}"
 echo "Manage: xdrive-server status|doctor|update|backup|verify"
+if [[ -n "$SHELL_RC_PATH" ]]; then
+  echo "If this terminal still cannot find xdrive-server, run: source \"$SHELL_RC_PATH\""
+fi
 show_install_environment

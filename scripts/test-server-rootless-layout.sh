@@ -77,6 +77,7 @@ case "$url" in
   */scripts/server-restore.sh) src="$TEST_ROOT/scripts/server-restore.sh" ;;
   */scripts/server-verify.sh) src="$TEST_ROOT/scripts/server-verify.sh" ;;
   */scripts/server-doctor.sh) src="$TEST_ROOT/scripts/server-doctor.sh" ;;
+  */scripts/server-migrate-user.sh) src="$TEST_ROOT/scripts/server-migrate-user.sh" ;;
   */scripts/xdrive-server-host.sh) src="$TEST_ROOT/scripts/xdrive-server-host.sh" ;;
   *) echo "unexpected URL: $url" >&2; exit 9 ;;
 esac
@@ -92,7 +93,7 @@ run_install() {
   TEST_ROOTLESS="$rootless" \
   PATH="$TMP/bin:/usr/bin:/bin" \
   XD_CONFIG_DIR="$home" \
-  XD_HOST_BIN_DIR="$TMP/not-created" \
+  XD_SHELL_RC_PATH="$home.bashrc" \
   XD_SOURCE_REF="$SHA" \
   XD_IMAGE_TAG="sha-$SHORT" \
   XD_BUILT_CHANNEL=master \
@@ -125,6 +126,7 @@ for dir in config bin data backups/snapshots backups/pre-upgrade backups/pre-res
 done
 
 test -x "$ROOTLESS_HOME/bin/xdrive-server"
+test -x "$ROOTLESS_HOME/bin/server-migrate-user.sh"
 test -x "$ROOTLESS_HOME/bin/server-backup.sh"
 test -f "$ROOTLESS_HOME/config/docker-compose.yml"
 test -f "$ROOTLESS_HOME/state/layout-version"

@@ -223,9 +223,16 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			return activeErr
 		}
 
+		var maxRunNumber int64
+		if err := tx.Model(&meta.SyncRun{}).
+			Where("source_id = ?", source.ID).
+			Select("COALESCE(MAX(run_number), 0)").
+			Scan(&maxRunNumber).Error; err != nil {
+			return err
+		}
 		targetID := target.ID
 		out = meta.SyncRun{
-			ID: runID, SourceID: source.ID, SourceRevision: source.Revision,
+			ID: runID, SourceID: source.ID, RunNumber: maxRunNumber + 1, SourceRevision: source.Revision,
 			TargetNodeID: &targetID, IgnoreRules: source.IgnoreRules,
 			Mode: source.RunMode, Trigger: req.Trigger, Status: meta.SyncRunStatusRunning,
 			CheckpointBefore: source.Checkpoint, StartedAt: now,

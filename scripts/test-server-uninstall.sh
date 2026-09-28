@@ -111,7 +111,7 @@ EOF
 run_host() {
   local home="$1"
   shift
-  TEST_STATE="$TMP/state"   PATH="$TMP/bin:/usr/bin:/bin"   XD_CONFIG_DIR="$home"   XD_HOST_BIN_DIR="$TMP/host-bin"   "$home/bin/xdrive-server" "$@"
+  TEST_STATE="$TMP/state"   PATH="$TMP/bin:/usr/bin:/bin"   XD_CONFIG_DIR="$home"   XD_SHELL_RC_PATH="$home/.bashrc"   "$home/bin/xdrive-server" "$@"
 }
 
 # Destructive cleanup always requires explicit confirmation.
@@ -135,7 +135,6 @@ test -f "$TMP/state/volume-xdrive_postgres-data"
 grep -q 'No changes made' "$TMP/cleanup-preview.out"
 
 # Uninstall with retained legacy volumes keeps only a cleanup-capable manager.
-ln -s "$LEGACY_HOME/bin/xdrive-server" "$TMP/host-bin/xdrive-server"
 printf '0 3 * * * XD_CONFIG_DIR=/tmp/x ~/.xd/bin/server-backup-scheduled.sh # xdrive-managed-backup\n' > "$TMP/state/crontab"
 printf '5 4 * * * echo keep-me\n' >> "$TMP/state/crontab"
 run_host "$LEGACY_HOME" uninstall --yes >"$TMP/uninstall-legacy.out"
@@ -149,7 +148,6 @@ test -x "$LEGACY_HOME/bin/xdrive-server"
 test ! -e "$LEGACY_HOME/bin/server-backup.sh"
 test -f "$LEGACY_HOME/state/legacy-volumes-retained"
 grep -q '^purge_all=0$' "$LEGACY_HOME/state/runtime-uninstalled"
-test ! -e "$TMP/host-bin/xdrive-server"
 grep -q 'keep-me' "$TMP/state/crontab"
 if grep -q 'xdrive-managed-backup' "$TMP/state/crontab"; then
   echo "managed backup crontab entry survived uninstall" >&2
@@ -157,13 +155,17 @@ if grep -q 'xdrive-managed-backup' "$TMP/state/crontab"; then
 fi
 grep -q 'compose.*down --remove-orphans' "$TMP/state/docker-calls"
 
-TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$LEGACY_HOME" XD_HOST_BIN_DIR="$TMP/host-bin" "$LEGACY_HOME/bin/xdrive-server" cleanup legacy-volumes --yes >"$TMP/cleanup.out"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$LEGACY_HOME" XD_SHELL_RC_PATH="$LEGACY_HOME/.bashrc" "$LEGACY_HOME/bin/xdrive-server" cleanup legacy-volumes --yes >"$TMP/cleanup.out"
 
 test ! -f "$TMP/state/volume-xdrive_file-data"
 test ! -f "$TMP/state/volume-xdrive_postgres-data"
 test ! -e "$LEGACY_HOME/state/legacy-volumes-retained"
 test ! -e "$LEGACY_HOME/state/runtime-uninstalled"
 test ! -e "$LEGACY_HOME/bin/xdrive-server"
+if grep -q 'xDrive server PATH' "$LEGACY_HOME/.bashrc"; then
+  echo "xDrive PATH marker survived final legacy cleanup" >&2
+  exit 1
+fi
 grep -q 'Legacy xDrive volumes cleaned up' "$TMP/cleanup.out"
 
 # Default uninstall preserves config secrets, data and backups.
@@ -188,6 +190,10 @@ test ! -e "$KEEP_HOME/logs"
 test ! -e "$KEEP_HOME/state"
 test ! -e "$KEEP_HOME/config/docker-compose.yml"
 test ! -e "$KEEP_HOME/config/Caddyfile"
+if grep -q 'xDrive server PATH' "$KEEP_HOME/.bashrc"; then
+  echo "xDrive PATH marker survived normal uninstall" >&2
+  exit 1
+fi
 grep -q 'Retained configuration/secrets' "$TMP/uninstall-keep.out"
 grep -q 'Retained data' "$TMP/uninstall-keep.out"
 grep -q 'Retained backups' "$TMP/uninstall-keep.out"

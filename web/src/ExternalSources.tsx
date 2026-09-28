@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Alert, Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
+import { Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
 import {
   Accordion,
@@ -81,6 +81,19 @@ type CreateSourceValues = {
   ignore_rules?: string
   cookie?: string
 }
+
+type SourceErrorDialogState = {
+  title: string
+  message: string
+  detail?: string
+}
+
+function sourceActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim()
+  const value = String(error ?? '').trim()
+  return value && value !== '[object Object]' ? value : fallback
+}
+
 
 
 function YikeCookieHelpGuide() {
@@ -163,11 +176,22 @@ export default function ExternalSourcesPanel({
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
   const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
   const [guideUsername, setGuideUsername] = useState<string | undefined>()
+  const [errorDialog, setErrorDialog] = useState<SourceErrorDialogState | null>(null)
+  const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
+  const [clearingCookie, setClearingCookie] = useState(false)
   const [createForm] = Form.useForm<CreateSourceValues>()
   const createScheduleType = Form.useWatch('schedule_type', createForm) ?? 'interval'
   const createScheduleExpression = Form.useWatch('schedule_expression', createForm) ?? '6h'
   const createScheduleTimezone = Form.useWatch('schedule_timezone', createForm) ?? 'UTC'
   const createKind = Form.useWatch('kind', createForm)
+
+  const showActionError = (title: string, error: unknown, fallback: string, detail?: string) => {
+    setErrorDialog({
+      title,
+      message: sourceActionErrorMessage(error, fallback),
+      detail,
+    })
+  }
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -329,12 +353,12 @@ export default function ExternalSourcesPanel({
 
   const createSource = async (values: CreateSourceValues) => {
     if (values.kind !== 'yike_photos' && !defaultTargetNodeID) {
-      message.error('当前目标文件夹尚未加载，请稍后重试')
+      setErrorDialog({ title: '无法添加来源', message: '当前目标文件夹尚未加载，请稍后重试。' })
       return
     }
     const cookie = values.cookie?.trim() ?? ''
     if (values.kind === 'yike_photos' && !cookie) {
-      message.error('请填写一刻相册 Cookie')
+      setErrorDialog({ title: '无法添加来源', message: '请先填写一刻相册 Cookie。' })
       return
     }
 
@@ -361,7 +385,7 @@ export default function ExternalSourcesPanel({
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
-      onError(error)
+      showActionError('添加来源失败', error, '创建外部来源失败，请稍后重试。')
       setCreating(false)
       return
     }
@@ -372,16 +396,22 @@ export default function ExternalSourcesPanel({
         await api.setSourceCredential(created.id, { cookie })
       } catch (error) {
         credentialSaved = false
-        onError(error)
         try {
           await api.deleteSource(created.id, created.revision)
-          message.warning('Cookie 保存失败，刚创建的一刻相册来源已自动撤销；请检查后重试')
+          setErrorDialog({
+            title: 'Cookie 保存失败',
+            message: '刚创建的一刻相册来源已自动撤销，请检查 Cookie 后重试。',
+            detail: sourceActionErrorMessage(error, '保存 Cookie 失败'),
+          })
           await load()
           setCreating(false)
           return
         } catch (rollbackError) {
-          onError(rollbackError)
-          message.warning('来源已创建，但 Cookie 保存失败且自动回滚失败；请在“设置”中重新配置 Cookie')
+          setErrorDialog({
+            title: '来源创建未完成',
+            message: '来源已创建，但 Cookie 保存失败且自动回滚也失败。请进入“设置”重新配置 Cookie，或删除该来源后重试。',
+            detail: `Cookie：${sourceActionErrorMessage(error, '保存失败')}；回滚：${sourceActionErrorMessage(rollbackError, '回滚失败')}`,
+          })
         }
       }
     }
@@ -404,10 +434,10 @@ export default function ExternalSourcesPanel({
       await api.triggerSource(row.source.id)
       message.success(row.source.kind === 'synology_photos'
         ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查'
-        : '已请求立即扫描，Pull worker 将在下一次轮询时开始')
+        : '已请求立即扫描，已主动唤醒 Pull worker；定时轮询仅作为兜底')
       await load()
     } catch (error) {
-      onError(error)
+      showActionError('立即扫描失败', error, '无法提交立即扫描请求，请稍后重试。')
     } finally {
       setTriggeringSourceID(null)
     }
@@ -422,7 +452,7 @@ export default function ExternalSourcesPanel({
       message.success('已请求停止当前运行')
       await load(true)
     } catch (error) {
-      onError(error)
+      showActionError('停止运行失败', error, '无法停止当前运行，请稍后重试。')
     } finally {
       setCancellingRunID(null)
     }
@@ -493,7 +523,7 @@ export default function ExternalSourcesPanel({
       settingsForm.resetFields()
       await load()
     } catch (error) {
-      onError(error)
+      showActionError('保存来源设置失败', error, '来源设置未保存，请检查后重试。')
       await load()
     } finally {
       setSavingSettings(false)
@@ -502,9 +532,11 @@ export default function ExternalSourcesPanel({
 
   const clearCookie = async () => {
     if (!setting) return
+    setClearingCookie(true)
     try {
       await api.deleteSourceCredential(setting.source.id)
       message.success('Cookie 已清除，来源已自动暂停')
+      setClearCookieConfirmOpen(false)
       setSetting({
         ...setting,
         source: {
@@ -518,7 +550,10 @@ export default function ExternalSourcesPanel({
       settingsForm.setFieldValue('status', 'paused')
       await load()
     } catch (error) {
-      onError(error)
+      setClearCookieConfirmOpen(false)
+      showActionError('清除 Cookie 失败', error, '已保存的 Cookie 未能清除，请稍后重试。')
+    } finally {
+      setClearingCookie(false)
     }
   }
 
@@ -537,7 +572,7 @@ export default function ExternalSourcesPanel({
       setDeleteTarget(null)
       await load()
     } catch (error) {
-      onError(error)
+      showActionError('删除来源失败', error, '外部来源未删除，请稍后重试。')
       await load()
     } finally {
       setDeletingSourceID(null)
@@ -560,7 +595,7 @@ export default function ExternalSourcesPanel({
       setFailedItems(items)
       setFailedItemsLimitReached(items.length >= 1000)
     } catch (error) {
-      onError(error)
+      showActionError('加载来源详情失败', error, '无法读取当前失败文件列表，请稍后重试。')
     } finally {
       setFailedItemsLoading(false)
     }
@@ -582,7 +617,9 @@ export default function ExternalSourcesPanel({
 
   return (
     <>
-      <Modal title="外部来源" open={open} onCancel={onClose} footer={null} width={760}>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <DialogTitle>外部来源</DialogTitle>
+        <DialogContent dividers>
       <div className="external-sources-toolbar">
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
@@ -613,11 +650,18 @@ export default function ExternalSourcesPanel({
                   <div className="external-source-card-meta">
                     <div className="external-source-stats">{stats}</div>
                     {row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' && (
-                      <Space size={4}>
-                        <Typography.Text type="danger" ellipsis={{ tooltip: row.source.last_error }} style={{ maxWidth: 360 }}>
-                          {row.source.last_error}
-                        </Typography.Text>
-                      </Space>
+                      <MuiButton
+                        size="small"
+                        color="error"
+                        variant="text"
+                        onClick={() => setErrorDialog({
+                          title: `${row.source.name} · 最近一次运行错误`,
+                          message: row.source.last_error || '未提供具体错误信息',
+                        })}
+                        sx={{ minWidth: 'auto', px: 0, justifyContent: 'flex-start' }}
+                      >
+                        查看最近错误
+                      </MuiButton>
                     )}
                   </div>
                   <div className="external-source-actions">
@@ -664,25 +708,22 @@ export default function ExternalSourcesPanel({
           </div>
         )}
       </Spin>
-      </Modal>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton onClick={onClose}>关闭</MuiButton>
+        </DialogActions>
+      </Dialog>
 
-      <Modal
-        title={selected ? `${selected.source.name} · 来源详情` : '来源详情'}
-        open={!!selected}
-        onCancel={closeDetails}
-        footer={null}
-        width={720}
-      >
+      <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth>
+        <DialogTitle>{selected ? `${selected.source.name} · 来源详情` : '来源详情'}</DialogTitle>
+        <DialogContent dividers>
         {selected && selectedDetail && (
           <>
             {selectedDetail.error && (
-              <Alert
-                type="error"
-                showIcon
-                message="最近一次运行异常"
-                description={selectedDetail.error}
-                style={{ marginBottom: 16 }}
-              />
+              <MuiAlert severity="error" sx={{ mb: 2 }}>
+                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>最近一次运行异常</MuiTypography>
+                <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedDetail.error}</MuiTypography>
+              </MuiAlert>
             )}
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
               <Descriptions.Item label="来源类型">{selectedDetail.kindLabel}</Descriptions.Item>
@@ -709,7 +750,7 @@ export default function ExternalSourcesPanel({
             <Spin spinning={historyLoading}>
               {historyRuns.length > 0 ? (
                 <Stack spacing={1}>
-                  {historyRuns.map((run, index) => {
+                  {historyRuns.map((run) => {
                     const runDetail = externalSourceRunDetailView(run)
                     const canCancel = run.status === 'running' && selected.latestRun?.id === run.id
                     const failurePage = runFailurePages[run.id]
@@ -730,7 +771,7 @@ export default function ExternalSourcesPanel({
                             <MuiBox>
                               <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
                                 <MuiTypography variant="body2" sx={{ fontWeight: 700 }}>
-                                  #{(historyPage - 1) * SOURCE_HISTORY_PAGE_SIZE + index + 1} · {runDetail.statusLabel}
+                                  #{run.run_number > 0 ? run.run_number : '—'} · {runDetail.statusLabel}
                                 </MuiTypography>
                                 <Chip size="small" label={runDetail.modeLabel} />
                                 <Chip size="small" label={runDetail.triggerLabel} />
@@ -778,7 +819,8 @@ export default function ExternalSourcesPanel({
                             </MuiBox>
                           )}
                           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                            <Descriptions.Item label="运行 ID"><Typography.Text copyable>{run.id}</Typography.Text></Descriptions.Item>
+                            <Descriptions.Item label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</Descriptions.Item>
+                            <Descriptions.Item label="内部运行 ID"><Typography.Text copyable>{run.id}</Typography.Text></Descriptions.Item>
                             <Descriptions.Item label="耗时">{runDetail.durationLabel}</Descriptions.Item>
                             <Descriptions.Item label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</Descriptions.Item>
                             <Descriptions.Item label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</Descriptions.Item>
@@ -905,7 +947,11 @@ export default function ExternalSourcesPanel({
             )}
           </>
         )}
-      </Modal>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton onClick={closeDetails}>关闭</MuiButton>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={failedItemsOpen && failedItems.length > 0} onClose={() => setFailedItemsOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>失败文件</DialogTitle>
@@ -939,29 +985,29 @@ export default function ExternalSourcesPanel({
         </DialogActions>
       </Dialog>
 
-      <Modal
-        title="添加外部来源"
+      <Dialog
         open={createOpen}
-        onCancel={() => {
+        onClose={() => {
+          if (creating) return
           setCreateOpen(false)
           createForm.resetFields()
         }}
-        footer={null}
-        width={640}
-        destroyOnClose
+        maxWidth="sm"
+        fullWidth
       >
+        <DialogTitle>添加外部来源</DialogTitle>
+        <DialogContent dividers>
         {createKind === 'yike_photos' ? (
           <MuiAlert severity="info" sx={{ mb: 2 }}>
             固定逻辑目录：{yikeManagedTargetLabel}。连接成功后由服务器按百度 UID 和账号名称自动创建；底层文件仍使用 xDrive CAS 存储。
           </MuiAlert>
         ) : (
-          <Alert
-            type="info"
-            showIcon
-            message="目标目录使用当前文件夹"
-            description={`当前目标：${defaultTargetLabel}${defaultTargetPath ? `（${defaultTargetPath}）` : '（我的文件根目录）'}`}
-            style={{ marginBottom: 16 }}
-          />
+          <MuiAlert severity="info" sx={{ mb: 2 }}>
+            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
+            <MuiTypography variant="body2">
+              当前目标：{defaultTargetLabel}{defaultTargetPath ? `（${defaultTargetPath}）` : '（我的文件根目录）'}
+            </MuiTypography>
+          </MuiAlert>
         )}
         <Form form={createForm} layout="vertical" onFinish={createSource} requiredMark={false}>
           <Form.Item name="kind" label="来源类型" rules={[{ required: true }]}>
@@ -1064,19 +1110,22 @@ export default function ExternalSourcesPanel({
             </Button>
           </div>
         </Form>
-      </Modal>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        title={setting ? `${setting.source.name} · 设置` : '来源设置'}
+      <Dialog
         open={!!setting}
-        onCancel={() => {
+        onClose={() => {
+          if (savingSettings) return
+          setClearCookieConfirmOpen(false)
           setSetting(null)
           settingsForm.resetFields()
         }}
-        footer={null}
-        width={640}
-        destroyOnClose
+        maxWidth="sm"
+        fullWidth
       >
+        <DialogTitle>{setting ? `${setting.source.name} · 设置` : '来源设置'}</DialogTitle>
+        <DialogContent dividers>
         {setting && (
           <Form form={settingsForm} layout="vertical" onFinish={saveSettings} requiredMark={false}>
             <Form.Item
@@ -1147,13 +1196,14 @@ export default function ExternalSourcesPanel({
             {externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && (
               <>
                 <Divider orientation="left">一刻相册凭据</Divider>
-                <Alert
-                  type={setting.credential?.configured ? 'success' : 'warning'}
-                  showIcon
-                  message={setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
-                  description="出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。"
-                  style={{ marginBottom: 16 }}
-                />
+                <MuiAlert severity={setting.credential?.configured ? 'success' : 'warning'} sx={{ mb: 2 }}>
+                  <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
+                  </MuiTypography>
+                  <MuiTypography variant="body2">
+                    出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
+                  </MuiTypography>
+                </MuiAlert>
                 <Form.Item name="cookie" label="更新 Cookie">
                   <Input.Password
                     autoComplete="off"
@@ -1183,15 +1233,15 @@ export default function ExternalSourcesPanel({
                   {settingsCredentialTestError && <MuiAlert severity="error" sx={{ mt: 1 }}>{settingsCredentialTestError}</MuiAlert>}
                 </div>
                 {setting.credential?.configured && (
-                  <Popconfirm
-                    title="清除已保存的 Cookie？"
-                    description="清除后，一刻相册来源将无法继续扫描或同步，直到重新配置 Cookie。"
-                    okText="清除"
-                    cancelText="取消"
-                    onConfirm={() => void clearCookie()}
+                  <MuiButton
+                    color="error"
+                    variant="outlined"
+                    disabled={clearingCookie}
+                    onClick={() => setClearCookieConfirmOpen(true)}
+                    sx={{ mb: 2 }}
                   >
-                    <Button danger style={{ marginBottom: 16 }}>清除 Cookie</Button>
-                  </Popconfirm>
+                    清除 Cookie
+                  </MuiButton>
                 )}
               </>
             )}
@@ -1209,6 +1259,7 @@ export default function ExternalSourcesPanel({
               <div style={{ display: 'flex', gap: 8 }}>
                 <Button
                   onClick={() => {
+                    setClearCookieConfirmOpen(false)
                     setSetting(null)
                     settingsForm.resetFields()
                   }}
@@ -1220,7 +1271,8 @@ export default function ExternalSourcesPanel({
             </div>
           </Form>
         )}
-      </Modal>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)}>
         <DialogTitle>删除外部来源？</DialogTitle>
@@ -1235,6 +1287,48 @@ export default function ExternalSourcesPanel({
           <MuiButton color="error" variant="contained" disabled={deletingSourceID !== null} onClick={() => void deleteSource()}>
             {deletingSourceID === null ? '删除来源' : '正在删除…'}
           </MuiButton>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={clearCookieConfirmOpen}
+        onClose={() => !clearingCookie && setClearCookieConfirmOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>清除已保存的 Cookie？</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            清除后，一刻相册来源会自动暂停，无法继续扫描或同步，直到重新配置有效 Cookie。
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton disabled={clearingCookie} onClick={() => setClearCookieConfirmOpen(false)}>取消</MuiButton>
+          <MuiButton color="error" variant="contained" disabled={clearingCookie} onClick={() => void clearCookie()}>
+            {clearingCookie ? '正在清除…' : '清除 Cookie'}
+          </MuiButton>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!errorDialog} onClose={() => setErrorDialog(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{errorDialog?.title ?? '操作失败'}</DialogTitle>
+        <DialogContent dividers>
+          {errorDialog && (
+            <Stack spacing={1.5}>
+              <MuiAlert severity="error">{errorDialog.message}</MuiAlert>
+              {errorDialog.detail && (
+                <MuiBox>
+                  <MuiTypography variant="caption" color="text.secondary">详细信息</MuiTypography>
+                  <MuiTypography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                    {errorDialog.detail}
+                  </MuiTypography>
+                </MuiBox>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <MuiButton variant="contained" onClick={() => setErrorDialog(null)}>知道了</MuiButton>
         </DialogActions>
       </Dialog>
 

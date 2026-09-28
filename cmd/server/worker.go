@@ -12,8 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
+	"github.com/lazyxu/xdrive/internal/sourcewake"
 	"github.com/lazyxu/xdrive/internal/yikeworker"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -23,6 +25,7 @@ const (
 	defaultSourcePullInterval = 6 * time.Hour
 	defaultWorkerPollInterval = time.Minute
 	defaultInternalServerURL  = "http://server:8080"
+	sourceWakeReconnectDelay  = 5 * time.Second
 )
 
 func runWorker(args []string) error {
@@ -107,6 +110,7 @@ func runWorker(args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	wakeups := sourceRunWakeups(ctx, cfg.DatabaseURL)
 
 	slog.Info("source_pull_worker_started",
 		"server_url", serverURL,
@@ -128,7 +132,64 @@ func runWorker(args []string) error {
 			if err := runDue(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("source_pull_cycle_failed", "error", err)
 			}
+		case <-wakeups:
+			if err := runDue(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("source_pull_wakeup_cycle_failed", "error", err)
+			}
 		}
+	}
+}
+
+func sourceRunWakeups(ctx context.Context, databaseURL string) <-chan struct{} {
+	wakeups := make(chan struct{}, 1)
+	go func() {
+		for ctx.Err() == nil {
+			conn, err := pgx.Connect(ctx, databaseURL)
+			if err != nil {
+				slog.Warn("source_pull_wakeup_listener_connect_failed", "error", err)
+				if !sleepWithContext(ctx, sourceWakeReconnectDelay) {
+					return
+				}
+				continue
+			}
+			if _, err := conn.Exec(ctx, "LISTEN "+sourcewake.PostgreSQLChannel); err != nil {
+				slog.Warn("source_pull_wakeup_listener_listen_failed", "error", err)
+				_ = conn.Close(context.Background())
+				if !sleepWithContext(ctx, sourceWakeReconnectDelay) {
+					return
+				}
+				continue
+			}
+			slog.Info("source_pull_wakeup_listener_ready", "channel", sourcewake.PostgreSQLChannel)
+			for ctx.Err() == nil {
+				if _, err := conn.WaitForNotification(ctx); err != nil {
+					if ctx.Err() == nil {
+						slog.Warn("source_pull_wakeup_listener_disconnected", "error", err)
+					}
+					break
+				}
+				select {
+				case wakeups <- struct{}{}:
+				default:
+				}
+			}
+			_ = conn.Close(context.Background())
+			if ctx.Err() == nil && !sleepWithContext(ctx, sourceWakeReconnectDelay) {
+				return
+			}
+		}
+	}()
+	return wakeups
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

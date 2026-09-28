@@ -118,7 +118,7 @@ touch "$TEST_STATE/data-restored"
 exit 0
 '
     ;;
-  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '
@@ -262,7 +262,7 @@ TEST_PULL_MODE=transient \
 TEST_HEALTH_OK=0 \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config" \
-XD_HOST_BIN_DIR="$TMP/host-bin" \
+XD_SHELL_RC_PATH="$TMP/config.bashrc" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
@@ -294,8 +294,8 @@ grep -q 'pull postgres.*1.0 KiB / 4.0 KiB (25%)' "$TMP/upgrade.out"
 grep -q 'pull postgres.*4.0 KiB / 4.0 KiB (100%)' "$TMP/upgrade.out"
 test -x "$TMP/config/bin/xdrive-server"
 test -x "$TMP/config/bin/server-doctor.sh"
-test -L "$TMP/host-bin/xdrive-server"
-[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/bin/xdrive-server" ]]
+grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
+test ! -e "$TMP/host-bin/xdrive-server"
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/upgrade.err"
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
@@ -317,7 +317,7 @@ TEST_PULL_MODE=stall-once \
 TEST_HEALTH_OK=1 \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/stall-config" \
-XD_HOST_BIN_DIR="$TMP/stall-host-bin" \
+XD_SHELL_RC_PATH="$TMP/stall-config.bashrc" \
 XD_NONINTERACTIVE=1 \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
@@ -344,7 +344,7 @@ TEST_PULL_MODE=permanent \
 TEST_HEALTH_OK=1 \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config" \
-XD_HOST_BIN_DIR="$TMP/host-bin" \
+XD_SHELL_RC_PATH="$TMP/config.bashrc" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
@@ -368,8 +368,8 @@ grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=2$' "$TMP/config/.env"
 grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb$' "$TMP/config/.env"
 test -x "$TMP/config/bin/xdrive-server"
 test -x "$TMP/config/bin/server-doctor.sh"
-test -L "$TMP/host-bin/xdrive-server"
-[[ "$(readlink "$TMP/host-bin/xdrive-server")" == "$TMP/config/bin/xdrive-server" ]]
+grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
+test ! -e "$TMP/host-bin/xdrive-server"
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/pull-fail.err"
 
 echo "server transactional upgrade tests passed"

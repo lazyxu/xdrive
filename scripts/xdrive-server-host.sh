@@ -30,8 +30,6 @@ BACKUP_DIR="$XDRIVE_HOME/backups"
 LOG_DIR="$XDRIVE_HOME/logs"
 STATE_DIR="$XDRIVE_HOME/state"
 LEGACY_VOLUMES_RECORD="$STATE_DIR/legacy-volumes-retained"
-HOST_BIN_DIR="${XD_HOST_BIN_DIR:-/usr/local/bin}"
-HOST_MANAGER_LINK="$HOST_BIN_DIR/xdrive-server"
 ENV_PATH="$CONFIG_DIR/.env"
 COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 
@@ -46,6 +44,7 @@ Usage:
   xdrive-server backup [server-backup.sh options...]
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
+  xdrive-server migrate-user USER
   xdrive-server cleanup legacy-volumes [--yes]
   xdrive-server uninstall [--purge-data] [--purge-backups] --yes
   xdrive-server admin list
@@ -59,6 +58,36 @@ This command runs on the Docker host. It manages the xDrive home (default
 ~/.xd) and the xDrive containers; it is not the xdrive-server API daemon
 inside the container.
 EOF
+}
+
+detect_shell_rc() {
+  local shell_name
+  if [[ -n "${XD_SHELL_RC_PATH:-}" ]]; then
+    printf '%s\n' "$XD_SHELL_RC_PATH"
+    return
+  fi
+  shell_name="$(basename "${SHELL:-bash}")"
+  case "$shell_name" in
+    zsh) printf '%s\n' "$HOME/.zshrc" ;;
+    bash) printf '%s\n' "$HOME/.bashrc" ;;
+    *) printf '%s\n' "$HOME/.profile" ;;
+  esac
+}
+
+remove_user_command_path() {
+  local rc tmp begin end
+  rc="$(detect_shell_rc)"
+  [[ -f "$rc" ]] || return 0
+  begin="# >>> xDrive server PATH >>>"
+  end="# <<< xDrive server PATH <<<"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-shell-rc.XXXXXX")"
+  awk -v begin="$begin" -v end="$end" '
+    $0 == begin { skip=1; next }
+    $0 == end { skip=0; next }
+    !skip { print }
+  ' "$rc" > "$tmp"
+  cat "$tmp" > "$rc"
+  rm -f "$tmp"
 }
 
 env_value() {
@@ -358,6 +387,19 @@ restore_cmd() {
   return "$status"
 }
 
+migrate_user_cmd() {
+  local script="$BIN_DIR/server-migrate-user.sh"
+  [[ -x "$script" ]] || {
+    echo "xdrive-server: migration tool is not installed at $script" >&2
+    return 1
+  }
+  if [[ "${EUID:-$(id -u)}" -ne 0 && "${XD_MIGRATE_TEST_ALLOW_NONROOT:-0}" != "1" ]]; then
+    echo "xdrive-server: migrate-user must be started by root." >&2
+    return 1
+  fi
+  XD_SOURCE_CONFIG_DIR="$XDRIVE_HOME" exec "$script" "$@"
+}
+
 verify_cmd() {
   local script="$BIN_DIR/server-verify.sh" status repair=0 dry_run=0 arg
   [[ -x "$script" ]] || {
@@ -453,6 +495,7 @@ cleanup_legacy_volumes_cmd() {
       rm -f "$STATE_DIR/runtime-uninstalled"
       rm -f "$BIN_DIR/xdrive-server"
       rmdir "$BIN_DIR" "$STATE_DIR" 2>/dev/null || true
+      remove_user_command_path
       if [[ "$purge_all" == "1" ]]; then
         rm -f "$ENV_PATH"
         rmdir "$CONFIG_DIR" "$DATA_DIR/caddy" "$DATA_DIR" "$BACKUP_DIR" "$LOG_DIR" "$XDRIVE_HOME" 2>/dev/null || true
@@ -518,21 +561,6 @@ purge_container_owned_dir() {
   rmdir "$path" 2>/dev/null || true
 }
 
-remove_host_manager_link() {
-  [[ -L "$HOST_MANAGER_LINK" ]] || return 0
-  local target
-  target="$(readlink -f "$HOST_MANAGER_LINK" 2>/dev/null || true)"
-  if [[ "$target" != "$SELF_PATH" && "$target" != "$(canonical_path "$BIN_DIR/xdrive-server")" ]]; then
-    echo "xdrive-server: leaving unrelated symlink $HOST_MANAGER_LINK -> $target" >&2
-    return 0
-  fi
-  if [[ -w "$HOST_BIN_DIR" ]]; then
-    rm -f "$HOST_MANAGER_LINK"
-  else
-    echo "xdrive-server: warning: cannot remove $HOST_MANAGER_LINK without write permission; remove that symlink manually." >&2
-  fi
-}
-
 uninstall_cmd() {
   local purge_data=0 purge_backups=0 confirm=0 arg
   local files_dir postgres_dir caddy_data_dir caddy_config_dir
@@ -573,7 +601,6 @@ uninstall_cmd() {
   fi
 
   remove_backup_schedule
-  remove_host_manager_link
 
   if [[ "$purge_data" == "1" ]]; then
     purge_container_owned_dir "file data" "$files_dir"
@@ -611,6 +638,7 @@ uninstall_cmd() {
     echo "[xDrive] run '$BIN_DIR/xdrive-server cleanup legacy-volumes --yes' when you are ready to remove the old volumes."
   else
     rm -rf "$STATE_DIR" "$BIN_DIR"
+    remove_user_command_path
   fi
 
   if [[ "$purge_data" == "1" && "$purge_backups" == "1" && ! -f "$LEGACY_VOLUMES_RECORD" ]]; then
@@ -716,6 +744,7 @@ case "$cmd" in
   backup) backup_cmd "$@" ;;
   restore) restore_cmd "$@" ;;
   verify) verify_cmd "$@" ;;
+  migrate-user) migrate_user_cmd "$@" ;;
   cleanup) cleanup_cmd "$@" ;;
   uninstall) uninstall_cmd "$@" ;;
   admin) admin_cmd "$@" ;;

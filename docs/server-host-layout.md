@@ -60,7 +60,7 @@ The directory is private to the installing user. `.env` is always mode `0600`.
 
 Contains host-management executables and maintenance scripts. These files manage Docker from the host and are not mounted into application containers.
 
-The canonical host manager is `~/.xd/bin/xdrive-server`. If the configured host bin directory (default `/usr/local/bin`) is writable, the installer may create a symlink there. Lack of permission to write `/usr/local/bin` must never make installation fail.
+The canonical host manager is `~/.xd/bin/xdrive-server` (or `$XD_CONFIG_DIR/bin/xdrive-server` when the xDrive home is overridden). The installer never creates a system-wide command in `/usr/local/bin`. Instead it idempotently adds the active xDrive `bin` directory to the installing user's shell PATH. This contract is identical for root and non-root users.
 
 ### `data/`
 
@@ -156,6 +156,18 @@ PostgreSQL and Caddy retain their image-native ownership behavior inside their b
 
 Because bind-mounted data is intentionally owned according to container runtime identities, the host user must not rely on direct recursive `rm -rf`, `chown`, or in-place editing of `data/postgres` or other container-owned trees. xDrive maintenance, migration, backup, restore, and eventual uninstall/cleanup flows must use Docker/container-assisted operations when ownership translation is required. This is especially important for Rootless Docker, where container UIDs can map to subordinate host IDs.
 
+## Root-to-user migration
+
+A deployment originally installed as root can be migrated to a normal user with:
+
+```bash
+/root/.xd/bin/xdrive-server migrate-user USER
+```
+
+The migration command preflights the target user's Docker access and free disk space, stops the root-owned deployment, copies the complete xDrive home to `/home/USER/.xd`, rewrites xDrive-managed absolute data paths, transfers the managed backup schedule, starts the copied deployment through the target user's Docker context, and requires the server health check to pass before committing the migration. If startup or verification fails, the target deployment is stopped and the original root deployment is restarted.
+
+The original root xDrive home is intentionally retained after a successful migration as a rollback copy. It is never deleted automatically. The target user's shell PATH is updated to use `/home/USER/.xd/bin`; an already-open target-user shell must run the printed `source <rc-file>` command or start a new login shell.
+
 ## Non-root installation contract
 
 A supported installation must succeed when all of the following are true:
@@ -170,12 +182,12 @@ The installer must not:
 
 - require EUID 0;
 - invoke `sudo`;
-- require writes to `/etc`, `/var/lib`, or `/usr/local/bin`;
+- require writes to `/etc`, `/var/lib`, or any system-wide command directory;
 - mount `/var/run/docker.sock` into xDrive application containers;
 - require `--privileged`;
 - require host networking.
 
-If `/usr/local/bin` is not writable, the supported command remains `~/.xd/bin/xdrive-server`, and the installer prints the PATH export needed for the user's shell.
+The supported command remains user-local. The installer updates the detected shell rc file (`.bashrc`, `.zshrc`, or `.profile`) with a managed PATH block and prints the exact `source <rc-file>` command needed for an already-open parent shell to pick up that change.
 
 ## Legacy layout migration
 
@@ -323,7 +335,7 @@ Normal CI must verify at least:
 - installer source contains no `sudo` requirement or EUID-root gate;
 - rootless detection selects the rootless runtime GID contract;
 - default data paths resolve under the selected xDrive home;
-- a non-writable `/usr/local/bin` path does not fail installation;
+- installation and update do not create or require a `/usr/local/bin/xdrive-server` entry;
 - legacy flat configuration is recognized and migrated;
 - legacy named-volume data is copied before the new deployment is opened;
 - rollback keeps the old named-volume deployment usable;

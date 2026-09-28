@@ -345,6 +345,9 @@ jobs:
           bash -n scripts/server-doctor.sh
           bash -n scripts/test-server-doctor.sh
           bash scripts/test-server-doctor.sh
+          bash -n scripts/server-migrate-user.sh
+          bash -n scripts/test-server-user-migration.sh
+          bash scripts/test-server-user-migration.sh
           bash -n scripts/test-server-backup-restore.sh
           bash -n scripts/test-server-chunk-storage.sh
           bash -n scripts/test-server-installer-bootstrap.sh
@@ -482,6 +485,13 @@ jobs:
           grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
           grep -q 'server-doctor.sh' deploy/install-server.sh
           grep -q 'server-doctor.sh' .github/workflows/release.yml
+          grep -q 'server-migrate-user.sh' deploy/install-server.sh
+          grep -q 'server-migrate-user.sh' .github/workflows/release.yml
+          grep -q 'migrate-user) migrate_user_cmd' scripts/xdrive-server-host.sh
+          if grep -Eq 'HOST_BIN_DIR|HOST_MANAGER_LINK|ln -sfn .*xdrive-server' deploy/install-server.sh scripts/xdrive-server-host.sh; then
+            echo "xDrive host manager must not create a system-wide command link" >&2
+            exit 1
+          fi
           grep -q '/api/v1/readyz' deploy/install-server.sh
           grep -q '/api/v1/readyz' scripts/server-doctor.sh
           if grep -q '/api/v1/healthz' deploy/install-server.sh; then
