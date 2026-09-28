@@ -38,10 +38,6 @@ is_template_placeholder() {
   [[ "$1" =~ ^@[A-Z_]+@$ ]]
 }
 
-is_template_placeholder() {
-  [[ "$1" =~ ^@[A-Z_]+@$ ]]
-}
-
 STAGE_TOTAL=9
 STAGE_NO=0
 CURRENT_STAGE="startup"
