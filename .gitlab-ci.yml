@@ -419,6 +419,8 @@ test-windows-upgrade-artifact:
   needs:
     - job: package-windows-client
       artifacts: true
+    - job: test-windows-rollback-artifact
+      artifacts: false
   resource_group: xdrive-test-windows-client-artifact
   variables:
     XDRIVE_WINDOWS_TRANSACTION_SCENARIO: "upgrade"
@@ -432,6 +434,8 @@ test-windows-smoke-artifact:
   needs:
     - job: package-windows-client
       artifacts: true
+    - job: test-windows-upgrade-artifact
+      artifacts: false
   resource_group: xdrive-test-windows-client-artifact
   tags:
     - windows

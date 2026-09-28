@@ -455,13 +455,13 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitHubJobNeeds(t, github, "test-linux-artifact", []string{"package-linux-client"})
 	assertGitHubJobNeeds(t, github, "test-source-agent-artifact", []string{"build-source-agent"})
 	assertGitHubJobNeeds(t, github, "test-windows-rollback-artifact", []string{"package-windows-client"})
-	assertGitHubJobNeeds(t, github, "test-windows-upgrade-artifact", []string{"package-windows-client"})
-	assertGitHubJobNeeds(t, github, "test-windows-smoke-artifact", []string{"package-windows-client"})
+	assertGitHubJobNeeds(t, github, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
+	assertGitHubJobNeeds(t, github, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
 	assertGitLabJobNeeds(t, gitlab, "test-linux-artifact", []string{"package-linux-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-source-agent-artifact", []string{"build-source-agent"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
-	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client"})
-	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client"})
+	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
+	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
 	assertGitLabSharedResourceGroup(t, gitlab, []string{
 		"test-windows-rollback-artifact",
 		"test-windows-upgrade-artifact",

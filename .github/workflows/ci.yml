@@ -801,7 +801,7 @@ jobs:
           }
 
   test-windows-upgrade-artifact:
-    needs: package-windows-client
+    needs: [package-windows-client, test-windows-rollback-artifact]
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
@@ -827,7 +827,7 @@ jobs:
           }
 
   test-windows-smoke-artifact:
-    needs: package-windows-client
+    needs: [package-windows-client, test-windows-upgrade-artifact]
     runs-on: windows-latest
     env:
       XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
