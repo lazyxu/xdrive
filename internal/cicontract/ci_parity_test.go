@@ -933,6 +933,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	}
 
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
+		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`,
 		"release-assets:",
 		"publish-server-images:",
 		"promote-server-images:",
