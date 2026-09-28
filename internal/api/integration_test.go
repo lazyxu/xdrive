@@ -46,10 +46,11 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
 		t.Fatal(err)
 	}
-	store, err := storage.NewLocal(t.TempDir())
+	localStore, err := storage.NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	store := &capacityOverrideLocal{Local: localStore, availableOverride: -1}
 	router := (&Server{
 		DB: db, Store: store, Auth: auth.New("integration-test-secret", time.Hour), RefreshTTL: 30 * 24 * time.Hour,
 		AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
@@ -88,6 +89,27 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 		t.Fatalf("size=%d", file.Size)
 	}
 
+	var lowSpaceBody bytes.Buffer
+	lowSpaceWriter := multipart.NewWriter(&lowSpaceBody)
+	lowSpacePart, err := lowSpaceWriter.CreateFormFile("file", "no-space.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(lowSpacePart, "blocked")
+	if err := lowSpaceWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store.availableOverride = 1
+	lowSpaceReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/files", dir.ID), &lowSpaceBody)
+	lowSpaceReq.Header.Set("Content-Type", lowSpaceWriter.FormDataContentType())
+	lowSpaceReq.Header.Set("Authorization", "Bearer "+tokenA)
+	lowSpaceRes := httptest.NewRecorder()
+	router.ServeHTTP(lowSpaceRes, lowSpaceReq)
+	if lowSpaceRes.Code != http.StatusInsufficientStorage || !strings.Contains(lowSpaceRes.Body.String(), "storage_capacity_exceeded") {
+		t.Fatalf("low-space multipart status=%d body=%s", lowSpaceRes.Code, lowSpaceRes.Body.String())
+	}
+	store.availableOverride = -1
+
 	// Another user cannot read or mutate Alice's node IDs.
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenB, nil, http.StatusNotFound)
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", dir.ID), tokenB, nil, http.StatusNotFound, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", dir.Revision)})
@@ -102,6 +124,13 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 		t.Fatalf("range=%q", got)
 	}
 
+	store.availableOverride = 1
+	requestWithHeaders(
+		t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID),
+		tokenA, strings.NewReader("updated"), http.StatusInsufficientStorage,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)},
+	)
+	store.availableOverride = -1
 	updated := requestNodeWithHeaders(t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenA, strings.NewReader("updated"), http.StatusOK, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)})
 	if updated.Size != 7 {
 		t.Fatalf("updated size=%d", updated.Size)

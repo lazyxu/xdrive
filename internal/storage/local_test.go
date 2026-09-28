@@ -85,3 +85,31 @@ func TestLocalReportsFilesystemCapacity(t *testing.T) {
 		t.Fatalf("invalid available capacity: %+v", capacity)
 	}
 }
+
+func TestLocalPromoteMovesContentIntoTarget(t *testing.T) {
+	s, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(context.Background(), "tmp/source", strings.NewReader("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Promote(context.Background(), "tmp/source", ".xdrive-blobs/sha256/aa/target", 5); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Open(context.Background(), "tmp/source"); err == nil {
+		t.Fatal("promoted source still exists")
+	}
+	target, err := s.Open(context.Background(), ".xdrive-blobs/sha256/aa/target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Close()
+	got, err := io.ReadAll(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "hello" {
+		t.Fatalf("promoted content=%q", got)
+	}
+}

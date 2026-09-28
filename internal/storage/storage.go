@@ -58,3 +58,7 @@ type Capacity struct {
 type CapacityReporter interface {
 	Capacity(context.Context) (Capacity, error)
 }
+
+type ContentPromoter interface {
+	Promote(context.Context, string, string, int64) error
+}

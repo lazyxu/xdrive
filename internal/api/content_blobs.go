@@ -107,6 +107,12 @@ func (s *Server) ensureContentBlobObject(ctx context.Context, tempKey, targetKey
 			return nil
 		}
 	}
+	if promoter, ok := s.Store.(storage.ContentPromoter); ok {
+		return promoter.Promote(ctx, tempKey, targetKey, expectedSize)
+	}
+	if err := s.ensureStorageWriteCapacity(ctx, expectedSize); err != nil {
+		return err
+	}
 	return s.writeBlobFromTemp(ctx, tempKey, targetKey, expectedSize)
 }
 

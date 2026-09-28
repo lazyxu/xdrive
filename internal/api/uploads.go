@@ -360,6 +360,12 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 	}
 
 	key := fmt.Sprintf("%s/%d/%s/%06d-%s", storage.UploadStagingDir, session.OwnerID, session.ID, index, uuid.NewString())
+	if err := s.ensureStorageWriteCapacity(c.Request.Context(), expectedSize); err != nil {
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "storage capacity check failed")
+		}
+		return
+	}
 	h := sha256.New()
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, expectedSize)
 	size, err := s.Store.Put(c.Request.Context(), key, io.TeeReader(c.Request.Body, h))
@@ -517,6 +523,12 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	}
 
 	newKey := storageKey(session.OwnerID, targetLogical, uuid.NewString())
+	if err := s.ensureStorageWriteCapacity(c.Request.Context(), session.TotalSize); err != nil {
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "storage capacity check failed")
+		}
+		return
+	}
 	seq := &uploadPartSequence{ctx: c.Request.Context(), store: s.Store, parts: parts}
 	fullHash := sha256.New()
 	md5Hash := md5.New()
@@ -557,7 +569,9 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	casKey, _ := storage.ContentAddressedKey(actualHash)
 	if err := s.ensureContentBlobObject(c.Request.Context(), newKey, casKey, size); err != nil {
 		_ = s.Store.Delete(c.Request.Context(), newKey)
-		fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
+		}
 		return
 	}
 	var (
