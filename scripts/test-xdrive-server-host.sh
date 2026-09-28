@@ -57,7 +57,7 @@ printf '%s\n' "$*" >> "$TEST_STATE/docker-args"
 case "$*" in
   *"exec -T server xdrive-server version"*)
     cat <<'EOF'
-server version: snapshot-0123456789ab
+server version: snapshot
 channel: master
 commit: 0123456789abcdef0123456789abcdef01234567
 commit message: feat: server build metadata
@@ -144,10 +144,10 @@ TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
 XD_INSTALLER_URL="https://example.invalid/install-server.sh" \
-bash "$HOST" update --channel master --commit 0123456789ab >"$TMP/update.out" 2>"$TMP/update.err"
+bash "$HOST" update --channel master >"$TMP/update.out" 2>"$TMP/update.err"
 
 grep -q '^https://example.invalid/install-server.sh$' "$TMP/state/curl-url"
-grep -q '^--channel master --commit 0123456789ab$' "$TMP/state/installer-args"
+grep -q '^--channel master$' "$TMP/state/installer-args"
 if grep -q '^pipe:' "$TMP/state/installer-stdin"; then
   echo "host updater passed a pipe as installer stdin" >&2
   cat "$TMP/state/installer-stdin" >&2
@@ -170,7 +170,7 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" version >"$TMP/version.out"
 
-grep -q '^server version: snapshot-0123456789ab$' "$TMP/version.out"
+grep -q '^server version: snapshot$' "$TMP/version.out"
 grep -q '^channel: master$' "$TMP/version.out"
 grep -q '^commit: 0123456789abcdef0123456789abcdef01234567$' "$TMP/version.out"
 grep -q '^commit message: feat: server build metadata$' "$TMP/version.out"

@@ -41,8 +41,8 @@ case "$url" in
     "sha": "0123456789abcdef0123456789abcdef01234567"
   }
 }' ;;
-  */releases/tags/snapshot-0123456789ab)
-    emit '{"tag_name":"snapshot-0123456789ab"}' ;;
+  */releases/tags/snapshot)
+    emit '{"tag_name":"snapshot"}' ;;
   */deploy/docker-compose.yml)
     emit 'name: xdrive
 services: {}

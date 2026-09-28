@@ -656,7 +656,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"Go version OK:",
 	)
 	requireRaw(t, "client artifact version resolver", artifactVersion,
-		"XDRIVE_RELEASE_VERSION=\"snapshot-$short_sha\"",
+		"XDRIVE_RELEASE_VERSION=\"snapshot\"",
 		"XDRIVE_DESKTOP_VERSION=\"0.0.0-snapshot.$short_sha\"",
 		"XDRIVE_RELEASE_VERSION=\"$tag\"",
 		"XDRIVE_RELEASE_VERSION=\"0.0.0-ci\"",
@@ -864,7 +864,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"name: xdrive-linux-amd64",
 		"name: xdrive-windows-amd64",
 		"name: xdrive-source-agent-linux",
-		"snapshot-${GITHUB_SHA::12}",
+		"gh release create snapshot release/* --repo \"$repo\" --prerelease",
 		"target_tag=\"edge\"",
 		"target_tag=\"latest\"",
 		"retention-days: 14",
@@ -897,6 +897,14 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	if strings.Contains(githubRelease, "gh release delete-asset snapshot") {
 		t.Errorf("GitHub rolling snapshot update must recreate the release instead of deleting assets one by one")
 	}
+	for _, forbidden := range []string{"snapshot-${GITHUB_SHA::12}", "Publish immutable master snapshot", "Prune old immutable master snapshots"} {
+		if strings.Contains(githubRelease, forbidden) {
+			t.Errorf("GitHub release workflow must keep only the rolling snapshot: %q", forbidden)
+		}
+	}
+	if strings.Contains(gitlabReleaseScripts, `XDRIVE_RELEASE_TAG="snapshot-$short_sha"`) {
+		t.Errorf("GitLab release workflow must keep only the rolling snapshot tag")
+	}
 	for _, forbidden := range []string{"docker/build-push-action", "docker build --build-arg", "docker build -f"} {
 		if strings.Contains(githubRelease, forbidden) {
 			t.Errorf("GitHub release workflow must publish exact tested server images without rebuilding: %q", forbidden)
@@ -928,7 +936,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	}
 
 	requireRaw(t, "GitLab release scripts", gitlabReleaseScripts,
-		"snapshot-$short_sha",
+		"XDRIVE_RELEASE_TAG=\"snapshot\"",
 		"0.0.0-snapshot.$short_sha",
 		"XDRIVE_PROMOTION_TAG=\"edge\"",
 		"XDRIVE_PROMOTION_TAG=\"latest\"",

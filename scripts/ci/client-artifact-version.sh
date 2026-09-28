@@ -30,7 +30,7 @@ if [[ -n "$tag" ]]; then
   XDRIVE_ARTIFACT_CHANNEL="stable"
   XDRIVE_ARTIFACT_PUBLISHABLE="1"
 elif [[ "$branch_name" == "master" || "${GITHUB_REF:-}" == "refs/heads/master" ]]; then
-  XDRIVE_RELEASE_VERSION="snapshot-$short_sha"
+  XDRIVE_RELEASE_VERSION="snapshot"
   XDRIVE_DESKTOP_VERSION="0.0.0-snapshot.$short_sha"
   XDRIVE_ARTIFACT_CHANNEL="master"
   XDRIVE_ARTIFACT_PUBLISHABLE="1"

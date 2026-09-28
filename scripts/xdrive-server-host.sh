@@ -40,7 +40,7 @@ usage() {
 xDrive server host manager
 
 Usage:
-  xdrive-server update [--source github|gitlab] [--channel stable|master|commit] [--commit SHA]
+  xdrive-server update [--source github|gitlab] [--channel stable|master]
   xdrive-server doctor [--strict]
   xdrive-server status [--summary-only]
   xdrive-server backup [server-backup.sh options...]
@@ -153,7 +153,6 @@ update_cmd() (
 
   for arg in "$@"; do
     case "$previous" in
-      --commit) audit_target="$arg" ;;
       --channel) [[ -z "$audit_target" ]] && audit_target="$arg" ;;
       --source) update_source="$arg" ;;
     esac

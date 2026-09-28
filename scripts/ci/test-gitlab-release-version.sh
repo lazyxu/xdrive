@@ -11,7 +11,7 @@ master_out="$(
     printf "%s\n" "$XDRIVE_RELEASE_VERSION" "$XDRIVE_DESKTOP_VERSION" "$XDRIVE_IMAGE_TAG" "$XDRIVE_RELEASE_CHANNEL" "$XDRIVE_RELEASE_TAG" "$XDRIVE_PROMOTION_TAG"
   '
 )"
-expected_master=$'snapshot-0123456789ab\n0.0.0-snapshot.0123456789ab\nsha-0123456789ab\nmaster\nsnapshot-0123456789ab\nedge'
+expected_master=$'snapshot\n0.0.0-snapshot.0123456789ab\nsha-0123456789ab\nmaster\nsnapshot\nedge'
 [[ "$master_out" == "$expected_master" ]] || {
   printf 'unexpected master release version output:\n%s\n' "$master_out" >&2
   exit 1

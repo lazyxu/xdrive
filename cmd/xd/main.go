@@ -64,7 +64,7 @@ Usage:
   xd config --mount PATH
   xd mount [PATH]
   xd version
-  xd update [--source github|gitlab] [--channel stable|master|commit] [--commit SHA] [--install]
+  xd update [--source github|gitlab] [--channel stable|master] [--install]
   xd update --status
   xd doctor [--strict]
   xd logout
@@ -339,14 +339,13 @@ func updateCmd(args []string) error {
 	install := fs.Bool("install", false, "install the available update now")
 	showStatus := fs.Bool("status", false, "show the most recent platform update transaction")
 	sourceFlag := fs.String("source", "", "update source: github or gitlab")
-	channelFlag := fs.String("channel", "", "update channel: stable, master, or commit")
-	commitFlag := fs.String("commit", "", "commit SHA for the commit channel")
+	channelFlag := fs.String("channel", "", "update channel: stable or master")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *showStatus {
-		if *install || strings.TrimSpace(*sourceFlag) != "" || strings.TrimSpace(*channelFlag) != "" || strings.TrimSpace(*commitFlag) != "" {
-			return fmt.Errorf("--status cannot be combined with --install, --source, --channel, or --commit")
+		if *install || strings.TrimSpace(*sourceFlag) != "" || strings.TrimSpace(*channelFlag) != "" {
+			return fmt.Errorf("--status cannot be combined with --install, --source, or --channel")
 		}
 		status, err := xupdate.LastInstallStatus()
 		if err != nil {
@@ -393,13 +392,9 @@ func updateCmd(args []string) error {
 		}
 	}
 	channel := strings.TrimSpace(*channelFlag)
-	commit := strings.TrimSpace(*commitFlag)
-	if channel == "" && commit != "" {
-		channel = xupdate.ChannelCommit
-	}
 	if channel == "" {
 		var err error
-		channel, commit, err = xupdate.AutomaticTarget(current)
+		channel, err = xupdate.AutomaticChannel(current)
 		if err != nil {
 			return err
 		}
@@ -413,15 +408,12 @@ func updateCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	if normalized == xupdate.ChannelCommit && commit == "" {
-		return fmt.Errorf("--commit SHA is required for commit channel")
-	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	if *install {
-		started, installed, err := xupdate.InstallTargetFromSourceWithProgress(ctx, current, normalized, commit, source, func(event xupdate.ProgressEvent) {
+		started, installed, err := xupdate.InstallTargetFromSourceWithProgress(ctx, current, normalized, source, func(event xupdate.ProgressEvent) {
 			fmt.Println(xupdate.FormatProgress(event))
 		})
 		if err != nil {
@@ -434,7 +426,7 @@ func updateCmd(args []string) error {
 	}
 
 	fmt.Printf("[update 1/1] check: checking %s channel from %s via %s\n", normalized, current, source)
-	result, err := xupdate.CheckPlatformTargetFromSource(ctx, current, normalized, commit, source)
+	result, err := xupdate.CheckPlatformTargetFromSource(ctx, current, normalized, source)
 	if err != nil {
 		return err
 	}
@@ -446,10 +438,6 @@ func updateCmd(args []string) error {
 	if result.Asset.Size > 0 {
 		fmt.Printf("download: %s (%s)\n", result.Asset.Name, formatStorageBytes(result.Asset.Size))
 	}
-	if normalized == xupdate.ChannelCommit {
-		fmt.Printf("run: xd update --source %s --channel commit --commit %s --install\n", source, result.Commit)
-	} else {
-		fmt.Printf("run: xd update --source %s --channel %s --install\n", source, normalized)
-	}
+	fmt.Printf("run: xd update --source %s --channel %s --install\n", source, normalized)
 	return nil
 }

@@ -22,7 +22,7 @@ output="$(
 )"
 
 mapfile -t values <<<"$output"
-[[ "${values[0]}" == snapshot-* ]]
+[[ "${values[0]}" == snapshot ]]
 [[ "${values[1]}" == master ]]
 [[ "${values[2]}" =~ ^[0-9a-f]{40}$ ]]
 [[ -n "${values[3]}" ]]
