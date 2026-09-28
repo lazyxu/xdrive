@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -21,6 +22,7 @@ const (
 	stagingCleanupHistoryRetention = 90 * 24 * time.Hour
 	stagingCleanupFailureTextLimit = 4 << 10
 	stagingCleanupHistoryBatchSize = 500
+	stagingCleanupFailureBatchSize = 200
 )
 
 type uploadStagingFileDTO struct {
@@ -90,15 +92,16 @@ type stagingCleanupFailureDTO struct {
 type uploadStagingPartRow struct {
 	StorageKey string
 	Size       int64
-	SessionID  string
-	Status     string
 	ExpiresAt  time.Time
 }
 
 type uploadStagingInventory struct {
-	Stats   uploadStagingStatsDTO
-	Orphans []storage.StagingFile
+	Stats        uploadStagingStatsDTO
+	Known        map[string]uploadStagingPartRow
+	OrphanCutoff time.Time
 }
+
+var errStopStagingWalk = errors.New("stop staging walk")
 
 func (s *Server) invalidateUploadStagingSnapshot() {
 	s.stagingCacheMu.Lock()
@@ -155,7 +158,7 @@ func (s *Server) scanUploadStagingInventory(ctx context.Context) (uploadStagingI
 
 	var parts []uploadStagingPartRow
 	if err := s.DB.WithContext(ctx).Raw(`
-		SELECT p.storage_key, p.size, p.session_id, s.status, s.expires_at
+		SELECT p.storage_key, p.size, s.expires_at
 		FROM xd_upload_parts p
 		JOIN xd_upload_sessions s ON s.id = p.session_id
 		WHERE p.reused = FALSE AND p.storage_key <> ''
@@ -169,40 +172,38 @@ func (s *Server) scanUploadStagingInventory(ctx context.Context) (uploadStagingI
 		stats.PartBytes += part.Size
 	}
 
-	inspector, ok := s.Store.(storage.StagingInspector)
-	if !ok {
-		return uploadStagingInventory{Stats: stats}, nil
+	if _, ok := s.Store.(storage.StagingInspector); !ok {
+		if _, ok := s.Store.(storage.StagingWalker); !ok {
+			return uploadStagingInventory{Stats: stats, Known: known}, nil
+		}
 	}
 	stats.Supported = true
-	files, err := inspector.ListStaging(ctx)
-	if err != nil {
-		return uploadStagingInventory{}, err
-	}
-	seen := make(map[string]struct{}, len(files))
-	orphans := make([]storage.StagingFile, 0)
+	seenKnown := make(map[string]struct{}, len(known))
 	cutoff := now.Add(-stagingOrphanGrace)
-	for _, file := range files {
+	if err := s.walkStagingFiles(ctx, func(file storage.StagingFile) error {
 		stats.StagingFiles++
 		stats.StagingBytes += file.Size
-		seen[file.Key] = struct{}{}
 		if part, exists := known[file.Key]; exists {
+			seenKnown[file.Key] = struct{}{}
 			if !part.ExpiresAt.After(now) {
 				stats.ExpiredStagingFiles++
 				stats.ExpiredStagingBytes += file.Size
 			}
-			continue
+			return nil
 		}
 		if !file.ModifiedAt.After(cutoff) {
 			stats.OrphanFiles++
 			stats.OrphanBytes += file.Size
-			orphans = append(orphans, file)
 		} else {
 			stats.RecentUntrackedFiles++
 			stats.RecentUntrackedBytes += file.Size
 		}
+		return nil
+	}); err != nil {
+		return uploadStagingInventory{}, err
 	}
 	for key, part := range known {
-		if _, exists := seen[key]; exists {
+		if _, exists := seenKnown[key]; exists {
 			continue
 		}
 		stats.MissingPartFiles++
@@ -210,10 +211,76 @@ func (s *Server) scanUploadStagingInventory(ctx context.Context) (uploadStagingI
 	}
 	stats.ReclaimableFiles = stats.OrphanFiles + stats.ExpiredStagingFiles
 	stats.ReclaimableBytes = stats.OrphanBytes + stats.ExpiredStagingBytes
-	sort.Slice(orphans, func(i, j int) bool {
-		return orphans[i].Key < orphans[j].Key
+	return uploadStagingInventory{Stats: stats, Known: known, OrphanCutoff: cutoff}, nil
+}
+
+func (s *Server) walkStagingFiles(ctx context.Context, visit func(storage.StagingFile) error) error {
+	if walker, ok := s.Store.(storage.StagingWalker); ok {
+		return walker.WalkStaging(ctx, visit)
+	}
+	inspector, ok := s.Store.(storage.StagingInspector)
+	if !ok {
+		return nil
+	}
+	files, err := inspector.ListStaging(ctx)
+	if err != nil {
+		return err
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Key < files[j].Key
 	})
-	return uploadStagingInventory{Stats: stats, Orphans: orphans}, nil
+	for _, file := range files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := visit(file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) listStagingOrphanPage(
+	ctx context.Context,
+	inventory uploadStagingInventory,
+	cursor string,
+	offset int,
+	limit int,
+) ([]storage.StagingFile, bool, error) {
+	if !inventory.Stats.Supported || limit <= 0 {
+		return nil, false, nil
+	}
+	items := make([]storage.StagingFile, 0, limit+1)
+	skipped := 0
+	err := s.walkStagingFiles(ctx, func(file storage.StagingFile) error {
+		if _, exists := inventory.Known[file.Key]; exists {
+			return nil
+		}
+		if file.ModifiedAt.After(inventory.OrphanCutoff) {
+			return nil
+		}
+		if cursor != "" {
+			if file.Key <= cursor {
+				return nil
+			}
+		} else if skipped < offset {
+			skipped++
+			return nil
+		}
+		items = append(items, file)
+		if len(items) > limit {
+			return errStopStagingWalk
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errStopStagingWalk) {
+		return nil, false, err
+	}
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+	return items, hasMore, nil
 }
 
 func (s *Server) adminUploadStaging(c *gin.Context) {
@@ -239,32 +306,28 @@ func (s *Server) adminUploadStaging(c *gin.Context) {
 		offset = value
 	}
 	cursor := strings.TrimSpace(c.Query("cursor"))
-	inventory, err := s.loadUploadStagingInventory(ctx)
+	forceFresh := strings.EqualFold(strings.TrimSpace(c.Query("fresh")), "true") || strings.TrimSpace(c.Query("fresh")) == "1"
+	var inventory uploadStagingInventory
+	var err error
+	if forceFresh {
+		inventory, err = s.loadUploadStagingInventoryFresh(ctx)
+	} else {
+		inventory, err = s.loadUploadStagingInventory(ctx)
+	}
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "load upload staging failed")
 		return
 	}
 
-	start := 0
-	if cursor != "" {
-		start = sort.Search(len(inventory.Orphans), func(i int) bool {
-			return inventory.Orphans[i].Key > cursor
-		})
-	} else if offset > 0 {
-		start = offset
+	page, hasMore, err := s.listStagingOrphanPage(ctx, inventory, cursor, offset, limit)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "list upload staging orphans failed")
+		return
 	}
-	if start > len(inventory.Orphans) {
-		start = len(inventory.Orphans)
-	}
-	end := start + limit
-	if end > len(inventory.Orphans) {
-		end = len(inventory.Orphans)
-	}
-	out := make([]uploadStagingFileDTO, 0, end-start)
-	for _, file := range inventory.Orphans[start:end] {
+	out := make([]uploadStagingFileDTO, 0, len(page))
+	for _, file := range page {
 		out = append(out, uploadStagingFileDTO{Key: file.Key, Size: file.Size, ModifiedAt: file.ModifiedAt})
 	}
-	hasMore := end < len(inventory.Orphans)
 	nextCursor := ""
 	if hasMore && len(out) != 0 {
 		nextCursor = out[len(out)-1].Key
@@ -325,23 +388,46 @@ func (s *Server) cleanupUploadStaging(ctx context.Context, trigger string) (uplo
 	}
 	inspector, ok := s.Store.(storage.StagingInspector)
 	if ok {
-		failures := make([]meta.StagingCleanupFailure, 0)
-		for _, file := range inventory.Orphans {
+		failures := make([]meta.StagingCleanupFailure, 0, stagingCleanupFailureBatchSize)
+		flushFailures := func() error {
+			if len(failures) == 0 {
+				return nil
+			}
+			if err := s.DB.WithContext(ctx).Create(&failures).Error; err != nil {
+				return err
+			}
+			failures = failures[:0]
+			return nil
+		}
+		orphans := make([]storage.StagingFile, 0)
+		if err := s.walkStagingFiles(ctx, func(file storage.StagingFile) error {
+			if _, exists := inventory.Known[file.Key]; exists || file.ModifiedAt.After(inventory.OrphanCutoff) {
+				return nil
+			}
+			orphans = append(orphans, file)
+			return nil
+		}); err != nil {
+			return failRun(err)
+		}
+		for _, file := range orphans {
 			if err := inspector.DeleteStaging(ctx, file.Key); err != nil {
 				result.FailedFiles++
 				failures = append(failures, meta.StagingCleanupFailure{
 					RunID: run.ID, StorageKey: file.Key, Size: file.Size,
 					Error: stagingCleanupError(err), FailedAt: time.Now().UTC(),
 				})
+				if len(failures) >= stagingCleanupFailureBatchSize {
+					if err := flushFailures(); err != nil {
+						return failRun(err)
+					}
+				}
 				continue
 			}
 			result.DeletedFiles++
 			result.DeletedBytes += file.Size
 		}
-		if len(failures) != 0 {
-			if err := s.DB.WithContext(ctx).Create(&failures).Error; err != nil {
-				return failRun(err)
-			}
+		if err := flushFailures(); err != nil {
+			return failRun(err)
 		}
 	}
 	s.invalidateUploadStagingSnapshot()

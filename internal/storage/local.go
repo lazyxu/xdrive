@@ -146,9 +146,8 @@ func (l *Local) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-func (l *Local) ListStaging(ctx context.Context) ([]StagingFile, error) {
+func (l *Local) WalkStaging(ctx context.Context, visit func(StagingFile) error) error {
 	root := filepath.Join(l.root, UploadStagingDir)
-	files := make([]StagingFile, 0)
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) {
@@ -170,16 +169,24 @@ func (l *Local) ListStaging(ctx context.Context) ([]StagingFile, error) {
 		if err != nil {
 			return err
 		}
-		files = append(files, StagingFile{
+		return visit(StagingFile{
 			Key:        filepath.ToSlash(rel),
 			Size:       info.Size(),
 			ModifiedAt: info.ModTime(),
 		})
-		return nil
 	})
 	if os.IsNotExist(err) {
-		return files, nil
+		return nil
 	}
+	return err
+}
+
+func (l *Local) ListStaging(ctx context.Context) ([]StagingFile, error) {
+	files := make([]StagingFile, 0)
+	err := l.WalkStaging(ctx, func(file StagingFile) error {
+		files = append(files, file)
+		return nil
+	})
 	return files, err
 }
 

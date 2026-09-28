@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -151,5 +152,46 @@ func TestLocalStagingInspectionAndCleanup(t *testing.T) {
 	}
 	if err := normal.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLocalWalkStagingIsLexicalAndStopsEarly(t *testing.T) {
+	s, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		UploadStagingDir + "/c/part",
+		UploadStagingDir + "/a/part",
+		UploadStagingDir + "/b/part",
+	} {
+		if _, err := s.Put(context.Background(), key, strings.NewReader(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stop := errors.New("stop")
+	var keys []string
+	err = s.WalkStaging(context.Background(), func(file StagingFile) error {
+		keys = append(keys, file.Key)
+		if len(keys) == 2 {
+			return stop
+		}
+		return nil
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("walk error=%v want stop sentinel", err)
+	}
+	want := []string{
+		UploadStagingDir + "/a/part",
+		UploadStagingDir + "/b/part",
+	}
+	if len(keys) != len(want) {
+		t.Fatalf("walk keys=%v want=%v", keys, want)
+	}
+	for i := range want {
+		if keys[i] != want[i] {
+			t.Fatalf("walk keys=%v want=%v", keys, want)
+		}
 	}
 }
