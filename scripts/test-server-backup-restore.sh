@@ -24,6 +24,9 @@ XD_WEB_PORT=31999
 XD_ALLOWED_ORIGIN=http://localhost:31999
 XD_MAX_UPLOAD_BYTES=21474836480
 XD_SERVER_IMAGE=xdrive/server:test
+XD_RELEASE_CHANNEL=master
+XD_RELEASE_COMMIT=0123456789abcdef0123456789abcdef01234567
+XD_UPDATE_SOURCE=github
 XD_DOCKER_MODE=rootful
 XD_SERVER_UID=65532
 XD_SERVER_GID=65532
@@ -107,6 +110,13 @@ assert_runtime_services
 [[ -f "$backup_dir/blobs.tar" ]]
 [[ -f "$backup_dir/manifest.json" ]]
 [[ -f "$backup_dir/SHA256SUMS.txt" ]]
+grep -q '"release_channel": "master"' "$backup_dir/manifest.json"
+grep -q '"release_commit": "0123456789abcdef0123456789abcdef01234567"' "$backup_dir/manifest.json"
+grep -q '"update_source": "github"' "$backup_dir/manifest.json"
+grep -Eq '"estimated_blob_bytes": [0-9]+' "$backup_dir/manifest.json"
+grep -Eq '"estimated_database_bytes": [0-9]+' "$backup_dir/manifest.json"
+grep -Eq '"preflight_required_bytes": [0-9]+' "$backup_dir/manifest.json"
+grep -Eq '"preflight_available_bytes": [0-9]+' "$backup_dir/manifest.json"
 (
   cd "$backup_dir"
   sha256sum -c SHA256SUMS.txt >/dev/null

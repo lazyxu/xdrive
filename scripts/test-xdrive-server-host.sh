@@ -9,7 +9,7 @@ cleanup() {
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
     for file in \
-      update.out update.err version.out backup.out restore.out backup-fail.err doctor.out \
+      update.out update.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out restore.out backup-fail.err doctor.out \
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
@@ -140,6 +140,25 @@ XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-0123456789ab
 EOF
 printf 'name: xdrive\nservices: {}\n' > "$TMP/home/config/docker-compose.yml"
 
+SNAPSHOT="$TMP/home/backups/snapshots/xdrive-backup-20260928T120000Z"
+mkdir -p "$SNAPSHOT"
+printf 'db-dump\n' > "$SNAPSHOT/database.dump"
+printf 'blob-tar\n' > "$SNAPSHOT/blobs.tar"
+printf '{"ok":true}\n' > "$SNAPSHOT/verify.json"
+cat > "$SNAPSHOT/manifest.json" <<'EOF'
+{
+  "format_version": 1,
+  "created_at_utc": "2026-09-28T12:00:00Z",
+  "consistency_verified": true,
+  "release_channel": "master",
+  "release_commit": "0123456789abcdef0123456789abcdef01234567"
+}
+EOF
+(
+  cd "$SNAPSHOT"
+  sha256sum database.dump blobs.tar verify.json manifest.json > SHA256SUMS.txt
+)
+
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
@@ -184,6 +203,48 @@ XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" backup >"$TMP/backup.out"
 grep -q '/tmp/mock-xdrive-backup' "$TMP/backup.out"
 grep -q -- 'audit record --action system.backup --result success' "$TMP/state/audit-calls"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" backup create --output-dir "$TMP/created-backups" >"$TMP/backup-create.out"
+grep -q '/tmp/mock-xdrive-backup' "$TMP/backup-create.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" backup list >"$TMP/backup-list.out"
+grep -q 'xdrive-backup-20260928T120000Z' "$TMP/backup-list.out"
+grep -q '2026-09-28T12:00:00Z' "$TMP/backup-list.out"
+grep -q 'master' "$TMP/backup-list.out"
+grep -q '0123456789ab' "$TMP/backup-list.out"
+grep -q 'complete' "$TMP/backup-list.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" backup verify "$SNAPSHOT" >"$TMP/backup-verify.out"
+grep -q "Backup verified: $SNAPSHOT" "$TMP/backup-verify.out"
+grep -q 'release: master / 0123456789ab' "$TMP/backup-verify.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" backup verify >"$TMP/backup-verify-latest.out"
+grep -q "Backup verified: $SNAPSHOT" "$TMP/backup-verify-latest.out"
+
+CORRUPT="$TMP/home/backups/snapshots/xdrive-backup-20260928T110000Z"
+cp -a "$SNAPSHOT" "$CORRUPT"
+printf 'corrupt\n' >> "$CORRUPT/database.dump"
+set +e
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" backup verify "$CORRUPT" >"$TMP/backup-corrupt.out" 2>"$TMP/backup-corrupt.err"
+corrupt_status=$?
+set -e
+[[ "$corrupt_status" -ne 0 ]]
+grep -Eq 'FAILED|did NOT match' "$TMP/backup-corrupt.out" "$TMP/backup-corrupt.err"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

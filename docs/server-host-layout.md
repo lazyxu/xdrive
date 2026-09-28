@@ -290,9 +290,21 @@ Before removal each candidate is checked through Docker. Any volume still refere
 
 Backups are storage-backend neutral. They must work whether `/data` and PostgreSQL are backed by a bind mount or a legacy named volume.
 
-Backup and restore code discovers the actual mount through Docker metadata rather than assuming a volume name.
+Backup and restore code discovers the actual mount through Docker metadata rather than assuming a volume name. Before entering the maintenance window, backup creation estimates the file-data bytes plus PostgreSQL database bytes, adds a 10% margin and 64 MiB fixed reserve, and refuses to start when the backup filesystem does not have that much free space.
 
-A restore must never depend on direct host ownership of `data/files`; containerized copy/extract operations are used where numeric container ownership matters.
+Each completed backup contains checksums and a manifest with its creation time, consistency status, server/Caddy images, release channel and commit, update source, Docker mode, and the space-preflight measurements. Checksums are verified once before the partial directory is atomically promoted to a completed backup.
+
+Host-side backup inspection is available without touching the running services:
+
+```text
+xdrive-server backup list
+xdrive-server backup verify
+xdrive-server backup verify ~/.xd/backups/snapshots/xdrive-backup-YYYYMMDDTHHMMSSZ
+```
+
+`backup list` reports normal snapshot backups with creation time, size, release channel/commit and completeness/consistency state. `backup verify` validates the latest snapshot by default, or an explicitly supplied backup directory, using the stored SHA-256 checksums. Existing `xdrive-server backup` behavior remains a create operation; `xdrive-server backup create` is an explicit alias.
+
+A restore must never depend on direct host ownership of `data/files`; containerized copy/extract operations are used where numeric container ownership matters. Production restore drills are not run automatically because they are destructive; CI continues to exercise the full backup-corrupt-restore-verify sequence in an isolated deployment.
 
 ## Installation environment summary and diagnostics
 
