@@ -1,0 +1,20 @@
+(xdrive_app) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+	handle /api/* {
+		reverse_proxy server:8080
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+	log {
+		output stdout
+		format console
+	}
+}

@@ -73,23 +73,11 @@ env_value() {
 }
 
 compose() {
-  local domain
-  domain="$(env_value XD_DOMAIN)"
-  if [[ -n "$domain" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  fi
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 compose_with_stdin() {
-  local domain
-  domain="$(env_value XD_DOMAIN)"
-  if [[ -n "$domain" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
-  else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
-  fi
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
 }
 
 record_system_audit() {

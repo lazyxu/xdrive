@@ -23,7 +23,6 @@ IMAGE_TAG="${XD_IMAGE_TAG:-@IMAGE_TAG@}"
 BUILT_CHANNEL="${XD_BUILT_CHANNEL:-@RELEASE_CHANNEL@}"
 BUILT_COMMIT="${XD_BUILT_COMMIT:-@RELEASE_COMMIT@}"
 BUILT_SOURCE="${XD_BUILT_SOURCE:-@UPDATE_SOURCE@}"
-BUILT_CADDY_ID="${XD_BUILT_CADDY_ID:-@CADDY_BUILD_ID@}"
 REPOSITORY="${XD_GITHUB_REPOSITORY:-lazyxu/xdrive}"
 GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
 GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
@@ -747,18 +746,17 @@ if [[ "$requested_source" == "gitlab" ]]; then
 else
   raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
 fi
-fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/8 docker-compose.yml"
-fetch "$raw_base/deploy/Caddyfile" "$STAGING_DIR/Caddyfile" "2/8 Caddyfile"
-asset_no=2
+fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/7 docker-compose.yml"
+asset_no=1
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
   asset_no=$((asset_no + 1))
-  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/8 $maintenance_script"
+  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/7 $maintenance_script"
   chmod 700 "$STAGING_DIR/$maintenance_script"
 done
 asset_no=$((asset_no + 1))
-fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/8 xdrive-server"
+fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/7 xdrive-server"
 chmod 700 "$STAGING_DIR/xdrive-server"
-chmod 600 "$STAGING_DIR/docker-compose.yml" "$STAGING_DIR/Caddyfile"
+chmod 600 "$STAGING_DIR/docker-compose.yml"
 
 random_hex() {
   local bytes="${1:-32}"
@@ -845,18 +843,23 @@ validate_rootless_port() {
 }
 
 managed_container_id() {
-  local service="$1" conventional id
-  conventional="xdrive-${service}-1"
+  local service="$1" conventional legacy id
+  conventional="xdrive-${service}"
+  legacy="xdrive-${service}-1"
 
-  # The compose project is explicitly named xdrive, so prefer the stable
-  # container name. This also works for older deployments whose compose labels
-  # may be missing or differ from the current project metadata.
+  # Current deployments use explicit stable container names.
   if docker inspect "$conventional" </dev/null >/dev/null 2>&1; then
     printf '%s\n' "$conventional"
     return 0
   fi
 
-  # Fall back to Compose discovery when the conventional name is unavailable.
+  # Upgrades from the historical Compose naming scheme still use -1.
+  if docker inspect "$legacy" </dev/null >/dev/null 2>&1; then
+    printf '%s\n' "$legacy"
+    return 0
+  fi
+
+  # Fall back to Compose discovery when neither conventional name is available.
   if [[ -f "$COMPOSE_PATH" ]]; then
     id="$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" ps -aq "$service" </dev/null 2>/dev/null | head -n1 || true)"
     if [[ -n "$id" ]]; then
@@ -1100,18 +1103,16 @@ EOF
 }
 
 rollback_compose() {
-  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  fi
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 rollback_upgrade() {
   local ok=1 i
   ROLLBACK_RUNNING=1
   echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
-  docker stop xdrive-caddy-1 xdrive-web-1 xdrive-server-1 </dev/null >/dev/null 2>&1 || true
+  docker stop xdrive-caddy xdrive-server xdrive-worker xdrive-postgres \
+    xdrive-caddy-1 xdrive-web-1 xdrive-server-1 xdrive-worker-1 xdrive-postgres-1 \
+    </dev/null >/dev/null 2>&1 || true
 
   echo "[xDrive] rollback: restoring previous deployment files..." >&2
   restore_transaction_file ".env" "$ENV_PATH" 600 || ok=0
@@ -1177,7 +1178,7 @@ rollback_upgrade() {
   done
 
   echo "[xDrive] rollback: previous server did not become healthy." >&2
-  rollback_compose logs --tail=100 postgres server web >&2 || true
+  rollback_compose logs --tail=100 postgres server >&2 || true
   ROLLBACK_RUNNING=0
   return 1
 }
@@ -1387,9 +1388,6 @@ ensure_env XD_POSTGRES_PIDS_LIMIT "${XD_POSTGRES_PIDS_LIMIT:-256}"
 ensure_env XD_SERVER_MEMORY_LIMIT "${XD_SERVER_MEMORY_LIMIT:-1g}"
 ensure_env XD_SERVER_CPU_LIMIT "${XD_SERVER_CPU_LIMIT:-1.0}"
 ensure_env XD_SERVER_PIDS_LIMIT "${XD_SERVER_PIDS_LIMIT:-256}"
-ensure_env XD_WEB_MEMORY_LIMIT "${XD_WEB_MEMORY_LIMIT:-256m}"
-ensure_env XD_WEB_CPU_LIMIT "${XD_WEB_CPU_LIMIT:-0.50}"
-ensure_env XD_WEB_PIDS_LIMIT "${XD_WEB_PIDS_LIMIT:-128}"
 ensure_env XD_CADDY_MEMORY_LIMIT "${XD_CADDY_MEMORY_LIMIT:-256m}"
 ensure_env XD_CADDY_CPU_LIMIT "${XD_CADDY_CPU_LIMIT:-0.50}"
 ensure_env XD_CADDY_PIDS_LIMIT "${XD_CADDY_PIDS_LIMIT:-128}"
@@ -1398,8 +1396,6 @@ ensure_env XD_LOG_MAX_FILES "${XD_LOG_MAX_FILES:-5}"
 ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
 previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
-previous_caddy_image="$(existing_env_value XD_CADDY_IMAGE)"
-previous_caddy_build_id="$(existing_env_value XD_CADDY_BUILD_ID)"
 ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"
 ensure_env XD_RELEASE_COMMIT "${requested_commit:-}"
@@ -1483,7 +1479,7 @@ fi
 stage 5 "create pre-upgrade backup"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   echo "[xDrive] existing deployment detected; entering upgrade maintenance window..."
-  docker stop xdrive-caddy-1 xdrive-web-1 </dev/null >/dev/null 2>&1 || true
+  docker stop xdrive-caddy xdrive-caddy-1 xdrive-web-1 </dev/null >/dev/null 2>&1 || true
 
   backup_output=""
   if ! backup_output="$("$STAGING_DIR/server-backup.sh" \
@@ -1508,24 +1504,16 @@ fi
 
 stage 6 "install deployment files"
 # Only point at the new release images after the old deployment has been
-# backed up successfully. This keeps pre-upgrade verification on the exact
-# server/Web version that owns the current database and blob layout.
+# backed up successfully. Caddy now contains the exact CI-tested Web build.
 set_env XD_SERVER_IMAGE "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
-set_env XD_WEB_IMAGE "$IMAGE_REGISTRY/xdrive-web:$IMAGE_TAG"
-target_caddy_image="$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
-caddy_image_changed=1
-if [[ -n "$previous_caddy_image" && -n "$previous_caddy_build_id" && "$BUILT_CADDY_ID" != "@CADDY_BUILD_ID@" && "$previous_caddy_build_id" == "$BUILT_CADDY_ID" ]]; then
-  target_caddy_image="$previous_caddy_image"
-  caddy_image_changed=0
-  echo "[xDrive] Caddy component unchanged ($BUILT_CADDY_ID); retaining $previous_caddy_image."
-fi
-set_env XD_CADDY_IMAGE "$target_caddy_image"
-if [[ "$BUILT_CADDY_ID" != "@CADDY_BUILD_ID@" ]]; then
-  set_env XD_CADDY_BUILD_ID "$BUILT_CADDY_ID"
-fi
+set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+unset_env XD_WEB_IMAGE
+unset_env XD_WEB_MEMORY_LIMIT
+unset_env XD_WEB_CPU_LIMIT
+unset_env XD_WEB_PIDS_LIMIT
+unset_env XD_CADDY_BUILD_ID
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
-install -m 600 "$STAGING_DIR/Caddyfile" "$CADDY_PATH"
 for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$BIN_DIR/$maintenance_script"
 done
@@ -1540,19 +1528,11 @@ fi
 rm -rf "$STAGING_DIR"
 
 compose() {
-  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-  fi
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 compose_with_stdin() {
-  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-    docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
-  else
-    docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
-  fi
+  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
 }
 
 show_install_environment() {
@@ -1638,14 +1618,7 @@ else
   echo "[xDrive] Docker Compose JSON progress unavailable; falling back to host RX rate." >&2
 fi
 
-pull_services=(postgres server web)
-if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-  if [[ "${caddy_image_changed:-1}" == "1" ]]; then
-    pull_services+=(caddy)
-  else
-    echo "[xDrive] Caddy image unchanged; skip pull."
-  fi
-fi
+pull_services=(postgres server caddy)
 for pull_service in "${pull_services[@]}"; do
   pull_service_with_retry "$pull_service"
 done
@@ -1656,7 +1629,7 @@ rm -f "$PULL_LOG"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   DATABASE_ROLLBACK_REQUIRED=1
 fi
-compose up -d postgres server
+compose up -d --remove-orphans postgres server
 
 stage 8 "verify service health"
 healthy=0
@@ -1673,25 +1646,21 @@ if [[ "$healthy" != "1" ]]; then
   exit 1
 fi
 
-# Keep data rollback armed through all stage-8 validation. Public services are
-# still considered inside the maintenance transaction until Web/TLS are proven.
-compose up -d worker web
-web_healthy=0
+# Keep data rollback armed through all stage-8 validation. Caddy contains the
+# exact CI-tested Web build and proxies /api directly to the server.
+compose up -d --remove-orphans worker caddy
+edge_healthy=0
 for _ in $(seq 1 30); do
-  if compose exec -T web wget -q -O /dev/null http://127.0.0.1/api/v1/readyz >/dev/null 2>&1; then
-    web_healthy=1
+  if compose exec -T caddy wget -q -O /dev/null http://127.0.0.1/api/v1/readyz >/dev/null 2>&1; then
+    edge_healthy=1
     break
   fi
   sleep 2
 done
-if [[ "$web_healthy" != "1" ]]; then
-  echo "xDrive Web/API proxy did not become healthy. Recent logs:" >&2
-  compose logs --tail=100 server web >&2 || true
+if [[ "$edge_healthy" != "1" ]]; then
+  echo "xDrive Caddy/Web/API edge did not become healthy. Recent logs:" >&2
+  compose logs --tail=100 server caddy >&2 || true
   exit 1
-fi
-
-if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-  compose up -d caddy
 fi
 
 wait_https() {
@@ -1723,7 +1692,7 @@ wait_https() {
   echo "xDrive HTTPS did not become ready." >&2
   echo "Confirm AliDNS credentials can edit TXT records, the domain resolves to this server, and inbound TCP $port reaches it." >&2
   echo "DNS-01 certificate issuance does not require inbound TCP 80 or 443." >&2
-  compose logs --tail=120 caddy web server >&2 || true
+  compose logs --tail=120 caddy server >&2 || true
   return 1
 }
 
@@ -1733,6 +1702,9 @@ fi
 
 DATABASE_ROLLBACK_REQUIRED=0
 commit_upgrade_transaction
+# Caddy/Web configuration is embedded in the versioned edge image. Keep an old
+# host Caddyfile only until the upgrade transaction can no longer roll back.
+rm -f "$CADDY_PATH"
 finalize_host_layout
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   echo "[xDrive] UPGRADE SUCCESS: $SOURCE_REF is healthy."

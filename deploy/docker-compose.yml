@@ -8,6 +8,7 @@ x-logging: &default-logging
 
 services:
   postgres:
+    container_name: xdrive-postgres
     image: ${XD_POSTGRES_IMAGE:-postgres:17-alpine}
     environment:
       POSTGRES_USER: xdrive
@@ -48,6 +49,7 @@ services:
     pids_limit: ${XD_STORAGE_INIT_PIDS_LIMIT:-64}
 
   server:
+    container_name: xdrive-server
     image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
     user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"
     environment:
@@ -82,6 +84,7 @@ services:
     pids_limit: ${XD_SERVER_PIDS_LIMIT:-256}
 
   worker:
+    container_name: xdrive-worker
     image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
     user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"
     command: ["worker"]
@@ -104,49 +107,38 @@ services:
     cpus: ${XD_WORKER_CPU_LIMIT:-0.50}
     pids_limit: ${XD_WORKER_PIDS_LIMIT:-128}
 
-  web:
-    image: ${XD_WEB_IMAGE:-ghcr.io/lazyxu/xdrive-web:latest}
+  caddy:
+    container_name: xdrive-caddy
+    image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
+    environment:
+      XD_DOMAIN: ${XD_DOMAIN:-}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ -n "$$XD_DOMAIN" ]; then
+          exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+        fi
+        exec caddy run --config /etc/caddy/Caddyfile.http --adapter caddyfile
     ports:
-      - "${XD_WEB_BIND:-127.0.0.1}:${XD_WEB_PORT:-3000}:80"
+      - "${XD_WEB_BIND:-127.0.0.1}:${XD_WEB_PORT:-3000}:80/tcp"
+      - "${XD_HTTPS_BIND:-0.0.0.0}:${XD_HTTPS_PORT:-8443}:443/tcp"
+    volumes:
+      - "${XD_CADDY_DATA_DIR:-../data/caddy/data}:/data"
+      - "${XD_CADDY_CONFIG_DIR:-../data/caddy/config}:/config"
     depends_on:
       server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/v1/readyz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: ${XD_WEB_MEMORY_LIMIT:-256m}
-    cpus: ${XD_WEB_CPU_LIMIT:-0.50}
-    pids_limit: ${XD_WEB_PIDS_LIMIT:-128}
-
-  caddy:
-    image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
-    profiles: ["https"]
-    environment:
-      XD_DOMAIN: ${XD_DOMAIN:-localhost}
-      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
-      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
-    ports:
-      - "${XD_HTTPS_BIND:-0.0.0.0}:${XD_HTTPS_PORT:-8443}:443/tcp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - "${XD_CADDY_DATA_DIR:-../data/caddy/data}:/data"
-      - "${XD_CADDY_CONFIG_DIR:-../data/caddy/config}:/config"
-    depends_on:
-      web:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "caddy", "version"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-    logging: *default-logging
     mem_limit: ${XD_CADDY_MEMORY_LIMIT:-256m}
     cpus: ${XD_CADDY_CPU_LIMIT:-0.50}
     pids_limit: ${XD_CADDY_PIDS_LIMIT:-128}
-

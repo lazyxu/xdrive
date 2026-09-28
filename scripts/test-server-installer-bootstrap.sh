@@ -70,10 +70,6 @@ case "$url" in
 services: {}
 '
     ;;
-  */0123456789abcdef0123456789abcdef01234567/deploy/Caddyfile)
-    emit 'example.invalid { respond "ok" }
-'
-    ;;
   */0123456789abcdef0123456789abcdef01234567/scripts/server-backup.sh)
     emit '#!/usr/bin/env bash
 set -euo pipefail
@@ -137,8 +133,19 @@ grep -q '\[xDrive\] \[1/9\] resolve release channel' "$TMP/ok.out"
 grep -q 'Resolved latest fully published master snapshot: 0123456789ab' "$TMP/ok.out"
 grep -q '\[xDrive\] \[9/9\] complete' "$TMP/ok.out"
 grep -q "XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
-grep -q "XD_WEB_IMAGE=ghcr.io/lazyxu/xdrive-web:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
 grep -q "XD_CADDY_IMAGE=ghcr.io/lazyxu/xdrive-caddy:sha-$MASTER_SHORT" "$TMP/config-ok/config/.env"
+if grep -q '^XD_WEB_IMAGE=' "$TMP/config-ok/config/.env"; then
+  echo "new installs must not persist the retired XD_WEB_IMAGE" >&2
+  exit 1
+fi
+grep -q 'container_name: xdrive-postgres' "$ROOT/deploy/docker-compose.yml"
+grep -q 'container_name: xdrive-server' "$ROOT/deploy/docker-compose.yml"
+grep -q 'container_name: xdrive-worker' "$ROOT/deploy/docker-compose.yml"
+grep -q 'container_name: xdrive-caddy' "$ROOT/deploy/docker-compose.yml"
+if grep -q '^  web:' "$ROOT/deploy/docker-compose.yml"; then
+  echo "new Compose must not contain a web service" >&2
+  exit 1
+fi
 grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/config/.env"
 connector_active="$(grep '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=' "$TMP/config-ok/config/.env" | tail -n1 | cut -d= -f2-)"
 connector_keys="$(grep '^XD_CONNECTOR_SECRET_KEYS=' "$TMP/config-ok/config/.env" | tail -n1 | cut -d= -f2-)"

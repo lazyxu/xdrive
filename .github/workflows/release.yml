@@ -88,7 +88,6 @@ jobs:
           }
 
           load_exact xdrive-server-image xdrive/server:test
-          load_exact xdrive-web-image xdrive/web:test
           load_exact xdrive-caddy-image xdrive/caddy:test
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -106,8 +105,8 @@ jobs:
             remote_tag="sha-${GITHUB_SHA::12}"
           fi
 
-          names=(xdrive-server xdrive-web xdrive-caddy)
-          locals=(xdrive/server:test xdrive/web:test xdrive/caddy:test)
+          names=(xdrive-server xdrive-caddy)
+          locals=(xdrive/server:test xdrive/caddy:test)
           pids=()
 
           for i in "${!names[@]}"; do
@@ -147,7 +146,6 @@ jobs:
             release_channel="master"
             release_commit="$GITHUB_SHA"
           fi
-          caddy_build_id="$(sha256sum deploy/Caddy.Dockerfile | cut -c1-16)"
           sed \
             -e "s|@SOURCE_REF@|$source_ref|g" \
             -e "s|@IMAGE_TAG@|$image_tag|g" \
@@ -155,11 +153,9 @@ jobs:
             -e "s|@RELEASE_CHANNEL@|$release_channel|g" \
             -e "s|@RELEASE_COMMIT@|$release_commit|g" \
             -e "s|@UPDATE_SOURCE@|github|g" \
-            -e "s|@CADDY_BUILD_ID@|$caddy_build_id|g" \
             deploy/install-server.sh > release/xdrive-server-install.sh
           chmod +x release/xdrive-server-install.sh
           cp deploy/docker-compose.yml release/docker-compose.yml
-          cp deploy/Caddyfile release/Caddyfile
           cp deploy/.env.example release/xdrive.env.example
           cp scripts/server-backup.sh scripts/server-backup-scheduled.sh scripts/server-restore.sh scripts/server-verify.sh scripts/server-doctor.sh release/
           cp scripts/xdrive-server-host.sh release/xdrive-server
@@ -229,7 +225,6 @@ jobs:
             server-doctor.sh \
             xdrive-server \
             docker-compose.yml \
-            Caddyfile \
             xdrive.env.example > SHA256SUMS.txt
       - name: Log in to GHCR for channel promotion
         uses: docker/login-action@v3
@@ -249,7 +244,7 @@ jobs:
             source_tag="sha-${GITHUB_SHA::12}"
             target_tag="edge"
           fi
-          for image in xdrive-server xdrive-web xdrive-caddy; do
+          for image in xdrive-server xdrive-caddy; do
             docker buildx imagetools create \
               --tag "ghcr.io/$owner/$image:$target_tag" \
               "ghcr.io/$owner/$image:$source_tag"

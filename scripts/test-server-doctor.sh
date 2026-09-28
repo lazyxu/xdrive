@@ -53,7 +53,7 @@ if [[ "$1" == "compose" ]]; then
       case "${@: -1}" in
         postgres) echo "pg-id" ;;
         server) echo "server-id" ;;
-        web) echo "web-id" ;;
+        worker) echo "worker-id" ;;
         caddy) echo "caddy-id" ;;
       esac
       exit 0
