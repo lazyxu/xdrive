@@ -164,6 +164,12 @@ try {
     }
     Copy-Item $LegacyCleanupSource (Join-Path $Source "windows-legacy-cleanup.ps1")
 
+    $ProcessScopeSource = Join-Path $Root "internal\update\windows_process_scope.ps1"
+    if (-not (Test-Path $ProcessScopeSource)) {
+        throw "Windows process scope helper is missing: $ProcessScopeSource"
+    }
+    Copy-Item $ProcessScopeSource (Join-Path $Source "windows_process_scope.ps1")
+
     $DesktopTarget = Join-Path $Source "desktop"
     New-Item -ItemType Directory -Force $DesktopTarget | Out-Null
     Copy-Item (Join-Path $DesktopSourceDir "*") $DesktopTarget -Recurse -Force

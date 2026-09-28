@@ -32,6 +32,7 @@ import {
   type DesktopShortcutAction,
 } from './desktop_shortcuts.cjs'
 import { trayStatusIconFile, trayStatusKind, type TrayStatusKind } from './tray_status.cjs'
+import { DesktopLifecycleLog, formatLifecycleError } from './lifecycle_log.cjs'
 import {
   defaultDesktopPreferences,
   normalizeDesktopPreferences,
@@ -92,6 +93,8 @@ let closeDecisionPending = false
 let pendingDesktopView: DesktopViewTarget | null = null
 let tray: Tray | null = null
 let quitting = false
+let quitReason = 'system-or-application'
+let lifecycleLog: DesktopLifecycleLog | null = null
 let agentClient: AgentIPCClient | null = null
 let agentLifecycle: AgentLifecycle | null = null
 let agentState: AgentConnectionState = { connected: false, error: 'Connecting to xdrive-agent…' }
@@ -104,6 +107,20 @@ const startupDesktopAction = desktopShortcutActionFromArgs(process.argv)
 const backgroundLaunch = process.argv.includes('--background') ||
   (startupDesktopAction !== null && !desktopShortcutShowsWindow(startupDesktopAction))
 const desktopPreferencesName = 'desktop-settings.json'
+
+function desktopLifecycleLogDirectory() {
+  if (process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()) {
+    return path.join(process.env.LOCALAPPDATA, 'xDrive')
+  }
+  return app.getPath('logs')
+}
+
+function requestDesktopQuit(reason: string) {
+  quitReason = reason
+  quitting = true
+  lifecycleLog?.record('quit_requested', { reason })
+  app.quit()
+}
 
 async function loadDesktopPreferences(): Promise<DesktopPreferences> {
   const file = path.join(app.getPath('userData'), desktopPreferencesName)
@@ -232,8 +249,7 @@ async function handleMainWindowClose(win: BrowserWindow) {
         win.hide()
         return
       }
-      quitting = true
-      app.quit()
+      requestDesktopQuit('window-close-dialog')
       return
     } finally {
       closeDecisionPending = false
@@ -244,8 +260,7 @@ async function handleMainWindowClose(win: BrowserWindow) {
     win.hide()
     return
   }
-  quitting = true
-  app.quit()
+  requestDesktopQuit('window-close')
 }
 
 function showMainWindow() {
@@ -353,6 +368,13 @@ function createMainWindow(showOnReady = true) {
     if (!params.isEditable) return
     Menu.buildFromTemplate(editContextMenuTemplate(params.editFlags)).popup({ window: win })
   })
+  win.webContents.on('render-process-gone', (_event, details) => {
+    lifecycleLog?.record('render_process_gone', {
+      reason: details.reason,
+      exit_code: details.exitCode,
+    })
+  })
+  win.on('unresponsive', () => lifecycleLog?.record('window_unresponsive'))
   win.webContents.on('before-input-event', (event, input) => {
     const action = desktopShortcutActionFromInput(input)
     if (!action) return
@@ -507,8 +529,7 @@ function rebuildTrayMenu() {
     {
       label: '退出 xDrive 桌面版',
       click: () => {
-        quitting = true
-        app.quit()
+        requestDesktopQuit('tray-menu')
       },
     },
   ]))
@@ -1375,8 +1396,7 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:open-folder', () => runAgentAction(() => requireAgentClient().openFolder(), false))
   ipcMain.on('desktop:hide', () => mainWindow?.hide())
   ipcMain.on('desktop:quit', () => {
-    quitting = true
-    app.quit()
+    requestDesktopQuit('renderer-request')
   })
 }
 
@@ -1384,6 +1404,28 @@ const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) {
   app.quit()
 } else {
+  lifecycleLog = new DesktopLifecycleLog(desktopLifecycleLogDirectory())
+  lifecycleLog.start({
+    version: app.getVersion(),
+    channel: desktopBuildInfo.channel,
+    commit: desktopBuildInfo.commit,
+    background: backgroundLaunch,
+  })
+  process.on('uncaughtExceptionMonitor', (error, origin) => {
+    lifecycleLog?.record('uncaught_exception', { origin, error: formatLifecycleError(error) })
+  })
+  process.on('unhandledRejection', (reason) => {
+    lifecycleLog?.record('unhandled_rejection', { error: formatLifecycleError(reason) })
+  })
+  process.on('exit', (code) => lifecycleLog?.record('process_exit', { exit_code: code }))
+  app.on('child-process-gone', (_event, details) => {
+    lifecycleLog?.record('child_process_gone', {
+      process_type: details.type,
+      reason: details.reason,
+      exit_code: details.exitCode,
+      service_name: details.serviceName,
+    })
+  })
   app.on('second-instance', (_event, commandLine) => {
     const action = desktopShortcutActionFromArgs(commandLine)
     if (action) {
@@ -1395,10 +1437,12 @@ if (!primaryInstance) {
   })
   app.on('before-quit', () => {
     quitting = true
+    lifecycleLog?.record('before_quit', { reason: quitReason })
     agentMonitor?.abort()
     transferMonitor?.abort()
     updateMonitor?.abort()
   })
+  app.on('quit', (_event, exitCode) => lifecycleLog?.cleanExit(quitReason, exitCode))
   void app.whenReady().then(async () => {
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
     nativeTheme.themeSource = 'system'
@@ -1424,6 +1468,10 @@ if (!primaryInstance) {
       restartDesktopMonitors()
     })
     if (startupDesktopAction) await performDesktopShortcutAction(startupDesktopAction)
+  }).catch((error) => {
+    lifecycleLog?.record('startup_failed', { error: formatLifecycleError(error) })
+    quitReason = 'startup-failed'
+    app.exit(1)
   })
   app.on('activate', () => {
     if (mainWindow) showMainWindow()

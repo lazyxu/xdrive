@@ -21,10 +21,12 @@ try {
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/test-windows-client-upgrade.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_upgrade_transaction.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_legacy_cleanup.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./internal/update/windows_process_scope.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/gitlab-windows-native.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/resolve-windows-uninstaller.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-uninstaller-resolver.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-client-package.ps1))
+            $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-process-scope.ps1))
             $null = [scriptblock]::Create((Get-Content -Raw ./scripts/ci/test-windows-smoke-package.ps1))
         }
 

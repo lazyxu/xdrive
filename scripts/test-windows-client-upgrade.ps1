@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $Root "scripts\ci\windows-path-normalization.ps1")
+. (Join-Path $Root "internal\update\windows_process_scope.ps1")
 $TransactionScript = Join-Path $Root "internal\update\windows_upgrade_transaction.ps1"
 $LegacyCleanupScript = Join-Path $Root "internal\update\windows_legacy_cleanup.ps1"
 $UninstallerResolver = Join-Path $Root "scripts\ci\resolve-windows-uninstaller.ps1"
@@ -18,8 +19,7 @@ $LogPath = Join-Path $TransactionRoot "last-transaction.log"
 $Installer = (Resolve-Path $Installer).Path
 
 function Stop-XDriveProcesses {
-    Get-Process -Name "xdrive-desktop" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Get-Process -Name "xdrive-agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Stop-XDriveProcessesInSession -Names @("xdrive-desktop", "xdrive-agent")
     Start-Sleep -Milliseconds 500
 }
 
@@ -262,11 +262,11 @@ if ($postRunValue -notlike "*xdrive-agent.exe*") {
     throw "xDriveAgent autorun registration missing after committed transaction"
 }
 
-$agent = Get-Process -Name "xdrive-agent" -ErrorAction SilentlyContinue
+$agent = Get-XDriveProcessesInSession -Names @("xdrive-agent")
 if ($null -eq $agent) {
     throw "committed transaction did not restart xdrive-agent"
 }
-$desktop = Get-Process -Name "xdrive-desktop" -ErrorAction SilentlyContinue
+$desktop = Get-XDriveProcessesInSession -Names @("xdrive-desktop")
 if ($null -eq $desktop) {
     throw "committed transaction did not restart xDrive Desktop"
 }

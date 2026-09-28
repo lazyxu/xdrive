@@ -39,7 +39,9 @@ SetupIconFile={#SourceDir}\icons\app.ico
 Source: "{#SourceDir}\xd.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\xdrive-agent.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\desktop\*"; DestDir: "{app}\desktop"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\windows_process_scope.ps1"; DestDir: "{app}\internal"; Flags: ignoreversion
 Source: "{#SourceDir}\windows-legacy-cleanup.ps1"; Flags: dontcopy
+Source: "{#SourceDir}\windows_process_scope.ps1"; Flags: dontcopy
 Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -62,7 +64,7 @@ Filename: "{app}\desktop\xdrive-desktop.exe"; Description: "Open xDrive Desktop"
 
 [UninstallRun]
 Filename: "{app}\xdrive-agent.exe"; Parameters: "--shell-action unregister"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RemoveXDriveExplorerActions"
-Filename: "{cmd}"; Parameters: "/C taskkill /IM xdrive-desktop.exe /F >NUL 2>&1 & taskkill /IM xdrive-agent.exe /F >NUL 2>&1"; Flags: runhidden; RunOnceId: "StopXDriveProcesses"
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\internal\windows_process_scope.ps1"" -StopNamesCsv ""xdrive-desktop,xdrive-agent"""; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopXDriveProcesses"
 Filename: "{app}\xd.exe"; Parameters: "cleanup"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "CleanupXDriveSyncRoot"
 
 [Code]
@@ -123,6 +125,7 @@ begin
   if ShouldDeferLegacyCleanup() then
     exit;
   ExtractTemporaryFile('windows-legacy-cleanup.ps1');
+  ExtractTemporaryFile('windows_process_scope.ps1');
   ScriptPath := ExpandConstant('{tmp}\windows-legacy-cleanup.ps1');
   Params := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath +
     '" -UnifiedAppDir "' + ExpandConstant('{app}') + '"';
@@ -172,8 +175,13 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  ScriptPath: String;
 begin
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM xdrive-desktop.exe /F >NUL 2>&1 & taskkill /IM xdrive-agent.exe /F >NUL 2>&1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  ExtractTemporaryFile('windows_process_scope.ps1');
+  ScriptPath := ExpandConstant('{tmp}\windows_process_scope.ps1');
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath +
+    '" -StopNamesCsv "xdrive-desktop,xdrive-agent"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
 end;
 

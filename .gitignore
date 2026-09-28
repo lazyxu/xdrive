@@ -1,4 +1,5 @@
 .cache
+.worktrees/
 
 # Go binaries and tests
 *.exe

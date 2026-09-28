@@ -9,6 +9,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "windows_process_scope.ps1")
 
 function Get-XDriveStartMenuProgramPaths {
     $paths = @()
@@ -74,8 +75,7 @@ function Get-XDriveAppDir {
 }
 
 function Stop-XDriveProcesses {
-    Get-Process -Name "xdrive-desktop" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Get-Process -Name "xdrive-agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Stop-XDriveProcessesInSession -Names @("xdrive-desktop", "xdrive-agent")
     $discovery = Join-Path $env:APPDATA "xdrive\desktop-ipc.json"
     Remove-Item -LiteralPath $discovery -Force -ErrorAction SilentlyContinue
 }
@@ -232,7 +232,7 @@ function Start-DesktopAndVerify([string]$AppDir) {
     $want = [System.IO.Path]::GetFullPath($desktop)
 
     while ((Get-Date) -lt $deadline) {
-        foreach ($process in (Get-Process -Name "xdrive-desktop" -ErrorAction SilentlyContinue)) {
+        foreach ($process in (Get-XDriveProcessesInSession -Names @("xdrive-desktop"))) {
             try {
                 $got = [System.IO.Path]::GetFullPath([string]$process.Path)
                 if ([string]::Equals($got, $want, [System.StringComparison]::OrdinalIgnoreCase)) {

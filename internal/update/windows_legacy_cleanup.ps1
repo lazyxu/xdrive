@@ -3,6 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "windows_process_scope.ps1")
 $unified = [System.IO.Path]::GetFullPath($UnifiedAppDir).TrimEnd('\')
 $uninstallRoot = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
 
@@ -36,7 +37,7 @@ function Is-UnifiedPath([string]$Path) {
     }
 }
 
-foreach ($process in (Get-Process -Name "xdrive-desktop" -ErrorAction SilentlyContinue)) {
+foreach ($process in (Get-XDriveProcessesInSession -Names @("xdrive-desktop"))) {
     try {
         $processPath = [string]$process.Path
         if ($processPath -and -not (Is-UnifiedPath $processPath)) {

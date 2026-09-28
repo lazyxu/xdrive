@@ -20,6 +20,9 @@ var windowsUpgradeTransactionScript string
 //go:embed windows_legacy_cleanup.ps1
 var windowsLegacyCleanupScript string
 
+//go:embed windows_process_scope.ps1
+var windowsProcessScopeScript string
+
 func platformAssetName() string { return "xDriveSetup-amd64.exe" }
 
 func writeWindowsUpdateScripts(dir string) (transactionPath, cleanupPath, statusPath, logPath string, err error) {
@@ -28,12 +31,16 @@ func writeWindowsUpdateScripts(dir string) (transactionPath, cleanupPath, status
 	}
 	transactionPath = filepath.Join(dir, "windows-upgrade-transaction.ps1")
 	cleanupPath = filepath.Join(dir, "windows-legacy-cleanup.ps1")
+	processScopePath := filepath.Join(dir, "windows_process_scope.ps1")
 	statusPath = filepath.Join(dir, "last-transaction.json")
 	logPath = filepath.Join(dir, "last-transaction.log")
 	if err = os.WriteFile(transactionPath, []byte(windowsUpgradeTransactionScript), 0o600); err != nil {
 		return "", "", "", "", err
 	}
 	if err = os.WriteFile(cleanupPath, []byte(windowsLegacyCleanupScript), 0o600); err != nil {
+		return "", "", "", "", err
+	}
+	if err = os.WriteFile(processScopePath, []byte(windowsProcessScopeScript), 0o600); err != nil {
 		return "", "", "", "", err
 	}
 	return transactionPath, cleanupPath, statusPath, logPath, nil
