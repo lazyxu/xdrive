@@ -153,6 +153,19 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
 	clientCoreBuild := readFile(t, filepath.Join(root, "scripts", "build-client-core.sh"))
+	requireRaw(t, "client core build metadata contract", clientCoreBuild,
+		`source "$ROOT/scripts/ci/build-metadata.sh"`,
+		`github.com/lazyxu/xdrive/internal/version.Version=$BUILD_VERSION`,
+		`github.com/lazyxu/xdrive/internal/version.Channel=$BUILD_CHANNEL`,
+		`github.com/lazyxu/xdrive/internal/version.Commit=$BUILD_COMMIT`,
+		`github.com/lazyxu/xdrive/internal/version.CommitMessageBase64=$BUILD_COMMIT_MESSAGE_B64`,
+		`github.com/lazyxu/xdrive/internal/version.CommitTime=$BUILD_COMMIT_TIME`,
+		`github.com/lazyxu/xdrive/internal/version.BuildTime=$BUILD_TIME`,
+		`client core $VERSION build requires a full 40-character commit SHA`,
+	)
+	if strings.Contains(clientCoreBuild, "$VERSION_LDFLAG") {
+		t.Error("client core build must not use the legacy version-only ldflag")
+	}
 	dockerImageExport := readFile(t, filepath.Join(root, "scripts", "ci", "export-docker-image.sh"))
 	dockerImageImport := readFile(t, filepath.Join(root, "scripts", "ci", "import-docker-image.sh"))
 	gitlabGoLinux := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-linux.sh"))
