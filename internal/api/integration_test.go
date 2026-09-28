@@ -110,6 +110,44 @@ func TestFileCRUDAndUserIsolation(t *testing.T) {
 	}
 	store.availableOverride = -1
 
+	reservedSession := meta.UploadSession{
+		ID: "direct-reservation", OwnerID: me.ID,
+		TotalSize: 100, ChunkSize: 100, ChunkCount: 1,
+		Status: meta.UploadStatusActive, ReservedBytes: 95,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := db.Create(&reservedSession).Error; err != nil {
+		t.Fatal(err)
+	}
+	store.availableOverride = 100
+	var reservedBody bytes.Buffer
+	reservedWriter := multipart.NewWriter(&reservedBody)
+	reservedPart, err := reservedWriter.CreateFormFile("file", "reservation-blocked.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(reservedPart, "blocked")
+	if err := reservedWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reservedReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/files", dir.ID), &reservedBody)
+	reservedReq.Header.Set("Content-Type", reservedWriter.FormDataContentType())
+	reservedReq.Header.Set("Authorization", "Bearer "+tokenA)
+	reservedRes := httptest.NewRecorder()
+	router.ServeHTTP(reservedRes, reservedReq)
+	if reservedRes.Code != http.StatusInsufficientStorage || !strings.Contains(reservedRes.Body.String(), "storage_capacity_exceeded") {
+		t.Fatalf("reserved multipart status=%d body=%s", reservedRes.Code, reservedRes.Body.String())
+	}
+	requestWithHeaders(
+		t, router, http.MethodPut, fmt.Sprintf("/api/v1/files/%d/content", file.ID),
+		tokenA, strings.NewReader("updated"), http.StatusInsufficientStorage,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)},
+	)
+	if err := db.Delete(&reservedSession).Error; err != nil {
+		t.Fatal(err)
+	}
+	store.availableOverride = -1
+
 	// Another user cannot read or mutate Alice's node IDs.
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", file.ID), tokenB, nil, http.StatusNotFound)
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", dir.ID), tokenB, nil, http.StatusNotFound, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", dir.Revision)})

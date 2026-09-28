@@ -113,3 +113,43 @@ func TestLocalPromoteMovesContentIntoTarget(t *testing.T) {
 		t.Fatalf("promoted content=%q", got)
 	}
 }
+
+func TestLocalStagingInspectionAndCleanup(t *testing.T) {
+	s, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(context.Background(), UploadStagingDir+"/1/run/part", strings.NewReader("part")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(context.Background(), "normal/blob", strings.NewReader("normal")); err != nil {
+		t.Fatal(err)
+	}
+	files, err := s.ListStaging(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Key != UploadStagingDir+"/1/run/part" || files[0].Size != 4 {
+		t.Fatalf("unexpected staging files: %+v", files)
+	}
+	if err := s.DeleteStaging(context.Background(), "normal/blob"); err == nil {
+		t.Fatal("DeleteStaging accepted non-staging key")
+	}
+	if err := s.DeleteStaging(context.Background(), files[0].Key); err != nil {
+		t.Fatal(err)
+	}
+	files, err = s.ListStaging(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("staging files remain after cleanup: %+v", files)
+	}
+	normal, err := s.Open(context.Background(), "normal/blob")
+	if err != nil {
+		t.Fatalf("normal storage was affected by staging cleanup: %v", err)
+	}
+	if err := normal.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

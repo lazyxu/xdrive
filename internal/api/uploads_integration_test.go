@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,6 +84,64 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	token := createTestUser(t, db, router, "chunk-user", "chunk-password")
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 
+	store.availableOverride = 100
+	type concurrentInitResult struct {
+		code int
+		body string
+	}
+	results := make(chan concurrentInitResult, 2)
+	var wg sync.WaitGroup
+	for _, name := range []string{"reserve-a.bin", "reserve-b.bin"} {
+		name := name
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			body := fmt.Sprintf(`{"parent_id":%d,"name":%q,"size":30,"chunk_size":4194304,"resume_key":%q}`, root.ID, name, name)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/uploads", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			router.ServeHTTP(res, req)
+			results <- concurrentInitResult{code: res.Code, body: res.Body.String()}
+		}()
+	}
+	wg.Wait()
+	close(results)
+	created := 0
+	rejected := 0
+	createdSessionID := ""
+	for result := range results {
+		switch result.code {
+		case http.StatusCreated:
+			created++
+			var session uploadSessionDTO
+			if err := json.Unmarshal([]byte(result.body), &session); err != nil {
+				t.Fatal(err)
+			}
+			createdSessionID = session.ID
+		case http.StatusInsufficientStorage:
+			rejected++
+		default:
+			t.Fatalf("unexpected concurrent init status=%d body=%s", result.code, result.body)
+		}
+	}
+	if created != 1 || rejected != 1 {
+		t.Fatalf("concurrent reservations created=%d rejected=%d", created, rejected)
+	}
+	var reserved int64
+	if err := db.Model(&meta.UploadSession{}).Select("COALESCE(SUM(reserved_bytes), 0)").
+		Where("status = ?", meta.UploadStatusActive).Scan(&reserved).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reserved != 60 {
+		t.Fatalf("reserved bytes=%d want=60", reserved)
+	}
+	if createdSessionID == "" {
+		t.Fatal("missing created reservation session")
+	}
+	request(t, router, http.MethodDelete, "/api/v1/uploads/"+createdSessionID, token, nil, http.StatusNoContent)
+	store.availableOverride = -1
+
 	const chunkSize = int64(4 << 20)
 	data := make([]byte, 2*chunkSize+123)
 	for i := range data {
@@ -102,6 +162,13 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	}
 	if session.ID == "" || session.ChunkCount != 3 || session.ChunkSize != chunkSize {
 		t.Fatalf("unexpected upload session: %+v", session)
+	}
+	var persistedSession meta.UploadSession
+	if err := db.First(&persistedSession, "id = ?", session.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persistedSession.ReservedBytes != int64(len(data))*2 {
+		t.Fatalf("initial reserved bytes=%d want=%d", persistedSession.ReservedBytes, int64(len(data))*2)
 	}
 
 	statusRes := request(t, router, http.MethodGet, "/api/v1/uploads/"+session.ID, token, nil, http.StatusOK)
@@ -143,8 +210,14 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	// Same chunk/hash is idempotent and returns the already recorded part.
 	putPart(session.ID, 0, part0, hash0, http.StatusOK)
 	putPart(session.ID, 2, part2, hash2, http.StatusCreated)
-
+	if err := db.First(&persistedSession, "id = ?", session.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	resumePeak := int64(len(data)) + chunkSize
+	if persistedSession.ReservedBytes != resumePeak {
+		t.Fatalf("reservation after chunks=%d want=%d", persistedSession.ReservedBytes, resumePeak)
+	}
+
 	store.availableOverride = resumePeak - 1
 	request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(initBody), http.StatusInsufficientStorage)
 	store.availableOverride = resumePeak
@@ -171,6 +244,12 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	}
 	if finalized.Result.Size != int64(len(data)) || finalized.Result.SHA256 != fullHash || finalized.Result.Revision != 1 {
 		t.Fatalf("finalized node=%+v", finalized.Result)
+	}
+	if err := db.First(&persistedSession, "id = ?", session.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persistedSession.ReservedBytes != 0 {
+		t.Fatalf("finalized reserved bytes=%d want=0", persistedSession.ReservedBytes)
 	}
 	node := *finalized.Result
 

@@ -117,6 +117,25 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`UPDATE xd_users SET session_version = 1 WHERE session_version = 0`).Error; err != nil {
 		return err
 	}
+	if err := db.Exec(`
+		UPDATE xd_upload_sessions
+		SET reserved_bytes = 0
+		WHERE status <> 'active' OR expires_at <= NOW()
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE xd_upload_sessions AS s
+		SET reserved_bytes = s.total_size + GREATEST(
+			s.total_size - COALESCE((
+				SELECT SUM(p.size) FROM xd_upload_parts AS p WHERE p.session_id = s.id
+			), 0),
+			0
+		)
+		WHERE s.status = 'active' AND s.expires_at > NOW()
+	`).Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`DROP INDEX IF EXISTS idx_xd_files_storage_key`).Error; err != nil {
 		return err
 	}

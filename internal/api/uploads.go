@@ -183,15 +183,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					fail(c, http.StatusInternalServerError, "load upload chunks failed")
 					return
 				}
-				if err := s.ensureStorageWriteCapacity(
-					c.Request.Context(), resumableUploadRemainingPeakBytes(existing.TotalSize, received),
-				); err != nil {
-					if !writeStorageCapacityError(c, err) {
-						fail(c, http.StatusInternalServerError, "storage capacity check failed")
-					}
-					return
-				}
-				updates := map[string]any{}
+				requiredReservation := uploadReservationBytes(existing.TotalSize, received)
+				updates := map[string]any{"reserved_bytes": requiredReservation}
 				if existing.SHA256 == "" && req.SHA256 != "" {
 					updates["sha256"] = req.SHA256
 					existing.SHA256 = req.SHA256
@@ -200,9 +193,18 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					updates["expected_md5"] = req.MD5
 					existing.ExpectedMD5 = req.MD5
 				}
-				if len(updates) != 0 {
-					_ = s.DB.Model(&existing).Updates(updates).Error
+				if err := s.DB.Transaction(func(tx *gorm.DB) error {
+					if err := s.reserveUploadCapacity(c.Request.Context(), tx, existing.ID, requiredReservation); err != nil {
+						return err
+					}
+					return tx.Model(&meta.UploadSession{}).Where("id = ? AND status = ?", existing.ID, meta.UploadStatusActive).Updates(updates).Error
+				}); err != nil {
+					if !writeStorageCapacityError(c, err) {
+						fail(c, http.StatusInternalServerError, "reserve upload capacity failed")
+					}
+					return
 				}
+				existing.ReservedBytes = requiredReservation
 				s.writeUploadSession(c, existing, http.StatusOK)
 				return
 			}
@@ -307,15 +309,12 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			return
 		}
 	}
-	if err := s.ensureStorageWriteCapacity(
-		c.Request.Context(), resumableUploadRemainingPeakBytes(session.TotalSize, reusable),
-	); err != nil {
-		if !writeStorageCapacityError(c, err) {
-			fail(c, http.StatusInternalServerError, "storage capacity check failed")
-		}
-		return
-	}
+	requiredReservation := uploadReservationBytes(session.TotalSize, reusable)
+	session.ReservedBytes = requiredReservation
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.reserveUploadCapacity(c.Request.Context(), tx, "", requiredReservation); err != nil {
+			return err
+		}
 		if err := tx.Create(&session).Error; err != nil {
 			return err
 		}
@@ -324,7 +323,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
-		fail(c, http.StatusInternalServerError, "create upload session failed")
+		if !writeStorageCapacityError(c, err) {
+			fail(c, http.StatusInternalServerError, "create upload session failed")
+		}
 		return
 	}
 	s.writeUploadSession(c, session, http.StatusCreated)
@@ -381,7 +382,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 	}
 
 	key := fmt.Sprintf("%s/%d/%s/%06d-%s", storage.UploadStagingDir, session.OwnerID, session.ID, index, uuid.NewString())
-	if err := s.ensureStorageWriteCapacity(c.Request.Context(), expectedSize); err != nil {
+	if err := s.ensureStorageWriteCapacityWithReservations(c.Request.Context(), expectedSize, session.ID); err != nil {
 		if !writeStorageCapacityError(c, err) {
 			fail(c, http.StatusInternalServerError, "storage capacity check failed")
 		}
@@ -440,18 +441,24 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 		if findErr == nil {
 			oldKey = old.StorageKey
 			oldReused = old.Reused
-			return tx.Model(&old).Updates(map[string]any{
+			if err := tx.Model(&old).Updates(map[string]any{
 				"size": size, "sha256": actualHash, "storage_key": key,
 				"reused": false, "source_storage_key": "", "source_offset": 0,
 				"updated_at": time.Now(),
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+		} else {
+			if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return findErr
+			}
+			if err := tx.Create(&meta.UploadPart{
+				SessionID: session.ID, PartIndex: index, Size: size, SHA256: actualHash, StorageKey: key,
+			}).Error; err != nil {
+				return err
+			}
 		}
-		if !errors.Is(findErr, gorm.ErrRecordNotFound) {
-			return findErr
-		}
-		return tx.Create(&meta.UploadPart{
-			SessionID: session.ID, PartIndex: index, Size: size, SHA256: actualHash, StorageKey: key,
-		}).Error
+		return s.refreshUploadReservation(tx, current)
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)
@@ -544,7 +551,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	}
 
 	newKey := storageKey(session.OwnerID, targetLogical, uuid.NewString())
-	if err := s.ensureStorageWriteCapacity(c.Request.Context(), session.TotalSize); err != nil {
+	if err := s.ensureStorageWriteCapacityWithReservations(c.Request.Context(), session.TotalSize, session.ID); err != nil {
 		if !writeStorageCapacityError(c, err) {
 			fail(c, http.StatusInternalServerError, "storage capacity check failed")
 		}
@@ -687,7 +694,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		resultID := result.ID
 		if err := tx.Model(&meta.UploadSession{}).Where("id = ?", currentSession.ID).Updates(map[string]any{
 			"status": meta.UploadStatusFinalized, "result_node_id": resultID,
-			"sha256": actualHash, "updated_at": now,
+			"sha256": actualHash, "reserved_bytes": 0, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
@@ -896,9 +903,9 @@ func (s *Server) StartUploadJanitor(ctx context.Context) {
 }
 
 func (s *Server) runStorageJanitorPass(ctx context.Context) {
-	if err := s.cleanupExpiredUploads(ctx, 0); err != nil {
+	if _, err := s.cleanupUploadStaging(ctx); err != nil {
 		s.ensureObservability()
-		s.obs.logger.Warn("upload_janitor_failed", "error", err)
+		s.obs.logger.Warn("upload_staging_cleanup_failed", "error", err)
 	}
 	if err := s.reapDeletingContentBlobs(ctx); err != nil {
 		s.ensureObservability()

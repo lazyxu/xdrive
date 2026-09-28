@@ -170,6 +170,7 @@ type UploadSession struct {
 	ExpectedMD5      string `gorm:"size:32;index"`
 	ResumeKey        string `gorm:"size:128;index"`
 	Status           string `gorm:"size:16;not null;index"`
+	ReservedBytes    int64  `gorm:"not null;default:0"`
 	ResultNodeID     *uint64
 	ExpiresAt        time.Time `gorm:"not null;index"`
 	CreatedAt        time.Time

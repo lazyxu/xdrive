@@ -146,6 +146,70 @@ func (l *Local) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+func (l *Local) ListStaging(ctx context.Context) ([]StagingFile, error) {
+	root := filepath.Join(l.root, UploadStagingDir)
+	files := make([]StagingFile, 0)
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(l.root, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, StagingFile{
+			Key:        filepath.ToSlash(rel),
+			Size:       info.Size(),
+			ModifiedAt: info.ModTime(),
+		})
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return files, nil
+	}
+	return files, err
+}
+
+func (l *Local) DeleteStaging(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	key = filepath.ToSlash(strings.TrimSpace(key))
+	prefix := UploadStagingDir + "/"
+	if !strings.HasPrefix(key, prefix) {
+		return fmt.Errorf("storage key is not in upload staging")
+	}
+	full, err := l.resolve(key)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	dir := filepath.Dir(full)
+	stagingRoot := filepath.Join(l.root, UploadStagingDir)
+	for dir != stagingRoot && strings.HasPrefix(dir, stagingRoot+string(os.PathSeparator)) {
+		if err := os.Remove(dir); err != nil {
+			break
+		}
+		dir = filepath.Dir(dir)
+	}
+	return nil
+}
+
 func (l *Local) Promote(ctx context.Context, sourceKey, targetKey string, expectedSize int64) error {
 	if err := ctx.Err(); err != nil {
 		return err
