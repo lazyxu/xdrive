@@ -50,6 +50,7 @@ release-assets:
       - release/server-restore.sh
       - release/server-verify.sh
       - release/server-doctor.sh
+      - release/server-migrate-user.sh
       - release/xdrive-server
       - release/docker-compose.yml
       - release/xdrive.env.example

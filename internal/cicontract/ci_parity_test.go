@@ -835,6 +835,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"server-restore.sh",
 		"server-verify.sh",
 		"server-doctor.sh",
+		"server-migrate-user.sh",
 		"xdrive-server",
 		"docker-compose.yml",
 		"xdrive.env.example",
@@ -970,6 +971,7 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"expire_in: 14 days",
 		"GLAB_ENABLE_CI_AUTOLOGIN: \"true\"",
 		"image: $XDRIVE_CI_GLAB_IMAGE",
+		"- release/server-migrate-user.sh",
 	)
 	for _, legacyJob := range []string{"package-linux-amd64:", "package-windows-amd64:", "package-server-images:"} {
 		if strings.Contains(gitlabRelease, legacyJob) {
