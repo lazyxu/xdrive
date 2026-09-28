@@ -5,7 +5,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Switch,
@@ -36,6 +35,22 @@ type ResetForm = {
   must_change_password: boolean
 }
 
+type AdminConfirmAction = {
+  title: string
+  description: string
+  confirmLabel: string
+  danger?: boolean
+  successMessage: string
+  errorTitle: string
+  errorFallback: string
+  run: () => Promise<void>
+}
+
+type AdminActionError = {
+  title: string
+  message: string
+}
+
 const GIB = 1024 ** 3
 
 function quotaToGiB(bytes: number) {
@@ -64,6 +79,9 @@ export default function AdminUsersPanel({
   const [createOpen, setCreateOpen] = useState(false)
   const [quotaUser, setQuotaUser] = useState<AdminUser | null>(null)
   const [resetUser, setResetUser] = useState<AdminUser | null>(null)
+  const [confirmAction, setConfirmAction] = useState<AdminConfirmAction | null>(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
+  const [actionError, setActionError] = useState<AdminActionError | null>(null)
   const [createForm] = Form.useForm<CreateForm>()
   const [quotaForm] = Form.useForm<QuotaForm>()
   const [resetForm] = Form.useForm<ResetForm>()
@@ -85,13 +103,41 @@ export default function AdminUsersPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const updateUser = async (user: AdminUser, input: { role?: 'user' | 'admin'; disabled?: boolean; quota_bytes?: number }) => {
+  const showActionError = (title: string, err: unknown, fallback: string) => {
+    setActionError({
+      title,
+      message: err instanceof Error && err.message.trim() ? err.message : fallback,
+    })
+  }
+
+  const updateUser = async (
+    user: AdminUser,
+    input: { role?: 'user' | 'admin'; disabled?: boolean; quota_bytes?: number },
+    successMessage = '用户已更新',
+  ) => {
     try {
       await api.adminUpdateUser(user.id, input)
+      message.success(successMessage)
       await load()
       onChanged()
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '更新用户失败')
+      showActionError('更新用户失败', err, '更新用户失败，请稍后重试。')
+    }
+  }
+
+  const executeConfirmAction = async () => {
+    if (!confirmAction) return
+    const action = confirmAction
+    setConfirmLoading(true)
+    try {
+      await action.run()
+      message.success(action.successMessage)
+      setConfirmAction(null)
+    } catch (err) {
+      setConfirmAction(null)
+      showActionError(action.errorTitle, err, action.errorFallback)
+    } finally {
+      setConfirmLoading(false)
     }
   }
 
@@ -119,7 +165,25 @@ export default function AdminUsersPanel({
             { value: 'user', label: '普通用户' },
             { value: 'admin', label: '管理员' },
           ]}
-          onChange={(role: 'user' | 'admin') => void updateUser(user, { role })}
+          onChange={(role: 'user' | 'admin') => {
+            if (role === user.role) return
+            setConfirmAction({
+              title: `变更 ${user.username} 的角色？`,
+              description: role === 'admin'
+                ? '该用户将获得管理员权限，包括用户管理、全局存储查看和管理操作。'
+                : '该用户将失去管理员权限，但其文件和账户数据不会被删除。',
+              confirmLabel: '确认变更',
+              danger: role !== 'admin',
+              successMessage: '用户角色已更新',
+              errorTitle: '变更用户角色失败',
+              errorFallback: '无法变更用户角色，请稍后重试。',
+              run: async () => {
+                await api.adminUpdateUser(user.id, { role })
+                await load()
+                onChanged()
+              },
+            })
+          }}
         />
       ),
     },
@@ -130,7 +194,26 @@ export default function AdminUsersPanel({
         <Switch
           checked={!user.disabled}
           disabled={user.id === currentUserID}
-          onChange={(enabled) => void updateUser(user, { disabled: !enabled })}
+          onChange={(enabled) => {
+            if (enabled) {
+              void updateUser(user, { disabled: false }, '用户已启用')
+              return
+            }
+            setConfirmAction({
+              title: `停用 ${user.username}？`,
+              description: '停用后该用户将无法继续登录或使用现有会话，数据不会被删除。',
+              confirmLabel: '停用用户',
+              danger: true,
+              successMessage: '用户已停用',
+              errorTitle: '停用用户失败',
+              errorFallback: '无法停用该用户，请稍后重试。',
+              run: async () => {
+                await api.adminUpdateUser(user.id, { disabled: true })
+                await load()
+                onChanged()
+              },
+            })
+          }}
         />
       ),
     },
@@ -181,37 +264,43 @@ export default function AdminUsersPanel({
           }}>
             重置密码
           </Button>
-          <Popconfirm
-            title="撤销全部会话？"
-            description="该用户现有的 access token 和 refresh token 将立即失效。"
-            onConfirm={async () => {
-              try {
+          <Button
+            size="small"
+            onClick={() => setConfirmAction({
+              title: `撤销 ${user.username} 的全部会话？`,
+              description: '该用户现有的 access token 和 refresh token 将立即失效，需要重新登录。',
+              confirmLabel: '撤销全部会话',
+              successMessage: '会话已撤销',
+              errorTitle: '撤销会话失败',
+              errorFallback: '无法撤销该用户的现有会话，请稍后重试。',
+              run: async () => {
                 await api.adminRevokeSessions(user.id)
-                message.success('会话已撤销')
-              } catch (err) {
-                message.error(err instanceof Error ? err.message : '撤销会话失败')
-              }
-            }}
+              },
+            })}
           >
-            <Button size="small">撤销会话</Button>
-          </Popconfirm>
+            撤销会话
+          </Button>
           {user.id !== currentUserID && (
-            <Popconfirm
-              title={'永久删除 ' + user.username + '？'}
-              description="该用户账户、元数据和已存储文件都将被永久删除。"
-              okButtonProps={{ danger: true }}
-              onConfirm={async () => {
-                try {
+            <Button
+              danger
+              size="small"
+              onClick={() => setConfirmAction({
+                title: `永久删除 ${user.username}？`,
+                description: '该用户账户、元数据、当前文件、回收站内容和历史版本都将永久删除。此操作不可恢复。',
+                confirmLabel: '永久删除用户',
+                danger: true,
+                successMessage: '用户已删除',
+                errorTitle: '删除用户失败',
+                errorFallback: '无法永久删除该用户，请稍后重试。',
+                run: async () => {
                   await api.adminDeleteUser(user.id)
-                  message.success('用户已删除')
                   await load()
-                } catch (err) {
-                  message.error(err instanceof Error ? err.message : '删除用户失败')
-                }
-              }}
+                  onChanged()
+                },
+              })}
             >
-              <Button danger size="small">删除</Button>
-            </Popconfirm>
+              删除
+            </Button>
           )}
         </Space>
       ),
@@ -274,7 +363,7 @@ export default function AdminUsersPanel({
               createForm.resetFields()
               await load()
             } catch (err) {
-              message.error(err instanceof Error ? err.message : '创建用户失败')
+              showActionError('创建用户失败', err, '无法创建用户，请检查输入后重试。')
             }
           }}
         >
@@ -324,7 +413,7 @@ export default function AdminUsersPanel({
               await load()
               onChanged()
             } catch (err) {
-              message.error(err instanceof Error ? err.message : '更新存储配额失败')
+              showActionError('更新存储配额失败', err, '无法更新存储配额，请稍后重试。')
             }
           }}
         >
@@ -355,7 +444,7 @@ export default function AdminUsersPanel({
               resetForm.resetFields()
               await load()
             } catch (err) {
-              message.error(err instanceof Error ? err.message : '重置密码失败')
+              showActionError('重置密码失败', err, '无法重置该用户密码，请稍后重试。')
             }
           }}
         >
@@ -367,6 +456,39 @@ export default function AdminUsersPanel({
           </Form.Item>
           <Button type="primary" htmlType="submit">重置密码</Button>
         </Form>
+      </Modal>
+
+      <Modal
+        title={confirmAction?.title ?? '确认操作'}
+        open={!!confirmAction}
+        onCancel={() => !confirmLoading && setConfirmAction(null)}
+        closable={!confirmLoading}
+        maskClosable={!confirmLoading}
+        footer={[
+          <Button key="cancel" disabled={confirmLoading} onClick={() => setConfirmAction(null)}>取消</Button>,
+          <Button
+            key="confirm"
+            type="primary"
+            danger={confirmAction?.danger}
+            loading={confirmLoading}
+            onClick={() => void executeConfirmAction()}
+          >
+            {confirmAction?.confirmLabel ?? '确认'}
+          </Button>,
+        ]}
+      >
+        <Typography.Paragraph style={{ marginBottom: 0 }}>
+          {confirmAction?.description}
+        </Typography.Paragraph>
+      </Modal>
+
+      <Modal
+        title={actionError?.title ?? '操作失败'}
+        open={!!actionError}
+        onCancel={() => setActionError(null)}
+        footer={<Button type="primary" onClick={() => setActionError(null)}>知道了</Button>}
+      >
+        <Typography.Text type="danger">{actionError?.message}</Typography.Text>
       </Modal>
     </>
   )

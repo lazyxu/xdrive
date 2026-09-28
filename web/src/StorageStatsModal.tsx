@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Col, Modal, Popconfirm, Row, Space, Statistic, Table, Typography } from 'antd'
+import { Alert, Button, Col, Modal, Row, Space, Statistic, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Accordion, AccordionDetails, AccordionSummary, Chip, Stack, Typography as MuiTypography } from '@mui/material'
 import type {
@@ -139,6 +139,9 @@ export default function StorageStatsModal({
   const [stagingCursors, setStagingCursors] = useState<string[]>([''])
   const [stagingLoading, setStagingLoading] = useState(false)
   const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false)
+  const [cleanupActionError, setCleanupActionError] = useState('')
+  const [cleanupResultWarning, setCleanupResultWarning] = useState('')
   const [stagingNotice, setStagingNotice] = useState('')
   const [cleanupRuns, setCleanupRuns] = useState<StagingCleanupRun[]>([])
   const [cleanupFailures, setCleanupFailures] = useState<Record<number, StagingCleanupFailure[]>>({})
@@ -158,6 +161,9 @@ export default function StorageStatsModal({
     setStagingPage(1)
     setStagingCursors([''])
     setStagingNotice('')
+    setCleanupConfirmOpen(false)
+    setCleanupActionError('')
+    setCleanupResultWarning('')
     setCleanupRuns([])
     setCleanupFailures({})
     const request = scope === 'global' ? api.adminStorageStats() : api.storageStats()
@@ -227,11 +233,30 @@ export default function StorageStatsModal({
   const cleanupStaging = async () => {
     setCleanupLoading(true)
     setStagingNotice('')
+    setCleanupActionError('')
+    setCleanupResultWarning('')
+
+    let result
     try {
-      const result = await api.adminCleanupUploadStaging()
-      let notice = '已清理 ' + result.deleted_files.toLocaleString() + ' 个临时文件，共 ' + formatSize(result.deleted_bytes)
-      if (result.failed_files > 0) notice += '；失败 ' + result.failed_files.toLocaleString() + ' 个'
-      setStagingNotice(notice)
+      result = await api.adminCleanupUploadStaging()
+    } catch (err) {
+      setCleanupConfirmOpen(false)
+      setCleanupActionError(err instanceof Error && err.message.trim() ? err.message : '清理上传临时空间失败，请稍后重试。')
+      setCleanupLoading(false)
+      return
+    }
+
+    setCleanupConfirmOpen(false)
+    const notice = '已清理 ' + result.deleted_files.toLocaleString() + ' 个临时文件，共 ' + formatSize(result.deleted_bytes)
+    setStagingNotice(notice)
+    if (result.failed_files > 0) {
+      setCleanupResultWarning(
+        '本次已清理 ' + result.deleted_files.toLocaleString() + ' 个文件，但仍有 ' +
+        result.failed_files.toLocaleString() + ' 个文件删除失败。可在“最近 staging 清理”中展开本次记录查看逐文件错误。',
+      )
+    }
+
+    try {
       const [nextStats, nextStaging, nextCleanupRuns] = await Promise.all([
         api.adminStorageStats(),
         api.adminUploadStaging(STAGING_PAGE_SIZE, ''),
@@ -244,7 +269,9 @@ export default function StorageStatsModal({
       setStagingPage(1)
       setStagingCursors(nextStaging.next_cursor ? ['', nextStaging.next_cursor] : [''])
     } catch (err) {
-      setError(err instanceof Error ? err.message : '清理上传临时空间失败')
+      setError(err instanceof Error && err.message.trim()
+        ? '清理已执行，但刷新存储统计失败：' + err.message
+        : '清理已执行，但刷新存储统计失败，请手动刷新。')
     } finally {
       setCleanupLoading(false)
     }
@@ -257,6 +284,7 @@ export default function StorageStatsModal({
     : undefined
 
   return (
+    <>
     <Modal
       title={scope === 'global' ? '全局存储统计' : '我的存储统计'}
       open={open}
@@ -334,21 +362,14 @@ export default function StorageStatsModal({
               </Typography.Paragraph>
               <Space wrap>
                 <Button loading={stagingLoading} onClick={() => void loadStagingPage(1)}>刷新 staging</Button>
-                <Popconfirm
-                  title="清理可回收上传临时数据？"
-                  description="将清理过期 UploadSession 及超过 1 小时、数据库无引用的 orphan staging 文件。"
-                  okText="清理"
-                  cancelText="取消"
-                  onConfirm={() => void cleanupStaging()}
+                <Button
+                  danger
+                  loading={cleanupLoading}
+                  disabled={staging.stats.reclaimable_files <= 0 && staging.stats.expired_sessions <= 0}
+                  onClick={() => setCleanupConfirmOpen(true)}
                 >
-                  <Button
-                    danger
-                    loading={cleanupLoading}
-                    disabled={staging.stats.reclaimable_files <= 0 && staging.stats.expired_sessions <= 0}
-                  >
-                    清理可回收临时数据
-                  </Button>
-                </Popconfirm>
+                  清理可回收临时数据
+                </Button>
               </Space>
               {staging.orphans.length > 0 && (
                 <div>
@@ -529,5 +550,53 @@ export default function StorageStatsModal({
       )}
       {!stats && !error && <Table loading={loading} dataSource={[]} columns={columns} pagination={false} />}
     </Modal>
+
+    <Modal
+      title="清理可回收上传临时数据？"
+      open={cleanupConfirmOpen}
+      onCancel={() => !cleanupLoading && setCleanupConfirmOpen(false)}
+      closable={!cleanupLoading}
+      maskClosable={!cleanupLoading}
+      footer={[
+        <Button key="cancel" disabled={cleanupLoading} onClick={() => setCleanupConfirmOpen(false)}>取消</Button>,
+        <Button key="cleanup" type="primary" danger loading={cleanupLoading} onClick={() => void cleanupStaging()}>
+          确认清理
+        </Button>,
+      ]}
+    >
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Typography.Paragraph style={{ marginBottom: 0 }}>
+          将清理过期 UploadSession，以及超过 1 小时且数据库没有任何引用的 orphan staging 文件。
+          近期未登记文件不会删除。
+        </Typography.Paragraph>
+        {staging && (
+          <Alert
+            type="warning"
+            showIcon
+            message={`预计可回收 ${staging.stats.reclaimable_files.toLocaleString()} 个临时文件 / ${formatSize(staging.stats.reclaimable_bytes)}`}
+            description={`另有 ${staging.stats.expired_sessions.toLocaleString()} 个过期 UploadSession 将被回收。`}
+          />
+        )}
+      </Space>
+    </Modal>
+
+    <Modal
+      title="staging 清理部分完成"
+      open={!!cleanupResultWarning}
+      onCancel={() => setCleanupResultWarning('')}
+      footer={<Button type="primary" onClick={() => setCleanupResultWarning('')}>知道了</Button>}
+    >
+      <Alert type="warning" showIcon message={cleanupResultWarning} />
+    </Modal>
+
+    <Modal
+      title="清理 staging 失败"
+      open={!!cleanupActionError}
+      onCancel={() => setCleanupActionError('')}
+      footer={<Button type="primary" onClick={() => setCleanupActionError('')}>知道了</Button>}
+    >
+      <Typography.Text type="danger">{cleanupActionError}</Typography.Text>
+    </Modal>
+    </>
   )
 }
