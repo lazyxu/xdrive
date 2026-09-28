@@ -194,14 +194,14 @@ export default function StorageStatsModal({
     return () => { active = false }
   }, [api, open, scope])
 
-  const loadStagingPage = async (page: number) => {
+  const loadStagingPage = async (page: number, fresh = false) => {
     if (scope !== 'global') return
     const nextPage = Math.max(1, Math.trunc(page))
     const cursor = nextPage === 1 ? '' : stagingCursors[nextPage - 1]
     if (cursor === undefined) return
     setStagingLoading(true)
     try {
-      const value = await api.adminUploadStaging(STAGING_PAGE_SIZE, cursor)
+      const value = await api.adminUploadStaging(STAGING_PAGE_SIZE, cursor, fresh)
       setStaging(value)
       setStagingPage(nextPage)
       setStagingCursors((current) => {
@@ -361,7 +361,7 @@ export default function StorageStatsModal({
                 Reservation 表示活跃 resumable 上传未来仍可能需要写入的峰值空间，不等于当前物理占用；Staging 实际占用已计入 xDrive 物理占用。
               </Typography.Paragraph>
               <Space wrap>
-                <Button loading={stagingLoading} onClick={() => void loadStagingPage(1)}>刷新 staging</Button>
+                <Button loading={stagingLoading} onClick={() => void loadStagingPage(1, true)}>刷新 staging</Button>
                 <Button
                   danger
                   loading={cleanupLoading}

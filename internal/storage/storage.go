@@ -74,3 +74,9 @@ type StagingInspector interface {
 	ListStaging(context.Context) ([]StagingFile, error)
 	DeleteStaging(context.Context, string) error
 }
+
+// StagingWalker streams staging files in ascending lexical key order.
+// Implementations must stop promptly when the visitor returns an error.
+type StagingWalker interface {
+	WalkStaging(context.Context, func(StagingFile) error) error
+}
