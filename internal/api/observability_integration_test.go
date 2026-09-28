@@ -109,6 +109,20 @@ func TestServerObservability(t *testing.T) {
 	token := createTestUser(t, db, router, "metrics-user", "metrics-password")
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 
+	var metricsUser meta.User
+	if err := db.Where("username = ?", "metrics-user").First(&metricsUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.loadQuotaUsage(db, metricsUser.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.loadUploadStagingInventory(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.loadUploadStagingInventory(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
 	traceID := "trace-test-123"
 	traced := requestWithHeaders(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK,
 		map[string]string{"X-Request-ID": traceID})
@@ -157,6 +171,10 @@ func TestServerObservability(t *testing.T) {
 		"xdrive_retained_blob_bytes 2",
 		"xdrive_database_size_bytes ",
 		"xdrive_api_5xx_total 2",
+		`xdrive_internal_operation_duration_seconds_count{operation="quota_single"} `,
+		`xdrive_internal_operation_duration_seconds_count{operation="staging_inventory_scan"} `,
+		`xdrive_staging_snapshot_cache_total{result="hit"} `,
+		`xdrive_staging_snapshot_cache_total{result="miss"} `,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics missing %q:\n%s", want, body)

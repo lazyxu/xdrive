@@ -56,6 +56,12 @@ func (s *Server) quotaUsage(c *gin.Context) {
 }
 
 func (s *Server) loadQuotaUsage(db *gorm.DB, uid uint64, lockUser bool) (quotaUsageDTO, error) {
+	started := time.Now()
+	defer func() {
+		if s.obs != nil {
+			s.obs.observeInternalOperation("quota_single", time.Since(started))
+		}
+	}()
 	var user meta.User
 	q := db
 	if lockUser {

@@ -122,9 +122,19 @@ func (s *Server) loadUploadStagingInventorySnapshot(ctx context.Context, force b
 	s.stagingCacheMu.Lock()
 	defer s.stagingCacheMu.Unlock()
 	if !force && !s.stagingCacheAt.IsZero() && time.Since(s.stagingCacheAt) < stagingSnapshotTTL {
+		if s.obs != nil {
+			s.obs.noteStagingSnapshotCache(true)
+		}
 		return s.stagingCache, nil
 	}
+	if s.obs != nil {
+		s.obs.noteStagingSnapshotCache(false)
+	}
+	started := time.Now()
 	inventory, err := s.scanUploadStagingInventory(ctx)
+	if s.obs != nil {
+		s.obs.observeInternalOperation("staging_inventory_scan", time.Since(started))
+	}
 	if err != nil {
 		return uploadStagingInventory{}, err
 	}
@@ -319,7 +329,11 @@ func (s *Server) adminUploadStaging(c *gin.Context) {
 		return
 	}
 
+	pageStarted := time.Now()
 	page, hasMore, err := s.listStagingOrphanPage(ctx, inventory, cursor, offset, limit)
+	if s.obs != nil {
+		s.obs.observeInternalOperation("staging_orphan_page", time.Since(pageStarted))
+	}
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "list upload staging orphans failed")
 		return

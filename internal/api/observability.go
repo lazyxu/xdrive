@@ -40,8 +40,11 @@ type serverObservability struct {
 	startedAt time.Time
 	logger    *slog.Logger
 
-	httpRequests map[httpMetricKey]httpMetricValue
-	uploads      map[uploadMetricKey]uint64
+	httpRequests       map[httpMetricKey]httpMetricValue
+	uploads            map[uploadMetricKey]uint64
+	internalOperations map[string]httpMetricValue
+	stagingCacheHits   uint64
+	stagingCacheMisses uint64
 
 	loginFailures    uint64
 	quotaRejections  uint64
@@ -69,10 +72,11 @@ func newServerObservability(logger *slog.Logger) *serverObservability {
 		logger = slog.Default()
 	}
 	return &serverObservability{
-		startedAt:    time.Now().UTC(),
-		logger:       logger,
-		httpRequests: make(map[httpMetricKey]httpMetricValue),
-		uploads:      make(map[uploadMetricKey]uint64),
+		startedAt:          time.Now().UTC(),
+		logger:             logger,
+		httpRequests:       make(map[httpMetricKey]httpMetricValue),
+		uploads:            make(map[uploadMetricKey]uint64),
+		internalOperations: make(map[string]httpMetricValue),
 	}
 }
 
@@ -244,6 +248,25 @@ func (o *serverObservability) noteCollectionError() {
 	o.mu.Unlock()
 }
 
+func (o *serverObservability) observeInternalOperation(operation string, duration time.Duration) {
+	o.mu.Lock()
+	value := o.internalOperations[operation]
+	value.Count++
+	value.DurationSeconds += duration.Seconds()
+	o.internalOperations[operation] = value
+	o.mu.Unlock()
+}
+
+func (o *serverObservability) noteStagingSnapshotCache(hit bool) {
+	o.mu.Lock()
+	if hit {
+		o.stagingCacheHits++
+	} else {
+		o.stagingCacheMisses++
+	}
+	o.mu.Unlock()
+}
+
 func (s *Server) metrics(c *gin.Context) {
 	c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	c.Header("Cache-Control", "no-store")
@@ -271,6 +294,12 @@ func (s *Server) metrics(c *gin.Context) {
 	for key, value := range s.obs.uploads {
 		uploads[key] = value
 	}
+	internalOperations := make(map[string]httpMetricValue, len(s.obs.internalOperations))
+	for key, value := range s.obs.internalOperations {
+		internalOperations[key] = value
+	}
+	stagingCacheHits := s.obs.stagingCacheHits
+	stagingCacheMisses := s.obs.stagingCacheMisses
 	loginFailures := s.obs.loginFailures
 	quotaRejections := s.obs.quotaRejections
 	api5xx := s.obs.api5xx
@@ -365,6 +394,26 @@ func (s *Server) metrics(c *gin.Context) {
 		fmt.Fprintf(&b, "xdrive_upload_operations_total{operation=%q,result=%q} %d\n",
 			key.Operation, key.Result, uploads[key])
 	}
+
+	fmt.Fprintln(&b, "# HELP xdrive_internal_operation_duration_seconds Internal heavy-operation duration by bounded operation name.")
+	fmt.Fprintln(&b, "# TYPE xdrive_internal_operation_duration_seconds summary")
+	internalOperationKeys := make([]string, 0, len(internalOperations))
+	for operation := range internalOperations {
+		internalOperationKeys = append(internalOperationKeys, operation)
+	}
+	sort.Strings(internalOperationKeys)
+	for _, operation := range internalOperationKeys {
+		value := internalOperations[operation]
+		fmt.Fprintf(&b, "xdrive_internal_operation_duration_seconds_sum{operation=%q} %.6f\n",
+			operation, value.DurationSeconds)
+		fmt.Fprintf(&b, "xdrive_internal_operation_duration_seconds_count{operation=%q} %d\n",
+			operation, value.Count)
+	}
+
+	fmt.Fprintln(&b, "# HELP xdrive_staging_snapshot_cache_total Staging snapshot cache lookups grouped by hit or miss.")
+	fmt.Fprintln(&b, "# TYPE xdrive_staging_snapshot_cache_total counter")
+	fmt.Fprintf(&b, "xdrive_staging_snapshot_cache_total{result=%q} %d\n", "hit", stagingCacheHits)
+	fmt.Fprintf(&b, "xdrive_staging_snapshot_cache_total{result=%q} %d\n", "miss", stagingCacheMisses)
 
 	fmt.Fprintln(&b, "# HELP xdrive_metrics_collection_success Whether live DB-backed gauges were collected successfully.")
 	fmt.Fprintln(&b, "# TYPE xdrive_metrics_collection_success gauge")
