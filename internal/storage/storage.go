@@ -49,3 +49,12 @@ type Store interface {
 	Open(ctx context.Context, key string) (*os.File, error)
 	Delete(ctx context.Context, key string) error
 }
+
+type Capacity struct {
+	TotalBytes     int64
+	AvailableBytes int64
+}
+
+type CapacityReporter interface {
+	Capacity(context.Context) (Capacity, error)
+}

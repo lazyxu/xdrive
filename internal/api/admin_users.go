@@ -22,6 +22,7 @@ type userDTO struct {
 	MustChangePassword bool       `json:"must_change_password"`
 	QuotaBytes         int64      `json:"quota_bytes"`
 	PhysicalUsedBytes  int64      `json:"physical_used_bytes"`
+	AvailableBytes     int64      `json:"available_bytes"`
 	LogicalFileBytes   int64      `json:"logical_file_bytes"`
 	TrashBytes         int64      `json:"trash_bytes"`
 	HistoryBytes       int64      `json:"history_bytes"`
@@ -45,13 +46,14 @@ func toUserDTO(user meta.User) userDTO {
 	}
 }
 
-func userDTOWithQuota(db *gorm.DB, user meta.User) (userDTO, error) {
+func userDTOWithQuota(db *gorm.DB, user meta.User, diskAvailableBytes int64) (userDTO, error) {
 	usage, err := quotaUsageForUser(db, user)
 	if err != nil {
 		return userDTO{}, err
 	}
 	dto := toUserDTO(user)
 	dto.PhysicalUsedBytes = usage.PhysicalUsedBytes
+	dto.AvailableBytes = effectiveAvailableBytes(user.QuotaBytes, usage.PhysicalUsedBytes, diskAvailableBytes)
 	dto.LogicalFileBytes = usage.LogicalFileBytes
 	dto.TrashBytes = usage.TrashBytes
 	dto.HistoryBytes = usage.HistoryBytes
@@ -65,9 +67,14 @@ func (s *Server) adminListUsers(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "list users failed")
 		return
 	}
+	capacity, err := s.storageCapacity(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load storage capacity failed")
+		return
+	}
 	out := make([]userDTO, 0, len(users))
 	for _, user := range users {
-		dto, err := userDTOWithQuota(s.DB, user)
+		dto, err := userDTOWithQuota(s.DB, user, capacity.AvailableBytes)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, "load user quota usage failed")
 			return
@@ -143,7 +150,12 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 		}
 		return
 	}
-	dto, err := userDTOWithQuota(s.DB, user)
+	capacity, err := s.storageCapacity(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load storage capacity failed")
+		return
+	}
+	dto, err := userDTOWithQuota(s.DB, user, capacity.AvailableBytes)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "load user quota usage failed")
 		return
@@ -279,7 +291,12 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 		}
 		return
 	}
-	dto, dtoErr := userDTOWithQuota(s.DB, updated)
+	capacity, capacityErr := s.storageCapacity(c.Request.Context())
+	if capacityErr != nil {
+		fail(c, http.StatusInternalServerError, "load storage capacity failed")
+		return
+	}
+	dto, dtoErr := userDTOWithQuota(s.DB, updated, capacity.AvailableBytes)
 	if dtoErr != nil {
 		fail(c, http.StatusInternalServerError, "load user quota usage failed")
 		return

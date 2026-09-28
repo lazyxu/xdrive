@@ -453,9 +453,15 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
               </>
             )}
             {quota && (
-              <Tooltip title={`当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)} · 点击查看 CAS 统计`}>
+              <Tooltip
+                title={
+                  quota.quota_bytes === 0
+                    ? `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)} · 服务器磁盘可用 ${formatSize(quota.disk_available_bytes ?? quota.available_bytes)} · 点击查看 CAS 统计`
+                    : `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)} · 可用空间 ${formatSize(quota.available_bytes)} · 点击查看 CAS 统计`
+                }
+              >
                 <Button type="text" icon={<DatabaseOutlined />} onClick={() => setStorageStatsScope('self')} className="logout-button">
-                  存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}
+                  存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)} · 可用 {formatSize(quota.available_bytes)}
                 </Button>
               </Tooltip>
             )}

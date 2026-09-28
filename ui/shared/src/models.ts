@@ -60,6 +60,8 @@ export interface MeResult {
 export interface QuotaUsage {
   quota_bytes: number
   physical_used_bytes: number
+  available_bytes: number
+  disk_available_bytes?: number
   logical_file_bytes: number
   trash_bytes: number
   history_bytes: number
@@ -75,6 +77,10 @@ export interface StorageSizeBucket {
 
 export interface StorageStats {
   scope: 'self' | 'global'
+  disk_total_bytes?: number
+  disk_used_bytes?: number
+  disk_available_bytes?: number
+  xdrive_physical_bytes?: number
   cas_blob_count: number
   cas_physical_bytes: number
   cas_logical_referenced_bytes: number
@@ -151,6 +157,7 @@ export interface AdminUser {
   must_change_password: boolean
   quota_bytes: number
   physical_used_bytes: number
+  available_bytes: number
   logical_file_bytes: number
   trash_bytes: number
   history_bytes: number

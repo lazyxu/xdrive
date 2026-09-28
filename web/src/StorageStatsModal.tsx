@@ -153,6 +153,9 @@ export default function StorageStatsModal({
 
   const firstHistory = history?.samples[0]
   const lastHistory = history?.samples[history.samples.length - 1]
+  const otherDiskUsed = stats?.disk_used_bytes !== undefined && stats?.xdrive_physical_bytes !== undefined
+    ? Math.max(0, stats.disk_used_bytes - stats.xdrive_physical_bytes)
+    : undefined
 
   return (
     <Modal
@@ -176,6 +179,25 @@ export default function StorageStatsModal({
               }
             />
           )}
+
+          {scope === 'global' &&
+            stats.disk_total_bytes !== undefined &&
+            stats.disk_used_bytes !== undefined &&
+            stats.disk_available_bytes !== undefined &&
+            stats.xdrive_physical_bytes !== undefined && (
+              <>
+                <Typography.Title level={5} style={{ margin: 0 }}>磁盘容量</Typography.Title>
+                <Row gutter={[16, 16]}>
+                  <Col xs={12} md={6}><Statistic title="磁盘总容量" value={formatSize(stats.disk_total_bytes)} /></Col>
+                  <Col xs={12} md={6}><Statistic title="磁盘已用" value={formatSize(stats.disk_used_bytes)} /></Col>
+                  <Col xs={12} md={6}><Statistic title="磁盘可用" value={formatSize(stats.disk_available_bytes)} /></Col>
+                  <Col xs={12} md={6}><Statistic title="xDrive 物理占用" value={formatSize(stats.xdrive_physical_bytes)} /></Col>
+                  {otherDiskUsed !== undefined && (
+                    <Col xs={12} md={6}><Statistic title="非 xDrive 占用（估算）" value={formatSize(otherDiskUsed)} /></Col>
+                  )}
+                </Row>
+              </>
+            )}
 
           {scope === 'global' && history && (
             <>

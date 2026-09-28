@@ -11,12 +11,14 @@ import (
 )
 
 type quotaUsageDTO struct {
-	QuotaBytes        int64 `json:"quota_bytes"`
-	PhysicalUsedBytes int64 `json:"physical_used_bytes"`
-	LogicalFileBytes  int64 `json:"logical_file_bytes"`
-	TrashBytes        int64 `json:"trash_bytes"`
-	HistoryBytes      int64 `json:"history_bytes"`
-	OverQuota         bool  `json:"over_quota"`
+	QuotaBytes         int64  `json:"quota_bytes"`
+	PhysicalUsedBytes  int64  `json:"physical_used_bytes"`
+	AvailableBytes     int64  `json:"available_bytes"`
+	DiskAvailableBytes *int64 `json:"disk_available_bytes,omitempty"`
+	LogicalFileBytes   int64  `json:"logical_file_bytes"`
+	TrashBytes         int64  `json:"trash_bytes"`
+	HistoryBytes       int64  `json:"history_bytes"`
+	OverQuota          bool   `json:"over_quota"`
 }
 
 type quotaExceededError struct {
@@ -32,6 +34,17 @@ func (s *Server) quotaUsage(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "load quota usage failed")
 		return
 	}
+	capacity, err := s.storageCapacity(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load storage capacity failed")
+		return
+	}
+	usage.AvailableBytes = effectiveAvailableBytes(usage.QuotaBytes, usage.PhysicalUsedBytes, capacity.AvailableBytes)
+	if usage.QuotaBytes == 0 {
+		available := capacity.AvailableBytes
+		usage.DiskAvailableBytes = &available
+	}
+	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, usage)
 }
 

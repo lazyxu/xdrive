@@ -143,7 +143,7 @@ export default function AdminUsersPanel({
     },
     {
       title: '存储',
-      width: 270,
+      width: 340,
       render: (_, user) => (
         <Space direction="vertical" size={0}>
           <Typography.Text>
@@ -151,7 +151,9 @@ export default function AdminUsersPanel({
             {user.over_quota && <Tag color="red" style={{ marginLeft: 8 }}>已超配额</Tag>}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            文件 {formatBytes(user.logical_file_bytes)} · 回收站 {formatBytes(user.trash_bytes)} · 历史版本 {formatBytes(user.history_bytes)}
+            可用 {formatBytes(user.available_bytes)}
+            {user.quota_bytes === 0 ? '（服务器磁盘）' : ''}
+            {' · '}文件 {formatBytes(user.logical_file_bytes)} · 回收站 {formatBytes(user.trash_bytes)} · 历史版本 {formatBytes(user.history_bytes)}
           </Typography.Text>
         </Space>
       ),
