@@ -186,6 +186,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	windowsLegacyCleanup := readFile(t, filepath.Join(root, "internal", "update", "windows_legacy_cleanup.ps1"))
 	windowsInstaller := readFile(t, filepath.Join(root, "packaging", "windows", "xdrive.iss"))
 	chunkStorageTest := readFile(t, filepath.Join(root, "scripts", "test-server-chunk-storage.sh"))
+	serverBackupScript := readFile(t, filepath.Join(root, "scripts", "server-backup.sh"))
+	serverRestoreScript := readFile(t, filepath.Join(root, "scripts", "server-restore.sh"))
 	branchCleanup := readFile(t, filepath.Join(root, "scripts", "cleanup-merged-branches.sh"))
 	serverPipeTest := readFile(t, filepath.Join(root, "scripts", "test-server-installer-pipe.sh"))
 	gitlabContractText := gitlabText + "\n" + downloadHelper + "\n" + nodeInstaller + "\n" + dockerInstaller + "\n" +
@@ -692,10 +694,12 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "Windows WOW64 path normalizer", windowsPathNormalizer,
 		"Get-XDriveComparablePath",
 		"[Environment]::Is64BitOperatingSystem",
-		"[Environment]::Is64BitProcess",
 		"System32\\config\\systemprofile",
 		"SysWOW64\\config\\systemprofile",
 	)
+	if strings.Contains(windowsPathNormalizer, "[Environment]::Is64BitProcess") {
+		t.Errorf("Windows system-profile aliases must compare equally even when the resolver runs in 64-bit PowerShell")
+	}
 	if strings.Contains(windowsPathNormalizer, "Sysnative\\config\\systemprofile") {
 		t.Errorf("WOW64 path normalizer must not treat Sysnative as equivalent to SysWOW64")
 	}
@@ -755,6 +759,20 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	}
 	if strings.Contains(chunkStorageTest, "/test-output") {
 		t.Errorf("chunk storage test must stream data across Docker exec instead of bind-mounting job-container paths into the host daemon")
+	}
+	requireRaw(t, "server backup Docker-daemon boundary", serverBackupScript,
+		"tar -cf - .",
+		`> "$partial_dir/blobs.tar"`,
+	)
+	if strings.Contains(serverBackupScript, `-v "$partial_dir:/backup"`) {
+		t.Errorf("server backup must stream blobs from the Docker daemon instead of bind-mounting a job-container path")
+	}
+	requireRaw(t, "server restore Docker-daemon boundary", serverRestoreScript,
+		"tar -xf - -C /data",
+		`< "$BACKUP_DIR/blobs.tar"`,
+	)
+	if strings.Contains(serverRestoreScript, `-v "$BACKUP_DIR:/backup:ro"`) {
+		t.Errorf("server restore must stream blobs to the Docker daemon instead of bind-mounting a job-container path")
 	}
 	requireRaw(t, "branch cleanup jq query", branchCleanup,
 		`--arg label_name "$superseded_label"`,

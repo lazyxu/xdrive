@@ -13,19 +13,19 @@ $syntheticSystem32 = "C:\Windows\System32\config\systemprofile\AppData\Local\Pro
 $syntheticSysWOW64 = "C:\Windows\SysWOW64\config\systemprofile\AppData\Local\Programs\xDrive"
 $syntheticSysnative = "C:\Windows\Sysnative\config\systemprofile\AppData\Local\Programs\xDrive"
 
-$wowSystem32 = Get-XDriveComparablePath -Path $syntheticSystem32 -WindowsDirectory $syntheticWindows -Wow64Process $true
-$wowSysWOW64 = Get-XDriveComparablePath -Path $syntheticSysWOW64 -WindowsDirectory $syntheticWindows -Wow64Process $true
+$wowSystem32 = Get-XDriveComparablePath -Path $syntheticSystem32 -WindowsDirectory $syntheticWindows -Is64BitOperatingSystem $true
+$wowSysWOW64 = Get-XDriveComparablePath -Path $syntheticSysWOW64 -WindowsDirectory $syntheticWindows -Is64BitOperatingSystem $true
 if (-not [string]::Equals($wowSystem32, $wowSysWOW64, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "WOW64 comparison must normalize System32 and SysWOW64 system-profile aliases"
 }
 
-$nativeSystem32 = Get-XDriveComparablePath -Path $syntheticSystem32 -WindowsDirectory $syntheticWindows -Wow64Process $false
-$nativeSysWOW64 = Get-XDriveComparablePath -Path $syntheticSysWOW64 -WindowsDirectory $syntheticWindows -Wow64Process $false
-if ([string]::Equals($nativeSystem32, $nativeSysWOW64, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "64-bit comparison must keep System32 and SysWOW64 distinct"
+$nativeSystem32 = Get-XDriveComparablePath -Path $syntheticSystem32 -WindowsDirectory $syntheticWindows
+$nativeSysWOW64 = Get-XDriveComparablePath -Path $syntheticSysWOW64 -WindowsDirectory $syntheticWindows
+if (-not [string]::Equals($nativeSystem32, $nativeSysWOW64, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "64-bit comparison must normalize the 32-bit Inno Setup system-profile alias"
 }
 
-$wowSysnative = Get-XDriveComparablePath -Path $syntheticSysnative -WindowsDirectory $syntheticWindows -Wow64Process $true
+$wowSysnative = Get-XDriveComparablePath -Path $syntheticSysnative -WindowsDirectory $syntheticWindows -Is64BitOperatingSystem $true
 if ([string]::Equals($wowSystem32, $wowSysnative, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Sysnative must not be normalized as a SysWOW64 alias"
 }

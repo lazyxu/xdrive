@@ -165,11 +165,10 @@ compose exec -T postgres dropdb -U xdrive --if-exists xdrive
 compose exec -T postgres createdb -U xdrive -O xdrive xdrive
 compose_with_stdin exec -T postgres pg_restore -U xdrive -d xdrive --no-owner --no-privileges < "$BACKUP_DIR/database.dump"
 
-docker run --rm --entrypoint sh \
+docker run --rm -i --entrypoint sh \
   -v "$data_source:/data" \
-  -v "$BACKUP_DIR:/backup:ro" \
   "$postgres_image" \
-  -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} \; && tar -xf /backup/blobs.tar -C /data' </dev/null
+  -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} \; && tar -xf - -C /data' < "$BACKUP_DIR/blobs.tar"
 
 echo "Repairing restored storage ownership..."
 compose run -T --rm --no-deps --user 0:0 server storage prepare --force </dev/null

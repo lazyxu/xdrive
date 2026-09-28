@@ -2,11 +2,11 @@ function Get-XDriveComparablePath {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [string]$WindowsDirectory = $env:WINDIR,
-        [bool]$Wow64Process = ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess)
+        [bool]$Is64BitOperatingSystem = [Environment]::Is64BitOperatingSystem
     )
 
     $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
-    if (-not $Wow64Process) {
+    if (-not $Is64BitOperatingSystem) {
         return $full
     }
 

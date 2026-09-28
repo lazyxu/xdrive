@@ -150,9 +150,8 @@ compose exec -T postgres pg_dump -U xdrive -d xdrive -Fc > "$partial_dir/databas
 
 docker run --rm --entrypoint sh \
   -v "$data_source:/data:ro" \
-  -v "$partial_dir:/backup" \
   "$postgres_image" \
-  -c 'cd /data && tar -cf /backup/blobs.tar .' </dev/null
+  -c 'cd /data && tar -cf - .' </dev/null > "$partial_dir/blobs.tar"
 
 created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 server_image="$(compose config --images | grep 'xdrive-server' | head -n1 || true)"
