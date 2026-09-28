@@ -92,6 +92,9 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 		`{"parent_id":%d,"name":"large.bin","size":%d,"chunk_size":%d,"sha256":%q,"resume_key":%q}`,
 		root.ID, len(data), chunkSize, fullHash, fullHash,
 	)
+	store.availableOverride = int64(len(data))*2 - 1
+	request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(initBody), http.StatusInsufficientStorage)
+	store.availableOverride = -1
 	initRes := request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(initBody), http.StatusCreated)
 	var session uploadSessionDTO
 	if err := json.Unmarshal(initRes.Body.Bytes(), &session); err != nil {
@@ -141,7 +144,12 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	putPart(session.ID, 0, part0, hash0, http.StatusOK)
 	putPart(session.ID, 2, part2, hash2, http.StatusCreated)
 
+	resumePeak := int64(len(data)) + chunkSize
+	store.availableOverride = resumePeak - 1
+	request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(initBody), http.StatusInsufficientStorage)
+	store.availableOverride = resumePeak
 	resumeRes := request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(initBody), http.StatusOK)
+	store.availableOverride = -1
 	var resumed uploadSessionDTO
 	if err := json.Unmarshal(resumeRes.Body.Bytes(), &resumed); err != nil {
 		t.Fatal(err)
@@ -206,7 +214,12 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deltaPeak := int64(len(deltaData)) + chunkSize
+	store.availableOverride = deltaPeak - 1
+	request(t, router, http.MethodPost, "/api/v1/uploads", token, bytes.NewReader(deltaInitJSON), http.StatusInsufficientStorage)
+	store.availableOverride = deltaPeak
 	deltaInit := request(t, router, http.MethodPost, "/api/v1/uploads", token, bytes.NewReader(deltaInitJSON), http.StatusCreated)
+	store.availableOverride = -1
 	var deltaSession uploadSessionDTO
 	if err := json.Unmarshal(deltaInit.Body.Bytes(), &deltaSession); err != nil {
 		t.Fatal(err)

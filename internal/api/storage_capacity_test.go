@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 )
 
@@ -60,5 +61,28 @@ func TestEnsureStorageWriteCapacity(t *testing.T) {
 	}
 	if capacityErr.RequiredBytes != 401 || capacityErr.AvailableBytes != 400 {
 		t.Fatalf("capacity error=%+v", capacityErr)
+	}
+}
+
+func TestResumableUploadRemainingPeakBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		total    int64
+		received []meta.UploadPart
+		want     int64
+	}{
+		{name: "empty", total: 0, want: 0},
+		{name: "new upload needs staging plus assembly", total: 100, want: 200},
+		{name: "partial resume subtracts received chunks", total: 100, received: []meta.UploadPart{{Size: 40}}, want: 160},
+		{name: "reused chunks count as already available", total: 100, received: []meta.UploadPart{{Size: 40, Reused: true}, {Size: 20, Reused: true}}, want: 140},
+		{name: "fully received only needs assembly", total: 100, received: []meta.UploadPart{{Size: 100}}, want: 100},
+		{name: "oversized received data clamps", total: 100, received: []meta.UploadPart{{Size: 120}}, want: 100},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resumableUploadRemainingPeakBytes(tc.total, tc.received); got != tc.want {
+				t.Fatalf("peak bytes=%d want=%d", got, tc.want)
+			}
+		})
 	}
 }
