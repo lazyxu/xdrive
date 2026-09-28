@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 const (
@@ -53,22 +55,22 @@ func AutomaticSource() (string, error) {
 	return NormalizeSource(os.Getenv("XD_UPDATE_SOURCE"))
 }
 
-func CheckPlatformTargetFromSource(ctx context.Context, current, channel, commit, source string) (Result, error) {
-	return CheckAssetTargetFromSource(ctx, current, platformAssetName(), channel, commit, source)
+func CheckPlatformTargetFromSource(ctx context.Context, current, channel, source string) (Result, error) {
+	return CheckAssetTargetFromSource(ctx, current, platformAssetName(), channel, source)
 }
 
-func CheckAssetTargetFromSource(ctx context.Context, current, assetName, channel, commit, source string) (Result, error) {
+func CheckAssetTargetFromSource(ctx context.Context, current, assetName, channel, source string) (Result, error) {
 	normalized, err := NormalizeSource(source)
 	if err != nil {
 		return Result{Current: current}, err
 	}
 	if normalized == SourceGitHub {
-		return DefaultChecker().CheckTarget(ctx, current, assetName, channel, commit)
+		return DefaultChecker().CheckTarget(ctx, current, assetName, channel)
 	}
-	return checkGitLabTarget(ctx, current, assetName, channel, commit)
+	return checkGitLabTarget(ctx, current, assetName, channel)
 }
 
-func InstallTargetFromSourceWithProgress(ctx context.Context, current, channel, commit, source string, progress ProgressFunc) (bool, Result, error) {
+func InstallTargetFromSourceWithProgress(ctx context.Context, current, channel, source string, progress ProgressFunc) (bool, Result, error) {
 	normalizedChannel, err := NormalizeChannel(channel)
 	if err != nil {
 		return false, Result{Current: current}, err
@@ -81,7 +83,7 @@ func InstallTargetFromSourceWithProgress(ctx context.Context, current, channel, 
 		Step: 1, Stage: "check",
 		Message: fmt.Sprintf("checking %s channel from %s via %s", normalizedChannel, current, normalizedSource),
 	})
-	result, err := CheckAssetTargetFromSource(ctx, current, platformAssetName(), normalizedChannel, commit, normalizedSource)
+	result, err := CheckAssetTargetFromSource(ctx, current, platformAssetName(), normalizedChannel, normalizedSource)
 	if err != nil {
 		return false, result, err
 	}
@@ -120,7 +122,7 @@ func InstallTargetFromSourceWithProgress(ctx context.Context, current, channel, 
 	return true, result, nil
 }
 
-func checkGitLabTarget(ctx context.Context, current, assetName, channel, commit string) (Result, error) {
+func checkGitLabTarget(ctx context.Context, current, assetName, channel string) (Result, error) {
 	channel, err := NormalizeChannel(channel)
 	if err != nil {
 		return Result{Current: current}, err
@@ -166,47 +168,17 @@ func checkGitLabTarget(ctx context.Context, current, assetName, channel, commit 
 		}
 
 	case ChannelMaster:
-		releases, err := gitLabReleases(ctx, checker, projectAPI, current)
+		var err error
+		release, err = gitLabReleaseByTag(ctx, checker, projectAPI, "snapshot", current)
 		if err != nil {
-			return result, err
+			return result, fmt.Errorf("gitlab has no published master snapshot: %w", err)
 		}
-		found := false
-		for _, candidate := range releases {
-			tag := strings.TrimSpace(candidate.TagName)
-			if !IsSnapshotVersion(tag) {
-				continue
-			}
-			if !found || candidate.ReleasedAt > release.ReleasedAt {
-				release = candidate
-				found = true
-			}
-		}
-		if !found {
-			return result, fmt.Errorf("gitlab has no published master snapshot")
-		}
-		result.Latest = strings.TrimSpace(release.TagName)
+		result.Latest = "snapshot"
 		result.Commit = gitLabReleaseCommit(release)
 		if result.Commit == "" {
-			result.Commit = strings.TrimPrefix(result.Latest, "snapshot-")
+			return result, fmt.Errorf("gitlab snapshot release does not identify its commit")
 		}
-		result.UpdateAvailable = !sameSnapshot(current, result.Commit)
-
-	case ChannelCommit:
-		full, err := gitLabResolveCommit(ctx, checker, projectAPI, commit, current)
-		if err != nil {
-			return result, err
-		}
-		result.Commit = full
-		tag := "snapshot-" + full[:12]
-		release, err = gitLabReleaseByTag(ctx, checker, projectAPI, tag, current)
-		if err != nil {
-			return result, fmt.Errorf("commit %s does not have a successful published GitLab snapshot: %w", full[:12], err)
-		}
-		if releaseCommit := gitLabReleaseCommit(release); releaseCommit != "" && releaseCommit != full {
-			return result, fmt.Errorf("gitlab release %s points to %s instead of %s", tag, releaseCommit, full)
-		}
-		result.Latest = tag
-		result.UpdateAvailable = !sameSnapshot(current, full)
+		result.UpdateAvailable = !sameSnapshot(current, version.Metadata().Commit, result.Commit)
 	}
 
 	result.ReleaseName = strings.TrimSpace(release.Name)
@@ -259,26 +231,15 @@ func gitLabReleaseByTag(ctx context.Context, checker Checker, projectAPI, tag, c
 	return release, nil
 }
 
-func gitLabResolveCommit(ctx context.Context, checker Checker, projectAPI, ref, current string) (string, error) {
-	ref = strings.TrimSpace(ref)
-	if !validCommitRef(ref) {
-		return "", fmt.Errorf("commit must be 7-40 hexadecimal characters")
-	}
-	var commit gitLabCommit
-	if err := checker.getJSONWithRetry(ctx, projectAPI+"/repository/commits/"+url.PathEscape(ref), current, "GitLab commit metadata", &commit); err != nil {
-		return "", err
-	}
-	full := strings.ToLower(strings.TrimSpace(commit.ID))
-	if len(full) != 40 || !validCommitRef(full) {
-		return "", fmt.Errorf("GitLab commit API returned invalid SHA")
-	}
-	return full, nil
-}
-
 func gitLabReleaseCommit(release gitLabRelease) string {
 	full := strings.ToLower(strings.TrimSpace(release.Commit.ID))
-	if len(full) != 40 || !validCommitRef(full) {
+	if len(full) != 40 {
 		return ""
+	}
+	for _, r := range full {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return ""
+		}
 	}
 	return full
 }

@@ -13,14 +13,12 @@ import (
 
 func main() {
 	sourceFlag := flag.String("source", "", "update source: github or gitlab")
-	channelFlag := flag.String("channel", "", "update channel: stable, master, or commit")
-	commitFlag := flag.String("commit", "", "commit SHA for the commit channel")
+	channelFlag := flag.String("channel", "", "update channel: stable or master")
 	flag.Parse()
 
 	current := version.String()
 	source := strings.TrimSpace(*sourceFlag)
 	channel := strings.TrimSpace(*channelFlag)
-	commit := strings.TrimSpace(*commitFlag)
 	var err error
 	if source == "" {
 		if prefs, prefsErr := userconfig.LoadUpdatePreferences(); prefsErr == nil {
@@ -40,12 +38,8 @@ func main() {
 			return
 		}
 	}
-	if channel == "" && commit != "" {
-		channel = xupdate.ChannelCommit
-	}
-
 	if channel == "" {
-		channel, commit, err = xupdate.AutomaticTarget(current)
+		channel, err = xupdate.AutomaticChannel(current)
 		if err != nil {
 			log.Printf("xDrive updater: %v", err)
 			return
@@ -60,12 +54,7 @@ func main() {
 		log.Printf("xDrive updater: %v", err)
 		return
 	}
-	if channel == xupdate.ChannelCommit && commit == "" {
-		log.Printf("xDrive updater: commit channel requires --commit SHA or XD_UPDATE_COMMIT")
-		return
-	}
-
-	started, result, err := xupdate.InstallTargetFromSourceWithProgress(context.Background(), current, channel, commit, source, func(event xupdate.ProgressEvent) {
+	started, result, err := xupdate.InstallTargetFromSourceWithProgress(context.Background(), current, channel, source, func(event xupdate.ProgressEvent) {
 		log.Print(xupdate.FormatProgress(event))
 	})
 	if err != nil {

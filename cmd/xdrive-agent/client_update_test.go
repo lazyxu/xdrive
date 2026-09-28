@@ -21,11 +21,11 @@ type fakeClientUpdateBackend struct {
 	downloadStarted chan struct{}
 }
 
-func (f *fakeClientUpdateBackend) Target(string) (string, string, error) {
-	return "master", "", nil
+func (f *fakeClientUpdateBackend) Target(string) (string, error) {
+	return "master", nil
 }
 
-func (f *fakeClientUpdateBackend) Check(_ context.Context, _ string, _ string, _ string, source string) (xupdate.Result, error) {
+func (f *fakeClientUpdateBackend) Check(_ context.Context, _ string, _ string, source string) (xupdate.Result, error) {
 	f.checkN++
 	f.lastSource = source
 	return f.result, nil
@@ -46,7 +46,7 @@ func (f *fakeClientUpdateBackend) Download(ctx context.Context, _ xupdate.Result
 	return filepath.Join("cache", "installer.exe"), nil
 }
 
-func (f *fakeClientUpdateBackend) Install(_ context.Context, _ string, _ string, _ string, source string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
+func (f *fakeClientUpdateBackend) Install(_ context.Context, _ string, _ string, source string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
 	f.installN++
 	f.lastSource = source
 	if progress != nil {
@@ -88,13 +88,13 @@ func TestClientUpdateManagerDefaultsToManual(t *testing.T) {
 func TestClientUpdateManagerCheckAndDownloadDoNotInstall(t *testing.T) {
 	backend := &fakeClientUpdateBackend{
 		result: xupdate.Result{
-			Latest:          "snapshot-abcdef123456",
+			Latest:          "snapshot",
 			Channel:         "master",
 			UpdateAvailable: true,
 			ReleaseName:     "xDrive snapshot abcdef123456",
 			PublishedAt:     "2026-09-27T12:00:00Z",
 			ReleaseNotes:    "Improved update details",
-			ReleaseURL:      "https://example.test/releases/snapshot-abcdef123456",
+			ReleaseURL:      "https://example.test/releases/snapshot",
 			Asset: xupdate.Asset{
 				Name: "xDriveSetup-amd64.exe",
 				Size: 100,
@@ -138,7 +138,7 @@ func TestClientUpdateManagerInstallSignalsRestart(t *testing.T) {
 	backend := &fakeClientUpdateBackend{
 		installStart: true,
 		result: xupdate.Result{
-			Latest:          "snapshot-fedcba654321",
+			Latest:          "snapshot",
 			Channel:         "master",
 			UpdateAvailable: true,
 		},
@@ -196,7 +196,7 @@ func TestClientUpdateManagerRejectsInstallModeWhenUnsupported(t *testing.T) {
 
 func TestClientUpdateManagerConfiguredModesRespectUserIntent(t *testing.T) {
 	result := xupdate.Result{
-		Latest:          "snapshot-123456abcdef",
+		Latest:          "snapshot",
 		Channel:         "master",
 		UpdateAvailable: true,
 		Asset:           xupdate.Asset{Name: "xDriveSetup-amd64.exe", Size: 100},
@@ -234,7 +234,7 @@ func TestClientUpdateManagerConfiguredModesRespectUserIntent(t *testing.T) {
 
 func TestClientUpdateManagerSourcePersistsAndSelectsBackend(t *testing.T) {
 	backend := &fakeClientUpdateBackend{
-		result: xupdate.Result{Latest: "snapshot-abcdef123456", Channel: "master"},
+		result: xupdate.Result{Latest: "snapshot", Channel: "master"},
 	}
 	manager := testUpdateManager(t, backend)
 
@@ -266,7 +266,7 @@ func TestClientUpdateManagerCancelDownload(t *testing.T) {
 		blockDownload:   true,
 		downloadStarted: started,
 		result: xupdate.Result{
-			Latest:          "snapshot-cancel123456",
+			Latest:          "snapshot",
 			Channel:         "master",
 			UpdateAvailable: true,
 			Asset:           xupdate.Asset{Name: "xDriveSetup-amd64.exe", Size: 100},

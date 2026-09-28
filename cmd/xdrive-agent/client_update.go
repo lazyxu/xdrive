@@ -57,20 +57,20 @@ type clientUpdateState struct {
 }
 
 type clientUpdateBackend interface {
-	Target(current string) (channel, commit string, err error)
-	Check(context.Context, string, string, string, string) (xupdate.Result, error)
+	Target(current string) (channel string, err error)
+	Check(context.Context, string, string, string) (xupdate.Result, error)
 	Download(context.Context, xupdate.Result, xupdate.ProgressFunc) (string, error)
-	Install(context.Context, string, string, string, string, xupdate.ProgressFunc) (bool, xupdate.Result, error)
+	Install(context.Context, string, string, string, xupdate.ProgressFunc) (bool, xupdate.Result, error)
 }
 
 type defaultClientUpdateBackend struct{}
 
-func (defaultClientUpdateBackend) Target(current string) (string, string, error) {
-	return xupdate.AutomaticTarget(current)
+func (defaultClientUpdateBackend) Target(current string) (string, error) {
+	return xupdate.AutomaticChannel(current)
 }
 
-func (defaultClientUpdateBackend) Check(ctx context.Context, current, channel, commit, source string) (xupdate.Result, error) {
-	return xupdate.CheckPlatformTargetFromSource(ctx, current, channel, commit, source)
+func (defaultClientUpdateBackend) Check(ctx context.Context, current, channel, source string) (xupdate.Result, error) {
+	return xupdate.CheckPlatformTargetFromSource(ctx, current, channel, source)
 }
 
 func (defaultClientUpdateBackend) Download(ctx context.Context, result xupdate.Result, progress xupdate.ProgressFunc) (string, error) {
@@ -82,8 +82,8 @@ func (defaultClientUpdateBackend) Download(ctx context.Context, result xupdate.R
 	return xupdate.DownloadVerifiedWithProgress(ctx, xupdate.DefaultChecker(), result, dir, progress)
 }
 
-func (defaultClientUpdateBackend) Install(ctx context.Context, current, channel, commit, source string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
-	return xupdate.InstallTargetFromSourceWithProgress(ctx, current, channel, commit, source, progress)
+func (defaultClientUpdateBackend) Install(ctx context.Context, current, channel, source string, progress xupdate.ProgressFunc) (bool, xupdate.Result, error) {
+	return xupdate.InstallTargetFromSourceWithProgress(ctx, current, channel, source, progress)
 }
 
 type clientUpdateManager struct {
@@ -253,13 +253,13 @@ func (m *clientUpdateManager) Check(ctx context.Context) (clientUpdateState, err
 	}
 	defer m.endOperation()
 
-	channel, commit, err := m.target()
+	channel, err := m.target()
 	if err != nil {
 		return m.fail(err)
 	}
 	source := m.Snapshot().Source
 	m.setOperation(clientUpdateStatusChecking, "正在检查更新…", channel)
-	result, err := m.backend.Check(opCtx, version.String(), channel, commit, source)
+	result, err := m.backend.Check(opCtx, version.String(), channel, source)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return m.cancelled()
@@ -276,13 +276,13 @@ func (m *clientUpdateManager) Download(ctx context.Context) (clientUpdateState, 
 	}
 	defer m.endOperation()
 
-	channel, commit, err := m.target()
+	channel, err := m.target()
 	if err != nil {
 		return m.fail(err)
 	}
 	source := m.Snapshot().Source
 	m.setOperation(clientUpdateStatusChecking, "正在检查更新…", channel)
-	result, err := m.backend.Check(opCtx, version.String(), channel, commit, source)
+	result, err := m.backend.Check(opCtx, version.String(), channel, source)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return m.cancelled()
@@ -334,13 +334,13 @@ func (m *clientUpdateManager) Install(ctx context.Context) (clientUpdateState, e
 	}
 	defer m.endOperation()
 
-	channel, commit, err := m.target()
+	channel, err := m.target()
 	if err != nil {
 		return m.fail(err)
 	}
 	source := m.Snapshot().Source
 	m.setOperation(clientUpdateStatusChecking, "正在检查更新…", channel)
-	started, result, err := m.backend.Install(opCtx, version.String(), channel, commit, source, m.progress)
+	started, result, err := m.backend.Install(opCtx, version.String(), channel, source, m.progress)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return m.cancelled()
@@ -376,15 +376,15 @@ func (m *clientUpdateManager) Install(ctx context.Context) (clientUpdateState, e
 	return m.Snapshot(), nil
 }
 
-func (m *clientUpdateManager) target() (string, string, error) {
-	channel, commit, err := m.backend.Target(version.String())
+func (m *clientUpdateManager) target() (string, error) {
+	channel, err := m.backend.Target(version.String())
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	if channel == "" {
-		return "", "", fmt.Errorf("当前构建未绑定更新通道")
+		return "", fmt.Errorf("当前构建未绑定更新通道")
 	}
-	return channel, commit, nil
+	return channel, nil
 }
 
 func (m *clientUpdateManager) Cancel() (clientUpdateState, error) {

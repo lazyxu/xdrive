@@ -24,13 +24,13 @@ else
     echo "release packaging is allowed only for master or v* tags; branch=$branch" >&2
     exit 1
   }
-  XDRIVE_RELEASE_VERSION="snapshot-$short_sha"
+  XDRIVE_RELEASE_VERSION="snapshot"
   XDRIVE_DESKTOP_VERSION="0.0.0-snapshot.$short_sha"
   XDRIVE_SOURCE_REF="$CI_COMMIT_SHA"
   XDRIVE_IMAGE_TAG="sha-$short_sha"
   XDRIVE_RELEASE_CHANNEL="master"
   XDRIVE_RELEASE_COMMIT="$CI_COMMIT_SHA"
-  XDRIVE_RELEASE_TAG="snapshot-$short_sha"
+  XDRIVE_RELEASE_TAG="snapshot"
   XDRIVE_PROMOTION_TAG="edge"
 fi
 

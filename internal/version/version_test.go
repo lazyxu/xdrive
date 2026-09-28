@@ -13,7 +13,7 @@ func TestMetadataDecodesCommitMessage(t *testing.T) {
 		CommitMessageBase64, CommitTime, BuildTime = oldMessage, oldCommitTime, oldBuildTime
 	})
 
-	Version = "snapshot-abcdef123456"
+	Version = "snapshot"
 	Channel = "master"
 	Commit = "abcdef1234567890"
 	CommitMessageBase64 = base64.StdEncoding.EncodeToString([]byte("feat: add server metadata"))

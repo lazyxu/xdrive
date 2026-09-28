@@ -28,7 +28,7 @@ function decodeBase64(value) {
 }
 
 const buildInfo = {
-  version,
+  version: env('XDRIVE_BUILD_VERSION', version),
   channel: env('XDRIVE_BUILD_CHANNEL', 'dev'),
   commit: env('XDRIVE_BUILD_COMMIT'),
   commit_message: decodeBase64(env('XDRIVE_BUILD_COMMIT_MESSAGE_B64')),

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 func TestCompare(t *testing.T) {
@@ -43,7 +45,7 @@ func TestVersionChannels(t *testing.T) {
 			t.Fatalf("DefaultChannel(%q)=%q", v, got)
 		}
 	}
-	for _, v := range []string{"snapshot-abcdef0", "snapshot-0123456789abcdef"} {
+	for _, v := range []string{"snapshot", " SNAPSHOT "} {
 		if !IsSnapshotVersion(v) {
 			t.Fatalf("%q should be a snapshot version", v)
 		}
@@ -51,7 +53,7 @@ func TestVersionChannels(t *testing.T) {
 			t.Fatalf("DefaultChannel(%q)=%q", v, got)
 		}
 	}
-	for _, v := range []string{"dev", "0.1.0", "v1.2", "snapshot-nope"} {
+	for _, v := range []string{"dev", "0.1.0", "v1.2", "snapshot-nope", "snapshot-abcdef0"} {
 		if got := DefaultChannel(v); got != "" {
 			t.Fatalf("DefaultChannel(%q)=%q want empty", v, got)
 		}
@@ -59,8 +61,10 @@ func TestVersionChannels(t *testing.T) {
 	if got, err := NormalizeChannel("snapshot"); err != nil || got != ChannelMaster {
 		t.Fatalf("snapshot alias got=%q err=%v", got, err)
 	}
-	if _, err := NormalizeChannel("nightly"); err == nil {
-		t.Fatal("invalid channel accepted")
+	for _, invalid := range []string{"nightly", "commit"} {
+		if _, err := NormalizeChannel(invalid); err == nil {
+			t.Fatalf("invalid channel %q accepted", invalid)
+		}
 	}
 }
 
@@ -141,15 +145,19 @@ func TestCheckMasterSnapshot(t *testing.T) {
 	defer server.Close()
 
 	checker := Checker{Repository: "lazyxu/xdrive", APIBase: server.URL, HTTP: server.Client()}
-	result, err := checker.CheckChannel(context.Background(), "snapshot-deadbee", assetName, ChannelMaster)
+	oldCommit := version.Commit
+	t.Cleanup(func() { version.Commit = oldCommit })
+	version.Commit = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	result, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.UpdateAvailable || result.Latest != "snapshot-0123456789ab" || result.Commit != sha {
+	if !result.UpdateAvailable || result.Latest != "snapshot" || result.Commit != sha {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 
-	current, err := checker.CheckChannel(context.Background(), "snapshot-0123456789ab", assetName, ChannelMaster)
+	version.Commit = sha
+	current, err := checker.CheckChannel(context.Background(), "snapshot", assetName, ChannelMaster)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,84 +174,12 @@ func TestCheckMasterSnapshot(t *testing.T) {
 	}
 }
 
-func TestValidCommitRef(t *testing.T) {
-	for _, ref := range []string{"abcdef0", "0123456789ab", "0123456789abcdef0123456789abcdef01234567"} {
-		if !validCommitRef(ref) {
-			t.Fatalf("%q should be a valid commit ref", ref)
-		}
-	}
-	for _, ref := range []string{"", "abc", "master", "../abcdef0", "01234g7", "0123456789abcdef0123456789abcdef012345678"} {
-		if validCommitRef(ref) {
-			t.Fatalf("%q should be rejected as a commit ref", ref)
-		}
-	}
-}
-
-func TestCheckCommitSnapshot(t *testing.T) {
-	const assetName = "xDriveSetup-amd64.exe"
-	const sha = "89abcdef0123456789abcdef0123456789abcdef"
-	const tag = "snapshot-89abcdef0123"
-
-	var server *httptest.Server
-	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/lazyxu/xdrive/commits/89abcde", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{"sha": sha})
-	})
-	mux.HandleFunc("/repos/lazyxu/xdrive/releases/tags/"+tag, func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"tag_name": tag,
-			"assets": []map[string]string{
-				{"name": assetName, "browser_download_url": server.URL + "/asset"},
-				{"name": "SHA256SUMS.txt", "browser_download_url": server.URL + "/sums"},
-			},
-		})
-	})
-	mux.HandleFunc("/repos/lazyxu/xdrive/git/ref/tags/"+tag, func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"object": map[string]string{"sha": sha, "type": "commit"},
-		})
-	})
-	server = httptest.NewServer(mux)
-	defer server.Close()
-
-	checker := Checker{Repository: "lazyxu/xdrive", APIBase: server.URL, HTTP: server.Client()}
-	result, err := checker.CheckTarget(context.Background(), "snapshot-deadbeef0000", assetName, ChannelCommit, "89abcde")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !result.UpdateAvailable || result.Latest != tag || result.Commit != sha || result.Channel != ChannelCommit {
-		t.Fatalf("unexpected result: %+v", result)
-	}
-
-	current, err := checker.CheckTarget(context.Background(), tag, assetName, ChannelCommit, "89abcde")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.UpdateAvailable {
-		t.Fatalf("same commit reported update: %+v", current)
-	}
-}
-
-func TestCommitChannelRequiresPublishedBuild(t *testing.T) {
-	const sha = "fedcba9876543210fedcba9876543210fedcba98"
-	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/lazyxu/xdrive/commits/fedcbaa", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{"sha": sha})
-	})
-	server := httptest.NewServer(mux)
-	defer server.Close()
-	checker := Checker{Repository: "lazyxu/xdrive", APIBase: server.URL, HTTP: server.Client()}
-	if _, err := checker.CheckTarget(context.Background(), "dev", "xDriveSetup-amd64.exe", ChannelCommit, "fedcbaa"); err == nil {
-		t.Fatal("unpublished commit build was accepted")
-	}
-}
-
 func TestAutomaticChannelOverride(t *testing.T) {
-	t.Setenv("XD_UPDATE_CHANNEL", "commit")
+	t.Setenv("XD_UPDATE_CHANNEL", "master")
 	t.Setenv("XD_UPDATE_COMMIT", "89abcde")
-	channel, commit, err := AutomaticTarget("v1.0.0")
-	if err != nil || channel != ChannelCommit || commit != "89abcde" {
-		t.Fatalf("AutomaticTarget override channel=%q commit=%q err=%v", channel, commit, err)
+	channel, err := AutomaticChannel("v1.0.0")
+	if err != nil || channel != ChannelMaster {
+		t.Fatalf("AutomaticChannel override channel=%q err=%v", channel, err)
 	}
 }
 
@@ -712,12 +648,12 @@ func TestDownloadFallsBackFromAPIAssetToBrowserURL(t *testing.T) {
 func TestUpdateAssetMirrorIsPreferred(t *testing.T) {
 	t.Setenv("XD_UPDATE_ASSET_MIRROR", "https://mirror.example/xdrive/")
 	asset := Asset{
-		Name: "xDriveSetup-amd64.exe", ReleaseTag: "snapshot-abc123",
+		Name: "xDriveSetup-amd64.exe", ReleaseTag: "snapshot",
 		APIURL: "https://api.github.example/asset/1",
 		URL:    "https://github.example/download/asset",
 	}
 	sources := assetDownloadSources(asset)
-	want := "https://mirror.example/xdrive/snapshot-abc123/xDriveSetup-amd64.exe"
+	want := "https://mirror.example/xdrive/snapshot/xDriveSetup-amd64.exe"
 	if len(sources) != 3 || sources[0] != want {
 		t.Fatalf("sources=%v want mirror first=%q", sources, want)
 	}
@@ -797,11 +733,11 @@ func TestProbeAssetDownloadUsesRange(t *testing.T) {
 
 	asset := Asset{
 		Name:       "xDriveSetup-amd64.exe",
-		ReleaseTag: "snapshot-test",
+		ReleaseTag: "snapshot",
 		APIURL:     server.URL + "/asset",
 		Size:       6432558,
 	}
-	source, err := ProbeAssetDownload(context.Background(), "snapshot-deadbeef", asset)
+	source, err := ProbeAssetDownload(context.Background(), "snapshot", asset)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 func TestNormalizeSource(t *testing.T) {
@@ -32,24 +34,27 @@ func TestGitLabSourceStableAndMasterAreSeparated(t *testing.T) {
 	const full = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "/api/v4/projects/xuliang%2Fxdrive/releases") &&
-			!strings.Contains(r.RequestURI, "/api/v4/projects/xuliang%2Fxdrive/releases") {
+		switch {
+		case strings.Contains(r.URL.Path, "/releases/snapshot"):
+			_ = json.NewEncoder(w).Encode(gitLabTestRelease("snapshot", "2026-09-27T12:00:00Z", full, server.URL))
+		case strings.Contains(r.URL.Path, "/releases"):
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				gitLabTestRelease("snapshot", "2026-09-27T12:00:00Z", full, server.URL),
+				gitLabTestRelease("v1.2.0", "2026-09-26T12:00:00Z", full, server.URL),
+				gitLabTestRelease("v1.10.0", "2026-09-25T12:00:00Z", full, server.URL),
+			})
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		releases := []map[string]any{
-			gitLabTestRelease("snapshot-aaaaaaaaaaaa", "2026-09-27T12:00:00Z", full, server.URL),
-			gitLabTestRelease("v1.2.0", "2026-09-26T12:00:00Z", full, server.URL),
-			gitLabTestRelease("v1.10.0", "2026-09-25T12:00:00Z", full, server.URL),
-		}
-		_ = json.NewEncoder(w).Encode(releases)
 	}))
 	defer server.Close()
 
 	t.Setenv("XD_UPDATE_GITLAB_BASE_URL", server.URL)
 	t.Setenv("XD_UPDATE_GITLAB_PROJECT", "xuliang/xdrive")
+	oldCommit := version.Commit
+	t.Cleanup(func() { version.Commit = oldCommit })
 
-	stable, err := CheckAssetTargetFromSource(context.Background(), "v1.2.0", "pkg.bin", ChannelStable, "", SourceGitLab)
+	stable, err := CheckAssetTargetFromSource(context.Background(), "v1.2.0", "pkg.bin", ChannelStable, SourceGitLab)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,38 +68,21 @@ func TestGitLabSourceStableAndMasterAreSeparated(t *testing.T) {
 		t.Fatalf("stable asset URL=%q", stable.Asset.URL)
 	}
 
-	master, err := CheckAssetTargetFromSource(context.Background(), "snapshot-bbbbbbbbbbbb", "pkg.bin", ChannelMaster, "", SourceGitLab)
+	version.Commit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	master, err := CheckAssetTargetFromSource(context.Background(), "snapshot", "pkg.bin", ChannelMaster, SourceGitLab)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if master.Latest != "snapshot-aaaaaaaaaaaa" || master.Commit != full || !master.UpdateAvailable {
+	if master.Latest != "snapshot" || master.Commit != full || !master.UpdateAvailable {
 		t.Fatalf("master=%+v", master)
 	}
-}
-
-func TestGitLabSourceCommitRequiresPublishedMatchingSnapshot(t *testing.T) {
-	const full = "abcdef0123456789abcdef0123456789abcdef01"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.Contains(r.URL.Path, "/repository/commits/"):
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": full})
-		case strings.Contains(r.URL.Path, "/releases/snapshot-abcdef012345"):
-			_ = json.NewEncoder(w).Encode(gitLabTestRelease("snapshot-abcdef012345", "2026-09-27T12:00:00Z", full, ""))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	t.Setenv("XD_UPDATE_GITLAB_BASE_URL", server.URL)
-	t.Setenv("XD_UPDATE_GITLAB_PROJECT", "xuliang/xdrive")
-
-	result, err := CheckAssetTargetFromSource(context.Background(), "snapshot-000000000000", "pkg.bin", ChannelCommit, "abcdef0", SourceGitLab)
+	version.Commit = full
+	current, err := CheckAssetTargetFromSource(context.Background(), "snapshot", "pkg.bin", ChannelMaster, SourceGitLab)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Commit != full || result.Latest != "snapshot-abcdef012345" || !result.UpdateAvailable {
-		t.Fatalf("result=%+v", result)
+	if current.UpdateAvailable {
+		t.Fatalf("same snapshot reported update: %+v", current)
 	}
 }
 

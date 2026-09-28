@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 const (
@@ -26,7 +28,6 @@ const (
 
 	ChannelStable = "stable"
 	ChannelMaster = "master"
-	ChannelCommit = "commit"
 )
 
 type Asset struct {
@@ -130,20 +131,7 @@ func IsReleaseVersion(v string) bool {
 }
 
 func IsSnapshotVersion(v string) bool {
-	v = strings.TrimSpace(v)
-	if !strings.HasPrefix(v, "snapshot-") {
-		return false
-	}
-	sha := strings.TrimPrefix(v, "snapshot-")
-	if len(sha) < 7 || len(sha) > 40 {
-		return false
-	}
-	for _, r := range sha {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
-			return false
-		}
-	}
-	return true
+	return strings.EqualFold(strings.TrimSpace(v), "snapshot")
 }
 
 func DefaultChannel(current string) string {
@@ -163,34 +151,16 @@ func NormalizeChannel(channel string) (string, error) {
 		return ChannelStable, nil
 	case ChannelMaster, "snapshot":
 		return ChannelMaster, nil
-	case ChannelCommit:
-		return ChannelCommit, nil
 	default:
-		return "", fmt.Errorf("invalid update channel %q; expected stable, master, or commit", channel)
+		return "", fmt.Errorf("invalid update channel %q; expected stable or master", channel)
 	}
-}
-
-func AutomaticTarget(current string) (string, string, error) {
-	channel := ""
-	if requested := strings.TrimSpace(os.Getenv("XD_UPDATE_CHANNEL")); requested != "" {
-		normalized, err := NormalizeChannel(requested)
-		if err != nil {
-			return "", "", err
-		}
-		channel = normalized
-	} else {
-		channel = DefaultChannel(current)
-	}
-	commit := strings.TrimSpace(os.Getenv("XD_UPDATE_COMMIT"))
-	if channel == ChannelCommit && commit == "" {
-		return "", "", fmt.Errorf("commit update channel requires XD_UPDATE_COMMIT")
-	}
-	return channel, commit, nil
 }
 
 func AutomaticChannel(current string) (string, error) {
-	channel, _, err := AutomaticTarget(current)
-	return channel, err
+	if requested := strings.TrimSpace(os.Getenv("XD_UPDATE_CHANNEL")); requested != "" {
+		return NormalizeChannel(requested)
+	}
+	return DefaultChannel(current), nil
 }
 
 func (c Checker) Check(ctx context.Context, current, assetName string) (Result, error) {
@@ -198,10 +168,10 @@ func (c Checker) Check(ctx context.Context, current, assetName string) (Result, 
 }
 
 func (c Checker) CheckChannel(ctx context.Context, current, assetName, channel string) (Result, error) {
-	return c.CheckTarget(ctx, current, assetName, channel, "")
+	return c.CheckTarget(ctx, current, assetName, channel)
 }
 
-func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel, commit string) (Result, error) {
+func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel string) (Result, error) {
 	channel, err := NormalizeChannel(channel)
 	if err != nil {
 		return Result{Current: current}, err
@@ -215,13 +185,6 @@ func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel, c
 		releasePath = "/releases/latest"
 	case ChannelMaster:
 		releasePath = "/releases/tags/snapshot"
-	case ChannelCommit:
-		full, err := c.resolveCommit(ctx, commit, current)
-		if err != nil {
-			return result, err
-		}
-		result.Commit = full
-		releasePath = "/releases/tags/snapshot-" + full[:12]
 	}
 	rel, err := c.release(ctx, releasePath, current)
 	if err != nil {
@@ -249,14 +212,8 @@ func (c Checker) CheckTarget(ctx context.Context, current, assetName, channel, c
 			return result, err
 		}
 		result.Commit = sha
-		result.Latest = snapshotVersion(sha)
-		result.UpdateAvailable = !sameSnapshot(current, sha)
-	case ChannelCommit:
-		if err := c.verifySnapshotTag(ctx, result.Commit, current); err != nil {
-			return result, err
-		}
-		result.Latest = snapshotVersion(result.Commit)
-		result.UpdateAvailable = !sameSnapshot(current, result.Commit)
+		result.Latest = "snapshot"
+		result.UpdateAvailable = !sameSnapshot(current, version.Metadata().Commit, sha)
 	}
 
 	for _, a := range rel.Assets {
@@ -427,69 +384,6 @@ func assetDownloadSources(asset Asset) []string {
 	return out
 }
 
-func validCommitRef(ref string) bool {
-	ref = strings.TrimSpace(ref)
-	if len(ref) < 7 || len(ref) > 40 {
-		return false
-	}
-	for _, r := range ref {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
-			return false
-		}
-	}
-	return true
-}
-
-func snapshotVersion(sha string) string {
-	sha = strings.ToLower(strings.TrimSpace(sha))
-	if len(sha) > 12 {
-		sha = sha[:12]
-	}
-	return "snapshot-" + sha
-}
-
-func (c Checker) resolveCommit(ctx context.Context, commit, current string) (string, error) {
-	commit = strings.TrimSpace(commit)
-	if !validCommitRef(commit) {
-		return "", fmt.Errorf("commit must be 7-40 hexadecimal characters")
-	}
-	requestURL := fmt.Sprintf("%s/repos/%s/commits/%s", c.APIBase, c.Repository, commit)
-	var out commitResponse
-	if err := c.getJSONWithRetry(ctx, requestURL, current, "commit metadata", &out); err != nil {
-		return "", err
-	}
-	sha := strings.ToLower(strings.TrimSpace(out.SHA))
-	if len(sha) != 40 {
-		return "", fmt.Errorf("commit API returned invalid SHA")
-	}
-	return sha, nil
-}
-
-func (c Checker) verifySnapshotTag(ctx context.Context, sha, current string) error {
-	tag := "snapshot-" + sha[:12]
-	got, err := c.tagCommit(ctx, tag, current)
-	if err != nil {
-		return fmt.Errorf("commit %s does not have a successful published client build: %w", sha[:12], err)
-	}
-	if got != sha {
-		return fmt.Errorf("snapshot tag %s points to %s instead of %s", tag, got, sha)
-	}
-	return nil
-}
-
-func (c Checker) tagCommit(ctx context.Context, tag, current string) (string, error) {
-	requestURL := fmt.Sprintf("%s/repos/%s/git/ref/tags/%s", c.APIBase, c.Repository, tag)
-	var ref refResponse
-	if err := c.getJSONWithRetry(ctx, requestURL, current, "tag metadata", &ref); err != nil {
-		return "", err
-	}
-	sha := strings.ToLower(strings.TrimSpace(ref.Object.SHA))
-	if len(sha) != 40 || ref.Object.Type != "commit" {
-		return "", fmt.Errorf("tag %s does not point at a commit", tag)
-	}
-	return sha, nil
-}
-
 func (c Checker) snapshotCommit(ctx context.Context, current string) (string, error) {
 	requestURL := fmt.Sprintf("%s/repos/%s/git/ref/tags/snapshot", c.APIBase, c.Repository)
 	var ref refResponse
@@ -508,14 +402,13 @@ func (c Checker) snapshotCommit(ctx context.Context, current string) (string, er
 	return sha, nil
 }
 
-func sameSnapshot(current, sha string) bool {
-	current = strings.TrimSpace(current)
+func sameSnapshot(current, currentCommit, targetCommit string) bool {
 	if !IsSnapshotVersion(current) {
 		return false
 	}
-	currentSHA := strings.ToLower(strings.TrimPrefix(current, "snapshot-"))
-	sha = strings.ToLower(strings.TrimSpace(sha))
-	return strings.HasPrefix(sha, currentSHA) || strings.HasPrefix(currentSHA, sha)
+	currentCommit = strings.ToLower(strings.TrimSpace(currentCommit))
+	targetCommit = strings.ToLower(strings.TrimSpace(targetCommit))
+	return len(currentCommit) == 40 && currentCommit == targetCommit
 }
 
 // Compare compares release versions of the form vMAJOR.MINOR.PATCH.
@@ -1016,47 +909,39 @@ func ProbeAssetDownload(ctx context.Context, current string, asset Asset) (strin
 }
 
 func CheckLatest(ctx context.Context, current string) (Result, error) {
-	channel, commit, err := AutomaticTarget(current)
+	channel, err := AutomaticChannel(current)
 	if err != nil {
 		return Result{Current: current}, err
 	}
 	if channel == "" {
 		return Result{Current: current}, nil
 	}
-	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel, commit)
+	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel)
 }
 
 func CheckChannel(ctx context.Context, current, channel string) (Result, error) {
-	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel, "")
-}
-
-func CheckTarget(ctx context.Context, current, channel, commit string) (Result, error) {
-	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel, commit)
+	return DefaultChecker().CheckTarget(ctx, current, platformAssetName(), channel)
 }
 
 // InstallLatest checks the default channel for the current build, verifies
 // the release SHA-256 digest (falling back to SHA256SUMS.txt for legacy
 // releases), and starts/executes the platform installer.
 func InstallLatest(ctx context.Context, current string) (bool, Result, error) {
-	channel, commit, err := AutomaticTarget(current)
+	channel, err := AutomaticChannel(current)
 	if err != nil {
 		return false, Result{Current: current}, err
 	}
 	if channel == "" {
 		return false, Result{Current: current}, nil
 	}
-	return InstallTarget(ctx, current, channel, commit)
+	return InstallChannel(ctx, current, channel)
 }
 
 func InstallChannel(ctx context.Context, current, channel string) (bool, Result, error) {
-	return InstallTarget(ctx, current, channel, "")
+	return InstallTargetWithProgress(ctx, current, channel, nil)
 }
 
-func InstallTarget(ctx context.Context, current, channel, commit string) (bool, Result, error) {
-	return InstallTargetWithProgress(ctx, current, channel, commit, nil)
-}
-
-func InstallTargetWithProgress(ctx context.Context, current, channel, commit string, progress ProgressFunc) (bool, Result, error) {
+func InstallTargetWithProgress(ctx context.Context, current, channel string, progress ProgressFunc) (bool, Result, error) {
 	normalized, err := NormalizeChannel(channel)
 	if err != nil {
 		return false, Result{Current: current}, err
@@ -1065,7 +950,7 @@ func InstallTargetWithProgress(ctx context.Context, current, channel, commit str
 	reportProgress(progress, ProgressEvent{
 		Step: 1, Stage: "check", Message: fmt.Sprintf("checking %s channel from %s", normalized, current),
 	})
-	result, err := checker.CheckTarget(ctx, current, platformAssetName(), normalized, commit)
+	result, err := checker.CheckTarget(ctx, current, platformAssetName(), normalized)
 	if err != nil {
 		return false, result, err
 	}

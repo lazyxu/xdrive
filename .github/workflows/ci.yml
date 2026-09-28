@@ -446,7 +446,11 @@ jobs:
           grep -q 'Load and verify exact images tested by CI' .github/workflows/release.yml
           grep -q 'Push exact tested images in parallel' .github/workflows/release.yml
           grep -q 'docker push "$remote" &' .github/workflows/release.yml
-          grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml
+          grep -q 'gh release create snapshot release/\* --repo "$repo" --prerelease' .github/workflows/release.yml
+          if grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml; then
+            echo "release workflow must not create immutable snapshot-<sha> tags" >&2
+            exit 1
+          fi
           grep -q 'target_tag="edge"' .github/workflows/release.yml
           grep -q 'xdrive-caddy' .github/workflows/release.yml
           grep -q '8443}:443/tcp' deploy/docker-compose.yml

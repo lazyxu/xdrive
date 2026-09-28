@@ -67,19 +67,15 @@ func Run(ctx context.Context) Report {
 		checks = append(checks, Check{Name: "update source", Status: Pass, Detail: source})
 	}
 
-	channel, commit, err := xupdate.AutomaticTarget(version.String())
+	channel, err := xupdate.AutomaticChannel(version.String())
 	if err != nil {
 		checks = append(checks, Check{Name: "update channel", Status: Fail, Detail: err.Error()})
 	} else if channel == "" {
 		checks = append(checks, Check{Name: "update channel", Status: Warn, Detail: "development build; no automatic channel"})
 	} else {
-		detail := channel
-		if channel == xupdate.ChannelCommit && commit != "" {
-			detail += " @ " + ShortID(commit)
-		}
-		checks = append(checks, Check{Name: "update channel", Status: Pass, Detail: detail})
+		checks = append(checks, Check{Name: "update channel", Status: Pass, Detail: channel})
 		checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		result, checkErr := xupdate.CheckPlatformTargetFromSource(checkCtx, version.String(), channel, commit, source)
+		result, checkErr := xupdate.CheckPlatformTargetFromSource(checkCtx, version.String(), channel, source)
 		cancel()
 		if checkErr != nil {
 			checks = append(checks, Check{Name: "update metadata", Status: Warn, Detail: checkErr.Error()})

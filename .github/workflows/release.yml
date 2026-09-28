@@ -254,38 +254,6 @@ jobs:
               --tag "ghcr.io/$owner/$image:$target_tag" \
               "ghcr.io/$owner/$image:$source_tag"
           done
-      - name: Publish immutable master snapshot
-        if: github.ref == 'refs/heads/master'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          repo="$GITHUB_REPOSITORY"
-          tag="snapshot-${GITHUB_SHA::12}"
-          if gh api "repos/$repo/git/ref/tags/$tag" >/dev/null 2>&1; then
-            existing="$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.sha')"
-            [[ "$existing" == "$GITHUB_SHA" ]] || {
-              echo "$tag already points to $existing, refusing to overwrite immutable snapshot." >&2
-              exit 1
-            }
-          else
-            gh api --method POST "repos/$repo/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null
-          fi
-
-          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            while IFS= read -r asset; do
-              [[ -n "$asset" ]] && gh release delete-asset "$tag" "$asset" --repo "$repo" -y
-            done < <(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name')
-            gh release upload "$tag" release/* --repo "$repo"
-            gh release edit "$tag" --repo "$repo" --prerelease \
-              --title "xDrive snapshot ${GITHUB_SHA::12}" \
-              --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
-          else
-            gh release create "$tag" release/* --repo "$repo" --prerelease \
-              --title "xDrive snapshot ${GITHUB_SHA::12}" \
-              --notes "Immutable successful master snapshot at `$GITHUB_SHA`."
-          fi
       - name: Publish rolling snapshot prerelease
         if: github.ref == 'refs/heads/master'
         env:
@@ -306,45 +274,29 @@ jobs:
           gh release create snapshot release/* --repo "$repo" --prerelease \
             --title "xDrive snapshot ${GITHUB_SHA::12}" \
             --notes "Rolling development snapshot from master at `$GITHUB_SHA`. The exact CI-tested installers are published without rebuilding."
-      - name: Prune old immutable master snapshots
-        if: github.ref == 'refs/heads/master'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          repo="$GITHUB_REPOSITORY"
-          keep="snapshot-${GITHUB_SHA::12}"
 
-          echo "Keeping rolling snapshot tag and latest immutable snapshot: $keep"
-
-          # Read the complete release list before deleting anything so pagination cannot skip entries.
-          mapfile -t snapshot_releases < <(
+          # Remove legacy immutable snapshot-<sha> releases/tags from the previous policy.
+          mapfile -t legacy_snapshot_releases < <(
             gh api --paginate "repos/$repo/releases?per_page=100" \
               --jq '.[] | "\(.id)|\(.tag_name)"'
           )
-          for row in "${snapshot_releases[@]}"; do
+          for row in "${legacy_snapshot_releases[@]}"; do
             release_id="${row%%|*}"
             tag="${row#*|}"
-            [[ "$tag" =~ ^snapshot-[0-9a-fA-F]{12}$ ]] || continue
-            [[ "$tag" == "$keep" ]] && continue
-            echo "Deleting old snapshot release: $tag"
+            [[ "$tag" =~ ^snapshot-[0-9a-fA-F]{7,40}$ ]] || continue
+            echo "Deleting legacy snapshot release: $tag"
             gh api --method DELETE "repos/$repo/releases/$release_id" >/dev/null
           done
 
-          # Preserve the rolling 'snapshot' ref and delete stale immutable snapshot refs only.
-          mapfile -t snapshot_refs < <(
-            gh api --paginate "repos/$repo/git/matching-refs/tags/snapshot-" \
-              --jq '.[].ref'
+          mapfile -t legacy_snapshot_refs < <(
+            gh api --paginate "repos/$repo/git/matching-refs/tags/snapshot-" --jq '.[].ref'
           )
-          for ref in "${snapshot_refs[@]}"; do
+          for ref in "${legacy_snapshot_refs[@]}"; do
             tag="${ref#refs/tags/}"
-            [[ "$tag" =~ ^snapshot-[0-9a-fA-F]{12}$ ]] || continue
-            [[ "$tag" == "$keep" ]] && continue
-            echo "Deleting old snapshot tag: $tag"
+            [[ "$tag" =~ ^snapshot-[0-9a-fA-F]{7,40}$ ]] || continue
+            echo "Deleting legacy snapshot tag: $tag"
             gh api --method DELETE "repos/$repo/git/refs/tags/$tag" >/dev/null
           done
-
       - name: Assert distribution assets are not archive-wrapped
         shell: bash
         run: |

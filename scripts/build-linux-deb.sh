@@ -9,6 +9,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 case "$VERSION" in
   v*) DEB_VERSION="${VERSION#v}" ;;
+  snapshot)
+    build_sha="${GITHUB_SHA:-${CI_COMMIT_SHA:-snapshot}}"
+    DEB_VERSION="0.0.0+snapshot.${build_sha:0:12}"
+    ;;
   snapshot-*) DEB_VERSION="0.0.0+${VERSION//[^0-9A-Za-z.+:~_-]/.}" ;;
   *) DEB_VERSION="${VERSION//[^0-9A-Za-z.+:~_-]/.}" ;;
 esac
@@ -117,7 +121,6 @@ printf '%s\n' 'xDrive Desktop, background agent, and xd CLI installed and verifi
 printf '%s\n' 'Open xDrive Desktop from the applications menu, or login with xd from a terminal.'
 printf '%s\n' 'The Desktop starts at login by default and keeps the background agent healthy.'
 printf '%s\n' 'Client update checks are user-controlled from Desktop; background auto-update is disabled by default.'
-printf '%s\n' 'Pin a commit with XD_UPDATE_CHANNEL=commit and XD_UPDATE_COMMIT=<sha>.'
 exit 0
 POSTINST
 chmod 0755 "$PKG_ROOT/DEBIAN/postinst"

@@ -163,12 +163,11 @@ usage() {
 xDrive server installer
 
 Usage:
-  install-server.sh [--source github|gitlab] [--channel stable|master|commit] [--commit SHA]
+  install-server.sh [--source github|gitlab] [--channel stable|master]
 
 Channels:
   stable  Latest successful vMAJOR.MINOR.PATCH release.
-  master  Latest fully successful master snapshot.
-  commit  Pin to a specified successfully published master commit.
+  master  Latest fully successful rolling master snapshot.
 
 The selected source and channel are persisted in ~/.xd/config/.env and reused on later updates.
 USAGE
@@ -176,7 +175,7 @@ USAGE
 
 requested_source="${XD_INSTALL_SOURCE:-}"
 requested_channel="${XD_INSTALL_CHANNEL:-}"
-requested_commit="${XD_INSTALL_COMMIT:-}"
+requested_commit=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source)
@@ -185,9 +184,6 @@ while [[ $# -gt 0 ]]; do
     --channel)
       [[ $# -ge 2 ]] || { echo "--channel requires a value" >&2; exit 2; }
       requested_channel="$2"; shift 2 ;;
-    --commit)
-      [[ $# -ge 2 ]] || { echo "--commit requires a SHA" >&2; exit 2; }
-      requested_commit="$2"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -221,9 +217,6 @@ case "$requested_source" in
   *) echo "invalid update source: $requested_source (expected github or gitlab)" >&2; exit 2 ;;
 esac
 
-if [[ -z "$requested_channel" && -n "$requested_commit" ]]; then
-  requested_channel="commit"
-fi
 if [[ -z "$requested_channel" ]]; then
   requested_channel="$(existing_env_value XD_RELEASE_CHANNEL)"
 fi
@@ -246,17 +239,10 @@ if [[ -z "$requested_channel" ]]; then
 fi
 requested_channel="$(printf '%s' "$requested_channel" | tr '[:upper:]' '[:lower:]')"
 case "$requested_channel" in
-  stable|master|commit) ;;
+  stable|master) ;;
   snapshot) requested_channel="master" ;;
-  *) echo "invalid channel: $requested_channel (expected stable, master, or commit)" >&2; exit 2 ;;
+  *) echo "invalid channel: $requested_channel (expected stable or master)" >&2; exit 2 ;;
 esac
-
-if [[ "$requested_channel" == "commit" && -z "$requested_commit" ]]; then
-  requested_commit="$(existing_env_value XD_RELEASE_COMMIT)"
-  if [[ -z "$requested_commit" && "$BUILT_COMMIT" != "@RELEASE_COMMIT@" ]]; then
-    requested_commit="$BUILT_COMMIT"
-  fi
-fi
 
 format_bytes() {
   awk -v bytes="${1:-0}" 'BEGIN {
@@ -559,19 +545,19 @@ gitlab_api_base() {
   printf '%s/api/v4/projects/%s\n' "${GITLAB_BASE_URL%/}" "$(gitlab_project_key)"
 }
 
-resolve_gitlab_commit() {
+resolve_gitlab_ref_commit() {
   local ref="$1" json full
-  [[ "$ref" =~ ^[0-9A-Fa-f]{7,40}$ ]] || {
-    echo "xDrive server installer: commit must be 7-40 hexadecimal characters." >&2
+  [[ -n "$ref" ]] || {
+    echo "xDrive server installer: GitLab ref is required." >&2
     return 1
   }
   if ! json="$(fetch_stdout "$(gitlab_api_base)/repository/commits/$ref")"; then
-    echo "xDrive server installer: could not query GitLab commit $ref." >&2
+    echo "xDrive server installer: could not resolve GitLab ref $ref." >&2
     return 1
   fi
   full="$(printf '%s\n' "$json" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{40}"' | head -n1 | grep -oE '[0-9a-fA-F]{40}' | tr '[:upper:]' '[:lower:]' || true)"
   [[ ${#full} -eq 40 ]] || {
-    echo "xDrive server installer: could not resolve GitLab commit $ref." >&2
+    echo "xDrive server installer: GitLab ref $ref did not resolve to a full commit SHA." >&2
     return 1
   }
   printf '%s\n' "$full"
@@ -596,16 +582,6 @@ resolve_gitlab_latest_stable_tag() {
   printf '%s\n' "$tag"
 }
 
-resolve_gitlab_latest_snapshot_tag() {
-  local tag
-  tag="$(gitlab_release_tags | grep -E '^snapshot-[0-9a-fA-F]{7,40}$' | head -n1)"
-  [[ -n "$tag" ]] || {
-    echo "xDrive server installer: no published GitLab master snapshot is available." >&2
-    return 1
-  }
-  printf '%s\n' "$tag"
-}
-
 verify_gitlab_release() {
   local tag="$1"
   fetch_stdout "$(gitlab_api_base)/releases/$tag" >/dev/null
@@ -625,30 +601,8 @@ resolve_gitlab_registry() {
   printf '%s\n' "$registry"
 }
 
-resolve_commit() {
-  local ref="$1" json full
-  if [[ "$requested_source" == "gitlab" ]]; then
-    resolve_gitlab_commit "$ref"
-    return
-  fi
-  [[ "$ref" =~ ^[0-9A-Fa-f]{7,40}$ ]] || {
-    echo "xDrive server installer: commit must be 7-40 hexadecimal characters." >&2
-    return 1
-  }
-  if ! json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/commits/$ref")"; then
-    echo "xDrive server installer: could not query commit $ref." >&2
-    return 1
-  fi
-  full="$(printf '%s\n' "$json" | sed -nE 's/^[[:space:]]*"sha":[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n1 | tr '[:upper:]' '[:lower:]')"
-  [[ ${#full} -eq 40 ]] || {
-    echo "xDrive server installer: could not resolve commit $ref." >&2
-    return 1
-  }
-  printf '%s\n' "$full"
-}
-
 resolve_published_master() {
-  local json full immutable_tag
+  local json full
   if ! json="$(fetch_stdout "https://api.github.com/repos/$REPOSITORY/git/ref/tags/snapshot")"; then
     echo "xDrive server installer: could not resolve the rolling master snapshot." >&2
     return 1
@@ -658,9 +612,8 @@ resolve_published_master() {
     echo "xDrive server installer: rolling snapshot did not resolve to a commit." >&2
     return 1
   }
-  immutable_tag="snapshot-${full:0:12}"
-  if ! fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/tags/$immutable_tag" >/dev/null; then
-    echo "xDrive server installer: $immutable_tag is not fully published yet; retry after the master build completes." >&2
+  if ! fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/tags/snapshot" >/dev/null; then
+    echo "xDrive server installer: rolling snapshot release is not fully published yet; retry after the master build completes." >&2
     return 1
   fi
   printf '%s\n' "$full"
@@ -684,39 +637,29 @@ resolve_latest_stable_tag() {
   printf '%s\n' "$tag"
 }
 
-verify_published_commit() {
-  local full="$1" tag="snapshot-${1:0:12}"
-  if [[ "$requested_source" == "gitlab" ]]; then
-    if ! verify_gitlab_release "$tag"; then
-      echo "xDrive server installer: commit $full has no successful published GitLab snapshot ($tag)." >&2
-      return 1
-    fi
-    return
-  fi
-  if ! fetch_stdout "https://api.github.com/repos/$REPOSITORY/releases/tags/$tag" >/dev/null; then
-    echo "xDrive server installer: commit $full has no successful published snapshot ($tag)." >&2
-    return 1
-  fi
-}
-
 resolve_install_source() {
-  local channel="$1" commit="$2" full tag
+  local channel="$1" full tag
   case "$channel" in
     master)
       if [[ "$requested_source" == "gitlab" ]]; then
-        tag="$(resolve_gitlab_latest_snapshot_tag)"
-        SOURCE_REF="$tag"
-        full="${tag#snapshot-}"
-        IMAGE_TAG="sha-$full"
+        verify_gitlab_release snapshot || {
+          echo "xDrive server installer: rolling GitLab snapshot is not fully published yet." >&2
+          return 1
+        }
+        full="$(resolve_gitlab_ref_commit snapshot)"
+        SOURCE_REF="$full"
+        IMAGE_TAG="sha-${full:0:12}"
         BUILT_CHANNEL="master"
         BUILT_COMMIT="$full"
-        echo "Resolved latest fully published GitLab master snapshot: $full"
+        requested_commit="$full"
+        echo "Resolved latest fully published GitLab master snapshot: ${full:0:12}"
       else
         full="$(resolve_published_master)"
         SOURCE_REF="$full"
         IMAGE_TAG="sha-${full:0:12}"
         BUILT_CHANNEL="master"
         BUILT_COMMIT="$full"
+        requested_commit="$full"
         echo "Resolved latest fully published master snapshot: ${full:0:12}"
       fi
       ;;
@@ -726,25 +669,8 @@ resolve_install_source() {
       IMAGE_TAG="$tag"
       BUILT_CHANNEL="stable"
       BUILT_COMMIT=""
+      requested_commit=""
       echo "Resolved stable release: $tag"
-      ;;
-    commit)
-      [[ -n "$commit" ]] || {
-        echo "xDrive server installer: --channel commit requires --commit SHA." >&2
-        return 1
-      }
-      full="$(resolve_commit "$commit")"
-      verify_published_commit "$full"
-      if [[ "$requested_source" == "gitlab" ]]; then
-        SOURCE_REF="snapshot-${full:0:12}"
-      else
-        SOURCE_REF="$full"
-      fi
-      IMAGE_TAG="sha-${full:0:12}"
-      BUILT_CHANNEL="commit"
-      BUILT_COMMIT="$full"
-      requested_commit="$full"
-      echo "Resolved published commit: ${full:0:12}"
       ;;
   esac
 }
@@ -758,13 +684,14 @@ stage 1 "resolve release channel"
 needs_source_resolution=false
 if [[ "$artifact_is_template" == "true" || "$requested_channel" != "$BUILT_CHANNEL" || "$requested_source" != "$BUILT_SOURCE" ]]; then
   needs_source_resolution=true
-elif [[ "$requested_channel" == "commit" && -n "$requested_commit" && "$requested_commit" != "$BUILT_COMMIT" ]]; then
-  needs_source_resolution=true
 fi
 
 if [[ "$needs_source_resolution" == "true" ]]; then
-  resolve_install_source "$requested_channel" "$requested_commit"
+  resolve_install_source "$requested_channel"
 else
+  if [[ "$requested_channel" == "master" && -z "$requested_commit" && "$BUILT_COMMIT" != "@RELEASE_COMMIT@" ]]; then
+    requested_commit="$BUILT_COMMIT"
+  fi
   echo "Using packaged release source: $SOURCE_REF"
 fi
 
@@ -1504,11 +1431,7 @@ ensure_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
 set_env XD_IMAGE_REGISTRY "$IMAGE_REGISTRY"
 set_env XD_UPDATE_SOURCE "$requested_source"
 set_env XD_RELEASE_CHANNEL "$requested_channel"
-if [[ "$requested_channel" == "commit" ]]; then
-  set_env XD_RELEASE_COMMIT "$requested_commit"
-else
-  set_env XD_RELEASE_COMMIT ""
-fi
+set_env XD_RELEASE_COMMIT "${requested_commit:-}"
 domain="$(env_value XD_DOMAIN)"
 https_port="$(env_value XD_HTTPS_PORT)"
 web_port="$(env_value XD_WEB_PORT)"
