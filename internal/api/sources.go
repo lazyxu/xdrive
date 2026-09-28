@@ -507,8 +507,17 @@ func (s *Server) listSourceRuns(c *gin.Context) {
 		}
 		limit = value
 	}
+	offset := 0
+	if raw := strings.TrimSpace(c.Query("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			fail(c, http.StatusBadRequest, "offset must be zero or greater")
+			return
+		}
+		offset = value
+	}
 	var runs []meta.SyncRun
-	if err := s.DB.Where("source_id = ?", id).Order("started_at DESC, id DESC").Limit(limit).Find(&runs).Error; err != nil {
+	if err := s.DB.Where("source_id = ?", id).Order("started_at DESC, id DESC").Limit(limit).Offset(offset).Find(&runs).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list source runs failed")
 		return
 	}

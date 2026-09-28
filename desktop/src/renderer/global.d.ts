@@ -233,7 +233,7 @@ declare global {
         getCache: () => Promise<DesktopResult<AgentCacheStats>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
-        getSourceRuns: (sourceID: number, limit?: number) => Promise<DesktopResult<AgentSourceRun[]>>
+        getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         cancelSourceRun: (sourceID: number, runID: string) => Promise<DesktopResult<AgentSourceRun>>
         getSourceItems: (sourceID: number, state?: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceItem[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>

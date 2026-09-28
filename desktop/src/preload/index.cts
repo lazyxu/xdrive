@@ -7,7 +7,7 @@ const agent = Object.freeze({
   getCache: () => ipcRenderer.invoke('agent:get-cache'),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
-  getSourceRuns: (sourceID: number, limit = 1) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit),
+  getSourceRuns: (sourceID: number, limit = 1, offset = 0) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit, offset),
   cancelSourceRun: (sourceID: number, runID: string) => ipcRenderer.invoke('agent:cancel-source-run', sourceID, runID),
   getSourceItems: (sourceID: number, state = 'error', limit = 1000, offset = 0) => ipcRenderer.invoke('agent:get-source-items', sourceID, state, limit, offset),
   getSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:get-source-credential', sourceID),

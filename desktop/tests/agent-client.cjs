@@ -432,12 +432,12 @@ test('external sources use dedicated agent endpoints', async (t) => {
   })
 
   assert.equal((await client.sources())[0].name, '一刻相册')
-  assert.equal((await client.sourceRuns(9, 5))[0].scanned_items, 12)
+  assert.equal((await client.sourceRuns(9, 5, 20))[0].scanned_items, 12)
   assert.equal((await client.sourceItems(9, 'error', 1000, 0))[0].last_error, 'download unavailable')
   assert.equal((await client.sourceCredentialStatus(9)).key_version, 2)
   assert.deepEqual(seen, [
     '/v1/sources',
-    '/v1/sources/runs?source_id=9&limit=5',
+    '/v1/sources/runs?source_id=9&limit=5&offset=20',
     '/v1/sources/items?source_id=9&limit=1000&offset=0&state=error',
     '/v1/sources/credential?source_id=9',
   ])

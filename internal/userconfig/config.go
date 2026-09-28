@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,8 @@ const (
 	SyncModeExclude     = "exclude"
 	SyncModeAlwaysLocal = "always-local"
 )
+
+var sessionRefreshLocks sync.Map
 
 type SyncRule struct {
 	Path string `json:"path"`
@@ -224,6 +227,8 @@ func (cfg *Config) ApplyAuth(resp client.AuthResponse, _ bool) error {
 		return err
 	}
 	if err := secretstore.Save(dir, cfg.SessionID, credentialLabel(*cfg), secretstore.Credentials{
+		AccessToken:      tokens.AccessToken,
+		AccessExpiresAt:  tokens.AccessExpiresAt,
 		RefreshToken:     tokens.RefreshToken,
 		RefreshExpiresAt: tokens.RefreshExpiresAt,
 	}); err != nil {
@@ -250,6 +255,8 @@ func NewClient(cfg Config) (*client.Client, error) {
 	}
 	saveTokens := func(next client.SessionTokens) error {
 		return secretstore.Save(dir, cfg.SessionID, credentialLabel(cfg), secretstore.Credentials{
+			AccessToken:      next.AccessToken,
+			AccessExpiresAt:  next.AccessExpiresAt,
 			RefreshToken:     next.RefreshToken,
 			RefreshExpiresAt: next.RefreshExpiresAt,
 		})
@@ -266,7 +273,9 @@ func NewClient(cfg Config) (*client.Client, error) {
 			RefreshExpiresAt: latest.RefreshExpiresAt,
 		}, nil
 	}
-	return client.NewManagedSession(cfg.Server, tokens, saveTokens, loadTokens), nil
+	key := strings.TrimRight(strings.TrimSpace(cfg.Server), "/") + "\x00" + cfg.SessionID
+	lockValue, _ := sessionRefreshLocks.LoadOrStore(key, &sync.Mutex{})
+	return client.NewManagedSessionWithRefreshLock(cfg.Server, tokens, saveTokens, loadTokens, lockValue.(*sync.Mutex)), nil
 }
 
 func CredentialBackend(cfg Config) string {

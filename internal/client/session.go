@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -42,10 +43,21 @@ func NewManagedSession(
 	onTokens func(SessionTokens) error,
 	loadTokens func() (SessionTokens, error),
 ) *Client {
+	return NewManagedSessionWithRefreshLock(baseURL, tokens, onTokens, loadTokens, nil)
+}
+
+func NewManagedSessionWithRefreshLock(
+	baseURL string,
+	tokens SessionTokens,
+	onTokens func(SessionTokens) error,
+	loadTokens func() (SessionTokens, error),
+	refreshLock *sync.Mutex,
+) *Client {
 	return &Client{
 		BaseURL:          strings.TrimRight(baseURL, "/"),
 		Token:            tokens.AccessToken,
 		HTTP:             &http.Client{Timeout: 0},
+		sharedRefreshMu:  refreshLock,
 		refreshToken:     tokens.RefreshToken,
 		accessExpiresAt:  tokens.AccessExpiresAt,
 		refreshExpiresAt: tokens.RefreshExpiresAt,
@@ -108,8 +120,12 @@ func (c *Client) ensureFresh(ctx context.Context) error {
 }
 
 func (c *Client) RefreshSession(ctx context.Context) (SessionTokens, error) {
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
+	refreshMu := &c.refreshMu
+	if c.sharedRefreshMu != nil {
+		refreshMu = c.sharedRefreshMu
+	}
+	refreshMu.Lock()
+	defer refreshMu.Unlock()
 
 	current := c.sessionTokens()
 	if c.loadTokens != nil {

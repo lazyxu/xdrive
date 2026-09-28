@@ -1,14 +1,117 @@
 package userconfig
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/secretstore"
 )
+
+func TestNewClientSharesRefreshAcrossConcurrentCallers(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("APPDATA", filepath.Join(root, "config"))
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("USERPROFILE", filepath.Join(root, "home"))
+	t.Setenv("XD_DISABLE_SECRET_SERVICE", "1")
+
+	var mu sync.Mutex
+	refreshCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/auth/refresh":
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			refreshCalls++
+			mu.Unlock()
+			if body["refresh_token"] != "refresh-old" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":"invalid or expired refresh token"}`))
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+			_ = json.NewEncoder(w).Encode(client.AuthResponse{
+				AccessToken: "access-new", RefreshToken: "refresh-new",
+				ExpiresIn: 900, RefreshExpiresIn: 3600,
+			})
+		case "/api/v1/nodes/root":
+			if got := r.Header.Get("Authorization"); got != "Bearer access-new" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":"invalid access token"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(client.Node{ID: 1, Type: "dir", Revision: 1})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	cfg := Config{Server: ts.URL, SessionID: "shared-refresh-session", Username: "alice"}
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secretstore.Save(dir, cfg.SessionID, credentialLabel(cfg), secretstore.Credentials{
+		AccessToken: "access-old", AccessExpiresAt: time.Now().Add(-time.Minute),
+		RefreshToken: "refresh-old", RefreshExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := NewClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for _, cli := range []*client.Client{first, second} {
+		go func(cli *client.Client) {
+			<-start
+			_, err := cli.Root(context.Background())
+			errs <- err
+		}(cli)
+	}
+	close(start)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mu.Lock()
+	calls := refreshCalls
+	mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("refresh calls=%d want=1", calls)
+	}
+	creds, err := secretstore.Load(dir, cfg.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if creds.AccessToken != "access-new" || creds.RefreshToken != "refresh-new" || creds.AccessExpiresAt.IsZero() {
+		t.Fatalf("persisted credentials=%+v", creds)
+	}
+}
 
 func TestSaveLoadUsesSecureCredentialStore(t *testing.T) {
 	root := t.TempDir()

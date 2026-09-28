@@ -515,8 +515,12 @@ export class AgentIPCClient {
     return this.request<AgentSource[]>('GET', '/v1/sources')
   }
 
-  sourceRuns(sourceID: number, limit = 1) {
-    const query = new URLSearchParams({ source_id: String(sourceID), limit: String(limit) })
+  sourceRuns(sourceID: number, limit = 1, offset = 0) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      limit: String(limit),
+      offset: String(offset),
+    })
     return this.request<AgentSourceRun[]>('GET', `/v1/sources/runs?${query.toString()}`)
   }
 

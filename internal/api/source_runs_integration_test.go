@@ -101,6 +101,10 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	missing := makeMapped("missing.jpg", "missing", "missing.jpg", 30)
 	ignoredOld := makeMapped("ignored-old.jpg", "ignored-old", "@eaDir/old.jpg", 10)
 
+	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).Update("last_error", "previous scan failed").Error; err != nil {
+		t.Fatal(err)
+	}
+
 	runID := uuid.NewString()
 	beginBody := fmt.Sprintf(`{"run_id":%q,"trigger":"scheduled"}`, runID)
 	beginRes := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
@@ -112,6 +116,13 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	if run.ID != runID || run.Mode != meta.SourceRunModeScan || run.SourceRevision != source.Revision ||
 		run.TargetNodeID == nil || *run.TargetNodeID != target.ID || run.IgnoreRules != "@eaDir/\n" {
 		t.Fatalf("unexpected run snapshot: %+v", run)
+	}
+	var startedSource meta.Source
+	if err := db.First(&startedSource, source.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if startedSource.LastError != "" {
+		t.Fatalf("new run kept stale source error %q", startedSource.LastError)
 	}
 
 	// A lost begin response is safe to retry with the same client-generated run ID.
@@ -592,6 +603,9 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if finished.Status != meta.SyncRunStatusPartial || finished.FailedItems != 1 {
 		t.Fatalf("pending execution did not downgrade run: %+v", finished)
 	}
+	if finished.Error != "1 source items failed" {
+		t.Fatalf("partial run did not persist generated error log: %+v", finished)
+	}
 
 	var latestSource meta.Source
 	if err := db.First(&latestSource, source.ID).Error; err != nil {
@@ -599,6 +613,9 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if latestSource.LastSuccessAt != nil {
 		t.Fatalf("partial sync unexpectedly advanced last_success_at: %+v", latestSource)
+	}
+	if latestSource.LastError != finished.Error {
+		t.Fatalf("partial source/run error mismatch: source=%q run=%q", latestSource.LastError, finished.Error)
 	}
 
 	// A later run retries an error item and clears its previous error when observed.

@@ -237,11 +237,18 @@ func (c *Client) SourceCollectionItems(ctx context.Context, sourceID, collection
 	return out, err
 }
 
-func (c *Client) SourceRuns(ctx context.Context, id uint64, limit int) ([]SyncRun, error) {
+func (c *Client) SourceRuns(ctx context.Context, id uint64, limit, offset int) ([]SyncRun, error) {
 	var out []SyncRun
-	path := fmt.Sprintf("/api/v1/sources/%d/runs", id)
+	values := url.Values{}
 	if limit > 0 {
-		path += "?limit=" + url.QueryEscape(strconv.Itoa(limit))
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	path := fmt.Sprintf("/api/v1/sources/%d/runs", id)
+	if query := values.Encode(); query != "" {
+		path += "?" + query
 	}
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err

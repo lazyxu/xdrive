@@ -258,6 +258,30 @@ test('shared source card view derives display data once for both UIs', () => {
   assert.equal(view.trigger.ready, true)
 })
 
+test('shared source detail suppresses stale errors while a run is pending or active', () => {
+  const running = shared.externalSourceDetailView({
+    source: source({ last_error: 'previous scan failed' }),
+    latestRun: { status: 'running' },
+  })
+  assert.equal(running.state.key, 'running')
+  assert.equal(running.error, undefined)
+
+  const pending = shared.externalSourceDetailView({
+    source: source({
+      last_error: 'previous scan failed',
+      run_requested_at: '2026-09-28T02:25:23Z',
+    }),
+  })
+  assert.equal(pending.state.key, 'pending')
+  assert.equal(pending.error, undefined)
+
+  const failed = shared.externalSourceDetailView({
+    source: source({ last_error: 'current scan failed' }),
+  })
+  assert.equal(failed.state.key, 'error')
+  assert.equal(failed.error, 'current scan failed')
+})
+
 test('shared source detail view keeps connector and credential semantics aligned', () => {
   const row = {
     source: source({
@@ -318,19 +342,30 @@ test('shared run detail view defines one metric order for Web and Desktop', () =
   })
 
   assert.equal(detail.statusLabel, '已完成')
+  assert.equal(detail.modeLabel, '同步')
+  assert.equal(detail.triggerLabel, '手动触发')
   assert.equal(detail.startedAt, '2026-09-26T18:00:00Z')
+  assert.equal(detail.finishedAt, '2026-09-26T18:05:00Z')
+  assert.equal(detail.durationLabel, '5 分')
+  assert.equal(detail.successItems, 99)
+  assert.equal(detail.failedItems, 1)
   assert.deepEqual(detail.metrics.map((metric) => metric.key), [
     'scanned',
-    'planned_transfer',
-    'transferred',
+    'ignored',
     'new',
     'changed',
     'moved',
+    'unchanged',
     'missing',
+    'planned_transfer',
+    'created',
+    'updated',
+    'skipped',
+    'transferred',
     'failed',
   ])
   assert.deepEqual(detail.metrics[0], { key: 'scanned', label: '扫描', items: 100, bytes: 1000 })
-  assert.deepEqual(detail.metrics[7], { key: 'failed', label: '失败', items: 1 })
+  assert.deepEqual(detail.metrics[12], { key: 'failed', label: '失败', items: 1 })
 })
 
 test('shared Synology DSM guide binds the exact Source and keeps secrets out of scheduled task', () => {

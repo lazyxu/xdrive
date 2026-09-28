@@ -217,7 +217,20 @@ export interface ExternalSourceDetailView {
 }
 
 export interface ExternalSourceRunMetric {
-  key: 'scanned' | 'planned_transfer' | 'transferred' | 'new' | 'changed' | 'moved' | 'missing' | 'failed'
+  key:
+    | 'scanned'
+    | 'ignored'
+    | 'new'
+    | 'changed'
+    | 'moved'
+    | 'unchanged'
+    | 'missing'
+    | 'planned_transfer'
+    | 'created'
+    | 'updated'
+    | 'skipped'
+    | 'transferred'
+    | 'failed'
   label: string
   items: number
   bytes?: number
@@ -232,7 +245,14 @@ export interface ExternalSourceRunProgressView {
 
 export interface ExternalSourceRunDetailView {
   statusLabel: string
+  modeLabel: string
+  triggerLabel: string
   startedAt: string
+  finishedAt?: string
+  durationLabel: string
+  successItems: number
+  failedItems: number
+  error?: string
   progress?: ExternalSourceRunProgressView
   metrics: ExternalSourceRunMetric[]
 }
@@ -398,6 +418,7 @@ export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCa
 
 export function externalSourceDetailView(row: ExternalSourceRow): ExternalSourceDetailView {
   const connector = externalSourceConnectorProfile(row.source.kind)
+  const runInProgress = row.latestRun?.status === 'running' || !!row.source.run_requested_at
   return {
     connector,
     kindLabel: connector.label,
@@ -412,7 +433,7 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
       : undefined,
     revision: row.source.revision,
     ignoreRules: row.source.ignore_rules || undefined,
-    error: row.source.last_error || undefined,
+    error: runInProgress ? undefined : (row.source.last_error || undefined),
   }
 }
 
@@ -422,6 +443,26 @@ function formatExternalSourceBytes(bytes: number) {
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   const value = bytes / 1024 ** i
   return `${value >= 10 || i === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[i]}`
+}
+
+function externalSourceRunDurationLabel(run: ExternalSourceRun) {
+  const started = new Date(run.started_at).getTime()
+  const finished = run.finished_at ? new Date(run.finished_at).getTime() : Date.now()
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) return '未知'
+  const seconds = Math.max(0, Math.round((finished - started) / 1000))
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.floor(seconds / 60)
+  const remainSeconds = seconds % 60
+  if (minutes < 60) return remainSeconds ? `${minutes} 分 ${remainSeconds} 秒` : `${minutes} 分`
+  const hours = Math.floor(minutes / 60)
+  const remainMinutes = minutes % 60
+  return remainMinutes ? `${hours} 小时 ${remainMinutes} 分` : `${hours} 小时`
+}
+
+function externalSourceRunTriggerLabel(trigger: string) {
+  if (trigger === 'manual') return '手动触发'
+  if (trigger === 'scheduled') return '计划任务'
+  return trigger || '未知'
 }
 
 export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSourceRunDetailView {
@@ -449,16 +490,28 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
 
   return {
     statusLabel: externalSourceRunStatusLabel(run.status),
+    modeLabel: run.mode === 'sync' ? '同步' : '扫描',
+    triggerLabel: externalSourceRunTriggerLabel(run.trigger),
     startedAt: run.started_at,
+    finishedAt: run.finished_at,
+    durationLabel: externalSourceRunDurationLabel(run),
+    successItems: Math.max(0, run.scanned_items - run.failed_items),
+    failedItems: Math.max(0, run.failed_items),
+    error: run.error || undefined,
     progress,
     metrics: [
       { key: 'scanned', label: '扫描', items: run.scanned_items, bytes: run.scanned_bytes },
-      { key: 'planned_transfer', label: '计划传输', items: run.planned_transfer_items, bytes: run.planned_transfer_bytes },
-      { key: 'transferred', label: '实际传输', items: run.transferred_items, bytes: run.transferred_bytes },
-      { key: 'new', label: '新增', items: run.new_items },
-      { key: 'changed', label: '变更', items: run.changed_items },
+      { key: 'ignored', label: '忽略', items: run.ignored_items, bytes: run.ignored_bytes },
+      { key: 'new', label: '新增', items: run.new_items, bytes: run.new_bytes },
+      { key: 'changed', label: '变更', items: run.changed_items, bytes: run.changed_bytes },
       { key: 'moved', label: '移动', items: run.moved_items },
-      { key: 'missing', label: '缺失', items: run.missing_items },
+      { key: 'unchanged', label: '未变化', items: run.unchanged_items, bytes: run.unchanged_bytes },
+      { key: 'missing', label: '缺失', items: run.missing_items, bytes: run.missing_bytes },
+      { key: 'planned_transfer', label: '计划传输', items: run.planned_transfer_items, bytes: run.planned_transfer_bytes },
+      { key: 'created', label: '创建', items: run.created_items },
+      { key: 'updated', label: '更新', items: run.updated_items },
+      { key: 'skipped', label: '跳过', items: run.skipped_items },
+      { key: 'transferred', label: '实际传输', items: run.transferred_items, bytes: run.transferred_bytes },
       { key: 'failed', label: '失败', items: run.failed_items },
     ],
   }
