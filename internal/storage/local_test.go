@@ -68,3 +68,20 @@ func TestLocalReady(t *testing.T) {
 		t.Fatal("expected cancelled readiness check to fail")
 	}
 }
+
+func TestLocalReportsFilesystemCapacity(t *testing.T) {
+	s, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	capacity, err := s.Capacity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capacity.TotalBytes <= 0 {
+		t.Fatalf("total capacity=%d", capacity.TotalBytes)
+	}
+	if capacity.AvailableBytes < 0 || capacity.AvailableBytes > capacity.TotalBytes {
+		t.Fatalf("invalid available capacity: %+v", capacity)
+	}
+}

@@ -143,6 +143,11 @@ test('desktop external sources expose live progress and cooperative cancellation
   assert.ok(renderer.includes('loadSources(true)'), 'missing silent Source progress refresh')
 })
 
+test('desktop cloud quota hides server disk wording for limited quotas', () => {
+  assert.ok(renderer.includes('可用空间'), 'missing cloud available-space label')
+  assert.ok(renderer.includes("cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'"), 'missing quota-aware disk visibility')
+})
+
 test('desktop external sources expose per-file failures', () => {
   assert.ok(renderer.includes('getSourceItems'), 'missing Source item query')
   assert.ok(renderer.includes('查看失败项'), 'missing per-file failure action')

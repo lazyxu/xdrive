@@ -2379,7 +2379,12 @@ export default function App() {
             )}
             {cloudQuota && (
               <div className="cloud-quota-grid">
-                <div><span>物理占用</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `of ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}</small></div>
+                <div><span>物理占用</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `配额 ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}</small></div>
+                <div>
+                  <span>可用空间</span>
+                  <strong>{formatBinarySize(cloudQuota.available_bytes)}</strong>
+                  <small>{cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'}</small>
+                </div>
                 <div><span>当前文件</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>有效逻辑内容</small></div>
                 <div><span>回收站</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>计入物理配额</small></div>
                 <div><span>历史版本</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>已保存的历史内容</small></div>

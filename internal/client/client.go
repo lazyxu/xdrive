@@ -69,12 +69,14 @@ type SearchOptions struct {
 }
 
 type QuotaUsage struct {
-	QuotaBytes        int64 `json:"quota_bytes"`
-	PhysicalUsedBytes int64 `json:"physical_used_bytes"`
-	LogicalFileBytes  int64 `json:"logical_file_bytes"`
-	TrashBytes        int64 `json:"trash_bytes"`
-	HistoryBytes      int64 `json:"history_bytes"`
-	OverQuota         bool  `json:"over_quota"`
+	QuotaBytes         int64  `json:"quota_bytes"`
+	PhysicalUsedBytes  int64  `json:"physical_used_bytes"`
+	AvailableBytes     int64  `json:"available_bytes"`
+	DiskAvailableBytes *int64 `json:"disk_available_bytes,omitempty"`
+	LogicalFileBytes   int64  `json:"logical_file_bytes"`
+	TrashBytes         int64  `json:"trash_bytes"`
+	HistoryBytes       int64  `json:"history_bytes"`
+	OverQuota          bool   `json:"over_quota"`
 }
 
 type StorageSizeBucket struct {
@@ -86,6 +88,10 @@ type StorageSizeBucket struct {
 
 type StorageStats struct {
 	Scope                     string              `json:"scope"`
+	DiskTotalBytes            *int64              `json:"disk_total_bytes,omitempty"`
+	DiskUsedBytes             *int64              `json:"disk_used_bytes,omitempty"`
+	DiskAvailableBytes        *int64              `json:"disk_available_bytes,omitempty"`
+	XDrivePhysicalBytes       *int64              `json:"xdrive_physical_bytes,omitempty"`
 	CASBlobCount              int64               `json:"cas_blob_count"`
 	CASPhysicalBytes          int64               `json:"cas_physical_bytes"`
 	CASLogicalReferencedBytes int64               `json:"cas_logical_referenced_bytes"`

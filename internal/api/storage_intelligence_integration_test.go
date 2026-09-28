@@ -102,6 +102,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if statsA.Scope != "self" {
 		t.Fatalf("scope=%q", statsA.Scope)
 	}
+	if statsA.DiskTotalBytes != nil || statsA.DiskUsedBytes != nil || statsA.DiskAvailableBytes != nil || statsA.XDrivePhysicalBytes != nil {
+		t.Fatalf("self storage stats leaked global disk capacity: %#v", statsA)
+	}
 	if statsA.CASBlobCount != 2 {
 		t.Fatalf("user A CAS blob count=%d want=2", statsA.CASBlobCount)
 	}
@@ -142,9 +145,21 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if global.Scope != "global" || global.CASBlobCount != 2 {
 		t.Fatalf("global stats=%#v", global)
 	}
+	if global.DiskTotalBytes == nil || global.DiskUsedBytes == nil || global.DiskAvailableBytes == nil || global.XDrivePhysicalBytes == nil {
+		t.Fatalf("global stats missing disk capacity: %#v", global)
+	}
+	if *global.DiskTotalBytes <= 0 || *global.DiskAvailableBytes < 0 || *global.DiskAvailableBytes > *global.DiskTotalBytes {
+		t.Fatalf("invalid global disk capacity: %#v", global)
+	}
+	if *global.DiskUsedBytes != *global.DiskTotalBytes-*global.DiskAvailableBytes {
+		t.Fatalf("disk used=%d total=%d available=%d", *global.DiskUsedBytes, *global.DiskTotalBytes, *global.DiskAvailableBytes)
+	}
 	wantGlobalLogical := int64(9 + len(large))
 	if global.CASPhysicalBytes != wantPhysical || global.CASLogicalReferencedBytes != wantGlobalLogical || global.CASDedupSavedBytes != 6 {
 		t.Fatalf("global bytes physical=%d logical=%d saved=%d", global.CASPhysicalBytes, global.CASLogicalReferencedBytes, global.CASDedupSavedBytes)
+	}
+	if *global.XDrivePhysicalBytes != global.CASPhysicalBytes+global.LegacyPhysicalBytes {
+		t.Fatalf("xdrive physical=%d want=%d", *global.XDrivePhysicalBytes, global.CASPhysicalBytes+global.LegacyPhysicalBytes)
 	}
 
 	healthRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/health", adminToken, nil, http.StatusOK)

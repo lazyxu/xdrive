@@ -23,6 +23,10 @@ type storageSizeBucketDTO struct {
 
 type storageStatsDTO struct {
 	Scope                     string                 `json:"scope"`
+	DiskTotalBytes            *int64                 `json:"disk_total_bytes,omitempty"`
+	DiskUsedBytes             *int64                 `json:"disk_used_bytes,omitempty"`
+	DiskAvailableBytes        *int64                 `json:"disk_available_bytes,omitempty"`
+	XDrivePhysicalBytes       *int64                 `json:"xdrive_physical_bytes,omitempty"`
 	CASBlobCount              int64                  `json:"cas_blob_count"`
 	CASPhysicalBytes          int64                  `json:"cas_physical_bytes"`
 	CASLogicalReferencedBytes int64                  `json:"cas_logical_referenced_bytes"`
@@ -89,6 +93,22 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "load storage statistics failed")
 		return
 	}
+	capacity, err := s.storageCapacity(ctx)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load storage capacity failed")
+		return
+	}
+	diskTotal := capacity.TotalBytes
+	diskAvailable := capacity.AvailableBytes
+	diskUsed := diskTotal - diskAvailable
+	if diskUsed < 0 {
+		diskUsed = 0
+	}
+	xdrivePhysical := stats.CASPhysicalBytes + stats.LegacyPhysicalBytes
+	stats.DiskTotalBytes = &diskTotal
+	stats.DiskUsedBytes = &diskUsed
+	stats.DiskAvailableBytes = &diskAvailable
+	stats.XDrivePhysicalBytes = &xdrivePhysical
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
 }

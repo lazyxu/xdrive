@@ -97,7 +97,7 @@ func TestUserQuotaCountsCurrentTrashAndHistory(t *testing.T) {
 	if err := json.Unmarshal(createdRes.Body.Bytes(), &managed); err != nil {
 		t.Fatal(err)
 	}
-	if managed.QuotaBytes != 20 || managed.PhysicalUsedBytes != 0 || managed.OverQuota {
+	if managed.QuotaBytes != 20 || managed.PhysicalUsedBytes != 0 || managed.AvailableBytes != 20 || managed.OverQuota {
 		t.Fatalf("created quota user=%+v", managed)
 	}
 	request(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/admin/users/%d", managed.ID), adminSession.AccessToken,
@@ -232,7 +232,7 @@ func TestUserQuotaCountsCurrentTrashAndHistory(t *testing.T) {
 	if err := json.Unmarshal(updatedRes.Body.Bytes(), &updated); err != nil {
 		t.Fatal(err)
 	}
-	if updated.PhysicalUsedBytes != 23 || !updated.OverQuota {
+	if updated.PhysicalUsedBytes != 23 || updated.AvailableBytes != 0 || !updated.OverQuota {
 		t.Fatalf("quota update response missing live usage: %+v", updated)
 	}
 	assertQuotaUsage(t, router, userSession.AccessToken, quotaUsageDTO{
@@ -291,8 +291,35 @@ func quotaUsageForTest(t *testing.T, h http.Handler, token string) quotaUsageDTO
 func assertQuotaUsage(t *testing.T, h http.Handler, token string, want quotaUsageDTO) {
 	t.Helper()
 	got := quotaUsageForTest(t, h, token)
-	if got != want {
+	if got.QuotaBytes != want.QuotaBytes ||
+		got.PhysicalUsedBytes != want.PhysicalUsedBytes ||
+		got.LogicalFileBytes != want.LogicalFileBytes ||
+		got.TrashBytes != want.TrashBytes ||
+		got.HistoryBytes != want.HistoryBytes ||
+		got.OverQuota != want.OverQuota {
 		t.Fatalf("quota usage=%+v want=%+v", got, want)
+	}
+	if got.AvailableBytes < 0 {
+		t.Fatalf("available bytes=%d", got.AvailableBytes)
+	}
+	if got.QuotaBytes > 0 {
+		if got.DiskAvailableBytes != nil {
+			t.Fatalf("limited quota leaked disk_available_bytes=%d", *got.DiskAvailableBytes)
+		}
+		remaining := got.QuotaBytes - got.PhysicalUsedBytes
+		if remaining < 0 {
+			remaining = 0
+		}
+		if got.AvailableBytes > remaining {
+			t.Fatalf("available bytes=%d exceed quota remaining=%d", got.AvailableBytes, remaining)
+		}
+	} else {
+		if got.DiskAvailableBytes == nil {
+			t.Fatal("unlimited quota did not expose disk_available_bytes")
+		}
+		if got.AvailableBytes != *got.DiskAvailableBytes {
+			t.Fatalf("unlimited available=%d disk_available=%d", got.AvailableBytes, *got.DiskAvailableBytes)
+		}
 	}
 }
 
