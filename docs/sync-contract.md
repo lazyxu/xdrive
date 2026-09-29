@@ -31,6 +31,8 @@ The first journal version is intentionally retention-free. A later retention pol
 
 On Windows, the provider captures a journal checkpoint before its startup full reconciliation. The normal 60-second remote poll then consumes only changes after that cursor. Directory subtree mutations, cursor resets, and servers that do not expose `/api/v1/changes` fall back to the existing full remote reconciliation path. The 15-minute full audit, manual sync, and restart/offline recovery remain unchanged as convergence safety nets.
 
+Windows baseline persistence uses a V2 framed transaction log at the existing state-file path. Each baseline commit appends only path-level puts/deletes with a CRC-protected frame; a truncated final frame is discarded on restart. Legacy V1 whole-file JSON baselines migrate automatically on first load. The log is compacted atomically after 10,000 appended frames or roughly 64 MiB of delta data.
+
 ## Continuous CI coverage
 
 | Layer | Direction | Scenario | Primary test |

@@ -528,12 +528,18 @@ func TestWindowsCfAPIRestartAndOfflineConflict(t *testing.T) {
 			if err != nil {
 				return false
 			}
-			var state winBaselineStateFile
-			if json.Unmarshal(data, &state) != nil {
+			probePath := statePath + ".probe"
+			if err := os.WriteFile(probePath, data, 0o600); err != nil {
 				return false
 			}
-			entry, ok := state.Entries["remote.txt"]
-			return ok && entry.Node.Revision == want
+			defer os.Remove(probePath)
+			reader := &winProvider{statePath: probePath, policy: newSyncPolicy(Options{})}
+			state, ok, err := reader.loadPersistedBaseline()
+			if err != nil || !ok {
+				return false
+			}
+			entry, ok := state["remote.txt"]
+			return ok && entry.node.Revision == want
 		})
 	}
 
