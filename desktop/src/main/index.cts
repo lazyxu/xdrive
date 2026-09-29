@@ -124,9 +124,15 @@ let windowsUserTasksDiagnostic: { status: 'PASS' | 'WARN'; detail: string } = {
   status: 'PASS',
   detail: '当前平台不需要注册 Windows 任务栏快捷操作。',
 }
+let rendererRecoveryExhausted = false
+let rendererRecoveryDialogPending = false
+let gpuSafeModeRelaunchPending = false
+const gpuCrashTimes: number[] = []
 const startupDesktopAction = desktopShortcutActionFromArgs(process.argv)
 const backgroundLaunch = process.argv.includes('--background') ||
   (startupDesktopAction !== null && !desktopShortcutShowsWindow(startupDesktopAction))
+const hardwareAccelerationDisabled = process.argv.includes('--disable-gpu')
+if (hardwareAccelerationDisabled) app.disableHardwareAcceleration()
 const desktopPreferencesName = 'desktop-settings.json'
 const loginHistoryName = 'desktop-login-history.json'
 
@@ -177,6 +183,44 @@ async function failDesktopStartup(event: string, error: unknown) {
   }
 
   app.exit(1)
+}
+
+async function showRendererRecoveryDialog() {
+  if (rendererRecoveryDialogPending || quitting) return
+  rendererRecoveryDialogPending = true
+  try {
+    const logDirectory = desktopLifecycleLogDirectory()
+    const result = await dialog.showMessageBox({
+      type: 'error',
+      title: 'xDrive Desktop 界面恢复',
+      message: 'xDrive Desktop 界面进程连续崩溃，已停止自动重载。',
+      detail: `你可以重新加载界面，或打开日志目录排查问题。\n\n日志目录：${logDirectory}`,
+      buttons: ['重新加载界面', '打开日志目录', '退出 xDrive'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    })
+    if (result.response === 0) {
+      rendererRecoveryExhausted = false
+      lifecycleLog?.record('renderer_manual_reload')
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reload()
+        mainWindow.show()
+        mainWindow.focus()
+      }
+      return
+    }
+    if (result.response === 1) {
+      const openError = await shell.openPath(logDirectory)
+      if (openError) lifecycleLog?.record('renderer_log_folder_open_failed', { error: openError })
+      return
+    }
+    requestDesktopQuit('renderer-recovery-dialog')
+  } catch (error) {
+    lifecycleLog?.record('renderer_recovery_dialog_failed', { error: formatLifecycleError(error) })
+  } finally {
+    rendererRecoveryDialogPending = false
+  }
 }
 
 function requestDesktopQuit(reason: string) {
@@ -373,6 +417,10 @@ async function handleMainWindowClose(win: BrowserWindow) {
 }
 
 function showMainWindow() {
+  if (rendererRecoveryExhausted) {
+    void showRendererRecoveryDialog()
+    return
+  }
   if (!mainWindow) return
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
@@ -382,6 +430,7 @@ function showMainWindow() {
 function showDesktopView(view: DesktopViewTarget) {
   pendingDesktopView = view
   showMainWindow()
+  if (rendererRecoveryExhausted) return
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoading()) return
   mainWindow.webContents.send('desktop:navigate', view)
   pendingDesktopView = null
@@ -508,10 +557,27 @@ function createMainWindow(showOnReady = true) {
       new Error('Desktop renderer did not finish loading within 15 seconds.'),
     )
   }, 15_000)
+  let rendererCrashTimes: number[] = []
+  let rendererRecoveryStableTimer: NodeJS.Timeout | null = null
   const clearRendererLoadTimer = () => {
     if (!rendererLoadTimer) return
     clearTimeout(rendererLoadTimer)
     rendererLoadTimer = null
+  }
+  const clearRendererRecoveryStableTimer = () => {
+    if (!rendererRecoveryStableTimer) return
+    clearTimeout(rendererRecoveryStableTimer)
+    rendererRecoveryStableTimer = null
+  }
+  const markRendererRecoveryStable = () => {
+    clearRendererRecoveryStableTimer()
+    if (rendererCrashTimes.length === 0) return
+    rendererRecoveryStableTimer = setTimeout(() => {
+      rendererCrashTimes = []
+      rendererRecoveryExhausted = false
+      rendererRecoveryStableTimer = null
+      lifecycleLog?.record('renderer_recovery_stable')
+    }, 30_000)
   }
 
   win.on('move', () => scheduleWindowStateSave(win))
@@ -536,6 +602,7 @@ function createMainWindow(showOnReady = true) {
   })
   win.on('closed', () => {
     clearRendererLoadTimer()
+    clearRendererRecoveryStableTimer()
     if (mainWindow === win) mainWindow = null
   })
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -562,6 +629,28 @@ function createMainWindow(showOnReady = true) {
       reason: details.reason,
       exit_code: details.exitCode,
     })
+    if (quitting) return
+    if (!['crashed', 'oom', 'abnormal-exit', 'launch-failed', 'integrity-failure', 'killed'].includes(details.reason)) return
+
+    clearRendererRecoveryStableTimer()
+    const now = Date.now()
+    rendererCrashTimes = rendererCrashTimes.filter((at) => now - at <= 60_000)
+    rendererCrashTimes.push(now)
+    if (rendererCrashTimes.length === 1) {
+      lifecycleLog?.record('renderer_recovery_reload', { attempt: 1, reason: details.reason })
+      setTimeout(() => {
+        if (!quitting && !win.isDestroyed()) win.webContents.reload()
+      }, 250)
+      return
+    }
+
+    rendererRecoveryExhausted = true
+    lifecycleLog?.record('renderer_recovery_exhausted', {
+      crashes: rendererCrashTimes.length,
+      window_ms: 60_000,
+      reason: details.reason,
+    })
+    if (win.isVisible()) void showRendererRecoveryDialog()
   })
   win.on('unresponsive', () => lifecycleLog?.record('window_unresponsive'))
   win.webContents.on('before-input-event', (event, input) => {
@@ -591,11 +680,16 @@ function createMainWindow(showOnReady = true) {
     startupCheckpoint('window_ready_to_show')
     if (showOnReady) win.show()
   })
-  win.webContents.once('did-finish-load', () => {
+  win.webContents.on('did-finish-load', () => {
     clearRendererLoadTimer()
-    startupRendererReady = true
-    startupCheckpoint('renderer_loaded')
-    markStartupCompleteIfReady()
+    if (!startupRendererReady) {
+      startupRendererReady = true
+      startupCheckpoint('renderer_loaded')
+      markStartupCompleteIfReady()
+    } else if (rendererCrashTimes.length > 0) {
+      lifecycleLog?.record('renderer_recovery_loaded', { crashes: rendererCrashTimes.length })
+    }
+    markRendererRecoveryStable()
     win.webContents.send('agent:state', agentState)
     publishDesktopWindowState(win)
     if (pendingDesktopView) {
@@ -855,6 +949,13 @@ function withDesktopCompatibility(report: AgentDiagnosticReport, hello: AgentHel
       name: 'Windows 任务栏快捷操作',
       status: windowsUserTasksDiagnostic.status,
       detail: windowsUserTasksDiagnostic.detail,
+    })
+    desktopChecks.push({
+      name: '桌面图形加速',
+      status: hardwareAccelerationDisabled ? 'WARN' : 'PASS',
+      detail: hardwareAccelerationDisabled
+        ? '检测到重复 GPU 崩溃后已禁用硬件加速，当前运行在兼容模式。'
+        : '硬件加速已启用；重复 GPU 崩溃时会自动切换到兼容模式。',
     })
   }
   const checks = [...report.checks, ...desktopChecks]
@@ -1763,6 +1864,34 @@ if (!primaryInstance) {
       exit_code: details.exitCode,
       service_name: details.serviceName,
     })
+    if (
+      process.platform !== 'win32' ||
+      details.type !== 'GPU' ||
+      quitting ||
+      hardwareAccelerationDisabled ||
+      gpuSafeModeRelaunchPending ||
+      !['crashed', 'oom', 'abnormal-exit', 'launch-failed'].includes(details.reason)
+    ) {
+      return
+    }
+
+    const now = Date.now()
+    while (gpuCrashTimes.length > 0 && now - gpuCrashTimes[0] > 60_000) gpuCrashTimes.shift()
+    gpuCrashTimes.push(now)
+    if (gpuCrashTimes.length < 2) return
+
+    gpuSafeModeRelaunchPending = true
+    lifecycleLog?.record('gpu_safe_mode_relaunch', {
+      crashes: gpuCrashTimes.length,
+      window_ms: 60_000,
+      reason: details.reason,
+    })
+    app.relaunch({
+      args: [...process.argv.slice(1).filter((arg) => arg !== '--disable-gpu'), '--disable-gpu'],
+    })
+    quitting = true
+    quitReason = 'gpu-safe-mode-relaunch'
+    app.exit(0)
   })
   app.on('second-instance', (_event, commandLine) => {
     const action = desktopShortcutActionFromArgs(commandLine)
@@ -1782,7 +1911,7 @@ if (!primaryInstance) {
   })
   app.on('quit', (_event, exitCode) => lifecycleLog?.cleanExit(quitReason, exitCode))
   void app.whenReady().then(async () => {
-    startupCheckpoint('electron_ready')
+    startupCheckpoint('electron_ready', { hardware_acceleration: hardwareAccelerationDisabled ? 'disabled' : 'enabled' })
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
     nativeTheme.themeSource = 'system'
     nativeTheme.on('updated', () => {
