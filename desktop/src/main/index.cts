@@ -23,7 +23,7 @@ import { desktopBuildInfo } from './build_metadata.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { trayTransferPresentation } from './tray_transfers.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
-import { taskbarOverlayKind } from './taskbar_attention.cjs'
+import { taskbarOverlayDataURL, taskbarOverlayKind } from './taskbar_attention.cjs'
 import { editContextMenuTemplate } from './edit_context_menu.cjs'
 import {
   desktopShortcutActionFromArgs,
@@ -376,6 +376,19 @@ function desktopWindowBackground() {
   return nativeTheme.shouldUseDarkColors ? '#0f141d' : '#f5f7fb'
 }
 
+function desktopWindowState(win = mainWindow) {
+  return {
+    maximized: !!win?.isMaximized(),
+    minimized: !!win?.isMinimized(),
+    fullscreen: !!win?.isFullScreen(),
+  }
+}
+
+function publishDesktopWindowState(win: BrowserWindow) {
+  if (win.isDestroyed()) return
+  win.webContents.send('desktop:window-state', desktopWindowState(win))
+}
+
 function requestTaskbarAttention() {
   if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed() || mainWindow.isFocused()) return
   mainWindow.flashFrame(true)
@@ -397,6 +410,7 @@ function createMainWindow(showOnReady = true) {
     minWidth: 900,
     minHeight: 600,
     show: false,
+    frame: false,
     title: 'xDrive 桌面版',
     icon: desktopRuntimeIconPath(),
     backgroundColor: desktopWindowBackground(),
@@ -412,8 +426,18 @@ function createMainWindow(showOnReady = true) {
   if (desktopPreferences.window_maximized) win.maximize()
   win.on('move', () => scheduleWindowStateSave(win))
   win.on('resize', () => scheduleWindowStateSave(win))
-  win.on('maximize', () => scheduleWindowStateSave(win))
-  win.on('unmaximize', () => scheduleWindowStateSave(win))
+  win.on('maximize', () => {
+    scheduleWindowStateSave(win)
+    publishDesktopWindowState(win)
+  })
+  win.on('unmaximize', () => {
+    scheduleWindowStateSave(win)
+    publishDesktopWindowState(win)
+  })
+  win.on('minimize', () => publishDesktopWindowState(win))
+  win.on('restore', () => publishDesktopWindowState(win))
+  win.on('enter-full-screen', () => publishDesktopWindowState(win))
+  win.on('leave-full-screen', () => publishDesktopWindowState(win))
   win.on('focus', () => win.flashFrame(false))
   win.on('close', (event) => {
     if (quitting) return
@@ -457,6 +481,7 @@ function createMainWindow(showOnReady = true) {
   })
   win.webContents.once('did-finish-load', () => {
     win.webContents.send('agent:state', agentState)
+    publishDesktopWindowState(win)
     if (pendingDesktopView) {
       win.webContents.send('desktop:navigate', pendingDesktopView)
       pendingDesktopView = null
@@ -482,9 +507,8 @@ function trayStatusAssetPath(kind: TrayStatusKind) {
 }
 
 function taskbarOverlayImage(kind: 'conflict' | 'offline') {
-  const assetPath = trayStatusAssetPath(kind)
-  const image = nativeImage.createFromPath(assetPath)
-  if (image.isEmpty()) throw new Error(`xDrive taskbar overlay icon is missing or invalid: ${assetPath}`)
+  const image = nativeImage.createFromDataURL(taskbarOverlayDataURL(kind))
+  if (image.isEmpty()) throw new Error(`xDrive taskbar overlay badge is invalid: ${kind}`)
   return image.resize({ width: 16, height: 16 })
 }
 
@@ -915,6 +939,14 @@ function registerIPCHandlers() {
   ipcMain.handle('desktop:get-startup', () => ({ start_at_login: desktopPreferences.start_at_login }))
   ipcMain.handle('desktop:get-preferences', () => publicDesktopPreferences())
   ipcMain.handle('desktop:get-login-history', () => loginHistorySnapshot())
+  ipcMain.handle('desktop:get-window-state', () => desktopWindowState())
+  ipcMain.on('desktop:window-minimize', () => mainWindow?.minimize())
+  ipcMain.on('desktop:window-toggle-maximize', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+  })
+  ipcMain.on('desktop:window-close', () => mainWindow?.close())
   ipcMain.handle('desktop:set-startup', async (_event, enabled: unknown) => {
     if (typeof enabled !== 'boolean') {
       return { ok: false, error: { code: 'invalid_input', message: 'start_at_login must be a boolean.' } }

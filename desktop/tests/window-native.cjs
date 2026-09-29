@@ -17,3 +17,14 @@ test('desktop remembers window state and exposes configurable close behavior', (
   assert.ok(main.includes("ipcMain.handle('desktop:set-close-to-tray'"), 'missing close-behavior IPC')
   assert.ok(renderer.includes('关闭窗口时最小化到系统托盘'), 'missing close-behavior setting')
 })
+
+
+test('desktop uses one custom frameless titlebar with native window actions', () => {
+  assert.ok(main.includes('frame: false'), 'Desktop BrowserWindow should disable the native titlebar')
+  assert.ok(main.includes("ipcMain.on('desktop:window-minimize'"), 'missing custom minimize IPC')
+  assert.ok(main.includes("ipcMain.on('desktop:window-toggle-maximize'"), 'missing custom maximize/restore IPC')
+  assert.ok(main.includes("ipcMain.on('desktop:window-close'"), 'missing custom close IPC')
+  assert.ok(main.includes("mainWindow?.close()"), 'custom close must route through the existing close-to-tray behavior')
+  assert.ok(renderer.includes('desktop-titlebar'), 'renderer must provide the custom titlebar')
+  assert.ok(renderer.includes('desktop-window-close'), 'renderer must provide a close control')
+})
