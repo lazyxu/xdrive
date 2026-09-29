@@ -2916,16 +2916,16 @@ export default function App() {
                                             <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
                                               <Typography variant="body2">{historyDetail.progress.label}</Typography>
                                               {canCancel && (
-                                                <MuiButton
-                                                  type="button"
-                                                  size="small"
-                                                  color="warning"
-                                                  variant="outlined"
+                                                <XDriveActionButton
+                                                  compact
+                                                  intent="warning"
                                                   disabled={!!busy || historyDetail.progress.cancelling}
+                                                  loading={historyDetail.progress.cancelling || busy === 'source-cancel-' + run.id}
+                                                  loadingLabel="正在取消…"
                                                   onClick={() => void cancelSourceRunNow(row)}
                                                 >
-                                                  {historyDetail.progress.cancelling || busy === 'source-cancel-' + run.id ? '正在取消…' : '停止'}
-                                                </MuiButton>
+                                                  停止
+                                                </XDriveActionButton>
                                               )}
                                             </Stack>
                                             <LinearProgress
@@ -2958,9 +2958,9 @@ export default function App() {
                                             </div>
                                           ))}
                                         </div>
-                                        <MuiAlert severity={historyDetail.error ? 'error' : 'success'} sx={{ mt: 1.25 }}>
+                                        <XDriveStatusAlert tone={historyDetail.error ? 'bad' : 'good'} sx={{ mt: 1.25 }}>
                                           运行日志：{historyDetail.error || '无错误日志'}
-                                        </MuiAlert>
+                                        </XDriveStatusAlert>
                                         {historyDetail.failedItems > 0 && (
                                           <MuiBox sx={{ mt: 1.25 }}>
                                             <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>本次失败文件</Typography>
@@ -2979,37 +2979,33 @@ export default function App() {
                                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
                                                       {failure.external_id} · {formatExternalSourceTime(failure.failed_at)}
                                                     </Typography>
-                                                    <MuiAlert severity="error" sx={{ mt: 0.75 }}>{failure.error}</MuiAlert>
+                                                    <XDriveStatusAlert tone="bad" sx={{ mt: 0.75 }}>{failure.error}</XDriveStatusAlert>
                                                   </MuiBox>
                                                 ))}
                                                 <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                                                  <MuiButton
-                                                    type="button"
-                                                    size="small"
-                                                    variant="outlined"
+                                                  <XDriveActionButton
+                                                    compact
                                                     disabled={failurePage.loading || failurePage.page <= 1}
                                                     onClick={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page - 1)}
                                                   >
                                                     上一页
-                                                  </MuiButton>
+                                                  </XDriveActionButton>
                                                   <Typography variant="caption" color="text.secondary">
                                                     失败项第 {failurePage.page} 页 · 每页 {SOURCE_RUN_FAILURE_PAGE_SIZE} 条
                                                   </Typography>
-                                                  <MuiButton
-                                                    type="button"
-                                                    size="small"
-                                                    variant="outlined"
+                                                  <XDriveActionButton
+                                                    compact
                                                     disabled={failurePage.loading || !failurePage.hasNext}
                                                     onClick={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page + 1)}
                                                   >
                                                     下一页
-                                                  </MuiButton>
+                                                  </XDriveActionButton>
                                                 </Stack>
                                               </Stack>
                                             ) : failurePage?.loaded ? (
-                                              <MuiAlert severity="warning">
+                                              <XDriveStatusAlert tone="warning">
                                                 该历史 Run 记录了 {historyDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
-                                              </MuiAlert>
+                                              </XDriveStatusAlert>
                                             ) : (
                                               <Typography variant="caption" color="text.secondary">展开后加载本次失败文件明细。</Typography>
                                             )}
@@ -3020,27 +3016,23 @@ export default function App() {
                                   )
                                 })}
                                 <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                                  <MuiButton
-                                    type="button"
-                                    size="small"
-                                    variant="outlined"
+                                  <XDriveActionButton
+                                    compact
                                     disabled={sourceHistoryLoading || sourceHistoryPage <= 1}
                                     onClick={() => void loadSourceHistory(row.source.id, sourceHistoryPage - 1)}
                                   >
                                     上一页
-                                  </MuiButton>
+                                  </XDriveActionButton>
                                   <Typography variant="caption" color="text.secondary">
                                     第 {sourceHistoryPage} 页 · 每页 {SOURCE_HISTORY_PAGE_SIZE} 条
                                   </Typography>
-                                  <MuiButton
-                                    type="button"
-                                    size="small"
-                                    variant="outlined"
+                                  <XDriveActionButton
+                                    compact
                                     disabled={sourceHistoryLoading || !sourceHistoryHasNext}
                                     onClick={() => void loadSourceHistory(row.source.id, sourceHistoryPage + 1)}
                                   >
                                     下一页
-                                  </MuiButton>
+                                  </XDriveActionButton>
                                 </Stack>
                               </Stack>
                             )}
@@ -3049,8 +3041,8 @@ export default function App() {
                             <Typography variant="caption" color="text.secondary">正在检查逐文件失败记录…</Typography>
                           )}
                           {failedItems.length > 0 && (
-                            <MuiAlert
-                              severity="error"
+                            <XDriveStatusAlert
+                              tone="bad"
                               sx={{ mt: 1.5 }}
                               action={(
                                 <Stack direction="row" spacing={0.5}>
@@ -3069,7 +3061,7 @@ export default function App() {
                               )}
                             >
                               当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
-                            </MuiAlert>
+                            </XDriveStatusAlert>
                           )}
                         </div>
                       )}
@@ -4047,7 +4039,7 @@ export default function App() {
         />
         <DialogContent dividers className="desktop-dialog-content">
           {sourceFailedItemsLimitReached && (
-            <MuiAlert severity="info" sx={{ mb: 2 }}>当前最多显示前 1000 个失败项。</MuiAlert>
+            <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>当前最多显示前 1000 个失败项。</XDriveStatusAlert>
           )}
           <Stack spacing={1.5}>
             {sourceFailedItems.map((item) => (
@@ -4061,13 +4053,13 @@ export default function App() {
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
                   外部 ID：{item.external_id}
                 </Typography>
-                <MuiAlert severity="error" sx={{ mt: 1 }}>{item.last_error || '未提供具体错误原因'}</MuiAlert>
+                <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{item.last_error || '未提供具体错误原因'}</XDriveStatusAlert>
               </MuiBox>
             ))}
           </Stack>
         </DialogContent>
         <XDriveDialogActions>
-          <MuiButton onClick={() => setSourceFailedItemsOpen(false)}>关闭</MuiButton>
+          <XDriveActionButton onClick={() => setSourceFailedItemsOpen(false)}>关闭</XDriveActionButton>
         </XDriveDialogActions>
       </Dialog>
 
@@ -4091,10 +4083,16 @@ export default function App() {
           </DialogContentText>
         </DialogContent>
         <XDriveDialogActions>
-          <MuiButton disabled={busy.startsWith('source-delete-')} onClick={() => setSourceDeleteTarget(null)}>取消</MuiButton>
-          <MuiButton color="error" variant="contained" disabled={busy.startsWith('source-delete-')} onClick={() => void deleteExternalSource()}>
-            {busy.startsWith('source-delete-') ? '正在删除…' : '删除来源'}
-          </MuiButton>
+          <XDriveActionButton disabled={busy.startsWith('source-delete-')} onClick={() => setSourceDeleteTarget(null)}>取消</XDriveActionButton>
+          <XDriveActionButton
+            intent="danger"
+            disabled={busy.startsWith('source-delete-')}
+            loading={busy.startsWith('source-delete-')}
+            loadingLabel="正在删除…"
+            onClick={() => void deleteExternalSource()}
+          >
+            删除来源
+          </XDriveActionButton>
         </XDriveDialogActions>
       </Dialog>
 
