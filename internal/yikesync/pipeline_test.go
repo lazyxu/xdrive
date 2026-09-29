@@ -113,6 +113,104 @@ func (e *blockingPipelineExecutor) Execute(ctx context.Context, plan client.Sour
 	}, nil
 }
 
+type pageFlushPipelineRemote struct {
+	firstPageObserved <-chan struct{}
+	page2SawObserved  chan bool
+}
+
+func (r *pageFlushPipelineRemote) UserInfo(context.Context) (yike.UserInfo, error) {
+	return yike.UserInfo{YouaID: "123"}, nil
+}
+
+func (r *pageFlushPipelineRemote) ListFilesPage(_ context.Context, cursor string) (yike.FileList, error) {
+	if cursor == "" {
+		return yike.FileList{
+			Page: yike.Page{HasMore: 1, Cursor: "next"},
+			List: []yike.File{{FSID: 1, Path: "/first.jpg", Size: 10, MTime: 100}},
+		}, nil
+	}
+	observed := false
+	select {
+	case <-r.firstPageObserved:
+		observed = true
+	default:
+	}
+	r.page2SawObserved <- observed
+	return yike.FileList{
+		Page: yike.Page{HasMore: 0},
+		List: []yike.File{{FSID: 2, Path: "/second.jpg", Size: 20, MTime: 200}},
+	}, nil
+}
+
+func (r *pageFlushPipelineRemote) ListAlbumsPage(context.Context, string) (yike.AlbumList, error) {
+	return yike.AlbumList{Page: yike.Page{HasMore: 0}}, nil
+}
+
+func (r *pageFlushPipelineRemote) ListAlbumFilesPage(context.Context, string, string) (yike.AlbumFileList, error) {
+	return yike.AlbumFileList{Page: yike.Page{HasMore: 0}}, nil
+}
+
+type pageFlushPipelineAPI struct {
+	pipelineTestAPI
+	firstObserved chan struct{}
+	once          sync.Once
+}
+
+func (a *pageFlushPipelineAPI) ObserveSourceItems(
+	ctx context.Context,
+	sourceID uint64,
+	runID string,
+	items []client.SourceObservation,
+) ([]client.SourcePlan, error) {
+	a.once.Do(func() { close(a.firstObserved) })
+	return a.pipelineTestAPI.ObserveSourceItems(ctx, sourceID, runID, items)
+}
+
+func TestScannerSyncFlushesPartialBatchAtPageBoundary(t *testing.T) {
+	firstObserved := make(chan struct{})
+	remote := &pageFlushPipelineRemote{
+		firstPageObserved: firstObserved,
+		page2SawObserved:  make(chan bool, 1),
+	}
+	api := &pageFlushPipelineAPI{firstObserved: firstObserved}
+	executor := &blockingPipelineExecutor{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	close(executor.release)
+
+	result, err := (Scanner{
+		Remote:            remote,
+		API:               api,
+		SourceID:          1,
+		RunID:             "run-page-flush",
+		Mode:              meta.SourceRunModeSync,
+		Executor:          executor,
+		TransferQueueSize: 1,
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case observed := <-remote.page2SawObserved:
+		if !observed {
+			t.Fatal("second Yike page was requested before the partial first-page batch was planned")
+		}
+	default:
+		t.Fatal("scanner did not request the second Yike page")
+	}
+	if result.RootItems != 2 || result.Summary.NewItems != 2 || result.Summary.FailedItems != 0 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	api.mu.Lock()
+	commits := api.commits
+	api.mu.Unlock()
+	if commits != 2 {
+		t.Fatalf("commits=%d want=2", commits)
+	}
+}
+
 func TestScannerSyncPipelinesScanAheadOfTransfer(t *testing.T) {
 	remote := &pipelineTestRemote{page2Seen: make(chan struct{}, 1)}
 	api := &pipelineTestAPI{}

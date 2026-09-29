@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -39,13 +40,14 @@ func (f *fakeRemote) ListAlbumFilesPage(_ context.Context, albumID, cursor strin
 }
 
 type fakeSourceAPI struct {
-	observed   [][]client.SourceObservation
-	commits    [][]client.SourceCommit
-	failures   [][]client.SourceFailure
-	progress   []sourcepkg.Summary
-	heartbeats int
-	action     string
-	commitErr  error
+	observed    [][]client.SourceObservation
+	commits     [][]client.SourceCommit
+	failures    [][]client.SourceFailure
+	progress    []sourcepkg.Summary
+	heartbeatMu sync.Mutex
+	heartbeats  int
+	action      string
+	commitErr   error
 }
 
 func (f *fakeSourceAPI) ObserveSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceObservation) ([]client.SourcePlan, error) {
@@ -80,7 +82,9 @@ func (f *fakeSourceAPI) UpdateSourceRunSummary(_ context.Context, _ uint64, _ st
 }
 
 func (f *fakeSourceAPI) HeartbeatSourceRun(context.Context, uint64, string) error {
+	f.heartbeatMu.Lock()
 	f.heartbeats++
+	f.heartbeatMu.Unlock()
 	return nil
 }
 
