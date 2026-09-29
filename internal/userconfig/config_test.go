@@ -3,6 +3,7 @@ package userconfig
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -242,5 +243,79 @@ func TestLoadMigratesPlaintextTokens(t *testing.T) {
 	}
 	if _, err := NewClient(cfg); err != nil {
 		t.Fatalf("migrated credential cannot create client: %v", err)
+	}
+}
+
+func TestInvalidateSessionPreservesSettingsAndBlocksClientUntilRelogin(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("APPDATA", filepath.Join(root, "config"))
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("USERPROFILE", filepath.Join(root, "home"))
+	t.Setenv("XD_DISABLE_SECRET_SERVICE", "1")
+
+	cfg := Config{
+		Server:          "https://example.test",
+		MountPath:       filepath.Join(root, "mount"),
+		Paused:          true,
+		CacheLimitBytes: 7 << 30,
+		SyncRules:       []SyncRule{{Path: "archive", Mode: SyncModeExclude}},
+	}
+	if err := cfg.ApplyAuth(client.AuthResponse{
+		AccessToken: "access-old", RefreshToken: "refresh-old",
+		ExpiresIn: 900, RefreshExpiresIn: 3600,
+		Username: "alice", Role: "user",
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := cfg.SessionID
+
+	if err := InvalidateSession(cfg); err != nil {
+		t.Fatal(err)
+	}
+	invalid, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !invalid.SessionInvalid {
+		t.Fatal("session was not marked invalid")
+	}
+	if invalid.Server != cfg.Server || invalid.Username != "alice" || invalid.MountPath != cfg.MountPath ||
+		invalid.CacheLimitBytes != cfg.CacheLimitBytes || !invalid.Paused ||
+		len(invalid.SyncRules) != 1 || invalid.SyncRules[0].Path != "archive" {
+		t.Fatalf("settings were not preserved: %+v", invalid)
+	}
+	if invalid.SessionID != sessionID {
+		t.Fatalf("session id changed: got=%q want=%q", invalid.SessionID, sessionID)
+	}
+	if _, err := NewClient(invalid); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("NewClient error=%v want ErrSessionInvalid", err)
+	}
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secretstore.Load(dir, sessionID); !errors.Is(err, secretstore.ErrNotFound) {
+		t.Fatalf("invalid credential still exists: %v", err)
+	}
+
+	if err := invalid.ApplyAuth(client.AuthResponse{
+		AccessToken: "access-new", RefreshToken: "refresh-new",
+		ExpiresIn: 900, RefreshExpiresIn: 3600,
+		Username: "alice", Role: "user",
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	if invalid.SessionInvalid {
+		t.Fatal("successful login did not clear invalid-session marker")
+	}
+	if err := Save(invalid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewClient(invalid); err != nil {
+		t.Fatalf("relogged session cannot create client: %v", err)
 	}
 }

@@ -211,6 +211,26 @@ func (c *agentController) Run() {
 		}
 	}
 
+	expireSession := func(d desiredMount, cause error) {
+		stopMount()
+		invalidateErr := userconfig.InvalidateSession(d.cfg)
+		c.transfers.Clear()
+		c.setSnapshot(func(s *agentSnapshot) {
+			s.Configured = false
+			s.Username = d.cfg.Username
+			s.Server = d.cfg.Server
+			s.MountPath = d.root
+			s.AuthStatus = "需要重新登录"
+			s.SyncStatus = "等待登录"
+			s.Paused = d.cfg.Paused
+			s.MustChangePassword = false
+			s.LastError = ""
+		})
+		if invalidateErr != nil {
+			log.Printf("invalidate expired xDrive session after %v: %v", cause, invalidateErr)
+		}
+	}
+
 	refreshServerBuild := func(d desiredMount) {
 		if serverVersionKey != d.key {
 			serverVersionKey = d.key
@@ -273,13 +293,28 @@ func (c *agentController) Run() {
 				stopMount()
 			}
 			c.transfers.Clear()
-			c.setSnapshot(func(s *agentSnapshot) {
-				*s = agentSnapshot{
-					AuthStatus: "未登录",
-					SyncStatus: "等待登录",
-					Version:    version.String(),
-				}
-			})
+			if errors.Is(loadErr, userconfig.ErrSessionInvalid) {
+				c.setSnapshot(func(s *agentSnapshot) {
+					*s = agentSnapshot{
+						Configured: false,
+						Username:   d.cfg.Username,
+						Server:     d.cfg.Server,
+						MountPath:  d.root,
+						AuthStatus: "需要重新登录",
+						SyncStatus: "等待登录",
+						Paused:     d.cfg.Paused,
+						Version:    version.String(),
+					}
+				})
+			} else {
+				c.setSnapshot(func(s *agentSnapshot) {
+					*s = agentSnapshot{
+						AuthStatus: "未登录",
+						SyncStatus: "等待登录",
+						Version:    version.String(),
+					}
+				})
+			}
 			conflictKey = ""
 			serverVersionKey = ""
 			lastServerVersionCheck = time.Time{}
@@ -398,11 +433,15 @@ func (c *agentController) Run() {
 					})
 					return
 				}
-				if apiErr.Status == 401 || apiErr.Status == 403 {
+				if apiErr.Status == 401 {
+					expireSession(d, err)
+					return
+				}
+				if apiErr.Status == 403 {
 					stopMount()
 					c.setSnapshot(func(s *agentSnapshot) {
-						s.AuthStatus = "登录已过期"
-						s.SyncStatus = "需要重新登录"
+						s.AuthStatus = "访问被拒绝"
+						s.SyncStatus = "同步已停止"
 						s.LastError = err.Error()
 					})
 					return
@@ -430,10 +469,14 @@ func (c *agentController) Run() {
 		cancel()
 		if err != nil {
 			var apiErr *client.APIError
-			if errors.As(err, &apiErr) && (apiErr.Status == 401 || apiErr.Status == 403) {
+			if errors.As(err, &apiErr) && apiErr.Status == 401 {
+				expireSession(d, err)
+				return
+			}
+			if errors.As(err, &apiErr) && apiErr.Status == 403 {
 				c.setSnapshot(func(s *agentSnapshot) {
-					s.AuthStatus = "登录已过期"
-					s.SyncStatus = "需要重新登录"
+					s.AuthStatus = "访问被拒绝"
+					s.SyncStatus = "同步已停止"
 					s.LastError = err.Error()
 				})
 				return
@@ -477,6 +520,13 @@ func (c *agentController) Run() {
 			mountCancel = nil
 			mountDone = nil
 			if err != nil && !errors.Is(err, context.Canceled) {
+				var apiErr *client.APIError
+				if errors.As(err, &apiErr) && apiErr.Status == 401 {
+					if d, loadErr := loadDesired(); loadErr == nil {
+						expireSession(d, err)
+						continue
+					}
+				}
 				c.setSnapshot(func(s *agentSnapshot) {
 					s.SyncStatus = "同步错误"
 					s.LastError = err.Error()
@@ -1271,11 +1321,15 @@ func loadDesired() (desiredMount, error) {
 	}
 	root, err := userconfig.EffectiveMountPath(cfg)
 	if err != nil {
-		return desiredMount{}, err
+		return desiredMount{cfg: cfg}, err
+	}
+	d := desiredMount{root: root, cfg: cfg}
+	if cfg.SessionInvalid {
+		return d, userconfig.ErrSessionInvalid
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
-		return desiredMount{}, err
+		return d, err
 	}
-	key := cfg.Server + "\x00" + cfg.SessionID + "\x00" + root + "\x00" + cfg.StoragePolicyKey()
-	return desiredMount{key: key, root: root, cfg: cfg}, nil
+	d.key = cfg.Server + "\x00" + cfg.SessionID + "\x00" + root + "\x00" + cfg.StoragePolicyKey()
+	return d, nil
 }

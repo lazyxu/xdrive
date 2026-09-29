@@ -24,7 +24,10 @@ const (
 
 const DefaultCacheLimitBytes int64 = 20 << 30
 
-var sessionRefreshLocks sync.Map
+var (
+	sessionRefreshLocks sync.Map
+	ErrSessionInvalid   = errors.New("xDrive session is invalid; please log in again")
+)
 
 type SyncRule struct {
 	Path string `json:"path"`
@@ -37,6 +40,7 @@ type Config struct {
 	Username           string     `json:"username"`
 	Role               string     `json:"role,omitempty"`
 	MustChangePassword bool       `json:"must_change_password,omitempty"`
+	SessionInvalid     bool       `json:"session_invalid,omitempty"`
 	MountPath          string     `json:"mount_path,omitempty"`
 	Paused             bool       `json:"paused,omitempty"`
 	SyncRules          []SyncRule `json:"sync_rules,omitempty"`
@@ -189,6 +193,25 @@ func loadRaw() (Config, error) {
 	return cfg, nil
 }
 
+func InvalidateSession(cfg Config) error {
+	if strings.TrimSpace(cfg.Server) == "" || strings.TrimSpace(cfg.SessionID) == "" {
+		return ErrSessionInvalid
+	}
+	cfg.SessionInvalid = true
+	cfg.MustChangePassword = false
+	if err := Save(cfg); err != nil {
+		return fmt.Errorf("persist invalid xDrive session: %w", err)
+	}
+	dir, err := Dir()
+	if err != nil {
+		return err
+	}
+	if err := secretstore.Delete(dir, cfg.SessionID); err != nil {
+		return fmt.Errorf("delete invalid xDrive credential: %w", err)
+	}
+	return nil
+}
+
 func Remove() error {
 	cfg, rawErr := loadRaw()
 	dir, dirErr := Dir()
@@ -224,6 +247,7 @@ func (cfg *Config) ApplyAuth(resp client.AuthResponse, _ bool) error {
 	cfg.Username = resp.Username
 	cfg.Role = resp.Role
 	cfg.MustChangePassword = resp.MustChangePassword
+	cfg.SessionInvalid = false
 	dir, err := Dir()
 	if err != nil {
 		return err
@@ -241,6 +265,9 @@ func (cfg *Config) ApplyAuth(resp client.AuthResponse, _ bool) error {
 }
 
 func NewClient(cfg Config) (*client.Client, error) {
+	if cfg.SessionInvalid {
+		return nil, ErrSessionInvalid
+	}
 	dir, err := Dir()
 	if err != nil {
 		return nil, err
