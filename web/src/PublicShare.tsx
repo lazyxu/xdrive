@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DownloadOutlined, FileOutlined, LockOutlined } from '@ant-design/icons'
-import { Alert, Card, Input, Space, Typography } from 'antd'
-import { XDriveActionButton, XDriveStatePanel } from '@xdrive/ui/mui'
+import { Card, Input, Space, Typography } from 'antd'
+import { XDriveActionButton, XDriveStatePanel, XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import type { PublicShare } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
@@ -70,7 +70,7 @@ export default function PublicShareView({ token }: { token: string }) {
         </div>
 
         {loading && <XDriveStatePanel variant="plain" loading message="正在加载分享…" />}
-        {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 18 }} />}
+        {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
 
         {share && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -101,7 +101,7 @@ export default function PublicShareView({ token }: { token: string }) {
               />
             )}
 
-            {exhausted && <Alert type="warning" showIcon message="此分享已达到下载上限。" />}
+            {exhausted && <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert>}
 
             <XDriveActionButton
               intent="primary"
