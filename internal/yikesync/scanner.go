@@ -172,6 +172,15 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		return nil
 	}
 
+	finishPage := func() error {
+		if mode == meta.SourceRunModeSync {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
+	}
+
 	add := func(ownerUK int64, file yike.File, albumFile *yike.AlbumFile) (string, bool, error) {
 		externalID, err := yike.ExternalID(ownerUK, file.FSID)
 		if err != nil {
@@ -231,7 +240,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 					return err
 				}
 			}
-			return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
+			return finishPage()
 		},
 	); err != nil {
 		return result, fmt.Errorf("scan Yike root library: %w", err)
@@ -281,7 +290,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 					}
 					position++
 				}
-				return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
+				return finishPage()
 			},
 		); err != nil {
 			return result, fmt.Errorf("scan Yike album %q: %w", album.Title, err)
