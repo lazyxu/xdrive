@@ -52,6 +52,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceRunProgress,
   XDriveSourceFailureItem,
+  XDriveSourceRunSummary,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -2868,7 +2869,7 @@ export default function App() {
                               <Typography variant="caption" color="text.secondary">尚无运行记录</Typography>
                             ) : (
                               <Stack spacing={1}>
-                                {sourceHistoryRuns.map((run, index) => {
+                                {sourceHistoryRuns.map((run) => {
                                   const historyDetail = externalSourceRunDetailView(run)
                                   const canCancel = run.status === 'running' && row.latestRun?.id === run.id
                                   const failurePage = sourceRunFailurePages[run.id]
@@ -2885,29 +2886,11 @@ export default function App() {
                                       sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
                                     >
                                       <MuiBox component="summary" sx={{ cursor: 'pointer', p: 1.25 }}>
-                                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ width: '100%', pr: 1 }}>
-                                          <MuiBox>
-                                            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
-                                              <Typography variant="body2" fontWeight={700}>
-                                                #{(sourceHistoryPage - 1) * SOURCE_HISTORY_PAGE_SIZE + index + 1}
-                                              </Typography>
-                                              <XDriveStatusBadge tone={historyDetail.statusTone} label={historyDetail.statusLabel} />
-                                              <Chip size="small" label={historyDetail.modeLabel} />
-                                              <Chip size="small" label={historyDetail.triggerLabel} />
-                                            </Stack>
-                                            <Typography variant="caption" color="text.secondary">
-                                              {formatExternalSourceTime(historyDetail.startedAt)}
-                                              {historyDetail.finishedAt ? ' → ' + formatExternalSourceTime(historyDetail.finishedAt) : ' → 进行中'}
-                                              {' · ' + historyDetail.durationLabel}
-                                            </Typography>
-                                          </MuiBox>
-                                          <Stack direction="row" spacing={1}>
-                                            <Typography variant="caption">成功 {historyDetail.successItems.toLocaleString('zh-CN')}</Typography>
-                                            <Typography variant="caption" color={historyDetail.failedItems > 0 ? 'error' : 'text.secondary'}>
-                                              失败 {historyDetail.failedItems.toLocaleString('zh-CN')}
-                                            </Typography>
-                                          </Stack>
-                                        </Stack>
+                                        <XDriveSourceRunSummary
+                                          runNumber={run.run_number}
+                                          detail={historyDetail}
+                                          wideAt="md"
+                                        />
                                       </MuiBox>
                                       <MuiBox sx={{ px: 1.5, pb: 1.5 }}>
                                         {historyDetail.progress && (
