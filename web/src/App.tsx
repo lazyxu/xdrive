@@ -18,7 +18,6 @@ import {
   CloudSyncOutlined,
 } from '@ant-design/icons'
 import {
-  Alert,
   Breadcrumb,
   Button,
   Card,
@@ -36,6 +35,7 @@ import {
   message,
 } from 'antd'
 import type { UploadProps } from 'antd'
+import { XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type { FileVersion, MeResult, Node, QuotaUsage } from '../../ui/shared/src'
@@ -165,7 +165,7 @@ function AuthView({ api, serverBuild, onAuthenticated }: { api: XDriveApi; serve
             <div style={{ marginTop: 6 }}><Tag>Server {serverBuild?.version || '未知'}</Tag></div>
           </div>
         </div>
-        {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 18 }} />}
+        {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
         <Form layout="vertical" onFinish={submit} requiredMark={false}>
           <Form.Item label="用户名" name="username" rules={[{ required: true }, { min: 3, max: 64 }]}>
             <Input autoFocus autoComplete="username" />
@@ -302,12 +302,9 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
         </Header>
         <Content className="content-wrap">
           <Card className="auth-card" title="修改临时密码">
-            <Alert
-              type="warning"
-              showIcon
-              message="管理员要求先修改密码，之后才能访问文件。"
-              style={{ marginBottom: 18 }}
-            />
+            <XDriveStatusAlert tone="warning" sx={{ mb: 2.25 }}>
+              管理员要求先修改密码，之后才能访问文件。
+            </XDriveStatusAlert>
             <Form
               form={passwordForm}
               layout="vertical"

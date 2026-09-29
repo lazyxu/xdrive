@@ -34,7 +34,8 @@ const forbidText = (source, values, label) => {
   }
 }
 
-requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹', '版本历史'], '文件管理器')
+requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹', '版本历史', 'XDriveStatusAlert'], '文件管理器')
+if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
 requireText(files.app, ['src={xDriveBrandIcon}'], 'xDrive 品牌图标')
 if ((files.app.match(/src=\{xDriveBrandIcon\}/g) || []).length !== 3) {
   throw new Error('Web 应在登录页和两个导航品牌位统一使用主应用图标')
@@ -47,8 +48,10 @@ requireText(files.storageStats, ['XDriveStatusBadge', 'XDriveStatusAlert', "run.
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
 requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录'], '审计日志')
-requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveShareStatusBadge'], '分享窗口')
-requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数'], '公开分享')
+requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveShareStatusBadge', 'XDriveStatusAlert'], '分享窗口')
+if (/<Alert\b/.test(files.share)) throw new Error('分享窗口仍在直接渲染 AntD Alert')
+requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数', 'XDriveStatusAlert'], '公开分享')
+if (/<Alert\b/.test(files.publicShare)) throw new Error('公开分享仍在直接渲染 AntD Alert')
 requireText(files.sources + files.externalSourcesShared, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveStatusAlert'], '外部来源')
 if (files.sources.includes('<DialogTitle')) throw new Error('Web 外部来源仍在直接渲染原生 DialogTitle')
 if (files.sources.includes('<MuiAlert')) throw new Error('Web 外部来源仍在直接渲染原生 MUI Alert')

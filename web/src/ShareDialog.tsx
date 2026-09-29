@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CopyOutlined, DeleteOutlined, LinkOutlined, LockOutlined } from '@ant-design/icons'
-import { Alert, Button, Form, Input, InputNumber, Modal, Space, Table, Typography, message } from 'antd'
-import { XDriveShareStatusBadge } from '@xdrive/ui/mui'
+import { Button, Form, Input, InputNumber, Modal, Space, Table, Typography, message } from 'antd'
+import { XDriveShareStatusBadge, XDriveStatusAlert } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 import type { FileShare, Node } from '../../ui/shared/src'
 
@@ -110,13 +110,9 @@ export default function ShareDialog({
       width={940}
       destroyOnClose
     >
-      <Alert
-        type="info"
-        showIcon
-        message="分享令牌只显示一次"
-        description="xDrive 只保存单向令牌哈希。请立即复制新创建的链接；已有链接可以撤销，但无法再次显示。"
-        style={{ marginBottom: 18 }}
-      />
+      <XDriveStatusAlert tone="neutral" title="分享令牌只显示一次" sx={{ mb: 2.25 }}>
+        xDrive 只保存单向令牌哈希。请立即复制新创建的链接；已有链接可以撤销，但无法再次显示。
+      </XDriveStatusAlert>
 
       {createdLink && (
         <Space.Compact style={{ width: '100%', marginBottom: 18 }}>
