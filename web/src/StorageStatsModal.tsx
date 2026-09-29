@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Col, Modal, Row, Space, Statistic, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Accordion, AccordionDetails, AccordionSummary, Chip, Stack, Typography as MuiTypography } from '@mui/material'
-import { XDriveStatusBadge } from '@xdrive/ui/mui'
+import { XDriveStatusAlert, XDriveStatusBadge } from '@xdrive/ui/mui'
 import type {
   StorageDecision,
   StorageHealth,
@@ -298,14 +298,12 @@ export default function StorageStatsModal({
       {stats && (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           {scope === 'global' && health && (
-            <Alert
-              type={health.status === 'fail' ? 'error' : health.status === 'warning' ? 'warning' : 'success'}
-              showIcon
-              message={health.status === 'fail' ? 'CAS 元数据存在一致性问题' : health.status === 'warning' ? 'CAS 元数据正常，但垃圾回收有积压' : 'CAS 元数据健康'}
-              description={
-                `ready ${health.ready_blobs.toLocaleString()} · deleting ${health.deleting_blobs.toLocaleString()} · stale ${health.stale_deleting_blobs.toLocaleString()} · missing metadata ${health.missing_metadata.toLocaleString()} · refcount drift ${health.refcount_mismatches.toLocaleString()} · state drift ${health.state_mismatches.toLocaleString()} · size drift ${health.size_mismatches.toLocaleString()} · key/hash drift ${health.key_hash_mismatches.toLocaleString()} · invalid state ${health.invalid_states.toLocaleString()}`
-              }
-            />
+            <XDriveStatusAlert
+              tone={health.status === 'fail' ? 'bad' : health.status === 'warning' ? 'warning' : 'good'}
+              title={health.status === 'fail' ? 'CAS 元数据存在一致性问题' : health.status === 'warning' ? 'CAS 元数据正常，但垃圾回收有积压' : 'CAS 元数据健康'}
+            >
+              {`ready ${health.ready_blobs.toLocaleString()} · deleting ${health.deleting_blobs.toLocaleString()} · stale ${health.stale_deleting_blobs.toLocaleString()} · missing metadata ${health.missing_metadata.toLocaleString()} · refcount drift ${health.refcount_mismatches.toLocaleString()} · state drift ${health.state_mismatches.toLocaleString()} · size drift ${health.size_mismatches.toLocaleString()} · key/hash drift ${health.key_hash_mismatches.toLocaleString()} · invalid state ${health.invalid_states.toLocaleString()}`}
+            </XDriveStatusAlert>
           )}
 
           {scope === 'global' &&
