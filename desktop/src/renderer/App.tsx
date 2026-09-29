@@ -1958,15 +1958,13 @@ export default function App() {
                 onChange={(event) => setLoginMount(event.target.value)}
                 placeholder="使用默认 xDrive 文件夹"
               />
-              <MuiButton
+              <XDriveActionButton
                 className="auth-folder-button"
-                type="button"
-                size="small"
-                variant="outlined"
+                compact
                 onClick={() => void chooseDirectory(loginMount, setLoginMount)}
               >
                 浏览
-              </MuiButton>
+              </XDriveActionButton>
             </MuiBox>
             <MuiBox className="auth-options">
               <FormControlLabel
@@ -3299,7 +3297,7 @@ export default function App() {
                   )}
                 </DialogContent>
                 <XDriveDialogActions>
-                  <MuiButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</MuiButton>
+                  <XDriveActionButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</XDriveActionButton>
                 </XDriveDialogActions>
               </Dialog>
             )}
@@ -3342,7 +3340,7 @@ export default function App() {
                   )}
                 </DialogContent>
                 <XDriveDialogActions>
-                  <MuiButton
+                  <XDriveActionButton
                     disabled={!!busy}
                     onClick={() => {
                       setCloudHistoryNode(null)
@@ -3351,7 +3349,7 @@ export default function App() {
                     }}
                   >
                     关闭
-                  </MuiButton>
+                  </XDriveActionButton>
                 </XDriveDialogActions>
               </Dialog>
             )}
@@ -3385,7 +3383,7 @@ export default function App() {
                   {createdShareURL && (
                     <div className="share-created-row">
                       <input value={createdShareURL} readOnly />
-                      <MuiButton variant="contained" onClick={() => void copyShareURL()}>复制链接</MuiButton>
+                      <XDriveActionButton intent="primary" onClick={() => void copyShareURL()}>复制链接</XDriveActionButton>
                     </div>
                   )}
 
@@ -3407,9 +3405,15 @@ export default function App() {
                       密码（可选）
                       <input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} placeholder="至少 8 个字符" />
                     </label>
-                    <MuiButton variant="contained" disabled={!!busy} onClick={() => void createCloudShare()}>
-                      {busy === 'cloud-share-create' ? '正在创建…' : '创建分享链接'}
-                    </MuiButton>
+                    <XDriveActionButton
+                      intent="primary"
+                      disabled={!!busy}
+                      loading={busy === 'cloud-share-create'}
+                      loadingLabel="正在创建…"
+                      onClick={() => void createCloudShare()}
+                    >
+                      创建分享链接
+                    </XDriveActionButton>
                   </div>
 
                   <div className="cloud-compact-list">
@@ -3429,7 +3433,7 @@ export default function App() {
                   </div>
                 </DialogContent>
                 <XDriveDialogActions>
-                  <MuiButton
+                  <XDriveActionButton
                     disabled={!!busy}
                     onClick={() => {
                       setCloudShareNode(null)
@@ -3438,7 +3442,7 @@ export default function App() {
                     }}
                   >
                     关闭
-                  </MuiButton>
+                  </XDriveActionButton>
                 </XDriveDialogActions>
               </Dialog>
             )}
@@ -3852,13 +3856,14 @@ export default function App() {
                     </MuiBox>
                   ) : null}
                   {clientUpdate.release_url ? (
-                    <MuiButton
-                      size="small"
-                      sx={{ mt: 1 }}
-                      onClick={() => void window.xdriveDesktop.openExternal(clientUpdate.release_url || '')}
-                    >
-                      查看发布页面
-                    </MuiButton>
+                    <MuiBox sx={{ mt: 1 }}>
+                      <XDriveActionButton
+                        compact
+                        onClick={() => void window.xdriveDesktop.openExternal(clientUpdate.release_url || '')}
+                      >
+                        查看发布页面
+                      </XDriveActionButton>
+                    </MuiBox>
                   ) : null}
 
                   {(clientUpdate.status === 'downloading' || clientUpdate.bytes_done || clientUpdate.bytes_total) ? (
@@ -4013,14 +4018,13 @@ export default function App() {
           <DialogContentText>{confirmDialog?.message ?? ''}</DialogContentText>
         </DialogContent>
         <XDriveDialogActions>
-          <MuiButton onClick={() => setConfirmDialog(null)}>取消</MuiButton>
-          <MuiButton
-            variant="contained"
-            color={confirmDialog?.tone ?? 'primary'}
+          <XDriveActionButton onClick={() => setConfirmDialog(null)}>取消</XDriveActionButton>
+          <XDriveActionButton
+            intent={confirmDialog?.tone === 'error' ? 'danger' : confirmDialog?.tone === 'warning' ? 'warning' : 'primary'}
             onClick={() => void confirmPendingAction()}
           >
             {confirmDialog?.confirmLabel ?? '确认'}
-          </MuiButton>
+          </XDriveActionButton>
         </XDriveDialogActions>
       </Dialog>
 
