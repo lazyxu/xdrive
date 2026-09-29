@@ -826,8 +826,9 @@ export default function ExternalSourcesPanel({
                             <MuiBox>
                               <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
                                 <MuiTypography variant="body2" sx={{ fontWeight: 700 }}>
-                                  #{run.run_number > 0 ? run.run_number : '—'} · {runDetail.statusLabel}
+                                  #{run.run_number > 0 ? run.run_number : '—'}
                                 </MuiTypography>
+                                <XDriveStatusBadge tone={runDetail.statusTone} label={runDetail.statusLabel} />
                                 <Chip size="small" label={runDetail.modeLabel} />
                                 <Chip size="small" label={runDetail.triggerLabel} />
                               </Stack>
@@ -876,6 +877,9 @@ export default function ExternalSourcesPanel({
                           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
                             <Descriptions.Item label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</Descriptions.Item>
                             <Descriptions.Item label="内部运行 ID"><Typography.Text copyable>{run.id}</Typography.Text></Descriptions.Item>
+                            <Descriptions.Item label="运行状态">
+                              <XDriveStatusBadge tone={runDetail.statusTone} label={runDetail.statusLabel} />
+                            </Descriptions.Item>
                             <Descriptions.Item label="耗时">{runDetail.durationLabel}</Descriptions.Item>
                             <Descriptions.Item label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</Descriptions.Item>
                             <Descriptions.Item label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</Descriptions.Item>

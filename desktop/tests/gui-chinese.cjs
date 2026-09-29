@@ -200,6 +200,11 @@ test('desktop cloud shares use the cross-client MUI share status badge', () => {
   assert.equal(renderer.includes('function shareStatusLabel('), false, 'desktop still owns a share status label mapper')
 })
 
+test('desktop external-source run history uses shared status tones', () => {
+  assert.ok(renderer.includes('tone={historyDetail.statusTone} label={historyDetail.statusLabel}'), 'run history does not use the shared status tone')
+  assert.equal(renderer.includes('· {historyDetail.statusLabel}'), false, 'run history still renders an untyped status label inline')
+})
+
 test('desktop external-source status uses the cross-client MUI badge', () => {
   assert.ok(sharedStatusBadge.includes('export function XDriveStatusBadge({'), 'shared status badge is missing')
   assert.ok(renderer.includes('<XDriveStatusBadge tone={card.state.tone} label={card.state.label} />'), 'desktop source cards do not use the shared status badge')

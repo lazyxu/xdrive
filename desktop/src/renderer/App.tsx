@@ -2569,8 +2569,9 @@ export default function App() {
                                           <MuiBox>
                                             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
                                               <Typography variant="body2" fontWeight={700}>
-                                                #{(sourceHistoryPage - 1) * SOURCE_HISTORY_PAGE_SIZE + index + 1} · {historyDetail.statusLabel}
+                                                #{(sourceHistoryPage - 1) * SOURCE_HISTORY_PAGE_SIZE + index + 1}
                                               </Typography>
+                                              <XDriveStatusBadge tone={historyDetail.statusTone} label={historyDetail.statusLabel} />
                                               <Chip size="small" label={historyDetail.modeLabel} />
                                               <Chip size="small" label={historyDetail.triggerLabel} />
                                             </Stack>
@@ -2619,7 +2620,7 @@ export default function App() {
                                         )}
                                         <div className="source-run-grid">
                                           <div><span>运行 ID</span><strong>{run.id}</strong></div>
-                                          <div><span>运行状态</span><strong>{historyDetail.statusLabel}</strong></div>
+                                          <div><span>运行状态</span><XDriveStatusBadge tone={historyDetail.statusTone} label={historyDetail.statusLabel} /></div>
                                           <div><span>触发方式</span><strong>{historyDetail.triggerLabel}</strong></div>
                                           <div><span>耗时</span><strong>{historyDetail.durationLabel}</strong></div>
                                           <div><span>开始时间</span><strong>{formatExternalSourceTime(historyDetail.startedAt)}</strong></div>
