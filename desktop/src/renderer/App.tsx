@@ -1758,13 +1758,14 @@ export default function App() {
   if (!configured) {
     return renderDesktopFrame(
       <div className="center-shell">
-        <form className="auth-panel" onSubmit={login}>
+        <form className="auth-panel auth-panel-form" onSubmit={login}>
           <p className="eyebrow">登录</p>
           <h1>{headline}</h1>
           <p className="subtitle">凭据会直接传递给 Go Agent，Electron 渲染进程不会接触 access token 或 refresh token。</p>
-          <Stack spacing={1.75} sx={{ mt: 1.5 }}>
+          <Stack className="auth-form" spacing={2}>
             <Autocomplete
               freeSolo
+              size="small"
               options={serverOptions}
               inputValue={server}
               onInputChange={(_event, value, reason) => {
@@ -1774,11 +1775,19 @@ export default function App() {
                 if (typeof value === 'string') selectLoginServer(value)
               }}
               renderInput={(params) => (
-                <TextField {...params} label="服务器" placeholder="https://drive.example.com" required />
+                <TextField
+                  {...params}
+                  fullWidth
+                  size="small"
+                  label="服务器"
+                  placeholder="https://drive.example.com"
+                  required
+                />
               )}
             />
             <Autocomplete
               freeSolo
+              size="small"
               options={usernameOptions}
               inputValue={username}
               onInputChange={(_event, value, reason) => {
@@ -1788,10 +1797,12 @@ export default function App() {
                 if (typeof value === 'string') selectLoginUsername(value)
               }}
               renderInput={(params) => (
-                <TextField {...params} label="用户名" autoComplete="username" required />
+                <TextField {...params} fullWidth size="small" label="用户名" autoComplete="username" required />
               )}
             />
             <TextField
+              fullWidth
+              size="small"
               label="密码"
               type="password"
               value={password}
@@ -1801,22 +1812,31 @@ export default function App() {
               placeholder={savedPasswordAvailable ? '已保存密码（留空继续使用）' : undefined}
               helperText={savedPasswordAvailable ? '已找到此服务器和用户名对应的安全保存密码。' : undefined}
             />
-            <Stack direction="row" spacing={1} alignItems="center">
+            <MuiBox className="auth-folder-row">
               <TextField
                 fullWidth
+                size="small"
                 label="同步文件夹（可选）"
                 value={loginMount}
                 onChange={(event) => setLoginMount(event.target.value)}
                 placeholder="使用默认 xDrive 文件夹"
               />
-              <MuiButton type="button" variant="outlined" onClick={() => void chooseDirectory(loginMount, setLoginMount)}>
+              <MuiButton
+                className="auth-folder-button"
+                type="button"
+                size="small"
+                variant="outlined"
+                onClick={() => void chooseDirectory(loginMount, setLoginMount)}
+              >
                 浏览
               </MuiButton>
-            </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0, sm: 2 }}>
+            </MuiBox>
+            <MuiBox className="auth-options">
               <FormControlLabel
+                className="auth-option"
                 control={(
                   <Checkbox
+                    size="small"
                     checked={rememberPassword}
                     disabled={!loginHistory.secure_password_storage}
                     onChange={(event) => {
@@ -1829,8 +1849,10 @@ export default function App() {
                 label="记住密码"
               />
               <FormControlLabel
+                className="auth-option"
                 control={(
                   <Checkbox
+                    size="small"
                     checked={autoLogin}
                     disabled={!loginHistory.secure_password_storage || !rememberPassword}
                     onChange={(event) => setAutoLogin(event.target.checked)}
@@ -1838,15 +1860,26 @@ export default function App() {
                 )}
                 label="自动登录"
               />
-            </Stack>
-            <Typography variant="caption" color={loginHistory.secure_password_storage ? 'text.secondary' : 'warning.main'}>
+            </MuiBox>
+            <MuiAlert
+              className="auth-security-note"
+              severity={loginHistory.secure_password_storage ? 'info' : 'warning'}
+              variant="outlined"
+            >
               {loginHistory.secure_password_storage
                 ? '保存的密码由操作系统安全凭据能力加密，登录历史文件不保存密码明文。'
                 : '当前系统没有可用的安全凭据存储，因此“记住密码”和“自动登录”已禁用。'}
-            </Typography>
-            <MuiButton fullWidth variant="contained" type="submit" disabled={busy === 'login'}>
-              {busy === 'login' ? '正在登录…' : '登录'}
-            </MuiButton>
+            </MuiAlert>
+            <XDriveActionButton
+              className="auth-submit"
+              fullWidth
+              intent="primary"
+              type="submit"
+              loading={busy === 'login'}
+              loadingLabel="正在登录…"
+            >
+              登录
+            </XDriveActionButton>
           </Stack>
         </form>
       </div>
@@ -1856,23 +1889,54 @@ export default function App() {
   if (status?.must_change_password) {
     return renderDesktopFrame(
       <div className="center-shell">
-        <form className="auth-panel" onSubmit={changePassword}>
+        <form className="auth-panel auth-panel-form" onSubmit={changePassword}>
           <p className="eyebrow">需要修改密码</p>
           <h1>{headline}</h1>
           <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
-          <label>当前密码<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required /></label>
-          <label>新密码<input type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required /></label>
-          <label>确认新密码<input type="password" minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></label>
-          <XDriveActionButton
-            className="wide"
-            fullWidth
-            intent="primary"
-            type="submit"
-            loading={busy === 'password'}
-            loadingLabel="正在更新…"
-          >
-            修改密码
-          </XDriveActionButton>
+          <Stack className="auth-form" spacing={2}>
+            <TextField
+              fullWidth
+              size="small"
+              label="当前密码"
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="新密码"
+              type="password"
+              inputProps={{ minLength: 8 }}
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              autoComplete="new-password"
+              required
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="确认新密码"
+              type="password"
+              inputProps={{ minLength: 8 }}
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              autoComplete="new-password"
+              required
+            />
+            <XDriveActionButton
+              className="auth-submit"
+              fullWidth
+              intent="primary"
+              type="submit"
+              loading={busy === 'password'}
+              loadingLabel="正在更新…"
+            >
+              修改密码
+            </XDriveActionButton>
+          </Stack>
         </form>
       </div>
     )

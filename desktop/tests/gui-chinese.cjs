@@ -280,3 +280,17 @@ test('desktop GUI does not regress to key English labels', () => {
     assert.equal(main.includes(text), false, `English desktop system label returned: ${text}`)
   }
 })
+
+
+test('desktop auth forms use MUI controls without legacy CSS overriding MUI internals', () => {
+  assert.ok(renderer.includes('className="auth-panel auth-panel-form"'), 'auth forms must use the dedicated MUI form surface')
+  assert.ok(renderer.includes('className="auth-folder-row"'), 'sync-folder input and browse action need one aligned row')
+  assert.ok(renderer.includes('className="auth-options"'), 'remember/auto-login controls need one aligned option row')
+  assert.ok(renderer.includes('className="auth-security-note"'), 'credential-storage explanation needs a dedicated feedback surface')
+  assert.ok(renderer.includes('<XDriveActionButton\n              className="auth-submit"'), 'auth submit actions should use the shared MUI action button')
+  assert.equal(renderer.includes('<label>当前密码<input'), false, 'password-change form must not keep native label/input markup')
+  assert.equal(styles.includes('.auth-panel label,'), false, 'legacy auth label CSS must not override MUI InputLabel')
+  assert.equal(styles.includes('.auth-panel input,'), false, 'legacy auth input CSS must not override MUI InputBase')
+  assert.ok(styles.includes('.auth-folder-button.MuiButton-root { min-width: 76px; height: 40px; }'), 'browse button must align to compact TextField height')
+  assert.ok(styles.includes('.auth-options .auth-option.MuiFormControlLabel-root { margin: 0; }'), 'checkbox labels must not inherit detached margins')
+})
