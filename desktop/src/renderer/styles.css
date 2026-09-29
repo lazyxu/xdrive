@@ -129,11 +129,6 @@ button.primary, button.secondary, button.danger { border-radius: 10px; padding: 
 .secondary { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-mid); }
 .danger { border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger-text); }
 .wide { width: 100%; margin-top: 20px; }
-.alert { margin-top: 18px; border-radius: 11px; padding: 11px 14px; font-size: 13px; }
-.alert.error { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text); }
-.alert.success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text); }
-.alert.warning { background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text); }
-
 .status-grid { margin-top: 28px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
 .status-card { min-height: 112px; border: 1px solid var(--border); border-radius: 16px; padding: 20px; background: var(--surface); display: flex; gap: 14px; box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 55%, transparent); }
 .status-card strong { font-size: 15px; }
@@ -226,11 +221,6 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 .update-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width .18s ease; }
 .update-progress small, .update-footnote { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
 .update-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.update-message, .update-error, .update-unavailable { border-radius: 10px; padding: 9px 11px; font-size: 11px; line-height: 1.45; }
-.update-message { background: var(--info-bg); color: var(--info-text); }
-.update-error { background: var(--danger-bg); color: var(--danger-text); }
-.update-unavailable { background: var(--surface-subtle); color: var(--text-muted); }
-
 @media (max-width: 980px) {
   .update-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .update-metrics > div:nth-child(2) { border-right: 0; }

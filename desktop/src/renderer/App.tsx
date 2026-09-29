@@ -7,6 +7,7 @@ import {
   Button as MuiButton,
   Checkbox,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -22,6 +23,7 @@ import {
   Menu,
   MenuItem,
   Select,
+  Snackbar,
   Stack,
   Switch,
   TextField,
@@ -138,6 +140,52 @@ function DesktopFrame({ children, maximized }: { children: ReactNode; maximized:
       </header>
       <div className="desktop-body">{children}</div>
     </div>
+  )
+}
+
+type DesktopActionIntent = 'primary' | 'secondary' | 'danger'
+
+function DesktopActionButton({
+  children,
+  loading = false,
+  loadingLabel,
+  intent = 'secondary',
+  disabled = false,
+  type = 'button',
+  form,
+  fullWidth = false,
+  className,
+  onClick,
+}: {
+  children: ReactNode
+  loading?: boolean
+  loadingLabel?: string
+  intent?: DesktopActionIntent
+  disabled?: boolean
+  type?: 'button' | 'submit'
+  form?: string
+  fullWidth?: boolean
+  className?: string
+  onClick?: () => void
+}) {
+  const primary = intent === 'primary'
+  const danger = intent === 'danger'
+  return (
+    <MuiButton
+      className={className}
+      size="small"
+      variant={primary ? 'contained' : 'outlined'}
+      color={danger ? 'error' : primary ? 'primary' : 'inherit'}
+      disabled={disabled || loading}
+      type={type}
+      form={form}
+      fullWidth={fullWidth}
+      onClick={onClick}
+      startIcon={loading ? <CircularProgress size={14} thickness={5} color="inherit" /> : undefined}
+      sx={{ minHeight: 36, borderRadius: 2, whiteSpace: 'nowrap' }}
+    >
+      {loading ? (loadingLabel || children) : children}
+    </MuiButton>
   )
 }
 
@@ -1690,8 +1738,33 @@ export default function App() {
     setConflicts(result.data)
   }
 
+  const dismissFeedback = () => {
+    setError('')
+    setNotice('')
+  }
+
   const renderDesktopFrame = (content: ReactNode) => (
-    <DesktopFrame maximized={windowMaximized}>{content}</DesktopFrame>
+    <DesktopFrame maximized={windowMaximized}>
+      {content}
+      <Snackbar
+        open={Boolean(error || notice)}
+        autoHideDuration={error ? null : 4000}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          dismissFeedback()
+        }}
+      >
+        <MuiAlert
+          severity={error ? 'error' : 'success'}
+          variant="filled"
+          onClose={dismissFeedback}
+          sx={{ width: '100%', maxWidth: 520, alignItems: 'flex-start', boxShadow: 3 }}
+        >
+          {error || notice}
+        </MuiAlert>
+      </Snackbar>
+    </DesktopFrame>
   )
 
   if (!agent.connected) {
@@ -1702,14 +1775,24 @@ export default function App() {
           <h1>{headline}</h1>
           <p className="subtitle">xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。</p>
           <div className="offline-box">{agent.error || '正在等待桌面 IPC 连接…'}</div>
-          {error && <div className="alert error">{error}</div>}
           <div className="offline-actions">
-            <button className="primary" type="button" disabled={!!busy} onClick={() => void retry()}>
-              {busy === 'retry' ? '正在连接…' : '重试连接'}
-            </button>
-            <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent()}>
-              {busy === 'restart-agent' ? '正在重启…' : '启动 / 重启 Agent'}
-            </button>
+            <DesktopActionButton
+              intent="primary"
+              disabled={!!busy}
+              loading={busy === 'retry'}
+              loadingLabel="正在连接…"
+              onClick={() => void retry()}
+            >
+              重试连接
+            </DesktopActionButton>
+            <DesktopActionButton
+              disabled={!!busy}
+              loading={busy === 'restart-agent'}
+              loadingLabel="正在重启…"
+              onClick={() => void restartAgent()}
+            >
+              启动 / 重启 Agent
+            </DesktopActionButton>
           </div>
           <p className="footnote">{info ? `桌面版 ${info.version} · ${platformLabel(info.platform)} ${info.arch}` : '正在加载桌面信息…'}</p>
         </section>
@@ -1724,7 +1807,6 @@ export default function App() {
           <p className="eyebrow">登录</p>
           <h1>{headline}</h1>
           <p className="subtitle">凭据会直接传递给 Go Agent，Electron 渲染进程不会接触 access token 或 refresh token。</p>
-          {error && <div className="alert error">{error}</div>}
           <Stack spacing={1.75} sx={{ mt: 1.5 }}>
             <Autocomplete
               freeSolo
@@ -1823,12 +1905,19 @@ export default function App() {
           <p className="eyebrow">需要修改密码</p>
           <h1>{headline}</h1>
           <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
-          {error && <div className="alert error">{error}</div>}
-          {notice && <div className="alert success">{notice}</div>}
           <label>当前密码<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" required /></label>
           <label>新密码<input type="password" minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" required /></label>
           <label>确认新密码<input type="password" minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" required /></label>
-          <button className="primary wide" type="submit" disabled={busy === 'password'}>{busy === 'password' ? '正在更新…' : '修改密码'}</button>
+          <DesktopActionButton
+            className="wide"
+            fullWidth
+            intent="primary"
+            type="submit"
+            loading={busy === 'password'}
+            loadingLabel="正在更新…"
+          >
+            修改密码
+          </DesktopActionButton>
         </form>
       </div>
     )
@@ -2005,9 +2094,6 @@ export default function App() {
           </Stack>
         ) : null}
 
-        {error && <div className="alert error">{error}</div>}
-        {notice && <div className="alert success">{notice}</div>}
-
         {view === 'overview' && (
           <>
             <section className="status-grid">
@@ -2020,7 +2106,13 @@ export default function App() {
             <section className="system-card">
               <div className="section-heading">
                 <div><p className="eyebrow">同步位置</p><h2>{status?.mount_path || '默认 xDrive 文件夹'}</h2></div>
-                <button className="secondary" type="button" onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}>打开</button>
+                <DesktopActionButton
+                  loading={busy === 'folder'}
+                  loadingLabel="正在打开…"
+                  onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}
+                >
+                  打开
+                </DesktopActionButton>
               </div>
               <dl>
                 <div><dt>服务器</dt><dd>{status?.server}</dd></div>
@@ -2043,12 +2135,17 @@ export default function App() {
                 <p className="source-note">来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的 Cookie 明文。</p>
               </div>
               <div className="source-heading-actions">
-                <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadSources()}>
-                  {busy === 'sources' ? '正在刷新…' : '刷新'}
-                </button>
-                <button className="primary" type="button" disabled={!!busy} onClick={() => void openSourceCreate()}>
+                <DesktopActionButton
+                  disabled={!!busy}
+                  loading={busy === 'sources'}
+                  loadingLabel="正在刷新…"
+                  onClick={() => void loadSources()}
+                >
+                  刷新
+                </DesktopActionButton>
+                <DesktopActionButton intent="primary" disabled={!!busy} onClick={() => void openSourceCreate()}>
                   + 添加来源
-                </button>
+                </DesktopActionButton>
               </div>
             </div>
 
@@ -2194,9 +2291,9 @@ export default function App() {
                   </label>
                 )}
                 {sourceCreateKind === 'synology_photos' && (
-                  <div className="alert warning source-create-note">
+                  <MuiAlert severity="warning" className="source-create-note">
                     创建 Source 后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
-                  </div>
+                  </MuiAlert>
                 )}
                   </form>
                 </DialogContent>
@@ -2677,17 +2774,29 @@ export default function App() {
                 <p className="cloud-note">云端操作通过 xdrive-agent 执行，渲染进程不会接触服务器 access token 或 refresh token。</p>
               </div>
               <div className="cloud-heading-actions">
-                <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudTrash()}>
+                <DesktopActionButton
+                  disabled={!!busy}
+                  loading={busy === 'cloud-trash'}
+                  loadingLabel="正在打开…"
+                  onClick={() => void loadCloudTrash()}
+                >
                   回收站
-                </button>
-                <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadCloudHome()}>
-                  {busy === 'cloud-load' ? '正在刷新…' : '刷新'}
-                </button>
+                </DesktopActionButton>
+                <DesktopActionButton
+                  disabled={!!busy}
+                  loading={busy === 'cloud-load'}
+                  loadingLabel="正在刷新…"
+                  onClick={() => void loadCloudHome()}
+                >
+                  刷新
+                </DesktopActionButton>
               </div>
             </div>
 
             {cloudQuota?.over_quota && (
-              <div className="alert error">存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。</div>
+              <MuiAlert severity="error" sx={{ mb: 2 }}>
+                存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
+              </MuiAlert>
             )}
             {cloudQuota && (
               <div className="cloud-quota-grid">
@@ -2730,9 +2839,9 @@ export default function App() {
                   ))}
                 </div>
                 {cloudStorageStats.legacy_blob_count > 0 && (
-                  <div className="alert warning">
+                  <MuiAlert severity="warning" sx={{ m: 1.5 }}>
                     仍有 {cloudStorageStats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBinarySize(cloudStorageStats.legacy_physical_bytes)}），未计入 CAS 分布。
-                  </div>
+                  </MuiAlert>
                 )}
               </div>
             )}
@@ -2750,16 +2859,24 @@ export default function App() {
                     }
                   }}
                 />
-                <button className="primary" type="button" disabled={!!busy || cloudQuery.trim().length < 2} onClick={() => void searchCloud()}>
-                  {busy === 'cloud-search' ? '正在搜索…' : '搜索'}
-                </button>
+                <DesktopActionButton
+                  intent="primary"
+                  disabled={!!busy || cloudQuery.trim().length < 2}
+                  loading={busy === 'cloud-search'}
+                  loadingLabel="正在搜索…"
+                  onClick={() => void searchCloud()}
+                >
+                  搜索
+                </DesktopActionButton>
               </div>
               {cloudSearchActive && (
-                <button className="secondary" type="button" onClick={() => {
+                <DesktopActionButton onClick={() => {
                   setCloudSearchActive(false)
                   setCloudResults([])
                   setCloudQuery('')
-                }}>清除结果</button>
+                }}>
+                  清除结果
+                </DesktopActionButton>
               )}
             </div>
 
@@ -3095,9 +3212,14 @@ export default function App() {
                     : 'Linux 当前使用 FUSE 远程挂载；目录在此处只读展示，文件内容在打开时按需获取。'}
                 </p>
               </div>
-              <button className="secondary" type="button" disabled={!!busy} onClick={() => void loadStorage()}>
-                {busy === 'storage' ? '正在刷新…' : '刷新'}
-              </button>
+              <DesktopActionButton
+                disabled={!!busy}
+                loading={busy === 'storage'}
+                loadingLabel="正在刷新…"
+                onClick={() => void loadStorage()}
+              >
+                刷新
+              </DesktopActionButton>
             </div>
 
             {!storagePoliciesSupported ? (
@@ -3117,9 +3239,14 @@ export default function App() {
                 {cacheStats.supported ? (
                   <div className="cache-actions">
                     <p>只会释放已完整同步且未固定的云端文件。“始终保留”的内容永远不会被回收。</p>
-                    <button className="secondary" type="button" disabled={!!busy || cacheStats.reclaimable_bytes <= 0} onClick={() => void releaseReclaimableCache()}>
-                      {busy === 'release-cache' ? '正在释放…' : '释放可回收缓存'}
-                    </button>
+                    <DesktopActionButton
+                      disabled={!!busy || cacheStats.reclaimable_bytes <= 0}
+                      loading={busy === 'release-cache'}
+                      loadingLabel="正在释放…"
+                      onClick={() => void releaseReclaimableCache()}
+                    >
+                      释放可回收缓存
+                    </DesktopActionButton>
                   </div>
                 ) : (
                   <div className="cache-unavailable">{cacheStats.reason || '当前平台不支持持久化本地缓存管理。'}</div>
@@ -3148,7 +3275,7 @@ export default function App() {
           <section className="panel">
             <div className="section-heading">
               <div><p className="eyebrow">冲突副本</p><h2>解决同步冲突</h2></div>
-              <button className="secondary" type="button" onClick={() => void loadConflicts()}>刷新</button>
+              <DesktopActionButton disabled={!!busy} onClick={() => void loadConflicts()}>刷新</DesktopActionButton>
             </div>
             {conflicts.length === 0 ? <div className="empty-state">没有未解决的冲突。</div> : (
               <div className="conflict-list">
@@ -3196,9 +3323,15 @@ export default function App() {
                 <h2>客户端诊断</h2>
                 <p className="diagnostic-note">Agent 会运行与 <code>xd doctor</code> 相同的脱敏检查。密钥、会话 ID 和用户目录路径不会暴露给渲染进程。</p>
               </div>
-              <button className="primary" type="button" disabled={!!busy} onClick={() => void loadDiagnostics()}>
-                {busy === 'diagnostics' ? '正在检查…' : '运行诊断'}
-              </button>
+              <DesktopActionButton
+                intent="primary"
+                disabled={!!busy}
+                loading={busy === 'diagnostics'}
+                loadingLabel="正在检查…"
+                onClick={() => void loadDiagnostics()}
+              >
+                运行诊断
+              </DesktopActionButton>
             </div>
 
             {diagnostics ? (
@@ -3211,31 +3344,58 @@ export default function App() {
                 </div>
 
                 <div className="diagnostic-actions">
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent().then(() => loadDiagnostics())}>
-                    {busy === 'restart-agent' ? '正在重启 Agent…' : '重启 Agent'}
-                  </button>
-                  <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void runDiagnosticAction(
-                    'reconnect',
-                    () => window.xdriveDesktop.agent.reconnect(),
-                    '同步引擎已重新连接。',
-                  )}>
-                    {busy === 'reconnect' ? '正在重新连接…' : '重新连接'}
-                  </button>
-                  <button className="secondary" type="button" disabled={!!busy || status?.paused} onClick={() => void runDiagnosticAction(
-                    'repair-sync-root',
-                    () => window.xdriveDesktop.agent.repairSyncRoot(),
-                    '同步根目录已修复并重新连接。',
-                  )}>
-                    {busy === 'repair-sync-root' ? '正在修复…' : '修复同步根目录'}
-                  </button>
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void run(
-                    'open-logs',
-                    () => window.xdriveDesktop.agent.openLogs(),
-                    '已打开 xDrive 日志。',
-                  )}>打开日志</button>
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => void exportDiagnostics()}>
-                    {busy === 'export-diagnostics' ? '正在导出…' : '导出报告'}
-                  </button>
+                  <DesktopActionButton
+                    disabled={!!busy}
+                    loading={busy === 'restart-agent'}
+                    loadingLabel="正在重启 Agent…"
+                    onClick={() => void restartAgent().then(() => loadDiagnostics())}
+                  >
+                    重启 Agent
+                  </DesktopActionButton>
+                  <DesktopActionButton
+                    disabled={!!busy || status?.paused}
+                    loading={busy === 'reconnect'}
+                    loadingLabel="正在重新连接…"
+                    onClick={() => void runDiagnosticAction(
+                      'reconnect',
+                      () => window.xdriveDesktop.agent.reconnect(),
+                      '同步引擎已重新连接。',
+                    )}
+                  >
+                    重新连接
+                  </DesktopActionButton>
+                  <DesktopActionButton
+                    disabled={!!busy || status?.paused}
+                    loading={busy === 'repair-sync-root'}
+                    loadingLabel="正在修复…"
+                    onClick={() => void runDiagnosticAction(
+                      'repair-sync-root',
+                      () => window.xdriveDesktop.agent.repairSyncRoot(),
+                      '同步根目录已修复并重新连接。',
+                    )}
+                  >
+                    修复同步根目录
+                  </DesktopActionButton>
+                  <DesktopActionButton
+                    disabled={!!busy}
+                    loading={busy === 'open-logs'}
+                    loadingLabel="正在打开…"
+                    onClick={() => void run(
+                      'open-logs',
+                      () => window.xdriveDesktop.agent.openLogs(),
+                      '已打开 xDrive 日志。',
+                    )}
+                  >
+                    打开日志
+                  </DesktopActionButton>
+                  <DesktopActionButton
+                    disabled={!!busy}
+                    loading={busy === 'export-diagnostics'}
+                    loadingLabel="正在导出…"
+                    onClick={() => void exportDiagnostics()}
+                  >
+                    导出报告
+                  </DesktopActionButton>
                 </div>
 
                 <div className="diagnostic-list">
@@ -3260,9 +3420,14 @@ export default function App() {
           <section className="panel">
             <div className="section-heading">
               <div><p className="eyebrow">客户端设置</p><h2>同步、更新、生命周期与缓存</h2></div>
-              <button className="secondary" type="button" disabled={!!busy} onClick={() => void restartAgent()}>
-                {busy === 'restart-agent' ? '正在重启 Agent…' : '重启 Agent'}
-              </button>
+              <DesktopActionButton
+                disabled={!!busy}
+                loading={busy === 'restart-agent'}
+                loadingLabel="正在重启 Agent…"
+                onClick={() => void restartAgent()}
+              >
+                重启 Agent
+              </DesktopActionButton>
             </div>
             <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ mb: 2 }}>
               <BuildInfoCard title="Desktop 构建信息" info={info} />
@@ -3335,9 +3500,12 @@ export default function App() {
               </div>
 
               {!updateSupported ? (
-                <div className="update-unavailable">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</div>
+                <MuiAlert severity="warning">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</MuiAlert>
               ) : !clientUpdate ? (
-                <div className="update-unavailable">正在读取客户端更新状态…</div>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary' }}>
+                  <CircularProgress size={16} />
+                  <Typography variant="body2">正在读取客户端更新状态…</Typography>
+                </Stack>
               ) : (
                 <>
                   <p className="update-mode-note">
@@ -3392,45 +3560,44 @@ export default function App() {
                     </div>
                   ) : null}
 
-                  {clientUpdate.last_error ? <div className="update-error">{clientUpdate.last_error}</div> : null}
-                  {!clientUpdate.last_error && clientUpdate.message ? <div className="update-message">{clientUpdate.message}</div> : null}
+                  {clientUpdate.last_error ? <MuiAlert severity="error">{clientUpdate.last_error}</MuiAlert> : null}
+                  {!clientUpdate.last_error && clientUpdate.message ? <MuiAlert severity="info">{clientUpdate.message}</MuiAlert> : null}
 
                   <div className="update-actions">
-                    <button
-                      className="secondary"
-                      type="button"
+                    <DesktopActionButton
                       disabled={!!busy || updateOperationBusy}
+                      loading={busy === 'update-check' || clientUpdate.status === 'checking'}
+                      loadingLabel="正在检查…"
                       onClick={() => void checkClientUpdate()}
                     >
-                      {busy === 'update-check' || clientUpdate.status === 'checking' ? '正在检查…' : '检查更新'}
-                    </button>
-                    <button
-                      className="secondary"
-                      type="button"
+                      检查更新
+                    </DesktopActionButton>
+                    <DesktopActionButton
                       disabled={!!busy || updateOperationBusy || !clientUpdate.update_available || clientUpdate.downloaded}
+                      loading={busy === 'update-download' || clientUpdate.status === 'downloading'}
+                      loadingLabel="正在下载…"
                       onClick={() => void downloadClientUpdate()}
                     >
-                      {busy === 'update-download' || clientUpdate.status === 'downloading' ? '正在下载…' : clientUpdate.downloaded ? '已下载' : '下载更新'}
-                    </button>
-                    <button
-                      className="primary"
-                      type="button"
+                      {clientUpdate.downloaded ? '已下载' : '下载更新'}
+                    </DesktopActionButton>
+                    <DesktopActionButton
+                      intent="primary"
                       disabled={!!busy || updateOperationBusy || !clientUpdate.update_available || !clientUpdate.install_supported}
+                      loading={busy === 'update-install' || clientUpdate.status === 'installing'}
+                      loadingLabel="正在安装…"
                       onClick={() => void installClientUpdate()}
                     >
-                      {busy === 'update-install' || clientUpdate.status === 'installing'
-                        ? '正在安装…'
-                        : clientUpdate.downloaded ? '安装更新' : '下载并安装'}
-                    </button>
+                      {clientUpdate.downloaded ? '安装更新' : '下载并安装'}
+                    </DesktopActionButton>
                     {updateCancelSupported && (clientUpdate.status === 'checking' || clientUpdate.status === 'downloading') ? (
-                      <button
-                        className="secondary"
-                        type="button"
+                      <DesktopActionButton
                         disabled={updateCancelling}
+                        loading={updateCancelling}
+                        loadingLabel="正在取消…"
                         onClick={() => void cancelClientUpdate()}
                       >
-                        {updateCancelling ? '正在取消…' : '取消'}
-                      </button>
+                        取消
+                      </DesktopActionButton>
                     ) : null}
                   </div>
                   <small className="update-footnote">自动策略在 Agent 启动后约 90 秒首次运行，之后约每 6 小时检查一次；切换到自动策略时会立即检查一次。</small>
@@ -3443,7 +3610,7 @@ export default function App() {
                   同步文件夹
                   <div className="input-action">
                     <input value={mountPath} onChange={(e) => setMountPath(e.target.value)} required />
-                    <button type="button" className="secondary" onClick={() => void chooseDirectory(mountPath, setMountPath)}>浏览</button>
+                    <DesktopActionButton onClick={() => void chooseDirectory(mountPath, setMountPath)}>浏览</DesktopActionButton>
                   </div>
                 </label>
                 <label>
@@ -3477,22 +3644,35 @@ export default function App() {
                         : 'Linux 使用 FUSE 远程挂载；“存储”页面提供只读目录视图，不提供 Windows CfAPI 的选择性同步和固定保留。'}
                     </span>
                   </div>
-                  <button className="secondary" type="button" onClick={() => setView('files')}>
+                  <DesktopActionButton onClick={() => setView('files')}>
                     {storagePoliciesSupported ? '管理存储' : '查看存储'}
-                  </button>
+                  </DesktopActionButton>
                 </div>
                 <div className="settings-divider" />
                 <div className="form-actions">
-                  <button className="primary" type="submit" disabled={busy === 'settings'}>{busy === 'settings' ? '正在保存…' : '保存设置'}</button>
-                  <button className="danger" type="button" disabled={!!busy} onClick={() => {
-                    requestConfirmation(
-                      '退出当前设备？',
-                      '确定要在此设备上退出 xDrive 吗？',
-                      '退出登录',
-                      async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
-                      'error',
-                    )
-                  }}>退出登录</button>
+                  <DesktopActionButton
+                    intent="primary"
+                    type="submit"
+                    loading={busy === 'settings'}
+                    loadingLabel="正在保存…"
+                  >
+                    保存设置
+                  </DesktopActionButton>
+                  <DesktopActionButton
+                    intent="danger"
+                    disabled={!!busy}
+                    onClick={() => {
+                      requestConfirmation(
+                        '退出当前设备？',
+                        '确定要在此设备上退出 xDrive 吗？',
+                        '退出登录',
+                        async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
+                        'error',
+                      )
+                    }}
+                  >
+                    退出登录
+                  </DesktopActionButton>
                 </div>
               </form>
             )}
