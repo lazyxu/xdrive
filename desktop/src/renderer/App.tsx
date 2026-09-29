@@ -1051,15 +1051,16 @@ export default function App() {
       if (sourceCreateKind === 'yike_photos') {
         const credential = await window.xdriveDesktop.agent.setSourceCredential(created.data.id, cookie)
         if (!credential.ok) {
+          const credentialMessage = externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)
           const rollback = await window.xdriveDesktop.agent.deleteSource(created.data.id, created.data.revision)
           if (rollback.ok) {
-            setError(`Cookie 保存失败：${credential.error.message}。刚创建的一刻相册来源已自动撤销，请检查后重试。`)
+            setError(`Cookie 保存失败：${credentialMessage}。刚创建的一刻相册来源已自动撤销，请检查后重试。`)
             await loadSources()
             return
           }
           setSourceCreateOpen(false)
           setSourceCreateCookie('')
-          setError(`来源已创建，但 Cookie 保存失败且自动回滚失败：${credential.error.message}；回滚错误：${rollback.error.message}。请在该来源的“设置”中重新配置 Cookie。`)
+          setError(`来源已创建，但 Cookie 保存失败且自动回滚失败：${credentialMessage}；回滚错误：${rollback.error.message}。请在该来源的“设置”中重新配置 Cookie。`)
           await loadSources()
           return
         }
@@ -1154,7 +1155,7 @@ export default function App() {
       if (externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && cookie) {
         const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, cookie)
         if (!credential.ok) {
-          setError(`来源设置已保存，但 Cookie 更新失败：${credential.error.message}`)
+          setError(`来源设置已保存，但 Cookie 更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)}`)
           await loadSources()
           return
         }

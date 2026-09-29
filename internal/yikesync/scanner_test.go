@@ -3,7 +3,6 @@ package yikesync
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -88,6 +87,67 @@ func (f *fakeSourceAPI) HeartbeatSourceRun(context.Context, uint64, string) erro
 	return nil
 }
 
+type seededPathAPI struct {
+	*fakeSourceAPI
+	items []client.SourceItem
+}
+
+func (a *seededPathAPI) SourceItems(_ context.Context, _ uint64, _ string, limit, offset int) ([]client.SourceItem, error) {
+	if offset >= len(a.items) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(a.items) {
+		end = len(a.items)
+	}
+	return append([]client.SourceItem(nil), a.items[offset:end]...), nil
+}
+
+func TestScannerKeepsExistingOwnerOfVisibleFilename(t *testing.T) {
+	nodeID := uint64(10)
+	api := &seededPathAPI{
+		fakeSourceAPI: &fakeSourceAPI{},
+		items: []client.SourceItem{{
+			ExternalID: "yike:123:1",
+			NodeID:     &nodeID,
+			Path:       "IMG_0001.jpg",
+		}},
+	}
+	remote := &fakeRemote{
+		user: yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.File{
+					// Newer same-name media is intentionally observed first.
+					{FSID: 2, Path: "/youa/web/200.jpg", ServerFilename: "IMG_0001.jpg", Size: 20, MTime: 200},
+					{FSID: 1, Path: "/youa/web/100.jpg", ServerFilename: "IMG_0001.jpg", Size: 10, MTime: 100},
+				},
+			},
+		},
+		albums:     map[string]yike.AlbumList{"": {Page: yike.Page{HasMore: 0}}},
+		albumFiles: map[string]map[string]yike.AlbumFileList{},
+	}
+
+	if _, err := (Scanner{
+		Remote: remote, API: api, SourceID: 1, RunID: "run-stable-name",
+	}).Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	observed := map[string]string{}
+	for _, batch := range api.observed {
+		for _, item := range batch {
+			observed[item.ExternalID] = item.Path
+		}
+	}
+	if got := observed["yike:123:1"]; got != "IMG_0001.jpg" {
+		t.Fatalf("existing owner path=%q", got)
+	}
+	if got := observed["yike:123:2"]; got != "IMG_0001 (2).jpg" {
+		t.Fatalf("new collision path=%q", got)
+	}
+}
+
 func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	remote := &fakeRemote{
 		user: yike.UserInfo{YouaID: "123"},
@@ -95,8 +155,8 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 			"": {
 				Page: yike.Page{HasMore: 0},
 				List: []yike.File{
-					{FSID: 1, Path: "/holiday.jpg", Size: 100, MTime: 1000, MD5: "AAAA"},
-					{FSID: 2, Path: "/ignored.jpg", Size: 200, MTime: 2000},
+					{FSID: 1, Path: "/1717120121000.png", ServerFilename: "holiday.jpg", Size: 100, MTime: 1000, MD5: "AAAA"},
+					{FSID: 2, Path: "/ignored.jpg", ServerFilename: "ignored.jpg", Size: 200, MTime: 2000},
 				},
 			},
 		},
@@ -114,12 +174,12 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 				"": {
 					Page: yike.Page{HasMore: 0},
 					List: []yike.AlbumFile{
-						{File: yike.File{FSID: 1, Path: "/holiday.jpg", Size: 100, MTime: 1000, MD5: "AAAA"}, AlbumID: "own", UK: 123},
+						{File: yike.File{FSID: 1, Path: "/holiday.jpg", ServerFilename: "holiday.jpg", Size: 100, MTime: 1000, MD5: "AAAA"}, AlbumID: "own", UK: 123},
 						// The same stable media identity was ignored from the root
 						// library. A different album path must not re-include it.
-						{File: yike.File{FSID: 2, Path: "/visible-in-album.jpg", Size: 200, MTime: 2000}, AlbumID: "own", UK: 123},
+						{File: yike.File{FSID: 2, Path: "/visible-in-album.jpg", ServerFilename: "ignored.jpg", Size: 200, MTime: 2000}, AlbumID: "own", UK: 123},
 						{File: yike.File{
-							FSID: 3, Path: "/album-only.jpg", Size: 300, CTime: 2500, MTime: 3000, ShootTime: 1500,
+							FSID: 3, Path: "/camera/1717120123000.jpg", ServerFilename: "album-only.jpg", Size: 300, CTime: 2500, MTime: 3000, ShootTime: 1500,
 							MD5: strings.Repeat("a", 32), ThumbURL: []string{"", " https://thumb.example/3 "},
 						}, AlbumID: "own", UK: 123},
 					},
@@ -129,8 +189,8 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 				"": {
 					Page: yike.Page{HasMore: 0},
 					List: []yike.AlbumFile{
-						{File: yike.File{FSID: 4, Path: "/shared.jpg", Size: 400, MTime: 4000}, AlbumID: "shared", UK: 999},
-						{File: yike.File{FSID: 4, Path: "/shared.jpg", Size: 400, MTime: 4000}, AlbumID: "shared", UK: 999},
+						{File: yike.File{FSID: 4, Path: "/shared/1717120124000.jpg", ServerFilename: "shared.jpg", Size: 400, MTime: 4000}, AlbumID: "shared", UK: 999},
+						{File: yike.File{FSID: 4, Path: "/shared/1717120124000.jpg", ServerFilename: "shared.jpg", Size: 400, MTime: 4000}, AlbumID: "shared", UK: 999},
 					},
 				},
 			},
@@ -183,13 +243,13 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("observed unique items=%d want=3", len(items))
 	}
-	if got := items["yike:123:1"]; got.Path != "Library/holiday.jpg [1]" || got.RemoteRevision != "md5:aaaa" {
+	if got := items["yike:123:1"]; got.Path != "holiday.jpg" || got.RemoteRevision != "md5:aaaa" {
 		t.Fatalf("root item=%+v", got)
 	}
-	if got := items["yike:123:3"]; got.Path != "Library/album-only.jpg [3]" {
+	if got := items["yike:123:3"]; got.Path != "album-only.jpg" {
 		t.Fatalf("own album-only item=%+v", got)
 	}
-	if got := items["yike:999:4"]; got.Path != "Shared/999/shared.jpg [4]" {
+	if got := items["yike:999:4"]; got.Path != "shared.jpg" {
 		t.Fatalf("shared item=%+v", got)
 	}
 	if _, exists := items["yike:123:2"]; exists {
@@ -207,7 +267,7 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	if !ok {
 		t.Fatalf("album-only metadata missing: %+v", result.Metadata)
 	}
-	if albumOnly.OriginalPath != "/album-only.jpg" ||
+	if albumOnly.OriginalPath != "/camera/1717120123000.jpg" ||
 		albumOnly.OwnerExternalID != "123" ||
 		albumOnly.CapturedAt == nil || albumOnly.CapturedAt.Unix() != 1500 ||
 		albumOnly.RemoteCreatedAt == nil || albumOnly.RemoteCreatedAt.Unix() != 2500 ||
@@ -301,25 +361,70 @@ func TestCollectionNameNormalizesRemoteTitle(t *testing.T) {
 	}
 }
 
-func TestCanonicalFileNameAlwaysValid(t *testing.T) {
+func TestCanonicalRemotePathPreservesVisibleYikeName(t *testing.T) {
 	tests := []struct {
-		path string
-		fsid int64
+		file yike.File
+		want string
 	}{
-		{"/CON.jpg", 1},
-		{"/bad<>:\"name?.jpg", 2},
-		{"/trailing. ", 3},
-		{"/" + strings.Repeat("长", 200) + ".jpg", 4},
-		{"", 5},
+		{yike.File{FSID: 1, Path: "/1717120121000.png", ServerFilename: "IMG_0001.png"}, "IMG_0001.png"},
+		{yike.File{FSID: 2, Path: "/youa/web/1717120122000.jpg", ServerFilename: "旅行照片.jpg"}, "旅行照片.jpg"},
+		{yike.File{FSID: 3, Path: "/folder/normal.mov"}, "normal.mov"},
+		{yike.File{FSID: 4, Path: "/CON.jpg"}, "_CON.jpg"},
+		{yike.File{FSID: 5, Path: "/bad<>:\"name?.jpg"}, "bad____name_.jpg"},
+		{yike.File{FSID: 6, Filename: "from-filename.jpg"}, "from-filename.jpg"},
+		{yike.File{FSID: 7, Name: "from-name.jpg"}, "from-name.jpg"},
+		{yike.File{FSID: 8, ServerFilename: "  leading-space.jpg"}, "  leading-space.jpg"},
+		{yike.File{FSID: 9, ServerFilename: "trailing-space.jpg   "}, "trailing-space.jpg"},
+		{yike.File{FSID: 10}, "file-10"},
 	}
 	for _, tt := range tests {
-		name := canonicalFileName(tt.path, tt.fsid)
-		if err := meta.ValidateName(name); err != nil {
-			t.Fatalf("canonicalFileName(%q,%d)=%q invalid: %v", tt.path, tt.fsid, name, err)
+		got := canonicalRemotePath(tt.file)
+		if got != tt.want {
+			t.Fatalf("canonicalRemotePath(%+v)=%q want=%q", tt.file, got, tt.want)
 		}
-		if !strings.Contains(name, "["+strconv.FormatInt(tt.fsid, 10)+"]") && !strings.HasPrefix(name, "file-") {
-			t.Fatalf("canonical name lacks stable fsid suffix: %q", name)
+		if strings.Contains(got, "/") {
+			t.Fatalf("canonical visible filename leaked an internal directory: %q", got)
 		}
+		if err := meta.ValidateName(got); err != nil {
+			t.Fatalf("canonical filename %q invalid: %v", got, err)
+		}
+		if strings.Contains(got, "[") || strings.Contains(got, "]") {
+			t.Fatalf("canonical filename unexpectedly exposes fsid suffix: %q", got)
+		}
+	}
+}
+
+func TestCanonicalYikeFileNamePreservesExtensionWhenTruncated(t *testing.T) {
+	name := strings.Repeat("长", 100) + ".jpg"
+	got := canonicalRemotePath(yike.File{FSID: 11, ServerFilename: name})
+	if len([]byte(got)) > 255 {
+		t.Fatalf("filename bytes=%d", len([]byte(got)))
+	}
+	if !strings.HasSuffix(got, ".jpg") {
+		t.Fatalf("truncated filename lost extension: %q", got)
+	}
+	if err := meta.ValidateName(got); err != nil {
+		t.Fatalf("truncated filename invalid: %v", err)
+	}
+}
+
+func TestReserveYikePathOnlyAddsSuffixOnRealConflict(t *testing.T) {
+	owners := map[string]string{}
+	first := reserveYikePath("IMG_0001.JPG", 123, 1, "yike:123:1", owners)
+	if first != "IMG_0001.JPG" {
+		t.Fatalf("first path=%q", first)
+	}
+	second := reserveYikePath("img_0001.jpg", 123, 2, "yike:123:2", owners)
+	if second != "img_0001 (2).jpg" {
+		t.Fatalf("case-insensitive collision path=%q", second)
+	}
+	third := reserveYikePath("bad_name.jpg", 999, 3, "yike:999:3", owners)
+	if third != "bad_name.jpg" {
+		t.Fatalf("unrelated path=%q", third)
+	}
+	fourth := reserveYikePath("bad_name.jpg", 999, 4, "yike:999:4", owners)
+	if fourth != "bad_name (4).jpg" {
+		t.Fatalf("sanitized collision path=%q", fourth)
 	}
 }
 

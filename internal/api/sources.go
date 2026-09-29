@@ -652,5 +652,7 @@ var (
 	errSourceCredentialRequired     = errors.New("source credential is required")
 	errYikeAccountAlreadyConfigured = errors.New("Yike account already configured")
 	errYikeAccountMismatch          = errors.New("Yike account does not match managed target")
+	errYikeTargetContainsData       = errors.New("Yike managed target already contains unmanaged data")
+	errYikeTargetPathConflict       = errors.New("Yike managed target path conflict")
 	errSourceNameTaken              = errors.New("source name taken")
 )

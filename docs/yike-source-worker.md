@@ -36,14 +36,15 @@ The account's `youa_id` is parsed as its owner UK. Album files use their own `uk
 
 The root library is scanned first. Album membership is scanned afterward. If the same media identity is present in the root library and one or more albums, it is observed only once. Album membership therefore never creates duplicate SourceItems.
 
-Canonical scan paths are independent of album membership:
+The Yike root library is user-visible as a flat media collection; the directory portion of the private API `path` is an internal Baidu/Yike namespace and is not reproduced as xDrive folders. xDrive prefers the newer file-list metadata that exposes `server_filename` (falling back to the compatible v1 list when necessary), then uses `server_filename`, `filename`, `name`, or finally the basename of `path` as the visible filename. It no longer invents `Library/` or `Shared/<owner_uk>/` prefixes and no longer appends `[fsid]` to every visible name.
+
+For example, a Yike item reported as `path=/youa/web/1717120121000.png` with `server_filename=IMG_0001.png` is stored directly under the managed account folder as:
 
 ```text
-Library/<sanitized-name> [<fsid>]
-Shared/<owner_uk>/<sanitized-name> [<fsid>]
+IMG_0001.png
 ```
 
-The fsid suffix makes names deterministic and collision-safe. Names are sanitized to xDrive's Windows-compatible namespace.
+The stable `yike:<owner_uk>:<fsid>` identity remains internal. If two distinct remote items would map to the same case-insensitive xDrive filename, the first keeps the original visible name and only the conflicting item receives a deterministic ` (fsid)` suffix. This exceptional suffix is required because Windows/CfAPI cannot represent two siblings with the same case-insensitive name. Windows-reserved characters/names and overlong filenames are also minimally normalized. Legacy ignore rules that reference the former `Library/` or `Shared/<owner_uk>/` aliases continue to match internally even though those aliases are no longer visible.
 
 Album metadata is persisted separately from media files. Each Yike album becomes one generic SourceCollection and membership is stored as a many-to-many relation to stable SourceItems. The same media object can therefore appear in multiple albums without creating duplicate xDrive Nodes or CAS objects.
 
@@ -108,12 +109,14 @@ Yike uses a server-managed xDrive **logical Node** target. Clients do not choose
 The Source remains paused and has no target until its Cookie is validated. On the first successful credential write, xDrive reads the Yike `youa_id` and nickname and atomically creates/binds:
 
 ```text
-来源/
+同步文件夹/
 └─ 一刻相册/
    └─ uid_<百度UID>_<账号名称>/
 ```
 
-For example: `来源/一刻相册/uid_12345_张三/`. Invalid filename characters in the account name are replaced safely. This hierarchy exists only in `xd_nodes`; file content still uses xDrive's content-addressed storage (CAS), so the managed folder does not duplicate physical blobs or change deduplication semantics. The target cannot be changed through the Source update API.
+For example: `同步文件夹/一刻相册/uid_12345_张三/`. Invalid filename characters in the account name are replaced safely. This hierarchy exists only in `xd_nodes`; file content still uses xDrive's content-addressed storage (CAS), so the managed folder does not duplicate physical blobs or change deduplication semantics. The target cannot be changed through the Source update API. While a Yike Source is bound, ordinary file-manager rename/move/delete operations are also blocked for the target folder and its managed ancestors so the fixed hierarchy cannot be bypassed; media files inside the target remain normal nodes.
+
+If a Yike Source was deleted while its imported folder was intentionally kept, re-adding the same account does not silently adopt files by name or size. Credential binding rejects a non-empty detached fixed target with `yike_target_contains_unmanaged_data`; move/archive that detached folder first, then add the Source again. This avoids treating unrelated user files as already-synchronized media.
 
 The first version supports only `backup` semantics. A media object that disappears from Yike becomes `missing`; its xDrive data is never deleted or trashed.
 

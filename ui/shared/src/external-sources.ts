@@ -176,7 +176,7 @@ export interface ExternalSourceDefaults {
 }
 
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
-export const yikeManagedTargetLabel = '来源 / 一刻相册 / uid_<百度UID>_<账号名称>'
+export const yikeManagedTargetLabel = '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>'
 
 export const yikeCookieHelp = {
   title: '如何获取 Cookie',
@@ -544,6 +544,8 @@ export function externalSourceCredentialTestErrorLabel(code: string) {
     yike_timeout: '连接一刻相册超时，请稍后重试',
     yike_unavailable: '一刻相册服务暂时不可用，请稍后重试',
     yike_connection_failed: '无法连接一刻相册，请检查网络后重试',
+    yike_target_contains_unmanaged_data: '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加来源',
+    yike_target_path_conflict: '固定的一刻相册路径被同名文件占用，请先整理“同步文件夹 / 一刻相册”路径后重试',
     invalid_source_credential: 'Cookie 格式无效，请重新获取',
     source_credential_not_configured: '尚未配置一刻相册 Cookie',
     unsupported_source_credential_kind: '当前来源不支持连接测试',

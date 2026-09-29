@@ -181,6 +181,26 @@ func (a *OwnerSourceAPI) HeartbeatSourceRun(ctx context.Context, sourceID uint64
 	return a.handleRunControlError(c.HeartbeatSourceRun(ctx, sourceID, runID))
 }
 
+// SourceItems and List intentionally expose the owner's read-only xDrive view
+// to connector scanners. They are used to preserve existing path ownership
+// across worker restarts and to reserve names already present in a managed
+// target before planning new remote items.
+func (a *OwnerSourceAPI) SourceItems(ctx context.Context, sourceID uint64, state string, limit, offset int) ([]client.SourceItem, error) {
+	c, err := a.client()
+	if err != nil {
+		return nil, err
+	}
+	return c.SourceItems(ctx, sourceID, state, limit, offset)
+}
+
+func (a *OwnerSourceAPI) List(ctx context.Context, parentID uint64) ([]client.Node, error) {
+	c, err := a.client()
+	if err != nil {
+		return nil, err
+	}
+	return c.List(ctx, parentID)
+}
+
 func (a *OwnerSourceAPI) FinishSourceRun(ctx context.Context, sourceID uint64, runID string, input client.FinishSourceRunInput) (client.SyncRun, error) {
 	c, err := a.client()
 	if err != nil {

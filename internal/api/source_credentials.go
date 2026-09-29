@@ -327,6 +327,14 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 			fail(c, http.StatusConflict, "yike_account_mismatch")
 			return
 		}
+		if errors.Is(err, errYikeTargetContainsData) {
+			fail(c, http.StatusConflict, "yike_target_contains_unmanaged_data")
+			return
+		}
+		if errors.Is(err, errYikeTargetPathConflict) {
+			fail(c, http.StatusConflict, "yike_target_path_conflict")
+			return
+		}
 		fail(c, http.StatusInternalServerError, "store source credential failed")
 		return
 	}

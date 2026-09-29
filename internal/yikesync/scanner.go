@@ -41,6 +41,14 @@ type SourceAPI interface {
 	HeartbeatSourceRun(context.Context, uint64, string) error
 }
 
+type sourceItemLister interface {
+	SourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
+}
+
+type targetNodeLister interface {
+	List(context.Context, uint64) ([]client.Node, error)
+}
+
 type PlanExecutor interface {
 	Execute(context.Context, client.SourcePlan, sourcepkg.DiscoveredItem, TransferRef) (client.SourceCommit, error)
 }
@@ -50,6 +58,7 @@ type Scanner struct {
 	API               SourceAPI
 	SourceID          uint64
 	RunID             string
+	TargetNodeID      uint64
 	IgnoreRules       string
 	Mode              string
 	Executor          PlanExecutor
@@ -113,6 +122,19 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
 	seen := make(map[string]bool)
+	pathOwners := make(map[string]string)
+	if lister, ok := s.API.(sourceItemLister); ok {
+		if err := seedYikePathOwners(ctx, lister, s.SourceID, pathOwners); err != nil {
+			return result, fmt.Errorf("read existing Yike source paths: %w", err)
+		}
+	}
+	if s.TargetNodeID != 0 {
+		if lister, ok := s.API.(targetNodeLister); ok {
+			if err := seedYikeTargetChildren(ctx, lister, s.TargetNodeID, pathOwners); err != nil {
+				return result, fmt.Errorf("read existing Yike target names: %w", err)
+			}
+		}
+	}
 
 	var pipeline *pullsync.Pipeline[TransferRef]
 	if mode == meta.SourceRunModeSync {
@@ -187,7 +209,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		if err != nil {
 			return "", false, err
 		}
-		item, err := discoveredItem(ownUK, ownerUK, file)
+		item, err := discoveredItem(ownerUK, file)
 		if err != nil {
 			return "", false, err
 		}
@@ -197,11 +219,14 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			return externalID, included, nil
 		}
 
-		if matcher.Ignored(item.Path, false) {
+		// Match both the current visible path and the old xDrive-only
+		// Library/Shared+[fsid] alias so existing ignore rules keep working.
+		if matcher.Ignored(item.Path, false) || matcher.Ignored(legacyYikeIgnorePath(ownUK, ownerUK, file), false) {
 			seen[externalID] = false
 			result.Summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: item})
 			return externalID, false, nil
 		}
+		item.Path = reserveYikePath(item.Path, ownerUK, file.FSID, externalID, pathOwners)
 		seen[externalID] = true
 		result.Metadata = append(result.Metadata, metadataSnapshot(ownerUK, file))
 		if ownerUK == ownUK {
@@ -401,17 +426,13 @@ func collectionRevision(album yike.Album) string {
 	return fmt.Sprintf("tid:%d:mtime:%d:join:%d", album.TID, album.MTime, album.JoinTime)
 }
 
-func discoveredItem(ownUK, ownerUK int64, file yike.File) (sourcepkg.DiscoveredItem, error) {
+func discoveredItem(ownerUK int64, file yike.File) (sourcepkg.DiscoveredItem, error) {
 	externalID, err := yike.ExternalID(ownerUK, file.FSID)
 	if err != nil {
 		return sourcepkg.DiscoveredItem{}, err
 	}
 	modified := file.ModifiedAt()
-	name := canonicalFileName(file.Path, file.FSID)
-	prefix := "Library"
-	if ownerUK != ownUK {
-		prefix = path.Join("Shared", strconv.FormatInt(ownerUK, 10))
-	}
+	remotePath := canonicalRemotePath(file)
 	revision := ""
 	if md5 := strings.ToLower(strings.TrimSpace(file.MD5)); md5 != "" {
 		revision = "md5:" + md5
@@ -419,7 +440,7 @@ func discoveredItem(ownUK, ownerUK int64, file yike.File) (sourcepkg.DiscoveredI
 	item := sourcepkg.DiscoveredItem{
 		ExternalID:     externalID,
 		Kind:           meta.SourceItemKindFile,
-		Path:           path.Join(prefix, name),
+		Path:           remotePath,
 		Size:           file.Size,
 		ModifiedAt:     &modified,
 		RemoteRevision: revision,
@@ -430,14 +451,131 @@ func discoveredItem(ownUK, ownerUK int64, file yike.File) (sourcepkg.DiscoveredI
 	return item, nil
 }
 
-func canonicalFileName(remotePath string, fsid int64) string {
+// canonicalRemotePath returns the user-visible Yike filename only. The path
+// directory component is an internal Yike/Baidu namespace rather than a
+// user-visible folder hierarchy, so xDrive must not expose it as directories.
+func canonicalRemotePath(file yike.File) string {
+	return canonicalYikeFileName(file.VisibleName(), "file-"+strconv.FormatInt(file.FSID, 10))
+}
+
+func seedYikePathOwners(ctx context.Context, lister sourceItemLister, sourceID uint64, owners map[string]string) error {
+	const pageSize = 1000
+	for offset := 0; ; offset += pageSize {
+		items, err := lister.SourceItems(ctx, sourceID, "", pageSize, offset)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			if item.NodeID == nil || item.ExternalID == "" {
+				continue
+			}
+			clean, err := sourcepkg.NormalizeRelativePath(item.Path)
+			if err != nil || strings.Contains(clean, "/") {
+				continue
+			}
+			key := strings.ToLower(clean)
+			if _, exists := owners[key]; !exists {
+				owners[key] = item.ExternalID
+			}
+		}
+		if len(items) < pageSize {
+			return nil
+		}
+	}
+}
+
+func seedYikeTargetChildren(ctx context.Context, lister targetNodeLister, targetNodeID uint64, owners map[string]string) error {
+	children, err := lister.List(ctx, targetNodeID)
+	if err != nil {
+		return err
+	}
+	for _, node := range children {
+		name := strings.TrimSpace(node.Name)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := owners[key]; !exists {
+			owners[key] = "node:" + strconv.FormatUint(node.ID, 10)
+		}
+	}
+	return nil
+}
+
+func reserveYikePath(preferred string, ownerUK, fsid int64, externalID string, owners map[string]string) string {
+	if owners == nil {
+		return preferred
+	}
+	key := strings.ToLower(preferred)
+	if current, exists := owners[key]; !exists || current == externalID {
+		owners[key] = externalID
+		return preferred
+	}
+
+	for attempt := 0; ; attempt++ {
+		candidate := collisionYikeFileName(preferred, ownerUK, fsid, attempt)
+		candidateKey := strings.ToLower(candidate)
+		if current, exists := owners[candidateKey]; !exists || current == externalID {
+			owners[candidateKey] = externalID
+			return candidate
+		}
+	}
+}
+
+func collisionYikeFileName(preferred string, ownerUK, fsid int64, attempt int) string {
+	ext := path.Ext(preferred)
+	stem := strings.TrimSuffix(preferred, ext)
+	suffix := " (" + strconv.FormatInt(fsid, 10) + ")"
+	if attempt > 0 {
+		suffix = " (" + strconv.FormatInt(ownerUK, 10) + "-" + strconv.FormatInt(fsid, 10)
+		if attempt > 1 {
+			suffix += "-" + strconv.Itoa(attempt)
+		}
+		suffix += ")"
+	}
+	maxStemBytes := 255 - len([]byte(ext)) - len([]byte(suffix))
+	if maxStemBytes < 1 {
+		ext = ""
+		maxStemBytes = 255 - len([]byte(suffix))
+	}
+	stem = trimUTF8Bytes(stem, maxStemBytes)
+	candidate := stem + suffix + ext
+	if err := meta.ValidateName(candidate); err == nil {
+		return candidate
+	}
+	return canonicalYikeFileName(
+		"file-"+strconv.FormatInt(ownerUK, 10)+"-"+strconv.FormatInt(fsid, 10)+"-"+strconv.Itoa(attempt+1)+ext,
+		"file-"+strconv.FormatInt(fsid, 10),
+	)
+}
+
+func legacyYikeIgnorePath(ownUK, ownerUK int64, file yike.File) string {
+	name := legacyYikeFileName(file.Path, file.FSID)
+	if ownerUK == ownUK {
+		return path.Join("Library", name)
+	}
+	return path.Join("Shared", strconv.FormatInt(ownerUK, 10), name)
+}
+
+func legacyYikeFileName(remotePath string, fsid int64) string {
 	remotePath = strings.ReplaceAll(strings.TrimSpace(remotePath), "\\", "/")
 	base := path.Base(remotePath)
 	if base == "." || base == "/" || base == "" {
 		base = "file"
 	}
+	clean := canonicalYikeFileName(base, "file")
+	suffix := " [" + strconv.FormatInt(fsid, 10) + "]"
+	clean = trimUTF8Bytes(clean, 255-len([]byte(suffix)))
+	candidate := clean + suffix
+	if err := meta.ValidateName(candidate); err != nil {
+		return "file-" + strconv.FormatInt(fsid, 10)
+	}
+	return candidate
+}
+
+func canonicalYikeFileName(value, fallback string) string {
 	var b strings.Builder
-	for _, r := range base {
+	for _, r := range value {
 		switch {
 		case r < 32:
 			b.WriteRune('_')
@@ -448,17 +586,34 @@ func canonicalFileName(remotePath string, fsid int64) string {
 		}
 	}
 	clean := strings.TrimRight(b.String(), " .")
-	if clean == "" {
-		clean = "file"
+	if clean == "" || clean == "." || clean == ".." {
+		clean = fallback
 	}
-	suffix := " [" + strconv.FormatInt(fsid, 10) + "]"
-	maxBaseBytes := 255 - len([]byte(suffix))
-	clean = trimUTF8Bytes(clean, maxBaseBytes)
-	candidate := clean + suffix
-	if err := meta.ValidateName(candidate); err != nil {
-		candidate = "file-" + strconv.FormatInt(fsid, 10)
+
+	preserveExtension := func(name string, maxBytes int) string {
+		if len([]byte(name)) <= maxBytes {
+			return name
+		}
+		ext := path.Ext(name)
+		if ext == "" || len([]byte(ext)) >= maxBytes {
+			return trimUTF8Bytes(name, maxBytes)
+		}
+		stem := strings.TrimSuffix(name, ext)
+		return trimUTF8Bytes(stem, maxBytes-len([]byte(ext))) + ext
 	}
-	return candidate
+
+	clean = preserveExtension(clean, 255)
+	if err := meta.ValidateName(clean); err == nil {
+		return clean
+	}
+
+	// Reserved Windows basenames such as CON.jpg cannot be represented by the
+	// shared CfAPI/FUSE namespace. Prefixing "_" is the smallest safe change.
+	clean = preserveExtension("_"+clean, 255)
+	if err := meta.ValidateName(clean); err == nil {
+		return clean
+	}
+	return preserveExtension(fallback, 255)
 }
 
 func trimUTF8Bytes(value string, maxBytes int) string {
@@ -509,7 +664,7 @@ func walkFilePages(
 		if !page.HasNext() {
 			return nil
 		}
-		next := strings.TrimSpace(page.Cursor)
+		next := strings.TrimSpace(string(page.Cursor))
 		if next == "" {
 			return fmt.Errorf("Yike pagination has_more=1 but cursor is empty")
 		}
@@ -543,7 +698,7 @@ func walkAlbumFilePages(
 		if !page.HasNext() {
 			return nil
 		}
-		next := strings.TrimSpace(page.Cursor)
+		next := strings.TrimSpace(string(page.Cursor))
 		if next == "" {
 			return fmt.Errorf("Yike album-file pagination has_more=1 but cursor is empty")
 		}
@@ -575,7 +730,7 @@ func collectAlbums(ctx context.Context, remote Remote, heartbeat func() error) (
 		if !page.HasNext() {
 			return out, nil
 		}
-		next := strings.TrimSpace(page.Cursor)
+		next := strings.TrimSpace(string(page.Cursor))
 		if next == "" {
 			return nil, fmt.Errorf("Yike album pagination has_more=1 but cursor is empty")
 		}

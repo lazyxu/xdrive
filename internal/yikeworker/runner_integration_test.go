@@ -385,11 +385,11 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootNode, ok := nodes["Library/root.jpg [1]"]
+	rootNode, ok := nodes["root.jpg"]
 	if !ok {
 		t.Fatalf("root media node missing after partial sync: %+v", nodes)
 	}
-	if _, exists := nodes["Shared/999/shared.jpg [2]"]; exists {
+	if _, exists := nodes["shared.jpg"]; exists {
 		t.Fatalf("failed shared item unexpectedly materialized: %+v", nodes)
 	}
 
@@ -423,8 +423,8 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootNode = nodes["Library/root.jpg [1]"]
-	sharedNode, ok := nodes["Shared/999/shared.jpg [2]"]
+	rootNode = nodes["root.jpg"]
+	sharedNode, ok := nodes["shared.jpg"]
 	if !ok {
 		t.Fatalf("shared media node missing after recovery: %+v", nodes)
 	}
@@ -471,7 +471,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node, ok := nodes["Shared/999/shared.jpg [2]"]; !ok || node.ID != sharedNodeID {
+	if node, ok := nodes["shared.jpg"]; !ok || node.ID != sharedNodeID {
 		t.Fatalf("source-side deletion propagated to xDrive: %+v", nodes)
 	}
 	var remainingMemberships []meta.SourceCollectionItem
@@ -517,7 +517,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node, ok := nodes["Shared/999/shared.jpg [2]"]; !ok || node.ID != sharedNodeID {
+	if node, ok := nodes["shared.jpg"]; !ok || node.ID != sharedNodeID {
 		t.Fatalf("album disappearance affected xDrive media: %+v", nodes)
 	}
 
