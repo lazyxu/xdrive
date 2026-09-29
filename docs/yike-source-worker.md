@@ -212,6 +212,8 @@ run_mode=scan|sync
 
 Sources. `scan` never opens media download streams. `sync` executes the same planner output through the Source execution-commit protocol.
 
+Sync discovery and transfer run as a bounded producer/consumer pipeline. Discovery flushes planning observations at least once per remote page (and at 100 items by default), then places executable plans into a bounded queue with a default capacity of 128. A single transfer worker consumes that queue, so scanning can continue while the previous media object is streaming without increasing Yike media-download concurrency. When the queue fills, discovery naturally applies backpressure until transfers catch up. Successful files are committed individually as soon as their upload/move completes, which narrows the recovery window if the worker exits mid-run. Scan-only mode keeps the larger 500-item observation batch because it never transfers media bytes.
+
 While a run is active, each observation batch persists the current scan/planning summary, and resumable media uploads persist the active Source path plus current/total bytes. Web/Desktop poll that SyncRun and render live progress. A user can request **停止**; xDrive stores `cancel_requested_at`, subsequent heartbeat/progress/observe/commit operations return a stable cancellation signal, and the worker cancels the run context so an active Range download/chunk upload stops promptly. The worker finalizes the run as `cancelled` with `complete_inventory=false`, so cancellation never triggers missing inference and is not counted as a file failure.
 
 For a manual one-shot scan inside the worker container:

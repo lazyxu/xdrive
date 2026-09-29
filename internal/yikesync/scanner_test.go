@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -39,6 +41,7 @@ func (f *fakeRemote) ListAlbumFilesPage(_ context.Context, albumID, cursor strin
 }
 
 type fakeSourceAPI struct {
+	mu         sync.Mutex
 	observed   [][]client.SourceObservation
 	commits    [][]client.SourceCommit
 	failures   [][]client.SourceFailure
@@ -49,6 +52,8 @@ type fakeSourceAPI struct {
 }
 
 func (f *fakeSourceAPI) ObserveSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceObservation) ([]client.SourcePlan, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	copyItems := append([]client.SourceObservation(nil), items...)
 	f.observed = append(f.observed, copyItems)
 	action := f.action
@@ -63,23 +68,31 @@ func (f *fakeSourceAPI) ObserveSourceItems(_ context.Context, _ uint64, _ string
 }
 
 func (f *fakeSourceAPI) CommitSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceCommit) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	copyItems := append([]client.SourceCommit(nil), items...)
 	f.commits = append(f.commits, copyItems)
 	return f.commitErr
 }
 
 func (f *fakeSourceAPI) FailSourceItems(_ context.Context, _ uint64, _ string, items []client.SourceFailure) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	copyItems := append([]client.SourceFailure(nil), items...)
 	f.failures = append(f.failures, copyItems)
 	return nil
 }
 
 func (f *fakeSourceAPI) UpdateSourceRunSummary(_ context.Context, _ uint64, _ string, summary sourcepkg.Summary) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.progress = append(f.progress, summary)
 	return nil
 }
 
 func (f *fakeSourceAPI) HeartbeatSourceRun(context.Context, uint64, string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.heartbeats++
 	return nil
 }
@@ -351,6 +364,133 @@ func (f *fakePlanExecutor) Execute(_ context.Context, plan client.SourcePlan, it
 	}
 	f.commits = append(f.commits, commit)
 	return commit, nil
+}
+
+type pipelineRemote struct {
+	secondPage chan struct{}
+	once       sync.Once
+}
+
+func (r *pipelineRemote) UserInfo(context.Context) (yike.UserInfo, error) {
+	return yike.UserInfo{YouaID: "123"}, nil
+}
+
+func (r *pipelineRemote) ListFilesPage(_ context.Context, cursor string) (yike.FileList, error) {
+	switch cursor {
+	case "":
+		return yike.FileList{
+			Page: yike.Page{HasMore: 1, Cursor: "next"},
+			List: []yike.File{{FSID: 1, Path: "/first.jpg", Size: 10, MTime: 100}},
+		}, nil
+	case "next":
+		r.once.Do(func() { close(r.secondPage) })
+		return yike.FileList{
+			Page: yike.Page{HasMore: 0},
+			List: []yike.File{{FSID: 2, Path: "/second.jpg", Size: 20, MTime: 200}},
+		}, nil
+	default:
+		return yike.FileList{}, fmt.Errorf("unexpected cursor %q", cursor)
+	}
+}
+
+func (r *pipelineRemote) ListAlbumsPage(context.Context, string) (yike.AlbumList, error) {
+	return yike.AlbumList{Page: yike.Page{HasMore: 0}}, nil
+}
+
+func (r *pipelineRemote) ListAlbumFilesPage(context.Context, string, string) (yike.AlbumFileList, error) {
+	return yike.AlbumFileList{Page: yike.Page{HasMore: 0}}, nil
+}
+
+type blockingPlanExecutor struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (e *blockingPlanExecutor) Execute(
+	ctx context.Context,
+	plan client.SourcePlan,
+	item sourcepkg.DiscoveredItem,
+	_ TransferRef,
+) (client.SourceCommit, error) {
+	e.once.Do(func() { close(e.started) })
+	select {
+	case <-e.release:
+	case <-ctx.Done():
+		return client.SourceCommit{}, ctx.Err()
+	}
+	return client.SourceCommit{
+		ExternalID:       item.ExternalID,
+		Action:           plan.Action,
+		NodeID:           100,
+		NodeRevision:     1,
+		Kind:             item.Kind,
+		Path:             item.Path,
+		Size:             item.Size,
+		ModifiedAt:       item.ModifiedAt,
+		SHA256:           strings.Repeat("a", 64),
+		RemoteRevision:   item.RemoteRevision,
+		Transferred:      true,
+		TransferredBytes: item.Size,
+	}, nil
+}
+
+func TestScannerSyncScansNextPageWhileTransferRuns(t *testing.T) {
+	remote := &pipelineRemote{secondPage: make(chan struct{})}
+	executor := &blockingPlanExecutor{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	defer func() {
+		select {
+		case <-executor.release:
+		default:
+			close(executor.release)
+		}
+	}()
+
+	api := &fakeSourceAPI{action: string(sourcepkg.ActionCreate)}
+	done := make(chan struct{})
+	var (
+		result  Result
+		scanErr error
+	)
+	go func() {
+		result, scanErr = (Scanner{
+			Remote: remote, API: api, SourceID: 1, RunID: "run-pipeline",
+			Mode: meta.SourceRunModeSync, Executor: executor,
+			BatchSize: 100, TransferQueueSize: 2,
+		}).Scan(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-executor.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first transfer did not start")
+	}
+	select {
+	case <-remote.secondPage:
+		// The producer reached page two while the first transfer remained blocked.
+	case <-time.After(2 * time.Second):
+		t.Fatal("scanner did not advance while transfer worker was busy")
+	}
+
+	close(executor.release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipeline scan did not finish")
+	}
+	if scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	if result.RootItems != 2 || result.Summary.NewItems != 2 || result.Summary.FailedItems != 0 {
+		t.Fatalf("result=%+v", result)
+	}
+	if len(api.commits) != 2 || len(api.commits[0]) != 1 || len(api.commits[1]) != 1 {
+		t.Fatalf("commits=%+v", api.commits)
+	}
 }
 
 func TestScannerSyncExecutesAndCommitsPlans(t *testing.T) {

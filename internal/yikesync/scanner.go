@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	SourceKind       = "yike_photos"
-	DefaultBatchSize = 500
+	SourceKind               = "yike_photos"
+	DefaultBatchSize         = 500
+	DefaultSyncBatchSize     = 100
+	DefaultTransferQueueSize = 128
 )
 
 type Remote interface {
@@ -43,14 +45,15 @@ type PlanExecutor interface {
 }
 
 type Scanner struct {
-	Remote      Remote
-	API         SourceAPI
-	SourceID    uint64
-	RunID       string
-	IgnoreRules string
-	Mode        string
-	Executor    PlanExecutor
-	BatchSize   int
+	Remote            Remote
+	API               SourceAPI
+	SourceID          uint64
+	RunID             string
+	IgnoreRules       string
+	Mode              string
+	Executor          PlanExecutor
+	BatchSize         int
+	TransferQueueSize int
 }
 
 type Result struct {
@@ -95,9 +98,41 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	}
 
 	batchSize := s.BatchSize
-	if batchSize <= 0 || batchSize > DefaultBatchSize {
+	if batchSize <= 0 {
+		batchSize = DefaultBatchSize
+		if mode == meta.SourceRunModeSync {
+			batchSize = DefaultSyncBatchSize
+		}
+	}
+	if batchSize > DefaultBatchSize {
 		batchSize = DefaultBatchSize
 	}
+
+	runCtx := ctx
+	var transfers *transferPipeline
+	if mode == meta.SourceRunModeSync {
+		queueSize := s.TransferQueueSize
+		if queueSize <= 0 {
+			queueSize = DefaultTransferQueueSize
+		}
+		if queueSize < batchSize {
+			queueSize = batchSize
+		}
+		transfers = newTransferPipeline(ctx, s, queueSize)
+		runCtx = transfers.Context()
+		defer transfers.Abort()
+	}
+	pipelineError := func(fallback error) error {
+		if transfers == nil {
+			return fallback
+		}
+		cause := transfers.Cause()
+		if cause == nil || cause == context.Canceled || cause == context.DeadlineExceeded {
+			return fallback
+		}
+		return fmt.Errorf("Yike transfer pipeline: %w", cause)
+	}
+
 	batch := make([]client.SourceObservation, 0, batchSize)
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
@@ -107,7 +142,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		if len(batch) == 0 {
 			return nil
 		}
-		plans, err := s.API.ObserveSourceItems(ctx, s.SourceID, s.RunID, batch)
+		plans, err := s.API.ObserveSourceItems(runCtx, s.SourceID, s.RunID, batch)
 		if err != nil {
 			return err
 		}
@@ -115,8 +150,6 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			return fmt.Errorf("source plan count mismatch: got %d want %d", len(plans), len(batch))
 		}
 		planned := make(map[string]struct{}, len(plans))
-		commits := make([]client.SourceCommit, 0, len(plans))
-		failures := make([]client.SourceFailure, 0)
 		for _, plan := range plans {
 			item, ok := batchItems[plan.ExternalID]
 			if !ok {
@@ -131,46 +164,33 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				return fmt.Errorf("server returned unsupported source action %q", plan.Action)
 			}
 			result.Summary.Add(sourcepkg.PlanResult{Action: action, Item: item})
-			if mode != meta.SourceRunModeSync || !executionAction(action) {
+			if transfers == nil || !executionAction(action) {
 				continue
 			}
-			if err := s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID); err != nil {
-				return err
-			}
-			commit, err := s.Executor.Execute(ctx, plan, item, batchRefs[plan.ExternalID])
-			if err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				result.Summary.AddFailure()
-				appendResultError(&result, item.ExternalID, item.Path, err)
-				failures = append(failures, sourceFailure(item.ExternalID, err))
-				continue
-			}
-			commits = append(commits, commit)
-			if err := s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID); err != nil {
+			if err := transfers.Enqueue(transferTask{
+				Plan: plan,
+				Item: item,
+				Ref:  batchRefs[plan.ExternalID],
+			}); err != nil {
 				return err
 			}
 		}
-		if len(commits) != 0 {
-			commitFailures, err := s.commitResults(ctx, commits, &result)
-			if err != nil {
-				return err
-			}
-			failures = append(failures, commitFailures...)
-		}
-		if len(failures) != 0 {
-			if err := s.API.FailSourceItems(ctx, s.SourceID, s.RunID, failures); err != nil {
-				return err
-			}
-		}
-		if err := s.API.UpdateSourceRunSummary(ctx, s.SourceID, s.RunID, result.Summary); err != nil {
+		if err := s.API.UpdateSourceRunSummary(runCtx, s.SourceID, s.RunID, result.Summary); err != nil {
 			return err
 		}
 		batch = batch[:0]
 		clear(batchItems)
 		clear(batchRefs)
 		return nil
+	}
+
+	finishPage := func() error {
+		if transfers != nil {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		return s.API.HeartbeatSourceRun(runCtx, s.SourceID, s.RunID)
 	}
 
 	add := func(ownerUK int64, file yike.File, albumFile *yike.AlbumFile) (string, bool, error) {
@@ -223,8 +243,8 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		return externalID, true, nil
 	}
 
-	if err := walkFilePages(ctx,
-		func(cursor string) (yike.FileList, error) { return s.Remote.ListFilesPage(ctx, cursor) },
+	if err := walkFilePages(runCtx,
+		func(cursor string) (yike.FileList, error) { return s.Remote.ListFilesPage(runCtx, cursor) },
 		func(page yike.FileList) error {
 			for _, file := range page.List {
 				result.RootItems++
@@ -232,17 +252,17 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 					return err
 				}
 			}
-			return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
+			return finishPage()
 		},
 	); err != nil {
-		return result, fmt.Errorf("scan Yike root library: %w", err)
+		return result, fmt.Errorf("scan Yike root library: %w", pipelineError(err))
 	}
 
-	albums, err := collectAlbums(ctx, s.Remote, func() error {
-		return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
+	albums, err := collectAlbums(runCtx, s.Remote, func() error {
+		return s.API.HeartbeatSourceRun(runCtx, s.SourceID, s.RunID)
 	})
 	if err != nil {
-		return result, fmt.Errorf("scan Yike albums: %w", err)
+		return result, fmt.Errorf("scan Yike albums: %w", pipelineError(err))
 	}
 	result.Albums = int64(len(albums))
 
@@ -259,9 +279,9 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		}
 		memberSeen := make(map[string]struct{})
 		var position int64
-		if err := walkAlbumFilePages(ctx,
+		if err := walkAlbumFilePages(runCtx,
 			func(cursor string) (yike.AlbumFileList, error) {
-				return s.Remote.ListAlbumFilesPage(ctx, album.AlbumID, cursor)
+				return s.Remote.ListAlbumFilesPage(runCtx, album.AlbumID, cursor)
 			},
 			func(page yike.AlbumFileList) error {
 				for _, file := range page.List {
@@ -282,41 +302,30 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 					}
 					position++
 				}
-				return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
+				return finishPage()
 			},
 		); err != nil {
-			return result, fmt.Errorf("scan Yike album %q: %w", album.Title, err)
+			return result, fmt.Errorf("scan Yike album %q: %w", album.Title, pipelineError(err))
 		}
 		result.Collections = append(result.Collections, snapshot)
 	}
 	if err := flush(); err != nil {
-		return result, fmt.Errorf("flush Yike source observations: %w", err)
+		return result, fmt.Errorf("flush Yike source observations: %w", pipelineError(err))
 	}
-	if err := s.API.UpdateSourceRunSummary(ctx, s.SourceID, s.RunID, result.Summary); err != nil {
+	if transfers != nil {
+		outcome, err := transfers.Finish()
+		if err != nil {
+			return result, fmt.Errorf("execute Yike transfer pipeline: %w", err)
+		}
+		result.Summary.FailedItems += outcome.FailedItems
+		for _, failure := range outcome.Failures {
+			appendResultError(&result, failure.ExternalID, failure.Path, failure.Err)
+		}
+	}
+	if err := s.API.UpdateSourceRunSummary(runCtx, s.SourceID, s.RunID, result.Summary); err != nil {
 		return result, fmt.Errorf("report Yike source progress: %w", err)
 	}
 	return result, nil
-}
-
-func (s Scanner) commitResults(ctx context.Context, commits []client.SourceCommit, result *Result) ([]client.SourceFailure, error) {
-	if err := s.API.CommitSourceItems(ctx, s.SourceID, s.RunID, commits); err == nil {
-		return nil, nil
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	failures := make([]client.SourceFailure, 0)
-	for _, commit := range commits {
-		if err := s.API.CommitSourceItems(ctx, s.SourceID, s.RunID, []client.SourceCommit{commit}); err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			result.Summary.AddFailure()
-			appendResultError(result, commit.ExternalID, commit.Path, err)
-			failures = append(failures, sourceFailure(commit.ExternalID, err))
-		}
-	}
-	return failures, nil
 }
 
 func sourceFailure(externalID string, err error) client.SourceFailure {
