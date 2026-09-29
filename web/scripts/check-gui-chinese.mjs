@@ -62,8 +62,10 @@ if ((files.sources.match(/<XDriveStatusAlert/g) || []).length < 16) throw new Er
 if (!files.sources.includes('XDriveActionButton')) throw new Error('Web 外部来源没有复用共享操作按钮')
 if ((files.sources.match(/<MuiButton/g) || []).length !== 3) throw new Error('Web 外部来源仅允许保留 3 个 text/inherit 特殊 MUI 按钮')
 if ((files.sources.match(/<XDriveActionButton/g) || []).length < 14) throw new Error('Web 外部来源常规 MUI 操作按钮没有全部共享化')
-requireText(files.yikeCookieHelp, ['如何获取 Cookie？', '点击展开', '关闭', 'XDriveDialogActions'], '一刻相册 Cookie 帮助')
-requireText(files.synologyGuide, ['群晖 DSM 配置', 'DSM 操作示意图', '上一步', '下一步', '完成', 'XDriveDialogActions'], '群晖 DSM 向导')
+requireText(files.yikeCookieHelp, ['如何获取 Cookie？', '点击展开', '关闭', 'XDriveDialogActions', 'XDriveStatusAlert'], '一刻相册 Cookie 帮助')
+if (/<Alert\b/.test(files.yikeCookieHelp)) throw new Error('一刻相册 Cookie 帮助仍在直接渲染原生 MUI Alert')
+requireText(files.synologyGuide, ['群晖 DSM 配置', 'DSM 操作示意图', '上一步', '下一步', '完成', 'XDriveDialogActions', 'XDriveStatusAlert'], '群晖 DSM 向导')
+if (/<Alert\b/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI Alert')
 requireText(files.main, ["import zhCN from 'antd/locale/zh_CN'", 'locale={zhCN}'], 'Ant Design')
 requireText(files.html, ['<html lang="zh-CN">', 'xDrive 网页文件管理器'], '网页入口')
 

@@ -15,16 +15,18 @@ export function XDriveStatusAlert({
   title,
   children,
   action,
+  className,
   sx,
 }: {
   tone: XDriveStatusTone
   title?: ReactNode
   children?: ReactNode
   action?: ReactNode
+  className?: string
   sx?: SxProps<Theme>
 }) {
   return (
-    <Alert severity={severityForTone(tone)} action={action} sx={sx}>
+    <Alert severity={severityForTone(tone)} action={action} className={className} sx={sx}>
       {title ? <AlertTitle>{title}</AlertTitle> : null}
       {children}
     </Alert>

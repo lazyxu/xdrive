@@ -204,6 +204,8 @@ test('desktop page actions use the cross-client MUI action component', () => {
 test('desktop persistent sync states use the cross-client MUI status alert', () => {
   assert.ok(sharedStatusAlert.includes('export function XDriveStatusAlert({'), 'shared status alert is missing')
   assert.ok(sharedStatusAlert.includes("if (tone === 'bad') return 'error'"), 'shared alert bad tone mapping is missing')
+  assert.ok(sharedStatusAlert.includes('className?: string'), 'shared status alert must support layout classes')
+  assert.ok(sharedStatusAlert.includes('className={className}'), 'shared status alert does not forward layout classes')
   assert.equal((renderer.match(/<XDriveStatusAlert/g) || []).length >= 3, true, 'desktop persistent sync states are not using shared status alerts')
   assert.ok(renderer.includes('tone="bad"'), 'sync-error state is not mapped to the bad tone')
   assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'paused status alert content is missing')
@@ -233,6 +235,19 @@ test('desktop cloud shares use the cross-client MUI share status badge', () => {
 test('desktop external-source run history uses shared status tones', () => {
   assert.ok(renderer.includes('tone={historyDetail.statusTone} label={historyDetail.statusLabel}'), 'run history does not use the shared status tone')
   assert.equal(renderer.includes('· {historyDetail.statusLabel}'), false, 'run history still renders an untyped status label inline')
+})
+
+test('desktop external-source create/settings surfaces use shared MUI alerts and actions', () => {
+  const start = renderer.indexOf('open={sourceCreateOpen}')
+  const end = renderer.indexOf('selectedSourceID === row.source.id && (', start)
+  assert.ok(start >= 0 && end > start, 'could not isolate source create/settings UI')
+  const sourceForms = renderer.slice(start, end)
+  assert.equal((sourceForms.match(/<MuiAlert/g) || []).length, 0, 'source create/settings still render raw MUI alerts')
+  assert.equal((sourceForms.match(/<MuiButton/g) || []).length, 0, 'source create/settings still render raw MUI buttons')
+  assert.equal((sourceForms.match(/<XDriveStatusAlert/g) || []).length, 9, 'source create/settings shared alert coverage is incomplete')
+  assert.equal((sourceForms.match(/<XDriveActionButton/g) || []).length >= 10, true, 'source create/settings shared action coverage is incomplete')
+  assert.ok(sourceForms.includes('loadingLabel="正在测试…"'), 'credential test action lost shared loading feedback')
+  assert.ok(sourceForms.includes('loadingLabel="正在保存…"'), 'source settings save action lost shared loading feedback')
 })
 
 test('desktop external-source status uses the cross-client MUI badge', () => {

@@ -2361,9 +2361,9 @@ export default function App() {
                 </MuiBox>
 
                 {sourceCreateKind === 'yike_photos' ? (
-                  <MuiAlert severity="info" sx={{ mb: 1.5 }}>
+                  <XDriveStatusAlert tone="neutral" sx={{ mb: 1.5 }}>
                     固定逻辑目录：{yikeManagedTargetLabel}。连接成功后自动创建；底层文件仍使用 xDrive CAS 存储。
-                  </MuiAlert>
+                  </XDriveStatusAlert>
                 ) : (
                 <div className="source-target">
                   <div className="source-target-heading">
@@ -2429,22 +2429,23 @@ export default function App() {
                       required
                     />
                     <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
-                    <MuiAlert severity="warning" sx={{ mt: 0.5 }}>{yikeConnectorNotice}</MuiAlert>
+                    <XDriveStatusAlert tone="warning" sx={{ mt: 0.5 }}>{yikeConnectorNotice}</XDriveStatusAlert>
                     <XDriveYikeCookieHelp variant="dialog" />
-                    <MuiButton
-                      type="button"
-                      size="small"
-                      variant="outlined"
-                      disabled={!!busy}
-                      onClick={() => void testCreateSourceCredential()}
-                      sx={{ alignSelf: 'flex-start', mt: 0.5 }}
-                    >
-                      {busy === 'source-create-test' ? '正在测试…' : '测试连接'}
-                    </MuiButton>
+                    <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
+                      <XDriveActionButton
+                        compact
+                        disabled={!!busy}
+                        loading={busy === 'source-create-test'}
+                        loadingLabel="正在测试…"
+                        onClick={() => void testCreateSourceCredential()}
+                      >
+                        测试连接
+                      </XDriveActionButton>
+                    </MuiBox>
                     {sourceCreateCredentialTest && (
-                      <MuiAlert severity="success" sx={{ mt: 0.5 }}>
+                      <XDriveStatusAlert tone="good" sx={{ mt: 0.5 }}>
                         {externalSourceCredentialTestSuccessLabel(sourceCreateCredentialTest)}
-                      </MuiAlert>
+                      </XDriveStatusAlert>
                     )}
                   </label>
                 )}
@@ -2509,43 +2510,46 @@ export default function App() {
                         ))}
                       </Stack>
                     </div>
-                    <MuiAlert severity="info" className="source-create-wide">
+                    <XDriveStatusAlert tone="neutral" className="source-create-wide">
                       DSM 凭据只会在服务器端加密保存；Pull worker 通过 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。
-                    </MuiAlert>
-                    <MuiButton
-                      type="button"
-                      size="small"
-                      variant="outlined"
-                      disabled={!!busy}
-                      onClick={() => void testCreateSourceCredential()}
-                      sx={{ alignSelf: 'flex-start' }}
-                    >
-                      {busy === 'source-create-test' ? '正在测试…' : '测试连接'}
-                    </MuiButton>
+                    </XDriveStatusAlert>
+                    <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
+                      <XDriveActionButton
+                        compact
+                        disabled={!!busy}
+                        loading={busy === 'source-create-test'}
+                        loadingLabel="正在测试…"
+                        onClick={() => void testCreateSourceCredential()}
+                      >
+                        测试连接
+                      </XDriveActionButton>
+                    </MuiBox>
                     {sourceCreateCredentialTest && (
-                      <MuiAlert severity="success" className="source-create-wide">
+                      <XDriveStatusAlert tone="good" className="source-create-wide">
                         {externalSourceCredentialTestSuccessLabel(sourceCreateCredentialTest)}
-                      </MuiAlert>
+                      </XDriveStatusAlert>
                     )}
                   </>
                 )}
                 {sourceCreateProfile.manualTriggerExecutor === 'source_agent' && (
-                  <MuiAlert severity="warning" className="source-create-note">
+                  <XDriveStatusAlert tone="warning" className="source-create-note">
                     创建 Source 后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
-                  </MuiAlert>
+                  </XDriveStatusAlert>
                 )}
                   </form>
                 </DialogContent>
                 <XDriveDialogActions>
-                  <MuiButton disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</MuiButton>
-                  <MuiButton
+                  <XDriveActionButton disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</XDriveActionButton>
+                  <XDriveActionButton
+                    intent="primary"
                     type="submit"
                     form="source-create-form"
-                    variant="contained"
                     disabled={!!busy || (sourceCreateKind !== 'yike_photos' && sourceTargetLoading)}
+                    loading={busy === 'source-create'}
+                    loadingLabel="正在添加…"
                   >
-                    {busy === 'source-create' ? '正在添加…' : '添加来源'}
-                  </MuiButton>
+                    添加来源
+                  </XDriveActionButton>
                 </XDriveDialogActions>
               </Dialog>
             )}
@@ -2699,31 +2703,32 @@ export default function App() {
                               />
                               <small>已保存的 Cookie 不会回读到桌面渲染进程。</small>
                               <XDriveYikeCookieHelp variant="dialog" />
-                              <MuiButton
-                                type="button"
-                                size="small"
-                                variant="outlined"
-                                disabled={!!busy}
-                                onClick={() => void testSettingsSourceCredential(row)}
-                                sx={{ alignSelf: 'flex-start', mt: 0.5 }}
-                              >
-                                {busy === `source-credential-test-${row.source.id}` ? '正在测试…' : '测试连接'}
-                              </MuiButton>
+                              <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
+                                <XDriveActionButton
+                                  compact
+                                  disabled={!!busy}
+                                  loading={busy === `source-credential-test-${row.source.id}`}
+                                  loadingLabel="正在测试…"
+                                  onClick={() => void testSettingsSourceCredential(row)}
+                                >
+                                  测试连接
+                                </XDriveActionButton>
+                              </MuiBox>
                               {sourceEditCredentialTest && (
-                                <MuiAlert severity="success" sx={{ mt: 0.5 }}>
+                                <XDriveStatusAlert tone="good" sx={{ mt: 0.5 }}>
                                   {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
-                                </MuiAlert>
+                                </XDriveStatusAlert>
                               )}
                             </label>
                           )}
                           {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'synology_dsm' && (
                             <>
                               <MuiDivider className="source-settings-wide" />
-                              <MuiAlert severity={row.credential?.configured ? 'success' : 'warning'} className="source-settings-wide">
+                              <XDriveStatusAlert tone={row.credential?.configured ? 'good' : 'warning'} className="source-settings-wide">
                                 {row.credential?.configured
                                   ? 'DSM 凭据已配置。出于安全原因，地址、用户名和密码不会回读；更新时请重新完整填写三项。'
                                   : 'DSM 凭据未配置；Pull 来源会保持暂停，直到保存有效凭据。'}
-                              </MuiAlert>
+                              </XDriveStatusAlert>
                               <label className="source-settings-wide">
                                 <span>更新 DSM 地址</span>
                                 <input
@@ -2781,20 +2786,21 @@ export default function App() {
                                 </Stack>
                                 {!sourceEditConnectorConfig && <small>正在读取当前空间配置；默认使用个人空间和共享空间。</small>}
                               </div>
-                              <MuiButton
-                                type="button"
-                                size="small"
-                                variant="outlined"
-                                disabled={!!busy}
-                                onClick={() => void testSettingsSourceCredential(row)}
-                                sx={{ alignSelf: 'flex-start' }}
-                              >
-                                {busy === `source-credential-test-${row.source.id}` ? '正在测试…' : '测试连接'}
-                              </MuiButton>
+                              <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
+                                <XDriveActionButton
+                                  compact
+                                  disabled={!!busy}
+                                  loading={busy === `source-credential-test-${row.source.id}`}
+                                  loadingLabel="正在测试…"
+                                  onClick={() => void testSettingsSourceCredential(row)}
+                                >
+                                  测试连接
+                                </XDriveActionButton>
+                              </MuiBox>
                               {sourceEditCredentialTest && (
-                                <MuiAlert severity="success" className="source-settings-wide">
+                                <XDriveStatusAlert tone="good" className="source-settings-wide">
                                   {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
-                                </MuiAlert>
+                                </XDriveStatusAlert>
                               )}
                             </>
                           )}
@@ -2802,28 +2808,29 @@ export default function App() {
                           </DialogContent>
                           <XDriveDialogActions>
                             {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential && row.credential?.configured && (
-                              <MuiButton color="error" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
+                              <XDriveActionButton intent="danger" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
                                 清除{externalSourceCredentialLabel(externalSourceConnectorProfile(row.source.kind, row.source.direction))}
-                              </MuiButton>
+                              </XDriveActionButton>
                             )}
-                            <MuiButton
-                              color="error"
-                              variant="outlined"
+                            <XDriveActionButton
+                              intent="danger"
                               disabled={!!busy || row.latestRun?.status === 'running'}
                               onClick={() => setSourceDeleteTarget(row)}
                             >
                               删除来源
-                            </MuiButton>
+                            </XDriveActionButton>
                             <XDriveDialogActionSpacer />
-                            <MuiButton disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</MuiButton>
-                            <MuiButton
+                            <XDriveActionButton disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</XDriveActionButton>
+                            <XDriveActionButton
+                              intent="primary"
                               type="submit"
                               form={`source-settings-form-${row.source.id}`}
-                              variant="contained"
                               disabled={!!busy}
+                              loading={busy === `source-settings-${row.source.id}`}
+                              loadingLabel="正在保存…"
                             >
-                              {busy === `source-settings-${row.source.id}` ? '正在保存…' : '保存设置'}
-                            </MuiButton>
+                              保存设置
+                            </XDriveActionButton>
                           </XDriveDialogActions>
                         </Dialog>
                       )}
