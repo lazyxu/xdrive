@@ -5,7 +5,6 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
-  Alert as MuiAlert,
   Box as MuiBox,
   Button as MuiButton,
   Chip,
@@ -13,7 +12,6 @@ import {
   DialogActions,
   DialogContent,
   DialogContentText,
-  DialogTitle,
   LinearProgress,
   MenuItem,
   Stack,
@@ -21,7 +19,15 @@ import {
   Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
-import { XDriveStatePanel, XDriveStatusBadge, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog, XDriveYikeCookieHelp } from '@xdrive/ui/mui'
+import {
+  XDriveDialogTitle,
+  XDriveStatePanel,
+  XDriveStatusAlert,
+  XDriveStatusBadge,
+  XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
+  XDriveYikeCookieHelp,
+  xDriveDialogPaperProps,
+} from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -649,8 +655,8 @@ export default function ExternalSourcesPanel({
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-        <DialogTitle>外部来源</DialogTitle>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title="外部来源" onClose={onClose} />
         <DialogContent dividers>
       <div className="external-sources-toolbar">
         <Space>
@@ -746,16 +752,16 @@ export default function ExternalSourcesPanel({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth>
-        <DialogTitle>{selected ? `${selected.source.name} · 来源详情` : '来源详情'}</DialogTitle>
+      <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title={selected ? `${selected.source.name} · 来源详情` : '来源详情'} onClose={closeDetails} />
         <DialogContent dividers>
         {selected && selectedDetail && (
           <>
             {selectedDetail.error && (
-              <MuiAlert severity="error" sx={{ mb: 2 }}>
+              <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>
                 <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>最近一次运行异常</MuiTypography>
                 <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedDetail.error}</MuiTypography>
-              </MuiAlert>
+              </XDriveStatusAlert>
             )}
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
               <Descriptions.Item label="来源类型">{selectedDetail.kindLabel}</Descriptions.Item>
@@ -869,9 +875,9 @@ export default function ExternalSourcesPanel({
                               </Descriptions.Item>
                             ))}
                           </Descriptions>
-                          <MuiAlert severity={runDetail.error ? 'error' : 'success'} sx={{ mt: 1.5 }}>
+                          <XDriveStatusAlert tone={runDetail.error ? 'bad' : 'good'} sx={{ mt: 1.5 }}>
                             运行日志：{runDetail.error || '无错误日志'}
-                          </MuiAlert>
+                          </XDriveStatusAlert>
                           {runDetail.failedItems > 0 && (
                             <MuiBox sx={{ mt: 1.5 }}>
                               <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
@@ -892,7 +898,7 @@ export default function ExternalSourcesPanel({
                                       <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
                                         {failure.external_id} · {formatExternalSourceTime(failure.failed_at)}
                                       </MuiTypography>
-                                      <MuiAlert severity="error" sx={{ mt: 0.75 }}>{failure.error}</MuiAlert>
+                                      <XDriveStatusAlert tone="bad" sx={{ mt: 0.75 }}>{failure.error}</XDriveStatusAlert>
                                     </MuiBox>
                                   ))}
                                   <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
@@ -916,9 +922,9 @@ export default function ExternalSourcesPanel({
                                   </Stack>
                                 </Stack>
                               ) : failurePage?.loaded ? (
-                                <MuiAlert severity="warning">
+                                <XDriveStatusAlert tone="warning">
                                   该历史 Run 记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
-                                </MuiAlert>
+                                </XDriveStatusAlert>
                               ) : (
                                 <MuiTypography variant="caption" color="text.secondary">
                                   展开后加载本次失败文件明细。
@@ -959,8 +965,8 @@ export default function ExternalSourcesPanel({
               </MuiTypography>
             )}
             {!failedItemsLoading && failedItems.length > 0 && (
-              <MuiAlert
-                severity="error"
+              <XDriveStatusAlert
+                tone="bad"
                 sx={{ mt: 2 }}
                 action={(
                   <Stack direction="row" spacing={0.5}>
@@ -979,7 +985,7 @@ export default function ExternalSourcesPanel({
                 )}
               >
                 当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
-              </MuiAlert>
+              </XDriveStatusAlert>
             )}
           </>
         )}
@@ -989,13 +995,13 @@ export default function ExternalSourcesPanel({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={failedItemsOpen && failedItems.length > 0} onClose={() => setFailedItemsOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>失败文件</DialogTitle>
+      <Dialog open={failedItemsOpen && failedItems.length > 0} onClose={() => setFailedItemsOpen(false)} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title="失败文件" onClose={() => setFailedItemsOpen(false)} />
         <DialogContent dividers>
           {failedItemsLimitReached && (
-            <MuiAlert severity="info" sx={{ mb: 2 }}>
+            <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
               当前最多显示前 1000 个失败项。
-            </MuiAlert>
+            </XDriveStatusAlert>
           )}
           <Stack spacing={1.5}>
             {failedItems.map((item) => (
@@ -1009,9 +1015,9 @@ export default function ExternalSourcesPanel({
                 <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
                   外部 ID：{item.external_id}
                 </MuiTypography>
-                <MuiAlert severity="error" sx={{ mt: 1 }}>
+                <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>
                   {item.last_error || '未提供具体错误原因'}
-                </MuiAlert>
+                </XDriveStatusAlert>
               </MuiBox>
             ))}
           </Stack>
@@ -1030,20 +1036,30 @@ export default function ExternalSourcesPanel({
         }}
         maxWidth="sm"
         fullWidth
+        scroll="paper"
+        slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <DialogTitle>添加外部来源</DialogTitle>
+        <XDriveDialogTitle
+          title="添加外部来源"
+          onClose={() => {
+            if (creating) return
+            setCreateOpen(false)
+            createForm.resetFields()
+          }}
+          closeDisabled={creating}
+        />
         <DialogContent dividers>
         {createKind === 'yike_photos' ? (
-          <MuiAlert severity="info" sx={{ mb: 2 }}>
+          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
             固定逻辑目录：{yikeManagedTargetLabel}。连接成功后由服务器按百度 UID 和账号名称自动创建；底层文件仍使用 xDrive CAS 存储。
-          </MuiAlert>
+          </XDriveStatusAlert>
         ) : (
-          <MuiAlert severity="info" sx={{ mb: 2 }}>
+          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
             <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
             <MuiTypography variant="body2">
               当前目标：{defaultTargetLabel}{defaultTargetPath ? `（${defaultTargetPath}）` : '（我的文件根目录）'}
             </MuiTypography>
-          </MuiAlert>
+          </XDriveStatusAlert>
         )}
         <Form form={createForm} layout="vertical" onFinish={createSource} requiredMark={false}>
           <Form.Item name="kind" label="来源类型" rules={[{ required: true }]}>
@@ -1122,17 +1138,17 @@ export default function ExternalSourcesPanel({
           )}
           {createKind === 'yike_photos' && (
             <div style={{ marginTop: -12, marginBottom: 16 }}>
-              <MuiAlert severity="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</MuiAlert>
+              <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</XDriveStatusAlert>
               <XDriveYikeCookieHelp variant="accordion" />
               <MuiButton size="small" variant="outlined" disabled={testingCreateCredential} onClick={() => void testCreateCookie()} sx={{ mt: 1 }}>
                 {testingCreateCredential ? '正在测试…' : '测试连接'}
               </MuiButton>
               {createCredentialTest && (
-                <MuiAlert severity="success" sx={{ mt: 1 }}>
+                <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
                   {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
-                </MuiAlert>
+                </XDriveStatusAlert>
               )}
-              {createCredentialTestError && <MuiAlert severity="error" sx={{ mt: 1 }}>{createCredentialTestError}</MuiAlert>}
+              {createCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{createCredentialTestError}</XDriveStatusAlert>}
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -1159,8 +1175,19 @@ export default function ExternalSourcesPanel({
         }}
         maxWidth="sm"
         fullWidth
+        scroll="paper"
+        slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <DialogTitle>{setting ? `${setting.source.name} · 设置` : '来源设置'}</DialogTitle>
+        <XDriveDialogTitle
+          title={setting ? `${setting.source.name} · 设置` : '来源设置'}
+          onClose={() => {
+            if (savingSettings) return
+            setClearCookieConfirmOpen(false)
+            setSetting(null)
+            settingsForm.resetFields()
+          }}
+          closeDisabled={savingSettings}
+        />
         <DialogContent dividers>
         {setting && (
           <Form form={settingsForm} layout="vertical" onFinish={saveSettings} requiredMark={false}>
@@ -1232,14 +1259,14 @@ export default function ExternalSourcesPanel({
             {externalSourceConnectorProfile(setting.source.kind).credential === 'cookie' && (
               <>
                 <Divider orientation="left">一刻相册凭据</Divider>
-                <MuiAlert severity={setting.credential?.configured ? 'success' : 'warning'} sx={{ mb: 2 }}>
+                <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 2 }}>
                   <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
                     {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
                   </MuiTypography>
                   <MuiTypography variant="body2">
                     出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
                   </MuiTypography>
-                </MuiAlert>
+                </XDriveStatusAlert>
                 <Form.Item name="cookie" label="更新 Cookie">
                   <Input.Password
                     autoComplete="off"
@@ -1262,11 +1289,11 @@ export default function ExternalSourcesPanel({
                     {testingSettingsCredential ? '正在测试…' : '测试连接'}
                   </MuiButton>
                   {settingsCredentialTest && (
-                    <MuiAlert severity="success" sx={{ mt: 1 }}>
+                    <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
                       {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
-                    </MuiAlert>
+                    </XDriveStatusAlert>
                   )}
-                  {settingsCredentialTestError && <MuiAlert severity="error" sx={{ mt: 1 }}>{settingsCredentialTestError}</MuiAlert>}
+                  {settingsCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{settingsCredentialTestError}</XDriveStatusAlert>}
                 </div>
                 {setting.credential?.configured && (
                   <MuiButton
@@ -1310,8 +1337,8 @@ export default function ExternalSourcesPanel({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)}>
-        <DialogTitle>删除外部来源？</DialogTitle>
+      <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title="删除外部来源？" onClose={() => setDeleteTarget(null)} closeDisabled={deletingSourceID !== null} />
         <DialogContent>
           <DialogContentText>
             删除“{deleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
@@ -1331,8 +1358,9 @@ export default function ExternalSourcesPanel({
         onClose={() => !clearingCookie && setClearCookieConfirmOpen(false)}
         maxWidth="xs"
         fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <DialogTitle>清除已保存的 Cookie？</DialogTitle>
+        <XDriveDialogTitle title="清除已保存的 Cookie？" onClose={() => setClearCookieConfirmOpen(false)} closeDisabled={clearingCookie} />
         <DialogContent>
           <DialogContentText>
             清除后，一刻相册来源会自动暂停，无法继续扫描或同步，直到重新配置有效 Cookie。
@@ -1346,12 +1374,12 @@ export default function ExternalSourcesPanel({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!errorDialog} onClose={() => setErrorDialog(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>{errorDialog?.title ?? '操作失败'}</DialogTitle>
+      <Dialog open={!!errorDialog} onClose={() => setErrorDialog(null)} maxWidth="sm" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title={errorDialog?.title ?? '操作失败'} onClose={() => setErrorDialog(null)} />
         <DialogContent dividers>
           {errorDialog && (
             <Stack spacing={1.5}>
-              <MuiAlert severity="error">{errorDialog.message}</MuiAlert>
+              <XDriveStatusAlert tone="bad">{errorDialog.message}</XDriveStatusAlert>
               {errorDialog.detail && (
                 <MuiBox>
                   <MuiTypography variant="caption" color="text.secondary">详细信息</MuiTypography>
