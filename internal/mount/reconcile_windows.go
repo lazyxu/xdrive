@@ -825,9 +825,10 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 
 func (p *winProvider) storeBaseline(baseline map[string]winState) {
 	p.mu.Lock()
+	previous := p.baseline
 	p.baseline = baseline
 	p.mu.Unlock()
-	if err := p.persistBaseline(baseline); err != nil {
+	if err := p.persistBaselineDelta(previous, baseline); err != nil {
 		fmt.Fprintln(os.Stderr, "xd: persist Windows sync baseline:", err)
 		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 	}

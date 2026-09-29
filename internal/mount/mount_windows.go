@@ -27,22 +27,24 @@ type winState struct {
 }
 
 type winProvider struct {
-	cli           *client.Client
-	root          string
-	connKey       int64
-	mu            sync.Mutex
-	baseline      map[string]winState
-	hydrated      map[uint64]time.Time
-	accessed      map[uint64]time.Time
-	policy        syncPolicy
-	cacheLimit    int64
-	cacheGrace    time.Duration
-	statePath     string
-	remoteJournal bool
-	remoteCursor  uint64
-	manualSync    chan struct{}
-	retrySync     chan chan error
-	transfers     *transfer.Manager
+	cli             *client.Client
+	root            string
+	connKey         int64
+	mu              sync.Mutex
+	baseline        map[string]winState
+	hydrated        map[uint64]time.Time
+	accessed        map[uint64]time.Time
+	policy          syncPolicy
+	cacheLimit      int64
+	cacheGrace      time.Duration
+	statePath       string
+	stateFrames     int
+	stateDeltaBytes int64
+	remoteJournal   bool
+	remoteCursor    uint64
+	manualSync      chan struct{}
+	retrySync       chan chan error
+	transfers       *transfer.Manager
 }
 
 var activeWinProvider struct {
@@ -360,7 +362,9 @@ func (p *winProvider) initialSync(ctx context.Context) error {
 		if !currentOK || !previousOK || currentRoot.ID != previousRoot.node.ID {
 			return fmt.Errorf("Windows sync baseline does not match the current account root")
 		}
-		p.storeBaseline(persisted)
+		p.mu.Lock()
+		p.baseline = persisted
+		p.mu.Unlock()
 		if err := p.reconcile(ctx); err != nil {
 			return err
 		}
