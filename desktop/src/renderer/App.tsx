@@ -45,6 +45,7 @@ import {
   XDriveDialogActionSpacer,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDrivePaginationControls,
   XDriveStatePanel,
   XDriveShareStatusBadge,
   XDriveStatusAlert,
@@ -2860,7 +2861,6 @@ export default function App() {
                           <div className="source-run-detail">
                             <div className="source-run-heading">
                               <strong>同步历史</strong>
-                              <span>第 {sourceHistoryPage} 页 · 每页 {SOURCE_HISTORY_PAGE_SIZE} 条</span>
                             </div>
                             {sourceHistoryLoading && sourceHistoryRuns.length === 0 ? (
                               <Typography variant="caption" color="text.secondary">正在加载运行历史…</Typography>
@@ -2959,25 +2959,15 @@ export default function App() {
                                                     error={failure.error}
                                                   />
                                                 ))}
-                                                <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                                                  <XDriveActionButton
-                                                    compact
-                                                    disabled={failurePage.loading || failurePage.page <= 1}
-                                                    onClick={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page - 1)}
-                                                  >
-                                                    上一页
-                                                  </XDriveActionButton>
-                                                  <Typography variant="caption" color="text.secondary">
-                                                    失败项第 {failurePage.page} 页 · 每页 {SOURCE_RUN_FAILURE_PAGE_SIZE} 条
-                                                  </Typography>
-                                                  <XDriveActionButton
-                                                    compact
-                                                    disabled={failurePage.loading || !failurePage.hasNext}
-                                                    onClick={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page + 1)}
-                                                  >
-                                                    下一页
-                                                  </XDriveActionButton>
-                                                </Stack>
+                                                <XDrivePaginationControls
+                                                  page={failurePage.page}
+                                                  pageSize={SOURCE_RUN_FAILURE_PAGE_SIZE}
+                                                  hasNext={failurePage.hasNext}
+                                                  loading={failurePage.loading}
+                                                  labelPrefix="失败项"
+                                                  onPrevious={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page - 1)}
+                                                  onNext={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page + 1)}
+                                                />
                                               </Stack>
                                             ) : failurePage?.loaded ? (
                                               <XDriveStatusAlert tone="warning">
@@ -2992,25 +2982,14 @@ export default function App() {
                                     </MuiBox>
                                   )
                                 })}
-                                <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                                  <XDriveActionButton
-                                    compact
-                                    disabled={sourceHistoryLoading || sourceHistoryPage <= 1}
-                                    onClick={() => void loadSourceHistory(row.source.id, sourceHistoryPage - 1)}
-                                  >
-                                    上一页
-                                  </XDriveActionButton>
-                                  <Typography variant="caption" color="text.secondary">
-                                    第 {sourceHistoryPage} 页 · 每页 {SOURCE_HISTORY_PAGE_SIZE} 条
-                                  </Typography>
-                                  <XDriveActionButton
-                                    compact
-                                    disabled={sourceHistoryLoading || !sourceHistoryHasNext}
-                                    onClick={() => void loadSourceHistory(row.source.id, sourceHistoryPage + 1)}
-                                  >
-                                    下一页
-                                  </XDriveActionButton>
-                                </Stack>
+                                <XDrivePaginationControls
+                                  page={sourceHistoryPage}
+                                  pageSize={SOURCE_HISTORY_PAGE_SIZE}
+                                  hasNext={sourceHistoryHasNext}
+                                  loading={sourceHistoryLoading}
+                                  onPrevious={() => void loadSourceHistory(row.source.id, sourceHistoryPage - 1)}
+                                  onNext={() => void loadSourceHistory(row.source.id, sourceHistoryPage + 1)}
+                                />
                               </Stack>
                             )}
                           </div>
