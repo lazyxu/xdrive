@@ -18,6 +18,7 @@ const sharedYikeCookieHelp = fs.readFileSync(path.join(root, '..', 'ui', 'shared
 const sharedExternalSources = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
 const sharedSourceRunProgress = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceRunProgress.tsx'), 'utf8')
 const sharedSourceFailureItem = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceFailureItem.tsx'), 'utf8')
+const sharedPaginationControls = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PaginationControls.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -276,6 +277,17 @@ test('desktop external-source run history uses shared status and progress surfac
   assert.equal(renderer.includes('<LinearProgress'), false, 'desktop still owns a raw source run progress bar')
 })
 
+test('shared pagination controls own compact navigation and disabled-state rules', () => {
+  assert.ok(sharedPaginationControls.includes('export function XDrivePaginationControls({'), 'shared pagination component is missing')
+  assert.ok(sharedPaginationControls.includes('XDriveActionButton compact'), 'shared pagination does not use compact shared actions')
+  assert.ok(sharedPaginationControls.includes('loading || page <= 1'), 'shared pagination previous-page guard is missing')
+  assert.ok(sharedPaginationControls.includes('loading || !hasNext'), 'shared pagination next-page guard is missing')
+  assert.ok(sharedPaginationControls.includes('labelPrefix'), 'shared pagination prefix contract is missing')
+  assert.equal((renderer.match(/<XDrivePaginationControls/g) || []).length, 2, 'desktop Source history/failure pagination is not fully shared')
+  assert.equal(renderer.includes('失败项第 {failurePage.page}'), false, 'desktop still owns failure pagination text')
+  assert.equal(renderer.includes('<span>第 {sourceHistoryPage} 页'), false, 'desktop still duplicates history pagination text in the heading')
+})
+
 test('desktop external-source create/settings surfaces use shared MUI alerts and actions', () => {
   const start = renderer.indexOf('open={sourceCreateOpen}')
   const end = renderer.indexOf('selectedSourceID === row.source.id && (', start)
@@ -298,7 +310,7 @@ test('desktop external-source detail/history surfaces use shared MUI alerts and 
   assert.equal((sourceDetail.match(/<MuiButton/g) || []).length, 2, 'source detail/history should only retain two inherit-color alert actions')
   assert.equal((sourceDetail.match(/<XDriveStatusAlert/g) || []).length >= 3, true, 'source detail/history shared alert coverage is incomplete')
   assert.equal((sourceDetail.match(/<XDriveSourceFailureItem/g) || []).length, 1, 'source detail/history shared failure-item coverage is incomplete')
-  assert.equal((sourceDetail.match(/<XDriveActionButton/g) || []).length >= 4, true, 'source detail/history shared action coverage is incomplete')
+  assert.equal((sourceDetail.match(/<XDrivePaginationControls/g) || []).length, 2, 'source detail/history pagination is not fully shared')
   assert.equal((sourceDetail.match(/<XDriveSourceRunProgress/g) || []).length, 1, 'source detail/history shared progress coverage is incomplete')
   assert.ok(sourceDetail.includes("cancelLoading={busy === 'source-cancel-' + run.id}"), 'run cancel state is not forwarded to shared progress')
 })

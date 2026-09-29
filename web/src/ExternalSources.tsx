@@ -21,6 +21,7 @@ import {
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDrivePaginationControls,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
@@ -1015,25 +1016,15 @@ export default function ExternalSourcesPanel({
                                       error={failure.error}
                                     />
                                   ))}
-                                  <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
-                                    <Button
-                                      size="small"
-                                      disabled={failurePage.loading || failurePage.page <= 1}
-                                      onClick={() => void loadRunFailures(selected.source.id, run.id, failurePage.page - 1)}
-                                    >
-                                      上一页
-                                    </Button>
-                                    <Typography.Text type="secondary">
-                                      失败项第 {failurePage.page} 页 · 每页 {SOURCE_RUN_FAILURE_PAGE_SIZE} 条
-                                    </Typography.Text>
-                                    <Button
-                                      size="small"
-                                      disabled={failurePage.loading || !failurePage.hasNext}
-                                      onClick={() => void loadRunFailures(selected.source.id, run.id, failurePage.page + 1)}
-                                    >
-                                      下一页
-                                    </Button>
-                                  </Stack>
+                                  <XDrivePaginationControls
+                                    page={failurePage.page}
+                                    pageSize={SOURCE_RUN_FAILURE_PAGE_SIZE}
+                                    hasNext={failurePage.hasNext}
+                                    loading={failurePage.loading}
+                                    labelPrefix="失败项"
+                                    onPrevious={() => void loadRunFailures(selected.source.id, run.id, failurePage.page - 1)}
+                                    onNext={() => void loadRunFailures(selected.source.id, run.id, failurePage.page + 1)}
+                                  />
                                 </Stack>
                               ) : failurePage?.loaded ? (
                                 <XDriveStatusAlert tone="warning">
@@ -1050,23 +1041,15 @@ export default function ExternalSourcesPanel({
                       </Accordion>
                     )
                   })}
-                  <Stack direction="row" spacing={1} justifyContent="center" alignItems="center" sx={{ pt: 0.5 }}>
-                    <Button
-                      size="small"
-                      disabled={historyLoading || historyPage <= 1}
-                      onClick={() => void loadRunHistory(selected.source.id, historyPage - 1)}
-                    >
-                      上一页
-                    </Button>
-                    <Typography.Text type="secondary">第 {historyPage} 页 · 每页 {SOURCE_HISTORY_PAGE_SIZE} 条</Typography.Text>
-                    <Button
-                      size="small"
-                      disabled={historyLoading || !historyHasNext}
-                      onClick={() => void loadRunHistory(selected.source.id, historyPage + 1)}
-                    >
-                      下一页
-                    </Button>
-                  </Stack>
+                  <XDrivePaginationControls
+                    page={historyPage}
+                    pageSize={SOURCE_HISTORY_PAGE_SIZE}
+                    hasNext={historyHasNext}
+                    loading={historyLoading}
+                    onPrevious={() => void loadRunHistory(selected.source.id, historyPage - 1)}
+                    onNext={() => void loadRunHistory(selected.source.id, historyPage + 1)}
+                    sx={{ pt: 0.5 }}
+                  />
                 </Stack>
               ) : (
                 <XDriveStatePanel variant="plain" message={historyLoading ? '正在加载运行历史' : '尚无运行记录'} />
