@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Col, Modal, Row, Space, Statistic, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Accordion, AccordionDetails, AccordionSummary, Chip, Stack, Typography as MuiTypography } from '@mui/material'
+import { XDriveStatusBadge } from '@xdrive/ui/mui'
 import type {
   StorageDecision,
   StorageHealth,
@@ -415,10 +416,9 @@ export default function StorageStatsModal({
                           label={run.trigger === 'manual' ? '手动' : '自动'}
                           variant="outlined"
                         />
-                        <Chip
-                          size="small"
+                        <XDriveStatusBadge
+                          tone={run.status === 'success' ? 'good' : run.status === 'partial' ? 'warning' : 'bad'}
                           label={run.status === 'success' ? '成功' : run.status === 'partial' ? '部分失败' : '失败'}
-                          color={run.status === 'success' ? 'success' : run.status === 'partial' ? 'warning' : 'error'}
                         />
                         <MuiTypography variant="body2" color="text.secondary">
                           删除 {run.deleted_files.toLocaleString()} 个 / {formatSize(run.deleted_bytes)}

@@ -9,12 +9,12 @@ import {
   Space,
   Switch,
   Table,
-  Tag,
   Typography,
   message,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { XDriveApi } from './api'
+import { XDriveStatusBadge } from '@xdrive/ui/mui'
 import type { AdminUser } from '../../ui/shared/src'
 import { formatBinarySize as formatBytes } from '../../ui/shared/src'
 
@@ -148,7 +148,7 @@ export default function AdminUsersPanel({
       render: (_, user) => (
         <Space>
           <Typography.Text strong={user.id === currentUserID}>{user.username}</Typography.Text>
-          {user.id === currentUserID && <Tag color="blue">当前用户</Tag>}
+          {user.id === currentUserID && <XDriveStatusBadge tone="neutral" label="当前用户" />}
         </Space>
       ),
     },
@@ -221,8 +221,8 @@ export default function AdminUsersPanel({
       title: '密码',
       width: 150,
       render: (_, user) => user.must_change_password
-        ? <Tag color="orange">需要修改</Tag>
-        : <Tag color="green">已设置</Tag>,
+        ? <XDriveStatusBadge tone="warning" label="需要修改" />
+        : <XDriveStatusBadge tone="good" label="已设置" />,
     },
     {
       title: '存储',
@@ -231,7 +231,7 @@ export default function AdminUsersPanel({
         <Space direction="vertical" size={0}>
           <Typography.Text>
             {formatBytes(user.physical_used_bytes)} / {user.quota_bytes === 0 ? '不限' : formatBytes(user.quota_bytes)}
-            {user.over_quota && <Tag color="red" style={{ marginLeft: 8 }}>已超配额</Tag>}
+            {user.over_quota && <span style={{ marginLeft: 8 }}><XDriveStatusBadge tone="bad" label="已超配额" /></span>}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             可用 {formatBytes(user.available_bytes)}
