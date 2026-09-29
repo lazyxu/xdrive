@@ -19,6 +19,7 @@ const files = {
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
   sourceRunProgress: readRepo('ui/shared/src/mui/SourceRunProgress.tsx'),
+  sourceFailureItem: readRepo('ui/shared/src/mui/SourceFailureItem.tsx'),
   main: read('src/main.tsx'),
   html: read('index.html'),
 }
@@ -53,7 +54,7 @@ requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '
 if (/<Alert\b/.test(files.share)) throw new Error('分享窗口仍在直接渲染 AntD Alert')
 requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数', 'XDriveStatusAlert'], '公开分享')
 if (/<Alert\b/.test(files.publicShare)) throw new Error('公开分享仍在直接渲染 AntD Alert')
-requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '外部来源')
+requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '外部来源')
 if (files.sources.includes('<DialogTitle')) throw new Error('Web 外部来源仍在直接渲染原生 DialogTitle')
 if (files.sources.includes('<MuiAlert')) throw new Error('Web 外部来源仍在直接渲染原生 MUI Alert')
 if ((files.sources.match(/<XDriveDialogTitle/g) || []).length < 8) throw new Error('Web 外部来源弹窗没有全部复用共享 Dialog chrome')
@@ -68,6 +69,9 @@ if ((files.sources.match(/<XDriveActionButton/g) || []).length < 14) throw new E
 if (files.sources.includes('<LinearProgress')) throw new Error('Web 外部来源仍在直接渲染运行进度条')
 if ((files.sources.match(/<XDriveSourceRunProgress/g) || []).length !== 1) throw new Error('Web 外部来源运行进度没有复用共享组件')
 requireText(files.sourceRunProgress, ['ExternalSourceRunProgressView', 'LinearProgress', '当前文件：', '正在取消…', 'XDriveActionButton'], '外部来源运行进度')
+if ((files.sources.match(/<XDriveSourceFailureItem/g) || []).length !== 2) throw new Error('Web 外部来源失败文件没有全部复用共享 item')
+if (files.sources.includes('<MuiBox key={failure.id}') || files.sources.includes('<MuiBox key={item.source_item_id}')) throw new Error('Web 外部来源仍保留本地失败文件卡片')
+requireText(files.sourceFailureItem, ['formatExternalSourceTime(failedAt)', '外部 ID：', '未提供具体错误原因', 'XDriveStatusAlert'], '外部来源失败文件 item')
 requireText(files.yikeCookieHelp, ['如何获取 Cookie？', '点击展开', '关闭', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '一刻相册 Cookie 帮助')
 if (/<Alert\b/.test(files.yikeCookieHelp)) throw new Error('一刻相册 Cookie 帮助仍在直接渲染原生 MUI Alert')
 if (/<DialogContent(?:\s|>)/.test(files.yikeCookieHelp)) throw new Error('一刻相册 Cookie 帮助仍在直接渲染原生 MUI DialogContent')
