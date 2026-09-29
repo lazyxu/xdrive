@@ -3,7 +3,6 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import {
   Alert,
   Box,
-  Button,
   Dialog,
   DialogActions,
   DialogContent,
@@ -15,17 +14,18 @@ import {
   Stepper,
   Typography,
 } from '@mui/material'
-import type { ExternalSource, SynologyDsmGuideVisual } from '@xdrive/shared'
-import { synologyDsmSetupGuide } from '@xdrive/shared'
-import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'
+import type { ExternalSource, SynologyDsmGuideVisual } from '../index'
+import { synologyDsmSetupGuide } from '../index'
+import { XDriveActionButton } from './ActionButton'
+import { XDriveDialogTitle } from './DialogTitle'
 
 const visuals: Record<SynologyDsmGuideVisual, string> = {
-  'task-create': new URL('../../../ui/shared/assets/synology-dsm-task-create.svg', import.meta.url).href,
-  'task-schedule': new URL('../../../ui/shared/assets/synology-dsm-task-schedule.svg', import.meta.url).href,
-  'task-script': new URL('../../../ui/shared/assets/synology-dsm-task-script.svg', import.meta.url).href,
+  'task-create': new URL('../../assets/synology-dsm-task-create.svg', import.meta.url).href,
+  'task-schedule': new URL('../../assets/synology-dsm-task-schedule.svg', import.meta.url).href,
+  'task-script': new URL('../../assets/synology-dsm-task-script.svg', import.meta.url).href,
 }
 
-export default function SynologyDsmGuideDialog({
+export function XDriveSynologyDsmGuideDialog({
   open,
   source,
   serverURL,
@@ -71,14 +71,22 @@ export default function SynologyDsmGuideDialog({
       fullWidth
       maxWidth="md"
       scroll="paper"
-      slotProps={{ paper: desktopDialogPaperProps }}
+      slotProps={{
+        paper: {
+          sx: {
+            maxHeight: '84vh',
+            borderRadius: 2,
+            backgroundImage: 'none',
+          },
+        },
+      }}
     >
-      <DesktopDialogTitle
+      <XDriveDialogTitle
         title={guide?.title ?? '群晖 DSM 配置'}
         subtitle={guide?.subtitle}
         onClose={onClose}
       />
-      <DialogContent dividers className="desktop-dialog-content">
+      <DialogContent dividers sx={{ px: 2.5, py: 2.25 }}>
         {guide && (
           <Stack spacing={2.5}>
             <Alert severity="info">
@@ -108,7 +116,7 @@ export default function SynologyDsmGuideDialog({
                               borderRadius: 2,
                               border: '1px solid',
                               borderColor: 'divider',
-                              bgcolor: 'grey.50',
+                              bgcolor: 'background.default',
                             }}
                           />
                           <Typography variant="caption" color="text.secondary">
@@ -140,37 +148,34 @@ export default function SynologyDsmGuideDialog({
                           >
                             {step.command}
                           </Typography>
-                          <Button
-                            size="small"
-                            variant="contained"
-                            startIcon={<ContentCopyRoundedIcon />}
-                            onClick={() => void copy(step.id, step.command!)}
-                            sx={{ position: 'absolute', top: 10, right: 10 }}
-                          >
-                            {copied === step.id ? '已复制' : '复制'}
-                          </Button>
+                          <Box sx={{ position: 'absolute', top: 10, right: 10 }}>
+                            <XDriveActionButton
+                              intent="primary"
+                              startIcon={<ContentCopyRoundedIcon />}
+                              onClick={() => void copy(step.id, step.command!)}
+                              compact
+                            >
+                              {copied === step.id ? '已复制' : '复制'}
+                            </XDriveActionButton>
+                          </Box>
                         </Paper>
                       )}
                       <Stack direction="row" spacing={1}>
-                        <Button
-                          size="small"
+                        <XDriveActionButton
+                          compact
                           disabled={index === 0}
                           onClick={() => setActiveStep((value) => Math.max(0, value - 1))}
                         >
                           上一步
-                        </Button>
+                        </XDriveActionButton>
                         {index < guide.steps.length - 1 ? (
-                          <Button
-                            size="small"
-                            variant="contained"
-                            onClick={() => setActiveStep(index + 1)}
-                          >
+                          <XDriveActionButton compact intent="primary" onClick={() => setActiveStep(index + 1)}>
                             下一步
-                          </Button>
+                          </XDriveActionButton>
                         ) : (
-                          <Button size="small" variant="contained" onClick={onClose}>
+                          <XDriveActionButton compact intent="primary" onClick={onClose}>
                             完成
-                          </Button>
+                          </XDriveActionButton>
                         )}
                       </Stack>
                     </Stack>
@@ -181,8 +186,8 @@ export default function SynologyDsmGuideDialog({
           </Stack>
         )}
       </DialogContent>
-      <DialogActions className="desktop-dialog-actions">
-        <Button onClick={onClose}>关闭</Button>
+      <DialogActions sx={{ px: 2, py: 1.25, minHeight: 58, bgcolor: 'action.hover' }}>
+        <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
       </DialogActions>
     </Dialog>
   )

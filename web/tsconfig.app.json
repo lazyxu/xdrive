@@ -33,6 +33,12 @@
       ],
       "@mui/material/*": [
         "node_modules/@mui/material/*"
+      ],
+      "@mui/icons-material": [
+        "node_modules/@mui/icons-material"
+      ],
+      "@mui/icons-material/*": [
+        "node_modules/@mui/icons-material/*"
       ]
     }
   },

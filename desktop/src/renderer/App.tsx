@@ -42,9 +42,8 @@ import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
-import { XDriveActionButton, XDriveStatePanel } from '@xdrive/ui/mui'
+import { XDriveActionButton, XDriveStatePanel, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from '@xdrive/ui/mui'
 import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'
-import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,

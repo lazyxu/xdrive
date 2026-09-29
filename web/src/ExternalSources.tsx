@@ -22,8 +22,7 @@ import {
   Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
-import { XDriveStatePanel } from '@xdrive/ui/mui'
-import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
+import { XDriveStatePanel, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,

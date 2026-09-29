@@ -5,7 +5,7 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..')
 const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
-const synologyGuide = fs.readFileSync(path.join(root, 'src', 'renderer', 'SynologyDsmGuideDialog.tsx'), 'utf8')
+const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDialogTitle.tsx'), 'utf8')
 const sharedActionButton = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ActionButton.tsx'), 'utf8')
 const sharedStatePanel = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatePanel.tsx'), 'utf8')
@@ -135,7 +135,8 @@ test('desktop transient management surfaces use modal dialogs', () => {
 
 test('desktop dialogs share one title, paper, content, and action treatment', () => {
   assert.ok(renderer.includes("import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'"), 'App is not using the shared dialog chrome')
-  assert.ok(synologyGuide.includes("import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'"), 'Synology guide is not using the shared dialog chrome')
+  assert.ok(synologyGuide.includes("import { XDriveDialogTitle } from './DialogTitle'"), 'Synology guide is not using the cross-client dialog title')
+  assert.ok(synologyGuide.includes('<XDriveDialogTitle'), 'Synology guide is not rendering the cross-client dialog title')
   assert.ok(dialogTitle.includes('aria-label="关闭弹窗"'), 'shared dialog title is missing the close control')
   assert.ok(dialogTitle.includes("className: 'desktop-dialog-paper'"), 'shared dialog paper contract is missing')
   assert.ok(styles.includes('.desktop-dialog-title'), 'shared dialog title styling is missing')
@@ -157,7 +158,8 @@ test('desktop transient feedback uses one non-layout-shifting Snackbar', () => {
 })
 
 test('desktop page actions use the cross-client MUI action component', () => {
-  assert.ok(renderer.includes("import { XDriveActionButton, XDriveStatePanel } from '@xdrive/ui/mui'"), 'desktop is not importing shared MUI primitives')
+  assert.ok(renderer.includes("from '@xdrive/ui/mui'"), 'desktop is not importing shared MUI primitives')
+  assert.ok(renderer.includes('XDriveActionButton') && renderer.includes('XDriveStatePanel'), 'desktop shared MUI primitives are incomplete')
   assert.equal(renderer.includes('function DesktopActionButton({'), false, 'desktop still owns a local action button implementation')
   assert.ok(sharedActionButton.includes('export function XDriveActionButton({'), 'shared action button is missing')
   assert.ok(sharedActionButton.includes('<CircularProgress size={compact ? 12 : 14}'), 'shared action button does not expose a loading spinner')
