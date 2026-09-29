@@ -570,7 +570,7 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 
 	sessionID := ""
 	var syncRules []userconfig.SyncRule
-	var cacheLimitBytes int64
+	cacheLimitBytes := userconfig.DefaultCacheLimitBytes
 	if old, loadErr := userconfig.Load(); loadErr == nil {
 		if mountPath == "" {
 			mountPath = old.MountPath

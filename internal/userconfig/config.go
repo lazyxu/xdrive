@@ -22,6 +22,8 @@ const (
 	SyncModeAlwaysLocal = "always-local"
 )
 
+const DefaultCacheLimitBytes int64 = 20 << 30
+
 var sessionRefreshLocks sync.Map
 
 type SyncRule struct {
