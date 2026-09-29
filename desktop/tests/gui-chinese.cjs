@@ -250,6 +250,30 @@ test('desktop external-source create/settings surfaces use shared MUI alerts and
   assert.ok(sourceForms.includes('loadingLabel="正在保存…"'), 'source settings save action lost shared loading feedback')
 })
 
+test('desktop external-source detail/history surfaces use shared MUI alerts and actions', () => {
+  const start = renderer.indexOf('selectedSourceID === row.source.id && (')
+  const end = renderer.indexOf('</article>', start)
+  assert.ok(start >= 0 && end > start, 'could not isolate source detail/history UI')
+  const sourceDetail = renderer.slice(start, end)
+  assert.equal((sourceDetail.match(/<MuiAlert/g) || []).length, 0, 'source detail/history still renders raw MUI alerts')
+  assert.equal((sourceDetail.match(/<MuiButton/g) || []).length, 2, 'source detail/history should only retain two inherit-color alert actions')
+  assert.equal((sourceDetail.match(/<XDriveStatusAlert/g) || []).length >= 4, true, 'source detail/history shared alert coverage is incomplete')
+  assert.equal((sourceDetail.match(/<XDriveActionButton/g) || []).length >= 5, true, 'source detail/history shared action coverage is incomplete')
+  assert.ok(sourceDetail.includes('loadingLabel="正在取消…"'), 'run cancel action lost shared loading feedback')
+})
+
+test('desktop external-source failed/delete dialogs use shared MUI surfaces', () => {
+  const start = renderer.indexOf('open={sourceFailedItemsOpen')
+  const end = renderer.indexOf('<SynologyDsmGuideDialog', start)
+  assert.ok(start >= 0 && end > start, 'could not isolate source failed/delete dialogs')
+  const sourceDialogs = renderer.slice(start, end)
+  assert.equal((sourceDialogs.match(/<MuiAlert/g) || []).length, 0, 'source failed/delete dialogs still render raw MUI alerts')
+  assert.equal((sourceDialogs.match(/<MuiButton/g) || []).length, 0, 'source failed/delete dialogs still render raw MUI buttons')
+  assert.equal((sourceDialogs.match(/<XDriveStatusAlert/g) || []).length >= 2, true, 'source failed dialog shared alert coverage is incomplete')
+  assert.equal((sourceDialogs.match(/<XDriveActionButton/g) || []).length >= 3, true, 'source failed/delete dialog shared action coverage is incomplete')
+  assert.ok(sourceDialogs.includes('loadingLabel="正在删除…"'), 'source delete action lost shared loading feedback')
+})
+
 test('desktop external-source status uses the cross-client MUI badge', () => {
   assert.ok(sharedStatusBadge.includes('export function XDriveStatusBadge({'), 'shared status badge is missing')
   assert.ok(renderer.includes('<XDriveStatusBadge tone={card.state.tone} label={card.state.label} />'), 'desktop source cards do not use the shared status badge')
