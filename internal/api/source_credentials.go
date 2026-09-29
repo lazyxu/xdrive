@@ -16,6 +16,7 @@ import (
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
+	"github.com/lazyxu/xdrive/internal/synology"
 	"github.com/lazyxu/xdrive/internal/yike"
 	"gorm.io/gorm"
 )
@@ -113,39 +114,66 @@ func writeSourceCredentialTestError(c *gin.Context, err error) {
 		fail(c, http.StatusGatewayTimeout, "yike_timeout")
 	case errors.Is(err, yike.ErrUnavailable):
 		fail(c, http.StatusBadGateway, "yike_unavailable")
+	case errors.Is(err, synology.ErrAuthentication):
+		fail(c, http.StatusUnprocessableEntity, "synology_auth_failed")
+	case errors.Is(err, synology.ErrPhotosMissing):
+		fail(c, http.StatusUnprocessableEntity, "synology_photos_unavailable")
+	case errors.Is(err, synology.ErrUnavailable):
+		fail(c, http.StatusBadGateway, "synology_unavailable")
 	default:
-		fail(c, http.StatusBadGateway, "yike_connection_failed")
+		fail(c, http.StatusBadGateway, "source_connection_failed")
 	}
 }
 
 func defaultSourceCredentialTester(ctx context.Context, kind string, payload json.RawMessage) (sourceCredentialTestDTO, error) {
-	if kind != "yike_photos" {
+	switch kind {
+	case yikeSourceKind:
+		var credential struct {
+			Cookie string `json:"cookie"`
+		}
+		if err := json.Unmarshal(payload, &credential); err != nil {
+			return sourceCredentialTestDTO{}, fmt.Errorf("%w: decode Yike credential: %v", errInvalidSourceCredentialTest, err)
+		}
+		credential.Cookie = strings.TrimSpace(credential.Cookie)
+		if credential.Cookie == "" {
+			return sourceCredentialTestDTO{}, fmt.Errorf("%w: Yike cookie is empty", errInvalidSourceCredentialTest)
+		}
+		client, err := yike.New(credential.Cookie)
+		credential.Cookie = ""
+		if err != nil {
+			return sourceCredentialTestDTO{}, fmt.Errorf("%w: %v", errInvalidSourceCredentialTest, err)
+		}
+		info, err := client.UserInfo(ctx)
+		if err != nil {
+			return sourceCredentialTestDTO{}, err
+		}
+		return sourceCredentialTestDTO{
+			Valid: true, Kind: kind,
+			AccountExternalID: strings.TrimSpace(info.YouaID),
+			AccountName:       strings.TrimSpace(info.Nickname),
+		}, nil
+	case synologySourceKind:
+		var credential synology.Credential
+		if err := json.Unmarshal(payload, &credential); err != nil {
+			return sourceCredentialTestDTO{}, fmt.Errorf("%w: decode Synology credential: %v", errInvalidSourceCredentialTest, err)
+		}
+		client, err := synology.New(credential)
+		credential.Password = ""
+		if err != nil {
+			return sourceCredentialTestDTO{}, fmt.Errorf("%w: %v", errInvalidSourceCredentialTest, err)
+		}
+		info, err := client.Test(ctx)
+		if err != nil {
+			return sourceCredentialTestDTO{}, err
+		}
+		return sourceCredentialTestDTO{
+			Valid:       true,
+			Kind:        kind,
+			AccountName: strings.TrimSpace(info.Username),
+		}, nil
+	default:
 		return sourceCredentialTestDTO{}, errUnsupportedSourceCredentialTest
 	}
-	var credential struct {
-		Cookie string `json:"cookie"`
-	}
-	if err := json.Unmarshal(payload, &credential); err != nil {
-		return sourceCredentialTestDTO{}, fmt.Errorf("%w: decode Yike credential: %v", errInvalidSourceCredentialTest, err)
-	}
-	credential.Cookie = strings.TrimSpace(credential.Cookie)
-	if credential.Cookie == "" {
-		return sourceCredentialTestDTO{}, fmt.Errorf("%w: Yike cookie is empty", errInvalidSourceCredentialTest)
-	}
-	client, err := yike.New(credential.Cookie)
-	credential.Cookie = ""
-	if err != nil {
-		return sourceCredentialTestDTO{}, fmt.Errorf("%w: %v", errInvalidSourceCredentialTest, err)
-	}
-	info, err := client.UserInfo(ctx)
-	if err != nil {
-		return sourceCredentialTestDTO{}, err
-	}
-	return sourceCredentialTestDTO{
-		Valid: true, Kind: kind,
-		AccountExternalID: strings.TrimSpace(info.YouaID),
-		AccountName:       strings.TrimSpace(info.Nickname),
-	}, nil
 }
 
 func (s *Server) testStoredSourceCredential(c *gin.Context) {
@@ -253,11 +281,11 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		return
 	}
 
-	// Yike credentials are bearer-style web session cookies. Validate them again
-	// at the persistence boundary so non-UI/API callers cannot store an already
-	// invalid session and leave a Source looking configured but unusable.
+	// Pull credentials grant the server worker remote access. Validate them
+	// again at the persistence boundary so non-UI/API callers cannot store an
+	// already invalid secret and leave a Source looking configured but unusable.
 	var identity sourceCredentialTestDTO
-	if source.Kind == yikeSourceKind {
+	if sourceUsesStoredCredential(source) {
 		identity, err = s.testSourceCredentialPayload(c.Request.Context(), source.Kind, compact.Bytes())
 		if err != nil {
 			writeSourceCredentialTestError(c, err)
@@ -274,6 +302,19 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		}
 		if err := sourcecredential.Put(c.Request.Context(), tx, s.ConnectorSecrets, source, compact.Bytes()); err != nil {
 			return err
+		}
+		if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPull &&
+			source.Status != meta.SourceStatusActive {
+			now := time.Now().UTC()
+			if err := tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+				Updates(map[string]any{
+					"status":     meta.SourceStatusActive,
+					"revision":   gorm.Expr("revision + 1"),
+					"last_error": "",
+					"updated_at": now,
+				}).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Where("source_id = ?", source.ID).First(&row).Error
 	})
@@ -311,7 +352,7 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 		if err := sourcecredential.Delete(c.Request.Context(), tx, source.ID); err != nil {
 			return err
 		}
-		if source.Kind == yikeSourceKind {
+		if sourceUsesStoredCredential(source) {
 			now := time.Now().UTC()
 			return tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
 				Updates(map[string]any{
