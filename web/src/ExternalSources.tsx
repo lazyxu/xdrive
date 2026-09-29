@@ -25,6 +25,7 @@ import {
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceRunProgress,
+  XDriveSourceFailureItem,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -1004,18 +1005,15 @@ export default function ExternalSourcesPanel({
                               ) : failurePage?.loaded && failurePage.items.length > 0 ? (
                                 <Stack spacing={0.75}>
                                   {failurePage.items.map((failure) => (
-                                    <MuiBox key={failure.id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                                      <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="flex-start">
-                                        <MuiTypography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-                                          {failure.path || failure.external_id}
-                                        </MuiTypography>
-                                        <Chip size="small" label={formatSize(failure.size)} />
-                                      </Stack>
-                                      <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                                        {failure.external_id} · {formatExternalSourceTime(failure.failed_at)}
-                                      </MuiTypography>
-                                      <XDriveStatusAlert tone="bad" sx={{ mt: 0.75 }}>{failure.error}</XDriveStatusAlert>
-                                    </MuiBox>
+                                    <XDriveSourceFailureItem
+                                      key={failure.id}
+                                      compact
+                                      title={failure.path || failure.external_id}
+                                      externalID={failure.external_id}
+                                      sizeLabel={formatSize(failure.size)}
+                                      failedAt={failure.failed_at}
+                                      error={failure.error}
+                                    />
                                   ))}
                                   <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
                                     <Button
@@ -1121,20 +1119,13 @@ export default function ExternalSourcesPanel({
           )}
           <Stack spacing={1.5}>
             {failedItems.map((item) => (
-              <MuiBox key={item.source_item_id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                  <MuiTypography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-                    {item.path || item.external_id}
-                  </MuiTypography>
-                  <Chip size="small" label={formatSize(item.size)} />
-                </Stack>
-                <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
-                  外部 ID：{item.external_id}
-                </MuiTypography>
-                <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>
-                  {item.last_error || '未提供具体错误原因'}
-                </XDriveStatusAlert>
-              </MuiBox>
+              <XDriveSourceFailureItem
+                key={item.source_item_id}
+                title={item.path || item.external_id}
+                externalID={item.external_id}
+                sizeLabel={formatSize(item.size)}
+                error={item.last_error}
+              />
             ))}
           </Stack>
         </XDriveDialogContent>

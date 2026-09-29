@@ -50,6 +50,7 @@ import {
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceRunProgress,
+  XDriveSourceFailureItem,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -2948,18 +2949,15 @@ export default function App() {
                                             ) : failurePage?.loaded && failurePage.items.length > 0 ? (
                                               <Stack spacing={0.75}>
                                                 {failurePage.items.map((failure) => (
-                                                  <MuiBox key={failure.id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                                                    <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="flex-start">
-                                                      <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
-                                                        {failure.path || failure.external_id}
-                                                      </Typography>
-                                                      <Chip size="small" label={formatBinarySize(failure.size)} />
-                                                    </Stack>
-                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                                                      {failure.external_id} · {formatExternalSourceTime(failure.failed_at)}
-                                                    </Typography>
-                                                    <XDriveStatusAlert tone="bad" sx={{ mt: 0.75 }}>{failure.error}</XDriveStatusAlert>
-                                                  </MuiBox>
+                                                  <XDriveSourceFailureItem
+                                                    key={failure.id}
+                                                    compact
+                                                    title={failure.path || failure.external_id}
+                                                    externalID={failure.external_id}
+                                                    sizeLabel={formatBinarySize(failure.size)}
+                                                    failedAt={failure.failed_at}
+                                                    error={failure.error}
+                                                  />
                                                 ))}
                                                 <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
                                                   <XDriveActionButton
@@ -4028,18 +4026,13 @@ export default function App() {
           )}
           <Stack spacing={1.5}>
             {sourceFailedItems.map((item) => (
-              <MuiBox key={item.source_item_id} sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                  <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-                    {item.path || item.external_id}
-                  </Typography>
-                  <Chip size="small" label={formatBinarySize(item.size)} />
-                </Stack>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflowWrap: 'anywhere' }}>
-                  外部 ID：{item.external_id}
-                </Typography>
-                <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{item.last_error || '未提供具体错误原因'}</XDriveStatusAlert>
-              </MuiBox>
+              <XDriveSourceFailureItem
+                key={item.source_item_id}
+                title={item.path || item.external_id}
+                externalID={item.external_id}
+                sizeLabel={formatBinarySize(item.size)}
+                error={item.last_error}
+              />
             ))}
           </Stack>
         </XDriveDialogContent>
