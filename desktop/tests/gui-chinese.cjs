@@ -144,6 +144,29 @@ test('desktop dialogs share one title, paper, content, and action treatment', ()
   assert.equal(renderer.includes('source-settings-heading'), false, 'legacy source settings panel heading remains inside the dialog')
 })
 
+test('desktop transient feedback uses one non-layout-shifting Snackbar', () => {
+  assert.ok(renderer.includes('<Snackbar'), 'missing shared Snackbar feedback surface')
+  assert.ok(renderer.includes("autoHideDuration={error ? null : 4000}"), 'success/error feedback lifetime contract is missing')
+  assert.ok(renderer.includes("severity={error ? 'error' : 'success'}"), 'Snackbar does not distinguish error and success feedback')
+  assert.equal(renderer.includes('className="alert error"'), false, 'legacy inline error feedback remains')
+  assert.equal(renderer.includes('className="alert success"'), false, 'legacy inline success feedback remains')
+  assert.equal(renderer.includes('className="alert warning"'), false, 'legacy alert panels remain')
+  assert.equal(styles.includes('.alert.error'), false, 'legacy alert CSS remains')
+})
+
+test('desktop page actions use one MUI loading/button hierarchy', () => {
+  assert.ok(renderer.includes('function DesktopActionButton({'), 'missing shared page action button')
+  assert.ok(renderer.includes('<CircularProgress size={14}'), 'page actions do not expose a loading spinner')
+  for (const label of ['重试连接', '添加来源', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
+    assert.ok(renderer.includes(label), `missing standardized action label: ${label}`)
+  }
+  assert.ok(renderer.includes('intent="primary"'), 'primary page action hierarchy is missing')
+  assert.ok(renderer.includes('intent="danger"'), 'danger page action hierarchy is missing')
+  assert.equal(renderer.includes('update-error'), false, 'legacy update error surface remains')
+  assert.equal(renderer.includes('update-message'), false, 'legacy update message surface remains')
+  assert.equal(renderer.includes('update-unavailable'), false, 'legacy update availability surface remains')
+})
+
 test('desktop uses app-native confirmation dialogs instead of browser confirms', () => {
   assert.equal(renderer.includes('window.confirm'), false, 'browser-native confirmation dialog remains in the desktop renderer')
   assert.ok(renderer.includes('type ConfirmDialogState ='), 'missing reusable confirmation dialog state')
