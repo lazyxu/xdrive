@@ -73,3 +73,22 @@ test('desktop startup lifecycle records checkpoints and non-fatal Windows task r
   assert.ok(main.includes("'Windows 任务栏快捷操作'"), 'Windows user-task status must appear in diagnostics')
   assert.equal(main.includes("console.error('failed to register Windows taskbar user tasks')"), false, 'user-task registration should not be console-only')
 })
+
+
+test('desktop renderer crashes recover once and then enter a bounded recovery flow', () => {
+  assert.ok(main.includes("'renderer_recovery_reload'"), 'first renderer crash should trigger an automatic reload')
+  assert.ok(main.includes("'renderer_recovery_exhausted'"), 'repeated renderer crashes should stop the automatic reload loop')
+  assert.ok(main.includes("title: 'xDrive Desktop 界面恢复'"), 'repeated crashes need a native recovery dialog')
+  assert.ok(main.includes("buttons: ['重新加载界面', '打开日志目录', '退出 xDrive']"), 'recovery dialog must expose retry, logs, and exit')
+  assert.ok(main.includes("'renderer_recovery_stable'"), 'successful recovery should clear the crash window after a stable period')
+  assert.ok(main.includes('if (win.isVisible()) void showRendererRecoveryDialog()'), 'visible windows should surface recovery even after a background launch')
+  assert.ok(main.includes('if (rendererRecoveryExhausted) return'), 'navigation must wait for recovery instead of sending into a crashed renderer')
+})
+
+test('repeated Windows GPU crashes relaunch Desktop in hardware-acceleration compatibility mode', () => {
+  assert.ok(main.includes("process.argv.includes('--disable-gpu')"), 'Desktop must recognize GPU compatibility mode')
+  assert.ok(main.includes('app.disableHardwareAcceleration()'), 'GPU compatibility mode must disable acceleration before ready')
+  assert.ok(main.includes("'gpu_safe_mode_relaunch'"), 'repeated GPU crashes must be recorded')
+  assert.ok(main.includes('app.relaunch({'), 'repeated GPU crashes must relaunch Desktop')
+  assert.ok(main.includes("'桌面图形加速'"), 'diagnostics must report the current graphics acceleration mode')
+})
