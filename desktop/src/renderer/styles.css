@@ -525,46 +525,7 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
   border-top: 0;
 }
 
-/* Shared Electron dialog chrome. Keep transient tasks visually separate from page panels. */
-.desktop-dialog-paper {
-  width: min(100%, 920px);
-  max-height: min(84vh, 820px);
-  border-radius: 16px !important;
-  overflow: hidden;
-  background: var(--surface) !important;
-  background-image: none !important;
-  box-shadow: 0 24px 70px color-mix(in srgb, var(--shadow) 72%, transparent) !important;
-}
-.desktop-dialog-title {
-  min-height: 64px;
-  padding: 16px 18px 14px 20px !important;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-.desktop-dialog-title-copy {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-.desktop-dialog-title-copy strong {
-  color: var(--text-strong);
-  font-size: 16px;
-  line-height: 1.35;
-}
-.desktop-dialog-title-copy span {
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-.desktop-dialog-close {
-  flex: 0 0 auto;
-  margin-top: -3px !important;
-  margin-right: -4px !important;
-  color: var(--text-muted) !important;
-}
+/* Desktop dialog content/actions remain app-specific; title and paper chrome are shared via @xdrive/ui/mui. */
 .desktop-dialog-content {
   padding: 20px 22px !important;
   overflow-y: auto;
@@ -585,13 +546,6 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
   flex: 1 1 auto;
 }
 @media (max-width: 640px) {
-  .desktop-dialog-paper {
-    max-height: 92vh;
-    border-radius: 12px !important;
-  }
-  .desktop-dialog-title {
-    padding: 14px 14px 12px 16px !important;
-  }
   .desktop-dialog-content {
     padding: 16px !important;
   }

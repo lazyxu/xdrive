@@ -17,7 +17,7 @@ import {
 import type { ExternalSource, SynologyDsmGuideVisual } from '../index'
 import { synologyDsmSetupGuide } from '../index'
 import { XDriveActionButton } from './ActionButton'
-import { XDriveDialogTitle } from './DialogTitle'
+import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 
 const visuals: Record<SynologyDsmGuideVisual, string> = {
   'task-create': new URL('../../assets/synology-dsm-task-create.svg', import.meta.url).href,
@@ -71,15 +71,7 @@ export function XDriveSynologyDsmGuideDialog({
       fullWidth
       maxWidth="md"
       scroll="paper"
-      slotProps={{
-        paper: {
-          sx: {
-            maxHeight: '84vh',
-            borderRadius: 2,
-            backgroundImage: 'none',
-          },
-        },
-      }}
+      slotProps={{ paper: xDriveDialogPaperProps }}
     >
       <XDriveDialogTitle
         title={guide?.title ?? '群晖 DSM 配置'}

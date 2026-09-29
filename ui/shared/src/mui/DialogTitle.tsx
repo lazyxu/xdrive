@@ -2,6 +2,16 @@ import type { ReactNode } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { Box, DialogTitle, IconButton, Typography } from '@mui/material'
 
+export const xDriveDialogPaperProps = {
+  sx: {
+    maxHeight: { xs: '92vh', sm: '84vh' },
+    borderRadius: { xs: 1.5, sm: 2 },
+    overflow: 'hidden',
+    backgroundImage: 'none',
+    boxShadow: 6,
+  },
+} as const
+
 export function XDriveDialogTitle({
   title,
   subtitle,

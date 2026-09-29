@@ -42,8 +42,13 @@ import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
-import { XDriveActionButton, XDriveStatePanel, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from '@xdrive/ui/mui'
-import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'
+import {
+  XDriveActionButton,
+  XDriveDialogTitle,
+  XDriveStatePanel,
+  XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
+  xDriveDialogPaperProps,
+} from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -261,9 +266,9 @@ function YikeCookieHelpGuide() {
         maxWidth="sm"
         fullWidth
         scroll="paper"
-        slotProps={{ paper: desktopDialogPaperProps }}
+        slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <DesktopDialogTitle title={yikeCookieHelp.title} onClose={() => setOpen(false)} />
+        <XDriveDialogTitle title={yikeCookieHelp.title} onClose={() => setOpen(false)} />
         <DialogContent dividers className="desktop-dialog-content">
           <Typography variant="body2">{yikeCookieHelp.summary}</Typography>
           <ol style={{ margin: '12px 0', paddingLeft: 24 }}>
@@ -2175,9 +2180,9 @@ export default function App() {
                 fullWidth
                 scroll="paper"
                 aria-label="添加外部来源"
-                slotProps={{ paper: desktopDialogPaperProps }}
+                slotProps={{ paper: xDriveDialogPaperProps }}
               >
-                <DesktopDialogTitle
+                <XDriveDialogTitle
                   title="添加外部来源"
                   subtitle={sourceCreateKind === 'yike_photos' ? '一刻相册目标目录由服务器自动管理。' : '选择来源类型、运行方式与 xDrive 目标文件夹。'}
                   onClose={() => setSourceCreateOpen(false)}
@@ -2413,9 +2418,9 @@ export default function App() {
                           fullWidth
                           scroll="paper"
                           aria-label="来源设置"
-                          slotProps={{ paper: desktopDialogPaperProps }}
+                          slotProps={{ paper: xDriveDialogPaperProps }}
                         >
-                          <DesktopDialogTitle
+                          <XDriveDialogTitle
                             title="来源设置"
                             subtitle={`${row.source.name} · 目标节点：${row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}`}
                             onClose={() => setEditingSourceID(null)}
@@ -2973,9 +2978,9 @@ export default function App() {
                 fullWidth
                 scroll="paper"
                 aria-label="回收站"
-                slotProps={{ paper: desktopDialogPaperProps }}
+                slotProps={{ paper: xDriveDialogPaperProps }}
               >
-                <DesktopDialogTitle
+                <XDriveDialogTitle
                   title="回收站"
                   subtitle={`${cloudTrash.length} 个项目`}
                   onClose={() => setCloudTrashOpen(false)}
@@ -3015,9 +3020,9 @@ export default function App() {
                 fullWidth
                 scroll="paper"
                 aria-label="版本历史"
-                slotProps={{ paper: desktopDialogPaperProps }}
+                slotProps={{ paper: xDriveDialogPaperProps }}
               >
-                <DesktopDialogTitle
+                <XDriveDialogTitle
                   title={`版本历史 — ${cloudHistoryNode.name}`}
                   subtitle={`当前版本 r${cloudHistoryNode.revision}`}
                   onClose={() => {
@@ -3067,9 +3072,9 @@ export default function App() {
                 fullWidth
                 scroll="paper"
                 aria-label="分享文件"
-                slotProps={{ paper: desktopDialogPaperProps }}
+                slotProps={{ paper: xDriveDialogPaperProps }}
               >
-                <DesktopDialogTitle
+                <XDriveDialogTitle
                   title={`分享 — ${cloudShareNode.name}`}
                   subtitle="分享令牌只会在创建时显示一次。"
                   onClose={() => {
@@ -3701,9 +3706,9 @@ export default function App() {
         aria-label="确认操作"
         maxWidth="xs"
         fullWidth
-        slotProps={{ paper: desktopDialogPaperProps }}
+        slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <DesktopDialogTitle title={confirmDialog?.title ?? '确认操作'} onClose={() => setConfirmDialog(null)} />
+        <XDriveDialogTitle title={confirmDialog?.title ?? '确认操作'} onClose={() => setConfirmDialog(null)} />
         <DialogContent className="desktop-dialog-content">
           <DialogContentText>{confirmDialog?.message ?? ''}</DialogContentText>
         </DialogContent>
@@ -3725,9 +3730,9 @@ export default function App() {
         maxWidth="md"
         fullWidth
         scroll="paper"
-        slotProps={{ paper: desktopDialogPaperProps }}
+        slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <DesktopDialogTitle
+        <XDriveDialogTitle
           title="失败文件"
           subtitle={`${sourceFailedItems.length} 个失败项`}
           onClose={() => setSourceFailedItemsOpen(false)}
@@ -3763,9 +3768,9 @@ export default function App() {
         onClose={() => busy.startsWith('source-delete-') ? undefined : setSourceDeleteTarget(null)}
         maxWidth="sm"
         fullWidth
-        slotProps={{ paper: desktopDialogPaperProps }}
+        slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <DesktopDialogTitle
+        <XDriveDialogTitle
           title="删除外部来源？"
           subtitle={sourceDeleteTarget?.source.name}
           onClose={() => setSourceDeleteTarget(null)}
