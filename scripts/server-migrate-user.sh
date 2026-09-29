@@ -57,6 +57,9 @@ TARGET_MANAGER="$TARGET_BIN/xdrive-server"
 TARGET_STATE="$TARGET_HOME/state"
 TARGET_LOG="$TARGET_HOME/logs"
 TARGET_RUNTIME_DIR="/run/user/$TARGET_UID"
+TARGET_DOCKER_HOST=""
+TARGET_DOCKER_ENDPOINT=""
+TARGET_DOCKER_SECURITY=""
 TARGET_CREATED=0
 SOURCE_STOPPED=0
 TARGET_STARTED=0
@@ -100,21 +103,66 @@ else
 fi
 
 run_as_target() {
+  local -a clean_env=(
+    env
+    -u DOCKER_HOST
+    -u DOCKER_CONTEXT
+    -u DOCKER_CONFIG
+    -u DOCKER_TLS_VERIFY
+    -u DOCKER_CERT_PATH
+    -u DOCKER_API_VERSION
+    HOME="$TARGET_LOGIN_HOME"
+    USER="$TARGET_USER"
+    LOGNAME="$TARGET_USER"
+    XDG_RUNTIME_DIR="$TARGET_RUNTIME_DIR"
+  )
+
   if [[ "$(id -u)" -eq "$TARGET_UID" ]]; then
-    HOME="$TARGET_LOGIN_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" XDG_RUNTIME_DIR="$TARGET_RUNTIME_DIR" "$@"
+    "${clean_env[@]}" "$@"
   else
     command -v runuser >/dev/null 2>&1 || {
       echo "xDrive migration: runuser is required to execute Docker as $TARGET_USER." >&2
       return 1
     }
-    runuser -u "$TARGET_USER" -- env \
-      HOME="$TARGET_LOGIN_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
-      XDG_RUNTIME_DIR="$TARGET_RUNTIME_DIR" "$@"
+    runuser -u "$TARGET_USER" -- "${clean_env[@]}" "$@"
+  fi
+}
+
+target_docker_with_host() {
+  local docker_host="$1"
+  shift
+  if [[ -n "$docker_host" ]]; then
+    run_as_target env DOCKER_HOST="$docker_host" docker "$@"
+  else
+    run_as_target docker "$@"
   fi
 }
 
 target_docker() {
-  run_as_target docker "$@"
+  target_docker_with_host "$TARGET_DOCKER_HOST" "$@"
+}
+
+select_target_docker() {
+  local rootless_host="unix://$TARGET_RUNTIME_DIR/docker.sock"
+  local rootful_host="unix:///var/run/docker.sock"
+
+  # First use the target user's own Docker config/context, but never inherit
+  # root's Docker connection overrides.
+  if target_docker_with_host "" info </dev/null >/dev/null 2>&1; then
+    TARGET_DOCKER_HOST=""
+    TARGET_DOCKER_ENDPOINT="target-user default/context"
+  elif target_docker_with_host "$rootless_host" info </dev/null >/dev/null 2>&1; then
+    TARGET_DOCKER_HOST="$rootless_host"
+    TARGET_DOCKER_ENDPOINT="$rootless_host"
+  elif target_docker_with_host "$rootful_host" info </dev/null >/dev/null 2>&1; then
+    TARGET_DOCKER_HOST="$rootful_host"
+    TARGET_DOCKER_ENDPOINT="$rootful_host"
+  else
+    return 1
+  fi
+
+  TARGET_DOCKER_SECURITY="$(target_docker info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null || true)"
+  [[ -n "$TARGET_DOCKER_SECURITY" ]] || TARGET_DOCKER_SECURITY='[]'
 }
 
 source_compose() {
@@ -125,9 +173,9 @@ target_compose() {
   target_docker compose --env-file "$TARGET_ENV" -f "$TARGET_COMPOSE" "$@" </dev/null
 }
 
-target_security="$(target_docker info --format '{{json .SecurityOptions}}' </dev/null 2>/dev/null || true)"
-if [[ -z "$target_security" ]]; then
+if ! select_target_docker; then
   echo "xDrive migration: user '$TARGET_USER' cannot access a Docker daemon." >&2
+  echo "Checked the target user's clean Docker context, $TARGET_RUNTIME_DIR/docker.sock, and /var/run/docker.sock." >&2
   echo "Configure Docker Rootless Mode or grant this user Docker access, then retry." >&2
   exit 1
 fi
@@ -135,7 +183,7 @@ if ! target_docker compose version </dev/null >/dev/null 2>&1; then
   echo "xDrive migration: Docker Compose v2 is unavailable to user '$TARGET_USER'." >&2
   exit 1
 fi
-if printf '%s' "$target_security" | grep -qi rootless; then
+if printf '%s' "$TARGET_DOCKER_SECURITY" | grep -qi rootless; then
   TARGET_DOCKER_MODE="rootless"
 else
   TARGET_DOCKER_MODE="rootful"
@@ -268,7 +316,7 @@ install_target_backup_schedule() {
     echo "[xDrive] warning: crontab is unavailable; scheduled backups were not migrated." >&2
     return 0
   }
-  local schedule existing tmp runtime_env=""
+  local schedule existing tmp runtime_env="" docker_host_env=""
   schedule="$(env_value "$TARGET_ENV" XD_BACKUP_SCHEDULE)"
   [[ -n "$schedule" ]] || return 0
   existing="$(run_as_target crontab -l 2>/dev/null || true)"
@@ -277,8 +325,11 @@ install_target_backup_schedule() {
   if [[ "$TARGET_DOCKER_MODE" == "rootless" ]]; then
     runtime_env="XDG_RUNTIME_DIR=$TARGET_RUNTIME_DIR "
   fi
-  printf '%s %sXD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
-    "$schedule" "$runtime_env" "$TARGET_HOME" "$TARGET_BIN/server-backup-scheduled.sh" "$TARGET_LOG/backup.log" >> "$tmp"
+  if [[ -n "$TARGET_DOCKER_HOST" ]]; then
+    docker_host_env="DOCKER_HOST=$TARGET_DOCKER_HOST "
+  fi
+  printf '%s %s%sXD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
+    "$schedule" "$runtime_env" "$docker_host_env" "$TARGET_HOME" "$TARGET_BIN/server-backup-scheduled.sh" "$TARGET_LOG/backup.log" >> "$tmp"
   chown "$TARGET_UID:$TARGET_GID" "$tmp"
   run_as_target crontab "$tmp"
   rm -f "$tmp"
@@ -288,6 +339,7 @@ echo "[xDrive] migrating server ownership"
 echo "  source:      $SOURCE_HOME (root)"
 echo "  target:      $TARGET_HOME ($TARGET_USER uid=$TARGET_UID gid=$TARGET_GID)"
 echo "  target Docker mode: $TARGET_DOCKER_MODE"
+echo "  target Docker endpoint: $TARGET_DOCKER_ENDPOINT"
 echo
 echo "[xDrive] stopping the original deployment..."
 source_compose down --remove-orphans
