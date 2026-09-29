@@ -49,6 +49,7 @@ import {
   XDriveShareStatusBadge,
   XDriveStatusBadge,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
+  XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { XDriveStatusTone } from '@xdrive/ui/mui'
@@ -64,7 +65,6 @@ import {
   formatBinarySize,
   formatExternalSourceTime,
   yikeConnectorNotice,
-  yikeCookieHelp,
   yikeManagedTargetLabel,
 } from '@xdrive/shared'
 import type {
@@ -233,46 +233,6 @@ function updateModeDescription(mode: AgentUpdateMode) {
   if (mode === 'download') return '后台定期检查并自动下载、校验；安装前仍由你确认。'
   if (mode === 'install') return '后台定期检查，有新版本时自动下载并安装。'
   return '不在后台检查更新；只有点击“检查更新”时才访问更新服务。'
-}
-
-function YikeCookieHelpGuide() {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <>
-      <MuiButton
-        type="button"
-        size="small"
-        variant="text"
-        onClick={() => setOpen(true)}
-        sx={{ alignSelf: 'flex-start', minWidth: 0, px: 0.5, mt: 0.25, textTransform: 'none' }}
-      >
-        如何获取 Cookie？
-      </MuiButton>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle title={yikeCookieHelp.title} onClose={() => setOpen(false)} />
-        <DialogContent dividers className="desktop-dialog-content">
-          <Typography variant="body2">{yikeCookieHelp.summary}</Typography>
-          <ol style={{ margin: '12px 0', paddingLeft: 24 }}>
-            {yikeCookieHelp.steps.map((step) => (
-              <li key={step}><Typography variant="body2" sx={{ mb: 0.75 }}>{step}</Typography></li>
-            ))}
-          </ol>
-          <MuiAlert severity="warning">{yikeCookieHelp.security}</MuiAlert>
-        </DialogContent>
-        <DialogActions className="desktop-dialog-actions">
-          <MuiButton onClick={() => setOpen(false)}>关闭</MuiButton>
-        </DialogActions>
-      </Dialog>
-    </>
-  )
 }
 
 export default function App() {
@@ -2281,7 +2241,7 @@ export default function App() {
                     />
                     <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
                     <MuiAlert severity="warning" sx={{ mt: 0.5 }}>{yikeConnectorNotice}</MuiAlert>
-                    <YikeCookieHelpGuide />
+                    <XDriveYikeCookieHelp variant="dialog" />
                     <MuiButton
                       type="button"
                       size="small"
@@ -2468,7 +2428,7 @@ export default function App() {
                                 placeholder={row.credential?.configured ? '留空则保持当前 Cookie' : '当前未配置，请粘贴 Cookie'}
                               />
                               <small>已保存的 Cookie 不会回读到桌面渲染进程。</small>
-                              <YikeCookieHelpGuide />
+                              <XDriveYikeCookieHelp variant="dialog" />
                               <MuiButton
                                 type="button"
                                 size="small"
