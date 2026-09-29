@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -106,7 +107,12 @@ func (c *Client) ensureFresh(ctx context.Context) error {
 		return nil
 	}
 	if !tokens.RefreshExpiresAt.IsZero() && !time.Now().Before(tokens.RefreshExpiresAt) {
-		return &APIError{Status: http.StatusUnauthorized, Msg: "refresh token expired"}
+		// The in-memory refresh token may be stale because another xDrive
+		// process already rotated it and persisted a replacement. Route
+		// through RefreshSession so it can reload shared credentials before
+		// declaring the session expired.
+		_, err := c.RefreshSession(ctx)
+		return err
 	}
 	if strings.TrimSpace(tokens.AccessToken) == "" {
 		_, err := c.RefreshSession(ctx)
@@ -175,18 +181,66 @@ func (c *Client) RefreshSession(ctx context.Context) (SessionTokens, error) {
 
 		// Another local process may have won refresh-token rotation after this
 		// process loaded the credential but before its refresh request arrived.
+		// First re-read immediately (the common case). If the server rejected a
+		// now-revoked refresh token, briefly wait for the winning process to
+		// persist its replacement before surfacing a false login-expired error.
 		if attempt == 0 && c.loadTokens != nil {
 			latest, loadErr := c.loadTokens()
-			if loadErr == nil && strings.TrimSpace(latest.RefreshToken) != "" &&
-				latest.RefreshToken != current.RefreshToken {
+			if loadErr == nil && rotatedRefreshToken(current.RefreshToken, latest.RefreshToken) {
 				c.setSessionTokensMemory(latest)
 				current = latest
 				continue
+			}
+			if isUnauthorizedRefreshError(decodeErr) {
+				if latest, ok := c.waitForRotatedSession(ctx, current.RefreshToken); ok {
+					c.setSessionTokensMemory(latest)
+					current = latest
+					continue
+				}
 			}
 		}
 		return SessionTokens{}, decodeErr
 	}
 	return SessionTokens{}, &APIError{Status: http.StatusUnauthorized, Msg: "refresh token rotation failed"}
+}
+
+func rotatedRefreshToken(stale, latest string) bool {
+	latest = strings.TrimSpace(latest)
+	return latest != "" && latest != strings.TrimSpace(stale)
+}
+
+func isUnauthorizedRefreshError(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized
+}
+
+func (c *Client) waitForRotatedSession(ctx context.Context, staleRefresh string) (SessionTokens, bool) {
+	if c.loadTokens == nil {
+		return SessionTokens{}, false
+	}
+
+	const attempts = 5
+	delay := 50 * time.Millisecond
+	for attempt := 0; attempt < attempts; attempt++ {
+		latest, err := c.loadTokens()
+		if err == nil && rotatedRefreshToken(staleRefresh, latest.RefreshToken) {
+			return latest, true
+		}
+		if attempt == attempts-1 {
+			break
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return SessionTokens{}, false
+		case <-timer.C:
+		}
+		delay *= 2
+	}
+	return SessionTokens{}, false
 }
 
 func (c *Client) ChangePassword(ctx context.Context, currentPassword, newPassword string) (AuthResponse, error) {
