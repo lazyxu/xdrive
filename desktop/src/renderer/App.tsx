@@ -3104,9 +3104,9 @@ export default function App() {
             </div>
 
             {cloudQuota?.over_quota && (
-              <MuiAlert severity="error" sx={{ mb: 2 }}>
+              <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>
                 存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
-              </MuiAlert>
+              </XDriveStatusAlert>
             )}
             {cloudQuota && (
               <div className="cloud-quota-grid">
@@ -3149,9 +3149,9 @@ export default function App() {
                   ))}
                 </div>
                 {cloudStorageStats.legacy_blob_count > 0 && (
-                  <MuiAlert severity="warning" sx={{ m: 1.5 }}>
+                  <XDriveStatusAlert tone="warning" sx={{ m: 1.5 }}>
                     仍有 {cloudStorageStats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBinarySize(cloudStorageStats.legacy_physical_bytes)}），未计入 CAS 分布。
-                  </MuiAlert>
+                  </XDriveStatusAlert>
                 )}
               </div>
             )}
@@ -3540,9 +3540,9 @@ export default function App() {
             </div>
 
             {!storagePoliciesSupported ? (
-              <MuiAlert severity="info" sx={{ mb: 2 }}>
+              <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
                 Linux FUSE 模式不提供 Windows CfAPI 的“不同步”“始终保留”或持久化本地缓存语义；这些策略只在 Windows 客户端可配置。
-              </MuiAlert>
+              </XDriveStatusAlert>
             ) : null}
 
             {storagePoliciesSupported ? (cacheStats ? (
@@ -3820,7 +3820,7 @@ export default function App() {
               </div>
 
               {!updateSupported ? (
-                <MuiAlert severity="warning">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</MuiAlert>
+                <XDriveStatusAlert tone="warning">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</XDriveStatusAlert>
               ) : !clientUpdate ? (
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary' }}>
                   <CircularProgress size={16} />
@@ -3880,8 +3880,8 @@ export default function App() {
                     </div>
                   ) : null}
 
-                  {clientUpdate.last_error ? <MuiAlert severity="error">{clientUpdate.last_error}</MuiAlert> : null}
-                  {!clientUpdate.last_error && clientUpdate.message ? <MuiAlert severity="info">{clientUpdate.message}</MuiAlert> : null}
+                  {clientUpdate.last_error ? <XDriveStatusAlert tone="bad">{clientUpdate.last_error}</XDriveStatusAlert> : null}
+                  {!clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="neutral">{clientUpdate.message}</XDriveStatusAlert> : null}
 
                   <div className="update-actions">
                     <XDriveActionButton

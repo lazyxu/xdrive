@@ -212,6 +212,22 @@ test('desktop persistent sync states use the cross-client MUI status alert', () 
   assert.ok(renderer.includes('发现 {status.conflict_count || 0} 个同步冲突'), 'conflict status alert content is missing')
 })
 
+test('desktop page-level status alerts use the shared alert surface', () => {
+  assert.equal((renderer.match(/<MuiAlert/g) || []).length, 2, 'unexpected raw MUI page alerts remain')
+  assert.ok(renderer.includes('variant="filled"'), 'transient Snackbar alert should remain the filled special case')
+  assert.ok(renderer.includes('className="auth-security-note"'), 'login security note should remain the outlined special case')
+  for (const text of [
+    '存储空间已超出配额',
+    '未计入 CAS 分布',
+    'Linux FUSE 模式不提供 Windows CfAPI',
+    '当前 xdrive-agent 不支持更新设置',
+    'clientUpdate.last_error ? <XDriveStatusAlert tone="bad"',
+    '!clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="neutral"',
+  ]) {
+    assert.ok(renderer.includes(text), `missing shared status alert coverage: ${text}`)
+  }
+})
+
 test('desktop global sync and diagnostic statuses use the cross-client MUI badge', () => {
   assert.ok(sharedStatusBadge.includes("export type XDriveStatusTone = 'neutral' | 'good' | 'warning' | 'bad' | 'busy'"), 'shared status tone contract is missing')
   assert.ok(sharedStatusBadge.includes('aria-label={ariaLabel}'), 'shared status badge is missing accessible labels')
