@@ -36,6 +36,8 @@ import {
   externalSourceCreateOptions,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
+  externalSourceSavedCredentialMask,
+  isExternalSourceSavedCredentialMask,
   externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
@@ -572,7 +574,7 @@ export default function ExternalSourcesPanel({
       schedule_expression: row.source.schedule_expression || '6h',
       schedule_timezone: row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone,
       ignore_rules: row.source.ignore_rules ?? '',
-      cookie: '',
+      cookie: profile.credential === 'cookie' && row.credential?.configured ? externalSourceSavedCredentialMask : '',
       base_url: '',
       username: '',
       password: '',
@@ -599,7 +601,9 @@ export default function ExternalSourcesPanel({
     if (!setting) return null
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     if (profile.credential === 'cookie') {
-      const cookie = String(settingsForm.getFieldValue('cookie') ?? '').trim()
+      const rawCookie = String(settingsForm.getFieldValue('cookie') ?? '')
+      if (isExternalSourceSavedCredentialMask(rawCookie)) return null
+      const cookie = rawCookie.trim()
       return cookie ? { cookie } : null
     }
     if (profile.credential === 'synology_dsm') {
@@ -1464,10 +1468,21 @@ export default function ExternalSourcesPanel({
                     出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
                   </MuiTypography>
                 </XDriveStatusAlert>
-                <Form.Item name="cookie" label="更新 Cookie">
+                <Form.Item
+                  name="cookie"
+                  label="一刻相册 Cookie"
+                  extra={setting.credential?.configured
+                    ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                    : '当前未配置 Cookie，请粘贴新的 Cookie。'}
+                >
                   <Input.Password
                     autoComplete="off"
-                    placeholder="留空则保持当前 Cookie 不变"
+                    placeholder={setting.credential?.configured ? externalSourceSavedCredentialMask : '粘贴一刻相册 Cookie'}
+                    onFocus={() => {
+                      if (isExternalSourceSavedCredentialMask(settingsForm.getFieldValue('cookie'))) {
+                        settingsForm.setFieldValue('cookie', '')
+                      }
+                    }}
                     onChange={() => {
                       setSettingsCredentialTest(null)
                       setSettingsCredentialTestError('')

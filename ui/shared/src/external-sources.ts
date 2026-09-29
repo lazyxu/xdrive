@@ -7,6 +7,12 @@ export type ExternalSourceStatus = 'active' | 'paused'
 export type ExternalSourceScheduleType = 'interval' | 'cron' | 'manual'
 export type ExternalSourceRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
 
+export const externalSourceSavedCredentialMask = '••••••••••••'
+
+export function isExternalSourceSavedCredentialMask(value: unknown) {
+  return String(value ?? '') === externalSourceSavedCredentialMask
+}
+
 export interface ExternalSource {
   id: number
   name: string

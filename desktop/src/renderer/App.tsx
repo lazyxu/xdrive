@@ -61,6 +61,8 @@ import {
   externalSourceCreateOptions,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
+  externalSourceSavedCredentialMask,
+  isExternalSourceSavedCredentialMask,
   externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
@@ -1129,7 +1131,7 @@ export default function App() {
     setSourceEditScheduleExpression(row.source.schedule_expression || '6h')
     setSourceEditScheduleTimezone(row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone)
     setSourceEditIgnoreRules(row.source.ignore_rules || '')
-    setSourceEditCookie('')
+    setSourceEditCookie(profile.credential === 'cookie' && row.credential?.configured ? externalSourceSavedCredentialMask : '')
     setSourceEditDsmBaseURL('')
     setSourceEditDsmUsername('')
     setSourceEditDsmPassword('')
@@ -1154,6 +1156,7 @@ export default function App() {
   const sourceEditCredentialPayload = (row: ExternalSourceRow): Record<string, string> | null | undefined => {
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     if (profile.credential === 'cookie') {
+      if (isExternalSourceSavedCredentialMask(sourceEditCookie)) return null
       const cookie = sourceEditCookie.trim()
       return cookie ? { cookie } : null
     }
@@ -2689,14 +2692,23 @@ export default function App() {
                               <input
                                 type="password"
                                 value={sourceEditCookie}
+                                onFocus={() => {
+                                  if (isExternalSourceSavedCredentialMask(sourceEditCookie)) {
+                                    setSourceEditCookie('')
+                                  }
+                                }}
                                 onChange={(event) => {
                                   setSourceEditCookie(event.target.value)
                                   setSourceEditCredentialTest(null)
                                 }}
                                 autoComplete="off"
-                                placeholder={row.credential?.configured ? '留空则保持当前 Cookie' : '当前未配置，请粘贴 Cookie'}
+                                placeholder={row.credential?.configured ? externalSourceSavedCredentialMask : '当前未配置，请粘贴 Cookie'}
                               />
-                              <small>已保存的 Cookie 不会回读到桌面渲染进程。</small>
+                              <small>
+                                {row.credential?.configured
+                                  ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                                  : '当前未配置 Cookie，请粘贴新的 Cookie。'}
+                              </small>
                               <XDriveYikeCookieHelp variant="dialog" />
                               <MuiButton
                                 type="button"

@@ -491,6 +491,13 @@ test('shared Synology space normalization is deterministic', () => {
   assert.deepEqual(shared.normalizeSynologyPhotoSpaces([]), [])
 })
 
+test('shared saved credential mask is display-only', () => {
+  assert.equal(shared.externalSourceSavedCredentialMask, '••••••••••••')
+  assert.equal(shared.isExternalSourceSavedCredentialMask(shared.externalSourceSavedCredentialMask), true)
+  assert.equal(shared.isExternalSourceSavedCredentialMask('BDUSS=real-cookie'), false)
+  assert.equal(shared.isExternalSourceSavedCredentialMask(''), false)
+})
+
 test('shared Yike credential test messages are actionable', () => {
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_auth_failed'), '一刻相册登录已失效，请重新获取 Cookie')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_rate_limited'), '一刻相册请求过于频繁，请稍后重试')

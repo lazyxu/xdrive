@@ -296,6 +296,10 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
   assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')
   assert.ok(renderer.includes('自动回滚也失败'), 'missing Source rollback failure fallback')
+  assert.ok(renderer.includes('externalSourceSavedCredentialMask'), 'saved Yike Cookie mask is not shown in settings')
+  assert.ok(renderer.includes('isExternalSourceSavedCredentialMask(sourceEditCookie)'), 'saved Cookie mask could be submitted as a replacement value')
+  assert.ok(renderer.includes('当前已保存的 Cookie 以遮罩显示'), 'missing saved Cookie UX explanation')
+  assert.ok(renderer.includes("onFocus={() => {"), 'saved Cookie field does not enter replacement mode on focus')
 })
 
 test('desktop external sources expose per-Source scheduling', () => {
