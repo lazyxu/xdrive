@@ -6,12 +6,12 @@ import {
   Alert,
   Button,
   Dialog,
-  DialogActions,
   DialogContent,
   Stack,
   Typography,
 } from '@mui/material'
 import { yikeCookieHelp } from '../index'
+import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 
 function CookieHelpContent({ compact = false }: { compact?: boolean }) {
@@ -86,9 +86,9 @@ export function XDriveYikeCookieHelp({
         <DialogContent dividers sx={{ px: 2.5, py: 2.25 }}>
           <CookieHelpContent />
         </DialogContent>
-        <DialogActions sx={{ px: 2, py: 1.25, minHeight: 58, bgcolor: 'action.hover' }}>
+        <XDriveDialogActions>
           <Button onClick={() => setOpen(false)}>关闭</Button>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
     </>
   )

@@ -9,7 +9,6 @@ import {
   Button as MuiButton,
   Chip,
   Dialog,
-  DialogActions,
   DialogContent,
   DialogContentText,
   LinearProgress,
@@ -21,6 +20,7 @@ import {
 import type { XDriveApi } from './api'
 import {
   XDriveActionButton,
+  XDriveDialogActions,
   XDriveDialogTitle,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -882,9 +882,9 @@ export default function ExternalSourcesPanel({
         )}
       </Spin>
         </DialogContent>
-        <DialogActions>
+        <XDriveDialogActions>
           <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
@@ -1126,9 +1126,9 @@ export default function ExternalSourcesPanel({
           </>
         )}
         </DialogContent>
-        <DialogActions>
+        <XDriveDialogActions>
           <XDriveActionButton onClick={closeDetails}>关闭</XDriveActionButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog open={failedItemsOpen && failedItems.length > 0} onClose={() => setFailedItemsOpen(false)} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
@@ -1158,9 +1158,9 @@ export default function ExternalSourcesPanel({
             ))}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <XDriveDialogActions>
           <XDriveActionButton onClick={() => setFailedItemsOpen(false)}>关闭</XDriveActionButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog
@@ -1609,7 +1609,7 @@ export default function ExternalSourcesPanel({
             已经同步到 xDrive 的文件会保留，不会删除。
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
+        <XDriveDialogActions>
           <XDriveActionButton disabled={deletingSourceID !== null} onClick={() => setDeleteTarget(null)}>取消</XDriveActionButton>
           <XDriveActionButton
             intent="danger"
@@ -1620,7 +1620,7 @@ export default function ExternalSourcesPanel({
           >
             删除来源
           </XDriveActionButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog
@@ -1640,7 +1640,7 @@ export default function ExternalSourcesPanel({
             清除后，该 Pull 来源会自动暂停，无法继续扫描或同步，直到重新配置有效凭据。
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
+        <XDriveDialogActions>
           <XDriveActionButton disabled={clearingCookie} onClick={() => setClearCookieConfirmOpen(false)}>取消</XDriveActionButton>
           <XDriveActionButton
             intent="danger"
@@ -1651,7 +1651,7 @@ export default function ExternalSourcesPanel({
           >
             清除凭据
           </XDriveActionButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog open={!!errorDialog} onClose={() => setErrorDialog(null)} maxWidth="sm" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
@@ -1671,9 +1671,9 @@ export default function ExternalSourcesPanel({
             </Stack>
           )}
         </DialogContent>
-        <DialogActions>
+        <XDriveDialogActions>
           <XDriveActionButton intent="primary" onClick={() => setErrorDialog(null)}>知道了</XDriveActionButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <SynologyDsmGuideDialog
