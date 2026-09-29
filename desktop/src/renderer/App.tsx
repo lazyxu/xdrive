@@ -51,8 +51,8 @@ import {
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceRunProgress,
-  XDriveSourceFailureItem,
   XDriveSourceRunSummary,
+  XDriveSourceFailureItem,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -60,11 +60,16 @@ import {
 import type { XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
+  externalSourceCollectionKindLabel,
+  externalSourceCollectionStateLabel,
+  externalSourceCollectionStateTone,
   externalSourceConnectorProfile,
   externalSourceCreateOption,
   externalSourceCreateOptions,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
+  externalSourceSavedCredentialMask,
+  isExternalSourceSavedCredentialMask,
   externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
@@ -79,6 +84,8 @@ import {
 } from '@xdrive/shared'
 import type {
   BuildInfo,
+  ExternalSourceCollection,
+  ExternalSourceCollectionItem,
   ExternalSourceConnectorConfig,
   ExternalSourceCreatePreset,
   ExternalSourceCredentialTestResult,
@@ -93,9 +100,18 @@ import type {
 
 const SOURCE_HISTORY_PAGE_SIZE = 20
 const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
+const SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50
 
 type SourceRunFailurePage = {
   items: ExternalSourceRunFailure[]
+  page: number
+  hasNext: boolean
+  loading: boolean
+  loaded: boolean
+}
+
+type SourceCollectionItemPage = {
+  items: ExternalSourceCollectionItem[]
   page: number
   hasNext: boolean
   loading: boolean
@@ -315,6 +331,10 @@ export default function App() {
   const [sourceHistoryHasNext, setSourceHistoryHasNext] = useState(false)
   const [sourceHistoryLoading, setSourceHistoryLoading] = useState(false)
   const [sourceRunFailurePages, setSourceRunFailurePages] = useState<Record<string, SourceRunFailurePage>>({})
+  const [sourceCollections, setSourceCollections] = useState<ExternalSourceCollection[]>([])
+  const [sourceCollectionsSourceID, setSourceCollectionsSourceID] = useState<number | null>(null)
+  const [sourceCollectionsLoadingID, setSourceCollectionsLoadingID] = useState<number | null>(null)
+  const [sourceCollectionItemPages, setSourceCollectionItemPages] = useState<Record<number, SourceCollectionItemPage>>({})
   const [sourceDeleteTarget, setSourceDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [synologyGuideSource, setSynologyGuideSource] = useState<AgentSource | null>(null)
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -843,6 +863,66 @@ export default function App() {
     }
   }
 
+  const loadSourceCollections = async (sourceID: number) => {
+    setSourceCollectionsLoadingID(sourceID)
+    try {
+      const result = await window.xdriveDesktop.agent.getSourceCollections(sourceID)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setSourceCollections(result.data)
+      setSourceCollectionsSourceID(sourceID)
+    } finally {
+      setSourceCollectionsLoadingID(null)
+    }
+  }
+
+  const loadSourceCollectionItems = async (sourceID: number, collectionID: number, page = 1) => {
+    const nextPage = Math.max(1, Math.trunc(page))
+    setSourceCollectionItemPages((current) => ({
+      ...current,
+      [collectionID]: {
+        items: current[collectionID]?.items ?? [],
+        page: current[collectionID]?.page ?? nextPage,
+        hasNext: current[collectionID]?.hasNext ?? false,
+        loading: true,
+        loaded: current[collectionID]?.loaded ?? false,
+      },
+    }))
+    const offset = (nextPage - 1) * SOURCE_COLLECTION_ITEM_PAGE_SIZE
+    const result = await window.xdriveDesktop.agent.getSourceCollectionItems(
+      sourceID,
+      collectionID,
+      SOURCE_COLLECTION_ITEM_PAGE_SIZE + 1,
+      offset,
+    )
+    if (!result.ok) {
+      setError(result.error.message)
+      setSourceCollectionItemPages((current) => ({
+        ...current,
+        [collectionID]: {
+          items: current[collectionID]?.items ?? [],
+          page: current[collectionID]?.page ?? nextPage,
+          hasNext: current[collectionID]?.hasNext ?? false,
+          loading: false,
+          loaded: current[collectionID]?.loaded ?? false,
+        },
+      }))
+      return
+    }
+    setSourceCollectionItemPages((current) => ({
+      ...current,
+      [collectionID]: {
+        items: result.data.slice(0, SOURCE_COLLECTION_ITEM_PAGE_SIZE),
+        page: nextPage,
+        hasNext: result.data.length > SOURCE_COLLECTION_ITEM_PAGE_SIZE,
+        loading: false,
+        loaded: true,
+      },
+    }))
+  }
+
   const toggleSourceDetails = async (row: ExternalSourceRow) => {
     const sourceID = row.source.id
     if (selectedSourceID === sourceID) {
@@ -855,6 +935,10 @@ export default function App() {
       setSourceHistoryPage(1)
       setSourceHistoryHasNext(false)
       setSourceRunFailurePages({})
+      setSourceCollections([])
+      setSourceCollectionsSourceID(null)
+      setSourceCollectionsLoadingID(null)
+      setSourceCollectionItemPages({})
       return
     }
 
@@ -867,9 +951,13 @@ export default function App() {
     setSourceHistoryPage(1)
     setSourceHistoryHasNext(false)
     setSourceRunFailurePages({})
+    setSourceCollections([])
+    setSourceCollectionsSourceID(null)
+    setSourceCollectionItemPages({})
     setSourceFailedItemsLoadingID(sourceID)
     setError('')
     void loadSourceHistory(sourceID, 1)
+    void loadSourceCollections(sourceID)
     try {
       const result = await window.xdriveDesktop.agent.getSourceItems(sourceID, 'error', 1000, 0)
       if (!result.ok) {
@@ -1133,7 +1221,7 @@ export default function App() {
     setSourceEditScheduleExpression(row.source.schedule_expression || '6h')
     setSourceEditScheduleTimezone(row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone)
     setSourceEditIgnoreRules(row.source.ignore_rules || '')
-    setSourceEditCookie('')
+    setSourceEditCookie(profile.credential === 'cookie' && row.credential?.configured ? externalSourceSavedCredentialMask : '')
     setSourceEditDsmBaseURL('')
     setSourceEditDsmUsername('')
     setSourceEditDsmPassword('')
@@ -1158,6 +1246,7 @@ export default function App() {
   const sourceEditCredentialPayload = (row: ExternalSourceRow): Record<string, string> | null | undefined => {
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     if (profile.credential === 'cookie') {
+      if (isExternalSourceSavedCredentialMask(sourceEditCookie)) return null
       const cookie = sourceEditCookie.trim()
       return cookie ? { cookie } : null
     }
@@ -2695,14 +2784,23 @@ export default function App() {
                               <input
                                 type="password"
                                 value={sourceEditCookie}
+                                onFocus={() => {
+                                  if (isExternalSourceSavedCredentialMask(sourceEditCookie)) {
+                                    setSourceEditCookie('')
+                                  }
+                                }}
                                 onChange={(event) => {
                                   setSourceEditCookie(event.target.value)
                                   setSourceEditCredentialTest(null)
                                 }}
                                 autoComplete="off"
-                                placeholder={row.credential?.configured ? '留空则保持当前 Cookie' : '当前未配置，请粘贴 Cookie'}
+                                placeholder={row.credential?.configured ? externalSourceSavedCredentialMask : '当前未配置，请粘贴 Cookie'}
                               />
-                              <small>已保存的 Cookie 不会回读到桌面渲染进程。</small>
+                              <small>
+                                {row.credential?.configured
+                                  ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                                  : '当前未配置 Cookie，请粘贴新的 Cookie。'}
+                              </small>
                               <XDriveYikeCookieHelp variant="dialog" />
                               <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
                                 <XDriveActionButton
@@ -2859,6 +2957,94 @@ export default function App() {
                               <pre>{detail.ignoreRules}</pre>
                             </div>
                           )}
+                          <div className="source-run-detail">
+                            <div className="source-run-heading">
+                              <strong>相册与集合</strong>
+                              <span>
+                                {sourceCollectionsSourceID === row.source.id
+                                  ? sourceCollections.length.toLocaleString('zh-CN') + ' 个'
+                                  : '正在读取…'}
+                              </span>
+                            </div>
+                            {sourceCollectionsLoadingID === row.source.id ? (
+                              <XDriveStatePanel loading message="正在加载相册/集合…" />
+                            ) : sourceCollectionsSourceID !== row.source.id || sourceCollections.length === 0 ? (
+                              <XDriveStatePanel message="该来源暂无相册/集合元数据。" />
+                            ) : (
+                              <Stack spacing={1}>
+                                {sourceCollections.map((collection) => {
+                                  const page = sourceCollectionItemPages[collection.id]
+                                  return (
+                                    <MuiBox
+                                      key={collection.id}
+                                      component="details"
+                                      onToggle={(event) => {
+                                        const details = event.currentTarget as HTMLDetailsElement
+                                        if (details.open && !page?.loaded && !page?.loading) {
+                                          void loadSourceCollectionItems(row.source.id, collection.id, 1)
+                                        }
+                                      }}
+                                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
+                                    >
+                                      <MuiBox component="summary" sx={{ cursor: 'pointer', p: 1.25 }}>
+                                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ width: '100%', pr: 1 }}>
+                                          <MuiBox>
+                                            <Typography variant="body2" fontWeight={700}>{collection.name}</Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                              {externalSourceCollectionKindLabel(collection.kind)} · {collection.item_count.toLocaleString('zh-CN')} 项 · 上次发现 {formatExternalSourceTime(collection.last_seen_at)}
+                                            </Typography>
+                                          </MuiBox>
+                                          <XDriveStatusBadge tone={externalSourceCollectionStateTone(collection.state)} label={externalSourceCollectionStateLabel(collection.state)} />
+                                        </Stack>
+                                      </MuiBox>
+                                      <MuiBox sx={{ px: 1.5, pb: 1.5 }}>
+                                        {page?.loading && !page.loaded ? (
+                                          <XDriveStatePanel loading message="正在加载集合成员…" />
+                                        ) : page?.loaded && page.items.length > 0 ? (
+                                          <Stack spacing={0.75}>
+                                            {page.items.map((item) => (
+                                              <MuiBox key={item.external_id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                                                <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.75} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+                                                  <MuiBox sx={{ minWidth: 0 }}>
+                                                    <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
+                                                      {item.path || item.external_id}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                                                      {item.metadata?.captured_at ? '拍摄 ' + formatExternalSourceTime(item.metadata.captured_at) + ' · ' : ''}
+                                                      {formatBinarySize(item.size)}
+                                                      {item.metadata?.original_path ? ' · 原始路径 ' + item.metadata.original_path : ''}
+                                                    </Typography>
+                                                  </MuiBox>
+                                                  <XDriveStatusBadge
+                                                    tone={item.state === 'synced' ? 'good' : item.state === 'error' ? 'bad' : item.state === 'missing' ? 'warning' : 'neutral'}
+                                                    label={item.state === 'synced' ? '已同步' : item.state === 'missing' ? '远端缺失' : item.state === 'error' ? '失败' : item.state}
+                                                  />
+                                                </Stack>
+                                              </MuiBox>
+                                            ))}
+                                            <XDrivePaginationControls
+                                              page={page.page}
+                                              pageSize={SOURCE_COLLECTION_ITEM_PAGE_SIZE}
+                                              hasNext={page.hasNext}
+                                              loading={page.loading}
+                                              labelPrefix="成员"
+                                              onPrevious={() => void loadSourceCollectionItems(row.source.id, collection.id, page.page - 1)}
+                                              onNext={() => void loadSourceCollectionItems(row.source.id, collection.id, page.page + 1)}
+                                            />
+                                          </Stack>
+                                        ) : page?.loaded ? (
+                                          <XDriveStatePanel message="该集合暂无成员。" />
+                                        ) : (
+                                          <Typography variant="caption" color="text.secondary">展开后加载成员。</Typography>
+                                        )}
+                                      </MuiBox>
+                                    </MuiBox>
+                                  )
+                                })}
+                              </Stack>
+                            )}
+                          </div>
+
                           <div className="source-run-detail">
                             <div className="source-run-heading">
                               <strong>同步历史</strong>

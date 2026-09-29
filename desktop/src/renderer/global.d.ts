@@ -4,6 +4,8 @@ import type {
   ExternalSource,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialTestResult,
+  ExternalSourceCollection,
+  ExternalSourceCollectionItem,
   ExternalSourceConnectorConfig,
   ExternalSourceItem,
   ExternalSourceRun,
@@ -174,6 +176,8 @@ declare global {
   type AgentSourceRun = ExternalSourceRun
   type AgentSourceRunFailure = ExternalSourceRunFailure
   type AgentSourceItem = ExternalSourceItem
+  type AgentSourceCollection = ExternalSourceCollection
+  type AgentSourceCollectionItem = ExternalSourceCollectionItem
   type AgentSourceCredentialStatus = ExternalSourceCredentialStatus
   type AgentSourceCredentialTestResult = ExternalSourceCredentialTestResult
   type AgentSourceConnectorConfig = ExternalSourceConnectorConfig
@@ -258,6 +262,8 @@ declare global {
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>
         cancelSourceRun: (sourceID: number, runID: string) => Promise<DesktopResult<AgentSourceRun>>
         getSourceItems: (sourceID: number, state?: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceItem[]>>
+        getSourceCollections: (sourceID: number, state?: string) => Promise<DesktopResult<AgentSourceCollection[]>>
+        getSourceCollectionItems: (sourceID: number, collectionID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceCollectionItem[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>
         testSourceCredential: (kind: string, credential: string | Record<string, string>) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
         testStoredSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialTestResult>>

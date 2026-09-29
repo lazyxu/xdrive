@@ -25,19 +25,24 @@ import {
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceRunProgress,
-  XDriveSourceFailureItem,
   XDriveSourceRunSummary,
+  XDriveSourceFailureItem,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
+  externalSourceCollectionKindLabel,
+  externalSourceCollectionStateLabel,
+  externalSourceCollectionStateTone,
   externalSourceConnectorProfile,
   externalSourceCreateOption,
   externalSourceCreateOptions,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
+  externalSourceSavedCredentialMask,
+  isExternalSourceSavedCredentialMask,
   externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
@@ -52,6 +57,8 @@ import {
 } from '../../ui/shared/src'
 import type {
   ExternalSource,
+  ExternalSourceCollection,
+  ExternalSourceCollectionItem,
   ExternalSourceConnectorConfig,
   ExternalSourceCreatePreset,
   ExternalSourceCredentialTestResult,
@@ -80,6 +87,7 @@ type SourceSettingsValues = {
 }
 const SOURCE_HISTORY_PAGE_SIZE = 20
 const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
+const SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50
 const SOURCE_RUNNING_POLL_MS = 2000
 const SOURCE_REQUESTED_POLL_MS = 5000
 
@@ -98,6 +106,14 @@ function selectedSourcePollDelay(row: ExternalSourceRow | null) {
 
 type SourceRunFailurePage = {
   items: ExternalSourceRunFailure[]
+  page: number
+  hasNext: boolean
+  loading: boolean
+  loaded: boolean
+}
+
+type SourceCollectionItemPage = {
+  items: ExternalSourceCollectionItem[]
   page: number
   hasNext: boolean
   loading: boolean
@@ -164,6 +180,9 @@ export default function ExternalSourcesPanel({
   const [historyHasNext, setHistoryHasNext] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [runFailurePages, setRunFailurePages] = useState<Record<string, SourceRunFailurePage>>({})
+  const [collections, setCollections] = useState<ExternalSourceCollection[]>([])
+  const [collectionsLoading, setCollectionsLoading] = useState(false)
+  const [collectionItemPages, setCollectionItemPages] = useState<Record<number, SourceCollectionItemPage>>({})
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsForm] = Form.useForm<SourceSettingsValues>()
@@ -574,7 +593,7 @@ export default function ExternalSourcesPanel({
       schedule_expression: row.source.schedule_expression || '6h',
       schedule_timezone: row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone,
       ignore_rules: row.source.ignore_rules ?? '',
-      cookie: '',
+      cookie: profile.credential === 'cookie' && row.credential?.configured ? externalSourceSavedCredentialMask : '',
       base_url: '',
       username: '',
       password: '',
@@ -601,7 +620,9 @@ export default function ExternalSourcesPanel({
     if (!setting) return null
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     if (profile.credential === 'cookie') {
-      const cookie = String(settingsForm.getFieldValue('cookie') ?? '').trim()
+      const rawCookie = String(settingsForm.getFieldValue('cookie') ?? '')
+      if (isExternalSourceSavedCredentialMask(rawCookie)) return null
+      const cookie = rawCookie.trim()
       return cookie ? { cookie } : null
     }
     if (profile.credential === 'synology_dsm') {
@@ -759,6 +780,62 @@ export default function ExternalSourcesPanel({
     }
   }
 
+  const loadCollections = useCallback(async (sourceID: number) => {
+    setCollectionsLoading(true)
+    try {
+      setCollections(await api.sourceCollections(sourceID))
+    } catch (error) {
+      showActionError('加载相册/集合失败', error, '无法读取该来源的相册/集合，请稍后重试。')
+    } finally {
+      setCollectionsLoading(false)
+    }
+  }, [api])
+
+  const loadCollectionItems = useCallback(async (sourceID: number, collectionID: number, page = 1) => {
+    const nextPage = Math.max(1, Math.trunc(page))
+    setCollectionItemPages((current) => ({
+      ...current,
+      [collectionID]: {
+        items: current[collectionID]?.items ?? [],
+        page: current[collectionID]?.page ?? nextPage,
+        hasNext: current[collectionID]?.hasNext ?? false,
+        loading: true,
+        loaded: current[collectionID]?.loaded ?? false,
+      },
+    }))
+    try {
+      const offset = (nextPage - 1) * SOURCE_COLLECTION_ITEM_PAGE_SIZE
+      const items = await api.sourceCollectionItems(
+        sourceID,
+        collectionID,
+        SOURCE_COLLECTION_ITEM_PAGE_SIZE + 1,
+        offset,
+      )
+      setCollectionItemPages((current) => ({
+        ...current,
+        [collectionID]: {
+          items: items.slice(0, SOURCE_COLLECTION_ITEM_PAGE_SIZE),
+          page: nextPage,
+          hasNext: items.length > SOURCE_COLLECTION_ITEM_PAGE_SIZE,
+          loading: false,
+          loaded: true,
+        },
+      }))
+    } catch (error) {
+      setCollectionItemPages((current) => ({
+        ...current,
+        [collectionID]: {
+          items: current[collectionID]?.items ?? [],
+          page: current[collectionID]?.page ?? nextPage,
+          hasNext: current[collectionID]?.hasNext ?? false,
+          loading: false,
+          loaded: current[collectionID]?.loaded ?? false,
+        },
+      }))
+      showActionError('加载集合成员失败', error, '无法读取该相册/集合的成员，请稍后重试。')
+    }
+  }, [api])
+
   const openDetails = async (row: ExternalSourceRow) => {
     setSelected(row)
     setFailedItems([])
@@ -768,8 +845,11 @@ export default function ExternalSourcesPanel({
     setHistoryPage(1)
     setHistoryHasNext(false)
     setRunFailurePages({})
+    setCollections([])
+    setCollectionItemPages({})
     setFailedItemsLoading(true)
     void loadRunHistory(row.source.id, 1)
+    void loadCollections(row.source.id)
     try {
       const items = await api.sourceItems(row.source.id, 'error', 1000, 0)
       setFailedItems(items)
@@ -790,6 +870,9 @@ export default function ExternalSourcesPanel({
     setHistoryPage(1)
     setHistoryHasNext(false)
     setRunFailurePages({})
+    setCollections([])
+    setCollectionsLoading(false)
+    setCollectionItemPages({})
   }
 
   const selectedDetail = selected ? externalSourceDetailView(selected) : null
@@ -920,6 +1003,87 @@ export default function ExternalSourcesPanel({
                 </Descriptions.Item>
               )}
             </Descriptions>
+
+            <Divider orientation="left">相册与集合</Divider>
+            {collectionsLoading ? (
+              <XDriveStatePanel loading variant="plain" message="正在加载相册/集合" />
+            ) : collections.length === 0 ? (
+              <XDriveStatePanel variant="plain" message="该来源暂无相册/集合元数据" />
+            ) : (
+              <Stack spacing={1}>
+                {collections.map((collection) => {
+                  const page = collectionItemPages[collection.id]
+                  return (
+                    <Accordion
+                      key={collection.id}
+                      disableGutters
+                      elevation={0}
+                      onChange={(_, expanded) => {
+                        if (expanded && !page?.loaded && !page?.loading) {
+                          void loadCollectionItems(selected.source.id, collection.id, 1)
+                        }
+                      }}
+                    >
+                      <AccordionSummary>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ width: '100%', pr: 1 }}>
+                          <MuiBox>
+                            <MuiTypography variant="body2" sx={{ fontWeight: 700 }}>{collection.name}</MuiTypography>
+                            <MuiTypography variant="caption" color="text.secondary">
+                              {externalSourceCollectionKindLabel(collection.kind)} · {collection.item_count.toLocaleString('zh-CN')} 项 · 上次发现 {formatExternalSourceTime(collection.last_seen_at)}
+                            </MuiTypography>
+                          </MuiBox>
+                          <XDriveStatusBadge
+                            tone={externalSourceCollectionStateTone(collection.state)}
+                            label={externalSourceCollectionStateLabel(collection.state)}
+                          />
+                        </Stack>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        {page?.loading && !page.loaded ? (
+                          <XDriveStatePanel loading variant="plain" message="正在加载集合成员" />
+                        ) : page?.loaded && page.items.length > 0 ? (
+                          <Stack spacing={0.75}>
+                            {page.items.map((item) => (
+                              <MuiBox key={item.external_id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.75} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+                                  <MuiBox sx={{ minWidth: 0 }}>
+                                    <MuiTypography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                                      {item.path || item.external_id}
+                                    </MuiTypography>
+                                    <MuiTypography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                                      {item.metadata?.captured_at ? '拍摄 ' + formatExternalSourceTime(item.metadata.captured_at) + ' · ' : ''}
+                                      {formatSize(item.size)}
+                                      {item.metadata?.original_path ? ' · 原始路径 ' + item.metadata.original_path : ''}
+                                    </MuiTypography>
+                                  </MuiBox>
+                                  <XDriveStatusBadge
+                                    tone={item.state === 'synced' ? 'good' : item.state === 'error' ? 'bad' : item.state === 'missing' ? 'warning' : 'neutral'}
+                                    label={item.state === 'synced' ? '已同步' : item.state === 'missing' ? '远端缺失' : item.state === 'error' ? '失败' : item.state}
+                                  />
+                                </Stack>
+                              </MuiBox>
+                            ))}
+                            <XDrivePaginationControls
+                              page={page.page}
+                              pageSize={SOURCE_COLLECTION_ITEM_PAGE_SIZE}
+                              hasNext={page.hasNext}
+                              loading={page.loading}
+                              labelPrefix="成员"
+                              onPrevious={() => void loadCollectionItems(selected.source.id, collection.id, page.page - 1)}
+                              onNext={() => void loadCollectionItems(selected.source.id, collection.id, page.page + 1)}
+                            />
+                          </Stack>
+                        ) : page?.loaded ? (
+                          <XDriveStatePanel variant="plain" message="该集合暂无成员" />
+                        ) : (
+                          <MuiTypography variant="caption" color="text.secondary">展开后加载成员。</MuiTypography>
+                        )}
+                      </AccordionDetails>
+                    </Accordion>
+                  )
+                })}
+              </Stack>
+            )}
 
             <Divider orientation="left">同步历史</Divider>
             <Spin spinning={historyLoading}>
@@ -1396,10 +1560,21 @@ export default function ExternalSourcesPanel({
                     出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
                   </MuiTypography>
                 </XDriveStatusAlert>
-                <Form.Item name="cookie" label="更新 Cookie">
+                <Form.Item
+                  name="cookie"
+                  label="一刻相册 Cookie"
+                  extra={setting.credential?.configured
+                    ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                    : '当前未配置 Cookie，请粘贴新的 Cookie。'}
+                >
                   <Input.Password
                     autoComplete="off"
-                    placeholder="留空则保持当前 Cookie 不变"
+                    placeholder={setting.credential?.configured ? externalSourceSavedCredentialMask : '粘贴一刻相册 Cookie'}
+                    onFocus={() => {
+                      if (isExternalSourceSavedCredentialMask(settingsForm.getFieldValue('cookie'))) {
+                        settingsForm.setFieldValue('cookie', '')
+                      }
+                    }}
                     onChange={() => {
                       setSettingsCredentialTest(null)
                       setSettingsCredentialTestError('')
