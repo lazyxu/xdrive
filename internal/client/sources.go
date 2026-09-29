@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -296,6 +297,27 @@ func (c *Client) TestSourceCredential(ctx context.Context, kind string, payload 
 func (c *Client) TestStoredSourceCredential(ctx context.Context, id uint64) (SourceCredentialTestResult, error) {
 	var out SourceCredentialTestResult
 	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/credential/test", id), map[string]any{}, &out)
+	return out, err
+}
+
+type SourceConnectorConfig struct {
+	Configured bool            `json:"configured"`
+	Revision   uint64          `json:"revision"`
+	Payload    json.RawMessage `json:"payload"`
+	UpdatedAt  *time.Time      `json:"updated_at,omitempty"`
+}
+
+func (c *Client) SourceConnectorConfig(ctx context.Context, id uint64) (SourceConnectorConfig, error) {
+	var out SourceConnectorConfig
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/connector-config", id), nil, &out)
+	return out, err
+}
+
+func (c *Client) PutSourceConnectorConfig(ctx context.Context, id, revision uint64, payload any) (SourceConnectorConfig, error) {
+	var out SourceConnectorConfig
+	err := c.jsonRevision(ctx, http.MethodPut, fmt.Sprintf("/api/v1/sources/%d/connector-config", id), revision, map[string]any{
+		"payload": payload,
+	}, &out)
 	return out, err
 }
 
