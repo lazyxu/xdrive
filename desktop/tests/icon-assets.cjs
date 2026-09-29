@@ -29,7 +29,7 @@ test('application icon has one SVG source of truth and platform wiring', () => {
     'Desktop brand lockups must import the approved master SVG directly',
   )
   const desktopBrandUses = desktopRenderer.match(/src=\{xDriveBrandIcon\}/g) || []
-  assert.ok(desktopBrandUses.length >= 4, 'Desktop auth/sidebar brand lockups must use the shared master icon')
+  assert.equal(desktopBrandUses.length, 1, 'Desktop must render the xDrive brand icon once in the custom titlebar')
 
   const web = text('web/index.html')
   assert.ok(web.includes('href="/favicon.svg"'), 'Web must expose the generated SVG favicon')

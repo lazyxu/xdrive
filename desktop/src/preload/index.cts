@@ -110,6 +110,15 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   getStartup: () => ipcRenderer.invoke('desktop:get-startup'),
   getPreferences: () => ipcRenderer.invoke('desktop:get-preferences'),
   getLoginHistory: () => ipcRenderer.invoke('desktop:get-login-history'),
+  getWindowState: () => ipcRenderer.invoke('desktop:get-window-state'),
+  minimizeWindow: () => ipcRenderer.send('desktop:window-minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.send('desktop:window-toggle-maximize'),
+  closeWindow: () => ipcRenderer.send('desktop:window-close'),
+  onWindowState: (callback: (state: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
+    ipcRenderer.on('desktop:window-state', handler)
+    return () => ipcRenderer.removeListener('desktop:window-state', handler)
+  },
   setStartup: (enabled: boolean) => ipcRenderer.invoke('desktop:set-startup', enabled),
   setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('desktop:set-close-to-tray', enabled),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),

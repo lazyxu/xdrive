@@ -32,6 +32,7 @@ declare global {
     password_available: boolean
   }
   type DesktopLoginHistory = { profiles: DesktopLoginProfile[]; secure_password_storage: boolean }
+  type DesktopWindowState = { maximized: boolean; minimized: boolean; fullscreen: boolean }
   type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
 
   type AgentHello = {
@@ -232,6 +233,11 @@ declare global {
       getStartup: () => Promise<DesktopStartup>
       getPreferences: () => Promise<DesktopPreferences>
       getLoginHistory: () => Promise<DesktopLoginHistory>
+      getWindowState: () => Promise<DesktopWindowState>
+      minimizeWindow: () => void
+      toggleMaximizeWindow: () => void
+      closeWindow: () => void
+      onWindowState: (callback: (state: DesktopWindowState) => void) => () => void
       setStartup: (enabled: boolean) => Promise<DesktopResult<DesktopStartup>>
       setCloseToTray: (enabled: boolean) => Promise<DesktopResult<DesktopPreferences>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>

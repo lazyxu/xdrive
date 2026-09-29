@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import {
   Alert as MuiAlert,
   Autocomplete,
@@ -30,7 +30,11 @@ import {
   Typography,
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
+import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
@@ -83,6 +87,50 @@ function platformLabel(platform: string) {
   if (platform === 'linux') return 'Linux'
   if (platform === 'darwin') return 'macOS'
   return platform || '未知'
+}
+
+function DesktopFrame({ children, maximized }: { children: ReactNode; maximized: boolean }) {
+  return (
+    <div className="desktop-frame">
+      <header className="desktop-titlebar">
+        <div className="desktop-titlebar-brand">
+          <img className="desktop-titlebar-icon" src={xDriveBrandIcon} alt="" aria-hidden="true" />
+          <strong>xDrive</strong>
+          <span>桌面版</span>
+        </div>
+        <div className="desktop-window-controls">
+          <IconButton
+            className="desktop-window-control"
+            aria-label="最小化"
+            title="最小化"
+            disableRipple
+            onClick={() => window.xdriveDesktop.minimizeWindow()}
+          >
+            <RemoveRoundedIcon fontSize="small" />
+          </IconButton>
+          <IconButton
+            className="desktop-window-control"
+            aria-label={maximized ? '还原' : '最大化'}
+            title={maximized ? '还原' : '最大化'}
+            disableRipple
+            onClick={() => window.xdriveDesktop.toggleMaximizeWindow()}
+          >
+            {maximized ? <FilterNoneRoundedIcon fontSize="small" /> : <CropSquareRoundedIcon fontSize="small" />}
+          </IconButton>
+          <IconButton
+            className="desktop-window-control desktop-window-close"
+            aria-label="关闭"
+            title="关闭"
+            disableRipple
+            onClick={() => window.xdriveDesktop.closeWindow()}
+          >
+            <CloseRoundedIcon fontSize="small" />
+          </IconButton>
+        </div>
+      </header>
+      <div className="desktop-body">{children}</div>
+    </div>
+  )
 }
 
 function buildInfoTime(value?: string) {
@@ -228,6 +276,7 @@ export default function App() {
     start_at_login: true,
     close_to_tray: true,
   })
+  const [windowMaximized, setWindowMaximized] = useState(false)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
   const [view, setView] = useState<View>('overview')
   const [busy, setBusy] = useState('')
@@ -386,6 +435,9 @@ export default function App() {
         setAutoLogin(value.secure_password_storage && latest.auto_login)
       }
     })
+    void window.xdriveDesktop.getWindowState().then((value) => {
+      if (active) setWindowMaximized(value.maximized)
+    })
     void window.xdriveDesktop.agent.getState().then((value) => {
       if (active) setAgent(value)
     })
@@ -397,6 +449,9 @@ export default function App() {
     })
     const unsubscribeTransfers = window.xdriveDesktop.agent.onTransfers((value) => {
       if (active) setTransfers(value)
+    })
+    const unsubscribeWindowState = window.xdriveDesktop.onWindowState((value) => {
+      if (active) setWindowMaximized(value.maximized)
     })
     const unsubscribeNavigate = window.xdriveDesktop.onNavigate((target) => {
       if (!active) return
@@ -413,6 +468,7 @@ export default function App() {
       active = false
       unsubscribe()
       unsubscribeTransfers()
+      unsubscribeWindowState()
       unsubscribeNavigate()
     }
   }, [])
@@ -1578,11 +1634,14 @@ export default function App() {
     setConflicts(result.data)
   }
 
+  const renderDesktopFrame = (content: ReactNode) => (
+    <DesktopFrame maximized={windowMaximized}>{content}</DesktopFrame>
+  )
+
   if (!agent.connected) {
-    return (
+    return renderDesktopFrame(
       <div className="center-shell">
         <section className="auth-panel">
-          <div className="brand large"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>桌面版</span></div></div>
           <p className="eyebrow">AGENT 连接</p>
           <h1>{headline}</h1>
           <p className="subtitle">xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。</p>
@@ -1603,10 +1662,9 @@ export default function App() {
   }
 
   if (!configured) {
-    return (
+    return renderDesktopFrame(
       <div className="center-shell">
         <form className="auth-panel" onSubmit={login}>
-          <div className="brand large"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>桌面版</span></div></div>
           <p className="eyebrow">登录</p>
           <h1>{headline}</h1>
           <p className="subtitle">凭据会直接传递给 Go Agent，Electron 渲染进程不会接触 access token 或 refresh token。</p>
@@ -1703,10 +1761,9 @@ export default function App() {
   }
 
   if (status?.must_change_password) {
-    return (
+    return renderDesktopFrame(
       <div className="center-shell">
         <form className="auth-panel" onSubmit={changePassword}>
-          <div className="brand large"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>{status.username}</span></div></div>
           <p className="eyebrow">需要修改密码</p>
           <h1>{headline}</h1>
           <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
@@ -1721,10 +1778,9 @@ export default function App() {
     )
   }
 
-  return (
+  return renderDesktopFrame(
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" /><div><strong>xDrive</strong><span>桌面版</span></div></div>
         <nav aria-label="桌面版功能区">
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>概览</button>
           <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>云端文件</button>
