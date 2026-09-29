@@ -6,16 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
-	sourcepkg "github.com/lazyxu/xdrive/internal/source"
+	"github.com/lazyxu/xdrive/internal/pullworker"
 	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"github.com/lazyxu/xdrive/internal/sourcemetadata"
@@ -25,10 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	internalTokenTTL   = 12 * time.Hour
-	DefaultRunInterval = 6 * time.Hour
-)
+const DefaultRunInterval = 6 * time.Hour
 
 type RemoteFactory func(cookie string) (yikesync.Remote, error)
 
@@ -104,7 +98,7 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 		}
 		run, result, err := r.RunSource(ctx, source)
 		if err != nil {
-			if isActiveRun(err) {
+			if pullworker.IsActiveRun(err) {
 				report.Skipped++
 				r.logger().Info("yike_source_skipped_active_run",
 					"source_id", source.ID,
@@ -173,53 +167,19 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		return client.SyncRun{}, result, fmt.Errorf("source %d is not an active Yike pull source", source.ID)
 	}
 
-	var owner meta.User
-	if err := r.DB.WithContext(ctx).First(&owner, source.OwnerID).Error; err != nil {
-		return client.SyncRun{}, result, err
-	}
-	if owner.DisabledAt != nil {
-		return client.SyncRun{}, result, fmt.Errorf("source owner account is disabled")
-	}
-	if owner.MustChangePassword {
-		return client.SyncRun{}, result, fmt.Errorf("source owner must change password before scheduled scans")
-	}
-
-	api := &ownerSourceAPI{
-		serverURL: strings.TrimRight(strings.TrimSpace(r.ServerURL), "/"),
-		auth:      auth.New(r.JWTSecret, internalTokenTTL),
-		owner:     owner,
-	}
-	trigger := meta.SyncRunTriggerScheduled
-	if source.RunRequestedAt != nil {
-		trigger = meta.SyncRunTriggerManual
-	}
-	runID := uuid.NewString()
-	run, err := api.BeginSourceRun(ctx, source.ID, runID, trigger)
+	session, err := pullworker.BeginRunSession(ctx, r.DB, r.ServerURL, r.JWTSecret, source, yikesync.SourceKind)
 	if err != nil {
 		return client.SyncRun{}, result, err
 	}
-	runCtx, cancelRun := context.WithCancel(ctx)
-	defer cancelRun()
-	api.cancelRun = cancelRun
+	defer session.Close()
+	run := session.Run
+	runCtx := session.Context
+	api := session.API
 
 	finishFailure := func(cause error, summaryFailed bool) (client.SyncRun, yikesync.Result, error) {
-		if summaryFailed && !errors.Is(cause, context.Canceled) {
-			result.Summary.AddFailure()
-		}
-		status := meta.SyncRunStatusFailed
-		if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
-			status = meta.SyncRunStatusCancelled
-		}
-		finishCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		finished, finishErr := api.FinishSourceRun(finishCtx, source.ID, run.ID, client.FinishSourceRunInput{
-			Status:            status,
-			CompleteInventory: false,
-			Summary:           result.Summary,
-			Error:             sourceErrorMessage(cause),
-		})
+		finished, finishErr := session.FinishFailure(cause, &result.Summary, summaryFailed, sourceErrorMessage(cause))
 		if finishErr != nil {
-			return client.SyncRun{}, result, errors.Join(cause, fmt.Errorf("finish failed Yike run: %w", finishErr))
+			return client.SyncRun{}, result, errors.Join(cause, finishErr)
 		}
 		return finished, result, cause
 	}
@@ -258,7 +218,7 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		if !ok {
 			return finishFailure(fmt.Errorf("Yike remote does not support media streaming"), true)
 		}
-		yikeExecutor := yikesync.NewExecutor(transferRemote, &ownerExecutionAPI{sourceAPI: api}, *run.TargetNodeID)
+		yikeExecutor := yikesync.NewExecutor(transferRemote, pullworker.NewExecutionAPI(api), *run.TargetNodeID)
 		yikeExecutor.Heartbeat = func(heartbeatCtx context.Context) error {
 			return api.HeartbeatSourceRun(heartbeatCtx, source.ID, run.ID)
 		}
@@ -288,12 +248,7 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		return finishFailure(fmt.Errorf("apply Yike collection snapshot: %w", err), true)
 	}
 
-	finished, err := api.FinishSourceRun(runCtx, source.ID, run.ID, client.FinishSourceRunInput{
-		Status:            meta.SyncRunStatusCompleted,
-		CompleteInventory: true,
-		Summary:           result.Summary,
-		Error:             strings.Join(result.Errors, "\n"),
-	})
+	finished, err := session.FinishSuccess(result.Summary, strings.Join(result.Errors, "\n"))
 	if err != nil {
 		return client.SyncRun{}, result, err
 	}
@@ -301,6 +256,11 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		return finished, result, fmt.Errorf("Yike pull run finished %s with %d failed items", finished.Status, finished.FailedItems)
 	}
 	return finished, result, nil
+}
+
+func (r *Runner) RunPullSource(ctx context.Context, source meta.Source) (client.SyncRun, error) {
+	run, _, err := r.RunSource(ctx, source)
+	return run, err
 }
 
 func (r *Runner) validate() error {
@@ -329,18 +289,8 @@ func (r *Runner) logger() *slog.Logger {
 	return slog.Default()
 }
 
-func isActiveRun(err error) bool {
-	var apiErr *client.APIError
-	return errors.As(err, &apiErr) &&
-		apiErr.Status == http.StatusConflict &&
-		apiErr.Msg == "source already has an active run"
-}
-
 func isSourceRunCancellationRequested(err error) bool {
-	var apiErr *client.APIError
-	return errors.As(err, &apiErr) &&
-		apiErr.Status == http.StatusConflict &&
-		apiErr.Msg == "source run cancellation requested"
+	return pullworker.IsCancellationRequested(err)
 }
 
 func sourceErrorMessage(err error) string {
@@ -367,156 +317,4 @@ func truncateError(err error) string {
 		return value
 	}
 	return value[:4096]
-}
-
-type ownerSourceAPI struct {
-	serverURL string
-	auth      auth.Manager
-	owner     meta.User
-	cancelRun context.CancelFunc
-}
-
-func (a *ownerSourceAPI) handleRunControlError(err error) error {
-	if !isSourceRunCancellationRequested(err) {
-		return err
-	}
-	if a.cancelRun != nil {
-		a.cancelRun()
-	}
-	return context.Canceled
-}
-
-func (a *ownerSourceAPI) client() (*client.Client, error) {
-	token, err := a.auth.Issue(a.owner.ID, a.owner.SessionVersion)
-	if err != nil {
-		return nil, err
-	}
-	out := client.New(a.serverURL, token)
-	out.HTTP = &http.Client{Timeout: 30 * time.Second}
-	return out, nil
-}
-
-type ownerExecutionAPI struct {
-	sourceAPI *ownerSourceAPI
-}
-
-func (a *ownerExecutionAPI) List(ctx context.Context, parentID uint64) ([]client.Node, error) {
-	c, err := a.sourceAPI.client()
-	if err != nil {
-		return nil, err
-	}
-	return c.List(ctx, parentID)
-}
-
-func (a *ownerExecutionAPI) CreateDir(ctx context.Context, parentID uint64, name string) (client.Node, error) {
-	c, err := a.sourceAPI.client()
-	if err != nil {
-		return client.Node{}, err
-	}
-	return c.CreateDir(ctx, parentID, name)
-}
-
-func (a *ownerExecutionAPI) RenameMove(ctx context.Context, id, revision uint64, name *string, parentID *uint64) (client.Node, error) {
-	c, err := a.sourceAPI.client()
-	if err != nil {
-		return client.Node{}, err
-	}
-	return c.RenameMove(ctx, id, revision, name, parentID)
-}
-
-func (a *ownerExecutionAPI) UploadStreamResumableDigestResult(
-	ctx context.Context,
-	parentID uint64,
-	name string,
-	size int64,
-	md5Digest string,
-	resumeKey string,
-	open client.UploadStreamOpen,
-	progress client.UploadProgress,
-) (client.UploadResult, error) {
-	c, err := a.sourceAPI.client()
-	if err != nil {
-		return client.UploadResult{}, err
-	}
-	return c.UploadStreamResumableDigestResult(ctx, parentID, name, size, md5Digest, resumeKey, open, progress)
-}
-
-func (a *ownerExecutionAPI) OverwriteStreamResumableDigestResult(
-	ctx context.Context,
-	nodeID, revision uint64,
-	size int64,
-	md5Digest string,
-	resumeKey string,
-	open client.UploadStreamOpen,
-	progress client.UploadProgress,
-) (client.UploadResult, error) {
-	c, err := a.sourceAPI.client()
-	if err != nil {
-		return client.UploadResult{}, err
-	}
-	return c.OverwriteStreamResumableDigestResult(ctx, nodeID, revision, size, md5Digest, resumeKey, open, progress)
-}
-
-func (a *ownerSourceAPI) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (client.SyncRun, error) {
-	c, err := a.client()
-	if err != nil {
-		return client.SyncRun{}, err
-	}
-	return c.BeginSourceRun(ctx, sourceID, runID, trigger)
-}
-
-func (a *ownerSourceAPI) ObserveSourceItems(ctx context.Context, sourceID uint64, runID string, items []client.SourceObservation) ([]client.SourcePlan, error) {
-	c, err := a.client()
-	if err != nil {
-		return nil, err
-	}
-	return c.ObserveSourceItems(ctx, sourceID, runID, items)
-}
-
-func (a *ownerSourceAPI) CommitSourceItems(ctx context.Context, sourceID uint64, runID string, items []client.SourceCommit) error {
-	c, err := a.client()
-	if err != nil {
-		return err
-	}
-	return c.CommitSourceItems(ctx, sourceID, runID, items)
-}
-
-func (a *ownerSourceAPI) FailSourceItems(ctx context.Context, sourceID uint64, runID string, items []client.SourceFailure) error {
-	c, err := a.client()
-	if err != nil {
-		return err
-	}
-	return c.FailSourceItems(ctx, sourceID, runID, items)
-}
-
-func (a *ownerSourceAPI) UpdateSourceRunSummary(ctx context.Context, sourceID uint64, runID string, summary sourcepkg.Summary) error {
-	c, err := a.client()
-	if err != nil {
-		return err
-	}
-	return a.handleRunControlError(c.UpdateSourceRunSummary(ctx, sourceID, runID, summary))
-}
-
-func (a *ownerSourceAPI) UpdateSourceRunTransferProgress(ctx context.Context, sourceID uint64, runID, path string, done, total int64) error {
-	c, err := a.client()
-	if err != nil {
-		return err
-	}
-	return a.handleRunControlError(c.UpdateSourceRunTransferProgress(ctx, sourceID, runID, path, done, total))
-}
-
-func (a *ownerSourceAPI) HeartbeatSourceRun(ctx context.Context, sourceID uint64, runID string) error {
-	c, err := a.client()
-	if err != nil {
-		return err
-	}
-	return a.handleRunControlError(c.HeartbeatSourceRun(ctx, sourceID, runID))
-}
-
-func (a *ownerSourceAPI) FinishSourceRun(ctx context.Context, sourceID uint64, runID string, input client.FinishSourceRunInput) (client.SyncRun, error) {
-	c, err := a.client()
-	if err != nil {
-		return client.SyncRun{}, err
-	}
-	return c.FinishSourceRun(ctx, sourceID, runID, input)
 }

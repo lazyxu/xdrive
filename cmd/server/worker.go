@@ -15,7 +15,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
+	"github.com/lazyxu/xdrive/internal/pullworker"
 	"github.com/lazyxu/xdrive/internal/sourcewake"
+	"github.com/lazyxu/xdrive/internal/yikesync"
 	"github.com/lazyxu/xdrive/internal/yikeworker"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -73,12 +75,19 @@ func runWorker(args []string) error {
 		return err
 	}
 
-	runner := &yikeworker.Runner{
+	yikeRunner := &yikeworker.Runner{
 		DB:        db,
 		Keyring:   keyring,
 		ServerURL: serverURL,
 		JWTSecret: cfg.JWTSecret,
 		Logger:    slog.Default(),
+	}
+	runner := &pullworker.Runner{
+		DB: db,
+		Handlers: map[string]pullworker.SourceHandler{
+			yikesync.SourceKind: yikeRunner,
+		},
+		Logger: slog.Default(),
 	}
 
 	runImmediate := func(ctx context.Context) error {
