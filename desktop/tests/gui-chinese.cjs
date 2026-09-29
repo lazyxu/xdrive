@@ -10,6 +10,7 @@ const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src',
 const sharedActionButton = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ActionButton.tsx'), 'utf8')
 const sharedStatePanel = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatePanel.tsx'), 'utf8')
 const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusBadge.tsx'), 'utf8')
+const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusAlert.tsx'), 'utf8')
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
 const sharedYikeCookieHelp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'YikeCookieHelp.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
@@ -179,6 +180,15 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
+})
+
+test('desktop persistent sync states use the cross-client MUI status alert', () => {
+  assert.ok(sharedStatusAlert.includes('export function XDriveStatusAlert({'), 'shared status alert is missing')
+  assert.ok(sharedStatusAlert.includes("if (tone === 'bad') return 'error'"), 'shared alert bad tone mapping is missing')
+  assert.equal((renderer.match(/<XDriveStatusAlert/g) || []).length >= 3, true, 'desktop persistent sync states are not using shared status alerts')
+  assert.ok(renderer.includes('tone="bad"'), 'sync-error state is not mapped to the bad tone')
+  assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'paused status alert content is missing')
+  assert.ok(renderer.includes('发现 {status.conflict_count || 0} 个同步冲突'), 'conflict status alert content is missing')
 })
 
 test('desktop global sync and diagnostic statuses use the cross-client MUI badge', () => {

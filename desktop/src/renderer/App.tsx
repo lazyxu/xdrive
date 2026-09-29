@@ -47,6 +47,7 @@ import {
   XDriveDialogTitle,
   XDriveStatePanel,
   XDriveShareStatusBadge,
+  XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
@@ -2028,16 +2029,16 @@ export default function App() {
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack spacing={1} sx={{ mt: 2 }}>
             {status?.last_error ? (
-              <MuiAlert
-                severity="error"
+              <XDriveStatusAlert
+                tone="bad"
                 action={<MuiButton color="inherit" size="small" onClick={() => setView('diagnostics')}>运行诊断</MuiButton>}
               >
                 同步异常：{status.last_error}
-              </MuiAlert>
+              </XDriveStatusAlert>
             ) : null}
             {status?.paused ? (
-              <MuiAlert
-                severity="warning"
+              <XDriveStatusAlert
+                tone="warning"
                 action={(
                   <MuiButton
                     color="inherit"
@@ -2050,15 +2051,15 @@ export default function App() {
                 )}
               >
                 同步已暂停；此设备不会继续后台同步。
-              </MuiAlert>
+              </XDriveStatusAlert>
             ) : null}
             {status?.has_conflict ? (
-              <MuiAlert
-                severity="warning"
+              <XDriveStatusAlert
+                tone="warning"
                 action={<MuiButton color="inherit" size="small" onClick={() => setView('conflicts')}>处理冲突</MuiButton>}
               >
                 发现 {status.conflict_count || 0} 个同步冲突，请进入“冲突”页面处理。
-              </MuiAlert>
+              </XDriveStatusAlert>
             ) : null}
           </Stack>
         ) : null}
