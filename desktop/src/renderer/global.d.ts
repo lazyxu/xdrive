@@ -22,6 +22,16 @@ declare global {
   type DesktopInfo = BuildInfo & { platform: string; arch: string }
   type DesktopStartup = { start_at_login: boolean }
   type DesktopPreferences = { start_at_login: boolean; close_to_tray: boolean }
+  type DesktopLoginProfile = {
+    server: string
+    username: string
+    mount_path?: string
+    last_used_at: string
+    remember_password: boolean
+    auto_login: boolean
+    password_available: boolean
+  }
+  type DesktopLoginHistory = { profiles: DesktopLoginProfile[]; secure_password_storage: boolean }
   type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
 
   type AgentHello = {
@@ -221,6 +231,7 @@ declare global {
       getInfo: () => Promise<DesktopInfo>
       getStartup: () => Promise<DesktopStartup>
       getPreferences: () => Promise<DesktopPreferences>
+      getLoginHistory: () => Promise<DesktopLoginHistory>
       setStartup: (enabled: boolean) => Promise<DesktopResult<DesktopStartup>>
       setCloseToTray: (enabled: boolean) => Promise<DesktopResult<DesktopPreferences>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
@@ -268,7 +279,15 @@ declare global {
         exportDiagnostics: () => Promise<DesktopResult<{ saved: boolean }>>
         retry: () => Promise<AgentConnectionState>
         restart: () => Promise<DesktopResult<AgentConnectionState>>
-        login: (input: { server: string; username: string; password: string; mount_path?: string }) => Promise<DesktopResult<AgentStatus>>
+        login: (input: {
+          server: string
+          username: string
+          password: string
+          mount_path?: string
+          remember_password?: boolean
+          auto_login?: boolean
+          use_saved_password?: boolean
+        }) => Promise<DesktopResult<AgentStatus>>
         logout: () => Promise<DesktopResult<AgentStatus>>
         changePassword: (input: { current_password: string; new_password: string }) => Promise<DesktopResult<AgentStatus>>
         setPaused: (paused: boolean) => Promise<DesktopResult<AgentStatus>>

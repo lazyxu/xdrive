@@ -14,6 +14,7 @@ import {
   screen,
   session,
   shell,
+  safeStorage,
   Tray,
   type OpenDialogOptions,
 } from 'electron'
@@ -39,6 +40,17 @@ import {
   resolveWindowBounds,
   type DesktopPreferences,
 } from './window_preferences.cjs'
+import {
+  automaticLoginProfile,
+  disableAutomaticLogin,
+  emptyLoginHistory,
+  findLoginProfile,
+  normalizeLoginHistory,
+  publicLoginHistory,
+  recordSuccessfulLogin,
+  replaceSavedPassword,
+  type LoginHistory,
+} from './login_history.cjs'
 import {
   AgentIPCClient,
   AgentIPCError,
@@ -88,6 +100,7 @@ type DesktopResult<T> =
 
 let mainWindow: BrowserWindow | null = null
 let desktopPreferences = defaultDesktopPreferences()
+let loginHistory: LoginHistory = emptyLoginHistory()
 let windowStateSaveTimer: NodeJS.Timeout | null = null
 let closeDecisionPending = false
 let pendingDesktopView: DesktopViewTarget | null = null
@@ -107,6 +120,7 @@ const startupDesktopAction = desktopShortcutActionFromArgs(process.argv)
 const backgroundLaunch = process.argv.includes('--background') ||
   (startupDesktopAction !== null && !desktopShortcutShowsWindow(startupDesktopAction))
 const desktopPreferencesName = 'desktop-settings.json'
+const loginHistoryName = 'desktop-login-history.json'
 
 function desktopLifecycleLogDirectory() {
   if (process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()) {
@@ -146,6 +160,51 @@ function publicDesktopPreferences() {
   return {
     start_at_login: desktopPreferences.start_at_login,
     close_to_tray: desktopPreferences.close_to_tray,
+  }
+}
+
+async function loadLoginHistory(): Promise<LoginHistory> {
+  try {
+    return normalizeLoginHistory(JSON.parse(await readFile(path.join(app.getPath('userData'), loginHistoryName), 'utf8')))
+  } catch {
+    return emptyLoginHistory()
+  }
+}
+
+async function saveLoginHistory() {
+  const dir = app.getPath('userData')
+  await mkdir(dir, { recursive: true })
+  await writeFile(
+    path.join(dir, loginHistoryName),
+    JSON.stringify(loginHistory, null, 2) + '\n',
+    { encoding: 'utf8', mode: 0o600 },
+  )
+}
+
+function securePasswordStorageAvailable() {
+  if (!safeStorage.isEncryptionAvailable()) return false
+  if (process.platform !== 'linux') return true
+  const backend = safeStorage.getSelectedStorageBackend()
+  return backend !== 'basic_text' && backend !== 'unknown'
+}
+
+function encryptLoginPassword(password: string) {
+  return safeStorage.encryptString(password).toString('base64')
+}
+
+function decryptLoginPassword(encryptedPassword: string) {
+  return safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'))
+}
+
+function loginHistorySnapshot() {
+  return publicLoginHistory(loginHistory, securePasswordStorageAvailable())
+}
+
+async function persistLoginHistoryBestEffort() {
+  try {
+    await saveLoginHistory()
+  } catch (error) {
+    lifecycleLog?.record('login_history_save_failed', { error: formatLifecycleError(error) })
   }
 }
 
@@ -716,6 +775,31 @@ async function runAgentAction<T>(operation: () => Promise<T>, refresh = true): P
   }
 }
 
+async function attemptAutomaticLogin() {
+  const profile = automaticLoginProfile(loginHistory)
+  if (!profile || !profile.encrypted_password || !securePasswordStorageAvailable()) return
+  if (!agentState.connected || agentState.status?.configured) return
+
+  try {
+    const password = decryptLoginPassword(profile.encrypted_password)
+    const result = await runAgentAction(() => requireAgentClient().login({
+      server: profile.server,
+      username: profile.username,
+      password,
+      ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
+    }))
+    if (!result.ok) {
+      loginHistory = disableAutomaticLogin(loginHistory)
+      await persistLoginHistoryBestEffort()
+      lifecycleLog?.record('auto_login_failed', { code: result.error.code, status: result.error.status })
+    }
+  } catch (error) {
+    loginHistory = disableAutomaticLogin(loginHistory)
+    await persistLoginHistoryBestEffort()
+    lifecycleLog?.record('auto_login_failed', { error: formatLifecycleError(error) })
+  }
+}
+
 function wait(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     if (signal.aborted) return resolve()
@@ -830,6 +914,7 @@ function registerIPCHandlers() {
   }))
   ipcMain.handle('desktop:get-startup', () => ({ start_at_login: desktopPreferences.start_at_login }))
   ipcMain.handle('desktop:get-preferences', () => publicDesktopPreferences())
+  ipcMain.handle('desktop:get-login-history', () => loginHistorySnapshot())
   ipcMain.handle('desktop:set-startup', async (_event, enabled: unknown) => {
     if (typeof enabled !== 'boolean') {
       return { ok: false, error: { code: 'invalid_input', message: 'start_at_login must be a boolean.' } }
@@ -1212,31 +1297,109 @@ function registerIPCHandlers() {
       return { ok: false, error: agentError(error) }
     }
   })
-  ipcMain.handle('agent:login', (_event, input: unknown) => {
-    const value = input as Partial<{ server: string; username: string; password: string; mount_path: string }>
+  ipcMain.handle('agent:login', async (_event, input: unknown) => {
+    const value = input as Partial<{
+      server: string
+      username: string
+      password: string
+      mount_path: string
+      remember_password: boolean
+      auto_login: boolean
+      use_saved_password: boolean
+    }>
     if (!value || typeof value.server !== 'string' || typeof value.username !== 'string' || typeof value.password !== 'string') {
       return { ok: false, error: { code: 'invalid_input', message: 'Server, username and password are required.' } }
     }
-    const { server, username, password } = value
+    const server = value.server.trim()
+    const username = value.username.trim()
     const mountPath = typeof value.mount_path === 'string' ? value.mount_path.trim() : ''
-    return runAgentAction(() => requireAgentClient().login({
+    const rememberPassword = value.remember_password === true
+    const autoLogin = value.auto_login === true
+    const useSavedPassword = value.use_saved_password === true
+    if (!server || !username) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Server and username are required.' } }
+    }
+    if (autoLogin && !rememberPassword) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Auto login requires remembered password.' } }
+    }
+    if (rememberPassword && !securePasswordStorageAvailable()) {
+      return { ok: false, error: { code: 'secure_storage_unavailable', message: 'Secure password storage is unavailable on this system.' } }
+    }
+
+    const existing = findLoginProfile(loginHistory, server, username)
+    let password = value.password
+    if (!password && useSavedPassword) {
+      if (!existing?.encrypted_password || !securePasswordStorageAvailable()) {
+        return { ok: false, error: { code: 'saved_password_unavailable', message: 'The saved password is unavailable. Please enter the password again.' } }
+      }
+      try {
+        password = decryptLoginPassword(existing.encrypted_password)
+      } catch {
+        return { ok: false, error: { code: 'saved_password_unavailable', message: 'The saved password could not be decrypted. Please enter the password again.' } }
+      }
+    }
+    if (!password) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Password is required.' } }
+    }
+
+    let encryptedPassword: string | undefined
+    if (rememberPassword) {
+      if (!value.password && useSavedPassword && existing?.encrypted_password) {
+        encryptedPassword = existing.encrypted_password
+      } else {
+        try {
+          encryptedPassword = encryptLoginPassword(password)
+        } catch {
+          return { ok: false, error: { code: 'secure_storage_unavailable', message: 'Password could not be stored securely.' } }
+        }
+      }
+    }
+
+    const result = await runAgentAction(() => requireAgentClient().login({
       server,
       username,
       password,
       ...(mountPath ? { mount_path: mountPath } : {}),
     }))
+    if (result.ok) {
+      loginHistory = recordSuccessfulLogin(loginHistory, {
+        server,
+        username,
+        ...(mountPath ? { mount_path: mountPath } : {}),
+        last_used_at: new Date().toISOString(),
+        remember_password: rememberPassword,
+        auto_login: autoLogin,
+        ...(encryptedPassword ? { encrypted_password: encryptedPassword } : {}),
+      })
+      await persistLoginHistoryBestEffort()
+    }
+    return result
   })
   ipcMain.handle('agent:logout', () => runAgentAction(() => requireAgentClient().logout()))
-  ipcMain.handle('agent:change-password', (_event, input: unknown) => {
+  ipcMain.handle('agent:change-password', async (_event, input: unknown) => {
     const value = input as Partial<{ current_password: string; new_password: string }>
     if (!value || typeof value.current_password !== 'string' || typeof value.new_password !== 'string') {
       return { ok: false, error: { code: 'invalid_input', message: 'Current and new password are required.' } }
     }
     const { current_password: currentPassword, new_password: newPassword } = value
-    return runAgentAction(() => requireAgentClient().changePassword({
+    const result = await runAgentAction(() => requireAgentClient().changePassword({
       current_password: currentPassword,
       new_password: newPassword,
     }))
+    const currentServer = agentState.status?.server?.trim()
+    const currentUsername = agentState.status?.username?.trim()
+    if (result.ok && currentServer && currentUsername && securePasswordStorageAvailable()) {
+      const profile = findLoginProfile(loginHistory, currentServer, currentUsername)
+      if (profile?.remember_password) {
+        try {
+          loginHistory = replaceSavedPassword(loginHistory, currentServer, currentUsername, encryptLoginPassword(newPassword))
+          await persistLoginHistoryBestEffort()
+        } catch (error) {
+          lifecycleLog?.record('login_password_refresh_failed', { error: formatLifecycleError(error) })
+        }
+      }
+    }
+    return result
   })
   ipcMain.handle('agent:set-paused', (_event, paused: unknown) => {
     if (typeof paused !== 'boolean') return { ok: false, error: { code: 'invalid_input', message: 'Paused must be a boolean.' } }
@@ -1454,6 +1617,7 @@ if (!primaryInstance) {
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
 
     desktopPreferences = await loadDesktopPreferences()
+    loginHistory = await loadLoginHistory()
     await applyStartAtLogin(desktopPreferences.start_at_login).catch((error) => {
       console.error('failed to configure desktop startup:', error)
     })
@@ -1463,6 +1627,10 @@ if (!primaryInstance) {
     registerIPCHandlers()
     createMainWindow(!backgroundLaunch)
     createTray()
+    const initialAgentState = await refreshAgentState()
+    if (initialAgentState.connected && !initialAgentState.status?.configured) {
+      await attemptAutomaticLogin()
+    }
     restartDesktopMonitors()
     powerMonitor.on('resume', () => {
       restartDesktopMonitors()

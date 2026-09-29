@@ -62,7 +62,15 @@ const agent = Object.freeze({
   exportDiagnostics: () => ipcRenderer.invoke('agent:export-diagnostics'),
   retry: () => ipcRenderer.invoke('agent:retry'),
   restart: () => ipcRenderer.invoke('agent:restart'),
-  login: (input: { server: string; username: string; password: string; mount_path?: string }) => ipcRenderer.invoke('agent:login', input),
+  login: (input: {
+    server: string
+    username: string
+    password: string
+    mount_path?: string
+    remember_password?: boolean
+    auto_login?: boolean
+    use_saved_password?: boolean
+  }) => ipcRenderer.invoke('agent:login', input),
   logout: () => ipcRenderer.invoke('agent:logout'),
   changePassword: (input: { current_password: string; new_password: string }) => ipcRenderer.invoke('agent:change-password', input),
   setPaused: (paused: boolean) => ipcRenderer.invoke('agent:set-paused', paused),
@@ -101,6 +109,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   getInfo: () => ipcRenderer.invoke('desktop:get-info'),
   getStartup: () => ipcRenderer.invoke('desktop:get-startup'),
   getPreferences: () => ipcRenderer.invoke('desktop:get-preferences'),
+  getLoginHistory: () => ipcRenderer.invoke('desktop:get-login-history'),
   setStartup: (enabled: boolean) => ipcRenderer.invoke('desktop:set-startup', enabled),
   setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('desktop:set-close-to-tray', enabled),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
