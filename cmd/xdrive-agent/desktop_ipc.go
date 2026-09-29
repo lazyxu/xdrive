@@ -22,6 +22,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/diagnostics"
+	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -160,6 +161,8 @@ type desktopIPCController interface {
 	CloudSourceRunFailures(context.Context, uint64, string, int, int) ([]client.SourceRunFailure, error)
 	CloudCancelSourceRun(context.Context, uint64, string) (client.SyncRun, error)
 	CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
+	CloudSourceCollections(context.Context, uint64, string) ([]client.SourceCollection, error)
+	CloudSourceCollectionItems(context.Context, uint64, uint64, int, int) ([]client.SourceCollectionItem, error)
 	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
 	CloudTestSourceCredential(context.Context, string, map[string]string) (client.SourceCredentialTestResult, error)
 	CloudTestStoredSourceCredential(context.Context, uint64) (client.SourceCredentialTestResult, error)
@@ -374,6 +377,8 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/sources/runs/failures", h.sourceRunFailures)
 	mux.HandleFunc("POST /v1/sources/runs/cancel", h.cancelSourceRun)
 	mux.HandleFunc("GET /v1/sources/items", h.sourceItems)
+	mux.HandleFunc("GET /v1/sources/collections", h.sourceCollections)
+	mux.HandleFunc("GET /v1/sources/collections/items", h.sourceCollectionItems)
 	mux.HandleFunc("POST /v1/source-credentials/test", h.testSourceCredential)
 	mux.HandleFunc("GET /v1/sources/credential", h.sourceCredentialStatus)
 	mux.HandleFunc("POST /v1/sources/credential/test", h.testStoredSourceCredential)
@@ -1115,6 +1120,62 @@ func (h *desktopIPCHandler) sourceItems(w http.ResponseWriter, r *http.Request) 
 		offset = value
 	}
 	items, err := h.ctrl.CloudSourceItems(r.Context(), sourceID, state, limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) sourceCollections(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	if state != "" && state != meta.SourceCollectionStateActive && state != meta.SourceCollectionStateMissing {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_collection_state", "collection state must be active or missing")
+		return
+	}
+	collections, err := h.ctrl.CloudSourceCollections(r.Context(), sourceID, state)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, collections)
+}
+
+func (h *desktopIPCHandler) sourceCollectionItems(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	collectionID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("collection_id")), 10, 64)
+	if err != nil || collectionID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_collection_id", "collection_id must be a positive integer")
+		return
+	}
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 1000 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 1000")
+			return
+		}
+		limit = value
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offset", "offset must be zero or greater")
+			return
+		}
+		offset = value
+	}
+	items, err := h.ctrl.CloudSourceCollectionItems(r.Context(), sourceID, collectionID, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

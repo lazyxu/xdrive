@@ -73,6 +73,8 @@ import {
   type AgentSourceRun,
   type AgentSourceRunFailure,
   type AgentSourceItem,
+  type AgentSourceCollection,
+  type AgentSourceCollectionItem,
   type AgentSourceCredentialStatus,
   type AgentSourceCredentialTestResult,
   type AgentSourceConnectorConfig,
@@ -1331,6 +1333,34 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source item state is invalid.')
     }
     return requireAgentClient().sourceItems(sourceID, normalizedState, limit, offset)
+  }, false))
+  ipcMain.handle('agent:get-source-collections', (_event, sourceID: unknown, state: unknown = '') => runAgentAction<AgentSourceCollection[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof state !== 'string'
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid Source collection query is required.')
+    }
+    const normalizedState = state.trim()
+    if (normalizedState && !['active', 'missing'].includes(normalizedState)) {
+      throw new AgentIPCError('invalid_input', 0, 'Source collection state is invalid.')
+    }
+    return requireAgentClient().sourceCollections(sourceID, normalizedState)
+  }, false))
+  ipcMain.handle('agent:get-source-collection-items', (_event, sourceID: unknown, collectionID: unknown, limit: unknown = 100, offset: unknown = 0) => runAgentAction<AgentSourceCollectionItem[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof collectionID !== 'number' || !Number.isSafeInteger(collectionID) || collectionID <= 0 ||
+      typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000 ||
+      typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid Source collection item query is required.')
+    }
+    return requireAgentClient().sourceCollectionItems(sourceID, collectionID, limit, offset)
   }, false))
   ipcMain.handle('agent:get-source-credential', (_event, sourceID: unknown) => runAgentAction<AgentSourceCredentialStatus>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

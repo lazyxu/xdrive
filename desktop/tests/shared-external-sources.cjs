@@ -435,6 +435,16 @@ test('shared Synology DSM guide binds the exact Source and keeps secrets out of 
   )
 })
 
+test('shared Source collection labels are connector-neutral', () => {
+  assert.equal(shared.externalSourceCollectionKindLabel('album'), '相册')
+  assert.equal(shared.externalSourceCollectionKindLabel('smart'), 'smart')
+  assert.equal(shared.externalSourceCollectionStateLabel('active'), '正常')
+  assert.equal(shared.externalSourceCollectionStateLabel('missing'), '远端已不存在')
+  assert.equal(shared.externalSourceCollectionStateTone('active'), 'good')
+  assert.equal(shared.externalSourceCollectionStateTone('missing'), 'warning')
+  assert.equal(shared.externalSourceCollectionStateTone('other'), 'neutral')
+})
+
 test('shared external-source defaults preserve connector-specific setup rules', () => {
   const scheduleTimezone = shared.defaultExternalSourceTimezone()
   assert.deepEqual(shared.externalSourceDefaults('yike_photos'), {
@@ -489,6 +499,13 @@ test('shared Synology space normalization is deterministic', () => {
   assert.deepEqual(shared.normalizeSynologyPhotoSpaces(['shared', 'personal', 'shared']), ['personal', 'shared'])
   assert.deepEqual(shared.normalizeSynologyPhotoSpaces(['shared']), ['shared'])
   assert.deepEqual(shared.normalizeSynologyPhotoSpaces([]), [])
+})
+
+test('shared saved credential mask is display-only', () => {
+  assert.equal(shared.externalSourceSavedCredentialMask, '••••••••••••')
+  assert.equal(shared.isExternalSourceSavedCredentialMask(shared.externalSourceSavedCredentialMask), true)
+  assert.equal(shared.isExternalSourceSavedCredentialMask('BDUSS=real-cookie'), false)
+  assert.equal(shared.isExternalSourceSavedCredentialMask(''), false)
 })
 
 test('shared Yike credential test messages are actionable', () => {

@@ -11,6 +11,8 @@ const agent = Object.freeze({
   getSourceRunFailures: (sourceID: number, runID: string, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-source-run-failures', sourceID, runID, limit, offset),
   cancelSourceRun: (sourceID: number, runID: string) => ipcRenderer.invoke('agent:cancel-source-run', sourceID, runID),
   getSourceItems: (sourceID: number, state = 'error', limit = 1000, offset = 0) => ipcRenderer.invoke('agent:get-source-items', sourceID, state, limit, offset),
+  getSourceCollections: (sourceID: number, state = '') => ipcRenderer.invoke('agent:get-source-collections', sourceID, state),
+  getSourceCollectionItems: (sourceID: number, collectionID: number, limit = 100, offset = 0) => ipcRenderer.invoke('agent:get-source-collection-items', sourceID, collectionID, limit, offset),
   getSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:get-source-credential', sourceID),
   testSourceCredential: (kind: string, credential: string | Record<string, string>) => ipcRenderer.invoke('agent:test-source-credential', kind, credential),
   testStoredSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:test-stored-source-credential', sourceID),
