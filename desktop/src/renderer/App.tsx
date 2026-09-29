@@ -3071,7 +3071,7 @@ export default function App() {
                   </div>
                   <small>
                     {info?.platform === 'win32'
-                      ? `0 表示不限。当前值：${formatBinarySize(settings.cache_limit_bytes)}。已固定 / 始终保留的内容不会被清理。`
+                      ? `0 表示不限；新设备默认 20 GiB。当前值：${formatBinarySize(settings.cache_limit_bytes)}。已固定 / 始终保留的内容不会被清理。`
                       : '持久化下载缓存上限适用于 Windows CfAPI；Linux FUSE 对每次打开使用临时文件。'}
                   </small>
                 </label>
