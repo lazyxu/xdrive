@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Badge, Button, Card, Descriptions, Divider, Form, Input, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
-import type { BadgeProps } from 'antd'
+import { Button, Card, Descriptions, Divider, Form, Input, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import {
   Accordion,
   AccordionDetails,
@@ -22,7 +21,7 @@ import {
   Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
-import { XDriveStatePanel, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from '@xdrive/ui/mui'
+import { XDriveStatePanel, XDriveStatusBadge, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -46,7 +45,6 @@ import type {
   ExternalSourceRun,
   ExternalSourceRunFailure,
   ExternalSourceScheduleType,
-  ExternalSourceStateTone,
   SupportedExternalSourceKind,
 } from '../../ui/shared/src'
 
@@ -132,15 +130,6 @@ function YikeCookieHelpGuide() {
     </Accordion>
   )
 }
-
-function sourceBadgeStatus(tone: ExternalSourceStateTone): BadgeProps['status'] {
-  if (tone === 'good') return 'success'
-  if (tone === 'warning') return 'warning'
-  if (tone === 'bad') return 'error'
-  if (tone === 'busy') return 'processing'
-  return 'default'
-}
-
 
 export default function ExternalSourcesPanel({
   open,
@@ -708,7 +697,7 @@ export default function ExternalSourcesPanel({
                       <Typography.Title level={4} style={{ margin: 0 }}>{row.source.name}</Typography.Title>
                       <div className="external-source-subtitle">{card.modeLabel}</div>
                     </div>
-                    <Badge status={sourceBadgeStatus(card.state.tone)} text={card.state.label} />
+                    <XDriveStatusBadge tone={card.state.tone} label={card.state.label} />
                   </div>
                   <div className="external-source-time">{card.lastActivityLabel}：{formatExternalSourceTime(card.lastActivityAt)}</div>
                   <div className="external-source-card-meta">
@@ -793,7 +782,7 @@ export default function ExternalSourcesPanel({
               <Descriptions.Item label="来源类型">{selectedDetail.kindLabel}</Descriptions.Item>
               <Descriptions.Item label="工作方式">{selectedDetail.modeLabel}</Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Badge status={sourceBadgeStatus(selectedDetail.state.tone)} text={selectedDetail.state.label} />
+                <XDriveStatusBadge tone={selectedDetail.state.tone} label={selectedDetail.state.label} />
               </Descriptions.Item>
               <Descriptions.Item label="目标目录">
                 {selected.source.kind === 'yike_photos'

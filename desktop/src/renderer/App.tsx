@@ -46,6 +46,7 @@ import {
   XDriveActionButton,
   XDriveDialogTitle,
   XDriveStatePanel,
+  XDriveStatusBadge,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
@@ -72,7 +73,6 @@ import type {
   ExternalSourceRun,
   ExternalSourceRunFailure,
   ExternalSourceScheduleType,
-  ExternalSourceStateTone,
   SupportedExternalSourceKind,
 } from '@xdrive/shared'
 
@@ -211,12 +211,6 @@ function viewLabel(view: View) {
     settings: '设置',
   }
   return labels[view]
-}
-
-function desktopSourceTone(tone: ExternalSourceStateTone) {
-  if (tone === 'good' || tone === 'busy') return 'ready'
-  if (tone === 'neutral') return 'waiting'
-  return 'warning'
 }
 
 function shareStatusLabel(status: string) {
@@ -2349,10 +2343,7 @@ export default function App() {
                           <strong>{row.source.name}</strong>
                           <span>{card.modeLabel}</span>
                         </div>
-                        <div className="source-state">
-                          <span className={`status-dot ${desktopSourceTone(card.state.tone)}`} />
-                          <strong>{card.state.label}</strong>
-                        </div>
+                        <XDriveStatusBadge tone={card.state.tone} label={card.state.label} />
                       </div>
                       <div className="source-card-meta">
                         <span>{card.lastActivityLabel}：{formatExternalSourceTime(card.lastActivityAt)}</span>
