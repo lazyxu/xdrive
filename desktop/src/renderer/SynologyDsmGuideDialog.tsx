@@ -7,7 +7,6 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Paper,
   Stack,
   Step,
@@ -18,6 +17,7 @@ import {
 } from '@mui/material'
 import type { ExternalSource, SynologyDsmGuideVisual } from '@xdrive/shared'
 import { synologyDsmSetupGuide } from '@xdrive/shared'
+import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'
 
 const visuals: Record<SynologyDsmGuideVisual, string> = {
   'task-create': new URL('../../../ui/shared/assets/synology-dsm-task-create.svg', import.meta.url).href,
@@ -65,9 +65,20 @@ export default function SynologyDsmGuideDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>{guide?.title ?? '群晖 DSM 配置'}</DialogTitle>
-      <DialogContent dividers>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="md"
+      scroll="paper"
+      slotProps={{ paper: desktopDialogPaperProps }}
+    >
+      <DesktopDialogTitle
+        title={guide?.title ?? '群晖 DSM 配置'}
+        subtitle={guide?.subtitle}
+        onClose={onClose}
+      />
+      <DialogContent dividers className="desktop-dialog-content">
         {guide && (
           <Stack spacing={2.5}>
             <Alert severity="info">
@@ -170,7 +181,7 @@ export default function SynologyDsmGuideDialog({
           </Stack>
         )}
       </DialogContent>
-      <DialogActions>
+      <DialogActions className="desktop-dialog-actions">
         <Button onClick={onClose}>关闭</Button>
       </DialogActions>
     </Dialog>

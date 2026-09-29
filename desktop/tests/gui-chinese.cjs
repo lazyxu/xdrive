@@ -6,6 +6,8 @@ const path = require('node:path')
 const root = path.join(__dirname, '..')
 const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
 const synologyGuide = fs.readFileSync(path.join(root, 'src', 'renderer', 'SynologyDsmGuideDialog.tsx'), 'utf8')
+const dialogTitle = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDialogTitle.tsx'), 'utf8')
+const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
 
@@ -124,9 +126,22 @@ test('desktop transient management surfaces use modal dialogs', () => {
     assert.ok(renderer.includes(`aria-label="${label}"`), `missing modal dialog label: ${label}`)
   }
 
-  assert.ok(renderer.includes('source-create modal-form-surface'), 'source creation still uses the inline panel surface')
-  assert.ok(renderer.includes('source-settings modal-form-surface'), 'source settings still use the inline card surface')
-  assert.equal((renderer.match(/cloud-subpanel modal-subpanel/g) || []).length, 3, 'cloud transient panels should all be modal surfaces')
+  assert.ok(renderer.includes('source-create modal-form-surface'), 'source creation must use the modal form surface')
+  assert.ok(renderer.includes('source-settings modal-form-surface'), 'source settings must use the modal form surface')
+  assert.equal(renderer.includes('cloud-subpanel modal-subpanel'), false, 'legacy cloud modal panel wrapper remains')
+})
+
+test('desktop dialogs share one title, paper, content, and action treatment', () => {
+  assert.ok(renderer.includes("import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'"), 'App is not using the shared dialog chrome')
+  assert.ok(synologyGuide.includes("import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'"), 'Synology guide is not using the shared dialog chrome')
+  assert.ok(dialogTitle.includes('aria-label="关闭弹窗"'), 'shared dialog title is missing the close control')
+  assert.ok(dialogTitle.includes("className: 'desktop-dialog-paper'"), 'shared dialog paper contract is missing')
+  assert.ok(styles.includes('.desktop-dialog-title'), 'shared dialog title styling is missing')
+  assert.ok(styles.includes('.desktop-dialog-actions'), 'shared dialog action styling is missing')
+  assert.ok(renderer.includes('form="source-create-form"'), 'source create primary action is not in DialogActions')
+  assert.ok(renderer.includes('form={`source-settings-form-${row.source.id}`}'), 'source settings primary action is not in DialogActions')
+  assert.equal(renderer.includes('source-create-heading'), false, 'legacy source create panel heading remains inside the dialog')
+  assert.equal(renderer.includes('source-settings-heading'), false, 'legacy source settings panel heading remains inside the dialog')
 })
 
 test('desktop uses app-native confirmation dialogs instead of browser confirms', () => {
@@ -155,7 +170,7 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('yikeManagedTargetLabel'), 'missing Yike managed target label')
   assert.ok(renderer.includes('固定逻辑目录'), 'missing Yike managed target explanation')
   assert.ok(renderer.includes('如何获取 Cookie？'), 'missing compact Yike Cookie help action')
-  assert.ok(renderer.includes("maxHeight: '72vh'"), 'Yike Cookie help dialog must stay viewport-bounded')
+  assert.ok(styles.includes('max-height: min(84vh, 820px);'), 'shared dialog paper must stay viewport-bounded')
   assert.equal(renderer.includes('<Accordion'), false, 'Yike Cookie help must not expand inline')
   assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
   assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')

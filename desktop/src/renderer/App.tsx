@@ -11,7 +11,6 @@ import {
   DialogActions,
   DialogContent,
   DialogContentText,
-  DialogTitle,
   Divider as MuiDivider,
   FormControl,
   FormControlLabel,
@@ -41,6 +40,7 @@ import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
+import DesktopDialogTitle, { desktopDialogPaperProps } from './DesktopDialogTitle'
 import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
@@ -258,10 +258,11 @@ function YikeCookieHelpGuide() {
         onClose={() => setOpen(false)}
         maxWidth="sm"
         fullWidth
-        slotProps={{ paper: { sx: { maxHeight: '72vh' } } }}
+        scroll="paper"
+        slotProps={{ paper: desktopDialogPaperProps }}
       >
-        <DialogTitle>{yikeCookieHelp.title}</DialogTitle>
-        <DialogContent dividers sx={{ overflowY: 'auto' }}>
+        <DesktopDialogTitle title={yikeCookieHelp.title} onClose={() => setOpen(false)} />
+        <DialogContent dividers className="desktop-dialog-content">
           <Typography variant="body2">{yikeCookieHelp.summary}</Typography>
           <ol style={{ margin: '12px 0', paddingLeft: 24 }}>
             {yikeCookieHelp.steps.map((step) => (
@@ -270,7 +271,7 @@ function YikeCookieHelpGuide() {
           </ol>
           <MuiAlert severity="warning">{yikeCookieHelp.security}</MuiAlert>
         </DialogContent>
-        <DialogActions>
+        <DialogActions className="desktop-dialog-actions">
           <MuiButton onClick={() => setOpen(false)}>关闭</MuiButton>
         </DialogActions>
       </Dialog>
@@ -2059,16 +2060,16 @@ export default function App() {
                 fullWidth
                 scroll="paper"
                 aria-label="添加外部来源"
+                slotProps={{ paper: desktopDialogPaperProps }}
               >
-                <DialogContent dividers>
-              <form className="source-create modal-form-surface" onSubmit={(event) => void createExternalSource(event)}>
-                <div className="source-create-heading">
-                  <div>
-                    <strong>添加外部来源</strong>
-                    <span>{sourceCreateKind === 'yike_photos' ? '一刻相册目标目录由服务器自动管理。' : '选择来源类型、运行方式与 xDrive 目标文件夹。'}</span>
-                  </div>
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>关闭</button>
-                </div>
+                <DesktopDialogTitle
+                  title="添加外部来源"
+                  subtitle={sourceCreateKind === 'yike_photos' ? '一刻相册目标目录由服务器自动管理。' : '选择来源类型、运行方式与 xDrive 目标文件夹。'}
+                  onClose={() => setSourceCreateOpen(false)}
+                  closeDisabled={!!busy}
+                />
+                <DialogContent dividers className="desktop-dialog-content">
+                  <form id="source-create-form" className="source-create modal-form-surface" onSubmit={(event) => void createExternalSource(event)}>
                 <div className="source-create-grid">
                   <label>
                     <span>来源类型</span>
@@ -2197,14 +2198,19 @@ export default function App() {
                     创建 Source 后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
                   </div>
                 )}
-                <div className="source-create-actions">
-                  <button className="primary" type="submit" disabled={!!busy || (sourceCreateKind !== 'yike_photos' && sourceTargetLoading)}>
-                    {busy === 'source-create' ? '正在添加…' : '添加来源'}
-                  </button>
-                  <button className="secondary" type="button" disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</button>
-                </div>
-              </form>
+                  </form>
                 </DialogContent>
+                <DialogActions className="desktop-dialog-actions">
+                  <MuiButton disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</MuiButton>
+                  <MuiButton
+                    type="submit"
+                    form="source-create-form"
+                    variant="contained"
+                    disabled={!!busy || (sourceCreateKind !== 'yike_photos' && sourceTargetLoading)}
+                  >
+                    {busy === 'source-create' ? '正在添加…' : '添加来源'}
+                  </MuiButton>
+                </DialogActions>
               </Dialog>
             )}
 
@@ -2302,15 +2308,16 @@ export default function App() {
                           fullWidth
                           scroll="paper"
                           aria-label="来源设置"
+                          slotProps={{ paper: desktopDialogPaperProps }}
                         >
-                          <DialogContent dividers>
-                        <form className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
-                          <div className="source-settings-heading">
-                            <div>
-                              <strong>来源设置</strong>
-                              <span>目标节点保持不变：{row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}</span>
-                            </div>
-                          </div>
+                          <DesktopDialogTitle
+                            title="来源设置"
+                            subtitle={`${row.source.name} · 目标节点：${row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}`}
+                            onClose={() => setEditingSourceID(null)}
+                            closeDisabled={!!busy}
+                          />
+                          <DialogContent dividers className="desktop-dialog-content">
+                            <form id={`source-settings-form-${row.source.id}`} className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
                           <div className="source-settings-grid">
                             <label>
                               <span>名称</span>
@@ -2386,28 +2393,31 @@ export default function App() {
                               )}
                             </label>
                           )}
-                          <div className="source-settings-actions">
-                            <button className="primary" type="submit" disabled={!!busy}>
-                              {busy === `source-settings-${row.source.id}` ? '正在保存…' : '保存设置'}
-                            </button>
-                            <button className="secondary" type="button" disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</button>
+                            </form>
+                          </DialogContent>
+                          <DialogActions className="desktop-dialog-actions">
                             {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && row.credential?.configured && (
-                              <button className="danger" type="button" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>清除 Cookie</button>
+                              <MuiButton color="error" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>清除 Cookie</MuiButton>
                             )}
                             <MuiButton
-                              type="button"
                               color="error"
                               variant="outlined"
-                              size="small"
                               disabled={!!busy || row.latestRun?.status === 'running'}
                               onClick={() => setSourceDeleteTarget(row)}
-                              sx={{ minWidth: 'auto', px: 1.2, py: 0.35, fontSize: 12 }}
                             >
                               删除来源
                             </MuiButton>
-                          </div>
-                        </form>
-                          </DialogContent>
+                            <span className="desktop-dialog-action-spacer" />
+                            <MuiButton disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</MuiButton>
+                            <MuiButton
+                              type="submit"
+                              form={`source-settings-form-${row.source.id}`}
+                              variant="contained"
+                              disabled={!!busy}
+                            >
+                              {busy === `source-settings-${row.source.id}` ? '正在保存…' : '保存设置'}
+                            </MuiButton>
+                          </DialogActions>
                         </Dialog>
                       )}
                       {selectedSourceID === row.source.id && (
@@ -2825,28 +2835,39 @@ export default function App() {
             </div>
 
             {cloudTrashOpen && (
-              <Dialog open={cloudTrashOpen} onClose={() => setCloudTrashOpen(false)} maxWidth="md" fullWidth scroll="paper" aria-label="回收站">
-                <DialogContent dividers sx={{ p: 0 }}>
-              <div className="cloud-subpanel modal-subpanel">
-                <div className="cloud-subpanel-heading">
-                  <div><strong>回收站</strong><span>{cloudTrash.length} item{cloudTrash.length === 1 ? '' : 's'}</span></div>
-                  <button className="secondary" type="button" onClick={() => setCloudTrashOpen(false)}>关闭</button>
-                </div>
-                {cloudTrash.length === 0 ? <div className="cloud-empty">回收站为空。</div> : (
-                  <div className="cloud-compact-list">
-                    {cloudTrash.map((node) => (
-                      <div className="cloud-compact-row" key={node.id}>
-                        <div><strong>{node.name}</strong><span>{node.type === 'dir' ? 'Folder' : formatBinarySize(node.size)} · deleted {node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</span></div>
-                        <div className="cloud-row-actions">
-                          <button className="secondary" type="button" disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>恢复</button>
-                          <button className="danger" type="button" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>永久删除</button>
+              <Dialog
+                open={cloudTrashOpen}
+                onClose={() => { if (!busy) setCloudTrashOpen(false) }}
+                maxWidth="md"
+                fullWidth
+                scroll="paper"
+                aria-label="回收站"
+                slotProps={{ paper: desktopDialogPaperProps }}
+              >
+                <DesktopDialogTitle
+                  title="回收站"
+                  subtitle={`${cloudTrash.length} 个项目`}
+                  onClose={() => setCloudTrashOpen(false)}
+                  closeDisabled={!!busy}
+                />
+                <DialogContent dividers className="desktop-dialog-content desktop-dialog-content-flush">
+                  {cloudTrash.length === 0 ? <div className="cloud-empty">回收站为空。</div> : (
+                    <div className="cloud-compact-list">
+                      {cloudTrash.map((node) => (
+                        <div className="cloud-compact-row" key={node.id}>
+                          <div><strong>{node.name}</strong><span>{node.type === 'dir' ? '文件夹' : formatBinarySize(node.size)} · 删除于 {node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</span></div>
+                          <div className="cloud-row-actions">
+                            <button className="secondary" type="button" disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>恢复</button>
+                            <button className="danger" type="button" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>永久删除</button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
                 </DialogContent>
+                <DialogActions className="desktop-dialog-actions">
+                  <MuiButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</MuiButton>
+                </DialogActions>
               </Dialog>
             )}
 
@@ -2854,6 +2875,7 @@ export default function App() {
               <Dialog
                 open={!!cloudHistoryNode}
                 onClose={() => {
+                  if (busy) return
                   setCloudHistoryNode(null)
                   setCloudHistoryCrumbs([])
                   setCloudVersions([])
@@ -2862,29 +2884,42 @@ export default function App() {
                 fullWidth
                 scroll="paper"
                 aria-label="版本历史"
+                slotProps={{ paper: desktopDialogPaperProps }}
               >
-                <DialogContent dividers sx={{ p: 0 }}>
-              <div className="cloud-subpanel modal-subpanel">
-                <div className="cloud-subpanel-heading">
-                  <div><strong>版本历史 — {cloudHistoryNode.name}</strong><span>当前版本 r{cloudHistoryNode.revision}</span></div>
-                  <button className="secondary" type="button" onClick={() => {
+                <DesktopDialogTitle
+                  title={`版本历史 — ${cloudHistoryNode.name}`}
+                  subtitle={`当前版本 r${cloudHistoryNode.revision}`}
+                  onClose={() => {
                     setCloudHistoryNode(null)
                     setCloudHistoryCrumbs([])
                     setCloudVersions([])
-                  }}>关闭</button>
-                </div>
-                {cloudVersions.length === 0 ? <div className="cloud-empty">暂无历史版本。</div> : (
-                  <div className="cloud-compact-list">
-                    {cloudVersions.map((version) => (
-                      <div className="cloud-compact-row" key={version.id}>
-                        <div><strong>Revision r{version.revision}</strong><span>{formatBinarySize(version.size)} · {new Date(version.created_at).toLocaleString()}</span></div>
-                        <button className="primary" type="button" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>恢复</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  }}
+                  closeDisabled={!!busy}
+                />
+                <DialogContent dividers className="desktop-dialog-content desktop-dialog-content-flush">
+                  {cloudVersions.length === 0 ? <div className="cloud-empty">暂无历史版本。</div> : (
+                    <div className="cloud-compact-list">
+                      {cloudVersions.map((version) => (
+                        <div className="cloud-compact-row" key={version.id}>
+                          <div><strong>Revision r{version.revision}</strong><span>{formatBinarySize(version.size)} · {new Date(version.created_at).toLocaleString()}</span></div>
+                          <button className="primary" type="button" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>恢复</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </DialogContent>
+                <DialogActions className="desktop-dialog-actions">
+                  <MuiButton
+                    disabled={!!busy}
+                    onClick={() => {
+                      setCloudHistoryNode(null)
+                      setCloudHistoryCrumbs([])
+                      setCloudVersions([])
+                    }}
+                  >
+                    关闭
+                  </MuiButton>
+                </DialogActions>
               </Dialog>
             )}
 
@@ -2892,6 +2927,7 @@ export default function App() {
               <Dialog
                 open={!!cloudShareNode}
                 onClose={() => {
+                  if (busy) return
                   setCloudShareNode(null)
                   setCloudShares([])
                   setCreatedShareURL('')
@@ -2900,65 +2936,77 @@ export default function App() {
                 fullWidth
                 scroll="paper"
                 aria-label="分享文件"
+                slotProps={{ paper: desktopDialogPaperProps }}
               >
-                <DialogContent dividers sx={{ p: 0 }}>
-              <div className="cloud-subpanel modal-subpanel">
-                <div className="cloud-subpanel-heading">
-                  <div><strong>分享 — {cloudShareNode.name}</strong><span>分享令牌只会在创建时显示一次。</span></div>
-                  <button className="secondary" type="button" onClick={() => {
+                <DesktopDialogTitle
+                  title={`分享 — ${cloudShareNode.name}`}
+                  subtitle="分享令牌只会在创建时显示一次。"
+                  onClose={() => {
                     setCloudShareNode(null)
                     setCloudShares([])
                     setCreatedShareURL('')
-                  }}>关闭</button>
-                </div>
-
-                {createdShareURL && (
-                  <div className="share-created-row">
-                    <input value={createdShareURL} readOnly />
-                    <button className="primary" type="button" onClick={() => void copyShareURL()}>复制链接</button>
-                  </div>
-                )}
-
-                <div className="share-form">
-                  <label>
-                    有效期
-                    <div className="input-with-unit">
-                      <input type="number" min="0" max="3650" step="1" value={shareExpiresDays} onChange={(event) => setShareExpiresDays(event.target.value)} />
-                      <span>天</span>
+                  }}
+                  closeDisabled={!!busy}
+                />
+                <DialogContent dividers className="desktop-dialog-content desktop-dialog-content-flush">
+                  {createdShareURL && (
+                    <div className="share-created-row">
+                      <input value={createdShareURL} readOnly />
+                      <MuiButton variant="contained" onClick={() => void copyShareURL()}>复制链接</MuiButton>
                     </div>
-                    <small>0 表示永不过期。</small>
-                  </label>
-                  <label>
-                    最大下载次数
-                    <input type="number" min="0" step="1" value={shareMaxDownloads} onChange={(event) => setShareMaxDownloads(event.target.value)} />
-                    <small>0 表示不限次数。</small>
-                  </label>
-                  <label>
-                    密码（可选）
-                    <input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} placeholder="至少 8 个字符" />
-                  </label>
-                  <button className="primary" type="button" disabled={!!busy} onClick={() => void createCloudShare()}>
-                    {busy === 'cloud-share-create' ? '正在创建…' : '创建分享链接'}
-                  </button>
-                </div>
+                  )}
 
-                <div className="cloud-compact-list">
-                  {cloudShares.length === 0 ? <div className="cloud-empty">此文件暂无分享链接。</div> : cloudShares.map((share) => (
-                    <div className="cloud-compact-row" key={share.id}>
-                      <div>
-                        <strong>{shareStatusLabel(share.status)}</strong>
-                        <span>
-                          {share.has_password ? '密码保护' : '仅链接'} ·
-                          {' '}{share.expires_at ? `到期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'} ·
-                          {' '}{share.download_count}{share.max_downloads > 0 ? ` / ${share.max_downloads}` : ' / 不限'} 次下载
-                        </span>
+                  <div className="share-form">
+                    <label>
+                      有效期
+                      <div className="input-with-unit">
+                        <input type="number" min="0" max="3650" step="1" value={shareExpiresDays} onChange={(event) => setShareExpiresDays(event.target.value)} />
+                        <span>天</span>
                       </div>
-                      <button className="danger" type="button" disabled={!!busy || share.status === 'revoked'} onClick={() => void revokeCloudShare(share)}>撤销</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                      <small>0 表示永不过期。</small>
+                    </label>
+                    <label>
+                      最大下载次数
+                      <input type="number" min="0" step="1" value={shareMaxDownloads} onChange={(event) => setShareMaxDownloads(event.target.value)} />
+                      <small>0 表示不限次数。</small>
+                    </label>
+                    <label>
+                      密码（可选）
+                      <input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} placeholder="至少 8 个字符" />
+                    </label>
+                    <MuiButton variant="contained" disabled={!!busy} onClick={() => void createCloudShare()}>
+                      {busy === 'cloud-share-create' ? '正在创建…' : '创建分享链接'}
+                    </MuiButton>
+                  </div>
+
+                  <div className="cloud-compact-list">
+                    {cloudShares.length === 0 ? <div className="cloud-empty">此文件暂无分享链接。</div> : cloudShares.map((share) => (
+                      <div className="cloud-compact-row" key={share.id}>
+                        <div>
+                          <strong>{shareStatusLabel(share.status)}</strong>
+                          <span>
+                            {share.has_password ? '密码保护' : '仅链接'} ·
+                            {' '}{share.expires_at ? `到期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'} ·
+                            {' '}{share.download_count}{share.max_downloads > 0 ? ` / ${share.max_downloads}` : ' / 不限'} 次下载
+                          </span>
+                        </div>
+                        <button className="danger" type="button" disabled={!!busy || share.status === 'revoked'} onClick={() => void revokeCloudShare(share)}>撤销</button>
+                      </div>
+                    ))}
+                  </div>
                 </DialogContent>
+                <DialogActions className="desktop-dialog-actions">
+                  <MuiButton
+                    disabled={!!busy}
+                    onClick={() => {
+                      setCloudShareNode(null)
+                      setCloudShares([])
+                      setCreatedShareURL('')
+                    }}
+                  >
+                    关闭
+                  </MuiButton>
+                </DialogActions>
               </Dialog>
             )}
           </section>
@@ -3452,12 +3500,19 @@ export default function App() {
         )}
       </main>
 
-      <Dialog open={!!confirmDialog} onClose={() => setConfirmDialog(null)} aria-label="确认操作">
-        <DialogTitle>{confirmDialog?.title ?? '确认操作'}</DialogTitle>
-        <DialogContent>
+      <Dialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        aria-label="确认操作"
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: desktopDialogPaperProps }}
+      >
+        <DesktopDialogTitle title={confirmDialog?.title ?? '确认操作'} onClose={() => setConfirmDialog(null)} />
+        <DialogContent className="desktop-dialog-content">
           <DialogContentText>{confirmDialog?.message ?? ''}</DialogContentText>
         </DialogContent>
-        <DialogActions>
+        <DialogActions className="desktop-dialog-actions">
           <MuiButton onClick={() => setConfirmDialog(null)}>取消</MuiButton>
           <MuiButton
             variant="contained"
@@ -3469,9 +3524,20 @@ export default function App() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={sourceFailedItemsOpen && sourceFailedItems.length > 0} onClose={() => setSourceFailedItemsOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>失败文件</DialogTitle>
-        <DialogContent dividers>
+      <Dialog
+        open={sourceFailedItemsOpen && sourceFailedItems.length > 0}
+        onClose={() => setSourceFailedItemsOpen(false)}
+        maxWidth="md"
+        fullWidth
+        scroll="paper"
+        slotProps={{ paper: desktopDialogPaperProps }}
+      >
+        <DesktopDialogTitle
+          title="失败文件"
+          subtitle={`${sourceFailedItems.length} 个失败项`}
+          onClose={() => setSourceFailedItemsOpen(false)}
+        />
+        <DialogContent dividers className="desktop-dialog-content">
           {sourceFailedItemsLimitReached && (
             <MuiAlert severity="info" sx={{ mb: 2 }}>当前最多显示前 1000 个失败项。</MuiAlert>
           )}
@@ -3492,20 +3558,31 @@ export default function App() {
             ))}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions className="desktop-dialog-actions">
           <MuiButton onClick={() => setSourceFailedItemsOpen(false)}>关闭</MuiButton>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!sourceDeleteTarget} onClose={() => busy.startsWith('source-delete-') ? undefined : setSourceDeleteTarget(null)}>
-        <DialogTitle>删除外部来源？</DialogTitle>
-        <DialogContent>
+      <Dialog
+        open={!!sourceDeleteTarget}
+        onClose={() => busy.startsWith('source-delete-') ? undefined : setSourceDeleteTarget(null)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: desktopDialogPaperProps }}
+      >
+        <DesktopDialogTitle
+          title="删除外部来源？"
+          subtitle={sourceDeleteTarget?.source.name}
+          onClose={() => setSourceDeleteTarget(null)}
+          closeDisabled={busy.startsWith('source-delete-')}
+        />
+        <DialogContent className="desktop-dialog-content">
           <DialogContentText>
             删除“{sourceDeleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
             已经同步到 xDrive 的文件会保留，不会删除。
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
+        <DialogActions className="desktop-dialog-actions">
           <MuiButton disabled={busy.startsWith('source-delete-')} onClick={() => setSourceDeleteTarget(null)}>取消</MuiButton>
           <MuiButton color="error" variant="contained" disabled={busy.startsWith('source-delete-')} onClick={() => void deleteExternalSource()}>
             {busy.startsWith('source-delete-') ? '正在删除…' : '删除来源'}
