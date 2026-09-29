@@ -4,7 +4,6 @@ import {
   Alert,
   Box,
   Dialog,
-  DialogActions,
   DialogContent,
   Paper,
   Stack,
@@ -17,6 +16,7 @@ import {
 import type { ExternalSource, SynologyDsmGuideVisual } from '../index'
 import { synologyDsmSetupGuide } from '../index'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 
 const visuals: Record<SynologyDsmGuideVisual, string> = {
@@ -178,9 +178,9 @@ export function XDriveSynologyDsmGuideDialog({
           </Stack>
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 2, py: 1.25, minHeight: 58, bgcolor: 'action.hover' }}>
+      <XDriveDialogActions>
         <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
-      </DialogActions>
+      </XDriveDialogActions>
     </Dialog>
   )
 }

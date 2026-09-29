@@ -9,7 +9,6 @@ import {
   Chip,
   CircularProgress,
   Dialog,
-  DialogActions,
   DialogContent,
   DialogContentText,
   Divider as MuiDivider,
@@ -44,6 +43,8 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
 import {
   XDriveActionButton,
+  XDriveDialogActions,
+  XDriveDialogActionSpacer,
   XDriveDialogTitle,
   XDriveStatePanel,
   XDriveShareStatusBadge,
@@ -2535,7 +2536,7 @@ export default function App() {
                 )}
                   </form>
                 </DialogContent>
-                <DialogActions className="desktop-dialog-actions">
+                <XDriveDialogActions>
                   <MuiButton disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</MuiButton>
                   <MuiButton
                     type="submit"
@@ -2545,7 +2546,7 @@ export default function App() {
                   >
                     {busy === 'source-create' ? '正在添加…' : '添加来源'}
                   </MuiButton>
-                </DialogActions>
+                </XDriveDialogActions>
               </Dialog>
             )}
 
@@ -2799,7 +2800,7 @@ export default function App() {
                           )}
                             </form>
                           </DialogContent>
-                          <DialogActions className="desktop-dialog-actions">
+                          <XDriveDialogActions>
                             {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential && row.credential?.configured && (
                               <MuiButton color="error" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
                                 清除{externalSourceCredentialLabel(externalSourceConnectorProfile(row.source.kind, row.source.direction))}
@@ -2813,7 +2814,7 @@ export default function App() {
                             >
                               删除来源
                             </MuiButton>
-                            <span className="desktop-dialog-action-spacer" />
+                            <XDriveDialogActionSpacer />
                             <MuiButton disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</MuiButton>
                             <MuiButton
                               type="submit"
@@ -2823,7 +2824,7 @@ export default function App() {
                             >
                               {busy === `source-settings-${row.source.id}` ? '正在保存…' : '保存设置'}
                             </MuiButton>
-                          </DialogActions>
+                          </XDriveDialogActions>
                         </Dialog>
                       )}
                       {selectedSourceID === row.source.id && (
@@ -3298,9 +3299,9 @@ export default function App() {
                     </div>
                   )}
                 </DialogContent>
-                <DialogActions className="desktop-dialog-actions">
+                <XDriveDialogActions>
                   <MuiButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</MuiButton>
-                </DialogActions>
+                </XDriveDialogActions>
               </Dialog>
             )}
 
@@ -3341,7 +3342,7 @@ export default function App() {
                     </div>
                   )}
                 </DialogContent>
-                <DialogActions className="desktop-dialog-actions">
+                <XDriveDialogActions>
                   <MuiButton
                     disabled={!!busy}
                     onClick={() => {
@@ -3352,7 +3353,7 @@ export default function App() {
                   >
                     关闭
                   </MuiButton>
-                </DialogActions>
+                </XDriveDialogActions>
               </Dialog>
             )}
 
@@ -3428,7 +3429,7 @@ export default function App() {
                     ))}
                   </div>
                 </DialogContent>
-                <DialogActions className="desktop-dialog-actions">
+                <XDriveDialogActions>
                   <MuiButton
                     disabled={!!busy}
                     onClick={() => {
@@ -3439,7 +3440,7 @@ export default function App() {
                   >
                     关闭
                   </MuiButton>
-                </DialogActions>
+                </XDriveDialogActions>
               </Dialog>
             )}
           </section>
@@ -4012,7 +4013,7 @@ export default function App() {
         <DialogContent className="desktop-dialog-content">
           <DialogContentText>{confirmDialog?.message ?? ''}</DialogContentText>
         </DialogContent>
-        <DialogActions className="desktop-dialog-actions">
+        <XDriveDialogActions>
           <MuiButton onClick={() => setConfirmDialog(null)}>取消</MuiButton>
           <MuiButton
             variant="contained"
@@ -4021,7 +4022,7 @@ export default function App() {
           >
             {confirmDialog?.confirmLabel ?? '确认'}
           </MuiButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog
@@ -4058,9 +4059,9 @@ export default function App() {
             ))}
           </Stack>
         </DialogContent>
-        <DialogActions className="desktop-dialog-actions">
+        <XDriveDialogActions>
           <MuiButton onClick={() => setSourceFailedItemsOpen(false)}>关闭</MuiButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog
@@ -4082,12 +4083,12 @@ export default function App() {
             已经同步到 xDrive 的文件会保留，不会删除。
           </DialogContentText>
         </DialogContent>
-        <DialogActions className="desktop-dialog-actions">
+        <XDriveDialogActions>
           <MuiButton disabled={busy.startsWith('source-delete-')} onClick={() => setSourceDeleteTarget(null)}>取消</MuiButton>
           <MuiButton color="error" variant="contained" disabled={busy.startsWith('source-delete-')} onClick={() => void deleteExternalSource()}>
             {busy.startsWith('source-delete-') ? '正在删除…' : '删除来源'}
           </MuiButton>
-        </DialogActions>
+        </XDriveDialogActions>
       </Dialog>
 
       <SynologyDsmGuideDialog
