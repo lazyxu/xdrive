@@ -9,7 +9,6 @@ import {
   Chip,
   CircularProgress,
   Dialog,
-  DialogContent,
   DialogContentText,
   Divider as MuiDivider,
   FormControl,
@@ -45,6 +44,7 @@ import {
   XDriveActionButton,
   XDriveDialogActions,
   XDriveDialogActionSpacer,
+  XDriveDialogContent,
   XDriveDialogTitle,
   XDriveStatePanel,
   XDriveShareStatusBadge,
@@ -2319,7 +2319,7 @@ export default function App() {
                   onClose={() => setSourceCreateOpen(false)}
                   closeDisabled={!!busy}
                 />
-                <DialogContent dividers className="desktop-dialog-content">
+                <XDriveDialogContent dividers>
                   <form id="source-create-form" className="source-create modal-form-surface" onSubmit={(event) => void createExternalSource(event)}>
                 <div className="source-create-grid">
                   <label>
@@ -2535,7 +2535,7 @@ export default function App() {
                   </XDriveStatusAlert>
                 )}
                   </form>
-                </DialogContent>
+                </XDriveDialogContent>
                 <XDriveDialogActions>
                   <XDriveActionButton disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</XDriveActionButton>
                   <XDriveActionButton
@@ -2641,7 +2641,7 @@ export default function App() {
                             onClose={() => setEditingSourceID(null)}
                             closeDisabled={!!busy}
                           />
-                          <DialogContent dividers className="desktop-dialog-content">
+                          <XDriveDialogContent dividers>
                             <form id={`source-settings-form-${row.source.id}`} className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
                           <div className="source-settings-grid">
                             <label>
@@ -2803,7 +2803,7 @@ export default function App() {
                             </>
                           )}
                             </form>
-                          </DialogContent>
+                          </XDriveDialogContent>
                           <XDriveDialogActions>
                             {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential && row.credential?.configured && (
                               <XDriveActionButton intent="danger" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
@@ -3281,7 +3281,7 @@ export default function App() {
                   onClose={() => setCloudTrashOpen(false)}
                   closeDisabled={!!busy}
                 />
-                <DialogContent dividers className="desktop-dialog-content desktop-dialog-content-flush">
+                <XDriveDialogContent dividers flush>
                   {cloudTrash.length === 0 ? <XDriveStatePanel variant="plain" compact message="回收站为空。" /> : (
                     <div className="cloud-compact-list">
                       {cloudTrash.map((node) => (
@@ -3295,7 +3295,7 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                </DialogContent>
+                </XDriveDialogContent>
                 <XDriveDialogActions>
                   <XDriveActionButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</XDriveActionButton>
                 </XDriveDialogActions>
@@ -3327,7 +3327,7 @@ export default function App() {
                   }}
                   closeDisabled={!!busy}
                 />
-                <DialogContent dividers className="desktop-dialog-content desktop-dialog-content-flush">
+                <XDriveDialogContent dividers flush>
                   {cloudVersions.length === 0 ? <XDriveStatePanel variant="plain" compact message="暂无历史版本。" /> : (
                     <div className="cloud-compact-list">
                       {cloudVersions.map((version) => (
@@ -3338,7 +3338,7 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                </DialogContent>
+                </XDriveDialogContent>
                 <XDriveDialogActions>
                   <XDriveActionButton
                     disabled={!!busy}
@@ -3379,7 +3379,7 @@ export default function App() {
                   }}
                   closeDisabled={!!busy}
                 />
-                <DialogContent dividers className="desktop-dialog-content desktop-dialog-content-flush">
+                <XDriveDialogContent dividers flush>
                   {createdShareURL && (
                     <div className="share-created-row">
                       <input value={createdShareURL} readOnly />
@@ -3431,7 +3431,7 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-                </DialogContent>
+                </XDriveDialogContent>
                 <XDriveDialogActions>
                   <XDriveActionButton
                     disabled={!!busy}
@@ -4014,9 +4014,9 @@ export default function App() {
         slotProps={{ paper: xDriveDialogPaperProps }}
       >
         <XDriveDialogTitle title={confirmDialog?.title ?? '确认操作'} onClose={() => setConfirmDialog(null)} />
-        <DialogContent className="desktop-dialog-content">
+        <XDriveDialogContent>
           <DialogContentText>{confirmDialog?.message ?? ''}</DialogContentText>
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton onClick={() => setConfirmDialog(null)}>取消</XDriveActionButton>
           <XDriveActionButton
@@ -4041,7 +4041,7 @@ export default function App() {
           subtitle={`${sourceFailedItems.length} 个失败项`}
           onClose={() => setSourceFailedItemsOpen(false)}
         />
-        <DialogContent dividers className="desktop-dialog-content">
+        <XDriveDialogContent dividers>
           {sourceFailedItemsLimitReached && (
             <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>当前最多显示前 1000 个失败项。</XDriveStatusAlert>
           )}
@@ -4061,7 +4061,7 @@ export default function App() {
               </MuiBox>
             ))}
           </Stack>
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton onClick={() => setSourceFailedItemsOpen(false)}>关闭</XDriveActionButton>
         </XDriveDialogActions>
@@ -4080,12 +4080,12 @@ export default function App() {
           onClose={() => setSourceDeleteTarget(null)}
           closeDisabled={busy.startsWith('source-delete-')}
         />
-        <DialogContent className="desktop-dialog-content">
+        <XDriveDialogContent>
           <DialogContentText>
             删除“{sourceDeleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
             已经同步到 xDrive 的文件会保留，不会删除。
           </DialogContentText>
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton disabled={busy.startsWith('source-delete-')} onClick={() => setSourceDeleteTarget(null)}>取消</XDriveActionButton>
           <XDriveActionButton

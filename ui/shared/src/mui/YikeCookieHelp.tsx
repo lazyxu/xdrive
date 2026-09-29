@@ -5,12 +5,12 @@ import {
   AccordionSummary,
   Button,
   Dialog,
-  DialogContent,
   Stack,
   Typography,
 } from '@mui/material'
 import { yikeCookieHelp } from '../index'
 import { XDriveDialogActions } from './DialogActions'
+import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveStatusAlert } from './StatusAlert'
 
@@ -83,9 +83,9 @@ export function XDriveYikeCookieHelp({
         slotProps={{ paper: xDriveDialogPaperProps }}
       >
         <XDriveDialogTitle title={yikeCookieHelp.title} onClose={() => setOpen(false)} />
-        <DialogContent dividers sx={{ px: 2.5, py: 2.25 }}>
+        <XDriveDialogContent dividers>
           <CookieHelpContent />
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <Button onClick={() => setOpen(false)}>关闭</Button>
         </XDriveDialogActions>

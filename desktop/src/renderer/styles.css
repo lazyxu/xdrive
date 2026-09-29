@@ -519,16 +519,3 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
   border-top: 0;
 }
 
-/* Desktop dialog content remains app-specific; title, paper and actions are shared via @xdrive/ui/mui. */
-.desktop-dialog-content {
-  padding: 20px 22px !important;
-  overflow-y: auto;
-}
-.desktop-dialog-content.desktop-dialog-content-flush {
-  padding: 0 !important;
-}
-@media (max-width: 640px) {
-  .desktop-dialog-content {
-    padding: 16px !important;
-  }
-}
