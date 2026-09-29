@@ -9,6 +9,7 @@ const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
 const sharedActionButton = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ActionButton.tsx'), 'utf8')
 const sharedStatePanel = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatePanel.tsx'), 'utf8')
+const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusBadge.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -176,6 +177,13 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
+})
+
+test('desktop external-source status uses the cross-client MUI badge', () => {
+  assert.ok(sharedStatusBadge.includes('export function XDriveStatusBadge({'), 'shared status badge is missing')
+  assert.ok(renderer.includes('<XDriveStatusBadge tone={card.state.tone} label={card.state.label} />'), 'desktop source cards do not use the shared status badge')
+  assert.equal(renderer.includes('function desktopSourceTone('), false, 'desktop still owns a source tone mapper')
+  assert.equal(renderer.includes('className="source-state"'), false, 'legacy desktop source state wrapper remains')
 })
 
 test('desktop empty and loading states use the cross-client MUI state panel', () => {
