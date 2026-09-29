@@ -459,10 +459,6 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 
 
 .source-settings { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); display: grid; gap: 13px; }
-.source-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.source-settings-heading > div { min-width: 0; display: grid; gap: 4px; }
-.source-settings-heading strong { color: var(--text-strong); font-size: 13px; }
-.source-settings-heading span { color: var(--text-muted); font-size: 10px; }
 .source-settings-grid { display: grid; grid-template-columns: minmax(0,1.5fr) repeat(2,minmax(130px,.75fr)); gap: 10px; }
 .source-settings label { min-width: 0; display: grid; gap: 6px; color: var(--text-mid); font-size: 11px; font-weight: 700; }
 .source-settings input,
@@ -474,21 +470,14 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 .source-settings textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(91,140,255,.13); }
 .source-settings-wide { display: grid !important; }
 .source-settings-wide small { color: var(--text-muted); font-size: 10px; font-weight: 500; line-height: 1.45; }
-.source-settings-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.source-settings-actions button { padding: 7px 11px; font-size: 11px; }
 
 @media (max-width: 760px) {
   .source-settings-grid { grid-template-columns: 1fr; }
-  .source-settings-actions { justify-content: flex-start; }
 }
 
 
 .source-heading-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .source-create { border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: var(--surface-soft); display: grid; gap: 14px; }
-.source-create-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.source-create-heading > div { min-width: 0; display: grid; gap: 4px; }
-.source-create-heading strong { color: var(--text-strong); font-size: 14px; }
-.source-create-heading span { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
 .source-create-grid { display: grid; grid-template-columns: minmax(170px,1fr) minmax(180px,1.4fr) minmax(130px,.8fr); gap: 10px; }
 .source-create label { min-width: 0; display: grid; gap: 6px; color: var(--text-mid); font-size: 11px; font-weight: 700; }
 .source-create input,
@@ -500,8 +489,6 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 .source-create textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(91,140,255,.13); }
 .source-create-wide { display: grid !important; }
 .source-create-wide small { color: var(--text-muted); font-size: 10px; font-weight: 500; line-height: 1.45; }
-.source-create-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.source-create-actions button { padding: 7px 11px; font-size: 11px; }
 .source-create-note { margin-top: 0; }
 .source-target { border: 1px solid var(--border); border-radius: 11px; overflow: hidden; background: var(--surface); }
 .source-target-heading { padding: 11px 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; background: var(--surface-muted); border-bottom: 1px solid var(--border-soft); }
@@ -521,9 +508,8 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 .source-target-empty { padding: 14px 12px; color: var(--text-muted); font-size: 10px; }
 
 @media (max-width: 760px) {
-  .source-heading-actions, .source-create-heading { align-items: flex-start; flex-direction: column; }
+  .source-heading-actions { align-items: flex-start; flex-direction: column; }
   .source-create-grid { grid-template-columns: 1fr; }
-  .source-create-actions { justify-content: flex-start; }
 }
 
 /* Transient management tasks are shown in MUI dialogs instead of expanding the page. */
@@ -538,8 +524,83 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
   padding-top: 0;
   border-top: 0;
 }
-.cloud-subpanel.modal-subpanel {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+
+/* Shared Electron dialog chrome. Keep transient tasks visually separate from page panels. */
+.desktop-dialog-paper {
+  width: min(100%, 920px);
+  max-height: min(84vh, 820px);
+  border-radius: 16px !important;
+  overflow: hidden;
+  background: var(--surface) !important;
+  background-image: none !important;
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--shadow) 72%, transparent) !important;
+}
+.desktop-dialog-title {
+  min-height: 64px;
+  padding: 16px 18px 14px 20px !important;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.desktop-dialog-title-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.desktop-dialog-title-copy strong {
+  color: var(--text-strong);
+  font-size: 16px;
+  line-height: 1.35;
+}
+.desktop-dialog-title-copy span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.desktop-dialog-close {
+  flex: 0 0 auto;
+  margin-top: -3px !important;
+  margin-right: -4px !important;
+  color: var(--text-muted) !important;
+}
+.desktop-dialog-content {
+  padding: 20px 22px !important;
+  overflow-y: auto;
+}
+.desktop-dialog-content.desktop-dialog-content-flush {
+  padding: 0 !important;
+}
+.desktop-dialog-actions {
+  min-height: 58px;
+  padding: 10px 16px 10px 18px !important;
+  gap: 8px;
+  background: var(--surface-soft);
+}
+.desktop-dialog-actions > :not(style) ~ :not(style) {
+  margin-left: 0 !important;
+}
+.desktop-dialog-action-spacer {
+  flex: 1 1 auto;
+}
+@media (max-width: 640px) {
+  .desktop-dialog-paper {
+    max-height: 92vh;
+    border-radius: 12px !important;
+  }
+  .desktop-dialog-title {
+    padding: 14px 14px 12px 16px !important;
+  }
+  .desktop-dialog-content {
+    padding: 16px !important;
+  }
+  .desktop-dialog-actions {
+    padding: 10px 12px !important;
+    flex-wrap: wrap;
+  }
+  .desktop-dialog-action-spacer {
+    flex-basis: 100%;
+    height: 0;
+  }
 }
