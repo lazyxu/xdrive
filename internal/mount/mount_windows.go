@@ -27,20 +27,22 @@ type winState struct {
 }
 
 type winProvider struct {
-	cli        *client.Client
-	root       string
-	connKey    int64
-	mu         sync.Mutex
-	baseline   map[string]winState
-	hydrated   map[uint64]time.Time
-	accessed   map[uint64]time.Time
-	policy     syncPolicy
-	cacheLimit int64
-	cacheGrace time.Duration
-	statePath  string
-	manualSync chan struct{}
-	retrySync  chan chan error
-	transfers  *transfer.Manager
+	cli           *client.Client
+	root          string
+	connKey       int64
+	mu            sync.Mutex
+	baseline      map[string]winState
+	hydrated      map[uint64]time.Time
+	accessed      map[uint64]time.Time
+	policy        syncPolicy
+	cacheLimit    int64
+	cacheGrace    time.Duration
+	statePath     string
+	remoteJournal bool
+	remoteCursor  uint64
+	manualSync    chan struct{}
+	retrySync     chan chan error
+	transfers     *transfer.Manager
 }
 
 var activeWinProvider struct {
@@ -88,6 +90,8 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 	}
 	p.connKey = key
 	defer cfDisconnect(key)
+
+	p.bootstrapRemoteJournal(ctx)
 
 	emitEvent(Event{Kind: EventSyncStarted})
 	if err := p.initialSync(ctx); err != nil {
