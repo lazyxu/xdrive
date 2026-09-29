@@ -7,7 +7,6 @@ import {
   AccordionSummary,
   Box as MuiBox,
   Button as MuiButton,
-  Chip,
   Dialog,
   DialogContentText,
   MenuItem,
@@ -27,6 +26,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceRunProgress,
   XDriveSourceFailureItem,
+  XDriveSourceRunSummary,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -942,29 +942,7 @@ export default function ExternalSourcesPanel({
                         sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}
                       >
                         <AccordionSummary>
-                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ width: '100%', pr: 1 }}>
-                            <MuiBox>
-                              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
-                                <MuiTypography variant="body2" sx={{ fontWeight: 700 }}>
-                                  #{run.run_number > 0 ? run.run_number : '—'}
-                                </MuiTypography>
-                                <XDriveStatusBadge tone={runDetail.statusTone} label={runDetail.statusLabel} />
-                                <Chip size="small" label={runDetail.modeLabel} />
-                                <Chip size="small" label={runDetail.triggerLabel} />
-                              </Stack>
-                              <MuiTypography variant="caption" color="text.secondary">
-                                {formatExternalSourceTime(runDetail.startedAt)}
-                                {runDetail.finishedAt ? ' → ' + formatExternalSourceTime(runDetail.finishedAt) : ' → 进行中'}
-                                {' · ' + runDetail.durationLabel}
-                              </MuiTypography>
-                            </MuiBox>
-                            <Stack direction="row" spacing={1}>
-                              <MuiTypography variant="caption">成功 {runDetail.successItems.toLocaleString('zh-CN')}</MuiTypography>
-                              <MuiTypography variant="caption" color={runDetail.failedItems > 0 ? 'error' : 'text.secondary'}>
-                                失败 {runDetail.failedItems.toLocaleString('zh-CN')}
-                              </MuiTypography>
-                            </Stack>
-                          </Stack>
+                          <XDriveSourceRunSummary runNumber={run.run_number} detail={runDetail} />
                         </AccordionSummary>
                         <AccordionDetails>
                           {runDetail.progress && (
