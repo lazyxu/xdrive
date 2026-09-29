@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Alert as MuiAlert,
+  Autocomplete,
   Box as MuiBox,
   Button as MuiButton,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
@@ -300,6 +302,9 @@ export default function App() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loginMount, setLoginMount] = useState('')
+  const [loginHistory, setLoginHistory] = useState<DesktopLoginHistory>({ profiles: [], secure_password_storage: false })
+  const [rememberPassword, setRememberPassword] = useState(false)
+  const [autoLogin, setAutoLogin] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -308,6 +313,28 @@ export default function App() {
   const [storageTree, setStorageTree] = useState<AgentStorageTreeNode | null>(null)
   const [cacheStats, setCacheStats] = useState<AgentCacheStats | null>(null)
   const [expandedStorage, setExpandedStorage] = useState<Set<string>>(new Set())
+
+  const serverOptions = useMemo(
+    () => Array.from(new Set(loginHistory.profiles.map((profile) => profile.server))),
+    [loginHistory.profiles],
+  )
+  const usernameOptions = useMemo(() => {
+    const normalizedServer = server.trim()
+    const ordered = normalizedServer
+      ? [
+          ...loginHistory.profiles.filter((profile) => profile.server === normalizedServer),
+          ...loginHistory.profiles.filter((profile) => profile.server !== normalizedServer),
+        ]
+      : loginHistory.profiles
+    return Array.from(new Set(ordered.map((profile) => profile.username)))
+  }, [loginHistory.profiles, server])
+  const matchingLoginProfile = useMemo(
+    () => loginHistory.profiles.find(
+      (profile) => profile.server === server.trim() && profile.username === username.trim(),
+    ),
+    [loginHistory.profiles, server, username],
+  )
+  const savedPasswordAvailable = password.length === 0 && !!matchingLoginProfile?.password_available
 
   const status = agent.status
   const configured = !!status?.configured
@@ -346,6 +373,18 @@ export default function App() {
     })
     void window.xdriveDesktop.getPreferences().then((value) => {
       if (active) setDesktopPreferences(value)
+    })
+    void window.xdriveDesktop.getLoginHistory().then((value) => {
+      if (!active) return
+      setLoginHistory(value)
+      const latest = value.profiles[0]
+      if (latest) {
+        setServer(latest.server)
+        setUsername(latest.username)
+        setLoginMount(latest.mount_path || '')
+        setRememberPassword(value.secure_password_storage && latest.remember_password)
+        setAutoLogin(value.secure_password_storage && latest.auto_login)
+      }
     })
     void window.xdriveDesktop.agent.getState().then((value) => {
       if (active) setAgent(value)
@@ -562,15 +601,63 @@ export default function App() {
     if (selected) apply(selected)
   }
 
+  const applyLoginProfile = (profile?: DesktopLoginProfile) => {
+    if (!profile) return
+    setLoginMount(profile.mount_path || '')
+    setRememberPassword(loginHistory.secure_password_storage && profile.remember_password)
+    setAutoLogin(loginHistory.secure_password_storage && profile.auto_login)
+    setPassword('')
+  }
+
+  const selectLoginServer = (value: string) => {
+    setServer(value)
+    const normalized = value.trim()
+    const profile = loginHistory.profiles.find((item) => item.server === normalized)
+    if (profile) {
+      setUsername(profile.username)
+      applyLoginProfile(profile)
+    }
+  }
+
+  const selectLoginUsername = (value: string) => {
+    setUsername(value)
+    const normalized = value.trim()
+    const currentServer = server.trim()
+    const profile = currentServer
+      ? loginHistory.profiles.find((item) => item.server === currentServer && item.username === normalized)
+      : loginHistory.profiles.find((item) => item.username === normalized)
+    if (profile) {
+      if (!currentServer) setServer(profile.server)
+      applyLoginProfile(profile)
+    }
+  }
+
+  const refreshLoginHistory = async () => {
+    const value = await window.xdriveDesktop.getLoginHistory()
+    setLoginHistory(value)
+    return value
+  }
+
   const login = async (event: FormEvent) => {
     event.preventDefault()
+    if (!password && !savedPasswordAvailable) {
+      setError('请输入密码。')
+      return
+    }
+    const remember = loginHistory.secure_password_storage && rememberPassword
     const result = await run('login', () => window.xdriveDesktop.agent.login({
       server: server.trim(),
       username: username.trim(),
       password,
       ...(loginMount.trim() ? { mount_path: loginMount.trim() } : {}),
+      remember_password: remember,
+      auto_login: remember && autoLogin,
+      use_saved_password: savedPasswordAvailable,
     }))
-    if (result) setPassword('')
+    if (result) {
+      setPassword('')
+      await refreshLoginHistory()
+    }
   }
 
   const changePassword = async (event: FormEvent) => {
@@ -1524,17 +1611,92 @@ export default function App() {
           <h1>{headline}</h1>
           <p className="subtitle">凭据会直接传递给 Go Agent，Electron 渲染进程不会接触 access token 或 refresh token。</p>
           {error && <div className="alert error">{error}</div>}
-          <label>服务器<input value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://drive.example.com" required /></label>
-          <label>用户名<input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required /></label>
-          <label>密码<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
-          <label>
-            同步文件夹 <span className="optional">可选</span>
-            <div className="input-action">
-              <input value={loginMount} onChange={(e) => setLoginMount(e.target.value)} placeholder="使用默认 xDrive 文件夹" />
-              <button type="button" className="secondary" onClick={() => void chooseDirectory(loginMount, setLoginMount)}>浏览</button>
-            </div>
-          </label>
-          <button className="primary wide" type="submit" disabled={busy === 'login'}>{busy === 'login' ? '正在登录…' : '登录'}</button>
+          <Stack spacing={1.75} sx={{ mt: 1.5 }}>
+            <Autocomplete
+              freeSolo
+              options={serverOptions}
+              inputValue={server}
+              onInputChange={(_event, value, reason) => {
+                if (reason !== 'reset') setServer(value)
+              }}
+              onChange={(_event, value) => {
+                if (typeof value === 'string') selectLoginServer(value)
+              }}
+              renderInput={(params) => (
+                <TextField {...params} label="服务器" placeholder="https://drive.example.com" required />
+              )}
+            />
+            <Autocomplete
+              freeSolo
+              options={usernameOptions}
+              inputValue={username}
+              onInputChange={(_event, value, reason) => {
+                if (reason !== 'reset') setUsername(value)
+              }}
+              onChange={(_event, value) => {
+                if (typeof value === 'string') selectLoginUsername(value)
+              }}
+              renderInput={(params) => (
+                <TextField {...params} label="用户名" autoComplete="username" required />
+              )}
+            />
+            <TextField
+              label="密码"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required={!savedPasswordAvailable}
+              placeholder={savedPasswordAvailable ? '已保存密码（留空继续使用）' : undefined}
+              helperText={savedPasswordAvailable ? '已找到此服务器和用户名对应的安全保存密码。' : undefined}
+            />
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                fullWidth
+                label="同步文件夹（可选）"
+                value={loginMount}
+                onChange={(event) => setLoginMount(event.target.value)}
+                placeholder="使用默认 xDrive 文件夹"
+              />
+              <MuiButton type="button" variant="outlined" onClick={() => void chooseDirectory(loginMount, setLoginMount)}>
+                浏览
+              </MuiButton>
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0, sm: 2 }}>
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    checked={rememberPassword}
+                    disabled={!loginHistory.secure_password_storage}
+                    onChange={(event) => {
+                      const checked = event.target.checked
+                      setRememberPassword(checked)
+                      if (!checked) setAutoLogin(false)
+                    }}
+                  />
+                )}
+                label="记住密码"
+              />
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    checked={autoLogin}
+                    disabled={!loginHistory.secure_password_storage || !rememberPassword}
+                    onChange={(event) => setAutoLogin(event.target.checked)}
+                  />
+                )}
+                label="自动登录"
+              />
+            </Stack>
+            <Typography variant="caption" color={loginHistory.secure_password_storage ? 'text.secondary' : 'warning.main'}>
+              {loginHistory.secure_password_storage
+                ? '保存的密码由操作系统安全凭据能力加密，登录历史文件不保存密码明文。'
+                : '当前系统没有可用的安全凭据存储，因此“记住密码”和“自动登录”已禁用。'}
+            </Typography>
+            <MuiButton fullWidth variant="contained" type="submit" disabled={busy === 'login'}>
+              {busy === 'login' ? '正在登录…' : '登录'}
+            </MuiButton>
+          </Stack>
         </form>
       </div>
     )
