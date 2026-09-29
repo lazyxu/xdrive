@@ -7,6 +7,12 @@ export type ExternalSourceStatus = 'active' | 'paused'
 export type ExternalSourceScheduleType = 'interval' | 'cron' | 'manual'
 export type ExternalSourceRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
 
+export const externalSourceSavedCredentialMask = '••••••••••••'
+
+export function isExternalSourceSavedCredentialMask(value: unknown) {
+  return String(value ?? '') === externalSourceSavedCredentialMask
+}
+
 export interface ExternalSource {
   id: number
   name: string
@@ -82,6 +88,17 @@ export interface ExternalSourceRunFailure {
   failed_at: string
 }
 
+export interface ExternalSourceItemMetadata {
+  original_path?: string
+  owner_external_id?: string
+  captured_at?: string
+  remote_created_at?: string
+  content_md5?: string
+  thumbnail_url?: string
+  pair_group_id?: string
+  pair_role?: string
+}
+
 export interface ExternalSourceItem {
   source_item_id: number
   external_id: string
@@ -94,6 +111,28 @@ export interface ExternalSourceItem {
   remote_revision?: string
   state: 'pending' | 'synced' | 'missing' | 'ignored' | 'error' | string
   last_error?: string
+  metadata?: ExternalSourceItemMetadata
+}
+
+export interface ExternalSourceCollection {
+  id: number
+  external_id: string
+  kind: string
+  name: string
+  state: 'active' | 'missing' | string
+  remote_revision?: string
+  item_count: number
+  last_seen_at: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ExternalSourceCollectionItem extends ExternalSourceItem {
+  position: number
+}
+
+export function externalSourceCollectionKindLabel(kind: string) {
+  return kind === 'album' ? '相册' : '集合'
 }
 
 export interface ExternalSourceCredentialStatus {

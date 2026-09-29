@@ -430,6 +430,14 @@ test('external sources use dedicated agent endpoints', async (t) => {
       json(res, 200, [{ source_item_id: 1, external_id: 'yike:123:2', kind: 'file', path: 'Library/fail.jpg [2]', size: 20, state: 'error', last_error: 'download unavailable' }])
       return
     }
+    if (url.pathname === '/v1/sources/collections') {
+      json(res, 200, [{ id: 4, external_id: 'yike:album:7', kind: 'album', name: '杭州旅行', state: 'active', item_count: 1, last_seen_at: new Date(0).toISOString(), created_at: new Date(0).toISOString(), updated_at: new Date(0).toISOString() }])
+      return
+    }
+    if (url.pathname === '/v1/sources/collections/items') {
+      json(res, 200, [{ position: 0, source_item_id: 2, external_id: 'yike:123:9', kind: 'file', path: 'IMG_0009.jpg', size: 99, state: 'synced' }])
+      return
+    }
     if (url.pathname === '/v1/sources/credential') {
       json(res, 200, { configured: true, key_version: 2 })
       return
@@ -441,12 +449,16 @@ test('external sources use dedicated agent endpoints', async (t) => {
   assert.equal((await client.sourceRuns(9, 5, 20))[0].scanned_items, 12)
   assert.equal((await client.sourceRunFailures(9, 'run-1', 21, 20))[0].error, 'download unavailable')
   assert.equal((await client.sourceItems(9, 'error', 1000, 0))[0].last_error, 'download unavailable')
+  assert.equal((await client.sourceCollections(9, 'active'))[0].name, '杭州旅行')
+  assert.equal((await client.sourceCollectionItems(9, 4, 101, 100))[0].path, 'IMG_0009.jpg')
   assert.equal((await client.sourceCredentialStatus(9)).key_version, 2)
   assert.deepEqual(seen, [
     '/v1/sources',
     '/v1/sources/runs?source_id=9&limit=5&offset=20',
     '/v1/sources/runs/failures?source_id=9&run_id=run-1&limit=21&offset=20',
     '/v1/sources/items?source_id=9&limit=1000&offset=0&state=error',
+    '/v1/sources/collections?source_id=9&state=active',
+    '/v1/sources/collections/items?source_id=9&collection_id=4&limit=101&offset=100',
     '/v1/sources/credential?source_id=9',
   ])
 })

@@ -162,7 +162,7 @@ test('desktop dialogs share one title, paper, content, and action treatment', ()
   assert.ok(dialogActions.includes("bgcolor: 'action.hover'"), 'shared dialog actions surface styling is missing')
   assert.ok(dialogActions.includes("flexWrap: { xs: 'wrap', sm: 'nowrap' }"), 'shared dialog actions responsive wrapping is missing')
   assert.ok(dialogActions.includes('export function XDriveDialogActionSpacer()'), 'shared dialog action spacer is missing')
-  assert.equal((renderer.match(/<XDriveDialogActions>/g) || []).length, 8, 'desktop dialogs are not all using the shared action bar')
+  assert.equal((renderer.match(/<XDriveDialogActions>/g) || []).length, 9, 'desktop dialogs are not all using the shared action bar')
   assert.ok(renderer.includes('<XDriveDialogActionSpacer />'), 'desktop destructive/settings dialog lost its shared action spacer')
   assert.equal(styles.includes('.desktop-dialog-actions'), false, 'legacy desktop dialog action CSS remains')
   assert.equal(styles.includes('.desktop-dialog-action-spacer'), false, 'legacy desktop dialog action spacer CSS remains')
@@ -364,6 +364,15 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
   assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')
   assert.ok(renderer.includes('自动回滚也失败'), 'missing Source rollback failure fallback')
+})
+
+test('desktop external sources expose logical albums and collections', () => {
+  assert.ok(renderer.includes('相册 / 集合'), 'missing source collection section')
+  assert.ok(renderer.includes('查看成员'), 'missing source collection member action')
+  assert.ok(renderer.includes('getSourceCollections'), 'missing source collection list bridge')
+  assert.ok(renderer.includes('getSourceCollectionItems'), 'missing source collection item bridge')
+  assert.ok(renderer.includes('逻辑集合视图'), 'missing non-duplicating collection explanation')
+  assert.ok(renderer.includes('同一文件可属于多个相册'), 'missing collection membership explanation')
 })
 
 test('desktop external sources expose per-Source scheduling', () => {

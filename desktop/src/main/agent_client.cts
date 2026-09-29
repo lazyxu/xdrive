@@ -240,6 +240,35 @@ export type AgentSourceItem = {
   last_error?: string
 }
 
+export type AgentSourceItemMetadata = {
+  original_path?: string
+  owner_external_id?: string
+  captured_at?: string
+  remote_created_at?: string
+  content_md5?: string
+  thumbnail_url?: string
+  pair_group_id?: string
+  pair_role?: string
+}
+
+export type AgentSourceCollection = {
+  id: number
+  external_id: string
+  kind: string
+  name: string
+  state: string
+  remote_revision?: string
+  item_count: number
+  last_seen_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type AgentSourceCollectionItem = AgentSourceItem & {
+  position: number
+  metadata?: AgentSourceItemMetadata
+}
+
 export type AgentSourceCredentialStatus = {
   configured: boolean
   key_version?: number
@@ -573,6 +602,22 @@ export class AgentIPCClient {
     })
     if (state) query.set('state', state)
     return this.request<AgentSourceItem[]>('GET', `/v1/sources/items?${query.toString()}`)
+  }
+
+  sourceCollections(sourceID: number, state = 'active') {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    if (state) query.set('state', state)
+    return this.request<AgentSourceCollection[]>('GET', `/v1/sources/collections?${query.toString()}`)
+  }
+
+  sourceCollectionItems(sourceID: number, collectionID: number, limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      collection_id: String(collectionID),
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentSourceCollectionItem[]>('GET', `/v1/sources/collections/items?${query.toString()}`)
   }
 
   sourceCredentialStatus(sourceID: number) {

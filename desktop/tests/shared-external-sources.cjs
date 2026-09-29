@@ -111,6 +111,11 @@ test('shared external-source state ordering is connector neutral', () => {
   )
 })
 
+test('shared source collection labels stay connector neutral', () => {
+  assert.equal(shared.externalSourceCollectionKindLabel('album'), '相册')
+  assert.equal(shared.externalSourceCollectionKindLabel('smart_album'), '集合')
+})
+
 test('shared external-source trigger gating matches connector execution model', () => {
   assert.deepEqual(
     shared.getExternalSourceTriggerState({

@@ -86,6 +86,8 @@ type fakeDesktopIPCController struct {
 	cloudCancelSourceID        uint64
 	cloudCancelRunID           string
 	cloudSourceItems           []client.SourceItem
+	cloudSourceCollections     []client.SourceCollection
+	cloudSourceCollectionItems []client.SourceCollectionItem
 	cloudSourceCredential      client.SourceCredentialStatus
 	cloudCredentialTest        client.SourceCredentialTestResult
 	cloudTestCredentialKind    string
@@ -282,6 +284,14 @@ func (f *fakeDesktopIPCController) CloudCancelSourceRun(_ context.Context, sourc
 
 func (f *fakeDesktopIPCController) CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error) {
 	return append([]client.SourceItem(nil), f.cloudSourceItems...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSourceCollections(context.Context, uint64, string) ([]client.SourceCollection, error) {
+	return append([]client.SourceCollection(nil), f.cloudSourceCollections...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSourceCollectionItems(context.Context, uint64, uint64, int, int) ([]client.SourceCollectionItem, error) {
+	return append([]client.SourceCollectionItem(nil), f.cloudSourceCollectionItems...), f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error) {
@@ -734,6 +744,14 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			SourceItemID: 1, ExternalID: "yike:123:2", Kind: "file",
 			Path: "Library/fail.jpg [2]", Size: 20, State: "error", LastError: "download unavailable",
 		}},
+		cloudSourceCollections: []client.SourceCollection{{
+			ID: 4, ExternalID: "yike:album:7", Kind: "album", Name: "杭州旅行",
+			State: "active", ItemCount: 1, LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
+		}},
+		cloudSourceCollectionItems: []client.SourceCollectionItem{{
+			Position: 0, SourceItemID: 2, ExternalID: "yike:123:9", Kind: "file",
+			Path: "IMG_0009.jpg", Size: 99, State: "synced",
+		}},
 		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
 		cloudCredentialTest: client.SourceCredentialTestResult{
 			Valid: true, Kind: "yike_photos", AccountExternalID: "12345", AccountName: "Test User",
@@ -759,6 +777,8 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		{"/v1/sources/runs?source_id=9&limit=5", "\"scanned_items\":12"},
 		{"/v1/sources/runs/failures?source_id=9&run_id=run-1&limit=20&offset=0", "\"error\":\"download unavailable\""},
 		{"/v1/sources/items?source_id=9&state=error&limit=1000&offset=0", "\"last_error\":\"download unavailable\""},
+		{"/v1/sources/collections?source_id=9&state=active", "\"name\":\"杭州旅行\""},
+		{"/v1/sources/collections/items?source_id=9&collection_id=4&limit=100&offset=0", "\"path\":\"IMG_0009.jpg\""},
 		{"/v1/sources/credential?source_id=9", "\"configured\":true"},
 		{"/v1/sources/connector-config?source_id=9", "\"spaces\":[\"personal\",\"shared\"]"},
 	}
@@ -779,6 +799,11 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		"/v1/sources/items?source_id=0",
 		"/v1/sources/items?source_id=9&limit=1001",
 		"/v1/sources/items?source_id=9&offset=-1",
+		"/v1/sources/collections?source_id=0",
+		"/v1/sources/collections?source_id=9&state=other",
+		"/v1/sources/collections/items?source_id=9&collection_id=0",
+		"/v1/sources/collections/items?source_id=9&collection_id=4&limit=1001",
+		"/v1/sources/collections/items?source_id=9&collection_id=4&offset=-1",
 		"/v1/sources/credential?source_id=bad",
 		"/v1/sources/connector-config?source_id=bad",
 	} {

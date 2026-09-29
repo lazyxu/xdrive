@@ -4,6 +4,8 @@ import type {
   CreateExternalSourceInput,
   CreatedFileShare,
   ExternalSource,
+  ExternalSourceCollection,
+  ExternalSourceCollectionItem,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialTestResult,
   ExternalSourceConnectorConfig,
@@ -30,6 +32,8 @@ import type {
 
 export type {
   ExternalSource,
+  ExternalSourceCollection,
+  ExternalSourceCollectionItem,
   ExternalSourceCredentialStatus,
   ExternalSourceConnectorConfig,
   ExternalSourceItem,
@@ -374,6 +378,25 @@ export class XDriveApi {
     query.set('limit', String(Math.min(1000, Math.max(1, Math.trunc(limit)))))
     if (offset > 0) query.set('offset', String(Math.trunc(offset)))
     return this.request<ExternalSourceItem[]>(`/api/v1/sources/${sourceID}/items?${query.toString()}`)
+  }
+
+  sourceCollections(sourceID: number, state = 'active') {
+    const query = new URLSearchParams()
+    if (state) query.set('state', state)
+    const suffix = query.toString()
+    return this.request<ExternalSourceCollection[]>(
+      `/api/v1/sources/${sourceID}/collections${suffix ? `?${suffix}` : ''}`,
+    )
+  }
+
+  sourceCollectionItems(sourceID: number, collectionID: number, limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(1000, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<ExternalSourceCollectionItem[]>(
+      `/api/v1/sources/${sourceID}/collections/${collectionID}/items?${query.toString()}`,
+    )
   }
 
   sourceCredentialStatus(sourceID: number) {
