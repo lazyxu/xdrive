@@ -1,6 +1,7 @@
 package synology
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,8 +15,20 @@ import (
 	"time"
 )
 
+const (
+	maxJSONBytes                         = 2 << 20
+	maxRequestBodyBytes                  = 64 << 10
+	defaultAPITimeout                    = 60 * time.Second
+	defaultAPIMaxAttempts                = 3
+	defaultAPIRetryBaseDelay             = 500 * time.Millisecond
+	defaultAPIRetryMaxDelay              = 30 * time.Second
+	defaultDownloadResponseHeaderTimeout = 30 * time.Second
+	defaultDownloadIdleTimeout           = 60 * time.Second
+)
+
 var (
 	ErrAuthentication = errors.New("Synology authentication failed")
+	ErrSessionExpired = errors.New("Synology session expired")
 	ErrUnavailable    = errors.New("Synology is unavailable")
 	ErrPhotosMissing  = errors.New("Synology Photos API is unavailable")
 )
@@ -31,10 +44,15 @@ type AccountInfo struct {
 }
 
 type Client struct {
-	baseURL  string
-	username string
-	password string
-	http     *http.Client
+	baseURL               string
+	username              string
+	password              string
+	http                  *http.Client
+	apiMaxAttempts        int
+	apiRetryBaseDelay     time.Duration
+	apiRetryMaxDelay      time.Duration
+	downloadHeaderTimeout time.Duration
+	downloadIdleTimeout   time.Duration
 }
 
 type apiInfo struct {
@@ -69,10 +87,13 @@ func New(credential Credential) (*Client, error) {
 		return nil, fmt.Errorf("base_url must be an http(s) DSM origin without path, query or credentials")
 	}
 	return &Client{
-		baseURL:  baseURL,
-		username: username,
-		password: password,
-		http:     &http.Client{Timeout: 0},
+		baseURL: baseURL, username: username, password: password,
+		http:                  &http.Client{Timeout: defaultAPITimeout},
+		apiMaxAttempts:        defaultAPIMaxAttempts,
+		apiRetryBaseDelay:     defaultAPIRetryBaseDelay,
+		apiRetryMaxDelay:      defaultAPIRetryMaxDelay,
+		downloadHeaderTimeout: defaultDownloadResponseHeaderTimeout,
+		downloadIdleTimeout:   defaultDownloadIdleTimeout,
 	}, nil
 }
 
@@ -216,27 +237,188 @@ func (c *Client) webAPIEndpoint(apiPath string) (string, error) {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, endpoint string, body io.Reader, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "xdrive-synology-pull/1")
+	var bodyBytes []byte
 	if body != nil {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		data, err := io.ReadAll(io.LimitReader(body, maxRequestBodyBytes+1))
+		if err != nil {
+			return err
+		}
+		if len(data) > maxRequestBodyBytes {
+			return fmt.Errorf("Synology request body exceeds %d bytes", maxRequestBodyBytes)
+		}
+		bodyBytes = data
 	}
-	resp, err := c.http.Do(req)
+
+	attempts := c.apiAttempts()
+	for attempt := 0; attempt < attempts; attempt++ {
+		var requestBody io.Reader
+		if bodyBytes != nil {
+			requestBody = bytes.NewReader(bodyBytes)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, endpoint, requestBody)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("User-Agent", "xdrive-synology-pull/1")
+		if requestBody != nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if attempt+1 < attempts {
+				if err := c.waitAPIRetry(ctx, attempt, ""); err != nil {
+					return err
+				}
+				continue
+			}
+			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
+
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxJSONBytes+1))
+		retryAfter := resp.Header.Get("Retry-After")
+		_ = resp.Body.Close()
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return fmt.Errorf("%w: HTTP %s", ErrAuthentication, resp.Status)
+		}
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			if attempt+1 < attempts {
+				if delay, allowed := c.apiRetryDelay(attempt, retryAfter); allowed {
+					if err := sleepContext(ctx, delay); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+			return fmt.Errorf("%w: HTTP %s", ErrUnavailable, resp.Status)
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return fmt.Errorf("%w: HTTP %s", ErrUnavailable, resp.Status)
+		}
+		if readErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if attempt+1 < attempts {
+				if err := c.waitAPIRetry(ctx, attempt, ""); err != nil {
+					return err
+				}
+				continue
+			}
+			return fmt.Errorf("%w: read response: %v", ErrUnavailable, readErr)
+		}
+		if len(data) > maxJSONBytes {
+			return fmt.Errorf("%w: response exceeds %d bytes", ErrUnavailable, maxJSONBytes)
+		}
+		if err := json.Unmarshal(data, out); err != nil {
+			return fmt.Errorf("%w: decode response: %v", ErrUnavailable, err)
+		}
+		if envelope, ok := out.(*apiEnvelope); ok && !envelope.Success {
+			code := 0
+			if envelope.Error != nil {
+				code = envelope.Error.Code
+			}
+			if transientAPIErrorCode(code) && attempt+1 < attempts {
+				if err := c.waitAPIRetry(ctx, attempt, ""); err != nil {
+					return err
+				}
+				continue
+			}
+			return apiError(*envelope)
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: retries exhausted", ErrUnavailable)
+}
+
+func (c *Client) apiAttempts() int {
+	if c.apiMaxAttempts < 1 {
+		return 1
+	}
+	return c.apiMaxAttempts
+}
+
+func (c *Client) waitAPIRetry(ctx context.Context, attempt int, retryAfter string) error {
+	delay, allowed := c.apiRetryDelay(attempt, retryAfter)
+	if !allowed {
+		return nil
+	}
+	return sleepContext(ctx, delay)
+}
+
+func (c *Client) apiRetryDelay(attempt int, retryAfter string) (time.Duration, bool) {
+	maxDelay := c.apiRetryMaxDelay
+	if maxDelay <= 0 {
+		maxDelay = defaultAPIRetryMaxDelay
+	}
+	if value, ok := parseRetryAfter(retryAfter, time.Now()); ok {
+		if value > maxDelay {
+			return 0, false
+		}
+		return value, true
+	}
+	delay := c.apiRetryBaseDelay
+	if delay < 0 {
+		delay = 0
+	}
+	for i := 0; i < attempt && delay < maxDelay; i++ {
+		if delay > maxDelay/2 {
+			delay = maxDelay
+			break
+		}
+		delay *= 2
+	}
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+	return delay, true
+}
+
+func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds < 0 || seconds > int64((time.Duration(1<<63-1))/time.Second) {
+			return 0, false
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	when, err := http.ParseTime(value)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return 0, false
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("%w: HTTP %s", ErrUnavailable, resp.Status)
+	delay := when.Sub(now)
+	if delay < 0 {
+		delay = 0
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(out); err != nil {
-		return fmt.Errorf("%w: decode response: %v", ErrUnavailable, err)
+	return delay, true
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	return nil
+}
+
+func transientAPIErrorCode(code int) bool {
+	switch code {
+	case 109, 110, 111, 117, 118:
+		return true
+	default:
+		return false
+	}
 }
 
 func apiError(envelope apiEnvelope) error {
@@ -245,6 +427,8 @@ func apiError(envelope apiEnvelope) error {
 		code = envelope.Error.Code
 	}
 	switch code {
+	case 106, 107, 119:
+		return fmt.Errorf("%w: DSM API error %d", ErrSessionExpired, code)
 	case 400, 401, 402, 403, 404:
 		return fmt.Errorf("%w: DSM API error %d", ErrAuthentication, code)
 	default:

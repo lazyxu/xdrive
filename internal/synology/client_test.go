@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientTestAuthenticatesAndChecksPhotosAPI(t *testing.T) {
@@ -119,4 +120,42 @@ func readBody(t *testing.T, r *http.Request) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func TestClientRetriesTransientHTTPFailure(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"SYNO.API.Auth":{"path":"entry.cgi","minVersion":1,"maxVersion":6}}}`))
+	}))
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiRetryBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 5 * time.Millisecond
+	if _, err := client.apiInfo(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts=%d want=3", attempts)
+	}
+}
+
+func TestAPIErrorClassifiesExpiredSession(t *testing.T) {
+	for _, code := range []int{106, 107, 119} {
+		envelope := apiEnvelope{Success: false}
+		envelope.Error = &struct {
+			Code int `json:"code"`
+		}{Code: code}
+		if err := apiError(envelope); !errors.Is(err, ErrSessionExpired) {
+			t.Fatalf("code=%d err=%v", code, err)
+		}
+	}
 }

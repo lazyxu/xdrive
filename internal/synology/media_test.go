@@ -2,12 +2,14 @@ package synology
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSessionListsSpacesAndOpensRangeDownload(t *testing.T) {
@@ -174,5 +176,150 @@ func TestSpaceAPIHelpersRejectUnknownSpace(t *testing.T) {
 		if _, err := fn(Space("other")); err == nil || !strings.Contains(err.Error(), "unsupported") {
 			t.Fatalf("unexpected err=%v", err)
 		}
+	}
+}
+
+func TestSessionReauthenticatesAfterSessionTimeout(t *testing.T) {
+	var loginCount, listCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Query().Get("api") == "SYNO.API.Info":
+			_, _ = w.Write([]byte(`{"success":true,"data":{
+				"SYNO.API.Auth":{"path":"entry.cgi","minVersion":1,"maxVersion":6},
+				"SYNO.Foto.Browse.Folder":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
+				"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
+				"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":1}
+			}}`))
+		case r.URL.Path == "/webapi/entry.cgi":
+			data, _ := io.ReadAll(r.Body)
+			values, _ := url.ParseQuery(string(data))
+			if values.Get("method") == "login" {
+				loginCount++
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"success":true,"data":{"sid":"sid-%d"}}`, loginCount)))
+				return
+			}
+			if values.Get("method") == "logout" {
+				_, _ = w.Write([]byte(`{"success":true,"data":{}}`))
+				return
+			}
+			http.NotFound(w, r)
+		case r.URL.Path == "/photo/webapi/entry.cgi":
+			data, _ := io.ReadAll(r.Body)
+			values, _ := url.ParseQuery(string(data))
+			listCount++
+			if listCount == 1 {
+				if values.Get("_sid") != "sid-1" {
+					t.Fatalf("first sid=%q", values.Get("_sid"))
+				}
+				_, _ = w.Write([]byte(`{"success":false,"error":{"code":106}}`))
+				return
+			}
+			if values.Get("_sid") != "sid-2" {
+				t.Fatalf("second sid=%q", values.Get("_sid"))
+			}
+			_, _ = w.Write([]byte(`{"success":true,"data":{"offset":0,"total":0,"list":[]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	if _, err := session.ListFoldersPage(context.Background(), SpacePersonal, 0, 100); err != nil {
+		t.Fatal(err)
+	}
+	if loginCount != 2 || listCount != 2 {
+		t.Fatalf("loginCount=%d listCount=%d", loginCount, listCount)
+	}
+}
+
+func TestSessionMediaIdleTimeout(t *testing.T) {
+	block := make(chan struct{})
+	server := newMediaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if flusher, ok := w.(http.Flusher); ok {
+			w.WriteHeader(http.StatusOK)
+			flusher.Flush()
+		}
+		<-block
+	})
+	defer func() {
+		close(block)
+		server.Close()
+	}()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.downloadIdleTimeout = 50 * time.Millisecond
+	client.downloadHeaderTimeout = time.Second
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	body, err := session.OpenItem(context.Background(), Item{ID: 5, Space: SpacePersonal}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	buf := make([]byte, 1)
+	start := time.Now()
+	_, err = body.Read(buf)
+	if err == nil || !strings.Contains(err.Error(), "stalled") {
+		t.Fatalf("err=%v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("idle timeout took %s", elapsed)
+	}
+}
+
+func TestSessionRetriesTransientDownloadOpen(t *testing.T) {
+	var attempts int
+	server := newMediaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write([]byte("ok"))
+	})
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiRetryBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 5 * time.Millisecond
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	body, err := session.OpenItem(context.Background(), Item{ID: 5, Space: SpacePersonal}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(body)
+	_ = body.Close()
+	if err != nil || string(data) != "ok" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts=%d want=3", attempts)
 	}
 }
