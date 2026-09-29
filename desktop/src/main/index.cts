@@ -116,6 +116,14 @@ let agentUpdateState: AgentUpdateState | null = null
 let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
 let updateMonitor: AbortController | null = null
+let startupFailurePending = false
+let startupCoreReady = false
+let startupRendererReady = false
+let startupCompleteLogged = false
+let windowsUserTasksDiagnostic: { status: 'PASS' | 'WARN'; detail: string } = {
+  status: 'PASS',
+  detail: '当前平台不需要注册 Windows 任务栏快捷操作。',
+}
 const startupDesktopAction = desktopShortcutActionFromArgs(process.argv)
 const backgroundLaunch = process.argv.includes('--background') ||
   (startupDesktopAction !== null && !desktopShortcutShowsWindow(startupDesktopAction))
@@ -127,6 +135,48 @@ function desktopLifecycleLogDirectory() {
     return path.join(process.env.LOCALAPPDATA, 'xDrive')
   }
   return app.getPath('logs')
+}
+
+function startupCheckpoint(stage: string, fields: Record<string, string | number | boolean | null | undefined> = {}) {
+  lifecycleLog?.record('startup_checkpoint', { stage, ...fields })
+}
+
+function markStartupCompleteIfReady() {
+  if (startupCompleteLogged || !startupCoreReady || !startupRendererReady) return
+  startupCompleteLogged = true
+  startupCheckpoint('startup_complete')
+}
+
+async function failDesktopStartup(event: string, error: unknown) {
+  if (startupFailurePending) return
+  startupFailurePending = true
+  const formatted = formatLifecycleError(error)
+  lifecycleLog?.record(event, { error: formatted })
+  quitReason = 'startup-failed'
+
+  if (!backgroundLaunch) {
+    const logDirectory = desktopLifecycleLogDirectory()
+    try {
+      const result = await dialog.showMessageBox({
+        type: 'error',
+        title: 'xDrive Desktop 启动失败',
+        message: 'xDrive Desktop 无法正常启动。',
+        detail: `${formatted}\n\n日志目录：${logDirectory}`,
+        buttons: ['打开日志目录', '退出'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      if (result.response === 0) {
+        const openError = await shell.openPath(logDirectory)
+        if (openError) lifecycleLog?.record('startup_log_folder_open_failed', { error: openError })
+      }
+    } catch (dialogError) {
+      lifecycleLog?.record('startup_error_dialog_failed', { error: formatLifecycleError(dialogError) })
+    }
+  }
+
+  app.exit(1)
 }
 
 function requestDesktopQuit(reason: string) {
@@ -356,9 +406,34 @@ async function performDesktopShortcutAction(action: DesktopShortcutAction) {
 }
 
 function registerWindowsUserTasks() {
-  if (process.platform !== 'win32' || !app.isPackaged) return
-  if (!app.setUserTasks(windowsUserTasks(process.execPath))) {
-    console.error('failed to register Windows taskbar user tasks')
+  if (process.platform !== 'win32' || !app.isPackaged) {
+    windowsUserTasksDiagnostic = {
+      status: 'PASS',
+      detail: '当前平台不需要注册 Windows 任务栏快捷操作。',
+    }
+    return
+  }
+
+  try {
+    if (app.setUserTasks(windowsUserTasks(process.execPath))) {
+      windowsUserTasksDiagnostic = {
+        status: 'PASS',
+        detail: 'Windows 任务栏快捷操作已注册。',
+      }
+      startupCheckpoint('windows_user_tasks_registered')
+      return
+    }
+    windowsUserTasksDiagnostic = {
+      status: 'WARN',
+      detail: 'Windows 拒绝注册任务栏快捷操作；不影响同步和主窗口使用。',
+    }
+    lifecycleLog?.record('windows_user_tasks_failed', { reason: 'setUserTasks returned false' })
+  } catch (error) {
+    windowsUserTasksDiagnostic = {
+      status: 'WARN',
+      detail: 'Windows 任务栏快捷操作注册异常；不影响同步和主窗口使用。',
+    }
+    lifecycleLog?.record('windows_user_tasks_failed', { error: formatLifecycleError(error) })
   }
 }
 
@@ -422,8 +497,23 @@ function createMainWindow(showOnReady = true) {
     },
   })
   mainWindow = win
+  startupCheckpoint('window_created')
   updateTaskbarOverlay()
   if (desktopPreferences.window_maximized) win.maximize()
+
+  let rendererLoadTimer: NodeJS.Timeout | null = setTimeout(() => {
+    rendererLoadTimer = null
+    void failDesktopStartup(
+      'renderer_load_timeout',
+      new Error('Desktop renderer did not finish loading within 15 seconds.'),
+    )
+  }, 15_000)
+  const clearRendererLoadTimer = () => {
+    if (!rendererLoadTimer) return
+    clearTimeout(rendererLoadTimer)
+    rendererLoadTimer = null
+  }
+
   win.on('move', () => scheduleWindowStateSave(win))
   win.on('resize', () => scheduleWindowStateSave(win))
   win.on('maximize', () => {
@@ -445,7 +535,23 @@ function createMainWindow(showOnReady = true) {
     void handleMainWindowClose(win)
   })
   win.on('closed', () => {
+    clearRendererLoadTimer()
     if (mainWindow === win) mainWindow = null
+  })
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return
+    clearRendererLoadTimer()
+    void failDesktopStartup(
+      'renderer_load_failed',
+      new Error(`Renderer load failed (${errorCode}) ${errorDescription}: ${validatedURL}`),
+    )
+  })
+  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+    clearRendererLoadTimer()
+    void failDesktopStartup(
+      'preload_failed',
+      new Error(`Preload failed at ${preloadPath}: ${formatLifecycleError(error)}`),
+    )
   })
   win.webContents.on('context-menu', (_event, params) => {
     if (!params.isEditable) return
@@ -474,12 +580,22 @@ function createMainWindow(showOnReady = true) {
     if (!url.startsWith('file://')) event.preventDefault()
   })
   const devURL = process.env.XD_DESKTOP_DEV_URL
-  if (devURL) void win.loadURL(devURL)
-  else void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+  const loadRenderer = devURL
+    ? win.loadURL(devURL)
+    : win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+  void loadRenderer.catch((error) => {
+    clearRendererLoadTimer()
+    void failDesktopStartup('renderer_load_rejected', error)
+  })
   win.once('ready-to-show', () => {
+    startupCheckpoint('window_ready_to_show')
     if (showOnReady) win.show()
   })
   win.webContents.once('did-finish-load', () => {
+    clearRendererLoadTimer()
+    startupRendererReady = true
+    startupCheckpoint('renderer_loaded')
+    markStartupCompleteIfReady()
     win.webContents.send('agent:state', agentState)
     publishDesktopWindowState(win)
     if (pendingDesktopView) {
@@ -733,7 +849,15 @@ function withDesktopCompatibility(report: AgentDiagnosticReport, hello: AgentHel
     status: 'PASS' as const,
     detail: `桌面版 ${app.getVersion()} · Agent ${hello.agent_version} · IPC 桌面版 ${AgentIPCClient.protocolMin}-${AgentIPCClient.protocolMax} / Agent ${hello.protocol_min}-${hello.protocol_max}`,
   }
-  const checks = [...report.checks, compatibility]
+  const desktopChecks: AgentDiagnosticReport['checks'] = [compatibility]
+  if (process.platform === 'win32' && app.isPackaged) {
+    desktopChecks.push({
+      name: 'Windows 任务栏快捷操作',
+      status: windowsUserTasksDiagnostic.status,
+      detail: windowsUserTasksDiagnostic.detail,
+    })
+  }
+  const checks = [...report.checks, ...desktopChecks]
   return {
     ...report,
     checks,
@@ -1658,6 +1782,7 @@ if (!primaryInstance) {
   })
   app.on('quit', (_event, exitCode) => lifecycleLog?.cleanExit(quitReason, exitCode))
   void app.whenReady().then(async () => {
+    startupCheckpoint('electron_ready')
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
     nativeTheme.themeSource = 'system'
     nativeTheme.on('updated', () => {
@@ -1669,28 +1794,33 @@ if (!primaryInstance) {
 
     desktopPreferences = await loadDesktopPreferences()
     loginHistory = await loadLoginHistory()
+    startupCheckpoint('preferences_loaded')
     await applyStartAtLogin(desktopPreferences.start_at_login).catch((error) => {
-      console.error('failed to configure desktop startup:', error)
+      lifecycleLog?.record('startup_preference_failed', { error: formatLifecycleError(error) })
     })
 
     agentClient = new AgentIPCClient(path.join(app.getPath('appData'), 'xdrive', 'desktop-ipc.json'))
     agentLifecycle = new AgentLifecycle(agentClient)
     registerIPCHandlers()
+    startupCheckpoint('ipc_ready')
     createMainWindow(!backgroundLaunch)
     createTray()
+    startupCheckpoint('tray_created')
     const initialAgentState = await refreshAgentState()
+    startupCheckpoint('agent_checked', { connected: initialAgentState.connected })
     if (initialAgentState.connected && !initialAgentState.status?.configured) {
       await attemptAutomaticLogin()
     }
     restartDesktopMonitors()
+    startupCheckpoint('monitors_started')
     powerMonitor.on('resume', () => {
       restartDesktopMonitors()
     })
     if (startupDesktopAction) await performDesktopShortcutAction(startupDesktopAction)
+    startupCoreReady = true
+    markStartupCompleteIfReady()
   }).catch((error) => {
-    lifecycleLog?.record('startup_failed', { error: formatLifecycleError(error) })
-    quitReason = 'startup-failed'
-    app.exit(1)
+    void failDesktopStartup('startup_failed', error)
   })
   app.on('activate', () => {
     if (mainWindow) showMainWindow()
