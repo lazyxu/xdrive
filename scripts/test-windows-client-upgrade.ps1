@@ -23,6 +23,68 @@ function Stop-XDriveProcesses {
     Start-Sleep -Milliseconds 500
 }
 
+function Get-DesktopLifecycleDiagnostics {
+    $lines = @()
+    $desktopLog = Join-Path $env:LOCALAPPDATA "xDrive\desktop.log"
+    $marker = Join-Path $env:LOCALAPPDATA "xDrive\desktop-running.json"
+    if (Test-Path -LiteralPath $desktopLog) {
+        $lines += "desktop.log tail:"
+        $lines += @(Get-Content -LiteralPath $desktopLog -Tail 40 -ErrorAction SilentlyContinue)
+    } else {
+        $lines += "desktop.log is missing: $desktopLog"
+    }
+    if (Test-Path -LiteralPath $marker) {
+        $lines += "desktop-running.json:"
+        $lines += (Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue)
+    } else {
+        $lines += "desktop-running.json is missing: $marker"
+    }
+    $current = @(Get-XDriveProcessesInSession -Names @("xdrive-desktop", "xdrive-agent") | ForEach-Object {
+        try {
+            "{0} pid={1} path={2}" -f $_.ProcessName, $_.Id, $_.Path
+        } catch {
+            "{0} pid={1} path=<unavailable>" -f $_.ProcessName, $_.Id
+        }
+    })
+    if ($current.Count -gt 0) {
+        $lines += "current xDrive processes:"
+        $lines += $current
+    }
+    return ($lines -join [Environment]::NewLine)
+}
+
+function Wait-XDriveProcessInSession {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Names,
+        [string]$ExpectedPath = "",
+        [int]$TimeoutSeconds = 20
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        $processes = @(Get-XDriveProcessesInSession -Names $Names)
+        if ([string]::IsNullOrWhiteSpace($ExpectedPath)) {
+            if ($processes.Count -gt 0) {
+                return $processes
+            }
+        } else {
+            $expected = [System.IO.Path]::GetFullPath($ExpectedPath)
+            foreach ($process in $processes) {
+                try {
+                    if ([System.IO.Path]::GetFullPath([string]$process.Path) -eq $expected) {
+                        return $process
+                    }
+                } catch {
+                    # The process can exist before its executable path is readable.
+                }
+            }
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    return $null
+}
+
 function Invoke-Transaction([string]$ExpectedVersion) {
     Remove-Item -LiteralPath $StatusPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
@@ -262,24 +324,20 @@ if ($postRunValue -notlike "*xdrive-agent.exe*") {
     throw "xDriveAgent autorun registration missing after committed transaction"
 }
 
-$agent = Get-XDriveProcessesInSession -Names @("xdrive-agent")
+$agent = Wait-XDriveProcessInSession -Names @("xdrive-agent")
 if ($null -eq $agent) {
-    throw "committed transaction did not restart xdrive-agent"
+    throw "committed transaction did not restart xdrive-agent within 20 seconds"
 }
-$desktop = Get-XDriveProcessesInSession -Names @("xdrive-desktop")
+$desktop = Wait-XDriveProcessInSession -Names @("xdrive-desktop")
 if ($null -eq $desktop) {
-    throw "committed transaction did not restart xDrive Desktop"
+    $diagnostics = Get-DesktopLifecycleDiagnostics
+    throw ("committed transaction did not restart xDrive Desktop within 20 seconds{0}{1}" -f [Environment]::NewLine, $diagnostics)
 }
 $unifiedDesktop = [System.IO.Path]::GetFullPath((Join-Path $AppDir "desktop\xdrive-desktop.exe"))
-$matchedDesktop = $desktop | Where-Object {
-    try {
-        [System.IO.Path]::GetFullPath([string]$_.Path) -eq $unifiedDesktop
-    } catch {
-        $false
-    }
-} | Select-Object -First 1
+$matchedDesktop = Wait-XDriveProcessInSession -Names @("xdrive-desktop") -ExpectedPath $unifiedDesktop
 if ($null -eq $matchedDesktop) {
-    throw "committed transaction did not start the unified Electron Desktop"
+    $diagnostics = Get-DesktopLifecycleDiagnostics
+    throw ("committed transaction did not start the unified Electron Desktop within 20 seconds{0}{1}" -f [Environment]::NewLine, $diagnostics)
 }
 
 Stop-XDriveProcesses
