@@ -23,7 +23,7 @@ import { desktopBuildInfo } from './build_metadata.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
 import { trayTransferPresentation } from './tray_transfers.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
-import { taskbarOverlayDataURL, taskbarOverlayKind } from './taskbar_attention.cjs'
+import { taskbarOverlayKind, taskbarOverlayPNG } from './taskbar_attention.cjs'
 import { editContextMenuTemplate } from './edit_context_menu.cjs'
 import {
   desktopShortcutActionFromArgs,
@@ -507,8 +507,8 @@ function trayStatusAssetPath(kind: TrayStatusKind) {
 }
 
 function taskbarOverlayImage(kind: 'conflict' | 'offline') {
-  const image = nativeImage.createFromDataURL(taskbarOverlayDataURL(kind))
-  if (image.isEmpty()) throw new Error(`xDrive taskbar overlay badge is invalid: ${kind}`)
+  const image = nativeImage.createFromBuffer(taskbarOverlayPNG(kind))
+  if (image.isEmpty()) return null
   return image.resize({ width: 16, height: 16 })
 }
 
@@ -519,10 +519,29 @@ function updateTaskbarOverlay() {
     mainWindow.setOverlayIcon(null, '')
     return
   }
-  mainWindow.setOverlayIcon(
-    taskbarOverlayImage(kind),
-    kind === 'conflict' ? 'xDrive 有同步冲突' : 'xDrive 需要处理同步或登录问题',
-  )
+
+  try {
+    const image = taskbarOverlayImage(kind)
+    if (!image) {
+      lifecycleLog?.record('taskbar_overlay_invalid', { kind })
+      mainWindow.setOverlayIcon(null, '')
+      return
+    }
+    mainWindow.setOverlayIcon(
+      image,
+      kind === 'conflict' ? 'xDrive 有同步冲突' : 'xDrive 需要处理同步或登录问题',
+    )
+  } catch (error) {
+    lifecycleLog?.record('taskbar_overlay_failed', {
+      kind,
+      error: formatLifecycleError(error),
+    })
+    try {
+      mainWindow.setOverlayIcon(null, '')
+    } catch {
+      // A taskbar decoration must never block the Desktop from starting.
+    }
+  }
 }
 
 function trayStatusImage() {

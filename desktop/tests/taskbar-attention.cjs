@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { taskbarOverlayDataURL, taskbarOverlayKind } = require('../dist/main/taskbar_attention.cjs')
+const { taskbarOverlayKind, taskbarOverlayPNG } = require('../dist/main/taskbar_attention.cjs')
 
 function status(overrides = {}) {
   return {
@@ -28,14 +28,12 @@ test('taskbar overlay only represents actionable problem states', () => {
   assert.equal(taskbarOverlayKind(true, status()), null)
 })
 
-
-test('taskbar overlays are status badges rather than a second xDrive logo', () => {
+test('taskbar overlays use Electron-compatible PNG badges', () => {
   for (const kind of ['conflict', 'offline']) {
-    const url = taskbarOverlayDataURL(kind)
-    assert.ok(url.startsWith('data:image/svg+xml;base64,'))
-    const svg = Buffer.from(url.split(',')[1], 'base64').toString('utf8')
-    assert.ok(svg.includes('<circle'), `${kind}: badge should contain a status circle`)
-    assert.equal(svg.includes('#1787FA'), false, `${kind}: badge must not embed the blue xDrive application icon`)
-    assert.equal(svg.includes('xDrive'), false, `${kind}: overlay must not contain the application logo`)
+    const png = taskbarOverlayPNG(kind)
+    assert.ok(Buffer.isBuffer(png), `${kind}: badge should be a Buffer`)
+    assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', `${kind}: badge should be a PNG`)
+    assert.equal(png.readUInt32BE(16), 32, `${kind}: badge width should be 32px`)
+    assert.equal(png.readUInt32BE(20), 32, `${kind}: badge height should be 32px`)
   }
 })
