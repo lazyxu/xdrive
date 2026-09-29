@@ -72,7 +72,7 @@ func New(credential Credential) (*Client, error) {
 		baseURL:  baseURL,
 		username: username,
 		password: password,
-		http:     &http.Client{Timeout: 15 * time.Second},
+		http:     &http.Client{Timeout: 0},
 	}, nil
 }
 
@@ -110,8 +110,10 @@ func (c *Client) apiInfo(ctx context.Context) (map[string]apiInfo, error) {
 	values.Set("method", "query")
 	values.Set("query", strings.Join([]string{
 		"SYNO.API.Auth",
+		"SYNO.Foto.Browse.Folder",
 		"SYNO.Foto.Browse.Item",
 		"SYNO.Foto.Download",
+		"SYNO.FotoTeam.Browse.Folder",
 		"SYNO.FotoTeam.Browse.Item",
 		"SYNO.FotoTeam.Download",
 	}, ","))
