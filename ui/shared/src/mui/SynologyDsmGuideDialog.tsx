@@ -3,7 +3,6 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import {
   Box,
   Dialog,
-  DialogContent,
   Paper,
   Stack,
   Step,
@@ -16,6 +15,7 @@ import type { ExternalSource, SynologyDsmGuideVisual } from '../index'
 import { synologyDsmSetupGuide } from '../index'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDialogActions } from './DialogActions'
+import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveStatusAlert } from './StatusAlert'
 
@@ -78,7 +78,7 @@ export function XDriveSynologyDsmGuideDialog({
         subtitle={guide?.subtitle}
         onClose={onClose}
       />
-      <DialogContent dividers sx={{ px: 2.5, py: 2.25 }}>
+      <XDriveDialogContent dividers>
         {guide && (
           <Stack spacing={2.5}>
             <XDriveStatusAlert tone="neutral">
@@ -177,7 +177,7 @@ export function XDriveSynologyDsmGuideDialog({
             </Stepper>
           </Stack>
         )}
-      </DialogContent>
+      </XDriveDialogContent>
       <XDriveDialogActions>
         <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
       </XDriveDialogActions>

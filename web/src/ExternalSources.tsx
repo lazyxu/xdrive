@@ -9,7 +9,6 @@ import {
   Button as MuiButton,
   Chip,
   Dialog,
-  DialogContent,
   DialogContentText,
   LinearProgress,
   MenuItem,
@@ -21,6 +20,7 @@ import type { XDriveApi } from './api'
 import {
   XDriveActionButton,
   XDriveDialogActions,
+  XDriveDialogContent,
   XDriveDialogTitle,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -797,7 +797,7 @@ export default function ExternalSourcesPanel({
     <>
       <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title="外部来源" onClose={onClose} />
-        <DialogContent dividers>
+        <XDriveDialogContent dividers>
       <div className="external-sources-toolbar">
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
@@ -881,7 +881,7 @@ export default function ExternalSourcesPanel({
           </div>
         )}
       </Spin>
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
         </XDriveDialogActions>
@@ -889,7 +889,7 @@ export default function ExternalSourcesPanel({
 
       <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title={selected ? `${selected.source.name} · 来源详情` : '来源详情'} onClose={closeDetails} />
-        <DialogContent dividers>
+        <XDriveDialogContent dividers>
         {selected && selectedDetail && (
           <>
             {selectedDetail.error && (
@@ -1125,7 +1125,7 @@ export default function ExternalSourcesPanel({
             )}
           </>
         )}
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton onClick={closeDetails}>关闭</XDriveActionButton>
         </XDriveDialogActions>
@@ -1133,7 +1133,7 @@ export default function ExternalSourcesPanel({
 
       <Dialog open={failedItemsOpen && failedItems.length > 0} onClose={() => setFailedItemsOpen(false)} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title="失败文件" onClose={() => setFailedItemsOpen(false)} />
-        <DialogContent dividers>
+        <XDriveDialogContent dividers>
           {failedItemsLimitReached && (
             <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
               当前最多显示前 1000 个失败项。
@@ -1157,7 +1157,7 @@ export default function ExternalSourcesPanel({
               </MuiBox>
             ))}
           </Stack>
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton onClick={() => setFailedItemsOpen(false)}>关闭</XDriveActionButton>
         </XDriveDialogActions>
@@ -1184,7 +1184,7 @@ export default function ExternalSourcesPanel({
           }}
           closeDisabled={creating}
         />
-        <DialogContent dividers>
+        <XDriveDialogContent dividers>
         {createOption.kind === 'yike_photos' ? (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
             固定逻辑目录：{yikeManagedTargetLabel}。连接成功后由服务器按百度 UID 和账号名称自动创建；底层文件仍使用 xDrive CAS 存储。
@@ -1359,7 +1359,7 @@ export default function ExternalSourcesPanel({
             </Button>
           </div>
         </Form>
-        </DialogContent>
+        </XDriveDialogContent>
       </Dialog>
 
       <Dialog
@@ -1385,7 +1385,7 @@ export default function ExternalSourcesPanel({
           }}
           closeDisabled={savingSettings}
         />
-        <DialogContent dividers>
+        <XDriveDialogContent dividers>
         {setting && (
           <Form form={settingsForm} layout="vertical" onFinish={saveSettings} requiredMark={false}>
             <Form.Item
@@ -1598,17 +1598,17 @@ export default function ExternalSourcesPanel({
             </div>
           </Form>
         )}
-        </DialogContent>
+        </XDriveDialogContent>
       </Dialog>
 
       <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title="删除外部来源？" onClose={() => setDeleteTarget(null)} closeDisabled={deletingSourceID !== null} />
-        <DialogContent>
+        <XDriveDialogContent>
           <DialogContentText>
             删除“{deleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
             已经同步到 xDrive 的文件会保留，不会删除。
           </DialogContentText>
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton disabled={deletingSourceID !== null} onClick={() => setDeleteTarget(null)}>取消</XDriveActionButton>
           <XDriveActionButton
@@ -1635,11 +1635,11 @@ export default function ExternalSourcesPanel({
           onClose={() => setClearCookieConfirmOpen(false)}
           closeDisabled={clearingCookie}
         />
-        <DialogContent>
+        <XDriveDialogContent>
           <DialogContentText>
             清除后，该 Pull 来源会自动暂停，无法继续扫描或同步，直到重新配置有效凭据。
           </DialogContentText>
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton disabled={clearingCookie} onClick={() => setClearCookieConfirmOpen(false)}>取消</XDriveActionButton>
           <XDriveActionButton
@@ -1656,7 +1656,7 @@ export default function ExternalSourcesPanel({
 
       <Dialog open={!!errorDialog} onClose={() => setErrorDialog(null)} maxWidth="sm" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title={errorDialog?.title ?? '操作失败'} onClose={() => setErrorDialog(null)} />
-        <DialogContent dividers>
+        <XDriveDialogContent dividers>
           {errorDialog && (
             <Stack spacing={1.5}>
               <XDriveStatusAlert tone="bad">{errorDialog.message}</XDriveStatusAlert>
@@ -1670,7 +1670,7 @@ export default function ExternalSourcesPanel({
               )}
             </Stack>
           )}
-        </DialogContent>
+        </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton intent="primary" onClick={() => setErrorDialog(null)}>知道了</XDriveActionButton>
         </XDriveDialogActions>
