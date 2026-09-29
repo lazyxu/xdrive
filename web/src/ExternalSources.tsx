@@ -20,6 +20,7 @@ import {
 } from '@mui/material'
 import type { XDriveApi } from './api'
 import {
+  XDriveActionButton,
   XDriveDialogTitle,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -706,14 +707,9 @@ export default function ExternalSourcesPanel({
                     <Space size="small">
                       <Button size="small" disabled={failedItemsLoading} onClick={() => void openDetails(row)}>查看</Button>
                       {row.source.kind === 'synology_photos' && (
-                        <MuiButton
-                          size="small"
-                          variant="outlined"
-                          onClick={() => openSynologyGuide(row.source)}
-                          sx={{ minWidth: 'auto', px: 1.25, py: 0.25, fontSize: 12 }}
-                        >
+                        <XDriveActionButton compact onClick={() => openSynologyGuide(row.source)}>
                           DSM 配置
-                        </MuiButton>
+                        </XDriveActionButton>
                       )}
                       <Tooltip title={card.trigger.label}>
                         <Button
@@ -726,16 +722,16 @@ export default function ExternalSourcesPanel({
                         </Button>
                       </Tooltip>
                       {row.latestRun?.status === 'running' && (
-                        <MuiButton
-                          size="small"
-                          color="warning"
-                          variant="outlined"
-                          disabled={Boolean(row.latestRun.cancel_requested_at) || cancellingRunID === row.latestRun.id}
+                        <XDriveActionButton
+                          compact
+                          intent="warning"
+                          disabled={Boolean(row.latestRun.cancel_requested_at)}
+                          loading={cancellingRunID === row.latestRun.id || Boolean(row.latestRun.cancel_requested_at)}
+                          loadingLabel="正在取消…"
                           onClick={() => void cancelRun(row)}
-                          sx={{ minWidth: 'auto', px: 1.25, py: 0.25, fontSize: 12 }}
                         >
-                          {row.latestRun.cancel_requested_at || cancellingRunID === row.latestRun.id ? '正在取消…' : '停止'}
-                        </MuiButton>
+                          停止
+                        </XDriveActionButton>
                       )}
                       <Button size="small" onClick={() => openSettings(row)}>设置</Button>
                     </Space>
@@ -748,7 +744,7 @@ export default function ExternalSourcesPanel({
       </Spin>
         </DialogContent>
         <DialogActions>
-          <MuiButton onClick={onClose}>关闭</MuiButton>
+          <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
         </DialogActions>
       </Dialog>
 
@@ -835,15 +831,16 @@ export default function ExternalSourcesPanel({
                               <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
                                 <MuiTypography variant="body2">{runDetail.progress.label}</MuiTypography>
                                 {canCancel && (
-                                  <MuiButton
-                                    size="small"
-                                    color="warning"
-                                    variant="outlined"
-                                    disabled={runDetail.progress.cancelling || cancellingRunID === run.id}
+                                  <XDriveActionButton
+                                    compact
+                                    intent="warning"
+                                    disabled={runDetail.progress.cancelling}
+                                    loading={runDetail.progress.cancelling || cancellingRunID === run.id}
+                                    loadingLabel="正在取消…"
                                     onClick={() => void cancelRun(selected)}
                                   >
-                                    {runDetail.progress.cancelling || cancellingRunID === run.id ? '正在取消…' : '停止'}
-                                  </MuiButton>
+                                    停止
+                                  </XDriveActionButton>
                                 )}
                               </Stack>
                               <LinearProgress
@@ -991,7 +988,7 @@ export default function ExternalSourcesPanel({
         )}
         </DialogContent>
         <DialogActions>
-          <MuiButton onClick={closeDetails}>关闭</MuiButton>
+          <XDriveActionButton onClick={closeDetails}>关闭</XDriveActionButton>
         </DialogActions>
       </Dialog>
 
@@ -1023,7 +1020,7 @@ export default function ExternalSourcesPanel({
           </Stack>
         </DialogContent>
         <DialogActions>
-          <MuiButton onClick={() => setFailedItemsOpen(false)}>关闭</MuiButton>
+          <XDriveActionButton onClick={() => setFailedItemsOpen(false)}>关闭</XDriveActionButton>
         </DialogActions>
       </Dialog>
 
@@ -1140,9 +1137,17 @@ export default function ExternalSourcesPanel({
             <div style={{ marginTop: -12, marginBottom: 16 }}>
               <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</XDriveStatusAlert>
               <XDriveYikeCookieHelp variant="accordion" />
-              <MuiButton size="small" variant="outlined" disabled={testingCreateCredential} onClick={() => void testCreateCookie()} sx={{ mt: 1 }}>
-                {testingCreateCredential ? '正在测试…' : '测试连接'}
-              </MuiButton>
+              <MuiBox sx={{ mt: 1 }}>
+                <XDriveActionButton
+                  compact
+                  disabled={testingCreateCredential}
+                  loading={testingCreateCredential}
+                  loadingLabel="正在测试…"
+                  onClick={() => void testCreateCookie()}
+                >
+                  测试连接
+                </XDriveActionButton>
+              </MuiBox>
               {createCredentialTest && (
                 <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
                   {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
@@ -1279,15 +1284,17 @@ export default function ExternalSourcesPanel({
                 </Form.Item>
                 <div style={{ marginTop: -12, marginBottom: 16 }}>
                   <XDriveYikeCookieHelp variant="accordion" />
-                  <MuiButton
-                    size="small"
-                    sx={{ mt: 1 }}
-                    variant="outlined"
-                    disabled={testingSettingsCredential}
-                    onClick={() => void testSettingsCookie()}
-                  >
-                    {testingSettingsCredential ? '正在测试…' : '测试连接'}
-                  </MuiButton>
+                  <MuiBox sx={{ mt: 1 }}>
+                    <XDriveActionButton
+                      compact
+                      disabled={testingSettingsCredential}
+                      loading={testingSettingsCredential}
+                      loadingLabel="正在测试…"
+                      onClick={() => void testSettingsCookie()}
+                    >
+                      测试连接
+                    </XDriveActionButton>
+                  </MuiBox>
                   {settingsCredentialTest && (
                     <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
                       {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
@@ -1296,29 +1303,27 @@ export default function ExternalSourcesPanel({
                   {settingsCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{settingsCredentialTestError}</XDriveStatusAlert>}
                 </div>
                 {setting.credential?.configured && (
-                  <MuiButton
-                    color="error"
-                    variant="outlined"
-                    disabled={clearingCookie}
-                    onClick={() => setClearCookieConfirmOpen(true)}
-                    sx={{ mb: 2 }}
-                  >
-                    清除 Cookie
-                  </MuiButton>
+                  <MuiBox sx={{ mb: 2 }}>
+                    <XDriveActionButton
+                      intent="danger"
+                      disabled={clearingCookie}
+                      onClick={() => setClearCookieConfirmOpen(true)}
+                    >
+                      清除 Cookie
+                    </XDriveActionButton>
+                  </MuiBox>
                 )}
               </>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <MuiButton
-                type="button"
-                color="error"
-                variant="outlined"
+              <XDriveActionButton
+                intent="danger"
                 disabled={savingSettings || setting.latestRun?.status === 'running'}
                 onClick={() => setDeleteTarget(setting)}
               >
                 删除来源
-              </MuiButton>
+              </XDriveActionButton>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Button
                   onClick={() => {
@@ -1346,10 +1351,16 @@ export default function ExternalSourcesPanel({
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <MuiButton disabled={deletingSourceID !== null} onClick={() => setDeleteTarget(null)}>取消</MuiButton>
-          <MuiButton color="error" variant="contained" disabled={deletingSourceID !== null} onClick={() => void deleteSource()}>
-            {deletingSourceID === null ? '删除来源' : '正在删除…'}
-          </MuiButton>
+          <XDriveActionButton disabled={deletingSourceID !== null} onClick={() => setDeleteTarget(null)}>取消</XDriveActionButton>
+          <XDriveActionButton
+            intent="danger"
+            disabled={deletingSourceID !== null}
+            loading={deletingSourceID !== null}
+            loadingLabel="正在删除…"
+            onClick={() => void deleteSource()}
+          >
+            删除来源
+          </XDriveActionButton>
         </DialogActions>
       </Dialog>
 
@@ -1367,10 +1378,16 @@ export default function ExternalSourcesPanel({
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <MuiButton disabled={clearingCookie} onClick={() => setClearCookieConfirmOpen(false)}>取消</MuiButton>
-          <MuiButton color="error" variant="contained" disabled={clearingCookie} onClick={() => void clearCookie()}>
-            {clearingCookie ? '正在清除…' : '清除 Cookie'}
-          </MuiButton>
+          <XDriveActionButton disabled={clearingCookie} onClick={() => setClearCookieConfirmOpen(false)}>取消</XDriveActionButton>
+          <XDriveActionButton
+            intent="danger"
+            disabled={clearingCookie}
+            loading={clearingCookie}
+            loadingLabel="正在清除…"
+            onClick={() => void clearCookie()}
+          >
+            清除 Cookie
+          </XDriveActionButton>
         </DialogActions>
       </Dialog>
 
@@ -1392,7 +1409,7 @@ export default function ExternalSourcesPanel({
           )}
         </DialogContent>
         <DialogActions>
-          <MuiButton variant="contained" onClick={() => setErrorDialog(null)}>知道了</MuiButton>
+          <XDriveActionButton intent="primary" onClick={() => setErrorDialog(null)}>知道了</XDriveActionButton>
         </DialogActions>
       </Dialog>
 
