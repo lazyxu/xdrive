@@ -71,7 +71,7 @@ func TestUserInfoAndRootFilePagination(t *testing.T) {
 				t.Fatalf("need_filter_hidden=%q", r.URL.Query().Get("need_filter_hidden"))
 			}
 			if cursor == "" {
-				_, _ = w.Write([]byte(`{"errno":0,"has_more":1,"cursor":"next-1","list":[{"fsid":11,"path":"/a.jpg","size":10,"ctime":90,"mtime":100,"shoot_time":80}]}`))
+				_, _ = w.Write([]byte(`{"errno":0,"has_more":1,"cursor":"next-1","list":[{"fsid":11,"path":"/1717120121000.png","server_filename":"IMG_0001.png","size":10,"ctime":90,"mtime":100,"shoot_time":80}]}`))
 				return
 			}
 			if cursor != "next-1" {
@@ -100,13 +100,55 @@ func TestUserInfoAndRootFilePagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(files) != 2 || files[0].FSID != 11 || files[1].FSID != 12 ||
-		files[0].ShootTime != 80 || files[0].CTime != 90 || files[0].MTime != 100 {
+		files[0].ServerFilename != "IMG_0001.png" || files[0].ShootTime != 80 || files[0].CTime != 90 || files[0].MTime != 100 {
 		t.Fatalf("files=%+v", files)
 	}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(cursors) != 2 || cursors[0] != "" || cursors[1] != "next-1" {
 		t.Fatalf("cursors=%v", cursors)
+	}
+}
+
+func TestListFilesPrefersV2OriginalFilename(t *testing.T) {
+	var v1Calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/youai/file/v2/list":
+			if r.URL.Query().Get("clienttype") != "70" || r.URL.Query().Get("need_original") != "1" {
+				t.Fatalf("v2 query=%v", r.URL.Query())
+			}
+			switch r.URL.Query().Get("cursor") {
+			case "0":
+				_, _ = w.Write([]byte(`{"errno":0,"data":{"hasMore":true,"next_cursor":"next-v2","items":[{"fs_id":31,"path":"/youa/web/1717120121000.png","server_filename":"IMG_0001.png","size":30,"mtime":300}]}}`))
+			case "next-v2":
+				_, _ = w.Write([]byte(`{"errno":0,"data":{"hasMore":false,"files":[{"fsid":32,"path":"/youa/web/%E6%97%85%E8%A1%8C.jpg","size":40,"mtime":400}]}}`))
+			default:
+				t.Fatalf("unexpected v2 cursor=%q", r.URL.Query().Get("cursor"))
+			}
+		case "/youai/file/v1/list":
+			v1Calls++
+			t.Fatal("v1 fallback should not run after a usable v2 page")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := client.ListAllFiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].FSID != 31 || files[0].VisibleName() != "IMG_0001.png" ||
+		files[1].FSID != 32 || files[1].VisibleName() != "旅行.jpg" {
+		t.Fatalf("files=%+v", files)
+	}
+	if v1Calls != 0 {
+		t.Fatalf("v1 calls=%d", v1Calls)
 	}
 }
 

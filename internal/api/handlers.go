@@ -628,6 +628,15 @@ func (s *Server) updateNode(c *gin.Context) {
 		c.JSON(http.StatusOK, toNodeDTO(n))
 		return
 	}
+	protected, err := yikeManagedTargetInSubtreeDB(c.Request.Context(), s.DB, userID(c), id)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "check managed source target failed")
+		return
+	}
+	if protected {
+		fail(c, http.StatusConflict, "managed Yike target path cannot be renamed or moved")
+		return
+	}
 	if s.nameExists(userID(c), newParent, newName, id) {
 		fail(c, http.StatusConflict, "name already exists")
 		return
@@ -687,6 +696,13 @@ func (s *Server) deleteNode(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		protected, err := yikeManagedTargetInIDsDB(c.Request.Context(), tx, userID(c), ids)
+		if err != nil {
+			return err
+		}
+		if protected {
+			return errManagedSourceTarget
+		}
 		now := time.Now()
 		if err := tx.Model(&meta.Share{}).
 			Where("node_id IN ? AND owner_id = ? AND revoked_at IS NULL", ids, userID(c)).
@@ -708,6 +724,8 @@ func (s *Server) deleteNode(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errRootMutation):
 			fail(c, http.StatusBadRequest, "root cannot be deleted")
+		case errors.Is(err, errManagedSourceTarget):
+			fail(c, http.StatusConflict, "managed Yike target path cannot be deleted")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "node not found")
 		default:

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -12,9 +14,53 @@ type UserInfo struct {
 	Nickname string `json:"nickname,omitempty"`
 }
 
+type FlexibleBoolInt int
+
+func (v *FlexibleBoolInt) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	switch string(data) {
+	case "", "null", "false":
+		*v = 0
+		return nil
+	case "true":
+		*v = 1
+		return nil
+	}
+	var value int
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*v = FlexibleBoolInt(value)
+	return nil
+}
+
+type FlexibleString string
+
+func (s *FlexibleString) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		*s = ""
+		return nil
+	}
+	if data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*s = FlexibleString(value)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err != nil {
+		return err
+	}
+	*s = FlexibleString(number.String())
+	return nil
+}
+
 type Page struct {
-	HasMore int    `json:"has_more"`
-	Cursor  string `json:"cursor"`
+	HasMore FlexibleBoolInt `json:"has_more"`
+	Cursor  FlexibleString  `json:"cursor"`
 }
 
 func (p Page) HasNext() bool { return p.HasMore == 1 }
@@ -66,21 +112,154 @@ func (s *FlexibleStringList) UnmarshalJSON(data []byte) error {
 }
 
 type File struct {
-	FSID      int64              `json:"fsid"`
-	Path      string             `json:"path"`
-	Size      int64              `json:"size"`
-	CTime     int64              `json:"ctime"`
-	MTime     int64              `json:"mtime"`
-	ShootTime int64              `json:"shoot_time,omitempty"`
-	ThumbURL  FlexibleStringList `json:"thumburl,omitempty"`
-	MD5       string             `json:"md5,omitempty"`
+	FSID           int64              `json:"fsid"`
+	FSIDAlt        int64              `json:"fs_id,omitempty"`
+	FileID         int64              `json:"file_id,omitempty"`
+	Path           string             `json:"path"`
+	ServerFilename string             `json:"server_filename,omitempty"`
+	Filename       string             `json:"filename,omitempty"`
+	Name           string             `json:"name,omitempty"`
+	Size           int64              `json:"size"`
+	FileSize       int64              `json:"file_size,omitempty"`
+	Bytes          int64              `json:"bytes,omitempty"`
+	CTime          int64              `json:"ctime"`
+	ServerCTime    int64              `json:"server_ctime,omitempty"`
+	CreateTime     int64              `json:"create_time,omitempty"`
+	MTime          int64              `json:"mtime"`
+	ServerMTime    int64              `json:"server_mtime,omitempty"`
+	ModifyTime     int64              `json:"modify_time,omitempty"`
+	Uptime         int64              `json:"uptime,omitempty"`
+	ShootTime      int64              `json:"shoot_time,omitempty"`
+	ShootTimeCamel int64              `json:"shootTime,omitempty"`
+	ThumbURL       FlexibleStringList `json:"thumburl,omitempty"`
+	MD5            string             `json:"md5,omitempty"`
+}
+
+func (f *File) Normalize() {
+	if f == nil {
+		return
+	}
+	if f.FSID <= 0 {
+		switch {
+		case f.FSIDAlt > 0:
+			f.FSID = f.FSIDAlt
+		case f.FileID > 0:
+			f.FSID = f.FileID
+		}
+	}
+	if f.Size <= 0 {
+		switch {
+		case f.FileSize > 0:
+			f.Size = f.FileSize
+		case f.Bytes > 0:
+			f.Size = f.Bytes
+		}
+	}
+	if f.CTime <= 0 {
+		switch {
+		case f.ServerCTime > 0:
+			f.CTime = f.ServerCTime
+		case f.CreateTime > 0:
+			f.CTime = f.CreateTime
+		}
+	}
+	if f.MTime <= 0 {
+		switch {
+		case f.ServerMTime > 0:
+			f.MTime = f.ServerMTime
+		case f.ModifyTime > 0:
+			f.MTime = f.ModifyTime
+		case f.Uptime > 0:
+			f.MTime = f.Uptime
+		}
+	}
+	if f.ShootTime <= 0 && f.ShootTimeCamel > 0 {
+		f.ShootTime = f.ShootTimeCamel
+	}
+}
+
+func (f File) VisibleName() string {
+	for _, candidate := range []string{f.ServerFilename, f.Filename, f.Name} {
+		if strings.TrimSpace(candidate) != "" {
+			// Preserve leading whitespace here; canonical filename handling
+			// removes only filesystem-incompatible trailing space/dot later.
+			return candidate
+		}
+	}
+	remotePath := strings.ReplaceAll(f.Path, "\\", "/")
+	remotePath = strings.TrimRight(remotePath, "/")
+	if strings.TrimSpace(remotePath) != "" {
+		if i := strings.LastIndexByte(remotePath, '/'); i >= 0 {
+			remotePath = remotePath[i+1:]
+		}
+		if strings.TrimSpace(remotePath) != "" {
+			if decoded, err := url.PathUnescape(remotePath); err == nil {
+				remotePath = decoded
+			}
+			return remotePath
+		}
+	}
+	return ""
 }
 
 func (f File) ModifiedAt() time.Time { return time.Unix(f.MTime, 0).UTC() }
 
 type FileList struct {
 	Page
-	List []File `json:"list"`
+	List            []File         `json:"list"`
+	Items           []File         `json:"items,omitempty"`
+	Files           []File         `json:"files,omitempty"`
+	FileList        []File         `json:"file_list,omitempty"`
+	FileListCompact []File         `json:"filelist,omitempty"`
+	NextCursor      FlexibleString `json:"next_cursor,omitempty"`
+	NextCursorCamel FlexibleString `json:"nextCursor,omitempty"`
+	HasMoreCamel    *bool          `json:"hasMore,omitempty"`
+	TotalCount      int64          `json:"total_count,omitempty"`
+}
+
+func (l *FileList) Normalize() {
+	if l == nil {
+		return
+	}
+	if len(l.List) == 0 {
+		switch {
+		case len(l.Items) != 0:
+			l.List = l.Items
+		case len(l.Files) != 0:
+			l.List = l.Files
+		case len(l.FileList) != 0:
+			l.List = l.FileList
+		case len(l.FileListCompact) != 0:
+			l.List = l.FileListCompact
+		}
+	}
+	for i := range l.List {
+		l.List[i].Normalize()
+	}
+	if strings.TrimSpace(string(l.Cursor)) == "" {
+		switch {
+		case strings.TrimSpace(string(l.NextCursor)) != "":
+			l.Cursor = FlexibleString(strings.TrimSpace(string(l.NextCursor)))
+			if l.HasMore == 0 {
+				l.HasMore = 1
+			}
+		case strings.TrimSpace(string(l.NextCursorCamel)) != "":
+			l.Cursor = FlexibleString(strings.TrimSpace(string(l.NextCursorCamel)))
+			if l.HasMore == 0 {
+				l.HasMore = 1
+			}
+		}
+	}
+	if l.HasMoreCamel != nil {
+		if *l.HasMoreCamel {
+			l.HasMore = 1
+		} else {
+			l.HasMore = 0
+		}
+	}
+	if l.HasMore == 0 && l.TotalCount > int64(len(l.List)) && strings.TrimSpace(string(l.Cursor)) != "" {
+		l.HasMore = 1
+	}
 }
 
 type Album struct {

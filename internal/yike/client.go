@@ -96,11 +96,64 @@ func (c *Client) UserInfo(ctx context.Context) (UserInfo, error) {
 	return out.UserInfo, nil
 }
 
+const (
+	fileCursorV1Prefix = "xdrive-yike-v1:"
+	fileCursorV2Prefix = "xdrive-yike-v2:"
+)
+
 func (c *Client) ListFilesPage(ctx context.Context, cursor string) (FileList, error) {
-	var out struct {
-		apiEnvelope
-		FileList
+	switch {
+	case strings.HasPrefix(cursor, fileCursorV2Prefix):
+		return c.listFilesPageV2(ctx, strings.TrimPrefix(cursor, fileCursorV2Prefix))
+	case strings.HasPrefix(cursor, fileCursorV1Prefix):
+		return c.listFilesPageV1(ctx, strings.TrimPrefix(cursor, fileCursorV1Prefix))
+	case cursor != "":
+		// Compatibility with callers that persisted or supplied an old raw v1 cursor.
+		return c.listFilesPageV1(ctx, cursor)
 	}
+
+	// Prefer the newer timeline shape because current Yike Web responses can
+	// expose the original user-facing filename there. Keep v1 as a compatibility
+	// fallback for accounts/endpoints where v2 is unavailable.
+	page, err := c.listFilesPageV2(ctx, "")
+	if err == nil && (len(page.List) != 0 || page.HasNext()) {
+		return page, nil
+	}
+	if err != nil && !canFallbackFromFileListV2(err) {
+		return FileList{}, err
+	}
+	return c.listFilesPageV1(ctx, "")
+}
+
+func canFallbackFromFileListV2(err error) bool {
+	return err == nil ||
+		(!errors.Is(err, ErrAuthentication) &&
+			!errors.Is(err, ErrRateLimited) &&
+			!errors.Is(err, ErrUnavailable))
+}
+
+func (c *Client) listFilesPageV2(ctx context.Context, cursor string) (FileList, error) {
+	query := url.Values{
+		"clienttype":     {"70"},
+		"web":            {"1"},
+		"need_thumbnail": {"0"},
+		"need_original":  {"1"},
+		"limit":          {"100"},
+	}
+	if cursor == "" {
+		query.Set("cursor", "0")
+	} else {
+		query.Set("cursor", cursor)
+	}
+	page, err := c.fetchFileListPage(ctx, "/file/v2/list", query)
+	if err != nil {
+		return FileList{}, err
+	}
+	tagFileListCursor(&page, fileCursorV2Prefix)
+	return page, nil
+}
+
+func (c *Client) listFilesPageV1(ctx context.Context, cursor string) (FileList, error) {
 	query := url.Values{
 		"need_thumbnail":     {"0"},
 		"need_filter_hidden": {"0"},
@@ -108,10 +161,37 @@ func (c *Client) ListFilesPage(ctx context.Context, cursor string) (FileList, er
 	if cursor != "" {
 		query.Set("cursor", cursor)
 	}
-	if err := c.getJSON(ctx, "/file/v1/list", query, &out); err != nil {
+	page, err := c.fetchFileListPage(ctx, "/file/v1/list", query)
+	if err != nil {
 		return FileList{}, err
 	}
-	return out.FileList, validatePage(out.FileList.Page)
+	tagFileListCursor(&page, fileCursorV1Prefix)
+	return page, nil
+}
+
+func (c *Client) fetchFileListPage(ctx context.Context, endpoint string, query url.Values) (FileList, error) {
+	var out struct {
+		apiEnvelope
+		FileList
+		Data *FileList `json:"data,omitempty"`
+	}
+	if err := c.getJSON(ctx, endpoint, query, &out); err != nil {
+		return FileList{}, err
+	}
+	page := out.FileList
+	if out.Data != nil && len(page.List) == 0 && len(page.Items) == 0 && len(page.Files) == 0 &&
+		len(page.FileList) == 0 && len(page.FileListCompact) == 0 && page.HasMore == 0 && page.Cursor == "" {
+		page = *out.Data
+	}
+	page.Normalize()
+	return page, validatePage(page.Page)
+}
+
+func tagFileListCursor(page *FileList, prefix string) {
+	if page == nil || !page.HasNext() {
+		return
+	}
+	page.Cursor = FlexibleString(prefix + string(page.Cursor))
 }
 
 func (c *Client) ListAllFiles(ctx context.Context) ([]File, error) {
@@ -177,6 +257,9 @@ func (c *Client) ListAlbumFilesPage(ctx context.Context, albumID, cursor string)
 	}
 	if err := c.getJSON(ctx, "/album/v1/listfile", query, &out); err != nil {
 		return AlbumFileList{}, err
+	}
+	for i := range out.List {
+		out.List[i].File.Normalize()
 	}
 	return out.AlbumFileList, validatePage(out.AlbumFileList.Page)
 }
@@ -681,7 +764,7 @@ func validatePage(page Page) error {
 	if page.HasMore != 0 && page.HasMore != 1 {
 		return fmt.Errorf("invalid Yike has_more value %d", page.HasMore)
 	}
-	if page.HasNext() && strings.TrimSpace(page.Cursor) == "" {
+	if page.HasNext() && strings.TrimSpace(string(page.Cursor)) == "" {
 		return fmt.Errorf("Yike pagination has_more=1 but cursor is empty")
 	}
 	return nil
@@ -706,7 +789,7 @@ func paginate[T any](
 		if !page.HasNext() {
 			return nil
 		}
-		next := strings.TrimSpace(page.Cursor)
+		next := strings.TrimSpace(string(page.Cursor))
 		if next == "" {
 			return fmt.Errorf("Yike pagination cursor is empty")
 		}

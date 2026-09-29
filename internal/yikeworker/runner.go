@@ -228,14 +228,19 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		executor = yikeExecutor
 	}
 
+	targetNodeID := uint64(0)
+	if run.TargetNodeID != nil {
+		targetNodeID = *run.TargetNodeID
+	}
 	result, err = (yikesync.Scanner{
-		Remote:      remote,
-		API:         api,
-		SourceID:    source.ID,
-		RunID:       run.ID,
-		IgnoreRules: run.IgnoreRules,
-		Mode:        run.Mode,
-		Executor:    executor,
+		Remote:       remote,
+		API:          api,
+		SourceID:     source.ID,
+		RunID:        run.ID,
+		TargetNodeID: targetNodeID,
+		IgnoreRules:  run.IgnoreRules,
+		Mode:         run.Mode,
+		Executor:     executor,
 	}).Scan(runCtx)
 	if err != nil {
 		return finishFailure(err, true)

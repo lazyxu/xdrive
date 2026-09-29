@@ -436,6 +436,14 @@ test('shared Yike credential test messages are actionable', () => {
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_auth_failed'), '一刻相册登录已失效，请重新获取 Cookie')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_rate_limited'), '一刻相册请求过于频繁，请稍后重试')
   assert.equal(
+    shared.externalSourceCredentialTestErrorLabel('yike_target_contains_unmanaged_data'),
+    '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加来源',
+  )
+  assert.equal(
+    shared.externalSourceCredentialTestErrorLabel('yike_target_path_conflict'),
+    '固定的一刻相册路径被同名文件占用，请先整理“同步文件夹 / 一刻相册”路径后重试',
+  )
+  assert.equal(
     shared.externalSourceCredentialTestSuccessLabel({ valid: true, kind: 'yike_photos', account_name: 'Alice', account_external_id: '123' }),
     '连接成功：Alice（123）',
   )
@@ -443,7 +451,7 @@ test('shared Yike credential test messages are actionable', () => {
 
 
 test('shared Yike Cookie guide gives the full-header workflow', () => {
-  assert.equal(shared.yikeManagedTargetLabel, '来源 / 一刻相册 / uid_<百度UID>_<账号名称>')
+  assert.equal(shared.yikeManagedTargetLabel, '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>')
   assert.match(shared.yikeConnectorNotice, /未公开接口/)
   assert.match(shared.yikeConnectorNotice, /不会上传、删除或修改/)
   assert.equal(shared.yikeCookieHelp.title, '如何获取 Cookie')

@@ -235,6 +235,9 @@ func migrate(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
+	if err := migrateLegacyYikeTargets(db); err != nil {
+		return fmt.Errorf("migrate legacy Yike targets: %w", err)
+	}
 	return meta.InstallNodeChangeJournal(db)
 }
 

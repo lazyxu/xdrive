@@ -102,9 +102,11 @@ type SourceErrorDialogState = {
 }
 
 function sourceActionErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) return error.message.trim()
-  const value = String(error ?? '').trim()
-  return value && value !== '[object Object]' ? value : fallback
+  const value = error instanceof Error && error.message.trim()
+    ? error.message.trim()
+    : String(error ?? '').trim()
+  if (!value || value === '[object Object]') return fallback
+  return externalSourceCredentialTestErrorLabel(value)
 }
 
 

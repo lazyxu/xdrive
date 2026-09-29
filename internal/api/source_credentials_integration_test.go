@@ -54,7 +54,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
+		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceCredential{},
 	); err != nil {
 		t.Fatal(err)
@@ -223,9 +223,25 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if logicalTarget != "来源/一刻相册/uid_12345_张三" {
+	if logicalTarget != "同步文件夹/一刻相册/uid_12345_张三" {
 		t.Fatalf("managed Yike target=%q", logicalTarget)
 	}
+
+	// The managed target hierarchy is fixed. Ordinary node mutations must not
+	// rename/move the target leaf or delete an ancestor that contains it.
+	requestWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", target.ID), tokenA,
+		strings.NewReader(`{"name":"手工改名"}`), http.StatusConflict,
+		map[string]string{"Content-Type": "application/json", "If-Match": fmt.Sprintf("\"%d\"", target.Revision)})
+	if target.ParentID == nil {
+		t.Fatal("managed Yike target has no connector parent")
+	}
+	var protectedConnector meta.Node
+	if err := db.First(&protectedConnector, *target.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", protectedConnector.ID), tokenA,
+		nil, http.StatusConflict,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", protectedConnector.Revision)})
 
 	duplicateSource := meta.Source{
 		OwnerID: userA.ID, Name: "Yike Duplicate", Kind: yikeSourceKind,
@@ -249,9 +265,112 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatalf("duplicate Yike credential rows=%d want=0", duplicateCredentialCount)
 	}
 
+	// A detached fixed target with existing data must fail before sync instead
+	// of letting a recreated Source discover per-file destination conflicts.
+	accountExternalID = "77777"
+	accountName = "王五"
+	orphanTarget, err := ensureYikeManagedTargetTx(context.Background(), db, userA.ID, sourceCredentialTestDTO{
+		AccountExternalID: accountExternalID,
+		AccountName:       accountName,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphanParentID := orphanTarget.ID
+	if err := db.Create(&meta.Node{
+		OwnerID: userA.ID, ParentID: &orphanParentID, Name: "已有数据", Type: meta.NodeTypeDir, Revision: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	orphanSource := meta.Source{
+		OwnerID: userA.ID, Name: "Yike Recreated", Kind: yikeSourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused, Revision: 1,
+	}
+	if err := db.Create(&orphanSource).Error; err != nil {
+		t.Fatal(err)
+	}
+	orphanCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", orphanSource.ID)
+	orphanPut := requestWithHeaders(t, router, http.MethodPut, orphanCredentialPath, tokenA, strings.NewReader(body), http.StatusConflict,
+		map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(orphanPut.Body.String(), "yike_target_contains_unmanaged_data") {
+		t.Fatalf("occupied Yike target response=%s", orphanPut.Body.String())
+	}
+	var orphanCredentialCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", orphanSource.ID).Count(&orphanCredentialCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if orphanCredentialCount != 0 {
+		t.Fatalf("occupied Yike target persisted credential rows=%d", orphanCredentialCount)
+	}
+
+	// A filesystem object occupying the deterministic uid_* path is a user
+	// conflict, not an internal server failure. Return an actionable 409 and
+	// do not persist the credential.
+	accountExternalID = "88888"
+	accountName = "赵六"
+	conflictParent, err := ensureYikeManagedParentTx(context.Background(), db, userA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflictParentID := conflictParent.ID
+	conflictLeaf, err := yikeManagedTargetLeaf(88888, accountName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.Node{
+		OwnerID: userA.ID, ParentID: &conflictParentID, Name: conflictLeaf, Type: meta.NodeTypeFile, Revision: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	conflictSource := meta.Source{
+		OwnerID: userA.ID, Name: "Yike Path Conflict", Kind: yikeSourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused, Revision: 1,
+	}
+	if err := db.Create(&conflictSource).Error; err != nil {
+		t.Fatal(err)
+	}
+	conflictCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", conflictSource.ID)
+	conflictPut := requestWithHeaders(t, router, http.MethodPut, conflictCredentialPath, tokenA, strings.NewReader(body), http.StatusConflict,
+		map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(conflictPut.Body.String(), "yike_target_path_conflict") {
+		t.Fatalf("Yike target path conflict response=%s", conflictPut.Body.String())
+	}
+	var conflictCredentialCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", conflictSource.ID).Count(&conflictCredentialCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if conflictCredentialCount != 0 {
+		t.Fatalf("path-conflicted Yike target persisted credential rows=%d", conflictCredentialCount)
+	}
+
+	// The orphan/conflict fixtures above intentionally occupy the fixed Yike
+	// hierarchy. Remove only those test fixtures before simulating an otherwise
+	// empty legacy 来源/一刻相册 tree; production pruning must never delete
+	// non-empty legacy directories.
+	cleanupIDs, err := activeSubtreeIDsDB(db, userA.ID, orphanTarget.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupNow := time.Now().UTC()
+	if err := db.Model(&meta.Node{}).
+		Where("owner_id = ? AND id IN ? AND deleted_at IS NULL", userA.ID, cleanupIDs).
+		Update("deleted_at", &cleanupNow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.Node{}).
+		Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL", userA.ID, conflictParent.ID, conflictLeaf).
+		Update("deleted_at", &cleanupNow).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	accountExternalID = "12345"
+	accountName = "张三"
+
 	if err := db.Create(&meta.SourceItem{
 		SourceID: source.ID, ExternalID: "yike:12345:999", Kind: meta.SourceItemKindFile,
-		Path: "Library/test.jpg", State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
+		Path: "test.jpg", State: meta.SourceItemStateSynced, LastSeenAt: time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -399,8 +518,27 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
 		map[string]string{"If-Match": `"3"`})
 
-	// Reconfiguring the same account reuses the managed target and reactivates
-	// the Source without moving already imported items.
+	// Simulate an installation created by the previous layout. Reconfiguring the
+	// same populated account must move the existing target node in-place from
+	// 来源/一刻相册 to 同步文件夹/一刻相册 rather than importing a second copy.
+	var legacyConnector meta.Node
+	if err := db.First(&legacyConnector, *target.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacyConnector.ParentID == nil {
+		t.Fatal("managed Yike connector has no parent")
+	}
+	var legacyRoot meta.Node
+	if err := db.First(&legacyRoot, *legacyConnector.ParentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacyRoot.Name != "同步文件夹" {
+		t.Fatalf("managed Yike root before migration=%q", legacyRoot.Name)
+	}
+	if err := db.Model(&legacyRoot).Updates(map[string]any{"name": "来源", "revision": gorm.Expr("revision + 1")}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	requestWithHeaders(t, router, http.MethodPut, statusPath, tokenA, strings.NewReader(body), http.StatusOK,
 		map[string]string{"Content-Type": "application/json"})
 	var reactivated meta.Source
@@ -410,6 +548,26 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if reactivated.Status != meta.SourceStatusActive || reactivated.Revision != 4 || reactivated.TargetNodeID == nil ||
 		*reactivated.TargetNodeID != target.ID {
 		t.Fatalf("reconfigured Yike source was not reactivated: %+v", reactivated)
+	}
+	var migratedTarget meta.Node
+	if err := db.First(&migratedTarget, target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	migratedPath, err := server.logicalPath(migratedTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migratedPath != "同步文件夹/一刻相册/uid_12345_张三" {
+		t.Fatalf("migrated Yike target=%q", migratedPath)
+	}
+	var legacyRootCount int64
+	if err := db.Model(&meta.Node{}).
+		Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL", userA.ID, rootA.ID, "来源").
+		Count(&legacyRootCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacyRootCount != 0 {
+		t.Fatalf("legacy Yike root remained active: %d", legacyRootCount)
 	}
 	request(t, router, http.MethodDelete, statusPath, tokenA, nil, http.StatusNoContent)
 	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", source.ID).Count(&count).Error; err != nil {
