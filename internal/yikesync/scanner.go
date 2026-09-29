@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	SourceKind       = "yike_photos"
-	DefaultBatchSize = 500
+	SourceKind               = "yike_photos"
+	DefaultBatchSize         = 500
+	DefaultSyncBatchSize     = 100
+	DefaultTransferQueueSize = 64
 )
 
 type Remote interface {
@@ -43,14 +45,15 @@ type PlanExecutor interface {
 }
 
 type Scanner struct {
-	Remote      Remote
-	API         SourceAPI
-	SourceID    uint64
-	RunID       string
-	IgnoreRules string
-	Mode        string
-	Executor    PlanExecutor
-	BatchSize   int
+	Remote            Remote
+	API               SourceAPI
+	SourceID          uint64
+	RunID             string
+	IgnoreRules       string
+	Mode              string
+	Executor          PlanExecutor
+	BatchSize         int
+	TransferQueueSize int
 }
 
 type Result struct {
@@ -95,13 +98,30 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	}
 
 	batchSize := s.BatchSize
-	if batchSize <= 0 || batchSize > DefaultBatchSize {
+	if batchSize <= 0 {
+		if mode == meta.SourceRunModeSync {
+			batchSize = DefaultSyncBatchSize
+		} else {
+			batchSize = DefaultBatchSize
+		}
+	}
+	if batchSize > DefaultBatchSize {
 		batchSize = DefaultBatchSize
 	}
 	batch := make([]client.SourceObservation, 0, batchSize)
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
 	seen := make(map[string]bool)
+
+	var pipeline *transferPipeline
+	if mode == meta.SourceRunModeSync {
+		queueSize := s.TransferQueueSize
+		if queueSize <= 0 {
+			queueSize = DefaultTransferQueueSize
+		}
+		pipeline = newTransferPipeline(ctx, s, queueSize)
+		defer pipeline.Abort()
+	}
 
 	flush := func() error {
 		if len(batch) == 0 {
@@ -115,8 +135,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			return fmt.Errorf("source plan count mismatch: got %d want %d", len(plans), len(batch))
 		}
 		planned := make(map[string]struct{}, len(plans))
-		commits := make([]client.SourceCommit, 0, len(plans))
-		failures := make([]client.SourceFailure, 0)
+		transfers := make([]transferTask, 0, len(plans))
 		for _, plan := range plans {
 			item, ok := batchItems[plan.ExternalID]
 			if !ok {
@@ -131,41 +150,21 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				return fmt.Errorf("server returned unsupported source action %q", plan.Action)
 			}
 			result.Summary.Add(sourcepkg.PlanResult{Action: action, Item: item})
-			if mode != meta.SourceRunModeSync || !executionAction(action) {
-				continue
-			}
-			if err := s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID); err != nil {
-				return err
-			}
-			commit, err := s.Executor.Execute(ctx, plan, item, batchRefs[plan.ExternalID])
-			if err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				result.Summary.AddFailure()
-				appendResultError(&result, item.ExternalID, item.Path, err)
-				failures = append(failures, sourceFailure(item.ExternalID, err))
-				continue
-			}
-			commits = append(commits, commit)
-			if err := s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID); err != nil {
-				return err
-			}
-		}
-		if len(commits) != 0 {
-			commitFailures, err := s.commitResults(ctx, commits, &result)
-			if err != nil {
-				return err
-			}
-			failures = append(failures, commitFailures...)
-		}
-		if len(failures) != 0 {
-			if err := s.API.FailSourceItems(ctx, s.SourceID, s.RunID, failures); err != nil {
-				return err
+			if mode == meta.SourceRunModeSync && executionAction(action) {
+				transfers = append(transfers, transferTask{
+					Plan: plan,
+					Item: item,
+					Ref:  batchRefs[plan.ExternalID],
+				})
 			}
 		}
 		if err := s.API.UpdateSourceRunSummary(ctx, s.SourceID, s.RunID, result.Summary); err != nil {
 			return err
+		}
+		for _, task := range transfers {
+			if err := pipeline.Submit(task); err != nil {
+				return err
+			}
 		}
 		batch = batch[:0]
 		clear(batchItems)
@@ -291,6 +290,13 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	}
 	if err := flush(); err != nil {
 		return result, fmt.Errorf("flush Yike source observations: %w", err)
+	}
+	if pipeline != nil {
+		worker := pipeline.Finish()
+		mergeTransferResult(&result, worker)
+		if worker.Err != nil {
+			return result, fmt.Errorf("execute Yike source transfers: %w", worker.Err)
+		}
 	}
 	if err := s.API.UpdateSourceRunSummary(ctx, s.SourceID, s.RunID, result.Summary); err != nil {
 		return result, fmt.Errorf("report Yike source progress: %w", err)
