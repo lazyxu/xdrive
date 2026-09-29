@@ -10,6 +10,7 @@ const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src',
 const sharedActionButton = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ActionButton.tsx'), 'utf8')
 const sharedStatePanel = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatePanel.tsx'), 'utf8')
 const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusBadge.tsx'), 'utf8')
+const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -188,6 +189,15 @@ test('desktop global sync and diagnostic statuses use the cross-client MUI badge
   assert.ok(renderer.includes("check.status === 'PASS' ? 'good' : check.status === 'WARN' ? 'warning' : 'bad'"), 'diagnostic status does not map into shared tones')
   assert.equal(renderer.includes('diagnostic-badge'), false, 'legacy diagnostic badge remains')
   assert.equal(styles.includes('.diagnostic-badge'), false, 'legacy diagnostic badge CSS remains')
+})
+
+test('desktop cloud shares use the cross-client MUI share status badge', () => {
+  assert.ok(sharedShareStatusBadge.includes('export function XDriveShareStatusBadge({ status }'), 'shared share status badge is missing')
+  for (const label of ['有效', '已过期', '已达上限', '已撤销']) {
+    assert.ok(sharedShareStatusBadge.includes(label), `shared share status badge is missing label: ${label}`)
+  }
+  assert.ok(renderer.includes('<XDriveShareStatusBadge status={share.status} />'), 'desktop cloud share status is not shared')
+  assert.equal(renderer.includes('function shareStatusLabel('), false, 'desktop still owns a share status label mapper')
 })
 
 test('desktop external-source status uses the cross-client MUI badge', () => {

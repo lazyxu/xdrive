@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CopyOutlined, DeleteOutlined, LinkOutlined, LockOutlined } from '@ant-design/icons'
-import { Alert, Button, Form, Input, InputNumber, Modal, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Form, Input, InputNumber, Modal, Space, Table, Typography, message } from 'antd'
+import { XDriveShareStatusBadge } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 import type { FileShare, Node } from '../../ui/shared/src'
 
@@ -14,15 +15,6 @@ function defaultExpiryInput() {
   const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   const offset = date.getTimezoneOffset() * 60_000
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
-}
-
-function statusTag(status: FileShare['status']) {
-  switch (status) {
-    case 'active': return <Tag color="green">有效</Tag>
-    case 'expired': return <Tag>已过期</Tag>
-    case 'exhausted': return <Tag color="orange">已达上限</Tag>
-    case 'revoked': return <Tag color="red">已撤销</Tag>
-  }
 }
 
 export default function ShareDialog({
@@ -179,7 +171,7 @@ export default function ShareDialog({
             title: '状态',
             dataIndex: 'status',
             width: 130,
-            render: (value: FileShare['status']) => statusTag(value),
+            render: (value: FileShare['status']) => <XDriveShareStatusBadge status={value} />,
           },
           {
             title: '保护方式',
