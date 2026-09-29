@@ -19,3 +19,5 @@ External Source UI contracts also live here. Web and Desktop renderer code shoul
 Reusable React/MUI primitives that are safe in both Web and Electron renderer code live under `src/mui` and are exposed through `@xdrive/ui/mui`.
 
 Keep this renderer-only entry separate from the pure `src/index.ts` contracts. Electron main/preload and other Node-only code must continue to use the pure helpers without importing React or MUI.
+
+The renderer-only shared entry also owns cross-client dialog primitives and the Synology DSM guide dialog so Web and Desktop do not maintain parallel copies of the same MUI flow.

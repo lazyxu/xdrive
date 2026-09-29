@@ -3,7 +3,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const repo = path.resolve(root, '..')
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8')
+const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
 const files = {
   app: read('src/App.tsx'),
@@ -12,7 +14,7 @@ const files = {
   share: read('src/ShareDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
-  synologyGuide: read('src/SynologyDsmGuideDialog.tsx'),
+  synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   main: read('src/main.tsx'),
   html: read('index.html'),
 }

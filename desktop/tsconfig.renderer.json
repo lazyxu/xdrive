@@ -36,6 +36,12 @@
       ],
       "react/jsx-runtime": [
         "node_modules/@types/react/jsx-runtime.d.ts"
+      ],
+      "@mui/icons-material": [
+        "node_modules/@mui/icons-material"
+      ],
+      "@mui/icons-material/*": [
+        "node_modules/@mui/icons-material/*"
       ]
     },
     "types": [
