@@ -14,11 +14,50 @@ import (
 )
 
 type fakeRemote struct {
-	page2Seen chan struct{}
+	page2Seen  chan struct{}
+	albums     map[synology.Space][]synology.Album
+	albumItems map[synology.Space]map[int64][]synology.Item
 }
 
 func (f *fakeRemote) Available(space synology.Space) bool {
 	return space == synology.SpacePersonal
+}
+
+func (f *fakeRemote) AlbumsAvailable(space synology.Space) bool {
+	_, ok := f.albums[space]
+	return ok
+}
+
+func (f *fakeRemote) ListAlbumsPage(_ context.Context, space synology.Space, offset, limit int) (synology.AlbumPage, error) {
+	list := f.albums[space]
+	if offset >= len(list) {
+		return synology.AlbumPage{Offset: offset, Total: len(list)}, nil
+	}
+	end := offset + limit
+	if end > len(list) {
+		end = len(list)
+	}
+	page := append([]synology.Album(nil), list[offset:end]...)
+	for i := range page {
+		page[i].Space = space
+	}
+	return synology.AlbumPage{Offset: offset, Total: len(list), List: page}, nil
+}
+
+func (f *fakeRemote) ListAlbumItemsPage(_ context.Context, space synology.Space, albumID int64, offset, limit int) (synology.ItemPage, error) {
+	list := f.albumItems[space][albumID]
+	if offset >= len(list) {
+		return synology.ItemPage{Offset: offset, Total: len(list)}, nil
+	}
+	end := offset + limit
+	if end > len(list) {
+		end = len(list)
+	}
+	page := append([]synology.Item(nil), list[offset:end]...)
+	for i := range page {
+		page[i].Space = space
+	}
+	return synology.ItemPage{Offset: offset, Total: len(list), List: page}, nil
 }
 
 func (f *fakeRemote) ListFoldersPage(context.Context, synology.Space, int, int) (synology.FolderPage, error) {
@@ -297,6 +336,64 @@ func TestSynologyMetadataKeepsOriginalVisibleFilename(t *testing.T) {
 	}
 	if snapshot.OwnerExternalID != "42" {
 		t.Fatalf("owner=%q", snapshot.OwnerExternalID)
+	}
+}
+
+func TestScannerBuildsAlbumCollectionSnapshotsWithoutDuplicatingMedia(t *testing.T) {
+	remote := &fakeRemote{
+		albums: map[synology.Space][]synology.Album{
+			synology.SpacePersonal: {{
+				ID: 101, Name: "Trips", Type: "normal", ItemCount: 4, CreateTime: 1_600_000_000,
+			}},
+		},
+		albumItems: map[synology.Space]map[int64][]synology.Item{
+			synology.SpacePersonal: {
+				101: {
+					{ID: 1},
+					{ID: 2},
+					{ID: 2},
+					{ID: 999},
+				},
+			},
+		},
+	}
+	result, err := (Scanner{
+		Remote: remote, API: &fakeAPI{}, SourceID: 1, RunID: "run-albums",
+		Mode: meta.SourceRunModeScan, Spaces: []synology.Space{synology.SpacePersonal},
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.CollectionsComplete || result.Albums != 1 || result.AlbumMemberships != 4 || result.DuplicateMemberships != 1 {
+		t.Fatalf("unexpected album result: %+v", result)
+	}
+	if len(result.Collections) != 1 {
+		t.Fatalf("collections=%d", len(result.Collections))
+	}
+	collection := result.Collections[0]
+	if collection.ExternalID != "synology:album:personal:101" || collection.Kind != "album" ||
+		collection.Name != "Trips" || len(collection.Members) != 2 {
+		t.Fatalf("collection=%+v", collection)
+	}
+	if collection.Members[0].ItemExternalID != "synology:personal:1" || collection.Members[0].Position != 0 ||
+		collection.Members[1].ItemExternalID != "synology:personal:2" || collection.Members[1].Position != 1 {
+		t.Fatalf("members=%+v", collection.Members)
+	}
+	if !strings.Contains(collection.RemoteRevision, "count:4") {
+		t.Fatalf("revision=%q", collection.RemoteRevision)
+	}
+}
+
+func TestScannerLeavesCollectionsUntouchedWhenAlbumAPIUnavailable(t *testing.T) {
+	result, err := (Scanner{
+		Remote: &fakeRemote{}, API: &fakeAPI{}, SourceID: 1, RunID: "run-no-albums",
+		Mode: meta.SourceRunModeScan, Spaces: []synology.Space{synology.SpacePersonal},
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CollectionsComplete || len(result.Collections) != 0 {
+		t.Fatalf("unexpected collection snapshot: %+v", result)
 	}
 }
 

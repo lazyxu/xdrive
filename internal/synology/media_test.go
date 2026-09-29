@@ -21,9 +21,11 @@ func TestSessionListsSpacesAndOpensRangeDownload(t *testing.T) {
 				"SYNO.API.Auth":{"path":"entry.cgi","minVersion":1,"maxVersion":7},
 				"SYNO.Foto.Browse.Folder":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
+				"SYNO.Foto.Browse.Album":{"path":"entry.cgi","minVersion":1,"maxVersion":4},
 				"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":2},
 				"SYNO.FotoTeam.Browse.Folder":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.FotoTeam.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
+				"SYNO.FotoTeam.Browse.Album":{"path":"entry.cgi","minVersion":1,"maxVersion":2},
 				"SYNO.FotoTeam.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":2}
 			}}`))
 		case r.URL.Path == "/webapi/entry.cgi":
@@ -49,6 +51,16 @@ func TestSessionListsSpacesAndOpensRangeDownload(t *testing.T) {
 			switch values.Get("api") {
 			case "SYNO.Foto.Browse.Folder":
 				_, _ = w.Write([]byte(`{"success":true,"data":{"offset":0,"total":1,"list":[{"id":10,"name":"2026","parent":0,"owner_user_id":7}]}}`))
+			case "SYNO.Foto.Browse.Album":
+				if values.Get("offset") != "0" || values.Get("limit") != "100" {
+					t.Fatalf("album pagination=%v", values)
+				}
+				_, _ = w.Write([]byte(`{"success":true,"data":{"offset":0,"total":1,"list":[{"id":101,"name":"Trips","type":"normal","item_count":1,"create_time":1600000000,"shared":false}]}}`))
+			case "SYNO.Foto.Browse.Item":
+				if values.Get("id") != "101" || values.Get("additional") != `["thumbnail"]` {
+					t.Fatalf("album item query=%v", values)
+				}
+				_, _ = w.Write([]byte(`{"success":true,"data":{"offset":0,"total":1,"list":[{"id":98,"filename":"trip.jpg","filesize":5,"folder_id":10,"indexed_time":1233,"owner_user_id":7,"time":999,"type":"photo","additional":{"thumbnail":{"cache_key":"98_1233","unit_id":98}}}]}}`))
 			case "SYNO.FotoTeam.Browse.Item":
 				if values.Get("additional") != `["thumbnail"]` {
 					t.Fatalf("additional=%q", values.Get("additional"))
@@ -94,6 +106,19 @@ func TestSessionListsSpacesAndOpensRangeDownload(t *testing.T) {
 	items, err := session.ListItemsPage(context.Background(), SpaceShared, 0, 500)
 	if err != nil || items.Total != 1 || len(items.List) != 1 || items.List[0].Space != SpaceShared {
 		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	if !session.AlbumsAvailable(SpacePersonal) || !session.AlbumsAvailable(SpaceShared) {
+		t.Fatalf("album availability personal=%t shared=%t", session.AlbumsAvailable(SpacePersonal), session.AlbumsAvailable(SpaceShared))
+	}
+	albums, err := session.ListAlbumsPage(context.Background(), SpacePersonal, 0, 100)
+	if err != nil || albums.Total != 1 || len(albums.List) != 1 ||
+		albums.List[0].ID != 101 || albums.List[0].Name != "Trips" || albums.List[0].Space != SpacePersonal {
+		t.Fatalf("albums=%+v err=%v", albums, err)
+	}
+	albumItems, err := session.ListAlbumItemsPage(context.Background(), SpacePersonal, 101, 0, 100)
+	if err != nil || albumItems.Total != 1 || len(albumItems.List) != 1 ||
+		albumItems.List[0].ID != 98 || albumItems.List[0].Space != SpacePersonal {
+		t.Fatalf("album items=%+v err=%v", albumItems, err)
 	}
 	body, err := session.OpenItem(context.Background(), items.List[0], 2)
 	if err != nil {
@@ -172,10 +197,34 @@ func newMediaTestServer(t *testing.T, download func(http.ResponseWriter, *http.R
 }
 
 func TestSpaceAPIHelpersRejectUnknownSpace(t *testing.T) {
-	for _, fn := range []func(Space) (string, error){folderAPI, itemAPI, downloadAPI} {
+	for _, fn := range []func(Space) (string, error){folderAPI, itemAPI, albumAPI, downloadAPI} {
 		if _, err := fn(Space("other")); err == nil || !strings.Contains(err.Error(), "unsupported") {
 			t.Fatalf("unexpected err=%v", err)
 		}
+	}
+}
+
+func TestSessionReportsAlbumCapabilityIndependently(t *testing.T) {
+	server := newMediaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	if session.AlbumsAvailable(SpacePersonal) {
+		t.Fatal("album API unexpectedly available")
+	}
+	if _, err := session.ListAlbumsPage(context.Background(), SpacePersonal, 0, 100); err == nil || !strings.Contains(err.Error(), "album API is unavailable") {
+		t.Fatalf("album list err=%v", err)
 	}
 }
 

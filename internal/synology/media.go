@@ -53,6 +53,16 @@ type Item struct {
 	Space       Space          `json:"-"`
 }
 
+type Album struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Type       string `json:"type,omitempty"`
+	ItemCount  int64  `json:"item_count,omitempty"`
+	CreateTime int64  `json:"create_time,omitempty"`
+	Shared     bool   `json:"shared,omitempty"`
+	Space      Space  `json:"-"`
+}
+
 func (i Item) CacheKey() string {
 	return strings.TrimSpace(i.Additional.Thumbnail.CacheKey)
 }
@@ -67,6 +77,12 @@ type ItemPage struct {
 	Offset int
 	Total  int
 	List   []Item
+}
+
+type AlbumPage struct {
+	Offset int
+	Total  int
+	List   []Album
 }
 
 type Session struct {
@@ -149,6 +165,21 @@ func (s *Session) Available(space Space) bool {
 	return spaceAvailable(s.apis, space)
 }
 
+func (s *Session) AlbumsAvailable(space Space) bool {
+	if s == nil {
+		return false
+	}
+	apiName, err := albumAPI(space)
+	if err != nil {
+		return false
+	}
+	itemName, err := itemAPI(space)
+	if err != nil {
+		return false
+	}
+	return s.apis[apiName].MaxVersion > 0 && s.apis[itemName].MaxVersion > 0
+}
+
 func (s *Session) ListFoldersPage(ctx context.Context, space Space, offset, limit int) (FolderPage, error) {
 	if err := s.validatePage(space, offset, limit); err != nil {
 		return FolderPage{}, err
@@ -198,6 +229,75 @@ func (s *Session) ListItemsPage(ctx context.Context, space Space, offset, limit 
 	}
 	if err := json.Unmarshal(envelope.Data, &data); err != nil {
 		return ItemPage{}, fmt.Errorf("%w: decode Synology item list: %v", ErrUnavailable, err)
+	}
+	for i := range data.List {
+		data.List[i].Space = space
+	}
+	return ItemPage{Offset: data.Offset, Total: data.Total, List: data.List}, nil
+}
+
+func (s *Session) ListAlbumsPage(ctx context.Context, space Space, offset, limit int) (AlbumPage, error) {
+	if err := s.validatePage(space, offset, limit); err != nil {
+		return AlbumPage{}, err
+	}
+	if !s.AlbumsAvailable(space) {
+		return AlbumPage{}, fmt.Errorf("%w: %s album API is unavailable", ErrPhotosMissing, space)
+	}
+	apiName, err := albumAPI(space)
+	if err != nil {
+		return AlbumPage{}, err
+	}
+	var envelope apiEnvelope
+	if err := s.doPhotosJSON(ctx, apiName, "list", func(values url.Values) {
+		values.Set("offset", strconv.Itoa(offset))
+		values.Set("limit", strconv.Itoa(limit))
+	}, &envelope); err != nil {
+		return AlbumPage{}, err
+	}
+	var data struct {
+		Offset int     `json:"offset"`
+		Total  int     `json:"total"`
+		List   []Album `json:"list"`
+	}
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return AlbumPage{}, fmt.Errorf("%w: decode Synology album list: %v", ErrUnavailable, err)
+	}
+	for i := range data.List {
+		data.List[i].Space = space
+	}
+	return AlbumPage{Offset: data.Offset, Total: data.Total, List: data.List}, nil
+}
+
+func (s *Session) ListAlbumItemsPage(ctx context.Context, space Space, albumID int64, offset, limit int) (ItemPage, error) {
+	if albumID <= 0 {
+		return ItemPage{}, fmt.Errorf("invalid Synology album id %d", albumID)
+	}
+	if err := s.validatePage(space, offset, limit); err != nil {
+		return ItemPage{}, err
+	}
+	if !s.AlbumsAvailable(space) {
+		return ItemPage{}, fmt.Errorf("%w: %s album API is unavailable", ErrPhotosMissing, space)
+	}
+	apiName, err := itemAPI(space)
+	if err != nil {
+		return ItemPage{}, err
+	}
+	var envelope apiEnvelope
+	if err := s.doPhotosJSON(ctx, apiName, "list", func(values url.Values) {
+		values.Set("id", strconv.FormatInt(albumID, 10))
+		values.Set("offset", strconv.Itoa(offset))
+		values.Set("limit", strconv.Itoa(limit))
+		values.Set("additional", `["thumbnail"]`)
+	}, &envelope); err != nil {
+		return ItemPage{}, err
+	}
+	var data struct {
+		Offset int    `json:"offset"`
+		Total  int    `json:"total"`
+		List   []Item `json:"list"`
+	}
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		return ItemPage{}, fmt.Errorf("%w: decode Synology album item list: %v", ErrUnavailable, err)
 	}
 	for i := range data.List {
 		data.List[i].Space = space
@@ -477,6 +577,17 @@ func folderAPI(space Space) (string, error) {
 		return "SYNO.Foto.Browse.Folder", nil
 	case SpaceShared:
 		return "SYNO.FotoTeam.Browse.Folder", nil
+	default:
+		return "", fmt.Errorf("unsupported Synology Photos space %q", space)
+	}
+}
+
+func albumAPI(space Space) (string, error) {
+	switch space {
+	case SpacePersonal:
+		return "SYNO.Foto.Browse.Album", nil
+	case SpaceShared:
+		return "SYNO.FotoTeam.Browse.Album", nil
 	default:
 		return "", fmt.Errorf("unsupported Synology Photos space %q", space)
 	}

@@ -30,6 +30,8 @@ import (
 type integrationRemote struct {
 	folders       map[synology.Space][]synology.Folder
 	items         map[synology.Space][]synology.Item
+	albums        map[synology.Space][]synology.Album
+	albumItems    map[synology.Space]map[int64][]synology.Item
 	payloads      map[string][]byte
 	downloadOpens int
 	closed        bool
@@ -38,6 +40,43 @@ type integrationRemote struct {
 func (r *integrationRemote) Available(space synology.Space) bool {
 	_, ok := r.items[space]
 	return ok
+}
+
+func (r *integrationRemote) AlbumsAvailable(space synology.Space) bool {
+	_, ok := r.albums[space]
+	return ok
+}
+
+func (r *integrationRemote) ListAlbumsPage(_ context.Context, space synology.Space, offset, limit int) (synology.AlbumPage, error) {
+	list := r.albums[space]
+	if offset >= len(list) {
+		return synology.AlbumPage{Offset: offset, Total: len(list)}, nil
+	}
+	end := offset + limit
+	if end > len(list) {
+		end = len(list)
+	}
+	page := append([]synology.Album(nil), list[offset:end]...)
+	for i := range page {
+		page[i].Space = space
+	}
+	return synology.AlbumPage{Offset: offset, Total: len(list), List: page}, nil
+}
+
+func (r *integrationRemote) ListAlbumItemsPage(_ context.Context, space synology.Space, albumID int64, offset, limit int) (synology.ItemPage, error) {
+	list := r.albumItems[space][albumID]
+	if offset >= len(list) {
+		return synology.ItemPage{Offset: offset, Total: len(list)}, nil
+	}
+	end := offset + limit
+	if end > len(list) {
+		end = len(list)
+	}
+	page := append([]synology.Item(nil), list[offset:end]...)
+	for i := range page {
+		page[i].Space = space
+	}
+	return synology.ItemPage{Offset: offset, Total: len(list), List: page}, nil
 }
 
 func (r *integrationRemote) ListFoldersPage(_ context.Context, space synology.Space, offset, _ int) (synology.FolderPage, error) {
@@ -110,6 +149,7 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 		&meta.UploadSession{}, &meta.UploadPart{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{},
 		&meta.SourceConnectorConfig{}, &meta.SourceItemMetadata{},
+		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +227,18 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 				IndexedTime: 1_700_000_001_000, OwnerUserID: 8, Time: 1_600_000_001,
 			}},
 		},
+		albums: map[synology.Space][]synology.Album{
+			synology.SpacePersonal: {{
+				ID: 101, Name: "Trips Album", Type: "normal", ItemCount: 1, CreateTime: 1_600_000_100,
+			}},
+			synology.SpaceShared: {{
+				ID: 202, Name: "Family Album", Type: "normal", ItemCount: 1, CreateTime: 1_600_000_200, Shared: true,
+			}},
+		},
+		albumItems: map[synology.Space]map[int64][]synology.Item{
+			synology.SpacePersonal: {101: {{ID: 1}}},
+			synology.SpaceShared:   {202: {{ID: 2}}},
+		},
 		payloads: map[string][]byte{
 			"personal:1": personalPayload,
 			"shared:2":   sharedPayload,
@@ -209,8 +261,27 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	if scanRun.Status != meta.SyncRunStatusCompleted || scanRun.ScannedItems != 2 || scanRun.NewItems != 2 {
 		t.Fatalf("unexpected scan run: %+v result=%+v", scanRun, scanResult)
 	}
-	if scanResult.PersonalItems != 1 || scanResult.SharedItems != 1 || remote.downloadOpens != 0 {
+	if scanResult.PersonalItems != 1 || scanResult.SharedItems != 1 || remote.downloadOpens != 0 ||
+		!scanResult.CollectionsComplete || scanResult.Albums != 2 || len(scanResult.Collections) != 2 {
 		t.Fatalf("unexpected scan result=%+v download_opens=%d", scanResult, remote.downloadOpens)
+	}
+	var initialCollections []meta.SourceCollection
+	if err := db.Where("source_id = ?", source.ID).Order("external_id ASC").Find(&initialCollections).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(initialCollections) != 2 ||
+		initialCollections[0].ExternalID != "synology:album:personal:101" ||
+		initialCollections[1].ExternalID != "synology:album:shared:202" {
+		t.Fatalf("initial collections=%+v", initialCollections)
+	}
+	initialPersonalCollectionID := initialCollections[0].ID
+	initialSharedCollectionID := initialCollections[1].ID
+	var initialMembershipCount int64
+	if err := db.Model(&meta.SourceCollectionItem{}).Count(&initialMembershipCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if initialMembershipCount != 2 {
+		t.Fatalf("initial collection memberships=%d want=2", initialMembershipCount)
 	}
 
 	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).Update("run_mode", meta.SourceRunModeSync).Error; err != nil {
@@ -274,6 +345,8 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	// without deleting the already backed-up xDrive node.
 	remote.items[synology.SpacePersonal][0].Filename = "IMG_RENAMED.jpg"
 	remote.items[synology.SpaceShared] = nil
+	remote.albums[synology.SpacePersonal][0].Name = "Trips Renamed"
+	remote.albums[synology.SpaceShared] = nil
 	downloadsBeforeReconcile := remote.downloadOpens
 	reconcileRun, reconcileResult, err := runner.RunSource(context.Background(), source)
 	if err != nil {
@@ -313,6 +386,37 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	if items[1].ExternalID != "synology:shared:2" || items[1].State != meta.SourceItemStateMissing ||
 		items[1].NodeID == nil {
 		t.Fatalf("missing source item=%+v", items[1])
+	}
+
+	var reconciledCollections []meta.SourceCollection
+	if err := db.Where("source_id = ?", source.ID).Order("external_id ASC").Find(&reconciledCollections).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(reconciledCollections) != 2 {
+		t.Fatalf("reconciled collections=%+v", reconciledCollections)
+	}
+	if reconciledCollections[0].ID != initialPersonalCollectionID ||
+		reconciledCollections[0].Name != "Trips Renamed" ||
+		reconciledCollections[0].State != meta.SourceCollectionStateActive {
+		t.Fatalf("renamed personal collection=%+v", reconciledCollections[0])
+	}
+	if reconciledCollections[1].ID != initialSharedCollectionID ||
+		reconciledCollections[1].State != meta.SourceCollectionStateMissing {
+		t.Fatalf("missing shared collection=%+v", reconciledCollections[1])
+	}
+	var personalMembershipCount, sharedMembershipCount int64
+	if err := db.Model(&meta.SourceCollectionItem{}).
+		Where("collection_id = ?", initialPersonalCollectionID).
+		Count(&personalMembershipCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.SourceCollectionItem{}).
+		Where("collection_id = ?", initialSharedCollectionID).
+		Count(&sharedMembershipCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if personalMembershipCount != 1 || sharedMembershipCount != 0 {
+		t.Fatalf("reconciled memberships personal=%d shared=%d", personalMembershipCount, sharedMembershipCount)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/pullworker"
+	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"github.com/lazyxu/xdrive/internal/sourcemetadata"
 	"github.com/lazyxu/xdrive/internal/synology"
@@ -123,6 +124,11 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 	}).Scan(runCtx)
 	if err != nil {
 		return finishFailure(err, true)
+	}
+	if result.CollectionsComplete {
+		if _, err := sourcecollection.ApplySnapshot(runCtx, r.DB, source.ID, run.ID, result.Collections); err != nil {
+			return finishFailure(fmt.Errorf("apply Synology album snapshot: %w", err), true)
+		}
 	}
 	if _, err := sourcemetadata.ApplySnapshot(runCtx, r.DB, source.ID, run.ID, result.Metadata); err != nil {
 		return finishFailure(fmt.Errorf("apply Synology media metadata snapshot: %w", err), true)
