@@ -379,6 +379,13 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (configured || !status) return
+    if (status.server) setServer((current) => current || status.server || '')
+    if (status.username) setUsername((current) => current || status.username || '')
+    if (status.mount_path) setLoginMount((current) => current || status.mount_path || '')
+  }, [configured, status?.mount_path, status?.server, status?.username])
+
+  useEffect(() => {
     if (!agent.connected || !(agent.hello?.capabilities.includes('client-update') ?? false)) {
       setClientUpdate(null)
       return
