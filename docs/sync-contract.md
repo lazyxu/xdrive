@@ -15,6 +15,20 @@ This document defines the synchronization behaviors that xDrive must preserve be
 - A completed resumable upload must create exactly one final file.
 - Selective-sync exclusions are intentional visibility differences, not convergence failures.
 
+## Remote change journal
+
+The server persists an owner-scoped monotonic node-change journal in PostgreSQL. Every committed insert, update, or delete of an `xd_nodes` row records the affected node identity in the same database transaction through an `AFTER` trigger.
+
+Authenticated clients can read the journal through:
+
+```http
+GET /api/v1/changes?after=<cursor>&limit=<1..1000>
+```
+
+The response coalesces repeated dirty events for the same node within the requested raw-event window and returns the node's current active state plus canonical path, or a `delete` event when the node is no longer active. `latest_cursor` is scoped to the authenticated owner. If a client presents a cursor newer than the server's owner-scoped journal (for example after restoring an older database snapshot), `reset_required=true` tells the client to rebuild its baseline before continuing incrementally.
+
+The first journal version is intentionally retention-free. A later retention policy must preserve an explicit reset/fallback contract for clients whose cursor predates retained history.
+
 ## Continuous CI coverage
 
 | Layer | Direction | Scenario | Primary test |

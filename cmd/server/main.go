@@ -223,7 +223,7 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_sync_runs_source_run_number ON xd_sync_runs(source_id, run_number) WHERE run_number > 0`).Error; err != nil {
 		return err
 	}
-	return db.Exec(`
+	if err := db.Exec(`
 		INSERT INTO xd_source_run_failures
 			(run_id, source_id, source_item_id, external_id, kind, path, size, error, failed_at, created_at, updated_at)
 		SELECT si.last_seen_run_id, si.source_id, si.id, si.external_id, si.kind, si.path, si.size,
@@ -232,7 +232,10 @@ func migrate(db *gorm.DB) error {
 		JOIN xd_sync_runs AS r ON r.id = si.last_seen_run_id AND r.source_id = si.source_id
 		WHERE si.state = 'error' AND si.last_error <> '' AND si.last_seen_run_id <> ''
 		ON CONFLICT (run_id, source_item_id) DO NOTHING
-	`).Error
+	`).Error; err != nil {
+		return err
+	}
+	return meta.InstallNodeChangeJournal(db)
 }
 
 func runHealthcheck(args []string) error {
