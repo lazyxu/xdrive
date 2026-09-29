@@ -199,6 +199,11 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
+  assert.equal((renderer.match(/<MuiButton/g) || []).length, 5, 'unexpected raw MUI action buttons remain')
+  assert.equal((renderer.match(/color="inherit"/g) || []).length, 5, 'raw MUI buttons must be limited to inherit-color alert actions')
+  assert.ok(renderer.includes('className="auth-folder-button"') && renderer.includes('XDriveActionButton'), 'login folder browse action is not shared')
+  assert.ok(renderer.includes('loadingLabel="正在创建…"'), 'cloud share creation lost shared loading feedback')
+  assert.ok(renderer.includes("confirmDialog?.tone === 'error' ? 'danger'"), 'confirmation dialog tone is not mapped to the shared action intent')
 })
 
 test('desktop persistent sync states use the cross-client MUI status alert', () => {
