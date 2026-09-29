@@ -507,9 +507,20 @@ function trayStatusAssetPath(kind: TrayStatusKind) {
 }
 
 function taskbarOverlayImage(kind: 'conflict' | 'offline') {
-  const image = nativeImage.createFromDataURL(taskbarOverlayDataURL(kind))
-  if (image.isEmpty()) throw new Error(`xDrive taskbar overlay badge is invalid: ${kind}`)
-  return image.resize({ width: 16, height: 16 })
+  const badge = nativeImage.createFromDataURL(taskbarOverlayDataURL(kind))
+  if (!badge.isEmpty()) return badge.resize({ width: 16, height: 16 })
+
+  // SVG data URLs are not decoded consistently by every Electron/Windows
+  // combination. A taskbar status badge is cosmetic and must never prevent
+  // the Desktop from starting, so fall back to the canonical packaged PNG.
+  const fallback = nativeImage.createFromPath(trayStatusAssetPath(kind))
+  if (!fallback.isEmpty()) {
+    lifecycleLog?.record('taskbar_overlay_fallback', { kind })
+    return fallback.resize({ width: 16, height: 16 })
+  }
+
+  lifecycleLog?.record('taskbar_overlay_unavailable', { kind })
+  return null
 }
 
 function updateTaskbarOverlay() {
@@ -519,8 +530,13 @@ function updateTaskbarOverlay() {
     mainWindow.setOverlayIcon(null, '')
     return
   }
+  const image = taskbarOverlayImage(kind)
+  if (!image) {
+    mainWindow.setOverlayIcon(null, '')
+    return
+  }
   mainWindow.setOverlayIcon(
-    taskbarOverlayImage(kind),
+    image,
     kind === 'conflict' ? 'xDrive 有同步冲突' : 'xDrive 需要处理同步或登录问题',
   )
 }

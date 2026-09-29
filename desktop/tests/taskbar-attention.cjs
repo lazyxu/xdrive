@@ -1,5 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const { taskbarOverlayDataURL, taskbarOverlayKind } = require('../dist/main/taskbar_attention.cjs')
 
@@ -38,4 +40,11 @@ test('taskbar overlays are status badges rather than a second xDrive logo', () =
     assert.equal(svg.includes('#1787FA'), false, `${kind}: badge must not embed the blue xDrive application icon`)
     assert.equal(svg.includes('xDrive'), false, `${kind}: overlay must not contain the application logo`)
   }
+})
+
+test('taskbar overlay rendering is best effort and cannot abort Desktop startup', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.cts'), 'utf8')
+  assert.equal(source.includes('xDrive taskbar overlay badge is invalid'), false)
+  assert.ok(source.includes('nativeImage.createFromPath(trayStatusAssetPath(kind))'))
+  assert.ok(source.includes("taskbar_overlay_unavailable"))
 })
