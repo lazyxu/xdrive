@@ -1,0 +1,16 @@
+{
+  "name": "@xdrive/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./mui": "./src/mui/index.tsx"
+  },
+  "peerDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

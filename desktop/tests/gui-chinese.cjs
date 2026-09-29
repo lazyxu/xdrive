@@ -7,6 +7,8 @@ const root = path.join(__dirname, '..')
 const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
 const synologyGuide = fs.readFileSync(path.join(root, 'src', 'renderer', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDialogTitle.tsx'), 'utf8')
+const sharedActionButton = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ActionButton.tsx'), 'utf8')
+const sharedStatePanel = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatePanel.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -154,9 +156,11 @@ test('desktop transient feedback uses one non-layout-shifting Snackbar', () => {
   assert.equal(styles.includes('.alert.error'), false, 'legacy alert CSS remains')
 })
 
-test('desktop page actions use one MUI loading/button hierarchy', () => {
-  assert.ok(renderer.includes('function DesktopActionButton({'), 'missing shared page action button')
-  assert.ok(renderer.includes('<CircularProgress size={14}'), 'page actions do not expose a loading spinner')
+test('desktop page actions use the cross-client MUI action component', () => {
+  assert.ok(renderer.includes("import { XDriveActionButton, XDriveStatePanel } from '@xdrive/ui/mui'"), 'desktop is not importing shared MUI primitives')
+  assert.equal(renderer.includes('function DesktopActionButton({'), false, 'desktop still owns a local action button implementation')
+  assert.ok(sharedActionButton.includes('export function XDriveActionButton({'), 'shared action button is missing')
+  assert.ok(sharedActionButton.includes('<CircularProgress size={compact ? 12 : 14}'), 'shared action button does not expose a loading spinner')
   for (const label of ['重试连接', '添加来源', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
     assert.ok(renderer.includes(label), `missing standardized action label: ${label}`)
   }
@@ -165,6 +169,20 @@ test('desktop page actions use one MUI loading/button hierarchy', () => {
   assert.equal(renderer.includes('update-error'), false, 'legacy update error surface remains')
   assert.equal(renderer.includes('update-message'), false, 'legacy update message surface remains')
   assert.equal(renderer.includes('update-unavailable'), false, 'legacy update availability surface remains')
+  assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
+  assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
+  assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
+})
+
+test('desktop empty and loading states use the cross-client MUI state panel', () => {
+  assert.ok(sharedStatePanel.includes('export function XDriveStatePanel({'), 'shared state panel is missing')
+  assert.ok(renderer.includes('<XDriveStatePanel loading message="正在加载设置…" />'), 'settings loading state is not shared')
+  assert.ok(renderer.includes('message="尚未添加外部来源。"'), 'source empty state is not shared')
+  assert.equal(renderer.includes('className="empty-state"'), false, 'legacy desktop empty-state remains')
+  assert.equal(renderer.includes('className="cloud-empty"'), false, 'legacy cloud empty-state remains')
+  assert.equal(renderer.includes('className="cache-unavailable"'), false, 'legacy cache unavailable state remains')
+  assert.equal(styles.includes('.empty-state'), false, 'legacy empty-state CSS remains')
+  assert.equal(styles.includes('.cloud-empty'), false, 'legacy cloud-empty CSS remains')
 })
 
 test('desktop uses app-native confirmation dialogs instead of browser confirms', () => {

@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
@@ -11,12 +15,35 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "isolatedModules": true,
+    "preserveSymlinks": true,
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@xdrive/shared": ["../ui/shared/src/index.ts"]
+      "@xdrive/shared": [
+        "../ui/shared/src/index.ts"
+      ],
+      "react": [
+        "node_modules/@types/react/index.d.ts"
+      ],
+      "react/*": [
+        "node_modules/react/*"
+      ],
+      "@mui/material": [
+        "node_modules/@mui/material"
+      ],
+      "@mui/material/*": [
+        "node_modules/@mui/material/*"
+      ],
+      "react/jsx-runtime": [
+        "node_modules/@types/react/jsx-runtime.d.ts"
+      ]
     },
-    "types": ["vite/client"]
+    "types": [
+      "vite/client"
+    ]
   },
-  "include": ["src/renderer", "../ui/shared/src"]
+  "include": [
+    "src/renderer",
+    "../ui/shared/src"
+  ]
 }
