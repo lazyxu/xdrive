@@ -15,6 +15,7 @@ const files = {
   share: read('src/ShareDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
+  externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
   main: read('src/main.tsx'),
@@ -46,7 +47,7 @@ requireText(files.storageStats, ['XDriveStatusBadge', 'XDriveStatusAlert', "run.
 requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录'], '审计日志')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveShareStatusBadge'], '分享窗口')
 requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数'], '公开分享')
-requireText(files.sources, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveStatusAlert'], '外部来源')
+requireText(files.sources + files.externalSourcesShared, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveStatusAlert'], '外部来源')
 if (files.sources.includes('<DialogTitle')) throw new Error('Web 外部来源仍在直接渲染原生 DialogTitle')
 if (files.sources.includes('<MuiAlert')) throw new Error('Web 外部来源仍在直接渲染原生 MUI Alert')
 if ((files.sources.match(/<XDriveDialogTitle/g) || []).length < 8) throw new Error('Web 外部来源弹窗没有全部复用共享 Dialog chrome')

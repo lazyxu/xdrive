@@ -101,6 +101,14 @@ test('shared external-source state ordering is connector neutral', () => {
     }),
     { key: 'credential_ready', tone: 'good', label: 'Cookie 已配置' },
   )
+
+  assert.deepEqual(
+    shared.getExternalSourceState({
+      source: source({ kind: 'synology_photos', direction: 'pull' }),
+      credential: { configured: false },
+    }),
+    { key: 'credential_missing', tone: 'warning', label: 'DSM 凭据未配置' },
+  )
 })
 
 test('shared external-source trigger gating matches connector execution model', () => {
@@ -133,6 +141,17 @@ test('shared external-source trigger gating matches connector execution model', 
     {
       ready: true,
       label: '立即唤醒 Pull worker 扫描此来源；定时轮询作为兜底',
+    },
+  )
+
+  assert.deepEqual(
+    shared.getExternalSourceTriggerState({
+      source: source({ kind: 'synology_photos', direction: 'pull' }),
+      credential: { configured: false },
+    }),
+    {
+      ready: false,
+      label: '请先配置 DSM 凭据',
     },
   )
 
@@ -237,6 +256,16 @@ test('shared connector profiles own credential and trigger semantics', () => {
     credential: 'cookie',
     manualTriggerExecutor: 'pull_worker',
     defaultName: '一刻相册',
+    defaultIgnoreRules: '',
+  })
+
+  assert.deepEqual(shared.externalSourceConnectorProfile('synology_photos', 'pull'), {
+    kind: 'synology_photos',
+    label: '群晖 Photos',
+    direction: 'pull',
+    credential: 'synology_dsm',
+    manualTriggerExecutor: 'pull_worker',
+    defaultName: '群晖 Photos Pull',
     defaultIgnoreRules: '',
   })
 
@@ -426,11 +455,41 @@ test('shared external-source defaults preserve connector-specific setup rules', 
     scheduleExpression: '6h',
     scheduleTimezone,
   })
+  assert.deepEqual(shared.externalSourceDefaults('synology_photos', 'pull'), {
+    kind: 'synology_photos',
+    name: '群晖 Photos Pull',
+    direction: 'pull',
+    ignoreRules: '',
+    scheduleType: 'interval',
+    scheduleExpression: '6h',
+    scheduleTimezone,
+  })
   assert.equal(shared.externalSourceModeLabel(source()), 'Push · 仅扫描')
   assert.equal(shared.externalSourceKindLabel('yike_photos'), '一刻相册')
   assert.equal(shared.externalSourceRunStatusLabel('partial'), '部分完成')
 })
 
+
+test('shared create presets distinguish Synology Push, Synology Pull, and Yike Pull', () => {
+  assert.deepEqual(
+    shared.externalSourceCreateOptions.map((item) => [item.value, item.kind, item.direction]),
+    [
+      ['synology_push', 'synology_photos', 'push'],
+      ['synology_pull', 'synology_photos', 'pull'],
+      ['yike_pull', 'yike_photos', 'pull'],
+    ],
+  )
+  assert.equal(shared.externalSourceCreateOption('synology_pull').label, '群晖 Photos · Pull')
+  assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'push'), 'synology_push')
+  assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'pull'), 'synology_pull')
+  assert.equal(shared.externalSourceCreatePresetFor('yike_photos', 'pull'), 'yike_pull')
+})
+
+test('shared Synology space normalization is deterministic', () => {
+  assert.deepEqual(shared.normalizeSynologyPhotoSpaces(['shared', 'personal', 'shared']), ['personal', 'shared'])
+  assert.deepEqual(shared.normalizeSynologyPhotoSpaces(['shared']), ['shared'])
+  assert.deepEqual(shared.normalizeSynologyPhotoSpaces([]), [])
+})
 
 test('shared Yike credential test messages are actionable', () => {
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_auth_failed'), '一刻相册登录已失效，请重新获取 Cookie')
@@ -447,6 +506,8 @@ test('shared Yike credential test messages are actionable', () => {
     shared.externalSourceCredentialTestSuccessLabel({ valid: true, kind: 'yike_photos', account_name: 'Alice', account_external_id: '123' }),
     '连接成功：Alice（123）',
   )
+  assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_auth_failed'), 'Synology DSM 登录失败，请检查地址、用户名和密码')
+  assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_timeout'), '连接 Synology DSM 超时，请稍后重试')
 })
 
 

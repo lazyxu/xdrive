@@ -75,6 +75,7 @@ import {
   type AgentSourceItem,
   type AgentSourceCredentialStatus,
   type AgentSourceCredentialTestResult,
+  type AgentSourceConnectorConfig,
   type AgentFileAvailability,
   type AgentSettings,
   type AgentUpdateMode,
@@ -1173,6 +1174,20 @@ function startUpdateMonitor() {
   })()
 }
 
+function normalizeSourceCredentialPayload(value: unknown): Record<string, string> | null {
+  if (typeof value === 'string') {
+    const cookie = value.trim()
+    return cookie ? { cookie } : null
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const out: Record<string, string> = {}
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (!key.trim() || typeof item !== 'string') return null
+    out[key] = item
+  }
+  return Object.keys(out).length ? out : null
+}
+
 function registerIPCHandlers() {
   ipcMain.handle('desktop:get-info', () => ({
     ...desktopBuildInfo,
@@ -1325,16 +1340,14 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().sourceCredentialStatus(sourceID)
   }, false))
-  ipcMain.handle('agent:test-source-credential', (_event, kind: unknown, cookie: unknown) => runAgentAction<AgentSourceCredentialTestResult>(async () => {
+  ipcMain.handle('agent:test-source-credential', (_event, kind: unknown, credential: unknown) => runAgentAction<AgentSourceCredentialTestResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')
-    if (
-      typeof kind !== 'string' || !kind.trim() ||
-      typeof cookie !== 'string' || !cookie.trim()
-    ) {
-      throw new AgentIPCError('invalid_input', 0, 'Source kind and non-empty Cookie are required.')
+    const payload = normalizeSourceCredentialPayload(credential)
+    if (typeof kind !== 'string' || !kind.trim() || !payload) {
+      throw new AgentIPCError('invalid_input', 0, 'Source kind and credential payload are required.')
     }
-    return requireAgentClient().testSourceCredential(kind.trim(), cookie.trim())
+    return requireAgentClient().testSourceCredential(kind.trim(), payload)
   }, false))
   ipcMain.handle('agent:test-stored-source-credential', (_event, sourceID: unknown) => runAgentAction<AgentSourceCredentialTestResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -1344,16 +1357,17 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().testStoredSourceCredential(sourceID)
   }, false))
-  ipcMain.handle('agent:set-source-credential', (_event, sourceID: unknown, cookie: unknown) => runAgentAction<AgentSourceCredentialStatus>(async () => {
+  ipcMain.handle('agent:set-source-credential', (_event, sourceID: unknown, credential: unknown) => runAgentAction<AgentSourceCredentialStatus>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')
+    const payload = normalizeSourceCredentialPayload(credential)
     if (
       typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
-      typeof cookie !== 'string' || !cookie.trim()
+      !payload
     ) {
-      throw new AgentIPCError('invalid_input', 0, 'Source id and non-empty Cookie are required.')
+      throw new AgentIPCError('invalid_input', 0, 'Source id and credential payload are required.')
     }
-    return requireAgentClient().setSourceCredential(sourceID, cookie.trim())
+    return requireAgentClient().setSourceCredential(sourceID, payload)
   }, false))
   ipcMain.handle('agent:delete-source-credential', (_event, sourceID: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -1362,6 +1376,26 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
     }
     return requireAgentClient().deleteSourceCredential(sourceID)
+  }, false))
+  ipcMain.handle('agent:get-source-connector-config', (_event, sourceID: unknown) => runAgentAction<AgentSourceConnectorConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
+    }
+    return requireAgentClient().sourceConnectorConfig(sourceID)
+  }, false))
+  ipcMain.handle('agent:set-source-connector-config', (_event, sourceID: unknown, revision: unknown, payload: unknown) => runAgentAction<AgentSourceConnectorConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      typeof payload !== 'object' || payload === null || Array.isArray(payload)
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id, config revision, and payload are required.')
+    }
+    return requireAgentClient().setSourceConnectorConfig(sourceID, revision, payload as Record<string, unknown>)
   }, false))
   ipcMain.handle('agent:create-source', (_event, input: unknown) => runAgentAction<AgentSource>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

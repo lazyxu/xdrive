@@ -246,6 +246,13 @@ export type AgentSourceCredentialStatus = {
   updated_at?: string
 }
 
+export type AgentSourceConnectorConfig = {
+  configured: boolean
+  revision: number
+  payload: Record<string, unknown>
+  updated_at?: string
+}
+
 export type AgentSourceCredentialTestResult = {
   valid: boolean
   kind: string
@@ -573,23 +580,38 @@ export class AgentIPCClient {
     return this.request<AgentSourceCredentialStatus>('GET', `/v1/sources/credential?${query.toString()}`)
   }
 
-  testSourceCredential(kind: string, cookie: string) {
-    return this.request<AgentSourceCredentialTestResult>('POST', '/v1/source-credentials/test', { kind, cookie }, 20_000)
+  testSourceCredential(kind: string, payload: string | Record<string, string>) {
+    const normalized = typeof payload === 'string' ? { cookie: payload } : payload
+    return this.request<AgentSourceCredentialTestResult>('POST', '/v1/source-credentials/test', { kind, payload: normalized }, 20_000)
   }
 
   testStoredSourceCredential(sourceID: number) {
     return this.request<AgentSourceCredentialTestResult>('POST', '/v1/sources/credential/test', { source_id: sourceID }, 20_000)
   }
 
-  setSourceCredential(sourceID: number, cookie: string) {
+  setSourceCredential(sourceID: number, payload: string | Record<string, string>) {
+    const normalized = typeof payload === 'string' ? { cookie: payload } : payload
     return this.request<AgentSourceCredentialStatus>('PUT', '/v1/sources/credential', {
       source_id: sourceID,
-      cookie,
+      payload: normalized,
     })
   }
 
   deleteSourceCredential(sourceID: number) {
     return this.request<{ ok: boolean }>('DELETE', '/v1/sources/credential', { source_id: sourceID })
+  }
+
+  sourceConnectorConfig(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentSourceConnectorConfig>('GET', `/v1/sources/connector-config?${query.toString()}`)
+  }
+
+  setSourceConnectorConfig(sourceID: number, revision: number, payload: Record<string, unknown>) {
+    return this.request<AgentSourceConnectorConfig>('PUT', '/v1/sources/connector-config', {
+      source_id: sourceID,
+      revision,
+      payload,
+    })
   }
 
   createSource(input: AgentCreateSourceInput) {

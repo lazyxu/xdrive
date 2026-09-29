@@ -182,7 +182,7 @@ func TestScannerPipelinesScanAheadOfTransfer(t *testing.T) {
 
 func TestFolderPathsAndStableItemIdentity(t *testing.T) {
 	folders := map[int64]synology.Folder{
-		10: {ID: 10, Name: "/Trips", Parent: 0},
+		10: {ID: 10, Name: "Trips", Parent: 0},
 		11: {ID: 11, Name: "Paris", Parent: 10},
 	}
 	paths := buildFolderPaths(folders)
@@ -198,9 +198,105 @@ func TestFolderPathsAndStableItemIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if item.ExternalID != "synology:shared:99" ||
-		item.Path != "Shared/Trips/Paris/IMG.JPG [99]" ||
+		item.Path != "Shared/Trips/Paris/IMG.JPG" ||
 		item.RemoteRevision != "cache:99_1700:size:12" {
 		t.Fatalf("item=%+v", item)
+	}
+}
+
+type seededSourceItemLister struct {
+	items []client.SourceItem
+}
+
+func (l seededSourceItemLister) SourceItems(_ context.Context, _ uint64, _ string, limit, offset int) ([]client.SourceItem, error) {
+	if offset >= len(l.items) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(l.items) {
+		end = len(l.items)
+	}
+	return append([]client.SourceItem(nil), l.items[offset:end]...), nil
+}
+
+func TestReserveSynologyPathOnlyAddsSuffixOnConflict(t *testing.T) {
+	owners := map[string]string{}
+	first := reserveSynologyPath("Personal/Trips/IMG_0001.JPG", 1, "synology:personal:1", owners)
+	if first != "Personal/Trips/IMG_0001.JPG" {
+		t.Fatalf("first path=%q", first)
+	}
+	second := reserveSynologyPath("Personal/Trips/img_0001.jpg", 2, "synology:personal:2", owners)
+	if second != "Personal/Trips/img_0001 (2).jpg" {
+		t.Fatalf("case-insensitive collision path=%q", second)
+	}
+	otherFolder := reserveSynologyPath("Personal/Other/IMG_0001.JPG", 3, "synology:personal:3", owners)
+	if otherFolder != "Personal/Other/IMG_0001.JPG" {
+		t.Fatalf("other-folder path=%q", otherFolder)
+	}
+}
+
+func TestSeedSynologyPathOwnersKeepsExistingOwner(t *testing.T) {
+	nodeID := uint64(9)
+	owners := map[string]string{}
+	err := seedSynologyPathOwners(context.Background(), seededSourceItemLister{items: []client.SourceItem{{
+		ExternalID: "synology:personal:1",
+		NodeID:     &nodeID,
+		Path:       "Personal/Trips/IMG_0001.jpg",
+	}}}, 1, owners)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reserveSynologyPath("Personal/Trips/IMG_0001.jpg", 2, "synology:personal:2", owners)
+	if got != "Personal/Trips/IMG_0001 (2).jpg" {
+		t.Fatalf("new collision took existing path: %q", got)
+	}
+	got = reserveSynologyPath("Personal/Trips/IMG_0001.jpg", 1, "synology:personal:1", owners)
+	if got != "Personal/Trips/IMG_0001.jpg" {
+		t.Fatalf("existing owner lost canonical path: %q", got)
+	}
+}
+
+func TestSynologyVisibleNameNormalizationPreservesRepresentableDetails(t *testing.T) {
+	cases := []struct {
+		in   string
+		id   int64
+		want string
+	}{
+		{"  leading-space.jpg", 1, "  leading-space.jpg"},
+		{"trailing-space.jpg   ", 2, "trailing-space.jpg"},
+		{"CON.jpg", 3, "_CON.jpg"},
+		{"bad<>:\"name?.jpg", 4, "bad____name_.jpg"},
+		{"/Trips", 5, "_Trips"},
+	}
+	for _, tt := range cases {
+		got := sanitizeSegment(tt.in, tt.id, false)
+		if got != tt.want {
+			t.Fatalf("sanitizeSegment(%q)=%q want=%q", tt.in, got, tt.want)
+		}
+		if err := meta.ValidateName(got); err != nil {
+			t.Fatalf("normalized filename %q invalid: %v", got, err)
+		}
+	}
+
+	long := strings.Repeat("长", 100) + ".jpg"
+	got := sanitizeSegment(long, 6, false)
+	if len([]byte(got)) > 255 {
+		t.Fatalf("long filename bytes=%d", len([]byte(got)))
+	}
+	if !strings.HasSuffix(got, ".jpg") {
+		t.Fatalf("long filename lost extension: %q", got)
+	}
+}
+
+func TestSynologyMetadataKeepsOriginalVisibleFilename(t *testing.T) {
+	snapshot := metadataSnapshot(synology.SpacePersonal, map[int64]string{10: "Trips"}, synology.Item{
+		ID: 7, FolderID: 10, Filename: "  original name.jpg  ", OwnerUserID: 42, Time: 1_700_000_000,
+	})
+	if snapshot.OriginalPath != "Trips/  original name.jpg  " {
+		t.Fatalf("original path=%q", snapshot.OriginalPath)
+	}
+	if snapshot.OwnerExternalID != "42" {
+		t.Fatalf("owner=%q", snapshot.OwnerExternalID)
 	}
 }
 

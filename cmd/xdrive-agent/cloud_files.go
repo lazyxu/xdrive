@@ -245,12 +245,12 @@ func (c *agentController) CloudSourceCredentialStatus(ctx context.Context, sourc
 	return cli.SourceCredentialStatus(ctx, sourceID)
 }
 
-func (c *agentController) CloudTestSourceCredential(ctx context.Context, kind, cookie string) (client.SourceCredentialTestResult, error) {
+func (c *agentController) CloudTestSourceCredential(ctx context.Context, kind string, payload map[string]string) (client.SourceCredentialTestResult, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return client.SourceCredentialTestResult{}, err
 	}
-	return cli.TestSourceCredential(ctx, kind, map[string]string{"cookie": cookie})
+	return cli.TestSourceCredential(ctx, kind, payload)
 }
 
 func (c *agentController) CloudTestStoredSourceCredential(ctx context.Context, sourceID uint64) (client.SourceCredentialTestResult, error) {
@@ -261,12 +261,12 @@ func (c *agentController) CloudTestStoredSourceCredential(ctx context.Context, s
 	return cli.TestStoredSourceCredential(ctx, sourceID)
 }
 
-func (c *agentController) CloudPutSourceCredential(ctx context.Context, sourceID uint64, cookie string) (client.SourceCredentialStatus, error) {
+func (c *agentController) CloudPutSourceCredential(ctx context.Context, sourceID uint64, payload map[string]string) (client.SourceCredentialStatus, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return client.SourceCredentialStatus{}, err
 	}
-	return cli.PutSourceCredential(ctx, sourceID, map[string]string{"cookie": cookie})
+	return cli.PutSourceCredential(ctx, sourceID, payload)
 }
 
 func (c *agentController) CloudDeleteSourceCredential(ctx context.Context, sourceID uint64) error {
@@ -275,6 +275,22 @@ func (c *agentController) CloudDeleteSourceCredential(ctx context.Context, sourc
 		return err
 	}
 	return cli.DeleteSourceCredential(ctx, sourceID)
+}
+
+func (c *agentController) CloudSourceConnectorConfig(ctx context.Context, sourceID uint64) (client.SourceConnectorConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.SourceConnectorConfig{}, err
+	}
+	return cli.SourceConnectorConfig(ctx, sourceID)
+}
+
+func (c *agentController) CloudPutSourceConnectorConfig(ctx context.Context, sourceID, revision uint64, payload map[string]any) (client.SourceConnectorConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.SourceConnectorConfig{}, err
+	}
+	return cli.PutSourceConnectorConfig(ctx, sourceID, revision, payload)
 }
 
 func (c *agentController) CloudCreateSource(ctx context.Context, input client.CreateSourceInput) (client.Source, error) {

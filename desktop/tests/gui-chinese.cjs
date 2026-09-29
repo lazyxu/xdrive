@@ -13,6 +13,7 @@ const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusAlert.tsx'), 'utf8')
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
 const sharedYikeCookieHelp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'YikeCookieHelp.tsx'), 'utf8')
+const sharedExternalSources = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -249,7 +250,7 @@ test('desktop uses app-native confirmation dialogs instead of browser confirms',
   assert.ok(renderer.includes('type ConfirmDialogState ='), 'missing reusable confirmation dialog state')
   assert.ok(renderer.includes('aria-label="确认操作"'), 'missing reusable confirmation dialog')
   for (const label of [
-    '清除 Cookie',
+    '清除凭据',
     '安装并重启',
     '永久删除',
     '恢复版本',
@@ -259,6 +260,23 @@ test('desktop uses app-native confirmation dialogs instead of browser confirms',
   ]) {
     assert.ok(renderer.includes(label), `missing confirmation action label: ${label}`)
   }
+})
+
+test('desktop external sources expose Synology Push and Pull without duplicating the UI framework', () => {
+  assert.ok(renderer.includes("value={sourceCreatePreset}"), 'source creation does not use the shared create preset')
+  assert.ok(renderer.includes('externalSourceCreateOptions.map'), 'missing shared source create options')
+  assert.ok(sharedExternalSources.includes("label: '群晖 Photos · Push'"), 'missing Synology Push label')
+  assert.ok(sharedExternalSources.includes("label: '群晖 Photos · Pull'"), 'missing Synology Pull label')
+  assert.ok(renderer.includes('DSM 地址'), 'missing DSM base URL field')
+  assert.ok(renderer.includes('DSM 用户名'), 'missing DSM username field')
+  assert.ok(renderer.includes('DSM 密码'), 'missing DSM password field')
+  assert.ok(renderer.includes('同步空间'), 'missing Synology Photos space selector')
+  assert.ok(renderer.includes('synologyPhotoSpaceOptions.map'), 'Synology space selector is not driven by shared options')
+  assert.ok(renderer.includes('getSourceConnectorConfig'), 'missing Synology connector-config read path')
+  assert.ok(renderer.includes('setSourceConnectorConfig'), 'missing Synology connector-config write path')
+  assert.ok(renderer.includes("card.connector.manualTriggerExecutor === 'source_agent'"), 'DSM source-agent guide is not limited to Push sources')
+  assert.ok(renderer.includes("sourceCreateProfile.credential === 'synology_dsm'"), 'Synology Pull credential UI is not profile-driven')
+  assert.ok(renderer.includes('externalSourceCredentialLabel'), 'credential actions are not connector-neutral')
 })
 
 test('desktop Yike source exposes connection testing and V1 recovery UX', () => {
@@ -277,7 +295,7 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.equal(renderer.includes('<Accordion'), false, 'Yike Cookie help must not expand inline')
   assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
   assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')
-  assert.ok(renderer.includes('自动回滚失败'), 'missing Yike rollback failure fallback')
+  assert.ok(renderer.includes('自动回滚也失败'), 'missing Source rollback failure fallback')
 })
 
 test('desktop external sources expose per-Source scheduling', () => {

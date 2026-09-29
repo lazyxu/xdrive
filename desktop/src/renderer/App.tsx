@@ -57,6 +57,9 @@ import type { XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
+  externalSourceCreateOption,
+  externalSourceCreateOptions,
+  externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
   externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
@@ -65,17 +68,22 @@ import {
   externalSourceTriggerActionLabel,
   formatBinarySize,
   formatExternalSourceTime,
+  normalizeSynologyPhotoSpaces,
+  synologyPhotoSpaceOptions,
   yikeConnectorNotice,
   yikeManagedTargetLabel,
 } from '@xdrive/shared'
 import type {
   BuildInfo,
+  ExternalSourceConnectorConfig,
+  ExternalSourceCreatePreset,
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRow,
   ExternalSourceRun,
   ExternalSourceRunFailure,
   ExternalSourceScheduleType,
+  SynologyPhotoSpace,
   SupportedExternalSourceKind,
 } from '@xdrive/shared'
 
@@ -267,9 +275,19 @@ export default function App() {
   const [sourceEditScheduleTimezone, setSourceEditScheduleTimezone] = useState('UTC')
   const [sourceEditIgnoreRules, setSourceEditIgnoreRules] = useState('')
   const [sourceEditCookie, setSourceEditCookie] = useState('')
+  const [sourceEditDsmBaseURL, setSourceEditDsmBaseURL] = useState('')
+  const [sourceEditDsmUsername, setSourceEditDsmUsername] = useState('')
+  const [sourceEditDsmPassword, setSourceEditDsmPassword] = useState('')
+  const [sourceEditSpaces, setSourceEditSpaces] = useState<SynologyPhotoSpace[]>(['personal', 'shared'])
+  const [sourceEditConnectorConfig, setSourceEditConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
   const [sourceCreateOpen, setSourceCreateOpen] = useState(false)
-  const initialSourceDefaults = externalSourceDefaults('synology_photos')
-  const [sourceCreateKind, setSourceCreateKind] = useState<SupportedExternalSourceKind>(initialSourceDefaults.kind)
+  const initialSourceOption = externalSourceCreateOption('synology_push')
+  const initialSourceDefaults = externalSourceDefaults(initialSourceOption.kind, initialSourceOption.direction)
+  const [sourceCreatePreset, setSourceCreatePreset] = useState<ExternalSourceCreatePreset>(initialSourceOption.value)
+  const sourceCreateOption = externalSourceCreateOption(sourceCreatePreset)
+  const sourceCreateKind = sourceCreateOption.kind
+  const sourceCreateDirection = sourceCreateOption.direction
+  const sourceCreateProfile = externalSourceConnectorProfile(sourceCreateKind, sourceCreateDirection)
   const [sourceCreateName, setSourceCreateName] = useState(initialSourceDefaults.name)
   const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>('scan')
   const [sourceCreateScheduleType, setSourceCreateScheduleType] = useState<ExternalSourceScheduleType>(initialSourceDefaults.scheduleType)
@@ -277,6 +295,10 @@ export default function App() {
   const [sourceCreateScheduleTimezone, setSourceCreateScheduleTimezone] = useState(initialSourceDefaults.scheduleTimezone)
   const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState(initialSourceDefaults.ignoreRules)
   const [sourceCreateCookie, setSourceCreateCookie] = useState('')
+  const [sourceCreateDsmBaseURL, setSourceCreateDsmBaseURL] = useState('')
+  const [sourceCreateDsmUsername, setSourceCreateDsmUsername] = useState('')
+  const [sourceCreateDsmPassword, setSourceCreateDsmPassword] = useState('')
+  const [sourceCreateSpaces, setSourceCreateSpaces] = useState<SynologyPhotoSpace[]>(['personal', 'shared'])
   const [sourceCreateCredentialTest, setSourceCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [sourceEditCredentialTest, setSourceEditCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [sourceFailedItems, setSourceFailedItems] = useState<ExternalSourceItem[]>([])
@@ -799,7 +821,7 @@ export default function App() {
       const rows = await Promise.all(sourceResult.data.map(async (source) => {
         const [runsResult, credentialResult] = await Promise.all([
           window.xdriveDesktop.agent.getSourceRuns(source.id, 1),
-          externalSourceConnectorProfile(source.kind).credential === 'cookie'
+          externalSourceConnectorProfile(source.kind, source.direction).credential
             ? window.xdriveDesktop.agent.getSourceCredential(source.id)
             : Promise.resolve(null),
         ])
@@ -860,9 +882,10 @@ export default function App() {
 
   const triggerSourceNow = async (row: ExternalSourceRow) => {
     const sourceID = row.source.id
-    const success = row.source.kind === 'synology_photos'
+    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
+    const success = profile.manualTriggerExecutor === 'source_agent'
       ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查。'
-      : '已请求立即扫描，Pull worker 将在下一次轮询时开始。'
+      : '已请求立即扫描，Pull worker 将在下一次轮询或唤醒时开始。'
     const data = await run(
       `source-trigger-${sourceID}`,
       () => window.xdriveDesktop.agent.triggerSource(sourceID),
@@ -899,17 +922,26 @@ export default function App() {
     }
   }
 
+  const resetSourceCreateCredential = () => {
+    setSourceCreateCookie('')
+    setSourceCreateDsmBaseURL('')
+    setSourceCreateDsmUsername('')
+    setSourceCreateDsmPassword('')
+    setSourceCreateSpaces(['personal', 'shared'])
+    setSourceCreateCredentialTest(null)
+  }
+
   const openSourceCreate = async () => {
-    const defaults = externalSourceDefaults('synology_photos')
-    setSourceCreateKind(defaults.kind)
+    const option = externalSourceCreateOption('synology_push')
+    const defaults = externalSourceDefaults(option.kind, option.direction)
+    setSourceCreatePreset(option.value)
     setSourceCreateName(defaults.name)
     setSourceCreateRunMode('scan')
     setSourceCreateScheduleType(defaults.scheduleType)
     setSourceCreateScheduleExpression(defaults.scheduleExpression)
     setSourceCreateScheduleTimezone(defaults.scheduleTimezone)
     setSourceCreateIgnoreRules(defaults.ignoreRules)
-    setSourceCreateCookie('')
-    setSourceCreateCredentialTest(null)
+    resetSourceCreateCredential()
     setSourceCreateOpen(true)
     setSourceTargetLoading(true)
     setError('')
@@ -925,29 +957,47 @@ export default function App() {
     }
   }
 
-  const changeSourceCreateKind = (kind: SupportedExternalSourceKind) => {
-    const defaults = externalSourceDefaults(kind)
-    setSourceCreateKind(defaults.kind)
+  const changeSourceCreatePreset = (preset: ExternalSourceCreatePreset) => {
+    const option = externalSourceCreateOption(preset)
+    const defaults = externalSourceDefaults(option.kind, option.direction)
+    setSourceCreatePreset(option.value)
     setSourceCreateName(defaults.name)
     setSourceCreateScheduleType(defaults.scheduleType)
     setSourceCreateScheduleExpression(defaults.scheduleExpression)
     setSourceCreateScheduleTimezone(defaults.scheduleTimezone)
     setSourceCreateIgnoreRules(defaults.ignoreRules)
-    if (kind === 'synology_photos') setSourceCreateCookie('')
-    setSourceCreateCredentialTest(null)
+    resetSourceCreateCredential()
   }
 
-  const testCreateYikeCredential = async () => {
-    const cookie = sourceCreateCookie.trim()
-    if (!cookie) {
-      setError('请先填写一刻相册 Cookie。')
+  const sourceCreateCredentialPayload = (): Record<string, string> | null => {
+    if (sourceCreateProfile.credential === 'cookie') {
+      const cookie = sourceCreateCookie.trim()
+      return cookie ? { cookie } : null
+    }
+    if (sourceCreateProfile.credential === 'synology_dsm') {
+      const baseURL = sourceCreateDsmBaseURL.trim()
+      const username = sourceCreateDsmUsername.trim()
+      return baseURL && username && sourceCreateDsmPassword
+        ? { base_url: baseURL, username, password: sourceCreateDsmPassword }
+        : null
+    }
+    return {}
+  }
+
+  const testCreateSourceCredential = async () => {
+    if (!sourceCreateProfile.credential) return null
+    const payload = sourceCreateCredentialPayload()
+    if (!payload) {
+      setError(sourceCreateProfile.credential === 'cookie'
+        ? '请先填写一刻相册 Cookie。'
+        : '请完整填写 DSM 地址、用户名和密码。')
       return null
     }
     setBusy('source-create-test')
     setError('')
     setNotice('')
     try {
-      const result = await window.xdriveDesktop.agent.testSourceCredential('yike_photos', cookie)
+      const result = await window.xdriveDesktop.agent.testSourceCredential(sourceCreateKind, payload)
       if (!result.ok) {
         setSourceCreateCredentialTest(null)
         setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message))
@@ -959,6 +1009,18 @@ export default function App() {
     } finally {
       setBusy('')
     }
+  }
+
+  const rollbackCreatedSource = async (created: AgentSource, reason: string) => {
+    const rollback = await window.xdriveDesktop.agent.deleteSource(created.id, created.revision)
+    if (rollback.ok) {
+      setError(`${reason}。刚创建的来源已自动撤销，请检查后重试。`)
+      await loadSources()
+      return true
+    }
+    setError(`${reason}；自动回滚也失败：${rollback.error.message}。请进入“设置”修复或删除该来源。`)
+    await loadSources()
+    return false
   }
 
   const createExternalSource = async (event: FormEvent) => {
@@ -973,9 +1035,15 @@ export default function App() {
       setError('请选择目标文件夹。')
       return
     }
-    const cookie = sourceCreateCookie.trim()
-    if (sourceCreateKind === 'yike_photos' && !cookie) {
-      setError('请填写一刻相册 Cookie。')
+    const credentialPayload = sourceCreateProfile.credential ? sourceCreateCredentialPayload() : null
+    if (sourceCreateProfile.credential && !credentialPayload) {
+      setError(sourceCreateProfile.credential === 'cookie'
+        ? '请填写一刻相册 Cookie。'
+        : '请完整填写 Synology DSM 地址、用户名和密码。')
+      return
+    }
+    if (sourceCreateProfile.credential === 'synology_dsm' && sourceCreateSpaces.length === 0) {
+      setError('至少选择一个 Synology Photos 空间。')
       return
     }
 
@@ -983,8 +1051,8 @@ export default function App() {
     setError('')
     setNotice('')
     try {
-      if (sourceCreateKind === 'yike_photos') {
-        const tested = await window.xdriveDesktop.agent.testSourceCredential('yike_photos', cookie)
+      if (sourceCreateProfile.credential) {
+        const tested = await window.xdriveDesktop.agent.testSourceCredential(sourceCreateKind, credentialPayload as Record<string, string>)
         if (!tested.ok) {
           setSourceCreateCredentialTest(null)
           setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message))
@@ -995,7 +1063,7 @@ export default function App() {
       const created = await window.xdriveDesktop.agent.createSource({
         name,
         kind: sourceCreateKind,
-        direction: externalSourceDefaults(sourceCreateKind).direction,
+        direction: sourceCreateDirection,
         sync_mode: 'backup',
         run_mode: sourceCreateRunMode,
         schedule_type: sourceCreateScheduleType,
@@ -1009,31 +1077,41 @@ export default function App() {
         return
       }
 
-      if (sourceCreateKind === 'yike_photos') {
-        const credential = await window.xdriveDesktop.agent.setSourceCredential(created.data.id, cookie)
+      if (sourceCreateProfile.credential === 'synology_dsm') {
+        const config = await window.xdriveDesktop.agent.getSourceConnectorConfig(created.data.id)
+        if (!config.ok) {
+          await rollbackCreatedSource(created.data, `读取群晖空间配置失败：${config.error.message}`)
+          return
+        }
+        const savedConfig = await window.xdriveDesktop.agent.setSourceConnectorConfig(
+          created.data.id,
+          config.data.revision,
+          { spaces: normalizeSynologyPhotoSpaces(sourceCreateSpaces) },
+        )
+        if (!savedConfig.ok) {
+          await rollbackCreatedSource(created.data, `保存群晖空间配置失败：${savedConfig.error.message}`)
+          return
+        }
+      }
+
+      if (sourceCreateProfile.credential && credentialPayload) {
+        const credential = await window.xdriveDesktop.agent.setSourceCredential(created.data.id, credentialPayload)
         if (!credential.ok) {
-          const credentialMessage = externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)
-          const rollback = await window.xdriveDesktop.agent.deleteSource(created.data.id, created.data.revision)
-          if (rollback.ok) {
-            setError(`Cookie 保存失败：${credentialMessage}。刚创建的一刻相册来源已自动撤销，请检查后重试。`)
-            await loadSources()
-            return
-          }
-          setSourceCreateOpen(false)
-          setSourceCreateCookie('')
-          setError(`来源已创建，但 Cookie 保存失败且自动回滚失败：${credentialMessage}；回滚错误：${rollback.error.message}。请在该来源的“设置”中重新配置 Cookie。`)
-          await loadSources()
+          const label = externalSourceCredentialLabel(sourceCreateProfile)
+          await rollbackCreatedSource(created.data, `${label}保存失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)}`)
           return
         }
       }
 
       setSourceCreateOpen(false)
-      setSourceCreateCookie('')
-      if (sourceCreateKind === 'synology_photos') {
+      resetSourceCreateCredential()
+      if (sourceCreateProfile.manualTriggerExecutor === 'source_agent') {
         setSynologyGuideSource(created.data)
-        setNotice('群晖来源已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
-      } else {
+        setNotice('群晖 Push 来源已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
+      } else if (sourceCreateKind === 'yike_photos') {
         setNotice(`一刻相册来源已添加，目标目录固定为 ${yikeManagedTargetLabel}。`)
+      } else {
+        setNotice('群晖 Pull 来源已添加；xDrive Server 将按调度直接读取 Synology Photos。')
       }
       await loadSources()
     } finally {
@@ -1042,26 +1120,69 @@ export default function App() {
   }
 
   const openSourceSettings = (row: ExternalSourceRow) => {
+    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setEditingSourceID(row.source.id)
     setSourceEditName(row.source.name)
     setSourceEditRunMode(row.source.run_mode)
     setSourceEditStatus(row.source.status)
     setSourceEditScheduleType(row.source.schedule_type ?? 'interval')
     setSourceEditScheduleExpression(row.source.schedule_expression || '6h')
-    setSourceEditScheduleTimezone(row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind).scheduleTimezone)
+    setSourceEditScheduleTimezone(row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone)
     setSourceEditIgnoreRules(row.source.ignore_rules || '')
     setSourceEditCookie('')
+    setSourceEditDsmBaseURL('')
+    setSourceEditDsmUsername('')
+    setSourceEditDsmPassword('')
+    setSourceEditSpaces(['personal', 'shared'])
+    setSourceEditConnectorConfig(null)
     setSourceEditCredentialTest(null)
+    if (profile.credential === 'synology_dsm') {
+      void window.xdriveDesktop.agent.getSourceConnectorConfig(row.source.id).then((config) => {
+        if (!config.ok) {
+          setError(config.error.message)
+          return
+        }
+        setSourceEditConnectorConfig(config.data)
+        const spaces = Array.isArray(config.data.payload.spaces)
+          ? config.data.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+          : []
+        setSourceEditSpaces(spaces.length ? spaces : ['personal', 'shared'])
+      })
+    }
   }
 
-  const testSettingsYikeCredential = async (row: ExternalSourceRow) => {
+  const sourceEditCredentialPayload = (row: ExternalSourceRow): Record<string, string> | null | undefined => {
+    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
+    if (profile.credential === 'cookie') {
+      const cookie = sourceEditCookie.trim()
+      return cookie ? { cookie } : null
+    }
+    if (profile.credential === 'synology_dsm') {
+      const baseURL = sourceEditDsmBaseURL.trim()
+      const username = sourceEditDsmUsername.trim()
+      const anyPending = Boolean(baseURL || username || sourceEditDsmPassword)
+      if (!anyPending) return null
+      return baseURL && username && sourceEditDsmPassword
+        ? { base_url: baseURL, username, password: sourceEditDsmPassword }
+        : undefined
+    }
+    return null
+  }
+
+  const testSettingsSourceCredential = async (row: ExternalSourceRow) => {
+    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
+    if (!profile.credential) return null
+    const pending = sourceEditCredentialPayload(row)
+    if (pending === undefined) {
+      setError('更新 DSM 凭据时请完整填写地址、用户名和密码。')
+      return null
+    }
     setBusy(`source-credential-test-${row.source.id}`)
     setError('')
     setNotice('')
     try {
-      const cookie = sourceEditCookie.trim()
-      const result = cookie
-        ? await window.xdriveDesktop.agent.testSourceCredential('yike_photos', cookie)
+      const result = pending
+        ? await window.xdriveDesktop.agent.testSourceCredential(row.source.kind, pending)
         : await window.xdriveDesktop.agent.testStoredSourceCredential(row.source.id)
       if (!result.ok) {
         setSourceEditCredentialTest(null)
@@ -1083,14 +1204,23 @@ export default function App() {
       setError('来源名称不能为空。')
       return
     }
+    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
+    const pendingCredential = sourceEditCredentialPayload(row)
+    if (pendingCredential === undefined) {
+      setError('更新 DSM 凭据时请完整填写地址、用户名和密码。')
+      return
+    }
+    if (profile.credential === 'synology_dsm' && sourceEditSpaces.length === 0) {
+      setError('至少选择一个 Synology Photos 空间。')
+      return
+    }
     const busyKey = `source-settings-${row.source.id}`
     setBusy(busyKey)
     setError('')
     setNotice('')
     try {
-      const pendingCookie = sourceEditCookie.trim()
-      if (externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && pendingCookie) {
-        const tested = await window.xdriveDesktop.agent.testSourceCredential('yike_photos', pendingCookie)
+      if (pendingCredential) {
+        const tested = await window.xdriveDesktop.agent.testSourceCredential(row.source.kind, pendingCredential)
         if (!tested.ok) {
           setSourceEditCredentialTest(null)
           setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message))
@@ -1098,10 +1228,11 @@ export default function App() {
         }
         setSourceEditCredentialTest(tested.data)
       }
+
       const updated = await window.xdriveDesktop.agent.updateSource(row.source.id, row.source.revision, {
         name,
         run_mode: sourceEditRunMode,
-        status: sourceEditStatus,
+        status: pendingCredential && !row.credential?.configured ? 'paused' : sourceEditStatus,
         schedule_type: sourceEditScheduleType,
         schedule_expression: sourceEditScheduleType === 'manual' ? '' : sourceEditScheduleExpression.trim(),
         schedule_timezone: sourceEditScheduleType === 'cron' ? sourceEditScheduleTimezone.trim() : '',
@@ -1112,18 +1243,63 @@ export default function App() {
         return
       }
 
-      const cookie = sourceEditCookie.trim()
-      if (externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && cookie) {
-        const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, cookie)
+      if (profile.credential === 'synology_dsm') {
+        let config = sourceEditConnectorConfig
+        if (!config) {
+          const loaded = await window.xdriveDesktop.agent.getSourceConnectorConfig(row.source.id)
+          if (!loaded.ok) {
+            setError(loaded.error.message)
+            return
+          }
+          config = loaded.data
+        }
+        const currentSpaces = Array.isArray(config.payload.spaces)
+          ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+          : []
+        if (currentSpaces.join(',') !== normalizeSynologyPhotoSpaces(sourceEditSpaces).join(',')) {
+          const saved = await window.xdriveDesktop.agent.setSourceConnectorConfig(
+            row.source.id,
+            config.revision,
+            { spaces: normalizeSynologyPhotoSpaces(sourceEditSpaces) },
+          )
+          if (!saved.ok) {
+            setError(saved.error.message)
+            return
+          }
+          setSourceEditConnectorConfig(saved.data)
+        }
+      }
+
+      if (pendingCredential) {
+        const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, pendingCredential)
         if (!credential.ok) {
-          setError(`来源设置已保存，但 Cookie 更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)}`)
+          setError(`来源设置已保存，但${externalSourceCredentialLabel(profile)}更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)}`)
           await loadSources()
           return
         }
       }
 
+      if (pendingCredential && sourceEditStatus === 'paused') {
+        const sourcesResult = await window.xdriveDesktop.agent.getSources()
+        if (sourcesResult.ok) {
+          const fresh = sourcesResult.data.find((source) => source.id === row.source.id)
+          if (fresh && fresh.status !== 'paused') {
+            const paused = await window.xdriveDesktop.agent.updateSource(fresh.id, fresh.revision, { status: 'paused' })
+            if (!paused.ok) {
+              setError(`凭据已更新，但重新暂停来源失败：${paused.error.message}`)
+              await loadSources()
+              return
+            }
+          }
+        }
+      }
+
       setEditingSourceID(null)
       setSourceEditCookie('')
+      setSourceEditDsmBaseURL('')
+      setSourceEditDsmUsername('')
+      setSourceEditDsmPassword('')
+      setSourceEditConnectorConfig(null)
       setNotice('来源设置已保存。')
       await loadSources()
     } finally {
@@ -1132,18 +1308,23 @@ export default function App() {
   }
 
   const clearSourceCookie = (row: ExternalSourceRow) => {
+    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
+    const label = externalSourceCredentialLabel(profile)
     requestConfirmation(
-      '清除已保存的 Cookie？',
-      `清除“${row.source.name}”保存的 Cookie 后，Pull 扫描将暂停，直到重新配置 Cookie。`,
-      '清除 Cookie',
+      `清除已保存的${label}？`,
+      `清除“${row.source.name}”保存的${label}后，Pull 扫描将暂停，直到重新配置有效凭据。`,
+      '清除凭据',
       async () => {
         const data = await run(
-          `source-cookie-delete-${row.source.id}`,
+          `source-credential-delete-${row.source.id}`,
           () => window.xdriveDesktop.agent.deleteSourceCredential(row.source.id),
-          'Cookie 已清除。',
+          `${label}已清除。`,
         )
         if (data) {
           setSourceEditCookie('')
+          setSourceEditDsmBaseURL('')
+          setSourceEditDsmUsername('')
+          setSourceEditDsmPassword('')
           setSourceEditStatus('paused')
           await loadSources()
         }
@@ -2102,7 +2283,7 @@ export default function App() {
               <div>
                 <p className="eyebrow">外部来源</p>
                 <h2>管理照片与媒体来源</h2>
-                <p className="source-note">来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的 Cookie 明文。</p>
+                <p className="source-note">来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的来源凭据明文。</p>
               </div>
               <div className="source-heading-actions">
                 <XDriveActionButton
@@ -2131,7 +2312,11 @@ export default function App() {
               >
                 <XDriveDialogTitle
                   title="添加外部来源"
-                  subtitle={sourceCreateKind === 'yike_photos' ? '一刻相册目标目录由服务器自动管理。' : '选择来源类型、运行方式与 xDrive 目标文件夹。'}
+                  subtitle={sourceCreateKind === 'yike_photos'
+                    ? '一刻相册目标目录由服务器自动管理。'
+                    : sourceCreateDirection === 'pull'
+                      ? '群晖 Pull 由 xDrive Server 直接连接 DSM，并同步到选定目标文件夹。'
+                      : '群晖 Push 由 DSM 上的 xdrive-source-agent 主动推送到选定目标文件夹。'}
                   onClose={() => setSourceCreateOpen(false)}
                   closeDisabled={!!busy}
                 />
@@ -2140,10 +2325,12 @@ export default function App() {
                 <div className="source-create-grid">
                   <label>
                     <span>来源类型</span>
-                    <select value={sourceCreateKind} onChange={(event) => changeSourceCreateKind(event.target.value as SupportedExternalSourceKind)}>
-                      <option value="synology_photos">群晖 Photos · Push</option>
-                      <option value="yike_photos">一刻相册 · Pull</option>
+                    <select value={sourceCreatePreset} onChange={(event) => changeSourceCreatePreset(event.target.value as ExternalSourceCreatePreset)}>
+                      {externalSourceCreateOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
                     </select>
+                    <small>{sourceCreateOption.description}</small>
                   </label>
                   <label>
                     <span>名称</span>
@@ -2226,7 +2413,7 @@ export default function App() {
                     placeholder="每行一条 gitignore 风格规则"
                   />
                 </label>
-                {sourceCreateKind === 'yike_photos' && (
+                {sourceCreateProfile.credential === 'cookie' && (
                   <label className="source-create-wide">
                     <span>一刻相册 Cookie</span>
                     <input
@@ -2248,7 +2435,7 @@ export default function App() {
                       size="small"
                       variant="outlined"
                       disabled={!!busy}
-                      onClick={() => void testCreateYikeCredential()}
+                      onClick={() => void testCreateSourceCredential()}
                       sx={{ alignSelf: 'flex-start', mt: 0.5 }}
                     >
                       {busy === 'source-create-test' ? '正在测试…' : '测试连接'}
@@ -2260,7 +2447,88 @@ export default function App() {
                     )}
                   </label>
                 )}
-                {sourceCreateKind === 'synology_photos' && (
+                {sourceCreateProfile.credential === 'synology_dsm' && (
+                  <>
+                    <MuiDivider className="source-create-wide" />
+                    <label className="source-create-wide">
+                      <span>DSM 地址</span>
+                      <input
+                        value={sourceCreateDsmBaseURL}
+                        onChange={(event) => {
+                          setSourceCreateDsmBaseURL(event.target.value)
+                          setSourceCreateCredentialTest(null)
+                        }}
+                        autoComplete="off"
+                        placeholder="https://nas.example.com:5001"
+                        required
+                      />
+                      <small>填写 xDrive Server 实际可以访问的 DSM 地址。</small>
+                    </label>
+                    <label>
+                      <span>DSM 用户名</span>
+                      <input
+                        value={sourceCreateDsmUsername}
+                        onChange={(event) => {
+                          setSourceCreateDsmUsername(event.target.value)
+                          setSourceCreateCredentialTest(null)
+                        }}
+                        autoComplete="username"
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>DSM 密码</span>
+                      <input
+                        type="password"
+                        value={sourceCreateDsmPassword}
+                        onChange={(event) => {
+                          setSourceCreateDsmPassword(event.target.value)
+                          setSourceCreateCredentialTest(null)
+                        }}
+                        autoComplete="new-password"
+                        required
+                      />
+                    </label>
+                    <div className="source-create-wide">
+                      <span>同步空间</span>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        {synologyPhotoSpaceOptions.map((option) => (
+                          <FormControlLabel
+                            key={option.value}
+                            control={(
+                              <Checkbox
+                                checked={sourceCreateSpaces.includes(option.value)}
+                                onChange={(event) => setSourceCreateSpaces((current) => event.target.checked
+                                  ? Array.from(new Set([...current, option.value]))
+                                  : current.filter((space) => space !== option.value))}
+                              />
+                            )}
+                            label={option.label}
+                          />
+                        ))}
+                      </Stack>
+                    </div>
+                    <MuiAlert severity="info" className="source-create-wide">
+                      DSM 凭据只会在服务器端加密保存；Pull worker 通过 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。
+                    </MuiAlert>
+                    <MuiButton
+                      type="button"
+                      size="small"
+                      variant="outlined"
+                      disabled={!!busy}
+                      onClick={() => void testCreateSourceCredential()}
+                      sx={{ alignSelf: 'flex-start' }}
+                    >
+                      {busy === 'source-create-test' ? '正在测试…' : '测试连接'}
+                    </MuiButton>
+                    {sourceCreateCredentialTest && (
+                      <MuiAlert severity="success" className="source-create-wide">
+                        {externalSourceCredentialTestSuccessLabel(sourceCreateCredentialTest)}
+                      </MuiAlert>
+                    )}
+                  </>
+                )}
+                {sourceCreateProfile.manualTriggerExecutor === 'source_agent' && (
                   <MuiAlert severity="warning" className="source-create-note">
                     创建 Source 后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
                   </MuiAlert>
@@ -2317,7 +2585,7 @@ export default function App() {
                         >
                           {selectedSourceID === row.source.id ? '收起' : '查看'}
                         </XDriveActionButton>
-                        {row.source.kind === 'synology_photos' && (
+                        {card.connector.manualTriggerExecutor === 'source_agent' && (
                           <XDriveActionButton compact disabled={!!busy} onClick={() => setSynologyGuideSource(row.source)}>
                             DSM 配置
                           </XDriveActionButton>
@@ -2415,7 +2683,7 @@ export default function App() {
                               placeholder="每行一条 gitignore 风格规则"
                             />
                           </label>
-                          {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && (
+                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'cookie' && (
                             <label className="source-settings-wide">
                               <span>一刻相册 Cookie</span>
                               <input
@@ -2435,7 +2703,7 @@ export default function App() {
                                 size="small"
                                 variant="outlined"
                                 disabled={!!busy}
-                                onClick={() => void testSettingsYikeCredential(row)}
+                                onClick={() => void testSettingsSourceCredential(row)}
                                 sx={{ alignSelf: 'flex-start', mt: 0.5 }}
                               >
                                 {busy === `source-credential-test-${row.source.id}` ? '正在测试…' : '测试连接'}
@@ -2447,11 +2715,95 @@ export default function App() {
                               )}
                             </label>
                           )}
+                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'synology_dsm' && (
+                            <>
+                              <MuiDivider className="source-settings-wide" />
+                              <MuiAlert severity={row.credential?.configured ? 'success' : 'warning'} className="source-settings-wide">
+                                {row.credential?.configured
+                                  ? 'DSM 凭据已配置。出于安全原因，地址、用户名和密码不会回读；更新时请重新完整填写三项。'
+                                  : 'DSM 凭据未配置；Pull 来源会保持暂停，直到保存有效凭据。'}
+                              </MuiAlert>
+                              <label className="source-settings-wide">
+                                <span>更新 DSM 地址</span>
+                                <input
+                                  value={sourceEditDsmBaseURL}
+                                  onChange={(event) => {
+                                    setSourceEditDsmBaseURL(event.target.value)
+                                    setSourceEditCredentialTest(null)
+                                  }}
+                                  autoComplete="off"
+                                  placeholder="留空则保持当前配置不变"
+                                />
+                              </label>
+                              <label>
+                                <span>更新 DSM 用户名</span>
+                                <input
+                                  value={sourceEditDsmUsername}
+                                  onChange={(event) => {
+                                    setSourceEditDsmUsername(event.target.value)
+                                    setSourceEditCredentialTest(null)
+                                  }}
+                                  autoComplete="username"
+                                  placeholder="留空则保持当前配置不变"
+                                />
+                              </label>
+                              <label>
+                                <span>更新 DSM 密码</span>
+                                <input
+                                  type="password"
+                                  value={sourceEditDsmPassword}
+                                  onChange={(event) => {
+                                    setSourceEditDsmPassword(event.target.value)
+                                    setSourceEditCredentialTest(null)
+                                  }}
+                                  autoComplete="new-password"
+                                  placeholder="留空则保持当前配置不变"
+                                />
+                              </label>
+                              <div className="source-settings-wide">
+                                <span>同步空间</span>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                  {synologyPhotoSpaceOptions.map((option) => (
+                                    <FormControlLabel
+                                      key={option.value}
+                                      control={(
+                                        <Checkbox
+                                          checked={sourceEditSpaces.includes(option.value)}
+                                          onChange={(event) => setSourceEditSpaces((current) => event.target.checked
+                                            ? Array.from(new Set([...current, option.value]))
+                                            : current.filter((space) => space !== option.value))}
+                                        />
+                                      )}
+                                      label={option.label}
+                                    />
+                                  ))}
+                                </Stack>
+                                {!sourceEditConnectorConfig && <small>正在读取当前空间配置；默认使用个人空间和共享空间。</small>}
+                              </div>
+                              <MuiButton
+                                type="button"
+                                size="small"
+                                variant="outlined"
+                                disabled={!!busy}
+                                onClick={() => void testSettingsSourceCredential(row)}
+                                sx={{ alignSelf: 'flex-start' }}
+                              >
+                                {busy === `source-credential-test-${row.source.id}` ? '正在测试…' : '测试连接'}
+                              </MuiButton>
+                              {sourceEditCredentialTest && (
+                                <MuiAlert severity="success" className="source-settings-wide">
+                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
+                                </MuiAlert>
+                              )}
+                            </>
+                          )}
                             </form>
                           </DialogContent>
                           <DialogActions className="desktop-dialog-actions">
-                            {externalSourceConnectorProfile(row.source.kind).credential === 'cookie' && row.credential?.configured && (
-                              <MuiButton color="error" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>清除 Cookie</MuiButton>
+                            {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential && row.credential?.configured && (
+                              <MuiButton color="error" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
+                                清除{externalSourceCredentialLabel(externalSourceConnectorProfile(row.source.kind, row.source.direction))}
+                              </MuiButton>
                             )}
                             <MuiButton
                               color="error"

@@ -6,6 +6,7 @@ import type {
   ExternalSource,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialTestResult,
+  ExternalSourceConnectorConfig,
   ExternalSourceItem,
   ExternalSourceOverview,
   ExternalSourceRun,
@@ -30,6 +31,7 @@ import type {
 export type {
   ExternalSource,
   ExternalSourceCredentialStatus,
+  ExternalSourceConnectorConfig,
   ExternalSourceItem,
   ExternalSourceOverview,
   ExternalSourceRun,
@@ -416,6 +418,18 @@ export class XDriveApi {
 
   deleteSourceCredential(sourceID: number) {
     return this.request<void>(`/api/v1/sources/${sourceID}/credential`, { method: 'DELETE' })
+  }
+
+  sourceConnectorConfig(sourceID: number) {
+    return this.request<ExternalSourceConnectorConfig>(`/api/v1/sources/${sourceID}/connector-config`)
+  }
+
+  setSourceConnectorConfig(sourceID: number, revision: number, payload: Record<string, unknown>) {
+    return this.request<ExternalSourceConnectorConfig>(`/api/v1/sources/${sourceID}/connector-config`, {
+      method: 'PUT',
+      headers: { 'If-Match': `"${revision}"` },
+      body: JSON.stringify({ payload }),
+    })
   }
 
   root() {

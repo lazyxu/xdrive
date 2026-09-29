@@ -161,10 +161,12 @@ type desktopIPCController interface {
 	CloudCancelSourceRun(context.Context, uint64, string) (client.SyncRun, error)
 	CloudSourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
 	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
-	CloudTestSourceCredential(context.Context, string, string) (client.SourceCredentialTestResult, error)
+	CloudTestSourceCredential(context.Context, string, map[string]string) (client.SourceCredentialTestResult, error)
 	CloudTestStoredSourceCredential(context.Context, uint64) (client.SourceCredentialTestResult, error)
-	CloudPutSourceCredential(context.Context, uint64, string) (client.SourceCredentialStatus, error)
+	CloudPutSourceCredential(context.Context, uint64, map[string]string) (client.SourceCredentialStatus, error)
 	CloudDeleteSourceCredential(context.Context, uint64) error
+	CloudSourceConnectorConfig(context.Context, uint64) (client.SourceConnectorConfig, error)
+	CloudPutSourceConnectorConfig(context.Context, uint64, uint64, map[string]any) (client.SourceConnectorConfig, error)
 	CloudCreateSource(context.Context, client.CreateSourceInput) (client.Source, error)
 	CloudUpdateSource(context.Context, uint64, uint64, client.UpdateSourceInput) (client.Source, error)
 	CloudDeleteSource(context.Context, uint64, uint64) error
@@ -377,6 +379,8 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/sources/credential/test", h.testStoredSourceCredential)
 	mux.HandleFunc("PUT /v1/sources/credential", h.putSourceCredential)
 	mux.HandleFunc("DELETE /v1/sources/credential", h.deleteSourceCredential)
+	mux.HandleFunc("GET /v1/sources/connector-config", h.sourceConnectorConfig)
+	mux.HandleFunc("PUT /v1/sources/connector-config", h.putSourceConnectorConfig)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
@@ -1120,19 +1124,22 @@ func (h *desktopIPCHandler) sourceItems(w http.ResponseWriter, r *http.Request) 
 
 func (h *desktopIPCHandler) testSourceCredential(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Kind   string `json:"kind"`
-		Cookie string `json:"cookie"`
+		Kind    string            `json:"kind"`
+		Payload map[string]string `json:"payload"`
+		Cookie  string            `json:"cookie,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
 	input.Kind = strings.TrimSpace(input.Kind)
-	input.Cookie = strings.TrimSpace(input.Cookie)
-	if input.Kind == "" || input.Cookie == "" {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_credential", "kind and cookie are required")
+	if len(input.Payload) == 0 && strings.TrimSpace(input.Cookie) != "" {
+		input.Payload = map[string]string{"cookie": strings.TrimSpace(input.Cookie)}
+	}
+	if input.Kind == "" || len(input.Payload) == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_credential", "kind and credential payload are required")
 		return
 	}
-	result, err := h.ctrl.CloudTestSourceCredential(r.Context(), input.Kind, input.Cookie)
+	result, err := h.ctrl.CloudTestSourceCredential(r.Context(), input.Kind, input.Payload)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -1175,18 +1182,21 @@ func (h *desktopIPCHandler) sourceCredentialStatus(w http.ResponseWriter, r *htt
 
 func (h *desktopIPCHandler) putSourceCredential(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		SourceID uint64 `json:"source_id"`
-		Cookie   string `json:"cookie"`
+		SourceID uint64            `json:"source_id"`
+		Payload  map[string]string `json:"payload"`
+		Cookie   string            `json:"cookie,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
-	input.Cookie = strings.TrimSpace(input.Cookie)
-	if input.SourceID == 0 || input.Cookie == "" {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_credential", "source_id and cookie are required")
+	if len(input.Payload) == 0 && strings.TrimSpace(input.Cookie) != "" {
+		input.Payload = map[string]string{"cookie": strings.TrimSpace(input.Cookie)}
+	}
+	if input.SourceID == 0 || len(input.Payload) == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_credential", "source_id and credential payload are required")
 		return
 	}
-	status, err := h.ctrl.CloudPutSourceCredential(r.Context(), input.SourceID, input.Cookie)
+	status, err := h.ctrl.CloudPutSourceCredential(r.Context(), input.SourceID, input.Payload)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -1210,6 +1220,41 @@ func (h *desktopIPCHandler) deleteSourceCredential(w http.ResponseWriter, r *htt
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) sourceConnectorConfig(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	config, err := h.ctrl.CloudSourceConnectorConfig(r.Context(), sourceID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, config)
+}
+
+func (h *desktopIPCHandler) putSourceConnectorConfig(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SourceID uint64         `json:"source_id"`
+		Revision uint64         `json:"revision"`
+		Payload  map[string]any `json:"payload"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.SourceID == 0 || input.Revision == 0 || input.Payload == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_connector_config", "source_id, revision, and payload are required")
+		return
+	}
+	config, err := h.ctrl.CloudPutSourceConnectorConfig(r.Context(), input.SourceID, input.Revision, input.Payload)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, config)
 }
 
 func (h *desktopIPCHandler) fileAvailability(w http.ResponseWriter, r *http.Request) {

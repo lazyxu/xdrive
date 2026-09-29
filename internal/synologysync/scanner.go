@@ -36,6 +36,10 @@ type SourceAPI interface {
 	UpdateSourceRunSummary(context.Context, uint64, string, sourcepkg.Summary) error
 }
 
+type sourceItemLister interface {
+	SourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
+}
+
 type PlanExecutor interface {
 	Execute(context.Context, client.SourcePlan, sourcepkg.DiscoveredItem, TransferRef) (client.SourceCommit, error)
 }
@@ -110,6 +114,12 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batch := make([]client.SourceObservation, 0, batchSize)
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
+	pathOwners := make(map[string]string)
+	if lister, ok := s.API.(sourceItemLister); ok {
+		if err := seedSynologyPathOwners(ctx, lister, s.SourceID, pathOwners); err != nil {
+			return result, fmt.Errorf("read existing Synology source paths: %w", err)
+		}
+	}
 
 	var pipeline *pullsync.Pipeline[TransferRef]
 	if mode == meta.SourceRunModeSync {
@@ -207,6 +217,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 					result.Summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: item})
 					continue
 				}
+				item.Path = reserveSynologyPath(item.Path, remoteItem.ID, item.ExternalID, pathOwners)
 				if space == synology.SpacePersonal {
 					result.PersonalItems++
 				} else {
@@ -395,7 +406,7 @@ func discoveredItem(space synology.Space, folderPaths map[int64]string, remote s
 		prefix = "Shared"
 	}
 	parent := strings.Trim(folderPaths[remote.FolderID], "/")
-	name := sanitizeSegment(remote.Filename, remote.ID, true)
+	name := sanitizeSegment(remote.Filename, remote.ID, false)
 	relative := path.Join(prefix, parent, name)
 	modified := indexedTime(remote.IndexedTime)
 	externalID := fmt.Sprintf("synology:%s:%d", space, remote.ID)
@@ -419,13 +430,87 @@ func metadataSnapshot(space synology.Space, folderPaths map[int64]string, item s
 		value := time.Unix(item.Time, 0).UTC()
 		capturedAt = &value
 	}
-	original := path.Join(folderPaths[item.FolderID], strings.TrimSpace(item.Filename))
+	original := path.Join(folderPaths[item.FolderID], item.Filename)
 	return sourcemetadata.Snapshot{
 		ItemExternalID:  fmt.Sprintf("synology:%s:%d", space, item.ID),
 		OriginalPath:    strings.Trim(original, "/"),
 		OwnerExternalID: strconv.FormatInt(item.OwnerUserID, 10),
 		CapturedAt:      capturedAt,
 	}
+}
+
+func seedSynologyPathOwners(ctx context.Context, lister sourceItemLister, sourceID uint64, owners map[string]string) error {
+	const pageSize = 1000
+	for offset := 0; ; offset += pageSize {
+		items, err := lister.SourceItems(ctx, sourceID, "", pageSize, offset)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			if item.NodeID == nil || strings.TrimSpace(item.ExternalID) == "" {
+				continue
+			}
+			clean, err := sourcepkg.NormalizeRelativePath(item.Path)
+			if err != nil {
+				continue
+			}
+			key := strings.ToLower(clean)
+			if _, exists := owners[key]; !exists {
+				owners[key] = item.ExternalID
+			}
+		}
+		if len(items) < pageSize {
+			return nil
+		}
+	}
+}
+
+func reserveSynologyPath(preferred string, itemID int64, externalID string, owners map[string]string) string {
+	if owners == nil {
+		return preferred
+	}
+	key := strings.ToLower(preferred)
+	if current, exists := owners[key]; !exists || current == externalID {
+		owners[key] = externalID
+		return preferred
+	}
+	for attempt := 0; ; attempt++ {
+		candidate := collisionSynologyPath(preferred, itemID, attempt)
+		candidateKey := strings.ToLower(candidate)
+		if current, exists := owners[candidateKey]; !exists || current == externalID {
+			owners[candidateKey] = externalID
+			return candidate
+		}
+	}
+}
+
+func collisionSynologyPath(preferred string, itemID int64, attempt int) string {
+	dir := path.Dir(preferred)
+	if dir == "." {
+		dir = ""
+	}
+	base := path.Base(preferred)
+	ext := path.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	suffix := " (" + strconv.FormatInt(itemID, 10) + ")"
+	if attempt > 0 {
+		suffix = " (" + strconv.FormatInt(itemID, 10) + "-" + strconv.Itoa(attempt+1) + ")"
+	}
+	maxStemBytes := 255 - len([]byte(ext)) - len([]byte(suffix))
+	if maxStemBytes < 1 {
+		ext = ""
+		maxStemBytes = 255 - len([]byte(suffix))
+	}
+	stem = trimUTF8Bytes(stem, maxStemBytes)
+	candidate := stem + suffix + ext
+	if err := meta.ValidateName(candidate); err != nil {
+		candidate = "item-" + strconv.FormatInt(itemID, 10) + suffix + ext
+		candidate = trimUTF8Bytes(candidate, 255)
+	}
+	if dir == "" {
+		return candidate
+	}
+	return path.Join(dir, candidate)
 }
 
 func indexedTime(value int64) time.Time {
@@ -447,9 +532,10 @@ func remoteRevision(item synology.Item) string {
 }
 
 func sanitizeSegment(value string, id int64, stableSuffix bool) string {
-	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
-	value = path.Base(value)
-	if value == "." || value == "/" || value == "" {
+	// Synology folder names and filenames are already single path segments.
+	// Treat slash/backslash as unrepresentable characters instead of parsing
+	// them as a second hierarchy, and preserve representable leading spaces.
+	if value == "" {
 		value = "item"
 	}
 	var b strings.Builder
@@ -463,15 +549,19 @@ func sanitizeSegment(value string, id int64, stableSuffix bool) string {
 			b.WriteRune(r)
 		}
 	}
-	clean := strings.TrimRight(strings.TrimSpace(b.String()), " .")
-	if clean == "" {
+	clean := strings.TrimRight(b.String(), " .")
+	if clean == "" || clean == "." || clean == ".." {
 		clean = "item"
 	}
 	if stableSuffix {
 		return appendStableSuffix(clean, id)
 	}
-	clean = trimUTF8Bytes(clean, 255)
+	clean = trimSegmentPreserveExtension(clean, 255)
 	if err := meta.ValidateName(clean); err != nil {
+		prefixed := trimSegmentPreserveExtension("_"+clean, 255)
+		if err := meta.ValidateName(prefixed); err == nil {
+			return prefixed
+		}
 		return appendStableSuffix("folder", id)
 	}
 	return clean
@@ -488,6 +578,18 @@ func appendStableSuffix(value string, id int64) string {
 		candidate = "item-" + strconv.FormatInt(id, 10)
 	}
 	return candidate
+}
+
+func trimSegmentPreserveExtension(value string, maxBytes int) string {
+	if len([]byte(value)) <= maxBytes {
+		return value
+	}
+	ext := path.Ext(value)
+	if ext == "" || len([]byte(ext)) >= maxBytes {
+		return trimUTF8Bytes(value, maxBytes)
+	}
+	stem := strings.TrimSuffix(value, ext)
+	return trimUTF8Bytes(stem, maxBytes-len([]byte(ext))) + ext
 }
 
 func trimUTF8Bytes(value string, maxBytes int) string {
