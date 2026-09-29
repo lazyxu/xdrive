@@ -149,11 +149,11 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 	}
 
 	sourceIDs := make([]uint64, 0, len(sources))
-	yikeIDs := make([]uint64, 0)
+	credentialSourceIDs := make([]uint64, 0)
 	for _, source := range sources {
 		sourceIDs = append(sourceIDs, source.ID)
-		if source.Kind == yikeSourceKind {
-			yikeIDs = append(yikeIDs, source.ID)
+		if sourceUsesStoredCredential(source) {
+			credentialSourceIDs = append(credentialSourceIDs, source.ID)
 		}
 	}
 
@@ -172,10 +172,10 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 		latestBySource[run.SourceID] = run
 	}
 
-	credentialBySource := make(map[uint64]meta.SourceCredential, len(yikeIDs))
-	if len(yikeIDs) != 0 {
+	credentialBySource := make(map[uint64]meta.SourceCredential, len(credentialSourceIDs))
+	if len(credentialSourceIDs) != 0 {
 		var credentials []meta.SourceCredential
-		if err := s.DB.Where("source_id IN ?", yikeIDs).Find(&credentials).Error; err != nil {
+		if err := s.DB.Where("source_id IN ?", credentialSourceIDs).Find(&credentials).Error; err != nil {
 			fail(c, http.StatusInternalServerError, "load source credentials failed")
 			return
 		}
@@ -190,7 +190,7 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 			dto := toSyncRunDTO(run)
 			row.LatestRun = &dto
 		}
-		if source.Kind == yikeSourceKind {
+		if sourceUsesStoredCredential(source) {
 			status := sourceCredentialStatusDTO{}
 			if credential, ok := credentialBySource[source.ID]; ok {
 				updated := credential.UpdatedAt
@@ -256,6 +256,7 @@ func (s *Server) createSource(c *gin.Context) {
 		return
 	}
 	isYike := req.Kind == yikeSourceKind
+	isSynologyPull := req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPull
 	if isYike {
 		if req.Direction != meta.SourceDirectionPull {
 			fail(c, http.StatusBadRequest, "Yike Photos only supports pull direction")
@@ -286,6 +287,11 @@ func (s *Server) createSource(c *gin.Context) {
 		// the Yike account UID/name are known.
 		status = meta.SourceStatusPaused
 	} else {
+		if isSynologyPull {
+			// Pull mode is executed by the server worker and must not run until
+			// the encrypted DSM credential has been validated and stored.
+			status = meta.SourceStatusPaused
+		}
 		value := req.TargetNodeID
 		target = &value
 	}
@@ -388,16 +394,16 @@ func (s *Server) updateSource(c *gin.Context) {
 			if !meta.ValidSourceStatus(status) {
 				return errInvalidSourceConfig
 			}
-			if current.Kind == yikeSourceKind && status == meta.SourceStatusActive {
+			if sourceUsesStoredCredential(current) && status == meta.SourceStatusActive {
 				if current.TargetNodeID == nil {
-					return errYikeCredentialRequired
+					return errSourceCredentialRequired
 				}
 				var credentialCount int64
 				if err := tx.Model(&meta.SourceCredential{}).Where("source_id = ?", current.ID).Count(&credentialCount).Error; err != nil {
 					return err
 				}
 				if credentialCount == 0 {
-					return errYikeCredentialRequired
+					return errSourceCredentialRequired
 				}
 			}
 			updates["status"] = status
@@ -465,8 +471,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
-		case errors.Is(err, errYikeCredentialRequired):
-			fail(c, http.StatusConflict, "Yike Photos must configure a valid Cookie before activation")
+		case errors.Is(err, errSourceCredentialRequired):
+			fail(c, http.StatusConflict, "source credential must be configured before activation")
 		case errors.Is(err, errManagedSourceTarget):
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 		case errors.Is(err, errInvalidSourceTarget):
@@ -507,7 +513,7 @@ func (s *Server) triggerSource(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		if source.Kind == yikeSourceKind && source.Direction == meta.SourceDirectionPull {
+		if source.Direction == meta.SourceDirectionPull {
 			if err := sourcewake.Notify(tx, source.ID); err != nil {
 				return err
 			}
@@ -643,7 +649,7 @@ var (
 	errInvalidSourceConfig          = errors.New("invalid source configuration")
 	errInvalidSourceTarget          = errors.New("invalid source target")
 	errManagedSourceTarget          = errors.New("managed source target")
-	errYikeCredentialRequired       = errors.New("Yike credential is required")
+	errSourceCredentialRequired     = errors.New("source credential is required")
 	errYikeAccountAlreadyConfigured = errors.New("Yike account already configured")
 	errYikeAccountMismatch          = errors.New("Yike account does not match managed target")
 	errSourceNameTaken              = errors.New("source name taken")
