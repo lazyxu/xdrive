@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Col, Modal, Row, Space, Statistic, Table, Typography } from 'antd'
+import { Button, Col, Modal, Row, Space, Statistic, Table, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { Accordion, AccordionDetails, AccordionSummary, Chip, Stack, Typography as MuiTypography } from '@mui/material'
 import { XDriveStatusAlert, XDriveStatusBadge } from '@xdrive/ui/mui'
@@ -101,9 +101,9 @@ function decisionMessage(decision: StorageDecision) {
   }
 }
 
-function decisionType(decision: StorageDecision): 'info' | 'success' | 'warning' {
-  if (decision.priority === 'collecting') return 'info'
-  if (decision.priority === 'observe') return 'info'
+function decisionTone(decision: StorageDecision): 'neutral' | 'warning' {
+  if (decision.priority === 'collecting') return 'neutral'
+  if (decision.priority === 'observe') return 'neutral'
   return 'warning'
 }
 
@@ -294,7 +294,7 @@ export default function StorageStatsModal({
       width={1040}
       destroyOnClose
     >
-      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+      {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
       {stats && (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           {scope === 'global' && health && (
@@ -328,21 +328,21 @@ export default function StorageStatsModal({
           {scope === 'global' && staging && (
             <>
               <Typography.Title level={5} style={{ margin: 0 }}>上传临时空间</Typography.Title>
-              {stagingNotice && <Alert type="success" showIcon message={stagingNotice} />}
+              {stagingNotice && <XDriveStatusAlert tone="good">{stagingNotice}</XDriveStatusAlert>}
               {!staging.stats.supported && (
-                <Alert type="info" showIcon message="当前存储后端不支持 staging 文件系统扫描，仅显示数据库侧会话信息。" />
+                <XDriveStatusAlert tone="neutral">当前存储后端不支持 staging 文件系统扫描，仅显示数据库侧会话信息。</XDriveStatusAlert>
               )}
               {(staging.stats.orphan_files > 0 || staging.stats.missing_part_files > 0 || staging.stats.recent_untracked_files > 0) && (
-                <Alert
-                  type={staging.stats.missing_part_files > 0 || staging.stats.orphan_files > 0 ? 'warning' : 'info'}
-                  showIcon
-                  message={
+                <XDriveStatusAlert
+                  tone={staging.stats.missing_part_files > 0 || staging.stats.orphan_files > 0 ? 'warning' : 'neutral'}
+                  title={
                     'orphan ' + staging.stats.orphan_files.toLocaleString() +
                     ' · 近期未登记 ' + staging.stats.recent_untracked_files.toLocaleString() +
                     ' · 缺失 part ' + staging.stats.missing_part_files.toLocaleString()
                   }
-                  description="只有数据库无引用且超过 1 小时的临时文件才会作为 orphan 清理；近期未登记文件不会删除。"
-                />
+                >
+                  只有数据库无引用且超过 1 小时的临时文件才会作为 orphan 清理；近期未登记文件不会删除。
+                </XDriveStatusAlert>
               )}
               <Row gutter={[16, 16]}>
                 <Col xs={12} md={6}><Statistic title="活跃 Upload Session" value={staging.stats.active_sessions} /></Col>
@@ -462,12 +462,12 @@ export default function StorageStatsModal({
 
           {scope === 'global' && history && (
             <>
-              <Alert
-                type={decisionType(history.decision)}
-                showIcon
-                message={decisionMessage(history.decision)}
-                description={decisionDescription(history.decision)}
-              />
+              <XDriveStatusAlert
+                tone={decisionTone(history.decision)}
+                title={decisionMessage(history.decision)}
+              >
+                {decisionDescription(history.decision)}
+              </XDriveStatusAlert>
               <Row gutter={[16, 16]}>
                 <Col xs={12} md={6}>
                   <Statistic title="历史样本" value={history.samples.length} suffix={`/ ${history.retention_days} 天`} />
@@ -520,11 +520,9 @@ export default function StorageStatsModal({
           </Row>
 
           {stats.legacy_blob_count > 0 && (
-            <Alert
-              type="info"
-              showIcon
-              message={`仍有 ${stats.legacy_blob_count.toLocaleString()} 个 legacy 对象，共 ${formatSize(stats.legacy_physical_bytes)}。它们不计入 CAS 尺寸分布。`}
-            />
+            <XDriveStatusAlert tone="neutral">
+              {`仍有 ${stats.legacy_blob_count.toLocaleString()} 个 legacy 对象，共 ${formatSize(stats.legacy_physical_bytes)}。它们不计入 CAS 尺寸分布。`}
+            </XDriveStatusAlert>
           )}
 
           <div>
@@ -568,12 +566,12 @@ export default function StorageStatsModal({
           近期未登记文件不会删除。
         </Typography.Paragraph>
         {staging && (
-          <Alert
-            type="warning"
-            showIcon
-            message={`预计可回收 ${staging.stats.reclaimable_files.toLocaleString()} 个临时文件 / ${formatSize(staging.stats.reclaimable_bytes)}`}
-            description={`另有 ${staging.stats.expired_sessions.toLocaleString()} 个过期 UploadSession 将被回收。`}
-          />
+          <XDriveStatusAlert
+            tone="warning"
+            title={`预计可回收 ${staging.stats.reclaimable_files.toLocaleString()} 个临时文件 / ${formatSize(staging.stats.reclaimable_bytes)}`}
+          >
+            另有 {staging.stats.expired_sessions.toLocaleString()} 个过期 UploadSession 将被回收。
+          </XDriveStatusAlert>
         )}
       </Space>
     </Modal>
@@ -584,7 +582,7 @@ export default function StorageStatsModal({
       onCancel={() => setCleanupResultWarning('')}
       footer={<Button type="primary" onClick={() => setCleanupResultWarning('')}>知道了</Button>}
     >
-      <Alert type="warning" showIcon message={cleanupResultWarning} />
+      <XDriveStatusAlert tone="warning">{cleanupResultWarning}</XDriveStatusAlert>
     </Modal>
 
     <Modal
@@ -593,7 +591,7 @@ export default function StorageStatsModal({
       onCancel={() => setCleanupActionError('')}
       footer={<Button type="primary" onClick={() => setCleanupActionError('')}>知道了</Button>}
     >
-      <Typography.Text type="danger">{cleanupActionError}</Typography.Text>
+      <XDriveStatusAlert tone="bad">{cleanupActionError}</XDriveStatusAlert>
     </Modal>
     </>
   )
