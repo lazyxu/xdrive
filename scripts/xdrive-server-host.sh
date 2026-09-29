@@ -5,6 +5,7 @@ umask 077
 REPOSITORY="${XD_REPOSITORY:-lazyxu/xdrive}"
 GITLAB_BASE_URL="${XD_GITLAB_BASE_URL:-http://gitlab.t-fluid.com:1080}"
 GITLAB_PROJECT="${XD_GITLAB_PROJECT:-xuliang/xdrive}"
+GITLAB_LOCAL_FALLBACK_URL="${XD_GITLAB_LOCAL_FALLBACK_URL-http://127.0.0.1:1080}"
 INSTALLER_URL_OVERRIDE="${XD_INSTALLER_URL:-}"
 
 resolve_self() {
@@ -150,18 +151,71 @@ installer_url_for_source() {
   esac
 }
 
-download_installer() {
-  local source="$1" destination="$2" installer_url
-  installer_url="$(installer_url_for_source "$source")"
+LAST_DOWNLOAD_TOOL=""
+
+download_installer_url() {
+  local installer_url="$1" destination="$2" status
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 10 \
-      "$installer_url" -o "$destination" </dev/null
+    LAST_DOWNLOAD_TOOL="curl"
+    if curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 10 \
+      "$installer_url" -o "$destination" </dev/null; then
+      return 0
+    else
+      status=$?
+      rm -f "$destination"
+      return "$status"
+    fi
   elif command -v wget >/dev/null 2>&1; then
-    wget -q --tries=5 --timeout=15 -O "$destination" "$installer_url" </dev/null
+    LAST_DOWNLOAD_TOOL="wget"
+    if wget -q --tries=5 --timeout=15 -O "$destination" "$installer_url" </dev/null; then
+      return 0
+    else
+      status=$?
+      rm -f "$destination"
+      return "$status"
+    fi
   else
     echo "xdrive-server: curl or wget is required to update." >&2
-    return 1
+    return 127
   fi
+}
+
+download_failure_is_connectivity() {
+  local tool="$1" status="$2"
+  case "$tool:$status" in
+    curl:5|curl:6|curl:7|curl:28|curl:35|curl:52|curl:55|curl:56|wget:4|wget:5)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+download_installer() {
+  local source="$1" destination="$2" installer_url status fallback_url
+  installer_url="$(installer_url_for_source "$source")"
+  if download_installer_url "$installer_url" "$destination"; then
+    return 0
+  else
+    status=$?
+  fi
+
+  if [[ "$source" != "gitlab" || -n "$INSTALLER_URL_OVERRIDE" ||
+        -z "$GITLAB_LOCAL_FALLBACK_URL" ||
+        "${GITLAB_BASE_URL%/}" == "${GITLAB_LOCAL_FALLBACK_URL%/}" ]]; then
+    return "$status"
+  fi
+  if ! download_failure_is_connectivity "$LAST_DOWNLOAD_TOOL" "$status"; then
+    return "$status"
+  fi
+
+  fallback_url="${GITLAB_LOCAL_FALLBACK_URL%/}"
+  echo "[xDrive] GitLab ${GITLAB_BASE_URL%/} is unreachable; retrying via local fallback $fallback_url..." >&2
+  GITLAB_BASE_URL="$fallback_url"
+  export XD_GITLAB_BASE_URL="$GITLAB_BASE_URL"
+  installer_url="$(installer_url_for_source "$source")"
+  download_installer_url "$installer_url" "$destination"
 }
 
 update_cmd() (

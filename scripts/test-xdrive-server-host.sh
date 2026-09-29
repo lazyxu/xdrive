@@ -41,10 +41,15 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$out" && -n "$url" ]]
 printf '%s\n' "$url" > "$TEST_STATE/curl-url"
+printf '%s\n' "$url" >> "$TEST_STATE/curl-urls"
+if [[ "${TEST_CURL_FAIL_GITLAB_DOMAIN:-0}" == "1" && "$url" == http://gitlab.t-fluid.com:1080/* ]]; then
+  exit "${TEST_CURL_FAIL_STATUS:-28}"
+fi
 cat > "$out" <<'INSTALL'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" > "$TEST_STATE/installer-args"
+printf '%s\n' "${XD_GITLAB_BASE_URL:-}" > "$TEST_STATE/installer-gitlab-base"
 readlink /proc/$$/fd/0 > "$TEST_STATE/installer-stdin" || true
 INSTALL
 SH
@@ -183,6 +188,34 @@ bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab.out" 2
 grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-url"
 grep -q '^--source gitlab --channel master$' "$TMP/state/installer-args"
 grep -q 'downloading host installer from gitlab' "$TMP/update-gitlab.out"
+
+rm -f "$TMP/state/curl-urls" "$TMP/state/installer-gitlab-base"
+TEST_CURL_FAIL_GITLAB_DOMAIN=1 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab-fallback.out" 2>"$TMP/update-gitlab-fallback.err"
+
+grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+grep -q '^http://127.0.0.1:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-urls"
+grep -q '^http://127.0.0.1:1080$' "$TMP/state/installer-gitlab-base"
+grep -q 'retrying via local fallback http://127.0.0.1:1080' "$TMP/update-gitlab-fallback.err"
+
+rm -f "$TMP/state/curl-urls" "$TMP/state/installer-gitlab-base"
+set +e
+TEST_CURL_FAIL_GITLAB_DOMAIN=1 \
+TEST_CURL_FAIL_STATUS=22 \
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab-http-error.out" 2>"$TMP/update-gitlab-http-error.err"
+gitlab_http_status=$?
+set -e
+[[ "$gitlab_http_status" -eq 22 ]]
+if grep -q '^http://127.0.0.1:1080/' "$TMP/state/curl-urls"; then
+  echo "GitLab HTTP errors must not fall back to localhost" >&2
+  exit 1
+fi
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
