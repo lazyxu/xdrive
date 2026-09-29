@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -28,82 +29,89 @@ type fakeDesktopIPCController struct {
 	root     string
 	items    []conflictstate.Record
 
-	loginServer               string
-	loginUsername             string
-	loginPassword             string
-	loginMount                string
-	currentPass               string
-	newPass                   string
-	logouts                   int
-	paused                    *bool
-	syncs                     int
-	updateMount               *string
-	updateCache               *int64
-	updateState               clientUpdateState
-	updateMode                string
-	updateSource              string
-	updateChecks              int
-	updateDownloads           int
-	updateInstalls            int
-	updateCancels             int
-	rulePath                  string
-	ruleMode                  string
-	filePath                  string
-	fileAction                string
-	fileState                 mount.FileAvailability
-	openFolderN               int
-	openID                    string
-	openBoth                  bool
-	resolveID                 string
-	resolveChoice             string
-	err                       error
-	transfers                 *transfer.Manager
-	diagnosticReport          diagnostics.Report
-	reconnectN                int
-	repairN                   int
-	openLogsN                 int
-	storageTree               agentStorageTreeNode
-	cacheStats                mount.CacheStats
-	cacheRelease              mount.CacheReleaseResult
-	cloudRoot                 client.Node
-	cloudChildren             []client.Node
-	cloudSearch               []agentCloudSearchResult
-	cloudQuota                client.QuotaUsage
-	cloudStorage              client.StorageStats
-	cloudTrash                []client.Node
-	cloudVersions             []client.FileVersion
-	cloudShares               []client.FileShare
-	cloudCreated              agentCreatedShare
-	cloudRestored             client.Node
-	cloudRevokeID             uint64
-	cloudDeleteID             uint64
-	cloudDeleteRev            uint64
-	cloudSources              []client.Source
-	cloudSourceRuns           []client.SyncRun
-	cloudSourceRunFailures    []client.SourceRunFailure
-	cloudCancelledRun         client.SyncRun
-	cloudCancelSourceID       uint64
-	cloudCancelRunID          string
-	cloudSourceItems          []client.SourceItem
-	cloudSourceCredential     client.SourceCredentialStatus
-	cloudCredentialTest       client.SourceCredentialTestResult
-	cloudTestCredentialKind   string
-	cloudTestCredentialCookie string
-	cloudTestStoredID         uint64
-	cloudPutCredential        client.SourceCredentialStatus
-	cloudPutCredentialID      uint64
-	cloudPutCookie            string
-	cloudDeleteCredential     uint64
-	cloudCreatedSource        client.Source
-	cloudUpdatedSource        client.Source
-	cloudTriggeredSource      client.Source
-	cloudCreateInput          client.CreateSourceInput
-	cloudUpdateID             uint64
-	cloudUpdateRevision       uint64
-	cloudUpdateInput          client.UpdateSourceInput
-	cloudDeleteSourceID       uint64
-	cloudDeleteSourceRev      uint64
-	cloudTriggerID            uint64
+	loginServer                string
+	loginUsername              string
+	loginPassword              string
+	loginMount                 string
+	currentPass                string
+	newPass                    string
+	logouts                    int
+	paused                     *bool
+	syncs                      int
+	updateMount                *string
+	updateCache                *int64
+	updateState                clientUpdateState
+	updateMode                 string
+	updateSource               string
+	updateChecks               int
+	updateDownloads            int
+	updateInstalls             int
+	updateCancels              int
+	rulePath                   string
+	ruleMode                   string
+	filePath                   string
+	fileAction                 string
+	fileState                  mount.FileAvailability
+	openFolderN                int
+	openID                     string
+	openBoth                   bool
+	resolveID                  string
+	resolveChoice              string
+	err                        error
+	transfers                  *transfer.Manager
+	diagnosticReport           diagnostics.Report
+	reconnectN                 int
+	repairN                    int
+	openLogsN                  int
+	storageTree                agentStorageTreeNode
+	cacheStats                 mount.CacheStats
+	cacheRelease               mount.CacheReleaseResult
+	cloudRoot                  client.Node
+	cloudChildren              []client.Node
+	cloudSearch                []agentCloudSearchResult
+	cloudQuota                 client.QuotaUsage
+	cloudStorage               client.StorageStats
+	cloudTrash                 []client.Node
+	cloudVersions              []client.FileVersion
+	cloudShares                []client.FileShare
+	cloudCreated               agentCreatedShare
+	cloudRestored              client.Node
+	cloudRevokeID              uint64
+	cloudDeleteID              uint64
+	cloudDeleteRev             uint64
+	cloudSources               []client.Source
+	cloudSourceRuns            []client.SyncRun
+	cloudSourceRunFailures     []client.SourceRunFailure
+	cloudCancelledRun          client.SyncRun
+	cloudCancelSourceID        uint64
+	cloudCancelRunID           string
+	cloudSourceItems           []client.SourceItem
+	cloudSourceCredential      client.SourceCredentialStatus
+	cloudCredentialTest        client.SourceCredentialTestResult
+	cloudTestCredentialKind    string
+	cloudTestCredentialPayload map[string]string
+	cloudTestStoredID          uint64
+	cloudPutCredential         client.SourceCredentialStatus
+	cloudPutCredentialID       uint64
+	cloudPutCredentialPayload  map[string]string
+	cloudDeleteCredential      uint64
+	cloudConnectorConfig       client.SourceConnectorConfig
+	cloudPutConnectorConfig    client.SourceConnectorConfig
+	cloudConnectorConfigID     uint64
+	cloudPutConnectorID        uint64
+	cloudPutConnectorRevision  uint64
+	cloudPutConnectorPayload   map[string]any
+
+	cloudCreatedSource   client.Source
+	cloudUpdatedSource   client.Source
+	cloudTriggeredSource client.Source
+	cloudCreateInput     client.CreateSourceInput
+	cloudUpdateID        uint64
+	cloudUpdateRevision  uint64
+	cloudUpdateInput     client.UpdateSourceInput
+	cloudDeleteSourceID  uint64
+	cloudDeleteSourceRev uint64
+	cloudTriggerID       uint64
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -280,8 +288,9 @@ func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, 
 	return f.cloudSourceCredential, f.err
 }
 
-func (f *fakeDesktopIPCController) CloudTestSourceCredential(_ context.Context, kind, cookie string) (client.SourceCredentialTestResult, error) {
-	f.cloudTestCredentialKind, f.cloudTestCredentialCookie = kind, cookie
+func (f *fakeDesktopIPCController) CloudTestSourceCredential(_ context.Context, kind string, payload map[string]string) (client.SourceCredentialTestResult, error) {
+	f.cloudTestCredentialKind = kind
+	f.cloudTestCredentialPayload = maps.Clone(payload)
 	return f.cloudCredentialTest, f.err
 }
 
@@ -290,14 +299,26 @@ func (f *fakeDesktopIPCController) CloudTestStoredSourceCredential(_ context.Con
 	return f.cloudCredentialTest, f.err
 }
 
-func (f *fakeDesktopIPCController) CloudPutSourceCredential(_ context.Context, sourceID uint64, cookie string) (client.SourceCredentialStatus, error) {
-	f.cloudPutCredentialID, f.cloudPutCookie = sourceID, cookie
+func (f *fakeDesktopIPCController) CloudPutSourceCredential(_ context.Context, sourceID uint64, payload map[string]string) (client.SourceCredentialStatus, error) {
+	f.cloudPutCredentialID = sourceID
+	f.cloudPutCredentialPayload = maps.Clone(payload)
 	return f.cloudPutCredential, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudDeleteSourceCredential(_ context.Context, sourceID uint64) error {
 	f.cloudDeleteCredential = sourceID
 	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSourceConnectorConfig(_ context.Context, sourceID uint64) (client.SourceConnectorConfig, error) {
+	f.cloudConnectorConfigID = sourceID
+	return f.cloudConnectorConfig, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudPutSourceConnectorConfig(_ context.Context, sourceID, revision uint64, payload map[string]any) (client.SourceConnectorConfig, error) {
+	f.cloudPutConnectorID, f.cloudPutConnectorRevision = sourceID, revision
+	f.cloudPutConnectorPayload = maps.Clone(payload)
+	return f.cloudPutConnectorConfig, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudCreateSource(_ context.Context, input client.CreateSourceInput) (client.Source, error) {
@@ -717,7 +738,13 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		cloudCredentialTest: client.SourceCredentialTestResult{
 			Valid: true, Kind: "yike_photos", AccountExternalID: "12345", AccountName: "Test User",
 		},
-		cloudPutCredential:   client.SourceCredentialStatus{Configured: true, KeyVersion: 3, UpdatedAt: &now},
+		cloudPutCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 3, UpdatedAt: &now},
+		cloudConnectorConfig: client.SourceConnectorConfig{
+			Configured: true, Revision: 2, Payload: json.RawMessage(`{"spaces":["personal","shared"]}`),
+		},
+		cloudPutConnectorConfig: client.SourceConnectorConfig{
+			Configured: true, Revision: 3, Payload: json.RawMessage(`{"spaces":["personal"]}`),
+		},
 		cloudCreatedSource:   client.Source{ID: 10, Name: "群晖 Photos", Kind: "synology_photos", Direction: "push", SyncMode: "backup", RunMode: "scan", Status: "active", Revision: 1},
 		cloudUpdatedSource:   client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4},
 		cloudTriggeredSource: client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4, RunRequestedAt: &now},
@@ -733,6 +760,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		{"/v1/sources/runs/failures?source_id=9&run_id=run-1&limit=20&offset=0", "\"error\":\"download unavailable\""},
 		{"/v1/sources/items?source_id=9&state=error&limit=1000&offset=0", "\"last_error\":\"download unavailable\""},
 		{"/v1/sources/credential?source_id=9", "\"configured\":true"},
+		{"/v1/sources/connector-config?source_id=9", "\"spaces\":[\"personal\",\"shared\"]"},
 	}
 	for _, tc := range cases {
 		res := desktopIPCRequest(t, handler, http.MethodGet, tc.path, "")
@@ -752,6 +780,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		"/v1/sources/items?source_id=9&limit=1001",
 		"/v1/sources/items?source_id=9&offset=-1",
 		"/v1/sources/credential?source_id=bad",
+		"/v1/sources/connector-config?source_id=bad",
 	} {
 		res := desktopIPCRequest(t, handler, http.MethodGet, path, "")
 		if res.Code != http.StatusBadRequest {
@@ -775,8 +804,8 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"account_external_id\":\"12345\"") {
 		t.Fatalf("test credential status=%d body=%s", res.Code, res.Body.String())
 	}
-	if ctrl.cloudTestCredentialKind != "yike_photos" || ctrl.cloudTestCredentialCookie != "BDUSS=ephemeral" {
-		t.Fatalf("credential test not forwarded safely: kind=%q cookie=%q", ctrl.cloudTestCredentialKind, ctrl.cloudTestCredentialCookie)
+	if ctrl.cloudTestCredentialKind != "yike_photos" || ctrl.cloudTestCredentialPayload["cookie"] != "BDUSS=ephemeral" {
+		t.Fatalf("credential test not forwarded safely: kind=%q payload=%v", ctrl.cloudTestCredentialKind, ctrl.cloudTestCredentialPayload)
 	}
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/credential/test", `{"source_id":9}`)
 	if res.Code != http.StatusOK || ctrl.cloudTestStoredID != 9 {
@@ -787,13 +816,25 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"key_version\":3") {
 		t.Fatalf("put credential status=%d body=%s", res.Code, res.Body.String())
 	}
-	if ctrl.cloudPutCredentialID != 9 || ctrl.cloudPutCookie != "BDUSS=secret; STOKEN=secret" {
-		t.Fatalf("credential not forwarded safely: id=%d cookie=%q", ctrl.cloudPutCredentialID, ctrl.cloudPutCookie)
+	if ctrl.cloudPutCredentialID != 9 || ctrl.cloudPutCredentialPayload["cookie"] != "BDUSS=secret; STOKEN=secret" {
+		t.Fatalf("credential not forwarded safely: id=%d payload=%v", ctrl.cloudPutCredentialID, ctrl.cloudPutCredentialPayload)
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodDelete, "/v1/sources/credential", `{"source_id":9}`)
 	if res.Code != http.StatusOK || ctrl.cloudDeleteCredential != 9 || !strings.Contains(res.Body.String(), "\"ok\":true") {
 		t.Fatalf("delete credential status=%d body=%s id=%d", res.Code, res.Body.String(), ctrl.cloudDeleteCredential)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPut, "/v1/sources/connector-config",
+		`{"source_id":9,"revision":2,"payload":{"spaces":["personal"]}}`)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"revision\":3") {
+		t.Fatalf("put connector config status=%d body=%s", res.Code, res.Body.String())
+	}
+	spaces, ok := ctrl.cloudPutConnectorPayload["spaces"].([]any)
+	if ctrl.cloudConnectorConfigID != 9 || ctrl.cloudPutConnectorID != 9 || ctrl.cloudPutConnectorRevision != 2 ||
+		!ok || len(spaces) != 1 || spaces[0] != "personal" {
+		t.Fatalf("connector config not forwarded: getID=%d putID=%d revision=%d payload=%v",
+			ctrl.cloudConnectorConfigID, ctrl.cloudPutConnectorID, ctrl.cloudPutConnectorRevision, ctrl.cloudPutConnectorPayload)
 	}
 
 	for _, tc := range []struct {

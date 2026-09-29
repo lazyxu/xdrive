@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/synology"
 )
 
 func TestNormalizeSynologyPullConnectorConfig(t *testing.T) {
@@ -16,11 +17,11 @@ func TestNormalizeSynologyPullConnectorConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got synologyPullConfig
+	var got synology.PullConfig
 	if err := json.Unmarshal(normalized, &got); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"personal", "shared"}; !reflect.DeepEqual(got.Spaces, want) {
+	if want := []synology.Space{synology.SpacePersonal, synology.SpaceShared}; !reflect.DeepEqual(got.Spaces, want) {
 		t.Fatalf("spaces=%v want=%v", got.Spaces, want)
 	}
 
@@ -47,11 +48,11 @@ func TestDefaultSynologyPullConnectorConfigIncludesBothSpaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got synologyPullConfig
+	var got synology.PullConfig
 	if err := json.Unmarshal(payload, &got); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"personal", "shared"}; !reflect.DeepEqual(got.Spaces, want) {
+	if want := []synology.Space{synology.SpacePersonal, synology.SpaceShared}; !reflect.DeepEqual(got.Spaces, want) {
 		t.Fatalf("spaces=%v want=%v", got.Spaces, want)
 	}
 }

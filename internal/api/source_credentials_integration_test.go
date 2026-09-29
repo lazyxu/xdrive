@@ -142,6 +142,15 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	credentialTestErr = nil
 
+	synologyTestBody := `{"kind":"synology_photos","payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`
+	credentialTestErr = context.DeadlineExceeded
+	synologyTimeout := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
+		strings.NewReader(synologyTestBody), http.StatusGatewayTimeout, map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(synologyTimeout.Body.String(), "synology_timeout") {
+		t.Fatalf("Synology timeout response=%s", synologyTimeout.Body.String())
+	}
+	credentialTestErr = nil
+
 	var userA meta.User
 	if err := db.Where("username = ?", "credential-alice").First(&userA).Error; err != nil {
 		t.Fatal(err)
@@ -163,6 +172,96 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
+	}
+
+	// Synology Push credentials live on the NAS source-agent. The server must
+	// reject credential persistence/read endpoints for Push sources so DSM
+	// passwords cannot be accidentally stored against the wrong execution model.
+	synologyPush := meta.Source{
+		OwnerID: userA.ID, Name: "Synology Push Credential Guard", Kind: synologySourceKind,
+		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusActive,
+		Revision: 1, TargetNodeID: &rootA.ID,
+	}
+	if err := db.Create(&synologyPush).Error; err != nil {
+		t.Fatal(err)
+	}
+	pushCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", synologyPush.ID)
+	pushStoredTestPath := fmt.Sprintf("/api/v1/sources/%d/credential/test", synologyPush.ID)
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, pushCredentialPath, ""},
+		{http.MethodPost, pushStoredTestPath, ""},
+		{http.MethodPut, pushCredentialPath, `{"payload":{"base_url":"https://nas.example","username":"alice","password":"secret"}}`},
+		{http.MethodDelete, pushCredentialPath, ""},
+	} {
+		res := requestWithHeaders(t, router, tc.method, tc.path, tokenA, strings.NewReader(tc.body), http.StatusBadRequest,
+			map[string]string{"Content-Type": "application/json"})
+		if !strings.Contains(res.Body.String(), "unsupported_source_credential_kind") {
+			t.Fatalf("Synology Push credential endpoint %s %s response=%s", tc.method, tc.path, res.Body.String())
+		}
+	}
+	var pushCredentialCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", synologyPush.ID).Count(&pushCredentialCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pushCredentialCount != 0 {
+		t.Fatalf("Synology Push persisted server credentials=%d", pushCredentialCount)
+	}
+
+	// Synology Pull uses the same encrypted SourceCredential store as Yike but
+	// carries a structured DSM credential payload. Saving a validated
+	// credential activates the paused Pull source; clearing it pauses the
+	// source again without ever returning plaintext.
+	synologyPull := meta.Source{
+		OwnerID: userA.ID, Name: "Synology Pull Credential", Kind: synologySourceKind,
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeScan, Status: meta.SourceStatusPaused,
+		Revision: 1, TargetNodeID: &rootA.ID,
+	}
+	if err := db.Create(&synologyPull).Error; err != nil {
+		t.Fatal(err)
+	}
+	synologyPullCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", synologyPull.ID)
+	synologyCredentialBody := `{"payload":{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}}`
+	requestWithHeaders(t, router, http.MethodPut, synologyPullCredentialPath, tokenA,
+		strings.NewReader(synologyCredentialBody), http.StatusOK,
+		map[string]string{"Content-Type": "application/json"})
+	if testedKind != synologySourceKind ||
+		string(testedPayload) != `{"base_url":"https://nas.example:5001","username":"alice","password":"secret"}` {
+		t.Fatalf("Synology credential test kind=%q payload=%s", testedKind, testedPayload)
+	}
+	var activatedSynologyPull meta.Source
+	if err := db.First(&activatedSynologyPull, synologyPull.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if activatedSynologyPull.Status != meta.SourceStatusActive || activatedSynologyPull.Revision != 2 {
+		t.Fatalf("Synology Pull not activated after credential save: %+v", activatedSynologyPull)
+	}
+	synologyStatus := request(t, router, http.MethodGet, synologyPullCredentialPath, tokenA, nil, http.StatusOK)
+	if !strings.Contains(synologyStatus.Body.String(), `"configured":true`) ||
+		strings.Contains(synologyStatus.Body.String(), "secret") ||
+		strings.Contains(synologyStatus.Body.String(), "username") ||
+		strings.Contains(synologyStatus.Body.String(), "base_url") {
+		t.Fatalf("Synology credential status leaked or missing state: %s", synologyStatus.Body.String())
+	}
+	request(t, router, http.MethodDelete, synologyPullCredentialPath, tokenA, nil, http.StatusNoContent)
+	var pausedSynologyPull meta.Source
+	if err := db.First(&pausedSynologyPull, synologyPull.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pausedSynologyPull.Status != meta.SourceStatusPaused || pausedSynologyPull.Revision != 3 {
+		t.Fatalf("Synology Pull not paused after credential deletion: %+v", pausedSynologyPull)
+	}
+	var synologyCredentialCount int64
+	if err := db.Model(&meta.SourceCredential{}).Where("source_id = ?", synologyPull.ID).Count(&synologyCredentialCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if synologyCredentialCount != 0 {
+		t.Fatalf("Synology Pull credential rows=%d want=0", synologyCredentialCount)
 	}
 
 	statusPath := fmt.Sprintf("/api/v1/sources/%d/credential", source.ID)

@@ -494,7 +494,7 @@ test('external source credentials never expose stored Cookie through read IPC', 
     {
       method: 'POST',
       path: '/v1/source-credentials/test',
-      body: { kind: 'yike_photos', cookie: 'BDUSS=ephemeral' },
+      body: { kind: 'yike_photos', payload: { cookie: 'BDUSS=ephemeral' } },
     },
     {
       method: 'POST',
@@ -504,12 +504,74 @@ test('external source credentials never expose stored Cookie through read IPC', 
     {
       method: 'PUT',
       path: '/v1/sources/credential',
-      body: { source_id: 9, cookie: 'BDUSS=secret; STOKEN=secret' },
+      body: { source_id: 9, payload: { cookie: 'BDUSS=secret; STOKEN=secret' } },
     },
     {
       method: 'DELETE',
       path: '/v1/sources/credential',
       body: { source_id: 9 },
+    },
+  ])
+})
+
+test('Synology Pull uses structured DSM credentials and connector config IPC', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    const chunks = []
+    if (req.method !== 'GET') {
+      for await (const chunk of req) chunks.push(chunk)
+    }
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null
+    seen.push({ method: req.method, path: url.pathname + url.search, body })
+
+    if (req.method === 'POST' && url.pathname === '/v1/source-credentials/test') {
+      json(res, 200, { valid: true, kind: 'synology_photos', account_name: 'alice' })
+      return
+    }
+    if (req.method === 'PUT' && url.pathname === '/v1/sources/credential') {
+      json(res, 200, { configured: true, key_version: 4 })
+      return
+    }
+    if (req.method === 'GET' && url.pathname === '/v1/sources/connector-config') {
+      json(res, 200, { configured: false, revision: 1, payload: { spaces: ['personal', 'shared'] } })
+      return
+    }
+    if (req.method === 'PUT' && url.pathname === '/v1/sources/connector-config') {
+      json(res, 200, { configured: true, revision: 2, payload: body.payload })
+      return
+    }
+    json(res, 404, { error: 'not_found', message: 'not found' })
+  })
+
+  const dsm = { base_url: 'https://nas.example:5001', username: 'alice', password: 'secret' }
+  assert.equal((await client.testSourceCredential('synology_photos', dsm)).account_name, 'alice')
+  assert.equal((await client.setSourceCredential(12, dsm)).configured, true)
+  const config = await client.sourceConnectorConfig(12)
+  assert.deepEqual(config.payload.spaces, ['personal', 'shared'])
+  const saved = await client.setSourceConnectorConfig(12, config.revision, { spaces: ['shared'] })
+  assert.deepEqual(saved.payload.spaces, ['shared'])
+
+  assert.deepEqual(seen, [
+    {
+      method: 'POST',
+      path: '/v1/source-credentials/test',
+      body: { kind: 'synology_photos', payload: dsm },
+    },
+    {
+      method: 'PUT',
+      path: '/v1/sources/credential',
+      body: { source_id: 12, payload: dsm },
+    },
+    {
+      method: 'GET',
+      path: '/v1/sources/connector-config?source_id=12',
+      body: null,
+    },
+    {
+      method: 'PUT',
+      path: '/v1/sources/connector-config',
+      body: { source_id: 12, revision: 1, payload: { spaces: ['shared'] } },
     },
   ])
 })

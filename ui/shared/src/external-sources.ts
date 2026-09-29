@@ -1,5 +1,7 @@
 export type SupportedExternalSourceKind = 'synology_photos' | 'yike_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
+export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'yike_pull'
+export type SynologyPhotoSpace = 'personal' | 'shared'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceStatus = 'active' | 'paused'
 export type ExternalSourceScheduleType = 'interval' | 'cron' | 'manual'
@@ -100,6 +102,19 @@ export interface ExternalSourceCredentialStatus {
   updated_at?: string
 }
 
+export interface SynologyDsmCredentialInput {
+  base_url: string
+  username: string
+  password: string
+}
+
+export interface ExternalSourceConnectorConfig {
+  configured: boolean
+  revision: number
+  payload: Record<string, unknown>
+  updated_at?: string
+}
+
 export interface ExternalSourceCredentialTestResult {
   valid: boolean
   kind: string
@@ -175,6 +190,59 @@ export interface ExternalSourceDefaults {
   scheduleTimezone: string
 }
 
+export interface ExternalSourceCreateOption {
+  value: ExternalSourceCreatePreset
+  kind: SupportedExternalSourceKind
+  direction: ExternalSourceDirection
+  label: string
+  description: string
+}
+
+export const externalSourceCreateOptions: ExternalSourceCreateOption[] = [
+  {
+    value: 'synology_push',
+    kind: 'synology_photos',
+    direction: 'push',
+    label: '群晖 Photos · Push',
+    description: '在 NAS 上运行 xdrive-source-agent，主动把照片推送到 xDrive。',
+  },
+  {
+    value: 'synology_pull',
+    kind: 'synology_photos',
+    direction: 'pull',
+    label: '群晖 Photos · Pull',
+    description: '由 xDrive Server 通过 DSM / Synology Photos API 定时读取并同步照片。',
+  },
+  {
+    value: 'yike_pull',
+    kind: 'yike_photos',
+    direction: 'pull',
+    label: '一刻相册 · Pull',
+    description: '由 xDrive Server 使用一刻相册 Cookie 读取并备份媒体。',
+  },
+]
+
+export const synologyPhotoSpaceOptions: Array<{ value: SynologyPhotoSpace; label: string }> = [
+  { value: 'personal', label: '个人空间' },
+  { value: 'shared', label: '共享空间' },
+]
+
+export function normalizeSynologyPhotoSpaces(input: readonly SynologyPhotoSpace[]) {
+  const selected = new Set(input)
+  return synologyPhotoSpaceOptions
+    .map((item) => item.value)
+    .filter((space) => selected.has(space))
+}
+
+export function externalSourceCreateOption(value: ExternalSourceCreatePreset) {
+  return externalSourceCreateOptions.find((item) => item.value === value) ?? externalSourceCreateOptions[0]
+}
+
+export function externalSourceCreatePresetFor(kind: string, direction: ExternalSourceDirection): ExternalSourceCreatePreset {
+  if (kind === 'yike_photos') return 'yike_pull'
+  return direction === 'pull' ? 'synology_pull' : 'synology_push'
+}
+
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
 export const yikeManagedTargetLabel = '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>'
 
@@ -198,7 +266,7 @@ export interface ExternalSourceConnectorProfile {
   kind: string
   label: string
   direction: ExternalSourceDirection
-  credential: 'cookie' | null
+  credential: 'cookie' | 'synology_dsm' | null
   manualTriggerExecutor: 'pull_worker' | 'source_agent'
   defaultName: string
   defaultIgnoreRules: string
@@ -226,7 +294,7 @@ export interface ExternalSourceDetailView {
   lastSuccessAt?: string
   scheduleLabel: string
   credential?: {
-    label: 'Cookie'
+    label: string
     configured: boolean
   }
   revision: number
@@ -322,7 +390,7 @@ export function defaultExternalSourceTimezone() {
   }
 }
 
-export function externalSourceConnectorProfile(kind: string): ExternalSourceConnectorProfile {
+export function externalSourceConnectorProfile(kind: string, direction?: ExternalSourceDirection): ExternalSourceConnectorProfile {
   if (kind === 'yike_photos') {
     return {
       kind,
@@ -331,6 +399,17 @@ export function externalSourceConnectorProfile(kind: string): ExternalSourceConn
       credential: 'cookie',
       manualTriggerExecutor: 'pull_worker',
       defaultName: '一刻相册',
+      defaultIgnoreRules: '',
+    }
+  }
+  if (kind === 'synology_photos' && direction === 'pull') {
+    return {
+      kind,
+      label: '群晖 Photos',
+      direction: 'pull',
+      credential: 'synology_dsm',
+      manualTriggerExecutor: 'pull_worker',
+      defaultName: '群晖 Photos Pull',
       defaultIgnoreRules: '',
     }
   }
@@ -348,16 +427,22 @@ export function externalSourceConnectorProfile(kind: string): ExternalSourceConn
   return {
     kind,
     label: kind,
-    direction: 'pull',
+    direction: direction ?? 'pull',
     credential: null,
-    manualTriggerExecutor: 'pull_worker',
+    manualTriggerExecutor: direction === 'push' ? 'source_agent' : 'pull_worker',
     defaultName: kind,
     defaultIgnoreRules: '',
   }
 }
 
-export function externalSourceKindLabel(kind: string) {
-  return externalSourceConnectorProfile(kind).label
+export function externalSourceKindLabel(kind: string, direction?: ExternalSourceDirection) {
+  return externalSourceConnectorProfile(kind, direction).label
+}
+
+export function externalSourceCredentialLabel(profile: ExternalSourceConnectorProfile) {
+  if (profile.credential === 'cookie') return 'Cookie'
+  if (profile.credential === 'synology_dsm') return 'DSM 凭据'
+  return '凭据'
 }
 
 export function externalSourceRunStatusLabel(status: ExternalSourceRunStatus) {
@@ -381,15 +466,17 @@ export function externalSourceRunStatusTone(status: ExternalSourceRunStatus): Ex
 
 export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceState {
   const { source, latestRun, credential } = row
-  const connector = externalSourceConnectorProfile(source.kind)
+  const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '已暂停' }
   if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: '运行中' }
   if (source.run_requested_at) return { key: 'pending', tone: 'busy', label: '等待执行' }
   if (source.last_error) return { key: 'error', tone: 'bad', label: '异常' }
-  if (connector.credential === 'cookie') {
+  if (connector.credential) {
+    const label = externalSourceCredentialLabel(connector)
+    const separator = connector.credential === 'cookie' ? ' ' : ''
     return credential?.configured
-      ? { key: 'credential_ready', tone: 'good', label: 'Cookie 已配置' }
-      : { key: 'credential_missing', tone: 'warning', label: 'Cookie 未配置' }
+      ? { key: 'credential_ready', tone: 'good', label: `${label}${separator}已配置` }
+      : { key: 'credential_missing', tone: 'warning', label: `${label}${separator}未配置` }
   }
   if (source.last_success_at) return { key: 'ready', tone: 'good', label: '正常' }
   if (latestRun?.status === 'partial') return { key: 'partial', tone: 'warning', label: '部分完成' }
@@ -398,9 +485,9 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
 
 export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalSourceTriggerState {
   const { source, latestRun, credential } = row
-  const connector = externalSourceConnectorProfile(source.kind)
+  const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.run_requested_at) return { ready: false, label: '已提交扫描请求' }
-  if (connector.credential === 'cookie' && !credential?.configured) return { ready: false, label: '请先配置 Cookie' }
+  if (connector.credential && !credential?.configured) return { ready: false, label: `请先配置 ${externalSourceCredentialLabel(connector)}` }
   if (source.status !== 'active') return { ready: false, label: '来源已暂停' }
   if (latestRun?.status === 'running') return { ready: false, label: '来源正在运行' }
   if (connector.manualTriggerExecutor === 'source_agent') {
@@ -415,8 +502,8 @@ export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
   return '立即扫描'
 }
 
-export function externalSourceDefaults(kind: SupportedExternalSourceKind): ExternalSourceDefaults {
-  const profile = externalSourceConnectorProfile(kind)
+export function externalSourceDefaults(kind: SupportedExternalSourceKind, direction?: ExternalSourceDirection): ExternalSourceDefaults {
+  const profile = externalSourceConnectorProfile(kind, direction)
   return {
     kind,
     name: profile.defaultName,
@@ -439,12 +526,12 @@ export function externalSourceCardView(row: ExternalSourceRow): ExternalSourceCa
     scannedItems: latestRun?.scanned_items,
     scannedBytes: latestRun?.scanned_bytes,
     failedItems: latestRun?.failed_items,
-    connector: externalSourceConnectorProfile(source.kind),
+    connector: externalSourceConnectorProfile(source.kind, source.direction),
   }
 }
 
 export function externalSourceDetailView(row: ExternalSourceRow): ExternalSourceDetailView {
-  const connector = externalSourceConnectorProfile(row.source.kind)
+  const connector = externalSourceConnectorProfile(row.source.kind, row.source.direction)
   const runInProgress = row.latestRun?.status === 'running' || !!row.source.run_requested_at
   return {
     connector,
@@ -455,8 +542,8 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
     lastRunAt: row.source.last_run_at,
     lastSuccessAt: row.source.last_success_at,
     scheduleLabel: externalSourceScheduleLabel(row.source),
-    credential: connector.credential === 'cookie'
-      ? { label: 'Cookie', configured: row.credential?.configured === true }
+    credential: connector.credential
+      ? { label: externalSourceCredentialLabel(connector), configured: row.credential?.configured === true }
       : undefined,
     revision: row.source.revision,
     ignoreRules: row.source.ignore_rules || undefined,
@@ -556,8 +643,14 @@ export function externalSourceCredentialTestErrorLabel(code: string) {
     yike_connection_failed: '无法连接一刻相册，请检查网络后重试',
     yike_target_contains_unmanaged_data: '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加来源',
     yike_target_path_conflict: '固定的一刻相册路径被同名文件占用，请先整理“同步文件夹 / 一刻相册”路径后重试',
-    invalid_source_credential: 'Cookie 格式无效，请重新获取',
-    source_credential_not_configured: '尚未配置一刻相册 Cookie',
+    synology_auth_failed: 'Synology DSM 登录失败，请检查地址、用户名和密码',
+    synology_photos_unavailable: 'Synology Photos API 不可用，请确认 NAS 已安装并启用 Synology Photos',
+    synology_unavailable: '无法连接 Synology DSM，请检查 NAS 地址、网络和 HTTPS 配置',
+    synology_timeout: '连接 Synology DSM 超时，请稍后重试',
+    source_timeout: '连接来源超时，请稍后重试',
+    source_connection_failed: '无法连接来源，请检查网络和凭据后重试',
+    invalid_source_credential: '来源凭据格式无效，请检查后重试',
+    source_credential_not_configured: '尚未配置来源凭据',
     unsupported_source_credential_kind: '当前来源不支持连接测试',
   }
   return labels[normalized] || normalized || '连接测试失败'

@@ -12,10 +12,12 @@ const agent = Object.freeze({
   cancelSourceRun: (sourceID: number, runID: string) => ipcRenderer.invoke('agent:cancel-source-run', sourceID, runID),
   getSourceItems: (sourceID: number, state = 'error', limit = 1000, offset = 0) => ipcRenderer.invoke('agent:get-source-items', sourceID, state, limit, offset),
   getSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:get-source-credential', sourceID),
-  testSourceCredential: (kind: string, cookie: string) => ipcRenderer.invoke('agent:test-source-credential', kind, cookie),
+  testSourceCredential: (kind: string, credential: string | Record<string, string>) => ipcRenderer.invoke('agent:test-source-credential', kind, credential),
   testStoredSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:test-stored-source-credential', sourceID),
-  setSourceCredential: (sourceID: number, cookie: string) => ipcRenderer.invoke('agent:set-source-credential', sourceID, cookie),
+  setSourceCredential: (sourceID: number, credential: string | Record<string, string>) => ipcRenderer.invoke('agent:set-source-credential', sourceID, credential),
   deleteSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:delete-source-credential', sourceID),
+  getSourceConnectorConfig: (sourceID: number) => ipcRenderer.invoke('agent:get-source-connector-config', sourceID),
+  setSourceConnectorConfig: (sourceID: number, revision: number, payload: Record<string, unknown>) => ipcRenderer.invoke('agent:set-source-connector-config', sourceID, revision, payload),
   createSource: (input: {
     name: string
     kind: string

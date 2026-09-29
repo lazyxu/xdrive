@@ -92,7 +92,7 @@ func (s *Server) testSourceCredential(c *gin.Context) {
 
 	result, err := s.testSourceCredentialPayload(c.Request.Context(), req.Kind, compact.Bytes())
 	if err != nil {
-		writeSourceCredentialTestError(c, err)
+		writeSourceCredentialTestError(c, req.Kind, err)
 		return
 	}
 	result.Valid = true
@@ -100,7 +100,7 @@ func (s *Server) testSourceCredential(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-func writeSourceCredentialTestError(c *gin.Context, err error) {
+func writeSourceCredentialTestError(c *gin.Context, kind string, err error) {
 	switch {
 	case errors.Is(err, errUnsupportedSourceCredentialTest):
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
@@ -111,7 +111,14 @@ func writeSourceCredentialTestError(c *gin.Context, err error) {
 	case errors.Is(err, yike.ErrRateLimited):
 		fail(c, http.StatusTooManyRequests, "yike_rate_limited")
 	case errors.Is(err, context.DeadlineExceeded):
-		fail(c, http.StatusGatewayTimeout, "yike_timeout")
+		switch strings.TrimSpace(kind) {
+		case yikeSourceKind:
+			fail(c, http.StatusGatewayTimeout, "yike_timeout")
+		case synologySourceKind:
+			fail(c, http.StatusGatewayTimeout, "synology_timeout")
+		default:
+			fail(c, http.StatusGatewayTimeout, "source_timeout")
+		}
 	case errors.Is(err, yike.ErrUnavailable):
 		fail(c, http.StatusBadGateway, "yike_unavailable")
 	case errors.Is(err, synology.ErrAuthentication):
@@ -191,6 +198,10 @@ func (s *Server) testStoredSourceCredential(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if !sourceUsesStoredCredential(source) {
+		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
+		return
+	}
 	plaintext, err := sourcecredential.Get(c.Request.Context(), s.DB, s.ConnectorSecrets, source)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -204,7 +215,7 @@ func (s *Server) testStoredSourceCredential(c *gin.Context) {
 
 	result, err := s.testSourceCredentialPayload(c.Request.Context(), source.Kind, json.RawMessage(plaintext))
 	if err != nil {
-		writeSourceCredentialTestError(c, err)
+		writeSourceCredentialTestError(c, source.Kind, err)
 		return
 	}
 	result.Valid = true
@@ -218,8 +229,13 @@ func (s *Server) getSourceCredentialStatus(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid source id")
 		return
 	}
-	if _, err := s.ownedSource(userID(c), sourceID); err != nil {
+	source, err := s.ownedSource(userID(c), sourceID)
+	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if !sourceUsesStoredCredential(source) {
+		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 		return
 	}
 
@@ -253,6 +269,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if !sourceUsesStoredCredential(source) {
+		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
+		return
+	}
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSourceCredentialPayloadBytes+4096)
 	var req struct {
@@ -284,13 +304,10 @@ func (s *Server) putSourceCredential(c *gin.Context) {
 	// Pull credentials grant the server worker remote access. Validate them
 	// again at the persistence boundary so non-UI/API callers cannot store an
 	// already invalid secret and leave a Source looking configured but unusable.
-	var identity sourceCredentialTestDTO
-	if sourceUsesStoredCredential(source) {
-		identity, err = s.testSourceCredentialPayload(c.Request.Context(), source.Kind, compact.Bytes())
-		if err != nil {
-			writeSourceCredentialTestError(c, err)
-			return
-		}
+	identity, err := s.testSourceCredentialPayload(c.Request.Context(), source.Kind, compact.Bytes())
+	if err != nil {
+		writeSourceCredentialTestError(c, source.Kind, err)
+		return
 	}
 
 	var row meta.SourceCredential
@@ -356,21 +373,22 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 		fail(c, statusForLookup(err), "source not found")
 		return
 	}
+	if !sourceUsesStoredCredential(source) {
+		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
+		return
+	}
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := sourcecredential.Delete(c.Request.Context(), tx, source.ID); err != nil {
 			return err
 		}
-		if sourceUsesStoredCredential(source) {
-			now := time.Now().UTC()
-			return tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
-				Updates(map[string]any{
-					"status":           meta.SourceStatusPaused,
-					"revision":         gorm.Expr("revision + 1"),
-					"run_requested_at": nil,
-					"updated_at":       now,
-				}).Error
-		}
-		return nil
+		now := time.Now().UTC()
+		return tx.Model(&meta.Source{}).Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+			Updates(map[string]any{
+				"status":           meta.SourceStatusPaused,
+				"revision":         gorm.Expr("revision + 1"),
+				"run_requested_at": nil,
+				"updated_at":       now,
+			}).Error
 	})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "delete source credential failed")

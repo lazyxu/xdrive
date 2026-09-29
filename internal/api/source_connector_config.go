@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/synology"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -27,13 +26,9 @@ type sourceConnectorConfigDTO struct {
 	UpdatedAt  *time.Time      `json:"updated_at,omitempty"`
 }
 
-type synologyPullConfig struct {
-	Spaces []string `json:"spaces"`
-}
-
 func defaultSourceConnectorConfig(source meta.Source) (json.RawMessage, error) {
 	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPull {
-		return json.Marshal(synologyPullConfig{Spaces: []string{"personal", "shared"}})
+		return json.Marshal(synology.DefaultPullConfig())
 	}
 	return nil, errUnsupportedSourceConnectorConfig
 }
@@ -45,35 +40,11 @@ func normalizeSourceConnectorConfig(source meta.Source, payload json.RawMessage)
 	if len(payload) == 0 || len(payload) > maxSourceConnectorConfigBytes {
 		return nil, errInvalidSourceConfig
 	}
-	var input synologyPullConfig
-	if err := json.Unmarshal(payload, &input); err != nil {
+	config, err := synology.ParsePullConfig(payload)
+	if err != nil {
 		return nil, errInvalidSourceConfig
 	}
-	if len(input.Spaces) == 0 {
-		return nil, errInvalidSourceConfig
-	}
-	seen := map[string]bool{}
-	for _, raw := range input.Spaces {
-		space := strings.ToLower(strings.TrimSpace(raw))
-		if space != "personal" && space != "shared" {
-			return nil, errInvalidSourceConfig
-		}
-		seen[space] = true
-	}
-	spaces := make([]string, 0, len(seen))
-	for space := range seen {
-		spaces = append(spaces, space)
-	}
-	sort.Slice(spaces, func(i, j int) bool {
-		if spaces[i] == "personal" {
-			return true
-		}
-		if spaces[j] == "personal" {
-			return false
-		}
-		return spaces[i] < spaces[j]
-	})
-	return json.Marshal(synologyPullConfig{Spaces: spaces})
+	return json.Marshal(config)
 }
 
 func (s *Server) getSourceConnectorConfig(c *gin.Context) {

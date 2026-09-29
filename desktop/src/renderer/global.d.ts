@@ -4,6 +4,7 @@ import type {
   ExternalSource,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialTestResult,
+  ExternalSourceConnectorConfig,
   ExternalSourceItem,
   ExternalSourceRun,
   ExternalSourceRunFailure,
@@ -175,6 +176,7 @@ declare global {
   type AgentSourceItem = ExternalSourceItem
   type AgentSourceCredentialStatus = ExternalSourceCredentialStatus
   type AgentSourceCredentialTestResult = ExternalSourceCredentialTestResult
+  type AgentSourceConnectorConfig = ExternalSourceConnectorConfig
 
   type AgentCloudNode = Node
   type AgentCloudQuota = QuotaUsage
@@ -257,10 +259,12 @@ declare global {
         cancelSourceRun: (sourceID: number, runID: string) => Promise<DesktopResult<AgentSourceRun>>
         getSourceItems: (sourceID: number, state?: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceItem[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>
-        testSourceCredential: (kind: string, cookie: string) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
+        testSourceCredential: (kind: string, credential: string | Record<string, string>) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
         testStoredSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
-        setSourceCredential: (sourceID: number, cookie: string) => Promise<DesktopResult<AgentSourceCredentialStatus>>
+        setSourceCredential: (sourceID: number, credential: string | Record<string, string>) => Promise<DesktopResult<AgentSourceCredentialStatus>>
         deleteSourceCredential: (sourceID: number) => Promise<DesktopResult<{ ok: boolean }>>
+        getSourceConnectorConfig: (sourceID: number) => Promise<DesktopResult<AgentSourceConnectorConfig>>
+        setSourceConnectorConfig: (sourceID: number, revision: number, payload: Record<string, unknown>) => Promise<DesktopResult<AgentSourceConnectorConfig>>
         createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>
         updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>
         deleteSource: (sourceID: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>

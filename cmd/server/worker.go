@@ -17,6 +17,8 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/pullworker"
 	"github.com/lazyxu/xdrive/internal/sourcewake"
+	"github.com/lazyxu/xdrive/internal/synologysync"
+	"github.com/lazyxu/xdrive/internal/synologyworker"
 	"github.com/lazyxu/xdrive/internal/yikesync"
 	"github.com/lazyxu/xdrive/internal/yikeworker"
 	"gorm.io/driver/postgres"
@@ -82,10 +84,18 @@ func runWorker(args []string) error {
 		JWTSecret: cfg.JWTSecret,
 		Logger:    slog.Default(),
 	}
+	synologyRunner := &synologyworker.Runner{
+		DB:        db,
+		Keyring:   keyring,
+		ServerURL: serverURL,
+		JWTSecret: cfg.JWTSecret,
+		Logger:    slog.Default(),
+	}
 	runner := &pullworker.Runner{
 		DB: db,
 		Handlers: map[string]pullworker.SourceHandler{
-			yikesync.SourceKind: yikeRunner,
+			yikesync.SourceKind:     yikeRunner,
+			synologysync.SourceKind: synologyRunner,
 		},
 		Logger: slog.Default(),
 	}
