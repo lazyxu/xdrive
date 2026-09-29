@@ -525,3 +525,21 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
   .source-create-grid { grid-template-columns: 1fr; }
   .source-create-actions { justify-content: flex-start; }
 }
+
+/* Transient management tasks are shown in MUI dialogs instead of expanding the page. */
+.source-create.modal-form-surface {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+.source-settings.modal-form-surface {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.cloud-subpanel.modal-subpanel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}

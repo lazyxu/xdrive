@@ -82,6 +82,14 @@ type SourceRunFailurePage = {
 
 type View = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
+type ConfirmDialogState = {
+  title: string
+  message: string
+  confirmLabel: string
+  tone: 'primary' | 'warning' | 'error'
+  onConfirm: () => unknown | Promise<unknown>
+}
+
 function platformLabel(platform: string) {
   if (platform === 'win32') return 'Windows'
   if (platform === 'linux') return 'Linux'
@@ -282,6 +290,7 @@ export default function App() {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [syncMenuAnchor, setSyncMenuAnchor] = useState<HTMLElement | null>(null)
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [clientUpdate, setClientUpdate] = useState<AgentUpdateState | null>(null)
@@ -346,6 +355,23 @@ export default function App() {
   const [sharePassword, setSharePassword] = useState('')
   const [shareMaxDownloads, setShareMaxDownloads] = useState('0')
   const [createdShareURL, setCreatedShareURL] = useState('')
+
+  const requestConfirmation = (
+    title: string,
+    message: string,
+    confirmLabel: string,
+    onConfirm: () => unknown | Promise<unknown>,
+    tone: ConfirmDialogState['tone'] = 'primary',
+  ) => {
+    setConfirmDialog({ title, message, confirmLabel, onConfirm, tone })
+  }
+
+  const confirmPendingAction = async () => {
+    const pending = confirmDialog
+    if (!pending) return
+    setConfirmDialog(null)
+    await pending.onConfirm()
+  }
 
   const [server, setServer] = useState('')
   const [username, setUsername] = useState('')
@@ -1146,18 +1172,25 @@ export default function App() {
     }
   }
 
-  const clearSourceCookie = async (row: ExternalSourceRow) => {
-    if (!window.confirm(`确定清除“${row.source.name}”保存的 Cookie？清除后 Pull 扫描将暂停，直到重新配置 Cookie。`)) return
-    const data = await run(
-      `source-cookie-delete-${row.source.id}`,
-      () => window.xdriveDesktop.agent.deleteSourceCredential(row.source.id),
-      'Cookie 已清除。',
+  const clearSourceCookie = (row: ExternalSourceRow) => {
+    requestConfirmation(
+      '清除已保存的 Cookie？',
+      `清除“${row.source.name}”保存的 Cookie 后，Pull 扫描将暂停，直到重新配置 Cookie。`,
+      '清除 Cookie',
+      async () => {
+        const data = await run(
+          `source-cookie-delete-${row.source.id}`,
+          () => window.xdriveDesktop.agent.deleteSourceCredential(row.source.id),
+          'Cookie 已清除。',
+        )
+        if (data) {
+          setSourceEditCookie('')
+          setSourceEditStatus('paused')
+          await loadSources()
+        }
+      },
+      'error',
     )
-    if (data) {
-      setSourceEditCookie('')
-      setSourceEditStatus('paused')
-      await loadSources()
-    }
   }
 
   const deleteExternalSource = async () => {
@@ -1238,15 +1271,22 @@ export default function App() {
         : data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
   }
 
-  const installClientUpdate = async () => {
-    if (!window.confirm('安装更新将关闭当前 xDrive 客户端，完成校验后自动重启。确定现在安装？')) return
-    const data = await run('update-install', () => window.xdriveDesktop.agent.installUpdate())
-    if (!data) return
-    setClientUpdate(data)
-    setNotice(data.message === '更新操作已取消。'
-      ? '更新操作已取消。'
-      : data.status === 'installing' ? '更新安装已启动，xDrive 将完成验证并重启。'
-        : data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
+  const installClientUpdate = () => {
+    requestConfirmation(
+      '安装客户端更新？',
+      '安装更新将关闭当前 xDrive 客户端，完成校验后自动重启。',
+      '安装并重启',
+      async () => {
+        const data = await run('update-install', () => window.xdriveDesktop.agent.installUpdate())
+        if (!data) return
+        setClientUpdate(data)
+        setNotice(data.message === '更新操作已取消。'
+          ? '更新操作已取消。'
+          : data.status === 'installing' ? '更新安装已启动，xDrive 将完成验证并重启。'
+            : data.update_available ? `发现新版本 ${data.latest_version || ''}。` : '当前已是最新版本。')
+      },
+      'warning',
+    )
   }
 
   const cancelClientUpdate = async () => {
@@ -1483,12 +1523,19 @@ export default function App() {
     if (cloudCrumbs.length > 0) await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
   }
 
-  const deleteCloudTrash = async (node: AgentCloudNode) => {
-    if (!window.confirm(`永久删除 ${node.name}？这也会删除已保存的历史版本，且无法撤销。`)) return
-    const data = await run('cloud-trash-delete', () => window.xdriveDesktop.agent.cloudDeleteTrash(node.id, node.revision), '已永久删除。')
-    if (!data) return
-    await loadCloudTrash()
-    await refreshCloudQuota()
+  const deleteCloudTrash = (node: AgentCloudNode) => {
+    requestConfirmation(
+      '永久删除项目？',
+      `永久删除“${node.name}”也会删除已保存的历史版本，且无法撤销。`,
+      '永久删除',
+      async () => {
+        const data = await run('cloud-trash-delete', () => window.xdriveDesktop.agent.cloudDeleteTrash(node.id, node.revision), '已永久删除。')
+        if (!data) return
+        await loadCloudTrash()
+        await refreshCloudQuota()
+      },
+      'error',
+    )
   }
 
   const openCloud历史版本 = async (node: AgentCloudNode, crumbs = cloudCrumbs) => {
@@ -1508,22 +1555,30 @@ export default function App() {
     }
   }
 
-  const restoreCloudVersion = async (version: AgentCloudVersion) => {
+  const restoreCloudVersion = (version: AgentCloudVersion) => {
     if (!cloudHistoryNode) return
-    if (!window.confirm(`恢复到版本 r${version.revision}？当前内容会先保留到历史版本中。`)) return
-    const restored = await run(
-      'cloud-version-restore',
-      () => window.xdriveDesktop.agent.cloudRestoreVersion(cloudHistoryNode.id, cloudHistoryNode.revision, version.id),
-      '版本已恢复。',
+    const historyNode = cloudHistoryNode
+    requestConfirmation(
+      '恢复历史版本？',
+      `将“${historyNode.name}”恢复到版本 r${version.revision}。当前内容会先保留到历史版本中。`,
+      '恢复版本',
+      async () => {
+        const restored = await run(
+          'cloud-version-restore',
+          () => window.xdriveDesktop.agent.cloudRestoreVersion(historyNode.id, historyNode.revision, version.id),
+          '版本已恢复。',
+        )
+        if (!restored) return
+        setCloudHistoryNode(restored)
+        const versions = await window.xdriveDesktop.agent.cloudVersions(restored.id)
+        if (versions.ok) setCloudVersions(versions.data)
+        await refreshCloudQuota()
+        if (cloudHistoryCrumbs.length > 0) {
+          await loadCloudDirectory(cloudHistoryCrumbs.at(-1)!.id, cloudHistoryCrumbs)
+        }
+      },
+      'warning',
     )
-    if (!restored) return
-    setCloudHistoryNode(restored)
-    const versions = await window.xdriveDesktop.agent.cloudVersions(restored.id)
-    if (versions.ok) setCloudVersions(versions.data)
-    await refreshCloudQuota()
-    if (cloudHistoryCrumbs.length > 0) {
-      await loadCloudDirectory(cloudHistoryCrumbs.at(-1)!.id, cloudHistoryCrumbs)
-    }
   }
 
   const openCloudShares = async (node: AgentCloudNode) => {
@@ -1997,7 +2052,16 @@ export default function App() {
             </div>
 
             {sourceCreateOpen && (
-              <form className="source-create" onSubmit={(event) => void createExternalSource(event)}>
+              <Dialog
+                open={sourceCreateOpen}
+                onClose={() => { if (!busy) setSourceCreateOpen(false) }}
+                maxWidth="md"
+                fullWidth
+                scroll="paper"
+                aria-label="添加外部来源"
+              >
+                <DialogContent dividers>
+              <form className="source-create modal-form-surface" onSubmit={(event) => void createExternalSource(event)}>
                 <div className="source-create-heading">
                   <div>
                     <strong>添加外部来源</strong>
@@ -2140,6 +2204,8 @@ export default function App() {
                   <button className="secondary" type="button" disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</button>
                 </div>
               </form>
+                </DialogContent>
+              </Dialog>
             )}
 
             {sources.length === 0 && busy !== 'sources' ? (
@@ -2229,7 +2295,16 @@ export default function App() {
                         </button>
                       </div>
                       {editingSourceID === row.source.id && (
-                        <form className="source-settings" onSubmit={(event) => void saveSourceSettings(event, row)}>
+                        <Dialog
+                          open={editingSourceID === row.source.id}
+                          onClose={() => { if (!busy) setEditingSourceID(null) }}
+                          maxWidth="md"
+                          fullWidth
+                          scroll="paper"
+                          aria-label="来源设置"
+                        >
+                          <DialogContent dividers>
+                        <form className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
                           <div className="source-settings-heading">
                             <div>
                               <strong>来源设置</strong>
@@ -2332,6 +2407,8 @@ export default function App() {
                             </MuiButton>
                           </div>
                         </form>
+                          </DialogContent>
+                        </Dialog>
                       )}
                       {selectedSourceID === row.source.id && (
                         <div className="source-detail">
@@ -2748,7 +2825,9 @@ export default function App() {
             </div>
 
             {cloudTrashOpen && (
-              <div className="cloud-subpanel">
+              <Dialog open={cloudTrashOpen} onClose={() => setCloudTrashOpen(false)} maxWidth="md" fullWidth scroll="paper" aria-label="回收站">
+                <DialogContent dividers sx={{ p: 0 }}>
+              <div className="cloud-subpanel modal-subpanel">
                 <div className="cloud-subpanel-heading">
                   <div><strong>回收站</strong><span>{cloudTrash.length} item{cloudTrash.length === 1 ? '' : 's'}</span></div>
                   <button className="secondary" type="button" onClick={() => setCloudTrashOpen(false)}>关闭</button>
@@ -2767,10 +2846,25 @@ export default function App() {
                   </div>
                 )}
               </div>
+                </DialogContent>
+              </Dialog>
             )}
 
             {cloudHistoryNode && (
-              <div className="cloud-subpanel">
+              <Dialog
+                open={!!cloudHistoryNode}
+                onClose={() => {
+                  setCloudHistoryNode(null)
+                  setCloudHistoryCrumbs([])
+                  setCloudVersions([])
+                }}
+                maxWidth="md"
+                fullWidth
+                scroll="paper"
+                aria-label="版本历史"
+              >
+                <DialogContent dividers sx={{ p: 0 }}>
+              <div className="cloud-subpanel modal-subpanel">
                 <div className="cloud-subpanel-heading">
                   <div><strong>版本历史 — {cloudHistoryNode.name}</strong><span>当前版本 r{cloudHistoryNode.revision}</span></div>
                   <button className="secondary" type="button" onClick={() => {
@@ -2790,10 +2884,25 @@ export default function App() {
                   </div>
                 )}
               </div>
+                </DialogContent>
+              </Dialog>
             )}
 
             {cloudShareNode && (
-              <div className="cloud-subpanel">
+              <Dialog
+                open={!!cloudShareNode}
+                onClose={() => {
+                  setCloudShareNode(null)
+                  setCloudShares([])
+                  setCreatedShareURL('')
+                }}
+                maxWidth="md"
+                fullWidth
+                scroll="paper"
+                aria-label="分享文件"
+              >
+                <DialogContent dividers sx={{ p: 0 }}>
+              <div className="cloud-subpanel modal-subpanel">
                 <div className="cloud-subpanel-heading">
                   <div><strong>分享 — {cloudShareNode.name}</strong><span>分享令牌只会在创建时显示一次。</span></div>
                   <button className="secondary" type="button" onClick={() => {
@@ -2849,6 +2958,8 @@ export default function App() {
                   ))}
                 </div>
               </div>
+                </DialogContent>
+              </Dialog>
             )}
           </section>
         )}
@@ -3003,14 +3114,22 @@ export default function App() {
                     <div className="row-actions">
                       <button className="secondary" type="button" onClick={() => void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))}>同时打开</button>
                       <button className="secondary" type="button" onClick={() => {
-                        if (window.confirm('保留服务器版本并删除本地冲突副本？')) {
-                          void run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts())
-                        }
+                        requestConfirmation(
+                          '保留服务器版本？',
+                          '这会保留服务器版本并删除本地冲突副本。',
+                          '保留服务器版本',
+                          () => run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts()),
+                          'warning',
+                        )
                       }}>保留服务器版本</button>
                       <button className="primary" type="button" onClick={() => {
-                        if (window.confirm('使用本地冲突副本替换服务器版本？')) {
-                          void run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts())
-                        }
+                        requestConfirmation(
+                          '保留本地版本？',
+                          '这会使用本地冲突副本替换服务器版本。',
+                          '保留本地版本',
+                          () => run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts()),
+                          'warning',
+                        )
                       }}>保留本地版本</button>
                     </div>
                   </article>
@@ -3318,7 +3437,13 @@ export default function App() {
                 <div className="form-actions">
                   <button className="primary" type="submit" disabled={busy === 'settings'}>{busy === 'settings' ? '正在保存…' : '保存设置'}</button>
                   <button className="danger" type="button" disabled={!!busy} onClick={() => {
-                    if (window.confirm('确定要在此设备上退出 xDrive 吗？')) void run('logout', () => window.xdriveDesktop.agent.logout())
+                    requestConfirmation(
+                      '退出当前设备？',
+                      '确定要在此设备上退出 xDrive 吗？',
+                      '退出登录',
+                      async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
+                      'error',
+                    )
                   }}>退出登录</button>
                 </div>
               </form>
@@ -3326,6 +3451,23 @@ export default function App() {
           </section>
         )}
       </main>
+
+      <Dialog open={!!confirmDialog} onClose={() => setConfirmDialog(null)} aria-label="确认操作">
+        <DialogTitle>{confirmDialog?.title ?? '确认操作'}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{confirmDialog?.message ?? ''}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <MuiButton onClick={() => setConfirmDialog(null)}>取消</MuiButton>
+          <MuiButton
+            variant="contained"
+            color={confirmDialog?.tone ?? 'primary'}
+            onClick={() => void confirmPendingAction()}
+          >
+            {confirmDialog?.confirmLabel ?? '确认'}
+          </MuiButton>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={sourceFailedItemsOpen && sourceFailedItems.length > 0} onClose={() => setSourceFailedItemsOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>失败文件</DialogTitle>

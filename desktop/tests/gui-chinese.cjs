@@ -109,6 +109,43 @@ test('desktop external sources expose safe source deletion', () => {
   assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
 })
 
+test('desktop transient management surfaces use modal dialogs', () => {
+  for (const openProp of [
+    'open={sourceCreateOpen}',
+    'open={editingSourceID === row.source.id}',
+    'open={cloudTrashOpen}',
+    'open={!!cloudHistoryNode}',
+    'open={!!cloudShareNode}',
+  ]) {
+    assert.ok(renderer.includes(openProp), `missing modal dialog state: ${openProp}`)
+  }
+
+  for (const label of ['添加外部来源', '来源设置', '回收站', '版本历史', '分享文件']) {
+    assert.ok(renderer.includes(`aria-label="${label}"`), `missing modal dialog label: ${label}`)
+  }
+
+  assert.ok(renderer.includes('source-create modal-form-surface'), 'source creation still uses the inline panel surface')
+  assert.ok(renderer.includes('source-settings modal-form-surface'), 'source settings still use the inline card surface')
+  assert.equal((renderer.match(/cloud-subpanel modal-subpanel/g) || []).length, 3, 'cloud transient panels should all be modal surfaces')
+})
+
+test('desktop uses app-native confirmation dialogs instead of browser confirms', () => {
+  assert.equal(renderer.includes('window.confirm'), false, 'browser-native confirmation dialog remains in the desktop renderer')
+  assert.ok(renderer.includes('type ConfirmDialogState ='), 'missing reusable confirmation dialog state')
+  assert.ok(renderer.includes('aria-label="确认操作"'), 'missing reusable confirmation dialog')
+  for (const label of [
+    '清除 Cookie',
+    '安装并重启',
+    '永久删除',
+    '恢复版本',
+    '保留服务器版本',
+    '保留本地版本',
+    '退出登录',
+  ]) {
+    assert.ok(renderer.includes(label), `missing confirmation action label: ${label}`)
+  }
+})
+
 test('desktop Yike source exposes connection testing and V1 recovery UX', () => {
   assert.ok(renderer.includes('testSourceCredential'), 'missing candidate Cookie test')
   assert.ok(renderer.includes('testStoredSourceCredential'), 'missing stored Cookie test')
