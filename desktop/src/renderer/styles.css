@@ -290,10 +290,6 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 .diagnostic-row { display: grid; grid-template-columns: 54px minmax(0,1fr); align-items: start; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
 .diagnostic-row strong { color: var(--text-strong); font-size: 13px; }
 .diagnostic-row p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.diagnostic-badge { margin-top: 1px; border-radius: 999px; padding: 4px 7px; text-align: center; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
-.diagnostic-badge.pass { background: var(--success-bg); color: var(--success-text); }
-.diagnostic-badge.warn { background: var(--warning-bg); color: var(--warning-text); }
-.diagnostic-badge.fail { background: var(--danger-bg); color: var(--danger-text); }
 
 @media (max-width: 800px) {
   .diagnostic-summary { grid-template-columns: repeat(3,1fr); }

@@ -91,7 +91,7 @@ test('desktop keeps sync controls global instead of repeating page status action
 
   assert.ok(topbar.includes('<h1>{viewLabel(view)}</h1>'), 'topbar should show the current page title')
   assert.equal(topbar.includes('{headline}'), false, 'topbar should not repeat sync status as the page title')
-  assert.ok(topbar.includes('aria-label="同步状态"'), 'missing global sync status capsule')
+  assert.ok(topbar.includes('ariaLabel="同步状态"'), 'missing global sync status capsule')
   assert.ok(topbar.includes('aria-label="立即同步"'), 'missing global sync shortcut')
   assert.ok(topbar.includes('aria-label="更多同步操作"'), 'missing global sync overflow menu')
   assert.ok(renderer.includes('打开同步文件夹'), 'missing global open-folder action')
@@ -177,6 +177,17 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
+})
+
+test('desktop global sync and diagnostic statuses use the cross-client MUI badge', () => {
+  assert.ok(sharedStatusBadge.includes("export type XDriveStatusTone = 'neutral' | 'good' | 'warning' | 'bad' | 'busy'"), 'shared status tone contract is missing')
+  assert.ok(sharedStatusBadge.includes('aria-label={ariaLabel}'), 'shared status badge is missing accessible labels')
+  assert.ok(sharedStatusBadge.includes('onClick={onClick}'), 'shared status badge is missing interactive status support')
+  assert.ok(renderer.includes('tone={globalSyncState.tone}'), 'global sync status does not use the shared status badge')
+  assert.ok(renderer.includes('ariaLabel="同步状态"'), 'global sync status lost its accessible label')
+  assert.ok(renderer.includes("check.status === 'PASS' ? 'good' : check.status === 'WARN' ? 'warning' : 'bad'"), 'diagnostic status does not map into shared tones')
+  assert.equal(renderer.includes('diagnostic-badge'), false, 'legacy diagnostic badge remains')
+  assert.equal(styles.includes('.diagnostic-badge'), false, 'legacy diagnostic badge CSS remains')
 })
 
 test('desktop external-source status uses the cross-client MUI badge', () => {
