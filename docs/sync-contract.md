@@ -29,6 +29,8 @@ The response coalesces repeated dirty events for the same node within the reques
 
 The first journal version is intentionally retention-free. A later retention policy must preserve an explicit reset/fallback contract for clients whose cursor predates retained history.
 
+On Windows, the provider captures a journal checkpoint before its startup full reconciliation. The normal 60-second remote poll then consumes only changes after that cursor. Directory subtree mutations, cursor resets, and servers that do not expose `/api/v1/changes` fall back to the existing full remote reconciliation path. The 15-minute full audit, manual sync, and restart/offline recovery remain unchanged as convergence safety nets.
+
 ## Continuous CI coverage
 
 | Layer | Direction | Scenario | Primary test |

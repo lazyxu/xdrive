@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -434,7 +435,274 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 	return nil
 }
 
+func (p *winProvider) bootstrapRemoteJournal(ctx context.Context) {
+	page, err := p.cli.NodeChanges(ctx, 0, 1)
+	if err != nil {
+		if ctx.Err() == nil && !nodeChangeJournalUnsupported(err) {
+			fmt.Fprintln(os.Stderr, "xd: Windows change journal bootstrap unavailable; using full remote polling:", err)
+		}
+		return
+	}
+	p.setRemoteJournal(true, page.LatestCursor)
+}
+
+func (p *winProvider) remoteJournalState() (bool, uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.remoteJournal, p.remoteCursor
+}
+
+func (p *winProvider) setRemoteJournal(enabled bool, cursor uint64) {
+	p.mu.Lock()
+	p.remoteJournal = enabled
+	p.remoteCursor = cursor
+	p.mu.Unlock()
+}
+
+func nodeChangeJournalUnsupported(err error) bool {
+	var apiErr *client.APIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound
+}
+
 func (p *winProvider) reconcileRemote(ctx context.Context) error {
+	enabled, cursor := p.remoteJournalState()
+	if !enabled {
+		return p.reconcileRemoteFull(ctx)
+	}
+
+	const pageLimit = 500
+	for {
+		page, err := p.cli.NodeChanges(ctx, cursor, pageLimit)
+		if err != nil {
+			if nodeChangeJournalUnsupported(err) {
+				p.setRemoteJournal(false, cursor)
+				return p.reconcileRemoteFull(ctx)
+			}
+			if fullErr := p.reconcileRemoteFull(ctx); fullErr != nil {
+				return fmt.Errorf("Windows change journal failed: %v; full remote fallback failed: %w", err, fullErr)
+			}
+			fmt.Fprintln(os.Stderr, "xd: Windows change journal request failed; used full remote fallback:", err)
+			return nil
+		}
+		if page.ResetRequired {
+			if err := p.reconcileRemoteFull(ctx); err != nil {
+				return err
+			}
+			p.setRemoteJournal(true, page.LatestCursor)
+			return nil
+		}
+
+		needFull, err := p.applyRemoteChangePage(ctx, page.Changes)
+		if err != nil {
+			return err
+		}
+		if needFull {
+			if err := p.reconcileRemoteFull(ctx); err != nil {
+				return err
+			}
+			p.setRemoteJournal(true, page.LatestCursor)
+			return nil
+		}
+
+		if page.NextCursor < cursor {
+			return fmt.Errorf("Windows change journal cursor moved backwards from %d to %d", cursor, page.NextCursor)
+		}
+		if page.HasMore && page.NextCursor == cursor {
+			return fmt.Errorf("Windows change journal did not advance cursor %d", cursor)
+		}
+		cursor = page.NextCursor
+		p.setRemoteJournal(true, cursor)
+		if !page.HasMore {
+			return nil
+		}
+	}
+}
+
+func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []client.NodeChange) (bool, error) {
+	if len(changes) == 0 {
+		return false, nil
+	}
+
+	p.mu.Lock()
+	baseline := cloneBaseline(p.baseline)
+	hydrated := cloneHydrated(p.hydrated)
+	p.mu.Unlock()
+
+	// Directory creates/moves/deletes may implicitly expose or hide an entire
+	// subtree whose descendants do not receive their own node mutation. Keep
+	// those relatively rare operations on the existing full reconciliation
+	// path while files use the incremental fast path.
+	for _, change := range changes {
+		switch change.Operation {
+		case "upsert":
+			if change.Node == nil {
+				return false, fmt.Errorf("Windows change journal upsert for node %d has no node payload", change.NodeID)
+			}
+			if change.Node.Type != "dir" {
+				continue
+			}
+			oldRel, oldState, exists := findBaselinePathByNodeID(baseline, change.NodeID)
+			if !exists || oldRel != change.Path {
+				return true, nil
+			}
+			if _, err := os.Lstat(filepath.Join(p.root, filepath.FromSlash(oldRel))); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return true, nil
+				}
+				return false, err
+			}
+			if oldState.node.Revision == change.Node.Revision {
+				continue
+			}
+			// A directory revision change without a path change is harmless
+			// metadata churn; update it incrementally.
+		case "delete":
+			_, oldState, exists := findBaselinePathByNodeID(baseline, change.NodeID)
+			if exists && oldState.node.Type == "dir" {
+				return true, nil
+			}
+		default:
+			return false, fmt.Errorf("Windows change journal returned unknown operation %q", change.Operation)
+		}
+	}
+
+	defer p.storeBaseline(baseline)
+	for _, change := range changes {
+		switch change.Operation {
+		case "delete":
+			oldRel, base, exists := findBaselinePathByNodeID(baseline, change.NodeID)
+			if !exists {
+				continue
+			}
+			abs := filepath.Join(p.root, filepath.FromSlash(oldRel))
+			if base.node.Type == "file" {
+				if info, statErr := os.Lstat(abs); statErr == nil {
+					if t, ok := hydrated[base.node.ID]; !ok || time.Since(t) >= winHydrationGrace {
+						if info.Size() != base.localSize || !info.ModTime().Equal(base.localModTime) {
+							return false, fmt.Errorf("remote deletion conflicts with unsynchronized local changes at %s", oldRel)
+						}
+					}
+				} else if !errors.Is(statErr, os.ErrNotExist) {
+					return false, statErr
+				}
+			}
+			if err := os.RemoveAll(abs); err != nil {
+				return false, err
+			}
+			deletePrefix(baseline, oldRel)
+
+		case "upsert":
+			rn := *change.Node
+			rel := filepath.ToSlash(strings.Trim(change.Path, "/"))
+			if rel == "" || rel == "." {
+				state := baseline[""]
+				state.node = rn
+				baseline[""] = state
+				continue
+			}
+
+			oldRel, _, oldExists := findBaselinePathByNodeID(baseline, rn.ID)
+			if p.policy.excludedPath(rel) {
+				if oldExists {
+					if err := os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(oldRel))); err != nil {
+						return false, err
+					}
+					deletePrefix(baseline, oldRel)
+				}
+				continue
+			}
+			if rn.Type == "dir" {
+				state := baseline[rel]
+				state.node = rn
+				baseline[rel] = state
+				continue
+			}
+			if rn.Type != "file" {
+				return false, fmt.Errorf("Windows change journal node %d has unsupported type %q", rn.ID, rn.Type)
+			}
+			parentRel := slashDir(rel)
+			if _, ok := baseline[parentRel]; !ok {
+				return true, nil
+			}
+
+			if oldExists && oldRel != rel {
+				oldAbs := filepath.Join(p.root, filepath.FromSlash(oldRel))
+				newAbs := filepath.Join(p.root, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(newAbs), 0o755); err != nil {
+					return false, err
+				}
+				if _, statErr := os.Lstat(oldAbs); statErr == nil {
+					if _, targetErr := os.Lstat(newAbs); targetErr == nil {
+						return true, nil
+					} else if !errors.Is(targetErr, os.ErrNotExist) {
+						return false, targetErr
+					}
+					if err := os.Rename(oldAbs, newAbs); err != nil {
+						return false, err
+					}
+				} else if !errors.Is(statErr, os.ErrNotExist) {
+					return false, statErr
+				}
+				moveBaselinePrefix(baseline, oldRel, rel)
+			}
+
+			base, exists := baseline[rel]
+			abs := filepath.Join(p.root, filepath.FromSlash(rel))
+			info, statErr := os.Lstat(abs)
+			localExists := statErr == nil
+			if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+				return false, statErr
+			}
+
+			if exists && localExists && base.node.Type == "file" {
+				if t, ok := hydrated[base.node.ID]; !ok || time.Since(t) >= winHydrationGrace {
+					if info.Size() != base.localSize || !info.ModTime().Equal(base.localModTime) {
+						if err := p.syncLocalFile(ctx, rel, info, baseline, hydrated); err != nil {
+							return false, err
+						}
+						base = baseline[rel]
+						if base.node.Revision >= rn.Revision {
+							continue
+						}
+					}
+				}
+			}
+
+			base, exists = baseline[rel]
+			if exists && localExists && base.node.Revision == rn.Revision {
+				base.node = rn
+				baseline[rel] = base
+				continue
+			}
+
+			if localExists {
+				if err := os.Remove(abs); err != nil {
+					return false, err
+				}
+			}
+			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+				return false, err
+			}
+			if err := cfCreatePlaceholder(filepath.Dir(abs), filepath.Base(abs), rn.ID, rn.Size, rn.UpdatedAt.UnixNano(), false); err != nil {
+				return false, err
+			}
+			if st, err := os.Stat(abs); err == nil {
+				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+			}
+		}
+	}
+
+	if err := p.applyAlwaysLocal(baseline); err != nil {
+		return false, err
+	}
+	if err := p.enforceCache(baseline); err != nil {
+		return false, err
+	}
+	p.pruneTransientState()
+	return false, nil
+}
+
+func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 	remote, err := p.cli.Walk(ctx)
 	if err != nil {
 		return err
