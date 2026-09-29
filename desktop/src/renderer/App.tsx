@@ -46,6 +46,7 @@ import {
   XDriveActionButton,
   XDriveDialogTitle,
   XDriveStatePanel,
+  XDriveShareStatusBadge,
   XDriveStatusBadge,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   xDriveDialogPaperProps,
@@ -214,13 +215,6 @@ function viewLabel(view: View) {
   return labels[view]
 }
 
-function shareStatusLabel(status: string) {
-  if (status === 'active') return '有效'
-  if (status === 'expired') return '已过期'
-  if (status === 'exhausted') return '已达下载上限'
-  if (status === 'revoked') return '已撤销'
-  return status
-}
 function updateStatusLabel(state: AgentUpdateState | null) {
   if (!state) return '不可用'
   if (state.status === 'idle') return '等待检查'
@@ -3107,7 +3101,7 @@ export default function App() {
                     {cloudShares.length === 0 ? <XDriveStatePanel variant="plain" compact message="此文件暂无分享链接。" /> : cloudShares.map((share) => (
                       <div className="cloud-compact-row" key={share.id}>
                         <div>
-                          <strong>{shareStatusLabel(share.status)}</strong>
+                          <XDriveShareStatusBadge status={share.status} />
                           <span>
                             {share.has_password ? '密码保护' : '仅链接'} ·
                             {' '}{share.expires_at ? `到期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'} ·
