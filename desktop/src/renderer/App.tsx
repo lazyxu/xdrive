@@ -50,6 +50,7 @@ import {
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
+import type { XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -427,13 +428,13 @@ export default function App() {
     : 0
   const globalSyncState = useMemo<{
     label: string
-    color: 'success' | 'warning' | 'error' | 'info'
+    tone: XDriveStatusTone
   }>(() => {
-    if (status?.last_error) return { label: '同步异常', color: 'error' }
-    if (status?.has_conflict) return { label: `${status.conflict_count || 0} 个冲突`, color: 'warning' }
-    if (status?.paused) return { label: '同步已暂停', color: 'warning' }
-    if (activeTransfers.length > 0) return { label: `正在同步 · ${activeTransfers.length}`, color: 'info' }
-    return { label: status?.sync_status || '同步正常', color: 'success' }
+    if (status?.last_error) return { label: '同步异常', tone: 'bad' }
+    if (status?.has_conflict) return { label: `${status.conflict_count || 0} 个冲突`, tone: 'warning' }
+    if (status?.paused) return { label: '同步已暂停', tone: 'warning' }
+    if (activeTransfers.length > 0) return { label: `正在同步 · ${activeTransfers.length}`, tone: 'busy' }
+    return { label: status?.sync_status || '同步正常', tone: 'good' }
   }, [
     activeTransfers.length,
     status?.conflict_count,
@@ -1983,16 +1984,12 @@ export default function App() {
             <Tooltip title={status?.server_build?.commit ? `${status.server_build.commit.slice(0, 12)}${status.server_build.commit_message ? ` · ${status.server_build.commit_message}` : ''}` : 'Server 构建信息'}>
               <Chip size="small" variant="outlined" label={`Server ${status?.server_build?.version || '—'}`} />
             </Tooltip>
-            <Chip
-              aria-label="同步状态"
-              clickable
-              size="small"
+            <XDriveStatusBadge
+              ariaLabel="同步状态"
               variant="outlined"
-              color={globalSyncState.color}
+              tone={globalSyncState.tone}
               label={globalSyncState.label}
-              icon={<MuiBox component="span" sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'currentColor' }} />}
               onClick={(event) => setSyncMenuAnchor(event.currentTarget)}
-              sx={{ fontWeight: 700 }}
             />
             <Tooltip title={status?.paused ? '同步已暂停' : '立即同步'}>
               <span>
@@ -3412,7 +3409,10 @@ export default function App() {
                 <div className="diagnostic-list">
                   {diagnostics.checks.map((check, index) => (
                     <article className="diagnostic-row" key={`${check.name}:${index}`}>
-                      <span className={`diagnostic-badge ${check.status.toLowerCase()}`}>{check.status}</span>
+                      <XDriveStatusBadge
+                        tone={check.status === 'PASS' ? 'good' : check.status === 'WARN' ? 'warning' : 'bad'}
+                        label={check.status}
+                      />
                       <div>
                         <strong>{check.name}</strong>
                         <p>{check.detail}</p>
