@@ -3,6 +3,7 @@ package synology
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Space string
@@ -71,9 +73,10 @@ type Session struct {
 	client  *Client
 	apis    map[string]apiInfo
 	authAPI apiInfo
-	auth    authData
-	closeMu sync.Mutex
-	closed  bool
+
+	mu     sync.Mutex
+	auth   authData
+	closed bool
 }
 
 func (c *Client) Connect(ctx context.Context) (*Session, error) {
@@ -99,13 +102,44 @@ func (s *Session) Close(ctx context.Context) error {
 	if s == nil || s.client == nil {
 		return nil
 	}
-	s.closeMu.Lock()
-	defer s.closeMu.Unlock()
+	s.mu.Lock()
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
 	s.closed = true
-	return s.client.logout(ctx, s.authAPI, s.auth.SID)
+	auth := s.auth
+	s.mu.Unlock()
+	return s.client.logout(ctx, s.authAPI, auth.SID)
+}
+
+func (s *Session) authSnapshot() (authData, error) {
+	if s == nil || s.client == nil {
+		return authData{}, fmt.Errorf("%w: Synology session is unavailable", ErrUnavailable)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return authData{}, fmt.Errorf("%w: Synology session is closed", ErrUnavailable)
+	}
+	return s.auth, nil
+}
+
+func (s *Session) reauthenticate(ctx context.Context, staleSID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return fmt.Errorf("%w: Synology session is closed", ErrUnavailable)
+	}
+	if strings.TrimSpace(s.auth.SID) != strings.TrimSpace(staleSID) {
+		return nil
+	}
+	auth, err := s.client.login(ctx, s.authAPI)
+	if err != nil {
+		return err
+	}
+	s.auth = auth
+	return nil
 }
 
 func (s *Session) Available(space Space) bool {
@@ -123,16 +157,12 @@ func (s *Session) ListFoldersPage(ctx context.Context, space Space, offset, limi
 	if err != nil {
 		return FolderPage{}, err
 	}
-	values := s.baseValues(apiName, "list")
-	values.Set("offset", strconv.Itoa(offset))
-	values.Set("limit", strconv.Itoa(limit))
-
 	var envelope apiEnvelope
-	if err := s.client.doJSON(ctx, http.MethodPost, s.photosEndpoint(), strings.NewReader(values.Encode()), &envelope); err != nil {
+	if err := s.doPhotosJSON(ctx, apiName, "list", func(values url.Values) {
+		values.Set("offset", strconv.Itoa(offset))
+		values.Set("limit", strconv.Itoa(limit))
+	}, &envelope); err != nil {
 		return FolderPage{}, err
-	}
-	if !envelope.Success {
-		return FolderPage{}, apiError(envelope)
 	}
 	var data struct {
 		Offset int      `json:"offset"`
@@ -153,17 +183,13 @@ func (s *Session) ListItemsPage(ctx context.Context, space Space, offset, limit 
 	if err != nil {
 		return ItemPage{}, err
 	}
-	values := s.baseValues(apiName, "list")
-	values.Set("offset", strconv.Itoa(offset))
-	values.Set("limit", strconv.Itoa(limit))
-	values.Set("additional", `["thumbnail"]`)
-
 	var envelope apiEnvelope
-	if err := s.client.doJSON(ctx, http.MethodPost, s.photosEndpoint(), strings.NewReader(values.Encode()), &envelope); err != nil {
+	if err := s.doPhotosJSON(ctx, apiName, "list", func(values url.Values) {
+		values.Set("offset", strconv.Itoa(offset))
+		values.Set("limit", strconv.Itoa(limit))
+		values.Set("additional", `["thumbnail"]`)
+	}, &envelope); err != nil {
 		return ItemPage{}, err
-	}
-	if !envelope.Success {
-		return ItemPage{}, apiError(envelope)
 	}
 	var data struct {
 		Offset int    `json:"offset"`
@@ -179,10 +205,49 @@ func (s *Session) ListItemsPage(ctx context.Context, space Space, offset, limit 
 	return ItemPage{Offset: data.Offset, Total: data.Total, List: data.List}, nil
 }
 
+type retryableDownloadOpenError struct {
+	err        error
+	retryAfter string
+}
+
+func (e *retryableDownloadOpenError) Error() string { return e.err.Error() }
+func (e *retryableDownloadOpenError) Unwrap() error { return e.err }
+
 func (s *Session) OpenItem(ctx context.Context, item Item, offset int64) (io.ReadCloser, error) {
-	if s == nil || s.client == nil || s.closed {
-		return nil, fmt.Errorf("%w: Synology session is closed", ErrUnavailable)
+	authRetried := false
+	attempts := s.client.apiAttempts()
+	for attempt := 0; attempt < attempts; attempt++ {
+		auth, err := s.authSnapshot()
+		if err != nil {
+			return nil, err
+		}
+		body, err := s.openItemOnce(ctx, item, offset, auth)
+		if err == nil {
+			return body, nil
+		}
+		if !authRetried && (errors.Is(err, ErrSessionExpired) || errors.Is(err, ErrAuthentication)) {
+			if err := s.reauthenticate(ctx, auth.SID); err != nil {
+				return nil, err
+			}
+			authRetried = true
+			attempt--
+			continue
+		}
+		var retryErr *retryableDownloadOpenError
+		if errors.As(err, &retryErr) && attempt+1 < attempts {
+			if delay, allowed := s.client.apiRetryDelay(attempt, retryErr.retryAfter); allowed {
+				if err := sleepContext(ctx, delay); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
+		return nil, err
 	}
+	return nil, fmt.Errorf("%w: media download retries exhausted", ErrUnavailable)
+}
+
+func (s *Session) openItemOnce(ctx context.Context, item Item, offset int64, auth authData) (io.ReadCloser, error) {
 	if item.ID <= 0 || offset < 0 {
 		return nil, fmt.Errorf("invalid Synology item or offset")
 	}
@@ -194,14 +259,17 @@ func (s *Session) OpenItem(ctx context.Context, item Item, offset int64) (io.Rea
 	if !ok || info.MaxVersion < 1 {
 		return nil, fmt.Errorf("%w: %s is missing", ErrPhotosMissing, apiName)
 	}
-	values := s.baseValues(apiName, "download")
+	values := s.baseValues(apiName, "download", auth)
 	values.Set("unit_id", fmt.Sprintf("[%d]", item.ID))
 	if key := item.CacheKey(); key != "" {
 		values.Set("cache_key", strconv.Quote(key))
 	}
 	endpoint := s.photosEndpoint() + "?" + values.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+
+	requestCtx, cancel := context.WithCancel(ctx)
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/octet-stream")
@@ -210,17 +278,38 @@ func (s *Session) OpenItem(ctx context.Context, item Item, offset int64) (io.Rea
 	if offset > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 	}
-	resp, err := s.client.http.Do(req)
+	httpClient := s.client.mediaDownloadClient()
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		cancel()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, &retryableDownloadOpenError{err: fmt.Errorf("%w: %v", ErrUnavailable, err)}
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		_ = resp.Body.Close()
+		cancel()
+		return nil, fmt.Errorf("%w: download returned HTTP %s", ErrAuthentication, resp.Status)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		retryAfter := resp.Header.Get("Retry-After")
+		_ = resp.Body.Close()
+		cancel()
+		return nil, &retryableDownloadOpenError{
+			err:        fmt.Errorf("%w: download returned HTTP %s", ErrUnavailable, resp.Status),
+			retryAfter: retryAfter,
+		}
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		_ = resp.Body.Close()
+		cancel()
 		return nil, fmt.Errorf("%w: download returned HTTP %s", ErrUnavailable, resp.Status)
 	}
 	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "application/json") {
 		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		_ = resp.Body.Close()
+		cancel()
 		if readErr != nil {
 			return nil, fmt.Errorf("%w: read download error: %v", ErrUnavailable, readErr)
 		}
@@ -230,18 +319,59 @@ func (s *Session) OpenItem(ctx context.Context, item Item, offset int64) (io.Rea
 		}
 		return nil, fmt.Errorf("%w: download returned JSON", ErrUnavailable)
 	}
+
+	body := &idleTimeoutReadCloser{
+		body: resp.Body, cancel: cancel, parent: ctx,
+		timeout: s.client.downloadIdleTimeout,
+	}
 	if offset > 0 && resp.StatusCode == http.StatusOK {
-		if _, err := io.CopyN(io.Discard, resp.Body, offset); err != nil {
-			_ = resp.Body.Close()
+		if _, err := io.CopyN(io.Discard, body, offset); err != nil {
+			_ = body.Close()
 			return nil, fmt.Errorf("%w: skip to resume offset %d: %v", ErrUnavailable, offset, err)
 		}
 	}
-	return resp.Body, nil
+	return body, nil
+}
+
+func (s *Session) doPhotosJSON(
+	ctx context.Context,
+	apiName string,
+	method string,
+	configure func(url.Values),
+	out *apiEnvelope,
+) error {
+	for authAttempt := 0; authAttempt < 2; authAttempt++ {
+		auth, err := s.authSnapshot()
+		if err != nil {
+			return err
+		}
+		values := s.baseValues(apiName, method, auth)
+		if configure != nil {
+			configure(values)
+		}
+		var envelope apiEnvelope
+		err = s.client.doJSON(ctx, http.MethodPost, s.photosEndpoint(), strings.NewReader(values.Encode()), &envelope)
+		if err == nil && envelope.Success {
+			*out = envelope
+			return nil
+		}
+		if err == nil {
+			err = apiError(envelope)
+		}
+		if authAttempt == 0 && (errors.Is(err, ErrSessionExpired) || errors.Is(err, ErrAuthentication)) {
+			if err := s.reauthenticate(ctx, auth.SID); err != nil {
+				return err
+			}
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("%w: Photos API reauthentication exhausted", ErrAuthentication)
 }
 
 func (s *Session) validatePage(space Space, offset, limit int) error {
-	if s == nil || s.client == nil || s.closed {
-		return fmt.Errorf("%w: Synology session is closed", ErrUnavailable)
+	if _, err := s.authSnapshot(); err != nil {
+		return err
 	}
 	if !s.Available(space) {
 		return fmt.Errorf("%w: %s space is unavailable", ErrPhotosMissing, space)
@@ -252,7 +382,7 @@ func (s *Session) validatePage(space Space, offset, limit int) error {
 	return nil
 }
 
-func (s *Session) baseValues(apiName, method string) url.Values {
+func (s *Session) baseValues(apiName, method string, auth authData) url.Values {
 	values := url.Values{}
 	values.Set("api", apiName)
 	version := s.apis[apiName].MaxVersion
@@ -264,8 +394,8 @@ func (s *Session) baseValues(apiName, method string) url.Values {
 	}
 	values.Set("version", strconv.Itoa(version))
 	values.Set("method", method)
-	values.Set("_sid", s.auth.SID)
-	if token := strings.TrimSpace(s.auth.SynoToken); token != "" {
+	values.Set("_sid", auth.SID)
+	if token := strings.TrimSpace(auth.SynoToken); token != "" {
 		values.Set("SynoToken", token)
 	}
 	return values
@@ -283,6 +413,62 @@ func spaceAvailable(apis map[string]apiInfo, space Space) bool {
 		return false
 	}
 	return apis[item].MaxVersion > 0 && apis[download].MaxVersion > 0 && apis[folder].MaxVersion > 0
+}
+
+func (c *Client) mediaDownloadClient() http.Client {
+	out := *c.http
+	out.Timeout = 0
+	timeout := c.downloadHeaderTimeout
+	if timeout <= 0 {
+		return out
+	}
+	switch transport := out.Transport.(type) {
+	case nil:
+		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+			cloned := defaultTransport.Clone()
+			cloned.ResponseHeaderTimeout = timeout
+			out.Transport = cloned
+		}
+	case *http.Transport:
+		cloned := transport.Clone()
+		if cloned.ResponseHeaderTimeout <= 0 || cloned.ResponseHeaderTimeout > timeout {
+			cloned.ResponseHeaderTimeout = timeout
+		}
+		out.Transport = cloned
+	}
+	return out
+}
+
+type idleTimeoutReadCloser struct {
+	body    io.ReadCloser
+	cancel  context.CancelFunc
+	parent  context.Context
+	timeout time.Duration
+}
+
+func (r *idleTimeoutReadCloser) Read(p []byte) (int, error) {
+	if r.timeout <= 0 {
+		return r.body.Read(p)
+	}
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(r.timeout, func() {
+		close(timedOut)
+		r.cancel()
+	})
+	n, err := r.body.Read(p)
+	if timer.Stop() {
+		return n, err
+	}
+	<-timedOut
+	if parentErr := r.parent.Err(); parentErr != nil {
+		return n, parentErr
+	}
+	return n, fmt.Errorf("Synology media download stalled for %s", r.timeout)
+}
+
+func (r *idleTimeoutReadCloser) Close() error {
+	r.cancel()
+	return r.body.Close()
 }
 
 func folderAPI(space Space) (string, error) {
