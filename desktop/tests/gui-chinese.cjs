@@ -78,11 +78,12 @@ test('desktop GUI defaults to Chinese', () => {
   assert.match(html, /<title>xDrive 桌面版<\/title>/)
 })
 
-test('desktop auth forms use a single bordered surface', () => {
-  assert.ok(renderer.includes('className="auth-panel auth-panel-form"'), 'login/password forms must use the single auth panel surface')
-  assert.ok(styles.includes('.auth-panel { width: min(520px,100%); border: 1px solid var(--border-strong); border-radius: 14px; padding: 24px; background: transparent; box-shadow: none; }'), 'auth panel must be one lightweight border without a filled/shadowed card surface')
-  assert.ok(styles.includes('.center-shell { width: 100%; height: 100%; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 24px; background: var(--page-bg); }'), 'auth shell spacing/background contract is missing')
+test('desktop auth uses one full-body frame instead of a floating card', () => {
+  assert.ok(renderer.includes('className="auth-panel auth-panel-form"'), 'login/password forms must use the shared auth content surface')
+  assert.ok(styles.includes('.center-shell { width: calc(100% - 40px); height: calc(100% - 40px); min-height: 0; margin: 20px; overflow: auto; display: grid; place-items: center; padding: 24px; border: 1px solid var(--border-strong); border-radius: 14px; background: transparent; }'), 'auth shell must own the single visible frame')
+  assert.ok(styles.includes('.auth-panel { width: min(520px,100%); border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }'), 'auth content must stay borderless inside the single frame')
   assert.ok(styles.includes('.auth-panel-form .auth-form { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }'), 'nested auth form surface must stay transparent and borderless')
+  assert.ok(styles.includes('.center-shell { width: calc(100% - 24px); height: calc(100% - 24px); margin: 12px; padding: 18px; }'), 'compact auth frame spacing is missing')
   assert.equal(styles.includes('radial-gradient(circle at 20% 10%'), false, 'auth shell should not add a second decorative surface')
   assert.equal(styles.includes('box-shadow: 0 20px 55px'), false, 'auth surface should not retain the old floating-card shadow')
 })
