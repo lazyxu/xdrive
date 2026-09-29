@@ -263,6 +263,7 @@ export interface ExternalSourceRunProgressView {
 
 export interface ExternalSourceRunDetailView {
   statusLabel: string
+  statusTone: ExternalSourceStateTone
   modeLabel: string
   triggerLabel: string
   startedAt: string
@@ -368,6 +369,14 @@ export function externalSourceRunStatusLabel(status: ExternalSourceRunStatus) {
     cancelled: '已取消',
   }
   return labels[status]
+}
+
+export function externalSourceRunStatusTone(status: ExternalSourceRunStatus): ExternalSourceStateTone {
+  if (status === 'running') return 'busy'
+  if (status === 'completed') return 'good'
+  if (status === 'partial') return 'warning'
+  if (status === 'failed') return 'bad'
+  return 'neutral'
 }
 
 export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceState {
@@ -508,6 +517,7 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
 
   return {
     statusLabel: externalSourceRunStatusLabel(run.status),
+    statusTone: externalSourceRunStatusTone(run.status),
     modeLabel: run.mode === 'sync' ? '同步' : '扫描',
     triggerLabel: externalSourceRunTriggerLabel(run.trigger),
     startedAt: run.started_at,
