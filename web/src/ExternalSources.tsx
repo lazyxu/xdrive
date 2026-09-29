@@ -21,7 +21,7 @@ import {
   Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
-import { XDriveStatePanel, XDriveStatusBadge, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from '@xdrive/ui/mui'
+import { XDriveStatePanel, XDriveStatusBadge, XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog, XDriveYikeCookieHelp } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -34,7 +34,6 @@ import {
   formatExternalSourceTime,
   formatSize,
   yikeConnectorNotice,
-  yikeCookieHelp,
   yikeManagedTargetLabel,
 } from '../../ui/shared/src'
 import type {
@@ -110,28 +109,6 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
 }
 
 
-
-function YikeCookieHelpGuide() {
-  return (
-    <Accordion disableGutters elevation={0} sx={{ mt: 1, border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
-      <AccordionSummary>
-        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
-          <MuiTypography variant="body2" sx={{ fontWeight: 600 }}>{yikeCookieHelp.title}</MuiTypography>
-          <MuiTypography variant="caption" color="text.secondary">点击展开</MuiTypography>
-        </Stack>
-      </AccordionSummary>
-      <AccordionDetails>
-        <MuiTypography variant="body2">{yikeCookieHelp.summary}</MuiTypography>
-        <ol style={{ margin: '10px 0', paddingLeft: 24 }}>
-          {yikeCookieHelp.steps.map((step) => (
-            <li key={step}><MuiTypography variant="body2">{step}</MuiTypography></li>
-          ))}
-        </ol>
-        <MuiAlert severity="warning">{yikeCookieHelp.security}</MuiAlert>
-      </AccordionDetails>
-    </Accordion>
-  )
-}
 
 export default function ExternalSourcesPanel({
   open,
@@ -1146,7 +1123,7 @@ export default function ExternalSourcesPanel({
           {createKind === 'yike_photos' && (
             <div style={{ marginTop: -12, marginBottom: 16 }}>
               <MuiAlert severity="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</MuiAlert>
-              <YikeCookieHelpGuide />
+              <XDriveYikeCookieHelp variant="accordion" />
               <MuiButton size="small" variant="outlined" disabled={testingCreateCredential} onClick={() => void testCreateCookie()} sx={{ mt: 1 }}>
                 {testingCreateCredential ? '正在测试…' : '测试连接'}
               </MuiButton>
@@ -1274,7 +1251,7 @@ export default function ExternalSourcesPanel({
                   />
                 </Form.Item>
                 <div style={{ marginTop: -12, marginBottom: 16 }}>
-                  <YikeCookieHelpGuide />
+                  <XDriveYikeCookieHelp variant="accordion" />
                   <MuiButton
                     size="small"
                     sx={{ mt: 1 }}
