@@ -10,7 +10,6 @@ import {
   Chip,
   Dialog,
   DialogContentText,
-  LinearProgress,
   MenuItem,
   Stack,
   TextField,
@@ -25,6 +24,7 @@ import {
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
+  XDriveSourceRunProgress,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -966,32 +966,12 @@ export default function ExternalSourcesPanel({
                         </AccordionSummary>
                         <AccordionDetails>
                           {runDetail.progress && (
-                            <MuiBox sx={{ mb: 1.5 }}>
-                              <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
-                                <MuiTypography variant="body2">{runDetail.progress.label}</MuiTypography>
-                                {canCancel && (
-                                  <XDriveActionButton
-                                    compact
-                                    intent="warning"
-                                    disabled={runDetail.progress.cancelling}
-                                    loading={runDetail.progress.cancelling || cancellingRunID === run.id}
-                                    loadingLabel="正在取消…"
-                                    onClick={() => void cancelRun(selected)}
-                                  >
-                                    停止
-                                  </XDriveActionButton>
-                                )}
-                              </Stack>
-                              <LinearProgress
-                                variant={runDetail.progress.percent === undefined ? 'indeterminate' : 'determinate'}
-                                value={runDetail.progress.percent ?? 0}
-                              />
-                              {runDetail.progress.activePath && (
-                                <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                                  当前文件：{runDetail.progress.activePath}
-                                </MuiTypography>
-                              )}
-                            </MuiBox>
+                            <XDriveSourceRunProgress
+                              progress={runDetail.progress}
+                              canCancel={canCancel}
+                              cancelLoading={cancellingRunID === run.id}
+                              onCancel={() => void cancelRun(selected)}
+                            />
                           )}
                           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
                             <Descriptions.Item label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</Descriptions.Item>

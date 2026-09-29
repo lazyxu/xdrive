@@ -17,7 +17,6 @@ import {
   InputLabel,
   ListItemIcon,
   ListItemText,
-  LinearProgress,
   Menu,
   MenuItem,
   Select,
@@ -50,6 +49,7 @@ import {
   XDriveShareStatusBadge,
   XDriveStatusAlert,
   XDriveStatusBadge,
+  XDriveSourceRunProgress,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -2910,32 +2910,13 @@ export default function App() {
                                       </MuiBox>
                                       <MuiBox sx={{ px: 1.5, pb: 1.5 }}>
                                         {historyDetail.progress && (
-                                          <MuiBox sx={{ mb: 1.5 }}>
-                                            <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
-                                              <Typography variant="body2">{historyDetail.progress.label}</Typography>
-                                              {canCancel && (
-                                                <XDriveActionButton
-                                                  compact
-                                                  intent="warning"
-                                                  disabled={!!busy || historyDetail.progress.cancelling}
-                                                  loading={historyDetail.progress.cancelling || busy === 'source-cancel-' + run.id}
-                                                  loadingLabel="正在取消…"
-                                                  onClick={() => void cancelSourceRunNow(row)}
-                                                >
-                                                  停止
-                                                </XDriveActionButton>
-                                              )}
-                                            </Stack>
-                                            <LinearProgress
-                                              variant={historyDetail.progress.percent === undefined ? 'indeterminate' : 'determinate'}
-                                              value={historyDetail.progress.percent ?? 0}
-                                            />
-                                            {historyDetail.progress.activePath && (
-                                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                                                当前文件：{historyDetail.progress.activePath}
-                                              </Typography>
-                                            )}
-                                          </MuiBox>
+                                          <XDriveSourceRunProgress
+                                            progress={historyDetail.progress}
+                                            canCancel={canCancel}
+                                            cancelDisabled={!!busy}
+                                            cancelLoading={busy === 'source-cancel-' + run.id}
+                                            onCancel={() => void cancelSourceRunNow(row)}
+                                          />
                                         )}
                                         <div className="source-run-grid">
                                           <div><span>运行 ID</span><strong>{run.id}</strong></div>

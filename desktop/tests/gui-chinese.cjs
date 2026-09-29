@@ -16,6 +16,7 @@ const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
 const sharedYikeCookieHelp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'YikeCookieHelp.tsx'), 'utf8')
 const sharedExternalSources = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
+const sharedSourceRunProgress = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceRunProgress.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -261,9 +262,17 @@ test('desktop cloud shares use the cross-client MUI share status badge', () => {
   assert.equal(renderer.includes('function shareStatusLabel('), false, 'desktop still owns a share status label mapper')
 })
 
-test('desktop external-source run history uses shared status tones', () => {
+test('desktop external-source run history uses shared status and progress surfaces', () => {
   assert.ok(renderer.includes('tone={historyDetail.statusTone} label={historyDetail.statusLabel}'), 'run history does not use the shared status tone')
   assert.equal(renderer.includes('· {historyDetail.statusLabel}'), false, 'run history still renders an untyped status label inline')
+  assert.ok(sharedSourceRunProgress.includes('export function XDriveSourceRunProgress({'), 'shared source run progress component is missing')
+  assert.ok(sharedSourceRunProgress.includes('ExternalSourceRunProgressView'), 'shared source run progress lost the shared view-model contract')
+  assert.ok(sharedSourceRunProgress.includes('<LinearProgress'), 'shared source run progress is missing the progress bar')
+  assert.ok(sharedSourceRunProgress.includes('当前文件：{progress.activePath}'), 'shared source run progress is missing active-path feedback')
+  assert.ok(sharedSourceRunProgress.includes('loadingLabel="正在取消…"'), 'shared source run progress is missing cancel loading feedback')
+  assert.ok(renderer.includes('<XDriveSourceRunProgress'), 'desktop run history is not using the shared run progress')
+  assert.ok(renderer.includes('progress={historyDetail.progress}'), 'desktop run progress is not bound to the shared view model')
+  assert.equal(renderer.includes('<LinearProgress'), false, 'desktop still owns a raw source run progress bar')
 })
 
 test('desktop external-source create/settings surfaces use shared MUI alerts and actions', () => {
@@ -287,8 +296,9 @@ test('desktop external-source detail/history surfaces use shared MUI alerts and 
   assert.equal((sourceDetail.match(/<MuiAlert/g) || []).length, 0, 'source detail/history still renders raw MUI alerts')
   assert.equal((sourceDetail.match(/<MuiButton/g) || []).length, 2, 'source detail/history should only retain two inherit-color alert actions')
   assert.equal((sourceDetail.match(/<XDriveStatusAlert/g) || []).length >= 4, true, 'source detail/history shared alert coverage is incomplete')
-  assert.equal((sourceDetail.match(/<XDriveActionButton/g) || []).length >= 5, true, 'source detail/history shared action coverage is incomplete')
-  assert.ok(sourceDetail.includes('loadingLabel="正在取消…"'), 'run cancel action lost shared loading feedback')
+  assert.equal((sourceDetail.match(/<XDriveActionButton/g) || []).length >= 4, true, 'source detail/history shared action coverage is incomplete')
+  assert.equal((sourceDetail.match(/<XDriveSourceRunProgress/g) || []).length, 1, 'source detail/history shared progress coverage is incomplete')
+  assert.ok(sourceDetail.includes("cancelLoading={busy === 'source-cancel-' + run.id}"), 'run cancel state is not forwarded to shared progress')
 })
 
 test('desktop external-source failed/delete dialogs use shared MUI surfaces', () => {
@@ -386,9 +396,10 @@ test('desktop external sources expose per-Source scheduling', () => {
 })
 
 test('desktop external sources expose live progress and cooperative cancellation', () => {
-  assert.ok(renderer.includes('LinearProgress'), 'missing Source live progress bar')
-  assert.ok(renderer.includes('当前文件：'), 'missing active Source file label')
-  assert.ok(renderer.includes('正在取消…'), 'missing Source cancellation state')
+  assert.ok(renderer.includes('<XDriveSourceRunProgress'), 'missing shared Source live progress surface')
+  assert.ok(sharedSourceRunProgress.includes('<LinearProgress'), 'shared Source progress is missing the live progress bar')
+  assert.ok(sharedSourceRunProgress.includes('当前文件：{progress.activePath}'), 'shared Source progress is missing the active file label')
+  assert.ok(sharedSourceRunProgress.includes('loadingLabel="正在取消…"'), 'shared Source progress is missing cancellation feedback')
   assert.ok(renderer.includes('cancelSourceRun'), 'missing renderer Source cancel bridge call')
   assert.ok(renderer.includes('loadSources(true)'), 'missing silent Source progress refresh')
 })
