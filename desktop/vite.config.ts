@@ -11,6 +11,7 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   resolve: {
+    preserveSymlinks: true,
     alias: {
       '@xdrive/shared': path.join(repositoryRoot, 'ui', 'shared', 'src', 'index.ts'),
     },

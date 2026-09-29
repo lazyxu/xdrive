@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DownloadOutlined, FileOutlined, LockOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Input, Space, Spin, Typography } from 'antd'
+import { Alert, Card, Input, Space, Typography } from 'antd'
+import { XDriveActionButton, XDriveStatePanel } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import type { PublicShare } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
@@ -68,7 +69,7 @@ export default function PublicShareView({ token }: { token: string }) {
           </div>
         </div>
 
-        {loading && <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>}
+        {loading && <XDriveStatePanel variant="plain" loading message="正在加载分享…" />}
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 18 }} />}
 
         {share && (
@@ -102,16 +103,17 @@ export default function PublicShareView({ token }: { token: string }) {
 
             {exhausted && <Alert type="warning" showIcon message="此分享已达到下载上限。" />}
 
-            <Button
-              type="primary"
-              icon={<DownloadOutlined />}
+            <XDriveActionButton
+              intent="primary"
+              fullWidth
+              startIcon={<DownloadOutlined />}
               loading={downloading}
+              loadingLabel="正在下载…"
               disabled={exhausted || (share.requires_password && !password)}
               onClick={() => void download()}
-              block
             >
               下载
-            </Button>
+            </XDriveActionButton>
           </Space>
         )}
       </Card>

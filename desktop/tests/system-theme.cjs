@@ -6,13 +6,16 @@ const path = require('node:path')
 const root = path.join(__dirname, '..')
 const rendererMain = fs.readFileSync(path.join(root, 'src', 'renderer', 'main.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
+const sharedTheme = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'theme.ts'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 
 test('desktop renderer follows the operating-system color scheme', () => {
   assert.ok(rendererMain.includes("useMediaQuery('(prefers-color-scheme: dark)'"), 'missing system dark-mode media query')
   assert.ok(rendererMain.includes('<ThemeProvider theme={theme}>'), 'missing MUI ThemeProvider')
   assert.ok(rendererMain.includes('<CssBaseline />'), 'missing MUI CssBaseline')
-  assert.ok(rendererMain.includes("mode: prefersDark ? 'dark' : 'light'"), 'MUI palette must follow system appearance')
+  assert.ok(rendererMain.includes("createXDriveMuiTheme(prefersDark ? 'dark' : 'light')"), 'desktop must pass the system appearance into the shared theme')
+  assert.ok(sharedTheme.includes("export function createXDriveMuiTheme(mode: PaletteMode = 'light')"), 'shared MUI theme factory is missing')
+  assert.ok(sharedTheme.includes('palette: {\n      mode,'), 'shared MUI palette must use the requested appearance')
 })
 
 test('legacy desktop CSS uses theme variables for both schemes', () => {

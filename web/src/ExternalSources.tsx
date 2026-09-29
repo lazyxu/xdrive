@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Badge, Button, Card, Descriptions, Divider, Empty, Form, Input, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
+import { Badge, Button, Card, Descriptions, Divider, Form, Input, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
 import type { BadgeProps } from 'antd'
 import {
   Accordion,
@@ -22,6 +22,7 @@ import {
   Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
+import { XDriveStatePanel } from '@xdrive/ui/mui'
 import SynologyDsmGuideDialog from './SynologyDsmGuideDialog'
 import {
   externalSourceCardView,
@@ -692,7 +693,7 @@ export default function ExternalSourcesPanel({
       </div>
       <Spin spinning={loading && rows.length === 0}>
         {rows.length === 0 && !loading ? (
-          <Empty className="external-source-empty" description="尚未添加外部来源" />
+          <XDriveStatePanel variant="plain" message="尚未添加外部来源" />
         ) : (
           <div className="external-source-list">
             {rows.map((row) => {
@@ -977,7 +978,7 @@ export default function ExternalSourcesPanel({
                   </Stack>
                 </Stack>
               ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={historyLoading ? '正在加载运行历史' : '尚无运行记录'} />
+                <XDriveStatePanel variant="plain" message={historyLoading ? '正在加载运行历史' : '尚无运行记录'} />
               )}
             </Spin>
 
