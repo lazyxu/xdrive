@@ -3,7 +3,6 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
-  Alert,
   Button,
   Dialog,
   DialogContent,
@@ -13,6 +12,7 @@ import {
 import { yikeCookieHelp } from '../index'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveStatusAlert } from './StatusAlert'
 
 function CookieHelpContent({ compact = false }: { compact?: boolean }) {
   return (
@@ -25,7 +25,7 @@ function CookieHelpContent({ compact = false }: { compact?: boolean }) {
           </li>
         ))}
       </ol>
-      <Alert severity="warning">{yikeCookieHelp.security}</Alert>
+      <XDriveStatusAlert tone="warning">{yikeCookieHelp.security}</XDriveStatusAlert>
     </>
   )
 }

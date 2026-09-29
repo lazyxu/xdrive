@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import {
-  Alert,
   Box,
   Dialog,
   DialogContent,
@@ -18,6 +17,7 @@ import { synologyDsmSetupGuide } from '../index'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveStatusAlert } from './StatusAlert'
 
 const visuals: Record<SynologyDsmGuideVisual, string> = {
   'task-create': new URL('../../assets/synology-dsm-task-create.svg', import.meta.url).href,
@@ -81,9 +81,9 @@ export function XDriveSynologyDsmGuideDialog({
       <DialogContent dividers sx={{ px: 2.5, py: 2.25 }}>
         {guide && (
           <Stack spacing={2.5}>
-            <Alert severity="info">
+            <XDriveStatusAlert tone="neutral">
               {guide.subtitle}。这些图片是 DSM 操作示意图，不同 DSM 版本的布局可能略有差异。
-            </Alert>
+            </XDriveStatusAlert>
             <Stepper activeStep={activeStep} orientation="vertical">
               {guide.steps.map((step, index) => (
                 <Step key={step.id}>
