@@ -19,11 +19,11 @@ export function taskbarOverlayKind(connected: boolean, status?: AgentStatus): Ta
   return null
 }
 
+const taskbarOverlayPNGs: Record<Exclude<TaskbarOverlayKind, null>, string> = {
+  conflict: 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA10lEQVR42u1XyxGEMAgVxiq2Ij24xXrZirQNvGay4Rsz6hiOjuE9HgTIMLzdwHuAiEh0CABNCGjAUSJwNrCXCETA9/lb/P/zW90kwArOgXKWk+FIYAvw0hlOTagBT6O0piVXAj1RSI65/GvqIRd9RHZLILnCeHUnxLPue7SbYiRvtWm4Zwo6gU7A0tWkqtZuDudzTHu0txdEr2s6Dy5PgTgNPbJaB5drGkq1YJ2GWj2htj5ZCrJmK0LLDhchYV3J1KlVsm1aaJuWv2+cPXctv8XDpPXTrNsBVr+73RS3CXMAAAAASUVORK5CYII=',
+  offline: 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA0UlEQVR42u2XMQ7DIAxFY182c9ceoGvmnpZMlSzEpzZ8C6SWOfAeH4Gd4/j1IdEJpZTSXVBEUgS+gUdFhA2OisgI/Hy8mt+/r2dYQrxwBEWjlkESmgFvzUFpagb8k4BHQiO7iMbfkugKWMNZOEqiTkGZr1rrFrgTmL3vEbhlKePsPXC0pq6InSYwC58SYMCHBVjwIQEmHAqgqjYDR2uqt24zd25ZuiJ2eATWzBYU5kNVJ63Rksp4JbsCtaGVyOiKlrdk+zalW7TlW/yYZP+a/ccNZeWghbGXhbcAAAAASUVORK5CYII=',
+}
 
-export function taskbarOverlayDataURL(kind: Exclude<TaskbarOverlayKind, null>) {
-  const body = kind === 'conflict'
-    ? '<circle cx="16" cy="16" r="13" fill="#E5484D" stroke="#FFFFFF" stroke-width="3"/><path d="M16 8.5V18" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/><circle cx="16" cy="23" r="2" fill="#FFFFFF"/>'
-    : '<circle cx="16" cy="16" r="13" fill="#667085" stroke="#FFFFFF" stroke-width="3"/><path d="M9 23L23 9" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>'
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">${body}</svg>`
-  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`
+export function taskbarOverlayPNG(kind: Exclude<TaskbarOverlayKind, null>) {
+  return Buffer.from(taskbarOverlayPNGs[kind], 'base64')
 }
