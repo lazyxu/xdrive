@@ -12,6 +12,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/pullsync"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcemetadata"
@@ -113,13 +114,13 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batchRefs := make(map[string]TransferRef, batchSize)
 	seen := make(map[string]bool)
 
-	var pipeline *transferPipeline
+	var pipeline *pullsync.Pipeline[TransferRef]
 	if mode == meta.SourceRunModeSync {
 		queueSize := s.TransferQueueSize
 		if queueSize <= 0 {
 			queueSize = DefaultTransferQueueSize
 		}
-		pipeline = newTransferPipeline(ctx, s, queueSize)
+		pipeline = pullsync.NewPipeline(ctx, queueSize, "Yike", s.SourceID, s.RunID, s.API, s.Executor)
 		defer pipeline.Abort()
 	}
 
@@ -135,7 +136,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			return fmt.Errorf("source plan count mismatch: got %d want %d", len(plans), len(batch))
 		}
 		planned := make(map[string]struct{}, len(plans))
-		transfers := make([]transferTask, 0, len(plans))
+		transfers := make([]pullsync.Task[TransferRef], 0, len(plans))
 		for _, plan := range plans {
 			item, ok := batchItems[plan.ExternalID]
 			if !ok {
@@ -150,8 +151,8 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				return fmt.Errorf("server returned unsupported source action %q", plan.Action)
 			}
 			result.Summary.Add(sourcepkg.PlanResult{Action: action, Item: item})
-			if mode == meta.SourceRunModeSync && executionAction(action) {
-				transfers = append(transfers, transferTask{
+			if mode == meta.SourceRunModeSync && pullsync.ExecutionAction(action) {
+				transfers = append(transfers, pullsync.Task[TransferRef]{
 					Plan: plan,
 					Item: item,
 					Ref:  batchRefs[plan.ExternalID],
@@ -162,7 +163,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			return err
 		}
 		for _, task := range transfers {
-			if err := pipeline.Submit(task); err != nil {
+			if err := pipeline.Submit(task.Plan, task.Item, task.Ref); err != nil {
 				return err
 			}
 		}
@@ -302,7 +303,13 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	}
 	if pipeline != nil {
 		worker := pipeline.Finish()
-		mergeTransferResult(&result, worker)
+		result.Summary.FailedItems += worker.Summary.FailedItems
+		for _, message := range worker.Errors {
+			if len(result.Errors) >= 5 {
+				break
+			}
+			result.Errors = append(result.Errors, message)
+		}
 		if worker.Err != nil {
 			return result, fmt.Errorf("execute Yike source transfers: %w", worker.Err)
 		}
@@ -311,49 +318,6 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		return result, fmt.Errorf("report Yike source progress: %w", err)
 	}
 	return result, nil
-}
-
-func (s Scanner) commitResults(ctx context.Context, commits []client.SourceCommit, result *Result) ([]client.SourceFailure, error) {
-	if err := s.API.CommitSourceItems(ctx, s.SourceID, s.RunID, commits); err == nil {
-		return nil, nil
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	failures := make([]client.SourceFailure, 0)
-	for _, commit := range commits {
-		if err := s.API.CommitSourceItems(ctx, s.SourceID, s.RunID, []client.SourceCommit{commit}); err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			result.Summary.AddFailure()
-			appendResultError(result, commit.ExternalID, commit.Path, err)
-			failures = append(failures, sourceFailure(commit.ExternalID, err))
-		}
-	}
-	return failures, nil
-}
-
-func sourceFailure(externalID string, err error) client.SourceFailure {
-	message := ""
-	if err != nil {
-		message = strings.TrimSpace(err.Error())
-	}
-	if message == "" {
-		message = "source item execution failed"
-	}
-	return client.SourceFailure{
-		ExternalID: externalID,
-		Error:      trimUTF8Bytes(message, 4<<10),
-	}
-}
-
-func appendResultError(result *Result, externalID, itemPath string, err error) {
-	if result == nil || err == nil || len(result.Errors) >= 5 {
-		return
-	}
-	message := fmt.Sprintf("%s (%s): %v", externalID, itemPath, err)
-	result.Errors = append(result.Errors, trimUTF8Bytes(message, 1024))
 }
 
 func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {
