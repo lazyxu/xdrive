@@ -44,3 +44,32 @@ test('desktop native feedback wires taskbar progress and clickable navigation', 
   assert.ok(setVersion.includes('XDRIVE_BUILD_COMMIT_TIME'), 'desktop packaging must embed commit time metadata')
   assert.ok(setVersion.includes('XDRIVE_BUILD_TIME'), 'desktop packaging must embed build time metadata')
 })
+
+
+test('desktop startup failures are visible and renderer loading is guarded', () => {
+  assert.ok(main.includes("title: 'xDrive Desktop 启动失败'"), 'foreground startup failures need a native error dialog')
+  assert.ok(main.includes("buttons: ['打开日志目录', '退出']"), 'startup error dialog must offer the lifecycle log directory')
+  assert.ok(main.includes("win.webContents.on('did-fail-load'"), 'missing main-frame load failure handling')
+  assert.ok(main.includes("win.webContents.on('preload-error'"), 'missing preload failure handling')
+  assert.ok(main.includes("'renderer_load_timeout'"), 'missing renderer startup timeout')
+  assert.ok(main.includes('15_000'), 'renderer startup timeout should be bounded')
+})
+
+test('desktop startup lifecycle records checkpoints and non-fatal Windows task registration', () => {
+  for (const stage of [
+    'electron_ready',
+    'preferences_loaded',
+    'ipc_ready',
+    'window_created',
+    'tray_created',
+    'agent_checked',
+    'monitors_started',
+    'renderer_loaded',
+    'startup_complete',
+  ]) {
+    assert.ok(main.includes(`startupCheckpoint('${stage}'`), `missing startup checkpoint: ${stage}`)
+  }
+  assert.ok(main.includes("'windows_user_tasks_failed'"), 'Windows user-task failures must reach the lifecycle log')
+  assert.ok(main.includes("'Windows 任务栏快捷操作'"), 'Windows user-task status must appear in diagnostics')
+  assert.equal(main.includes("console.error('failed to register Windows taskbar user tasks')"), false, 'user-task registration should not be console-only')
+})
