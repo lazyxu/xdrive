@@ -13,6 +13,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/pullsync"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
+	"github.com/lazyxu/xdrive/internal/sourcecollection"
 	"github.com/lazyxu/xdrive/internal/sourcemetadata"
 	"github.com/lazyxu/xdrive/internal/synology"
 )
@@ -26,8 +27,11 @@ const (
 
 type Remote interface {
 	Available(synology.Space) bool
+	AlbumsAvailable(synology.Space) bool
 	ListFoldersPage(context.Context, synology.Space, int, int) (synology.FolderPage, error)
 	ListItemsPage(context.Context, synology.Space, int, int) (synology.ItemPage, error)
+	ListAlbumsPage(context.Context, synology.Space, int, int) (synology.AlbumPage, error)
+	ListAlbumItemsPage(context.Context, synology.Space, int64, int, int) (synology.ItemPage, error)
 }
 
 type SourceAPI interface {
@@ -62,12 +66,17 @@ type Scanner struct {
 }
 
 type Result struct {
-	Summary       sourcepkg.Summary
-	Metadata      []sourcemetadata.Snapshot
-	PersonalItems int64
-	SharedItems   int64
-	Folders       int64
-	Errors        []string
+	Summary              sourcepkg.Summary
+	Collections          []sourcecollection.Snapshot
+	CollectionsComplete  bool
+	Metadata             []sourcemetadata.Snapshot
+	PersonalItems        int64
+	SharedItems          int64
+	Folders              int64
+	Albums               int64
+	AlbumMemberships     int64
+	DuplicateMemberships int64
+	Errors               []string
 }
 
 func (s Scanner) Scan(ctx context.Context) (Result, error) {
@@ -115,6 +124,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
 	pathOwners := make(map[string]string)
+	includedExternalIDs := make(map[string]struct{})
 	if lister, ok := s.API.(sourceItemLister); ok {
 		if err := seedSynologyPathOwners(ctx, lister, s.SourceID, pathOwners); err != nil {
 			return result, fmt.Errorf("read existing Synology source paths: %w", err)
@@ -218,6 +228,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 					continue
 				}
 				item.Path = reserveSynologyPath(item.Path, remoteItem.ID, item.ExternalID, pathOwners)
+				includedExternalIDs[item.ExternalID] = struct{}{}
 				if space == synology.SpacePersonal {
 					result.PersonalItems++
 				} else {
@@ -251,6 +262,76 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				break
 			}
 			offset = next
+		}
+	}
+
+	result.CollectionsComplete = true
+	for _, space := range spaces {
+		if !s.Remote.AlbumsAvailable(space) {
+			result.CollectionsComplete = false
+			break
+		}
+	}
+	if result.CollectionsComplete {
+		for _, space := range spaces {
+			albums, err := collectAlbums(ctx, s.Remote, space, func() error {
+				return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
+			})
+			if err != nil {
+				return result, fmt.Errorf("scan Synology %s albums: %w", space, err)
+			}
+			result.Albums += int64(len(albums))
+			for _, album := range albums {
+				if album.ID <= 0 {
+					return result, fmt.Errorf("invalid Synology %s album id=%d", space, album.ID)
+				}
+				snapshot := sourcecollection.Snapshot{
+					ExternalID:     albumCollectionExternalID(space, album.ID),
+					Kind:           "album",
+					Name:           albumCollectionName(album),
+					RemoteRevision: albumCollectionRevision(album),
+				}
+				memberSeen := make(map[string]struct{})
+				position := int64(0)
+				offset := 0
+				for pageNo := 0; pageNo < 100000; pageNo++ {
+					if err := ctx.Err(); err != nil {
+						return result, err
+					}
+					page, err := s.Remote.ListAlbumItemsPage(ctx, space, album.ID, offset, DefaultBatchSize)
+					if err != nil {
+						return result, fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err)
+					}
+					for _, remoteItem := range page.List {
+						result.AlbumMemberships++
+						externalID := fmt.Sprintf("synology:%s:%d", space, remoteItem.ID)
+						if _, included := includedExternalIDs[externalID]; included {
+							if _, duplicate := memberSeen[externalID]; duplicate {
+								result.DuplicateMemberships++
+							} else {
+								snapshot.Members = append(snapshot.Members, sourcecollection.MemberSnapshot{
+									ItemExternalID: externalID,
+									Position:       position,
+								})
+								memberSeen[externalID] = struct{}{}
+							}
+						}
+						position++
+					}
+					if err := s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID); err != nil {
+						return result, err
+					}
+					next, done, err := nextOffset(offset, page.Offset, page.Total, len(page.List))
+					if err != nil {
+						return result, fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err)
+					}
+					if done {
+						break
+					}
+					offset = next
+				}
+				result.Collections = append(result.Collections, snapshot)
+			}
 		}
 	}
 
@@ -331,6 +412,62 @@ func collectFolders(ctx context.Context, remote Remote, space synology.Space, he
 		offset = next
 	}
 	return nil, fmt.Errorf("Synology folder pagination exceeded safety limit")
+}
+
+func collectAlbums(ctx context.Context, remote Remote, space synology.Space, heartbeat func() error) ([]synology.Album, error) {
+	var out []synology.Album
+	offset := 0
+	for pageNo := 0; pageNo < 100000; pageNo++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		page, err := remote.ListAlbumsPage(ctx, space, offset, DefaultBatchSize)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.List...)
+		if err := heartbeat(); err != nil {
+			return nil, err
+		}
+		next, done, err := nextOffset(offset, page.Offset, page.Total, len(page.List))
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			return out, nil
+		}
+		offset = next
+	}
+	return nil, fmt.Errorf("Synology album pagination exceeded safety limit")
+}
+
+func albumCollectionExternalID(space synology.Space, albumID int64) string {
+	return fmt.Sprintf("synology:album:%s:%d", space, albumID)
+}
+
+func albumCollectionName(album synology.Album) string {
+	name := strings.TrimSpace(album.Name)
+	if name == "" {
+		name = "Album " + strconv.FormatInt(album.ID, 10)
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if r < 32 {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	name = strings.TrimSpace(b.String())
+	if name == "" {
+		name = "Album " + strconv.FormatInt(album.ID, 10)
+	}
+	return trimUTF8Bytes(name, 512)
+}
+
+func albumCollectionRevision(album synology.Album) string {
+	return fmt.Sprintf("type:%s:created:%d:count:%d:shared:%t",
+		strings.TrimSpace(album.Type), album.CreateTime, album.ItemCount, album.Shared)
 }
 
 func nextOffset(requested, returned, total, count int) (int, bool, error) {
