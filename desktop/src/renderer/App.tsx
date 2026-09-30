@@ -2711,24 +2711,24 @@ export default function App() {
         '--xdrive-sidebar-compact-width': `${XDRIVE_SIDEBAR_COMPACT_WIDTH}px`,
       } as CSSProperties}
     >
-      <XDriveSidebarSurface appearance="dark" ariaLabel="桌面版侧边栏" className="sidebar">
+      <XDriveSidebarSurface ariaLabel="桌面版侧边栏" className="sidebar">
         <XDriveSidebarNavList ariaLabel="桌面版功能区">
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'cloud'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setView('cloud')} />
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setView('gallery')} />
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="外部来源" onClick={() => setView('sources')} />
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'transfers'} icon={<SwapVertRoundedIcon fontSize="small" />} primary="传输" badge={activeTransfers.length || undefined} onClick={() => setView('transfers')} />
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'files'} icon={<StorageRoundedIcon fontSize="small" />} primary="存储" onClick={() => setView('files')} />
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
+          <XDriveSidebarNavItem selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
+          <XDriveSidebarNavItem selected={view === 'cloud'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setView('cloud')} />
+          <XDriveSidebarNavItem selected={view === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setView('gallery')} />
+          <XDriveSidebarNavItem selected={view === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="外部来源" onClick={() => setView('sources')} />
+          <XDriveSidebarNavItem selected={view === 'transfers'} icon={<SwapVertRoundedIcon fontSize="small" />} primary="传输" badge={activeTransfers.length || undefined} onClick={() => setView('transfers')} />
+          <XDriveSidebarNavItem selected={view === 'files'} icon={<StorageRoundedIcon fontSize="small" />} primary="存储" onClick={() => setView('files')} />
+          <XDriveSidebarNavItem selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
         </XDriveSidebarNavList>
-        <XDriveSidebarSection appearance="dark" pinnedBottom>
+        <XDriveSidebarSection pinnedBottom>
           <XDriveSidebarNavList ariaLabel="桌面版辅助功能">
-            <XDriveSidebarNavItem appearance="dark" selected={view === 'diagnostics'} icon={<BuildRoundedIcon fontSize="small" />} primary="诊断" onClick={() => setView('diagnostics')} />
+            <XDriveSidebarNavItem selected={view === 'diagnostics'} icon={<BuildRoundedIcon fontSize="small" />} primary="诊断" onClick={() => setView('diagnostics')} />
           </XDriveSidebarNavList>
         </XDriveSidebarSection>
         {cloudQuota && (
           <XDriveSidebarStorageSummary
-            appearance="dark"
+           
             usedBytes={cloudQuota.physical_used_bytes}
             totalBytes={cloudQuota.quota_bytes}
             diskAvailableBytes={cloudQuota.disk_available_bytes}
