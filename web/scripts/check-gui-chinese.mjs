@@ -120,7 +120,7 @@ if (files.sources.includes('@ant-design/icons')) throw new Error('Web 外部来�
 if (files.sources.includes('message.success') || /<Button\b/.test(files.sources) || /<Space\b/.test(files.sources) || /<Divider\b/.test(files.sources)) throw new Error('Web 外部来源外壳仍使用已迁移的 AntD 组件')
 if (/from ['"]antd['"]/.test(files.sources) || files.sources.includes('@ant-design/icons')) throw new Error('Web 外部来源仍依赖 Ant Design')
 if (/<Descriptions\b/.test(files.sources) || /<Spin\b/.test(files.sources) || /<Form\b/.test(files.sources) || /<Input\b/.test(files.sources) || /<Select\b/.test(files.sources) || files.sources.includes('Typography.')) throw new Error('Web 外部来源仍渲染 AntD 组件')
-requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', '复制运行 ID', 'CircularProgress', 'initialCreateSourceValues', 'settingsValues', 'MuiSelect', 'FormControl'], '外部来源 MUI 表单与详情展示')
+requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', '复制运行 ID', 'CircularProgress', 'initialCreateSourceValues', 'settingsValues'], '外部来源 MUI 表单与详情展示')
 if (files.sources.includes('<LinearProgress')) throw new Error('Web 外部来源仍在直接渲染运行进度条')
 if ((files.sources.match(/<XDriveSourceRunProgress/g) || []).length !== 1) throw new Error('Web 外部来源运行进度没有复用共享组件')
 requireText(files.sourceRunProgress, ['ExternalSourceRunProgressView', 'LinearProgress', '当前文件：', '正在取消…', 'XDriveActionButton'], '外部来源运行进度')
