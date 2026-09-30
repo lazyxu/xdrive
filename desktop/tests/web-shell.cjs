@@ -49,9 +49,10 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
 })
 
 
-test('Web first-class workspaces share the same page chrome', () => {
+test('Web first-class workspaces use page chrome except the full-bleed Files workspace', () => {
   assert.ok(webApp.includes('XDriveWorkspaceSurface'), 'Web app should reuse the shared workspace surface')
-  assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), 'Files page title must use workspace page chrome')
+  assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not render a duplicate page header')
+  assert.ok(webApp.includes('className="files-workspace-surface"'), 'Files should render as the application workspace itself')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
   assert.ok(webApp.includes('<ExternalSourcesPanel'), 'External Sources should remain a first-class page')
   assert.ok(webApp.includes('<StorageStatsPanel') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
@@ -169,7 +170,7 @@ test('Web and Desktop show account storage usage at the bottom of the sidebar', 
   assert.equal(webApp.includes('secondary={quota ?'), false, 'Web Storage nav item should not duplicate quota text')
   assert.ok(webApp.includes('void api.quota()'), 'Web should refresh sidebar quota outside manual file actions')
   assert.ok(webApp.includes("height: { md: 'calc(100vh - 64px)' }"), 'Web desktop shell should keep the sidebar viewport-height')
-  assert.ok(webApp.includes("overflowY: { md: 'auto' }"), 'Web desktop content should scroll without pushing sidebar footer away')
+  assert.ok(webApp.includes("overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }"), 'Web non-files content should scroll while Files delegates scrolling to Explorer')
 
   assert.ok(desktopApp.includes('usedBytes={cloudQuota.physical_used_bytes}'), 'Desktop sidebar should use cloud account physical usage')
   assert.ok(desktopApp.includes('totalBytes={cloudQuota.quota_bytes}'), 'Desktop sidebar should use cloud account quota')
