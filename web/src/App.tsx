@@ -58,6 +58,7 @@ import {
   XDriveMediaGalleryPage,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
+  XDriveSidebarSection,
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
   XDriveWorkspaceSurface,
@@ -753,25 +754,7 @@ function FileManager({
           </XDriveSidebarNavList>
 
           {profile?.role === 'admin' && (
-            <Box
-              sx={{
-                mt: { xs: 0, md: 1.5 },
-                ml: { xs: 1, md: 0 },
-                pt: { xs: 0, md: 1.5 },
-                pl: { xs: 1, md: 0 },
-                borderTop: { xs: 0, md: 1 },
-                borderLeft: { xs: 1, md: 0 },
-                borderColor: 'divider',
-              }}
-            >
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                fontWeight={700}
-                sx={{ display: { xs: 'none', md: 'block' }, px: 1.25, pb: 0.75 }}
-              >
-                管理
-              </Typography>
+            <XDriveSidebarSection label="管理" responsive>
               <XDriveSidebarNavList ariaLabel="管理员功能" responsive>
                 <XDriveSidebarNavItem
                   selected={appView === 'admin-users'}
@@ -792,7 +775,7 @@ function FileManager({
                   onClick={() => setAppView('admin-storage')}
                 />
               </XDriveSidebarNavList>
-            </Box>
+            </XDriveSidebarSection>
           )}
 
           {quota && (
