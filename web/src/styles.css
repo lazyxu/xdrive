@@ -60,10 +60,6 @@ a { user-select: none; }
   gap: 14px;
 }
 
-.external-source-card .ant-card-body {
-  padding: 18px 20px;
-}
-
 .external-source-card-header,
 .external-source-card-meta {
   display: flex;
