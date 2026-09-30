@@ -152,3 +152,23 @@ test('shared FileExplorer provides internal and external drag and drop contracts
     assert.ok(explorer.includes(token), `missing FileExplorer drag/drop contract: ${token}`)
   }
 })
+
+test('shared FileExplorer details columns are sortable, resizable, configurable and persisted', () => {
+  for (const token of [
+    "export type XDriveFileExplorerDetailsColumnKey = XDriveFileExplorerSortKey",
+    'export type XDriveFileExplorerDetailsLayout = {',
+    'xDriveNormalizeFileExplorerDetailsLayout',
+    'window.localStorage.setItem(detailsPreferencesKey, JSON.stringify(detailsLayout))',
+    '<ViewColumnRoundedIcon',
+    '重置列',
+    'gridTemplateColumns: detailsGridTemplate',
+    'setPointerCapture(event.pointerId)',
+    "cursor: 'col-resize'",
+    'onPointerMove={(event) => moveDetailsColumnResize(event, key)}',
+    'onClick={() => setSort({',
+    'aria-label={`按${detailsColumnMeta[key].label}排序`}',
+  ]) {
+    assert.ok(explorer.includes(token), `missing details-column feature: ${token}`)
+  }
+  assert.equal(explorer.includes("gridTemplateColumns: 'minmax(260px, 1fr) 190px 150px 120px'"), false, 'details columns must not remain hard-coded')
+})
