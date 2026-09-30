@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
@@ -61,6 +61,20 @@ export type XDriveFileExplorerSort = {
   direction: XDriveFileExplorerSortDirection
 }
 
+export type XDriveFileExplorerMenuItem = {
+  id: string
+  label: string
+  icon?: ReactNode
+  disabled?: boolean
+  danger?: boolean
+  dividerBefore?: boolean
+  onSelect: () => void
+}
+
+function explorerIDKey(id: XDriveFileExplorerID) {
+  return `${typeof id}:${String(id)}`
+}
+
 export function XDriveFileExplorer({
   items,
   crumbs,
@@ -83,6 +97,11 @@ export function XDriveFileExplorer({
   onUpload,
   onItemClick,
   onOpenItem,
+  selectedIDs: controlledSelectedIDs,
+  defaultSelectedIDs = [],
+  onSelectionChange,
+  getItemMenuItems,
+  backgroundMenuItems = [],
   viewMode: controlledViewMode,
   onViewModeChange,
   sort: controlledSort,
@@ -112,6 +131,11 @@ export function XDriveFileExplorer({
   onUpload?: () => void
   onItemClick?: (item: XDriveFileExplorerItem) => void
   onOpenItem?: (item: XDriveFileExplorerItem) => void
+  selectedIDs?: readonly XDriveFileExplorerID[]
+  defaultSelectedIDs?: readonly XDriveFileExplorerID[]
+  onSelectionChange?: (ids: XDriveFileExplorerID[]) => void
+  getItemMenuItems?: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
+  backgroundMenuItems?: XDriveFileExplorerMenuItem[]
   viewMode?: XDriveFileExplorerViewMode
   onViewModeChange?: (mode: XDriveFileExplorerViewMode) => void
   sort?: XDriveFileExplorerSort
@@ -128,10 +152,22 @@ export function XDriveFileExplorer({
   const [pathDraft, setPathDraft] = useState(derivedPath)
   const [internalViewMode, setInternalViewMode] = useState<XDriveFileExplorerViewMode>('details')
   const [internalSort, setInternalSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
+  const [internalSelectedIDs, setInternalSelectedIDs] = useState<XDriveFileExplorerID[]>([...defaultSelectedIDs])
+  const [selectionAnchorID, setSelectionAnchorID] = useState<XDriveFileExplorerID | null>(null)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    mouseX: number
+    mouseY: number
+    items: XDriveFileExplorerMenuItem[]
+  } | null>(null)
 
   const viewMode = controlledViewMode ?? internalViewMode
   const sort = controlledSort ?? internalSort
+  const selectedIDs = controlledSelectedIDs ?? internalSelectedIDs
+  const selectedKeySet = useMemo(
+    () => new Set(selectedIDs.map(explorerIDKey)),
+    [selectedIDs],
+  )
 
   useEffect(() => {
     if (!editingPath) setPathDraft(derivedPath)
@@ -155,6 +191,98 @@ export function XDriveFileExplorer({
     })
     return result
   }, [items, sort.direction, sort.key])
+
+  const commitSelection = (ids: XDriveFileExplorerID[]) => {
+    if (controlledSelectedIDs === undefined) setInternalSelectedIDs(ids)
+    onSelectionChange?.(ids)
+  }
+
+  const clearSelection = () => {
+    setSelectionAnchorID(null)
+    commitSelection([])
+  }
+
+  const selectItem = (
+    event: ReactMouseEvent<HTMLElement>,
+    item: XDriveFileExplorerItem,
+    index: number,
+  ) => {
+    const itemKey = explorerIDKey(item.id)
+    const additive = event.ctrlKey || event.metaKey
+
+    if (event.shiftKey && selectionAnchorID !== null) {
+      const anchorKey = explorerIDKey(selectionAnchorID)
+      const anchorIndex = visibleItems.findIndex((candidate) => explorerIDKey(candidate.id) === anchorKey)
+      if (anchorIndex >= 0) {
+        const start = Math.min(anchorIndex, index)
+        const end = Math.max(anchorIndex, index)
+        const range = visibleItems.slice(start, end + 1).map((candidate) => candidate.id)
+        if (additive) {
+          const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
+          for (const id of range) merged.set(explorerIDKey(id), id)
+          commitSelection([...merged.values()])
+        } else {
+          commitSelection(range)
+        }
+        onItemClick?.(item)
+        return
+      }
+    }
+
+    if (additive) {
+      if (selectedKeySet.has(itemKey)) {
+        commitSelection(selectedIDs.filter((id) => explorerIDKey(id) !== itemKey))
+      } else {
+        commitSelection([...selectedIDs, item.id])
+      }
+    } else {
+      commitSelection([item.id])
+    }
+    setSelectionAnchorID(item.id)
+    onItemClick?.(item)
+  }
+
+  const toggleKeyboardSelection = (item: XDriveFileExplorerItem) => {
+    const key = explorerIDKey(item.id)
+    if (selectedKeySet.has(key)) {
+      commitSelection(selectedIDs.filter((id) => explorerIDKey(id) !== key))
+    } else {
+      commitSelection([...selectedIDs, item.id])
+    }
+    setSelectionAnchorID(item.id)
+  }
+
+  const openItemContextMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    item: XDriveFileExplorerItem,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!selectedKeySet.has(explorerIDKey(item.id))) {
+      commitSelection([item.id])
+      setSelectionAnchorID(item.id)
+    }
+    const menuItems = getItemMenuItems?.(item) ?? []
+    if (menuItems.length === 0) return
+    setContextMenu({
+      mouseX: event.clientX + 2,
+      mouseY: event.clientY - 6,
+      items: menuItems,
+    })
+  }
+
+  const openBackgroundContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
+    if (backgroundMenuItems.length === 0) return
+    event.preventDefault()
+    clearSelection()
+    setContextMenu({
+      mouseX: event.clientX + 2,
+      mouseY: event.clientY - 6,
+      items: backgroundMenuItems,
+    })
+  }
+
+  const contextMenuItems = contextMenu?.items ?? []
 
   const setViewMode = (mode: XDriveFileExplorerViewMode) => {
     if (controlledViewMode === undefined) setInternalViewMode(mode)
@@ -203,8 +331,22 @@ export function XDriveFileExplorer({
     if (event.key === 'Enter') {
       event.preventDefault()
       onOpenItem?.(item)
+      return
+    }
+    if (event.key === ' ') {
+      event.preventDefault()
+      toggleKeyboardSelection(item)
     }
   }
+
+  const selectedSize = useMemo(
+    () => items.reduce((total, item) => (
+      selectedKeySet.has(explorerIDKey(item.id)) && item.kind === 'file'
+        ? total + (item.size ?? 0)
+        : total
+    ), 0),
+    [items, selectedKeySet],
+  )
 
   return (
     <Paper
@@ -430,7 +572,22 @@ export function XDriveFileExplorer({
 
       <Divider />
 
-      <Box sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'auto' }}>
+      <Box
+        sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'auto' }}
+        tabIndex={0}
+        onClick={(event) => {
+          const target = event.target as HTMLElement
+          if (!target.closest('[data-xdrive-file-explorer-item]')) clearSelection()
+        }}
+        onContextMenu={openBackgroundContextMenu}
+        onKeyDown={(event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+            event.preventDefault()
+            commitSelection(visibleItems.map((item) => item.id))
+          }
+          if (event.key === 'Escape') clearSelection()
+        }}
+      >
         {loading && visibleItems.length === 0 ? (
           <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
         ) : visibleItems.length === 0 ? (
@@ -460,14 +617,19 @@ export function XDriveFileExplorer({
               <span role="columnheader">类型</span>
               <span role="columnheader">大小</span>
             </Box>
-            {visibleItems.map((item) => (
+            {visibleItems.map((item, index) => {
+              const selected = selectedKeySet.has(explorerIDKey(item.id))
+              return (
               <ButtonBase
                 key={item.id}
                 component="div"
                 role="row"
+                data-xdrive-file-explorer-item
                 tabIndex={0}
-                onClick={() => onItemClick?.(item)}
+                aria-selected={selected}
+                onClick={(event) => selectItem(event, item, index)}
                 onDoubleClick={() => onOpenItem?.(item)}
+                onContextMenu={(event) => openItemContextMenu(event, item)}
                 onKeyDown={(event) => itemKeyDown(event, item)}
                 sx={{
                   width: '100%',
@@ -479,7 +641,8 @@ export function XDriveFileExplorer({
                   textAlign: 'left',
                   borderBottom: 1,
                   borderColor: 'divider',
-                  '&:hover': { bgcolor: 'action.hover' },
+                  bgcolor: selected ? 'action.selected' : 'transparent',
+                  '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                   '&:focus-visible': {
                     outline: '2px solid',
                     outlineColor: 'primary.main',
@@ -508,7 +671,8 @@ export function XDriveFileExplorer({
                   {item.kind === 'dir' ? '—' : formatSize(item.size ?? 0)}
                 </Typography>
               </ButtonBase>
-            ))}
+              )
+            })}
           </Box>
         ) : (
           <Box
@@ -522,14 +686,19 @@ export function XDriveFileExplorer({
               alignContent: 'start',
             }}
           >
-            {visibleItems.map((item) => (
+            {visibleItems.map((item, index) => {
+              const selected = selectedKeySet.has(explorerIDKey(item.id))
+              return (
               <ButtonBase
                 key={item.id}
                 component="div"
                 role="listitem"
+                data-xdrive-file-explorer-item
                 tabIndex={0}
-                onClick={() => onItemClick?.(item)}
+                aria-selected={selected}
+                onClick={(event) => selectItem(event, item, index)}
                 onDoubleClick={() => onOpenItem?.(item)}
+                onContextMenu={(event) => openItemContextMenu(event, item)}
                 onKeyDown={(event) => itemKeyDown(event, item)}
                 sx={{
                   minWidth: 0,
@@ -542,7 +711,8 @@ export function XDriveFileExplorer({
                   justifyContent: 'flex-start',
                   gap: 0.75,
                   textAlign: 'center',
-                  '&:hover': { bgcolor: 'action.hover' },
+                  bgcolor: selected ? 'action.selected' : 'transparent',
+                  '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                   '&:focus-visible': {
                     outline: '2px solid',
                     outlineColor: 'primary.main',
@@ -578,7 +748,8 @@ export function XDriveFileExplorer({
                   {item.name}
                 </Typography>
               </ButtonBase>
-            ))}
+              )
+            })}
           </Box>
         )}
 
@@ -596,6 +767,30 @@ export function XDriveFileExplorer({
         ) : null}
       </Box>
 
+      <Menu
+        open={Boolean(contextMenu)}
+        onClose={() => setContextMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
+      >
+        {contextMenuItems.map((menuItem) => (
+          <Fragment key={menuItem.id}>
+            {menuItem.dividerBefore ? <Divider /> : null}
+            <MenuItem
+              disabled={menuItem.disabled}
+              onClick={() => {
+                setContextMenu(null)
+                menuItem.onSelect()
+              }}
+              sx={menuItem.danger ? { color: 'error.main' } : undefined}
+            >
+              {menuItem.icon ? <Box sx={{ mr: 1, display: 'flex' }}>{menuItem.icon}</Box> : null}
+              {menuItem.label}
+            </MenuItem>
+          </Fragment>
+        ))}
+      </Menu>
+
       <Divider />
 
       <Stack
@@ -605,8 +800,12 @@ export function XDriveFileExplorer({
         spacing={2}
         sx={{ minHeight: 32, px: 1.5, color: 'text.secondary' }}
       >
-        <Typography variant="caption">{items.length} 个项目</Typography>
-        {statusText ? <Typography variant="caption">{statusText}</Typography> : null}
+        <Typography variant="caption">
+          {items.length} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
+        </Typography>
+        <Typography variant="caption">
+          {statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}
+        </Typography>
       </Stack>
     </Paper>
   )
