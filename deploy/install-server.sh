@@ -1267,22 +1267,36 @@ legacy_volume_by_label() {
 }
 
 capture_legacy_named_volumes() {
-  local info
+  local files_info postgres_info caddy_data_info caddy_config_info allow_label_fallback=1
   [[ "$UPGRADE_EXISTING" == "1" ]] || return 0
 
-  info="$(existing_mount_info server /data)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_FILES_VOLUME="${info#volume|}"; fi
-  info="$(existing_mount_info postgres /var/lib/postgresql/data)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_POSTGRES_VOLUME="${info#volume|}"; fi
-  info="$(existing_mount_info caddy /data)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_CADDY_DATA_VOLUME="${info#volume|}"; fi
-  info="$(existing_mount_info caddy /config)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_CADDY_CONFIG_VOLUME="${info#volume|}"; fi
+  files_info="$(existing_mount_info server /data)"
+  postgres_info="$(existing_mount_info postgres /var/lib/postgresql/data)"
+  caddy_data_info="$(existing_mount_info caddy /data)"
+  caddy_config_info="$(existing_mount_info caddy /config)"
 
-  [[ -n "$LEGACY_FILES_VOLUME" ]] || LEGACY_FILES_VOLUME="$(legacy_volume_by_label file-data)"
-  [[ -n "$LEGACY_POSTGRES_VOLUME" ]] || LEGACY_POSTGRES_VOLUME="$(legacy_volume_by_label postgres-data)"
-  [[ -n "$LEGACY_CADDY_DATA_VOLUME" ]] || LEGACY_CADDY_DATA_VOLUME="$(legacy_volume_by_label caddy-data)"
-  [[ -n "$LEGACY_CADDY_CONFIG_VOLUME" ]] || LEGACY_CADDY_CONFIG_VOLUME="$(legacy_volume_by_label caddy-config)"
+  # A bind mount on the active deployment is authoritative evidence that the
+  # host-layout migration already happened. Old Compose named volumes are
+  # intentionally retained for rollback and must never be rediscovered by
+  # label and copied back over the live bind-mounted data on later upgrades.
+  if [[ "$files_info" == bind\|* || "$postgres_info" == bind\|* || "$caddy_data_info" == bind\|* || "$caddy_config_info" == bind\|* ]]; then
+    allow_label_fallback=0
+  fi
+  if [[ -f "$STATE_DIR/legacy-volumes-retained" ]]; then
+    allow_label_fallback=0
+  fi
+
+  if [[ "$files_info" == volume\|* ]]; then LEGACY_FILES_VOLUME="${files_info#volume|}"; fi
+  if [[ "$postgres_info" == volume\|* ]]; then LEGACY_POSTGRES_VOLUME="${postgres_info#volume|}"; fi
+  if [[ "$caddy_data_info" == volume\|* ]]; then LEGACY_CADDY_DATA_VOLUME="${caddy_data_info#volume|}"; fi
+  if [[ "$caddy_config_info" == volume\|* ]]; then LEGACY_CADDY_CONFIG_VOLUME="${caddy_config_info#volume|}"; fi
+
+  if [[ "$allow_label_fallback" == "1" ]]; then
+    [[ -n "$LEGACY_FILES_VOLUME" ]] || LEGACY_FILES_VOLUME="$(legacy_volume_by_label file-data)"
+    [[ -n "$LEGACY_POSTGRES_VOLUME" ]] || LEGACY_POSTGRES_VOLUME="$(legacy_volume_by_label postgres-data)"
+    [[ -n "$LEGACY_CADDY_DATA_VOLUME" ]] || LEGACY_CADDY_DATA_VOLUME="$(legacy_volume_by_label caddy-data)"
+    [[ -n "$LEGACY_CADDY_CONFIG_VOLUME" ]] || LEGACY_CADDY_CONFIG_VOLUME="$(legacy_volume_by_label caddy-config)"
+  fi
 
   if [[ -n "$LEGACY_FILES_VOLUME$LEGACY_POSTGRES_VOLUME$LEGACY_CADDY_DATA_VOLUME$LEGACY_CADDY_CONFIG_VOLUME" ]]; then
     LEGACY_VOLUME_MIGRATION=1
@@ -1291,15 +1305,26 @@ capture_legacy_named_volumes() {
 }
 
 copy_legacy_volume() {
-  local volume="$1" target="$2" helper_image="$3" label="$4"
+  local volume="$1" target="$2" helper_image="$3" label="$4" existing_entry
   [[ -n "$volume" ]] || return 0
   mkdir -p "$target"
+
+  if ! existing_entry="$(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)"; then
+    echo "xDrive server installer: cannot inspect $label migration target: $target" >&2
+    return 1
+  fi
+  if [[ -n "$existing_entry" ]]; then
+    echo "xDrive server installer: refusing to overwrite non-empty $label migration target: $target" >&2
+    echo "The active data directory already contains state; legacy named-volume contents will not be replayed." >&2
+    return 1
+  fi
+
   echo "[xDrive] migrating $label: $volume -> $target"
   docker run --rm --entrypoint sh \
     -v "$volume:/from:ro" \
     -v "$target:/to" \
     "$helper_image" \
-    -ec 'find /to -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; cp -a /from/. /to/'
+    -ec 'cp -a /from/. /to/'
 }
 
 migrate_legacy_named_volumes() {
