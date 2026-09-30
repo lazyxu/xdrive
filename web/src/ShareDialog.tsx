@@ -9,7 +9,6 @@ import {
   Dialog,
   InputAdornment,
   LinearProgress,
-  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -24,6 +23,7 @@ import {
   XDriveActionButton,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDriveFeedbackSnackbar,
   XDriveShareStatusBadge,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -320,18 +320,13 @@ export default function ShareDialog({
         </XDriveDialogContent>
       </Dialog>
 
-      <Snackbar
+      <XDriveFeedbackSnackbar
         open={Boolean(feedback)}
+        tone={feedback?.tone ?? 'good'}
+        message={feedback?.message ?? ''}
         autoHideDuration={3000}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        onClose={(_event, reason) => {
-          if (reason !== 'clickaway') setFeedback(null)
-        }}
-      >
-        <div>
-          {feedback ? <XDriveStatusAlert tone={feedback.tone}>{feedback.message}</XDriveStatusAlert> : null}
-        </div>
-      </Snackbar>
+        onClose={() => setFeedback(null)}
+      />
     </>
   )
 }
