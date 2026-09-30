@@ -107,6 +107,7 @@ import {
   yikeRateLimitNotice,
   yikeManagedTargetLabel,
 } from '@xdrive/shared'
+import DesktopFileExplorer from './DesktopFileExplorer'
 import type {
   BuildInfo,
   ExternalSourceCollection,
@@ -372,14 +373,10 @@ export default function App() {
   const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
   const [sourceTargetDirectories, setSourceTargetDirectories] = useState<AgentCloudNode[]>([])
   const [sourceTargetLoading, setSourceTargetLoading] = useState(false)
-  const [cloudRoot, setCloudRoot] = useState<AgentCloudNode | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
   const [cloudStorageStats, setCloudStorageStats] = useState<AgentCloudStorageStats | null>(null)
-  const [cloudQuery, setCloudQuery] = useState('')
-  const [cloudSearchActive, setCloudSearchActive] = useState(false)
-  const [cloudResults, setCloudResults] = useState<AgentCloudSearchResult[]>([])
   const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
   const [cloudTrash, setCloudTrash] = useState<AgentCloudNode[]>([])
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
@@ -660,12 +657,10 @@ export default function App() {
       setSourceTargetDirectories([])
       setStorageTree(null)
       setCacheStats(null)
-      setCloudRoot(null)
       setCloudItems([])
       setCloudCrumbs([])
       setCloudQuota(null)
-      setCloudSearchActive(false)
-      setCloudResults([])
+      setCloudStorageStats(null)
       setCloudTrash([])
       setCloudHistoryNode(null)
       setCloudHistoryCrumbs([])
@@ -1711,9 +1706,12 @@ export default function App() {
     setBusy('storage')
     setError('')
     try {
-      const [treeResult, cacheResult] = await Promise.all([
+      const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
+      const [treeResult, cacheResult, quotaResult, cloudStatsResult] = await Promise.all([
         window.xdriveDesktop.agent.getStorageTree(),
         window.xdriveDesktop.agent.getCache(),
+        window.xdriveDesktop.agent.cloudQuota(),
+        storageStatsSupported ? window.xdriveDesktop.agent.cloudStorageStats() : Promise.resolve(null),
       ])
       if (!treeResult.ok) {
         setError(treeResult.error.message)
@@ -1725,6 +1723,9 @@ export default function App() {
       }
       setStorageTree(treeResult.data)
       setCacheStats(cacheResult.data)
+      if (quotaResult.ok) setCloudQuota(quotaResult.data)
+      if (cloudStatsResult?.ok) setCloudStorageStats(cloudStatsResult.data)
+      else if (cloudStatsResult) setCloudStorageStats(null)
       setExpandedStorage((current) => {
         if (current.size > 0) return current
         return new Set((treeResult.data.children || []).map((child) => child.path))
@@ -1833,9 +1834,6 @@ export default function App() {
       }
       setCloudItems(result.data)
       setCloudCrumbs(crumbs)
-      setCloudSearchActive(false)
-      setCloudResults([])
-      setCloudQuery('')
     } finally {
       setBusy('')
     }
@@ -1845,11 +1843,9 @@ export default function App() {
     setBusy('cloud-load')
     setError('')
     try {
-      const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
-      const [rootResult, quotaResult, storageStatsResult] = await Promise.all([
+      const [rootResult, quotaResult] = await Promise.all([
         window.xdriveDesktop.agent.cloudRoot(),
         window.xdriveDesktop.agent.cloudQuota(),
-        storageStatsSupported ? window.xdriveDesktop.agent.cloudStorageStats() : Promise.resolve(null),
       ])
       if (!rootResult.ok) {
         setError(rootResult.error.message)
@@ -1859,43 +1855,14 @@ export default function App() {
         setError(quotaResult.error.message)
         return
       }
-      if (storageStatsResult && !storageStatsResult.ok) {
-        setCloudStorageStats(null)
-      }
       const childrenResult = await window.xdriveDesktop.agent.cloudChildren(rootResult.data.id)
       if (!childrenResult.ok) {
         setError(childrenResult.error.message)
         return
       }
-      setCloudRoot(rootResult.data)
       setCloudItems(childrenResult.data)
       setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
       setCloudQuota(quotaResult.data)
-      setCloudStorageStats(storageStatsResult?.ok ? storageStatsResult.data : null)
-      setCloudSearchActive(false)
-      setCloudResults([])
-      setCloudQuery('')
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const searchCloud = async () => {
-    const query = cloudQuery.trim()
-    if (query.length < 2) {
-      setError('搜索关键字至少需要 2 个字符。')
-      return
-    }
-    setBusy('cloud-search')
-    setError('')
-    try {
-      const result = await window.xdriveDesktop.agent.cloudSearch(query)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setCloudSearchActive(true)
-      setCloudResults(result.data)
     } finally {
       setBusy('')
     }
@@ -1915,6 +1882,29 @@ export default function App() {
     } finally {
       setBusy('')
     }
+  }
+
+  const removeCloudNode = (node: AgentCloudNode) => {
+    requestConfirmation(
+      `将“${node.name}”移到回收站？`,
+      node.type === 'dir'
+        ? '该文件夹及其中的内容会从云端文件列表中移除，之后仍可从回收站恢复。'
+        : '该文件会从云端文件列表中移除，之后仍可从回收站恢复。',
+      '移到回收站',
+      async () => {
+        const data = await run(
+          `cloud-delete-${node.id}`,
+          () => window.xdriveDesktop.agent.cloudDelete(node.id, node.revision),
+          '已移到回收站。',
+        )
+        if (!data) return
+        await refreshCloudQuota()
+        if (cloudCrumbs.length > 0) {
+          await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
+        }
+      },
+      'warning',
+    )
   }
 
   const restoreCloudTrash = async (node: AgentCloudNode) => {
@@ -3586,196 +3576,25 @@ export default function App() {
 
 
         {view === 'cloud' && (
-          <section className="panel cloud-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">云端文件</p>
-                <h2>浏览和管理云端内容</h2>
-                <p className="cloud-note">云端操作通过 xdrive-agent 执行，渲染进程不会接触服务器 access token 或 refresh token。</p>
-              </div>
-              <div className="cloud-heading-actions">
-                <XDriveActionButton
-                  disabled={!!busy}
-                  loading={busy === 'cloud-trash'}
-                  loadingLabel="正在打开…"
-                  onClick={() => void loadCloudTrash()}
-                >
-                  回收站
-                </XDriveActionButton>
-                <XDriveActionButton
-                  disabled={!!busy}
-                  loading={busy === 'cloud-load'}
-                  loadingLabel="正在刷新…"
-                  onClick={() => void loadCloudHome()}
-                >
-                  刷新
-                </XDriveActionButton>
-              </div>
-            </div>
-
+          <section className="panel cloud-panel cloud-explorer-panel">
             {cloudQuota?.over_quota && (
               <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>
                 存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
               </XDriveStatusAlert>
             )}
-            {cloudQuota && (
-              <div className="cloud-quota-grid">
-                <div><span>物理占用</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `配额 ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}</small></div>
-                <div>
-                  <span>可用空间</span>
-                  <strong>{formatBinarySize(cloudQuota.available_bytes)}</strong>
-                  <small>{cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'}</small>
-                </div>
-                <div><span>当前文件</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>有效逻辑内容</small></div>
-                <div><span>回收站</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>计入物理配额</small></div>
-                <div><span>历史版本</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>已保存的历史内容</small></div>
-              </div>
-            )}
-
-            {cloudStorageStats && (
-              <div className="cloud-subpanel storage-intelligence">
-                <div className="cloud-subpanel-heading">
-                  <div>
-                    <strong>CAS 存储情报</strong>
-                    <span>用于评估 CDC 与 small-file packing 的真实收益</span>
-                  </div>
-                </div>
-                <div className="cloud-quota-grid">
-                  <div><span>CAS Blob</span><strong>{cloudStorageStats.cas_blob_count.toLocaleString()}</strong><small>唯一物理对象</small></div>
-                  <div><span>CAS 物理容量</span><strong>{formatBinarySize(cloudStorageStats.cas_physical_bytes)}</strong><small>实际占用</small></div>
-                  <div><span>逻辑引用容量</span><strong>{formatBinarySize(cloudStorageStats.cas_logical_referenced_bytes)}</strong><small>含重复引用</small></div>
-                  <div><span>去重节省</span><strong>{formatBinarySize(cloudStorageStats.cas_dedup_saved_bytes)}</strong><small>{cloudStorageStats.cas_dedup_ratio.toFixed(2)}× · {(cloudStorageStats.cas_savings_ratio * 100).toFixed(1)}%</small></div>
-                  <div><span>平均 Blob</span><strong>{formatBinarySize(cloudStorageStats.average_blob_size_bytes)}</strong><small>算术平均</small></div>
-                  <div><span>P50</span><strong>{formatBinarySize(cloudStorageStats.p50_blob_size_bytes)}</strong><small>中位尺寸</small></div>
-                  <div><span>P90</span><strong>{formatBinarySize(cloudStorageStats.p90_blob_size_bytes)}</strong><small>90% Blob 不超过</small></div>
-                  <div><span>P99</span><strong>{formatBinarySize(cloudStorageStats.p99_blob_size_bytes)}</strong><small>99% Blob 不超过</small></div>
-                </div>
-                <div className="cloud-compact-list">
-                  {cloudStorageStats.buckets.map((bucket) => (
-                    <div className="cloud-compact-row" key={bucket.key}>
-                      <div><strong>{bucket.label}</strong><span>{bucket.count.toLocaleString()} 个 Blob</span></div>
-                      <strong>{formatBinarySize(bucket.bytes)}</strong>
-                    </div>
-                  ))}
-                </div>
-                {cloudStorageStats.legacy_blob_count > 0 && (
-                  <XDriveStatusAlert tone="warning" sx={{ m: 1.5 }}>
-                    仍有 {cloudStorageStats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBinarySize(cloudStorageStats.legacy_physical_bytes)}），未计入 CAS 分布。
-                  </XDriveStatusAlert>
-                )}
-              </div>
-            )}
-
-            <div className="cloud-search-row">
-              <div className="cloud-search-input">
-                <input
-                  value={cloudQuery}
-                  onChange={(event) => setCloudQuery(event.target.value)}
-                  placeholder="搜索全部云端文件和文件夹"
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      void searchCloud()
-                    }
-                  }}
-                />
-                <XDriveActionButton
-                  intent="primary"
-                  disabled={!!busy || cloudQuery.trim().length < 2}
-                  loading={busy === 'cloud-search'}
-                  loadingLabel="正在搜索…"
-                  onClick={() => void searchCloud()}
-                >
-                  搜索
-                </XDriveActionButton>
-              </div>
-              {cloudSearchActive && (
-                <XDriveActionButton onClick={() => {
-                  setCloudSearchActive(false)
-                  setCloudResults([])
-                  setCloudQuery('')
-                }}>
-                  清除结果
-                </XDriveActionButton>
-              )}
-            </div>
-
-            {!cloudSearchActive && (
-              <div className="cloud-breadcrumbs">
-                {cloudCrumbs.map((crumb, index) => (
-                  <button
-                    type="button"
-                    key={crumb.id}
-                    disabled={index === cloudCrumbs.length - 1 || !!busy}
-                    onClick={() => void loadCloudDirectory(crumb.id, cloudCrumbs.slice(0, index + 1))}
-                  >
-                    {crumb.name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="cloud-list">
-              <div className="cloud-list-header">
-                <span>名称</span><span>大小</span><span>修改时间</span><span />
-              </div>
-              {cloudSearchActive ? (
-                cloudResults.length === 0 ? (
-                  <XDriveStatePanel variant="plain" compact message={`未找到与“${cloudQuery.trim()}”匹配的云端文件或文件夹。`} />
-                ) : cloudResults.map((result) => (
-                  <div className="cloud-row" key={`search:${result.node.id}:${result.path}`}>
-                    <div className="cloud-name">
-                      <strong>{result.node.name}</strong>
-                      <span>{result.path}</span>
-                    </div>
-                    <span>{result.node.type === 'dir' ? '—' : formatBinarySize(result.node.size)}</span>
-                    <span>{new Date(result.node.updated_at).toLocaleString()}</span>
-                    <div className="cloud-row-actions">
-                      {result.node.type === 'dir' ? (
-                        <XDriveActionButton compact disabled={!!busy} onClick={() => void loadCloudDirectory(result.node.id, result.crumbs)}>打开</XDriveActionButton>
-                      ) : (
-                        <>
-                          <XDriveActionButton compact disabled={!!busy} onClick={() => void openCloud历史版本(result.node, result.crumbs)}>历史版本</XDriveActionButton>
-                          <XDriveActionButton compact disabled={!!busy} onClick={() => void openCloudShares(result.node)}>分享</XDriveActionButton>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))
-              ) : cloudItems.length === 0 ? (
-                <XDriveStatePanel variant="plain" compact message="此云端文件夹为空。" />
-              ) : (
-                cloudItems.map((node) => (
-                  <div className="cloud-row" key={node.id}>
-                    <div className="cloud-name">
-                      <strong>{node.name}</strong>
-                      <span>{node.type === 'dir' ? 'Folder' : 'File'}</span>
-                    </div>
-                    <span>{node.type === 'dir' ? '—' : formatBinarySize(node.size)}</span>
-                    <span>{new Date(node.updated_at).toLocaleString()}</span>
-                    <div className="cloud-row-actions">
-                      {node.type === 'dir' ? (
-                        <XDriveActionButton
-                          compact
-                          disabled={!!busy}
-                          onClick={() => void loadCloudDirectory(
-                            node.id,
-                            [...cloudCrumbs, { id: node.id, name: node.name }],
-                          )}
-                        >
-                          打开
-                        </XDriveActionButton>
-                      ) : (
-                        <>
-                          <XDriveActionButton compact disabled={!!busy} onClick={() => void openCloud历史版本(node, cloudCrumbs)}>历史版本</XDriveActionButton>
-                          <XDriveActionButton compact disabled={!!busy} onClick={() => void openCloudShares(node)}>分享</XDriveActionButton>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            <DesktopFileExplorer
+              items={cloudItems}
+              crumbs={cloudCrumbs}
+              loading={busy === 'cloud-load' || busy === 'cloud-directory'}
+              onLoadDirectory={loadCloudDirectory}
+              onOpenTrash={() => { void loadCloudTrash() }}
+              onOpenHistory={(node, crumbs) => { void openCloud历史版本(node, crumbs) }}
+              onOpenShares={(node) => { void openCloudShares(node) }}
+              onDelete={removeCloudNode}
+              onQuotaChanged={refreshCloudQuota}
+              onError={(message) => setError(message)}
+              onFeedback={(_tone, message) => setNotice(message)}
+            />
 
             {cloudTrashOpen && (
               <Dialog
@@ -4054,6 +3873,58 @@ export default function App() {
                 刷新
               </XDriveActionButton>
             </div>
+
+            {cloudQuota && (
+              <div className="cloud-subpanel">
+                <div className="cloud-subpanel-heading">
+                  <div>
+                    <strong>云端容量</strong>
+                    <span>当前账号的有效内容、回收站与历史版本占用</span>
+                  </div>
+                </div>
+                <div className="cloud-quota-grid">
+                  <div><span>物理占用</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `配额 ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}</small></div>
+                  <div><span>可用空间</span><strong>{formatBinarySize(cloudQuota.available_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'}</small></div>
+                  <div><span>当前文件</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>有效逻辑内容</small></div>
+                  <div><span>回收站</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>计入物理配额</small></div>
+                  <div><span>历史版本</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>已保存的历史内容</small></div>
+                </div>
+              </div>
+            )}
+
+            {cloudStorageStats && (
+              <div className="cloud-subpanel storage-intelligence">
+                <div className="cloud-subpanel-heading">
+                  <div>
+                    <strong>CAS 存储情报</strong>
+                    <span>用于评估 CDC 与 small-file packing 的真实收益</span>
+                  </div>
+                </div>
+                <div className="cloud-quota-grid">
+                  <div><span>CAS Blob</span><strong>{cloudStorageStats.cas_blob_count.toLocaleString()}</strong><small>唯一物理对象</small></div>
+                  <div><span>CAS 物理容量</span><strong>{formatBinarySize(cloudStorageStats.cas_physical_bytes)}</strong><small>实际占用</small></div>
+                  <div><span>逻辑引用容量</span><strong>{formatBinarySize(cloudStorageStats.cas_logical_referenced_bytes)}</strong><small>含重复引用</small></div>
+                  <div><span>去重节省</span><strong>{formatBinarySize(cloudStorageStats.cas_dedup_saved_bytes)}</strong><small>{cloudStorageStats.cas_dedup_ratio.toFixed(2)}× · {(cloudStorageStats.cas_savings_ratio * 100).toFixed(1)}%</small></div>
+                  <div><span>平均 Blob</span><strong>{formatBinarySize(cloudStorageStats.average_blob_size_bytes)}</strong><small>算术平均</small></div>
+                  <div><span>P50</span><strong>{formatBinarySize(cloudStorageStats.p50_blob_size_bytes)}</strong><small>中位尺寸</small></div>
+                  <div><span>P90</span><strong>{formatBinarySize(cloudStorageStats.p90_blob_size_bytes)}</strong><small>90% Blob 不超过</small></div>
+                  <div><span>P99</span><strong>{formatBinarySize(cloudStorageStats.p99_blob_size_bytes)}</strong><small>99% Blob 不超过</small></div>
+                </div>
+                <div className="cloud-compact-list">
+                  {cloudStorageStats.buckets.map((bucket) => (
+                    <div className="cloud-compact-row" key={bucket.key}>
+                      <div><strong>{bucket.label}</strong><span>{bucket.count.toLocaleString()} 个 Blob</span></div>
+                      <strong>{formatBinarySize(bucket.bytes)}</strong>
+                    </div>
+                  ))}
+                </div>
+                {cloudStorageStats.legacy_blob_count > 0 && (
+                  <XDriveStatusAlert tone="warning" sx={{ m: 1.5 }}>
+                    仍有 {cloudStorageStats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBinarySize(cloudStorageStats.legacy_physical_bytes)}），未计入 CAS 分布。
+                  </XDriveStatusAlert>
+                )}
+              </div>
+            )}
 
             {!storagePoliciesSupported ? (
               <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>

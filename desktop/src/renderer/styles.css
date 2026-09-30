@@ -514,6 +514,17 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 
 
 .cloud-panel { display: grid; gap: 20px; }
+.cloud-explorer-panel {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 170px);
+  min-height: 520px;
+}
+.cloud-explorer-panel > [data-xdrive-file-explorer] {
+  flex: 1;
+  min-height: 0;
+}
+.storage-panel > .cloud-subpanel { margin-bottom: 18px; }
 .cloud-note { max-width: 760px; margin: 7px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 .cloud-heading-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .cloud-quota-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--surface-soft); }
