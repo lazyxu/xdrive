@@ -276,5 +276,65 @@ postgres_source="$(docker inspect "$postgres_id" --format '{{range .Mounts}}{{if
 server_user="$(docker inspect "$server_id" --format '{{.Config.User}}')"
 [[ "$server_user" == "65532:65532" ]]
 
+echo "[rootless-e2e] creating an external-source record before upgrade"
+printf '%s\n' 'RootlessE2E-Password-123!' | \
+  docker compose --env-file "$env_path" -f "$compose_path" \
+    exec -T server xdrive-server admin create --username upgrade-e2e --password-stdin >/dev/null
+owner_id="$(docker compose --env-file "$env_path" -f "$compose_path" \
+  exec -T postgres psql -U xdrive -d xdrive -Atqc \
+  "SELECT id FROM xd_users WHERE username = 'upgrade-e2e'")"
+[[ "$owner_id" =~ ^[0-9]+$ ]]
+
+docker compose --env-file "$env_path" -f "$compose_path" \
+  exec -T postgres psql -U xdrive -d xdrive -v ON_ERROR_STOP=1 -c \
+  "INSERT INTO xd_sources (
+     owner_id, name, kind, direction, sync_mode, run_mode, status,
+     schedule_type, schedule_expression, schedule_timezone, revision,
+     ignore_rules, checkpoint, last_error, created_at, updated_at
+   ) VALUES (
+     $owner_id, 'rootless-upgrade-source', 'synology_photos', 'pull',
+     'backup', 'sync', 'active', 'manual', '', 'UTC', 1, '', '', '',
+     NOW(), NOW()
+   );" >/dev/null
+
+source_count_before="$(docker compose --env-file "$env_path" -f "$compose_path" \
+  exec -T postgres psql -U xdrive -d xdrive -Atqc \
+  "SELECT count(*) FROM xd_sources WHERE owner_id = $owner_id AND name = 'rootless-upgrade-source'")"
+[[ "$source_count_before" == "1" ]]
+
+UPGRADE_LOG="$TMP_ROOT/upgrade.log"
+echo "[rootless-e2e] upgrading the bind-mounted deployment"
+if ! TEST_ROOT="$ROOT" TEST_REAL_CURL="$REAL_CURL" PATH="$FAKE_BIN:$PATH" \
+  XD_CONFIG_DIR="$XDRIVE_HOME" XD_HOST_BIN_DIR="$TMP_ROOT/no-host-bin" \
+  XD_SOURCE_REF=rootless-e2e XD_IMAGE_TAG="$TAG" XD_BUILT_CHANNEL=master \
+  XD_BUILT_COMMIT= XD_BUILT_SOURCE=github XD_IMAGE_REGISTRY="$registry" \
+  XD_NONINTERACTIVE=1 XD_KEEP_LOOPBACK_HTTP=1 XD_WEB_BIND=127.0.0.1 \
+  XD_WEB_PORT="$WEB_PORT" XD_PULL_ATTEMPTS=1 XD_PULL_RETRY_DELAY_SECONDS=1 \
+  bash "$ROOT/deploy/install-server.sh" --source github --channel master \
+  >"$UPGRADE_LOG" 2>&1; then
+  echo "rootless xDrive upgrade failed; full upgrade output follows:" >&2
+  cat "$UPGRADE_LOG" >&2 || true
+  docker compose --env-file "$env_path" -f "$compose_path" ps -a >&2 || true
+  docker compose --env-file "$env_path" -f "$compose_path" logs --tail=120 >&2 || true
+  exit 1
+fi
+
+cat "$UPGRADE_LOG"
+grep -q 'existing deployment detected; entering upgrade maintenance window' "$UPGRADE_LOG"
+find "$XDRIVE_HOME/backups/pre-upgrade" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print -quit | grep -q .
+
+source_count_after="$(docker compose --env-file "$env_path" -f "$compose_path" \
+  exec -T postgres psql -U xdrive -d xdrive -Atqc \
+  "SELECT count(*) FROM xd_sources WHERE owner_id = $owner_id AND name = 'rootless-upgrade-source'")"
+if [[ "$source_count_after" != "1" ]]; then
+  echo "external source disappeared across server upgrade: before=$source_count_before after=$source_count_after" >&2
+  exit 1
+fi
+
+if ! /usr/bin/curl -fsS "http://127.0.0.1:$WEB_PORT/api/v1/readyz" >/dev/null; then
+  echo "rootless xDrive readiness endpoint is unreachable after upgrade" >&2
+  exit 1
+fi
+
 echo "[rootless-e2e] host ownership files=$(stat -c '%u:%g' "$XDRIVE_HOME/data/files") postgres=$(stat -c '%u:%g' "$XDRIVE_HOME/data/postgres")"
-echo "real Rootless Docker server install/status/doctor E2E passed"
+echo "real Rootless Docker server install/upgrade/source-preservation E2E passed"
