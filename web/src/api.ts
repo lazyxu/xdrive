@@ -7,6 +7,7 @@ import type {
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
   ExternalSourceCredentialStatus,
+  ExternalSourceCredentialReveal,
   ExternalSourceCredentialTestResult,
   ExternalSourceConnectorConfig,
   ExternalSourceBrowsePage,
@@ -38,6 +39,7 @@ export type {
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
   ExternalSourceCredentialStatus,
+  ExternalSourceCredentialReveal,
   ExternalSourceConnectorConfig,
   ExternalSourceItem,
   ExternalSourceOverview,
@@ -470,6 +472,13 @@ export class XDriveApi {
 
   sourceCredentialStatus(sourceID: number) {
     return this.request<ExternalSourceCredentialStatus>(`/api/v1/sources/${sourceID}/credential`)
+  }
+
+  revealSourceCredential(sourceID: number) {
+    return this.request<ExternalSourceCredentialReveal>(`/api/v1/sources/${sourceID}/credential/reveal`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
   }
 
   testSourceCredential(kind: string, payload: Record<string, unknown>) {

@@ -437,7 +437,7 @@ export function XDriveMediaGallery({
           <Typography variant="body2" color="text.secondary">
             {currentAlbum
               ? `${currentAlbum.item_count.toLocaleString('zh-CN')} 个项目`
-              : '所有 xDrive 图片和视频，包括普通上传和外部来源文件'}
+              : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'}
           </Typography>
         </Box>
         {onRefresh ? (

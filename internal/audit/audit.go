@@ -33,6 +33,7 @@ const (
 	ActionUpdate                 = "system.update"
 	ActionSourceCredentialUpdate = "source.credential.update"
 	ActionSourceCredentialDelete = "source.credential.delete"
+	ActionSourceCredentialReveal = "source.credential.reveal"
 )
 
 type Event struct {

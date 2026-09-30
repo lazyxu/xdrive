@@ -131,8 +131,8 @@ requireText(sources, [
   'XDriveWorkspaceSurface',
   '<XDriveWorkspaceSurface',
   'presentation="page"',
-  'title="外部来源"',
-  'subtitle="统一管理外部媒体来源、凭据、调度方式与运行状态。"',
+  'title="同步文件夹"',
+  'subtitle="统一管理同步文件夹、凭据、调度方式与运行状态。"',
   'pageActions={',
 ], 'ExternalSources')
 

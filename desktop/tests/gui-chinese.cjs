@@ -49,13 +49,13 @@ test('desktop GUI defaults to Chinese', () => {
   for (const text of [
     '概览',
     '云端文件',
-    '外部来源',
+    '同步文件夹',
     '立即扫描',
-    '来源设置',
+    '同步文件夹设置',
     '保存设置',
-    '添加外部来源',
+    '添加同步文件夹',
     '目标文件夹',
-    '添加来源',
+    '添加同步文件夹',
     '传输中心',
     '存储策略',
     '冲突副本',
@@ -208,7 +208,7 @@ test('desktop gates CfAPI-only storage controls by platform', () => {
 })
 
 test('desktop external sources expose safe source deletion', () => {
-  assert.ok(renderer.includes('删除来源'), 'missing source delete action')
+  assert.ok(renderer.includes('删除同步文件夹'), 'missing source delete action')
   assert.ok(renderer.includes('已同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
   assert.ok(renderer.includes('文件会保留，不会删除'), 'missing non-destructive delete confirmation result')
   assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
@@ -225,7 +225,7 @@ test('desktop transient management surfaces use modal dialogs', () => {
     assert.ok(renderer.includes(openProp), `missing modal dialog state: ${openProp}`)
   }
 
-  for (const label of ['添加外部来源', '来源设置', '回收站', '版本历史', '分享文件']) {
+  for (const label of ['添加同步文件夹', '同步文件夹设置', '回收站', '版本历史', '分享文件']) {
     assert.ok(renderer.includes(`aria-label="${label}"`), `missing modal dialog label: ${label}`)
   }
 
@@ -287,7 +287,7 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('function DesktopActionButton({'), false, 'desktop still owns a local action button implementation')
   assert.ok(sharedActionButton.includes('export function XDriveActionButton({'), 'shared action button is missing')
   assert.ok(sharedActionButton.includes('<CircularProgress size={compact ? 12 : 14}'), 'shared action button does not expose a loading spinner')
-  for (const label of ['重试连接', '添加来源', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
+  for (const label of ['重试连接', '添加同步文件夹', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
     assert.ok(renderer.includes(label), `missing standardized action label: ${label}`)
   }
   assert.ok(renderer.includes('intent="primary"'), 'primary page action hierarchy is missing')
@@ -446,7 +446,7 @@ test('desktop external-source status uses the cross-client MUI badge', () => {
 test('desktop empty and loading states use the cross-client MUI state panel', () => {
   assert.ok(sharedStatePanel.includes('export function XDriveStatePanel({'), 'shared state panel is missing')
   assert.ok(renderer.includes('<XDriveStatePanel loading message="正在加载设置…" />'), 'settings loading state is not shared')
-  assert.ok(renderer.includes('message="尚未添加外部来源。"'), 'source empty state is not shared')
+  assert.ok(renderer.includes('message="尚未添加同步文件夹。"'), 'source empty state is not shared')
   assert.equal(renderer.includes('className="empty-state"'), false, 'legacy desktop empty-state remains')
   assert.equal(renderer.includes('className="cloud-empty"'), false, 'legacy cloud empty-state remains')
   assert.equal(renderer.includes('className="cache-unavailable"'), false, 'legacy cache unavailable state remains')
@@ -482,6 +482,11 @@ test('desktop external sources expose Synology Push and Pull without duplicating
   assert.ok(sharedSourceCredentialFields.includes("'DSM 地址'"), 'shared credentials are missing DSM base URL field')
   assert.ok(sharedSourceCredentialFields.includes("'DSM 用户名'"), 'shared credentials are missing DSM username field')
   assert.ok(sharedSourceCredentialFields.includes("'DSM 密码'"), 'shared credentials are missing DSM password field')
+  assert.ok(sharedSourceCredentialFields.includes('XDriveSourceTargetField'), 'shared credentials are missing read-only target field')
+  assert.ok(sharedSourceCredentialFields.includes('XDriveStoredCredentialField'), 'shared credentials are missing stored-credential reveal field')
+  assert.equal((renderer.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'desktop settings should render one shared target field')
+  assert.equal((renderer.match(/<XDriveStoredCredentialField\b/g) || []).length, 2, 'desktop settings should render Yike and DSM stored-credential fields')
+  assert.ok(renderer.includes('revealSourceCredential'), 'desktop settings are missing on-demand credential reveal')
   assert.equal((renderer.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length, 2, 'desktop Photos create/settings should reuse shared space field')
   assert.ok(sharedSourceConnectorConfigFields.includes('同步空间'), 'shared connector fields are missing Synology Photos space label')
   assert.ok(sharedSourceConnectorConfigFields.includes('synologyPhotoSpaceOptions.map'), 'shared Synology space selector is not driven by shared options')
@@ -510,10 +515,11 @@ test('desktop Yike source exposes connection testing and V1 recovery UX', () => 
   assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
   assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')
   assert.ok(renderer.includes('自动回滚也失败'), 'missing Source rollback failure fallback')
-  assert.ok(renderer.includes('externalSourceSavedCredentialMask'), 'saved Yike Cookie mask is not shown in settings')
-  assert.ok(renderer.includes('isExternalSourceSavedCredentialMask(sourceEditCookie)'), 'saved Cookie mask could be submitted as a replacement value')
-  assert.ok(renderer.includes('当前已保存的 Cookie 以遮罩显示'), 'missing saved Cookie UX explanation')
-  assert.ok(renderer.includes("onFocus={() => {"), 'saved Cookie field does not enter replacement mode on focus')
+  assert.ok(renderer.includes('label="已保存 Cookie"'), 'saved Yike Cookie field is missing')
+  assert.ok(renderer.includes('label="替换 Cookie"'), 'Yike replacement Cookie field is missing')
+  assert.ok(renderer.includes('revealSourceCredential'), 'saved Yike Cookie cannot be revealed on demand')
+  assert.ok(renderer.includes('已显示的 Cookie 不会自动带入此输入框'), 'revealed Cookie is not clearly separated from replacement input')
+  assert.equal(renderer.includes('isExternalSourceSavedCredentialMask(sourceEditCookie)'), false, 'replacement field must not depend on a display mask sentinel')
 })
 
 test('desktop external-source details expose paged Source collections', () => {
@@ -525,7 +531,7 @@ test('desktop external-source details expose paged Source collections', () => {
   assert.ok(renderer.includes('<XDriveSourceCollectionItem'), 'missing shared collection item presentation')
   assert.ok(sharedSourceCollection.includes('externalSourceCollectionKindLabel'), 'shared collection summary is missing collection kind label')
   assert.ok(sharedSourceCollection.includes('externalSourceCollectionStateTone'), 'shared collection summary is missing collection state tone')
-  assert.ok(renderer.includes('该来源暂无相册/集合元数据。'), 'missing empty collection state')
+  assert.ok(renderer.includes('该同步文件夹暂无相册/集合元数据。'), 'missing empty collection state')
   assert.ok(renderer.includes('展开后加载成员。'), 'collection members must stay lazy-loaded')
   assert.ok(renderer.includes('labelPrefix="成员"'), 'collection members must use shared pagination')
 })

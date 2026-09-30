@@ -1,7 +1,8 @@
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { Stack, TextField } from '@mui/material'
+import { Button, InputAdornment, Stack, TextField } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { synologyDsmAddressHelp } from '../external-sources'
+import { externalSourceSavedCredentialMask, synologyDsmAddressHelp } from '../external-sources'
 
 export function XDriveSourceCookieField({
   value,
@@ -99,5 +100,96 @@ export function XDriveSynologyDsmCredentialFields({
         onChange={(event) => onPasswordChange(event.target.value)}
       />
     </Stack>
+  )
+}
+
+
+export function XDriveSourceTargetField({
+  value,
+  managed = false,
+  label = '目标目录',
+  sx,
+}: {
+  value?: string
+  managed?: boolean
+  label?: ReactNode
+  sx?: SxProps<Theme>
+}) {
+  return (
+    <TextField
+      fullWidth
+      size="small"
+      label={label}
+      value={value || '未配置'}
+      helperText={managed
+        ? '该目录由连接器按账号身份管理，普通设置保存不会修改目录。'
+        : '当前同步目标目录为只读值；普通设置保存不会修改目录。'}
+      slotProps={{ input: { readOnly: true } }}
+      sx={sx}
+    />
+  )
+}
+
+export function XDriveStoredCredentialField({
+  label,
+  configured,
+  revealedValue = '',
+  loading = false,
+  expiresInSeconds = 30,
+  updatedAtLabel,
+  onReveal,
+  onHide,
+  sx,
+}: {
+  label: ReactNode
+  configured: boolean
+  revealedValue?: string
+  loading?: boolean
+  expiresInSeconds?: number
+  updatedAtLabel?: string
+  onReveal: () => void
+  onHide: () => void
+  sx?: SxProps<Theme>
+}) {
+  useEffect(() => {
+    if (!revealedValue) return
+    const timeout = globalThis.setTimeout(onHide, Math.max(1, expiresInSeconds) * 1000)
+    return () => globalThis.clearTimeout(timeout)
+  }, [expiresInSeconds, onHide, revealedValue])
+
+  const helper = configured
+    ? revealedValue
+      ? `已临时显示，将在 ${Math.max(1, expiresInSeconds)} 秒后自动隐藏。`
+      : '凭据已加密保存；点击“显示”后仅在当前界面内存中临时展示。'
+    : '尚未配置凭据。'
+  const helperText = updatedAtLabel ? `${helper} 最后更新：${updatedAtLabel}` : helper
+
+  return (
+    <TextField
+      fullWidth
+      size="small"
+      label={label}
+      value={configured ? (revealedValue || externalSourceSavedCredentialMask) : '未配置'}
+      helperText={helperText}
+      autoComplete="off"
+      slotProps={{
+        input: {
+          readOnly: true,
+          endAdornment: configured ? (
+            <InputAdornment position="end">
+              <Button
+                type="button"
+                size="small"
+                disabled={loading}
+                onClick={revealedValue ? onHide : onReveal}
+              >
+                {loading ? '读取中…' : revealedValue ? '隐藏' : '显示'}
+              </Button>
+            </InputAdornment>
+          ) : undefined,
+        },
+      }}
+      sx={sx}
+    />
   )
 }

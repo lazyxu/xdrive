@@ -148,7 +148,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: true,
-      label: '立即唤醒 Pull worker 扫描此来源；定时轮询作为兜底',
+      label: '立即唤醒 Pull worker 扫描此同步文件夹；定时轮询作为兜底',
     },
   )
 
@@ -171,7 +171,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: false,
-      label: '来源正在运行',
+      label: '同步文件夹正在运行',
     },
   )
 
@@ -183,7 +183,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: false,
-      label: '来源正在取消',
+      label: '同步文件夹正在取消',
     },
   )
 })
@@ -438,7 +438,7 @@ test('shared Synology DSM guide binds the exact Source and keeps secrets out of 
   })
 
   assert.equal(guide.sourceID, 42)
-  assert.match(guide.subtitle, /Source #42/)
+  assert.match(guide.subtitle, /同步文件夹 #42/)
   const bind = guide.steps.find((step) => step.id === 'bind')
   assert.ok(bind)
   assert.match(bind.command, /setup --source-id 42/)
@@ -554,7 +554,7 @@ test('shared Yike credential test messages are actionable', () => {
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_rate_limited'), '一刻相册请求过于频繁，请稍后重试')
   assert.equal(
     shared.externalSourceCredentialTestErrorLabel('yike_target_contains_unmanaged_data'),
-    '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加来源',
+    '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加同步文件夹',
   )
   assert.equal(
     shared.externalSourceCredentialTestErrorLabel('yike_target_path_conflict'),
@@ -729,8 +729,8 @@ test('Web and Desktop reuse shared source basic fields', () => {
     'XDriveSourceStatusField',
     'externalSourceCreateOptions',
     'XDriveSourceKindIcon',
-    '来源类型',
-    '来源名称',
+    '同步文件夹类型',
+    '同步文件夹名称',
     '运行模式',
     '启用',
     '暂停',
@@ -770,6 +770,8 @@ test('Web and Desktop reuse shared source credential fields', () => {
 
   for (const token of [
     'XDriveSourceCookieField',
+    'XDriveSourceTargetField',
+    'XDriveStoredCredentialField',
     'XDriveSynologyDsmCredentialFields',
     '一刻相册 Cookie',
     'DSM 地址',
@@ -777,6 +779,10 @@ test('Web and Desktop reuse shared source credential fields', () => {
     'DSM 密码',
     '更新 DSM 地址',
     '留空则保持当前配置不变',
+    '目标目录',
+    'expiresInSeconds = 30',
+    'onReveal',
+    'onHide',
     'synologyDsmAddressHelp',
   ]) {
     assert.ok(sharedFields.includes(token), `shared Source credential fields missing: ${token}`)
@@ -786,6 +792,12 @@ test('Web and Desktop reuse shared source credential fields', () => {
   assert.equal((desktop.match(/<XDriveSourceCookieField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Cookie field')
   assert.equal((web.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length, 2, 'Web create/settings should reuse shared DSM field group')
   assert.equal((desktop.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length, 2, 'Desktop create/settings should reuse shared DSM field group')
+  assert.equal((web.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'Web settings should reuse shared target field')
+  assert.equal((desktop.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'Desktop settings should reuse shared target field')
+  assert.equal((web.match(/<XDriveStoredCredentialField\b/g) || []).length, 2, 'Web settings should reuse shared stored-credential fields')
+  assert.equal((desktop.match(/<XDriveStoredCredentialField\b/g) || []).length, 2, 'Desktop settings should reuse shared stored-credential fields')
+  assert.ok(web.includes('revealSourceCredential'), 'Web settings should reveal credentials only on demand')
+  assert.ok(desktop.includes('revealSourceCredential'), 'Desktop settings should reveal credentials only on demand')
 
   assert.equal(web.includes('synologyDsmAddressHelp'), false, 'Web should not maintain DSM address help locally')
   assert.equal(desktop.includes('synologyDsmAddressHelp'), false, 'Desktop should not maintain DSM address help locally')

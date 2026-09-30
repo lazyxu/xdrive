@@ -214,6 +214,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	pushCredentialPath := fmt.Sprintf("/api/v1/sources/%d/credential", synologyPush.ID)
 	pushStoredTestPath := fmt.Sprintf("/api/v1/sources/%d/credential/test", synologyPush.ID)
+	pushRevealPath := fmt.Sprintf("/api/v1/sources/%d/credential/reveal", synologyPush.ID)
 	for _, tc := range []struct {
 		method string
 		path   string
@@ -221,6 +222,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}{
 		{http.MethodGet, pushCredentialPath, ""},
 		{http.MethodPost, pushStoredTestPath, ""},
+		{http.MethodPost, pushRevealPath, ""},
 		{http.MethodPut, pushCredentialPath, `{"payload":{"base_url":"https://nas.example","username":"alice","password":"secret"}}`},
 		{http.MethodDelete, pushCredentialPath, ""},
 	} {
@@ -240,8 +242,9 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 
 	// Synology Pull uses the same encrypted SourceCredential store as Yike but
 	// carries a structured DSM credential payload. Saving a validated
-	// credential activates the paused Pull source; clearing it pauses the
-	// source again without ever returning plaintext.
+	// credential activates the paused Pull source; status/test endpoints never
+	// return plaintext. Plaintext is available only through the explicit,
+	// audited short-lived reveal endpoint.
 	synologyPull := meta.Source{
 		OwnerID: userA.ID, Name: "Synology Pull Credential", Kind: synologySourceKind,
 		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
@@ -274,6 +277,17 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		strings.Contains(synologyStatus.Body.String(), "base_url") {
 		t.Fatalf("Synology credential status leaked or missing state: %s", synologyStatus.Body.String())
 	}
+	synologyRevealPath := fmt.Sprintf("/api/v1/sources/%d/credential/reveal", synologyPull.ID)
+	synologyReveal := request(t, router, http.MethodPost, synologyRevealPath, tokenA, nil, http.StatusOK)
+	if synologyReveal.Header().Get("Cache-Control") != "no-store" ||
+		!strings.Contains(synologyReveal.Body.String(), `"field":"password"`) ||
+		!strings.Contains(synologyReveal.Body.String(), `"value":"secret"`) ||
+		!strings.Contains(synologyReveal.Body.String(), `"expires_in_seconds":30`) ||
+		strings.Contains(synologyReveal.Body.String(), "base_url") ||
+		strings.Contains(synologyReveal.Body.String(), "username") {
+		t.Fatalf("Synology reveal returned unsafe payload: headers=%v body=%s", synologyReveal.Header(), synologyReveal.Body.String())
+	}
+	request(t, router, http.MethodPost, synologyRevealPath, tokenB, nil, http.StatusNotFound)
 	request(t, router, http.MethodDelete, synologyPullCredentialPath, tokenA, nil, http.StatusNoContent)
 	var pausedSynologyPull meta.Source
 	if err := db.First(&pausedSynologyPull, synologyPull.ID).Error; err != nil {
@@ -296,9 +310,14 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		t.Fatalf("credential status leaked plaintext: %s", statusRes.Body.String())
 	}
 	storedTestPath := fmt.Sprintf("/api/v1/sources/%d/credential/test", source.ID)
+	revealPath := fmt.Sprintf("/api/v1/sources/%d/credential/reveal", source.ID)
 	missingStored := request(t, router, http.MethodPost, storedTestPath, tokenA, nil, http.StatusConflict)
 	if !strings.Contains(missingStored.Body.String(), "source_credential_not_configured") {
 		t.Fatalf("missing stored credential response=%s", missingStored.Body.String())
+	}
+	missingReveal := request(t, router, http.MethodPost, revealPath, tokenA, nil, http.StatusConflict)
+	if !strings.Contains(missingReveal.Body.String(), "source_credential_not_configured") {
+		t.Fatalf("missing reveal credential response=%s", missingReveal.Body.String())
 	}
 
 	body := `{"payload":{"cookie":"BDUSS=top-secret-cookie"}}`
@@ -352,6 +371,18 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if logicalTarget != "同步文件夹/一刻相册/uid_12345_张三" {
 		t.Fatalf("managed Yike target=%q", logicalTarget)
 	}
+	sourceGet := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d", source.ID), tokenA, nil, http.StatusOK)
+	if !strings.Contains(sourceGet.Body.String(), `"target_path":"同步文件夹/一刻相册/uid_12345_张三"`) {
+		t.Fatalf("Yike source API did not expose the persisted target path: %s", sourceGet.Body.String())
+	}
+	revealRes := request(t, router, http.MethodPost, revealPath, tokenA, nil, http.StatusOK)
+	if revealRes.Header().Get("Cache-Control") != "no-store" ||
+		!strings.Contains(revealRes.Body.String(), `"field":"cookie"`) ||
+		!strings.Contains(revealRes.Body.String(), `"value":"BDUSS=top-secret-cookie"`) ||
+		!strings.Contains(revealRes.Body.String(), `"expires_in_seconds":30`) {
+		t.Fatalf("Yike reveal payload=%s headers=%v", revealRes.Body.String(), revealRes.Header())
+	}
+	request(t, router, http.MethodPost, revealPath, tokenB, nil, http.StatusNotFound)
 
 	// The managed target hierarchy is fixed. Ordinary node mutations must not
 	// rename/move the target leaf or delete an ancestor that contains it.
@@ -713,11 +744,21 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err := db.Model(&meta.AuditEvent{}).
 		Where("target_type = ? AND target_id = ? AND action IN ?",
 			"source", fmt.Sprintf("%d", source.ID),
-			[]string{"source.credential.update", "source.credential.delete"}).
+			[]string{"source.credential.update", "source.credential.delete", "source.credential.reveal"}).
 		Count(&auditCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if auditCount != 4 {
-		t.Fatalf("credential audit events=%d want=4", auditCount)
+	if auditCount != 5 {
+		t.Fatalf("credential audit events=%d want=5", auditCount)
+	}
+	var revealAudit meta.AuditEvent
+	if err := db.Where("target_type = ? AND target_id = ? AND action = ?",
+		"source", fmt.Sprintf("%d", source.ID), "source.credential.reveal").
+		First(&revealAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(revealAudit.Metadata, "BDUSS") || strings.Contains(revealAudit.Metadata, "top-secret-cookie") ||
+		!strings.Contains(revealAudit.Metadata, `"field":"cookie"`) {
+		t.Fatalf("credential reveal audit metadata is unsafe: %s", revealAudit.Metadata)
 	}
 }

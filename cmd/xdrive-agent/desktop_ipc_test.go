@@ -125,6 +125,8 @@ type fakeDesktopIPCController struct {
 	cloudSourceCollectionItems []client.SourceCollectionItem
 	cloudSourceCredential      client.SourceCredentialStatus
 	cloudCredentialTest        client.SourceCredentialTestResult
+	cloudCredentialReveal      client.SourceCredentialReveal
+	cloudRevealCredentialID    uint64
 	cloudTestCredentialKind    string
 	cloudTestCredentialPayload map[string]string
 	cloudTestStoredID          uint64
@@ -394,6 +396,11 @@ func (f *fakeDesktopIPCController) CloudSourceCollectionItems(context.Context, u
 
 func (f *fakeDesktopIPCController) CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error) {
 	return f.cloudSourceCredential, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRevealSourceCredential(_ context.Context, sourceID uint64) (client.SourceCredentialReveal, error) {
+	f.cloudRevealCredentialID = sourceID
+	return f.cloudCredentialReveal, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudTestSourceCredential(_ context.Context, kind string, payload map[string]string) (client.SourceCredentialTestResult, error) {
@@ -998,6 +1005,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 			Metadata: &client.SourceItemMetadata{CapturedAt: &now, OriginalPath: "/youa/web/family.jpg"},
 		}},
 		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
+		cloudCredentialReveal: client.SourceCredentialReveal{Field: "cookie", Value: "BDUSS=revealed", ExpiresInSeconds: 30},
 		cloudCredentialTest: client.SourceCredentialTestResult{
 			Valid: true, Kind: "yike_photos", AccountExternalID: "12345", AccountName: "Test User",
 		},
@@ -1097,6 +1105,14 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		t.Fatalf("test stored credential status=%d body=%s id=%d", res.Code, res.Body.String(), ctrl.cloudTestStoredID)
 	}
 
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/credential/reveal", `{"source_id":9}`)
+	if res.Code != http.StatusOK || ctrl.cloudRevealCredentialID != 9 ||
+		!strings.Contains(res.Body.String(), `"field":"cookie"`) ||
+		!strings.Contains(res.Body.String(), `"value":"BDUSS=revealed"`) ||
+		!strings.Contains(res.Body.String(), `"expires_in_seconds":30`) {
+		t.Fatalf("reveal stored credential status=%d body=%s id=%d", res.Code, res.Body.String(), ctrl.cloudRevealCredentialID)
+	}
+
 	res = desktopIPCRequest(t, handler, http.MethodPut, "/v1/sources/credential", `{"source_id":9,"cookie":"  BDUSS=secret; STOKEN=secret  "}`)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"key_version\":3") {
 		t.Fatalf("put credential status=%d body=%s", res.Code, res.Body.String())
@@ -1120,6 +1136,11 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		!ok || len(spaces) != 1 || spaces[0] != "personal" {
 		t.Fatalf("connector config not forwarded: getID=%d putID=%d revision=%d payload=%v",
 			ctrl.cloudConnectorConfigID, ctrl.cloudPutConnectorID, ctrl.cloudPutConnectorRevision, ctrl.cloudPutConnectorPayload)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/sources/credential/reveal", `{"source_id":0}`)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("invalid reveal credential status=%d body=%s", res.Code, res.Body.String())
 	}
 
 	for _, tc := range []struct {

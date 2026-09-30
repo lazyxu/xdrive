@@ -141,6 +141,7 @@ export type AgentSource = {
   schedule_timezone?: string
   revision: number
   target_node_id?: number
+  target_path?: string
   ignore_rules?: string
   checkpoint?: string
   last_run_at?: string
@@ -273,6 +274,12 @@ export type AgentSourceCredentialStatus = {
   configured: boolean
   key_version?: number
   updated_at?: string
+}
+
+export type AgentSourceCredentialReveal = {
+  field: 'cookie' | 'password'
+  value: string
+  expires_in_seconds: number
 }
 
 export type AgentSourceConnectorConfig = {
@@ -717,6 +724,10 @@ export class AgentIPCClient {
   sourceCredentialStatus(sourceID: number) {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentSourceCredentialStatus>('GET', `/v1/sources/credential?${query.toString()}`)
+  }
+
+  revealSourceCredential(sourceID: number) {
+    return this.request<AgentSourceCredentialReveal>('POST', '/v1/sources/credential/reveal', { source_id: sourceID })
   }
 
   testSourceCredential(kind: string, payload: string | Record<string, string>) {
