@@ -91,17 +91,11 @@ function initialResetValues(): ResetForm {
 
 export default function AdminUsersPanel({
   api,
-  open,
-  presentation = 'dialog',
   currentUserID,
-  onClose,
   onChanged,
 }: {
   api: XDriveApi
-  open: boolean
-  presentation?: 'dialog' | 'page'
   currentUserID: number
-  onClose: () => void
   onChanged: () => void
 }) {
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -121,7 +115,6 @@ export default function AdminUsersPanel({
   const [confirmAction, setConfirmAction] = useState<AdminConfirmAction | null>(null)
   const [confirmLoading, setConfirmLoading] = useState(false)
   const [actionError, setActionError] = useState<AdminActionError | null>(null)
-  const surfaceOpen = presentation === 'page' || open
 
   const load = async () => {
     setLoading(true)
@@ -136,10 +129,10 @@ export default function AdminUsersPanel({
   }
 
   useEffect(() => {
-    if (surfaceOpen) void load()
+    void load()
     // api is stable for one authenticated session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surfaceOpen])
+  }, [api])
 
   const showActionError = (title: string, err: unknown, fallback: string) => {
     setActionError({
@@ -254,13 +247,7 @@ export default function AdminUsersPanel({
 
   return (
     <>
-      <XDriveWorkspaceSurface
-        presentation={presentation}
-        open={open}
-        onClose={onClose}
-        maxWidth="xl"
-        title="用户管理"
-      >
+      <XDriveWorkspaceSurface presentation="page" title="用户管理">
         <Stack spacing={2}>
             <Stack direction="row" justifyContent="flex-end">
               <XDriveActionButton intent="primary" onClick={openCreate}>创建用户</XDriveActionButton>

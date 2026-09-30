@@ -50,14 +50,8 @@ function metadataText(metadata?: Record<string, unknown>) {
 
 export default function AdminAuditPanel({
   api,
-  open,
-  presentation = 'dialog',
-  onClose,
 }: {
   api: XDriveApi
-  open: boolean
-  presentation?: 'dialog' | 'page'
-  onClose: () => void
 }) {
   const [events, setEvents] = useState<AuditEvent[]>([])
   const [loading, setLoading] = useState(false)
@@ -66,7 +60,6 @@ export default function AdminAuditPanel({
   const [actor, setActor] = useState('')
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState('')
-  const surfaceOpen = presentation === 'page' || open
 
   type Filters = {
     action?: string
@@ -95,19 +88,13 @@ export default function AdminAuditPanel({
   }
 
   useEffect(() => {
-    if (surfaceOpen) void load(true)
+    void load(true)
     // Filters are applied explicitly with the Apply button.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surfaceOpen])
+  }, [api])
 
   return (
-    <XDriveWorkspaceSurface
-      presentation={presentation}
-      open={open}
-      onClose={onClose}
-      maxWidth="xl"
-      title="审计日志"
-    >
+    <XDriveWorkspaceSurface presentation="page" title="审计日志">
       <Stack spacing={2}>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
             <Autocomplete

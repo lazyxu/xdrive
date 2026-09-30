@@ -9,7 +9,7 @@ const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
 const workspace = readRepo('ui/shared/src/mui/WorkspaceSurface.tsx')
 const sources = read('src/ExternalSources.tsx')
-const storage = read('src/StorageStatsModal.tsx')
+const storage = read('src/StorageStatsPanel.tsx')
 const adminUsers = read('src/AdminUsers.tsx')
 const adminAudit = read('src/AdminAudit.tsx')
 
@@ -40,42 +40,34 @@ requireText(sources, [
 
 requireText(storage, [
   'XDriveWorkspaceSurface',
-  "presentation = 'dialog'",
-  "presentation?: 'dialog' | 'page'",
-  "const surfaceOpen = presentation === 'page' || open",
   '<XDriveWorkspaceSurface',
+  'presentation="page"',
   "title={scope === 'global' ? '全局存储统计' : '我的存储统计'}",
 ], 'StorageStats')
 
 requireText(adminUsers, [
   'XDriveWorkspaceSurface',
-  "presentation = 'dialog'",
-  "presentation?: 'dialog' | 'page'",
-  "const surfaceOpen = presentation === 'page' || open",
-  '<XDriveWorkspaceSurface',
+  '<XDriveWorkspaceSurface presentation="page"',
   'title="用户管理"',
 ], 'AdminUsers')
 
 requireText(adminAudit, [
   'XDriveWorkspaceSurface',
-  "presentation = 'dialog'",
-  "presentation?: 'dialog' | 'page'",
-  "const surfaceOpen = presentation === 'page' || open",
-  '<XDriveWorkspaceSurface',
+  '<XDriveWorkspaceSurface presentation="page"',
   'title="审计日志"',
 ], 'AdminAudit')
 
 if (sources.includes('<Dialog open={open} onClose={onClose} maxWidth="md"')) {
   throw new Error('ExternalSources outer workspace is still hard-wired to Dialog')
 }
-if (storage.includes('<Dialog\n        open={open}\n        onClose={onClose}\n        maxWidth="lg"')) {
-  throw new Error('StorageStats outer workspace is still hard-wired to Dialog')
-}
-if (adminUsers.includes('<Dialog\n        open={open}\n        onClose={onClose}\n        maxWidth="xl"')) {
-  throw new Error('AdminUsers outer workspace is still hard-wired to Dialog')
-}
-if (adminAudit.includes('<Dialog\n      open={open}\n      onClose={onClose}\n      maxWidth="xl"')) {
-  throw new Error('AdminAudit outer workspace is still hard-wired to Dialog')
+for (const [name, source] of [
+  ['StorageStats', storage],
+  ['AdminUsers', adminUsers],
+  ['AdminAudit', adminAudit],
+]) {
+  if (source.includes("presentation = 'dialog'") || source.includes("presentation?: 'dialog' | 'page'")) {
+    throw new Error(`${name} top-level workspace must remain page-only`)
+  }
 }
 
 console.log('Web workspace presentation checks passed')

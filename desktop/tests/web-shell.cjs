@@ -13,7 +13,7 @@ const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src',
 const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers.tsx'), 'utf8')
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
-const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsModal.tsx'), 'utf8')
+const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 
 test('Web AppBar keeps global chrome compact while admin tools live in the sidebar', () => {
   const appStart = webApp.indexOf('<AppBar position="static" elevation={1}>', webApp.indexOf('className="app-shell"'))
@@ -54,7 +54,7 @@ test('Web first-class workspaces share the same page chrome', () => {
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), 'Files page title must use workspace page chrome')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
   assert.ok(webApp.includes('<ExternalSourcesPanel') && webApp.includes('presentation="page"'), 'External Sources should remain a first-class page')
-  assert.ok(webApp.includes('<StorageStatsModal') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
+  assert.ok(webApp.includes('<StorageStatsPanel') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
 })
 
 test('Web admin workspaces are first-class pages while action dialogs stay local', () => {
@@ -62,25 +62,28 @@ test('Web admin workspaces are first-class pages while action dialogs stay local
   assert.equal(webApp.includes('auditOpen'), false, 'legacy Audit modal state should be removed')
   assert.equal(webApp.includes('storageStatsScope'), false, 'legacy Global Storage modal state should be removed')
 
-  assert.ok(webApp.includes("<AdminUsersPanel\n            api={api}\n            open\n            presentation=\"page\""), 'User Management should render as a page')
-  assert.ok(webApp.includes("<AdminAuditPanel\n            api={api}\n            open\n            presentation=\"page\""), 'Audit should render as a page')
-  assert.ok(webApp.includes("scope=\"global\"\n            open\n            presentation=\"page\""), 'Global Storage should render as a page')
+  assert.ok(webApp.includes("<AdminUsersPanel\n            api={api}\n            currentUserID={profile.id}"), 'User Management should render as a page')
+  assert.ok(webApp.includes("<AdminAuditPanel api={api} />"), 'Audit should render as a page')
+  assert.ok(webApp.includes("<StorageStatsPanel\n            api={api}\n            scope=\"global\""), 'Global Storage should render as a page')
 
   for (const [name, source, title] of [
     ['User Management', adminUsers, '用户管理'],
     ['Audit', adminAudit, '审计日志'],
   ]) {
-    assert.ok(source.includes("presentation = 'dialog'"), `${name} should preserve optional dialog presentation for reuse`)
-    assert.ok(source.includes("presentation?: 'dialog' | 'page'"), `${name} should type page presentation`)
-    assert.ok(source.includes("const surfaceOpen = presentation === 'page' || open"), `${name} should load in page presentation`)
-    assert.ok(source.includes('<XDriveWorkspaceSurface'), `${name} should use shared workspace chrome`)
+    assert.equal(source.includes("presentation = 'dialog'"), false, `${name} should not expose top-level dialog presentation`)
+    assert.equal(source.includes("presentation?: 'dialog' | 'page'"), false, `${name} should be page-only`)
+    assert.ok(source.includes('<XDriveWorkspaceSurface presentation="page"'), `${name} should use page workspace chrome`)
     assert.ok(source.includes(`title="${title}"`), `${name} workspace title is missing`)
   }
 
   assert.ok(adminUsers.includes('open={createOpen}'), 'Create User should remain a local action dialog')
   assert.ok(adminUsers.includes('open={!!quotaUser}'), 'Quota editing should remain a local action dialog')
   assert.ok(adminUsers.includes('open={!!resetUser}'), 'Password reset should remain a local action dialog')
-  assert.ok(storageStats.includes("title={scope === 'global' ? '全局存储统计' : '我的存储统计'}"), 'Global Storage should reuse storage workspace chrome')
+  assert.ok(storageStats.includes('export default function StorageStatsPanel'), 'Storage workspace should not retain Modal naming')
+  assert.equal(storageStats.includes("presentation = 'dialog'"), false, 'Storage workspace should be page-only')
+  assert.ok(storageStats.includes('<XDriveWorkspaceSurface'), 'Global Storage should reuse storage workspace chrome')
+  assert.ok(storageStats.includes('presentation="page"'), 'Storage workspace should render as a page')
+  assert.ok(storageStats.includes("title={scope === 'global' ? '全局存储统计' : '我的存储统计'}"), 'Global Storage title should remain scope-aware')
 })
 
 
