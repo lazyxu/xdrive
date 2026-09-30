@@ -233,6 +233,7 @@ declare global {
     code: string
     message: string
     status?: number
+    detail?: string
   }
 
   type DesktopResult<T> =

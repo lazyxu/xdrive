@@ -102,7 +102,7 @@ type AgentConnectionState = {
 
 type DesktopResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: { code: string; message: string; status?: number } }
+  | { ok: false; error: { code: string; message: string; status?: number; detail?: string } }
 
 let mainWindow: BrowserWindow | null = null
 let desktopPreferences = defaultDesktopPreferences()
@@ -994,7 +994,12 @@ function formatDesktopDiagnosticReport(report: AgentDiagnosticReport) {
 
 function agentError(error: unknown) {
   if (error instanceof AgentIPCError) {
-    return { code: error.code, message: error.message, ...(error.status ? { status: error.status } : {}) }
+    return {
+      code: error.code,
+      message: error.message,
+      ...(error.status ? { status: error.status } : {}),
+      ...(error.detail ? { detail: error.detail } : {}),
+    }
   }
   return { code: 'desktop_error', message: error instanceof Error ? error.message : 'Desktop operation failed.' }
 }

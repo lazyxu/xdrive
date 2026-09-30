@@ -72,13 +72,14 @@ func TestAPIErrorAndIdentity(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		_, _ = io.WriteString(w, `{"error":"duplicate"}`)
+		_, _ = io.WriteString(w, `{"error":"duplicate","detail":"specific conflict detail"}`)
 	}))
 	defer ts.Close()
 
 	_, err := New(ts.URL, "").CreateDir(context.Background(), 1, "docs")
 	apiErr, ok := err.(*APIError)
-	if !ok || apiErr.Status != http.StatusConflict || !strings.Contains(apiErr.Error(), "duplicate") {
+	if !ok || apiErr.Status != http.StatusConflict || !strings.Contains(apiErr.Error(), "duplicate") ||
+		apiErr.Detail != "specific conflict detail" {
 		t.Fatalf("unexpected error: %#v", err)
 	}
 

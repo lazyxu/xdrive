@@ -471,12 +471,14 @@ type AgentDiscovery = {
 export class AgentIPCError extends Error {
   readonly code: string
   readonly status: number
+  readonly detail?: string
 
-  constructor(code: string, status: number, message: string) {
+  constructor(code: string, status: number, message: string, detail?: string) {
     super(message)
     this.name = 'AgentIPCError'
     this.code = code
     this.status = status
+    this.detail = detail?.trim() || undefined
   }
 }
 
@@ -964,12 +966,13 @@ export class AgentIPCClient {
         }
 
         if (!response.ok) {
-          const errorPayload = payload as { error?: unknown; message?: unknown }
+          const errorPayload = payload as { error?: unknown; message?: unknown; detail?: unknown }
           const code = typeof errorPayload.error === 'string' ? errorPayload.error : 'agent_error'
           const message = typeof errorPayload.message === 'string'
             ? errorPayload.message
             : `xdrive-agent request failed with HTTP ${response.status}.`
-          const apiError = new AgentIPCError(code, response.status, message)
+          const detail = typeof errorPayload.detail === 'string' ? errorPayload.detail : undefined
+          const apiError = new AgentIPCError(code, response.status, message, detail)
           if (response.status === 401 && attempt === 0) {
             this.invalidate()
             lastError = apiError

@@ -121,15 +121,36 @@ func writeSourceCredentialTestError(c *gin.Context, kind string, err error) {
 		}
 	case errors.Is(err, yike.ErrUnavailable):
 		fail(c, http.StatusBadGateway, "yike_unavailable")
-	case errors.Is(err, synology.ErrAuthentication):
-		fail(c, http.StatusUnprocessableEntity, "synology_auth_failed")
-	case errors.Is(err, synology.ErrPhotosMissing):
-		fail(c, http.StatusUnprocessableEntity, "synology_photos_unavailable")
-	case errors.Is(err, synology.ErrUnavailable):
-		fail(c, http.StatusBadGateway, "synology_unavailable")
 	default:
+		if strings.TrimSpace(kind) == synologySourceKind {
+			diagnostic := synology.DiagnoseConnectionError(err)
+			status := http.StatusBadGateway
+			switch diagnostic.Code {
+			case "synology_auth_failed", "synology_photos_unavailable":
+				status = http.StatusUnprocessableEntity
+			case "synology_timeout":
+				status = http.StatusGatewayTimeout
+			}
+			slog.Warn(
+				"source_credential_test_failed",
+				"kind", synologySourceKind,
+				"code", diagnostic.Code,
+				"detail", diagnostic.Detail,
+				"error", err,
+			)
+			failWithDetail(c, status, diagnostic.Code, diagnostic.Detail)
+			return
+		}
 		fail(c, http.StatusBadGateway, "source_connection_failed")
 	}
+}
+
+func failWithDetail(c *gin.Context, status int, code, detail string) {
+	payload := gin.H{"error": strings.TrimSpace(code)}
+	if detail = strings.TrimSpace(detail); detail != "" {
+		payload["detail"] = detail
+	}
+	c.AbortWithStatusJSON(status, payload)
 }
 
 func defaultSourceCredentialTester(ctx context.Context, kind string, payload json.RawMessage) (sourceCredentialTestDTO, error) {

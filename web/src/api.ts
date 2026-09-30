@@ -90,10 +90,12 @@ export interface UploadSessionState {
 
 export class ApiError extends Error {
   readonly status: number
+  readonly detail?: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: string) {
     super(message)
     this.status = status
+    this.detail = detail?.trim() || undefined
   }
 }
 
@@ -183,13 +185,15 @@ export class XDriveApi {
     }
     if (!response.ok) {
       let message = response.statusText || 'Request failed'
+      let detail = ''
       try {
-        const body = (await response.json()) as { error?: string }
+        const body = (await response.json()) as { error?: string; detail?: string }
         if (body.error) message = body.error
+        if (body.detail) detail = body.detail
       } catch {
         // Keep the HTTP status text when the response is not JSON.
       }
-      throw new ApiError(response.status, message)
+      throw new ApiError(response.status, message, detail)
     }
     if (response.status === 204) return undefined as T
     return response.json() as Promise<T>

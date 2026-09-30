@@ -559,3 +559,24 @@ test('shared Yike Cookie guide gives the full-header workflow', () => {
   assert.match(shared.yikeCookieHelp.steps[4], /photo\.baidu\.com\/youai/)
   assert.match(shared.yikeCookieHelp.steps[7], /测试连接/)
 })
+
+test('credential diagnostics append backend detail', () => {
+  assert.equal(
+    shared.externalSourceCredentialTestErrorLabel(
+      'synology_tls_unknown_authority',
+      'DSM HTTPS 证书不受 xDrive Server 信任',
+    ),
+    'Synology DSM HTTPS 证书不受信任：DSM HTTPS 证书不受 xDrive Server 信任',
+  )
+  assert.equal(
+    shared.externalSourceCredentialTestErrorLabel('synology_connection_refused'),
+    'Synology DSM 端口拒绝连接',
+  )
+})
+
+test('shared DSM address help explains certificate matching', () => {
+  assert.match(shared.synologyDsmAddressHelp, /5001/)
+  assert.match(shared.synologyDsmAddressHelp, /https:\/\/IP:5001/)
+  assert.match(shared.synologyDsmAddressHelp, /证书/)
+  assert.match(shared.synologyDsmAddressHelp, /域名/)
+})

@@ -91,6 +91,7 @@ import {
   formatExternalSourceTime,
   normalizeSynologyPhotoSpaces,
   synologyPhotoSpaceOptions,
+  synologyDsmAddressHelp,
   yikeConnectorNotice,
   yikeRateLimitNotice,
   yikeManagedTargetLabel,
@@ -1151,7 +1152,7 @@ export default function App() {
       const result = await window.xdriveDesktop.agent.testSourceCredential(sourceCreateKind, payload)
       if (!result.ok) {
         setSourceCreateCredentialTest(null)
-        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message))
+        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message, result.error.detail))
         return null
       }
       setSourceCreateCredentialTest(result.data)
@@ -1206,7 +1207,7 @@ export default function App() {
         const tested = await window.xdriveDesktop.agent.testSourceCredential(sourceCreateKind, credentialPayload as Record<string, string>)
         if (!tested.ok) {
           setSourceCreateCredentialTest(null)
-          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message))
+          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message, tested.error.detail))
           return
         }
         setSourceCreateCredentialTest(tested.data)
@@ -1249,7 +1250,7 @@ export default function App() {
         const credential = await window.xdriveDesktop.agent.setSourceCredential(created.data.id, credentialPayload)
         if (!credential.ok) {
           const label = externalSourceCredentialLabel(sourceCreateProfile)
-          await rollbackCreatedSource(created.data, `${label}保存失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)}`)
+          await rollbackCreatedSource(created.data, `${label}保存失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message, credential.error.detail)}`)
           return
         }
       }
@@ -1338,7 +1339,7 @@ export default function App() {
         : await window.xdriveDesktop.agent.testStoredSourceCredential(row.source.id)
       if (!result.ok) {
         setSourceEditCredentialTest(null)
-        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message))
+        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message, result.error.detail))
         return null
       }
       setSourceEditCredentialTest(result.data)
@@ -1375,7 +1376,7 @@ export default function App() {
         const tested = await window.xdriveDesktop.agent.testSourceCredential(row.source.kind, pendingCredential)
         if (!tested.ok) {
           setSourceEditCredentialTest(null)
-          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message))
+          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message, tested.error.detail))
           return
         }
         setSourceEditCredentialTest(tested.data)
@@ -1425,7 +1426,7 @@ export default function App() {
       if (pendingCredential) {
         const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, pendingCredential)
         if (!credential.ok) {
-          setError(`来源设置已保存，但${externalSourceCredentialLabel(profile)}更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message)}`)
+          setError(`来源设置已保存，但${externalSourceCredentialLabel(profile)}更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message, credential.error.detail)}`)
           await loadSources()
           return
         }
@@ -2656,7 +2657,7 @@ export default function App() {
                         placeholder="https://nas.example.com:5001"
                         required
                       />
-                      <small>填写 xDrive Server 实际可以访问的 DSM 地址。</small>
+                      <small>{synologyDsmAddressHelp}</small>
                     </label>
                     <label>
                       <span>DSM 用户名</span>
@@ -2942,6 +2943,7 @@ export default function App() {
                                   autoComplete="off"
                                   placeholder="留空则保持当前配置不变"
                                 />
+                                <small>{synologyDsmAddressHelp}</small>
                               </label>
                               <label>
                                 <span>更新 DSM 用户名</span>

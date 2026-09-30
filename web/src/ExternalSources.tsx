@@ -30,6 +30,7 @@ import {
   Typography as MuiTypography,
 } from '@mui/material'
 import type { SelectChangeEvent } from '@mui/material/Select'
+import { ApiError } from './api'
 import type { XDriveApi } from './api'
 import WorkspaceSurface from './WorkspaceSurface'
 import {
@@ -69,6 +70,7 @@ import {
   formatSize,
   normalizeSynologyPhotoSpaces,
   synologyPhotoSpaceOptions,
+  synologyDsmAddressHelp,
   yikeConnectorNotice,
   yikeRateLimitNotice,
   yikeManagedTargetLabel,
@@ -164,7 +166,10 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
     ? error.message.trim()
     : String(error ?? '').trim()
   if (!value || value === '[object Object]') return fallback
-  return externalSourceCredentialTestErrorLabel(value)
+  return externalSourceCredentialTestErrorLabel(
+    value,
+    error instanceof ApiError ? error.detail : '',
+  )
 }
 
 function SourceDescriptionGrid({ children }: { children: ReactNode }) {
@@ -551,7 +556,10 @@ export default function ExternalSourcesPanel({
       return result
     } catch (error) {
       setCreateCredentialTest(null)
-      setCreateCredentialTestError(externalSourceCredentialTestErrorLabel(error instanceof Error ? error.message : String(error)))
+      setCreateCredentialTestError(externalSourceCredentialTestErrorLabel(
+        error instanceof Error ? error.message : String(error),
+        error instanceof ApiError ? error.detail : '',
+      ))
       return null
     } finally {
       setTestingCreateCredential(false)
@@ -767,7 +775,10 @@ export default function ExternalSourcesPanel({
       return result
     } catch (error) {
       setSettingsCredentialTest(null)
-      setSettingsCredentialTestError(externalSourceCredentialTestErrorLabel(error instanceof Error ? error.message : String(error)))
+      setSettingsCredentialTestError(externalSourceCredentialTestErrorLabel(
+        error instanceof Error ? error.message : String(error),
+        error instanceof ApiError ? error.detail : '',
+      ))
       return null
     } finally {
       setTestingSettingsCredential(false)
@@ -1579,7 +1590,7 @@ export default function ExternalSourcesPanel({
                   placeholder="https://nas.example.com:5001"
                   autoComplete="off"
                   value={createValues.base_url ?? ''}
-                  helperText="填写 xDrive Server 实际能够访问的 DSM Origin，例如 https://nas.example.com:5001。"
+                  helperText={synologyDsmAddressHelp}
                   onChange={(event) => {
                     setCreateValues((current) => ({ ...current, base_url: event.target.value }))
                     setCreateCredentialTest(null)
@@ -1868,6 +1879,7 @@ export default function ExternalSourcesPanel({
                     size="small"
                     label="更新 DSM 地址"
                     placeholder="留空则保持当前配置不变"
+                    helperText={synologyDsmAddressHelp}
                     autoComplete="off"
                     value={settingsValues.base_url ?? ''}
                     onChange={(event) => {

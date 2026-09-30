@@ -226,12 +226,17 @@ test('login sends credentials through main transport', async (t) => {
   assert.deepEqual(body, { server: 'https://drive.test', username: 'alice', password: 'secret' })
 })
 
-test('agent errors preserve code and status', async (t) => {
-  const { client } = await fixture(t, (_req, res) => json(res, 409, { error: 'revision_conflict', message: 'stale state' }))
+test('agent errors preserve code status and detail', async (t) => {
+  const { client } = await fixture(t, (_req, res) => json(res, 502, {
+    error: 'synology_tls_unknown_authority',
+    message: 'xdrive API: synology_tls_unknown_authority (502)',
+    detail: 'DSM HTTPS 证书不受 xDrive Server 信任',
+  }))
   await assert.rejects(client.syncNow(), (error) => {
     assert.ok(error instanceof AgentIPCError)
-    assert.equal(error.code, 'revision_conflict')
-    assert.equal(error.status, 409)
+    assert.equal(error.code, 'synology_tls_unknown_authority')
+    assert.equal(error.status, 502)
+    assert.equal(error.detail, 'DSM HTTPS 证书不受 xDrive Server 信任')
     return true
   })
 })
