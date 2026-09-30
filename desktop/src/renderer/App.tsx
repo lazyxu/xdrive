@@ -3143,37 +3143,58 @@ export default function App() {
                       )}
                       details={selectedSourceID === row.source.id && (
                         <div className="source-detail">
-                          <div className="source-detail-grid">
-                            <div><span>来源类型</span><strong>{detail.kindLabel}</strong></div>
-                            <div><span>工作方式</span><strong>{detail.modeLabel}</strong></div>
-                            <div><span>状态</span><strong>{detail.state.label}</strong></div>
-                            <div>
-                              <span>目标目录</span>
-                              <strong>{row.source.kind === 'yike_photos' ? yikeManagedTargetLabel : (detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置')}</strong>
-                            </div>
-                            <div><span>调度</span><strong>{detail.scheduleLabel}</strong></div>
-                            <div><span>上次运行</span><strong>{formatExternalSourceTime(detail.lastRunAt)}</strong></div>
-                            <div><span>上次成功</span><strong>{formatExternalSourceTime(detail.lastSuccessAt)}</strong></div>
+                          <XDriveDescriptionGrid columns={4} fullColumnsAt="md">
+                            <XDriveDescriptionItem label="来源类型">{detail.kindLabel}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="工作方式">{detail.modeLabel}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="状态">
+                              <XDriveStatusBadge tone={detail.state.tone} label={detail.state.label} />
+                            </XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="目标目录">
+                              {row.source.kind === 'yike_photos' ? yikeManagedTargetLabel : (detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置')}
+                            </XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="调度">{detail.scheduleLabel}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="上次运行">{formatExternalSourceTime(detail.lastRunAt)}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="上次成功">{formatExternalSourceTime(detail.lastSuccessAt)}</XDriveDescriptionItem>
                             {detail.credential && (
-                              <div><span>{detail.credential.label}</span><strong>{detail.credential.configured ? '已配置' : '未配置'}</strong></div>
+                              <XDriveDescriptionItem label={detail.credential.label}>
+                                {detail.credential.configured ? '已配置' : '未配置'}
+                              </XDriveDescriptionItem>
                             )}
-                            <div><span>配置修订号</span><strong>{detail.revision}</strong></div>
-                          </div>
-                          {detail.ignoreRules && (
-                            <div className="source-ignore">
-                              <span>忽略规则</span>
-                              <pre>{detail.ignoreRules}</pre>
-                            </div>
-                          )}
+                            <XDriveDescriptionItem label="配置修订号">{detail.revision}</XDriveDescriptionItem>
+                            {detail.ignoreRules && (
+                              <XDriveDescriptionItem label="忽略规则" fullWidth>
+                                <MuiBox
+                                  component="pre"
+                                  sx={{
+                                    maxHeight: 150,
+                                    m: 0,
+                                    overflow: 'auto',
+                                    whiteSpace: 'pre-wrap',
+                                    overflowWrap: 'anywhere',
+                                    fontFamily: 'ui-monospace,SFMono-Regular,Consolas,monospace',
+                                    fontSize: 11,
+                                    fontWeight: 400,
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  {detail.ignoreRules}
+                                </MuiBox>
+                              </XDriveDescriptionItem>
+                            )}
+                          </XDriveDescriptionGrid>
                           <div className="source-run-detail">
-                            <div className="source-run-heading">
-                              <strong>相册与集合</strong>
-                              <span>
-                                {sourceCollectionsSourceID === row.source.id
-                                  ? sourceCollections.length.toLocaleString('zh-CN') + ' 个'
-                                  : '正在读取…'}
-                              </span>
-                            </div>
+                            <XDriveSectionHeader
+                              level="h3"
+                              title="相册与集合"
+                              actions={(
+                                <Typography variant="caption" color="text.secondary">
+                                  {sourceCollectionsSourceID === row.source.id
+                                    ? sourceCollections.length.toLocaleString('zh-CN') + ' 个'
+                                    : '正在读取…'}
+                                </Typography>
+                              )}
+                              sx={{ p: 1.25, bgcolor: 'action.hover' }}
+                            />
                             {sourceCollectionsLoadingID === row.source.id ? (
                               <XDriveStatePanel loading message="正在加载相册/集合…" />
                             ) : sourceCollectionsSourceID !== row.source.id || sourceCollections.length === 0 ? (
@@ -3234,9 +3255,11 @@ export default function App() {
                           </div>
 
                           <div className="source-run-detail">
-                            <div className="source-run-heading">
-                              <strong>同步历史</strong>
-                            </div>
+                            <XDriveSectionHeader
+                              level="h3"
+                              title="同步历史"
+                              sx={{ p: 1.25, bgcolor: 'action.hover' }}
+                            />
                             {sourceHistoryLoading && sourceHistoryRuns.length === 0 ? (
                               <Typography variant="caption" color="text.secondary">正在加载运行历史…</Typography>
                             ) : sourceHistoryRuns.length === 0 ? (
@@ -3276,25 +3299,28 @@ export default function App() {
                                             onCancel={() => void cancelSourceRunNow(row)}
                                           />
                                         )}
-                                        <div className="source-run-grid">
-                                          <div><span>运行 ID</span><strong>{run.id}</strong></div>
-                                          <div><span>运行状态</span><XDriveStatusBadge tone={historyDetail.statusTone} label={historyDetail.statusLabel} /></div>
-                                          <div><span>触发方式</span><strong>{historyDetail.triggerLabel}</strong></div>
-                                          <div><span>耗时</span><strong>{historyDetail.durationLabel}</strong></div>
-                                          <div><span>开始时间</span><strong>{formatExternalSourceTime(historyDetail.startedAt)}</strong></div>
-                                          <div><span>结束时间</span><strong>{historyDetail.finishedAt ? formatExternalSourceTime(historyDetail.finishedAt) : '进行中'}</strong></div>
-                                          <div><span>成功项</span><strong>{historyDetail.successItems.toLocaleString('zh-CN')} 项</strong></div>
-                                          <div><span>失败项</span><strong>{historyDetail.failedItems.toLocaleString('zh-CN')} 项</strong></div>
+                                        <XDriveDescriptionGrid columns={3} fullColumnsAt="md" sx={{ p: 1.25 }}>
+                                          <XDriveDescriptionItem label="运行 ID">
+                                            <MuiBox component="code" sx={{ fontSize: 12, overflowWrap: 'anywhere' }}>{run.id}</MuiBox>
+                                          </XDriveDescriptionItem>
+                                          <XDriveDescriptionItem label="运行状态">
+                                            <XDriveStatusBadge tone={historyDetail.statusTone} label={historyDetail.statusLabel} />
+                                          </XDriveDescriptionItem>
+                                          <XDriveDescriptionItem label="触发方式">{historyDetail.triggerLabel}</XDriveDescriptionItem>
+                                          <XDriveDescriptionItem label="耗时">{historyDetail.durationLabel}</XDriveDescriptionItem>
+                                          <XDriveDescriptionItem label="开始时间">{formatExternalSourceTime(historyDetail.startedAt)}</XDriveDescriptionItem>
+                                          <XDriveDescriptionItem label="结束时间">
+                                            {historyDetail.finishedAt ? formatExternalSourceTime(historyDetail.finishedAt) : '进行中'}
+                                          </XDriveDescriptionItem>
+                                          <XDriveDescriptionItem label="成功项">{historyDetail.successItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
+                                          <XDriveDescriptionItem label="失败项">{historyDetail.failedItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
                                           {historyDetail.metrics.map((metric) => (
-                                            <div key={metric.key}>
-                                              <span>{metric.label}</span>
-                                              <strong>
-                                                {metric.items.toLocaleString('zh-CN')} 项
-                                                {metric.bytes === undefined ? '' : ' · ' + formatBinarySize(metric.bytes)}
-                                              </strong>
-                                            </div>
+                                            <XDriveDescriptionItem key={metric.key} label={metric.label}>
+                                              {metric.items.toLocaleString('zh-CN')} 项
+                                              {metric.bytes === undefined ? '' : ' · ' + formatBinarySize(metric.bytes)}
+                                            </XDriveDescriptionItem>
                                           ))}
-                                        </div>
+                                        </XDriveDescriptionGrid>
                                         <XDriveStatusAlert tone={historyDetail.error ? 'bad' : 'good'} sx={{ mt: 1.25 }}>
                                           运行日志：{historyDetail.error || '无错误日志'}
                                         </XDriveStatusAlert>

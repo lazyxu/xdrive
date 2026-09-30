@@ -5,20 +5,27 @@ import type { SxProps, Theme } from '@mui/material/styles'
 export function XDriveDescriptionGrid({
   children,
   columns = 2,
+  fullColumnsAt = 'lg',
   sx,
 }: {
   children: ReactNode
-  columns?: 2 | 4
+  columns?: 2 | 3 | 4
+  fullColumnsAt?: 'md' | 'lg'
   sx?: SxProps<Theme>
 }) {
+  const wideColumns = columns === 4 ? 4 : columns === 3 ? 3 : 2
+  const gridTemplateColumns = columns === 2
+    ? { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }
+    : fullColumnsAt === 'md'
+      ? { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: `repeat(${wideColumns}, minmax(0, 1fr))` }
+      : { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: `repeat(${wideColumns}, minmax(0, 1fr))` }
+
   return (
     <Box
       sx={[
         {
           display: 'grid',
-          gridTemplateColumns: columns === 4
-            ? { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }
-            : { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+          gridTemplateColumns,
           gap: 1,
         },
         ...(Array.isArray(sx) ? sx : sx ? [sx] : []),

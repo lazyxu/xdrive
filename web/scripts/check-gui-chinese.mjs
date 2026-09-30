@@ -66,7 +66,7 @@ if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染
 requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDrive 品牌图标')
 requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
 requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储', '无容量限制', '已使用', '磁盘可用', 'diskAvailableBytes', 'boundedDiskAvailable', '< 1 KiB', '空间紧张', '已用满', '已超额', 'LinearProgress', 'percentageLabel'], '共享侧栏存储摘要')
-requireText(files.descriptionGrid, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', "columns === 4", "bgcolor: 'action.hover'", 'fullWidth', "gridColumn: fullWidth ? '1 / -1' : undefined"], '共享描述网格')
+requireText(files.descriptionGrid, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', "columns === 4", "columns === 3", "columns?: 2 | 3 | 4", "fullColumnsAt", "bgcolor: 'action.hover'", 'fullWidth', "gridColumn: fullWidth ? '1 / -1' : undefined"], '共享描述网格')
 requireText(files.sectionHeader, ['XDriveSectionHeader', "level === 'h3'", 'eyebrow', 'subtitle', 'actions', 'component={level}'], '共享分区标题')
 requireText(files.tableSurface, ['XDriveTableSurface', 'TableContainer', 'border: 1', "borderColor: 'divider'", 'borderRadius: 1.5', "overflowX: 'auto'"], '共享表格表面')
 requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem'], '外部来源描述网格')
