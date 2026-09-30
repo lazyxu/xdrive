@@ -15,6 +15,8 @@ import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import ImageRoundedIcon from '@mui/icons-material/ImageRounded'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import MovieRoundedIcon from '@mui/icons-material/MovieRounded'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
@@ -124,6 +126,12 @@ export type XDriveFileExplorerFileKind =
   | 'text'
   | 'file'
 
+export type XDriveFileExplorerProperty = {
+  label: string
+  value: ReactNode
+  technical?: boolean
+}
+
 export type XDriveFileExplorerItem = {
   id: XDriveFileExplorerID
   name: string
@@ -136,6 +144,9 @@ export type XDriveFileExplorerItem = {
   icon?: ReactNode
   thumbnail?: ReactNode
   thumbnailEligible?: boolean
+  path?: string
+  revision?: string | number
+  properties?: XDriveFileExplorerProperty[]
 }
 
 export type XDriveFileExplorerSort = {
@@ -431,6 +442,7 @@ export function XDriveFileExplorer({
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
 
@@ -617,7 +629,14 @@ export function XDriveFileExplorer({
         onSelect: () => onDeleteItems(selection),
       })
     }
-    const menuItems = [...actionItems, ...clipboardItems, ...bulkItems]
+    const inspectorItems: XDriveFileExplorerMenuItem[] = [{
+      id: 'properties',
+      label: '属性',
+      icon: <InfoOutlinedIcon fontSize="small" />,
+      dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length > 0,
+      onSelect: () => setInspectorOpen(true),
+    }]
+    const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...inspectorItems]
     if (menuItems.length === 0) return
     setContextMenu({
       mouseX: event.clientX + 2,
@@ -812,6 +831,19 @@ export function XDriveFileExplorer({
       toggleKeyboardSelection(item)
     }
   }
+
+  const inspectorItem = selectedItems.length === 1 ? selectedItems[0] : null
+  const inspectorFileCount = selectedItems.filter((item) => item.kind === 'file').length
+  const inspectorFolderCount = selectedItems.length - inspectorFileCount
+  const inspectorProperties = inspectorItem ? [
+    { label: '类型', value: defaultTypeLabel(inspectorItem) },
+    { label: '大小', value: inspectorItem.kind === 'dir' ? '—' : formatSize(inspectorItem.size ?? 0) },
+    { label: '修改时间', value: inspectorItem.updatedAt ? new Date(inspectorItem.updatedAt).toLocaleString() : '—' },
+    { label: '位置', value: inspectorItem.path || inspectorItem.secondaryLabel || derivedPath },
+    ...(inspectorItem.properties ?? []),
+    { label: 'Revision', value: inspectorItem.revision ?? '—', technical: true },
+    { label: 'ID', value: String(inspectorItem.id), technical: true },
+  ] satisfies XDriveFileExplorerProperty[] : []
 
   const selectedSize = useMemo(
     () => items.reduce((total, item) => (
@@ -1091,6 +1123,14 @@ export function XDriveFileExplorer({
 
         {commandBarEnd}
 
+        <XDriveFileExplorerCommandButton
+          startIcon={<InfoOutlinedIcon />}
+          aria-pressed={inspectorOpen}
+          onClick={() => setInspectorOpen((open) => !open)}
+        >
+          详细信息
+        </XDriveFileExplorerCommandButton>
+
         {viewMode === 'details' ? (
           <XDriveFileExplorerCommandButton
             startIcon={<ViewColumnRoundedIcon />}
@@ -1162,9 +1202,10 @@ export function XDriveFileExplorer({
 
       <Divider />
 
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
       <Box
         ref={scrollHostRef}
-        sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'auto' }}
+        sx={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}
         tabIndex={0}
         onScroll={handleScroll}
         onClick={(event) => {
@@ -1471,6 +1512,93 @@ export function XDriveFileExplorer({
             }}
           />
         ) : null}
+      </Box>
+      {inspectorOpen ? (
+        <>
+          <Divider orientation="vertical" flexItem />
+          <Box
+            data-xdrive-file-explorer-inspector
+            aria-label="文件详细信息"
+            sx={{
+              width: 'clamp(248px, 27vw, 328px)',
+              flexShrink: 0,
+              minHeight: 0,
+              overflowY: 'auto',
+              bgcolor: 'background.paper',
+            }}
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 40, px: 1.5 }}>
+              <Typography variant="subtitle2">详细信息</Typography>
+              <IconButton size="small" aria-label="关闭详细信息" onClick={() => setInspectorOpen(false)}>
+                <CloseRoundedIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+            <Divider />
+            {selectedItems.length === 0 ? (
+              <XDriveStatePanel variant="plain" compact message="选择一个项目以查看预览和属性。" />
+            ) : selectedItems.length > 1 ? (
+              <Stack spacing={1.5} sx={{ p: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+                  <InsertDriveFileRoundedIcon color="action" sx={{ fontSize: 52 }} />
+                </Box>
+                <Typography variant="subtitle2">已选择 {selectedItems.length} 个项目</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {inspectorFileCount} 个文件 · {inspectorFolderCount} 个文件夹
+                </Typography>
+                {selectedSize > 0 ? (
+                  <Typography variant="body2" color="text.secondary">文件大小合计 {formatSize(selectedSize)}</Typography>
+                ) : null}
+              </Stack>
+            ) : inspectorItem ? (
+              <Stack spacing={1.5} sx={{ p: 1.5 }}>
+                <Box
+                  data-xdrive-file-explorer-preview
+                  sx={{
+                    minHeight: 176,
+                    maxHeight: 220,
+                    borderRadius: 1,
+                    bgcolor: 'background.default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {(inspectorItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(inspectorItem.name, inspectorItem.kind)) && loadThumbnail
+                    ? (
+                      <XDriveLazyFileThumbnail
+                        item={inspectorItem}
+                        loadThumbnail={loadThumbnail}
+                        fallback={defaultItemIcon(inspectorItem, true)}
+                      />
+                    )
+                    : defaultItemIcon(inspectorItem, true)}
+                </Box>
+                <Typography variant="subtitle2" sx={{ overflowWrap: 'anywhere' }}>{inspectorItem.name}</Typography>
+                <Divider />
+                <Stack spacing={1}>
+                  {inspectorProperties.filter((property) => !property.technical).map((property) => (
+                    <Box key={property.label} sx={{ display: 'grid', gridTemplateColumns: '88px minmax(0, 1fr)', gap: 1 }}>
+                      <Typography variant="caption" color="text.secondary">{property.label}</Typography>
+                      <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{property.value}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+                <Divider />
+                <Typography variant="caption" color="text.secondary">技术信息</Typography>
+                <Stack spacing={1}>
+                  {inspectorProperties.filter((property) => property.technical).map((property) => (
+                    <Box key={property.label} sx={{ display: 'grid', gridTemplateColumns: '88px minmax(0, 1fr)', gap: 1 }}>
+                      <Typography variant="caption" color="text.secondary">{property.label}</Typography>
+                      <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{property.value}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Stack>
+            ) : null}
+          </Box>
+        </>
+      ) : null}
       </Box>
 
       <Menu

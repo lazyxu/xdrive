@@ -85,3 +85,10 @@ test('Web uses a dedicated persistent FileExplorer details-column layout', () =>
   assert.ok(explorer.includes("const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'"), 'Web details layout storage key is missing')
   assert.ok(explorer.includes('detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}'), 'Web details layout key is not passed to shared FileExplorer')
 })
+
+test('Web FileExplorer supplies preview/properties metadata without a new plaintext preview channel', () => {
+  assert.ok(explorer.includes("path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'Web inspector path metadata is missing')
+  assert.ok(explorer.includes('revision: node.revision'), 'Web inspector revision metadata is missing')
+  assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Web inspector should reuse the protected thumbnail loader')
+  assert.equal(api.includes('previewPlaintext'), false, 'Web must not add a plaintext preview API')
+})

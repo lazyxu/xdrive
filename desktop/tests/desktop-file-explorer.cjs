@@ -142,3 +142,10 @@ test('Desktop uses a dedicated persistent FileExplorer details-column layout', (
   assert.ok(explorer.includes("const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'"), 'Desktop details layout storage key is missing')
   assert.ok(explorer.includes('detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}'), 'Desktop details layout key is not passed to shared FileExplorer')
 })
+
+test('Desktop FileExplorer supplies preview/properties metadata through existing protected thumbnail APIs', () => {
+  assert.ok(explorer.includes("path: searchByID.get(node.id)?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'Desktop inspector path metadata is missing')
+  assert.ok(explorer.includes('revision: node.revision'), 'Desktop inspector revision metadata is missing')
+  assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Desktop inspector should reuse the protected media thumbnail bridge')
+  assert.equal(explorer.includes('localPath:'), false, 'Desktop preview/properties must not expose managed local paths')
+})

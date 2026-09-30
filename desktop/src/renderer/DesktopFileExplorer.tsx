@@ -113,8 +113,10 @@ export default function DesktopFileExplorer({
       size: node.size,
       updatedAt: node.updated_at,
       secondaryLabel: searchByID.get(node.id)?.path,
+      path: searchByID.get(node.id)?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/'),
+      revision: node.revision,
     })),
-    [activeNodes, searchByID],
+    [activeNodes, crumbs, searchByID],
   )
 
   const explorerCrumbs = useMemo<XDriveFileExplorerCrumb[]>(

@@ -172,3 +172,26 @@ test('shared FileExplorer details columns are sortable, resizable, configurable 
   }
   assert.equal(explorer.includes("gridTemplateColumns: 'minmax(260px, 1fr) 190px 150px 120px'"), false, 'details columns must not remain hard-coded')
 })
+
+test('shared FileExplorer provides a preview and properties inspector', () => {
+  for (const token of [
+    'export type XDriveFileExplorerProperty = {',
+    'path?: string',
+    'revision?: string | number',
+    'properties?: XDriveFileExplorerProperty[]',
+    'const [inspectorOpen, setInspectorOpen] = useState(false)',
+    'aria-pressed={inspectorOpen}',
+    'data-xdrive-file-explorer-inspector',
+    'data-xdrive-file-explorer-preview',
+    "label: '属性'",
+    '选择一个项目以查看预览和属性。',
+    '已选择 {selectedItems.length} 个项目',
+    '技术信息',
+    'loadThumbnail={loadThumbnail}',
+    "label: 'Revision'",
+    "label: 'ID'",
+  ]) {
+    assert.ok(explorer.includes(token), `missing preview/properties feature: ${token}`)
+  }
+  assert.ok(explorer.includes("width: 'clamp(248px, 27vw, 328px)'"), 'inspector should use a bounded system-style side pane')
+})
