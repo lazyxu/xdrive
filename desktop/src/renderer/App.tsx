@@ -85,6 +85,8 @@ import {
   XDriveSourceStatusField,
   XDriveSourceCookieField,
   XDriveSynologyDsmCredentialFields,
+  XDriveSynologyPhotoSpacesField,
+  XDriveSynologyFileRootsField,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -114,7 +116,6 @@ import {
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
-  synologyPhotoSpaceOptions,
   yikeConnectorNotice,
   yikeRateLimitNotice,
   yikeManagedTargetLabel,
@@ -3014,37 +3015,18 @@ export default function App() {
                       }}
                     />
                     {sourceCreateKind === 'synology_photos' ? (
-                      <div className="source-create-wide">
-                        <span>同步空间</span>
-                        <Stack direction="row" spacing={1} flexWrap="wrap">
-                          {synologyPhotoSpaceOptions.map((option) => (
-                            <FormControlLabel
-                              key={option.value}
-                              control={(
-                                <Checkbox
-                                  checked={sourceCreateSpaces.includes(option.value)}
-                                  onChange={(event) => setSourceCreateSpaces((current) => event.target.checked
-                                    ? Array.from(new Set([...current, option.value]))
-                                    : current.filter((space) => space !== option.value))}
-                                />
-                              )}
-                              label={option.label}
-                            />
-                          ))}
-                        </Stack>
-                      </div>
+                      <XDriveSynologyPhotoSpacesField
+                        value={sourceCreateSpaces}
+                        onChange={setSourceCreateSpaces}
+                      />
                     ) : (
-                      <label className="source-create-wide">
-                        <span>File Station 根目录</span>
-                        <textarea
-                          rows={4}
-                          value={sourceCreateRoots.join('\n')}
-                          onChange={(event) => setSourceCreateRoots(event.target.value.split(/\r?\n/))}
-                          placeholder={'/documents\n/video/projects'}
-                          spellCheck={false}
-                        />
-                        <small>每行一个 DSM 绝对目录；会同步目录、空目录及其中的任意文件类型。</small>
-                      </label>
+                      <XDriveSynologyFileRootsField
+                        value={sourceCreateRoots}
+                        onChange={setSourceCreateRoots}
+                        rows={4}
+                        monospace
+                        helperText="每行一个 DSM 绝对目录；会同步目录、空目录及其中的任意文件类型。"
+                      />
                     )}
                     <XDriveStatusAlert tone="neutral" className="source-create-wide">
                       {sourceCreateKind === 'synology_files'
@@ -3516,38 +3498,21 @@ export default function App() {
                                 }}
                               />
                               {row.source.kind === 'synology_photos' ? (
-                                <div className="source-settings-wide">
-                                  <span>同步空间</span>
-                                  <Stack direction="row" spacing={1} flexWrap="wrap">
-                                    {synologyPhotoSpaceOptions.map((option) => (
-                                      <FormControlLabel
-                                        key={option.value}
-                                        control={(
-                                          <Checkbox
-                                            checked={sourceEditSpaces.includes(option.value)}
-                                            onChange={(event) => setSourceEditSpaces((current) => event.target.checked
-                                              ? Array.from(new Set([...current, option.value]))
-                                              : current.filter((space) => space !== option.value))}
-                                          />
-                                        )}
-                                        label={option.label}
-                                      />
-                                    ))}
-                                  </Stack>
-                                  {!sourceEditConnectorConfig && <small>正在读取当前空间配置；默认使用个人空间和共享空间。</small>}
-                                </div>
+                                <XDriveSynologyPhotoSpacesField
+                                  value={sourceEditSpaces}
+                                  onChange={setSourceEditSpaces}
+                                  helperText={!sourceEditConnectorConfig
+                                    ? '正在读取当前空间配置；默认使用个人空间和共享空间。'
+                                    : undefined}
+                                />
                               ) : (
-                                <label className="source-settings-wide">
-                                  <span>File Station 根目录</span>
-                                  <textarea
-                                    rows={4}
-                                    value={sourceEditRoots.join('\n')}
-                                    onChange={(event) => setSourceEditRoots(event.target.value.split(/\r?\n/))}
-                                    placeholder={'/documents\n/video/projects'}
-                                    spellCheck={false}
-                                  />
-                                  <small>每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。</small>
-                                </label>
+                                <XDriveSynologyFileRootsField
+                                  value={sourceEditRoots}
+                                  onChange={setSourceEditRoots}
+                                  rows={4}
+                                  monospace
+                                  helperText="每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。"
+                                />
                               )}
                               <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
                                 <XDriveActionButton

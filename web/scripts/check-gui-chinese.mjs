@@ -35,6 +35,7 @@ const files = {
   sourceScheduleFields: readRepo('ui/shared/src/mui/SourceScheduleFields.tsx'),
   sourceBasicFields: readRepo('ui/shared/src/mui/SourceBasicFields.tsx'),
   sourceCredentialFields: readRepo('ui/shared/src/mui/SourceCredentialFields.tsx'),
+  sourceConnectorFields: readRepo('ui/shared/src/mui/SourceConnectorFields.tsx'),
   sourceIgnoreRulesField: readRepo('ui/shared/src/mui/SourceIgnoreRulesField.tsx'),
   main: read('src/main.tsx'),
   styles: read('src/styles.css'),
@@ -135,6 +136,12 @@ requireText(files.sourceCollection, ['XDriveSourceCollectionSummary', 'XDriveSou
 requireText(files.sourceScheduleFields, ['XDriveSourceScheduleFields', '调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'onScheduleTypeChange', 'onExpressionChange', 'onTimezoneChange'], '共享来源调度字段')
 requireText(files.sourceBasicFields, ['XDriveSourcePresetField', 'XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '来源类型', '来源名称', '运行模式', '启用', '暂停'], '共享来源基础字段')
 requireText(files.sourceCredentialFields, ['XDriveSourceCookieField', 'XDriveSynologyDsmCredentialFields', '一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '留空则保持当前配置不变', 'synologyDsmAddressHelp'], '共享来源凭据字段')
+requireText(files.sourceConnectorFields, ['XDriveSynologyPhotoSpacesField', 'XDriveSynologyFileRootsField', '同步空间', 'File Station 根目录', 'synologyPhotoSpaceOptions', 'normalizeSynologyPhotoSpaces', '/documents'], '共享群晖连接配置字段')
+if ((files.sources.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length !== 2) throw new Error('Web Photos 创建/设置没有完整复用共享空间字段')
+if ((files.sources.match(/<XDriveSynologyFileRootsField\b/g) || []).length !== 2) throw new Error('Web File Station 创建/设置没有完整复用共享根目录字段')
+for (const legacy of ['selectedPhotoSpaces', 'photoSpaceLabel', 'synologyPhotoSpaceOptions']) {
+  if (files.sources.includes(legacy)) throw new Error(`Web 来源仍保留本地群晖连接字段逻辑：${legacy}`)
+}
 if ((files.sources.match(/<XDriveSourceCookieField\b/g) || []).length !== 2) throw new Error('Web Cookie 创建/设置没有完整复用共享字段')
 if ((files.sources.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length !== 2) throw new Error('Web DSM 创建/设置没有完整复用共享字段组')
 for (const legacy of ['一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '更新 DSM 用户名', '更新 DSM 密码']) {

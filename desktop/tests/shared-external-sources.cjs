@@ -792,3 +792,37 @@ test('Web and Desktop reuse shared source credential fields', () => {
   assert.equal(desktop.includes('<span>更新 DSM 地址</span>'), false, 'Desktop settings should not keep native DSM address input')
   assert.equal(desktop.includes('<span>一刻相册 Cookie</span>'), false, 'Desktop should not keep native Cookie input labels')
 })
+
+
+test('Web and Desktop reuse shared Synology connector fields', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorFields.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const desktopStyles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
+
+  for (const token of [
+    'XDriveSynologyPhotoSpacesField',
+    'XDriveSynologyFileRootsField',
+    '同步空间',
+    'File Station 根目录',
+    'synologyPhotoSpaceOptions',
+    'normalizeSynologyPhotoSpaces',
+    '/documents',
+  ]) {
+    assert.ok(sharedFields.includes(token), `shared Synology connector fields missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length, 2, 'Web create/settings should reuse shared Photos spaces field')
+  assert.equal((desktop.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Photos spaces field')
+  assert.equal((web.match(/<XDriveSynologyFileRootsField\b/g) || []).length, 2, 'Web create/settings should reuse shared File Station roots field')
+  assert.equal((desktop.match(/<XDriveSynologyFileRootsField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared File Station roots field')
+
+  assert.equal(web.includes('selectedPhotoSpaces'), false, 'Web should not retain a local Photos-space normalizer')
+  assert.equal(web.includes('photoSpaceLabel'), false, 'Web should not retain a local Photos-space label helper')
+  assert.equal(web.includes('synologyPhotoSpaceOptions'), false, 'Web should not render Photos options locally')
+  assert.equal(desktop.includes('synologyPhotoSpaceOptions'), false, 'Desktop should not render Photos options locally')
+  assert.equal(desktop.includes('<textarea'), false, 'Desktop Source forms should no longer use native textareas')
+  assert.equal(desktopStyles.includes('.source-create > label'), false, 'Desktop Source create should no longer keep native field CSS')
+  assert.equal(desktopStyles.includes('.source-settings > label'), false, 'Desktop Source settings should no longer keep native field CSS')
+})

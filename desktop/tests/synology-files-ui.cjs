@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const shared = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
 const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
 const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+const sharedConnectorFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorFields.tsx'), 'utf8')
 
 test('Synology File Station is a distinct generic Pull preset', () => {
   assert.match(shared, /SupportedExternalSourceKind = 'synology_photos' \| 'synology_files' \| 'yike_photos'/)
@@ -32,8 +33,9 @@ test('Web and Desktop persist roots and explicitly activate File Station sources
 })
 
 test('File Station forms explain arbitrary-file semantics', () => {
-  for (const source of [web, desktop]) {
-    assert.match(source, /File Station 根目录/)
-    assert.match(source, /所有文件和文件夹/)
-  }
+  assert.match(sharedConnectorFields, /File Station 根目录/)
+  assert.match(web, /所有文件和文件夹/)
+  assert.match(desktop, /所有文件和文件夹/)
+  assert.equal((web.match(/<XDriveSynologyFileRootsField\b/g) || []).length, 2)
+  assert.equal((desktop.match(/<XDriveSynologyFileRootsField\b/g) || []).length, 2)
 })
