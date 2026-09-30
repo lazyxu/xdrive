@@ -254,25 +254,18 @@ function photoSpaceLabel(value: SynologyPhotoSpace) {
 }
 
 export default function ExternalSourcesPanel({
-  open,
-  presentation = 'dialog',
   api,
   defaultTargetNodeID,
   defaultTargetLabel,
   defaultTargetPath,
-  onClose,
   onError,
 }: {
-  open: boolean
-  presentation?: 'dialog' | 'page'
   api: XDriveApi
   defaultTargetNodeID?: number
   defaultTargetLabel: string
   defaultTargetPath: string
-  onClose: () => void
   onError: (error: unknown) => void
 }) {
-  const surfaceOpen = presentation === 'page' || open
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<ExternalSourceRow | null>(null)
@@ -394,12 +387,12 @@ export default function ExternalSourcesPanel({
   }, [api, onError])
 
   useEffect(() => {
-    if (surfaceOpen) void load()
-  }, [surfaceOpen, load])
+    void load()
+  }, [load])
 
   useEffect(() => {
     const delay = sourceActivityPollDelay(rows)
-    if (!surfaceOpen || delay === null) return
+    if (delay === null) return
 
     let stopped = false
     let timer = 0
@@ -429,7 +422,7 @@ export default function ExternalSourcesPanel({
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [surfaceOpen, rows, load])
+  }, [rows, load])
   const loadRunHistory = useCallback(async (sourceID: number, page: number, silent = false) => {
     const nextPage = Math.max(1, Math.trunc(page))
     if (!silent) setHistoryLoading(true)
@@ -448,7 +441,7 @@ export default function ExternalSourcesPanel({
 
   useEffect(() => {
     const delay = selectedSourcePollDelay(selected)
-    if (!surfaceOpen || !selected || historyPage !== 1 || delay === null) return
+    if (!selected || historyPage !== 1 || delay === null) return
 
     let stopped = false
     let timer = 0
@@ -478,7 +471,7 @@ export default function ExternalSourcesPanel({
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [surfaceOpen, selected, historyPage, loadRunHistory])
+  }, [selected, historyPage, loadRunHistory])
 
   const openSynologyGuide = (source: ExternalSource) => {
     setGuideSource(source)
@@ -1013,28 +1006,25 @@ export default function ExternalSourcesPanel({
   return (
     <>
       <XDriveWorkspaceSurface
-        presentation={presentation}
-        open={open}
-        onClose={onClose}
+        presentation="page"
         title="外部来源"
-        maxWidth="md"
-        dialogActions={<XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>}
+        subtitle="统一管理外部媒体来源、凭据、调度方式与运行状态。"
+        pageActions={
+          <>
+            <XDriveActionButton
+              startIcon={<RefreshRoundedIcon />}
+              loading={loading}
+              loadingLabel="正在刷新…"
+              onClick={() => void load()}
+            >
+              刷新
+            </XDriveActionButton>
+            <XDriveActionButton intent="primary" startIcon={<AddRoundedIcon />} onClick={openCreate}>
+              添加来源
+            </XDriveActionButton>
+          </>
+        }
       >
-      <div className="external-sources-toolbar">
-        <Stack direction="row" spacing={1}>
-          <XDriveActionButton
-            startIcon={<RefreshRoundedIcon />}
-            loading={loading}
-            loadingLabel="正在刷新…"
-            onClick={() => void load()}
-          >
-            刷新
-          </XDriveActionButton>
-          <XDriveActionButton intent="primary" startIcon={<AddRoundedIcon />} onClick={openCreate}>
-            添加来源
-          </XDriveActionButton>
-        </Stack>
-      </div>
       {loading && rows.length === 0 ? (
         <XDriveStatePanel variant="plain" loading message="正在加载外部来源…" />
       ) : rows.length === 0 ? (

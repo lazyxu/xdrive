@@ -37,12 +37,6 @@ a { user-select: none; }
 }
 
 
-.external-sources-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-
 .external-source-list {
   display: grid;
   gap: 14px;

@@ -24,6 +24,8 @@ requireText(workspace, [
   'export function XDriveWorkspaceSurface',
   "presentation === 'page'",
   'workspace-page-surface',
+  'subtitle={subtitle}',
+  'actions={pageActions}',
   '<Dialog',
   '<XDriveDialogTitle',
   '<XDriveDialogContent',
@@ -31,34 +33,36 @@ requireText(workspace, [
 
 requireText(sources, [
   'XDriveWorkspaceSurface',
-  "presentation = 'dialog'",
-  "presentation?: 'dialog' | 'page'",
-  "const surfaceOpen = presentation === 'page' || open",
   '<XDriveWorkspaceSurface',
+  'presentation="page"',
   'title="外部来源"',
+  'subtitle="统一管理外部媒体来源、凭据、调度方式与运行状态。"',
+  'pageActions={',
 ], 'ExternalSources')
 
 requireText(storage, [
   'XDriveWorkspaceSurface',
   '<XDriveWorkspaceSurface',
   'presentation="page"',
-  "title={scope === 'global' ? '全局存储统计' : '我的存储统计'}",
+  "title={scope === 'global' ? '全局存储' : '存储'}",
 ], 'StorageStats')
 
 requireText(adminUsers, [
   'XDriveWorkspaceSurface',
-  '<XDriveWorkspaceSurface presentation="page"',
+  '<XDriveWorkspaceSurface',
+  'presentation="page"',
   'title="用户管理"',
 ], 'AdminUsers')
 
 requireText(adminAudit, [
   'XDriveWorkspaceSurface',
-  '<XDriveWorkspaceSurface presentation="page"',
+  '<XDriveWorkspaceSurface',
+  'presentation="page"',
   'title="审计日志"',
 ], 'AdminAudit')
 
-if (sources.includes('<Dialog open={open} onClose={onClose} maxWidth="md"')) {
-  throw new Error('ExternalSources outer workspace is still hard-wired to Dialog')
+if (sources.includes("presentation = 'dialog'") || sources.includes("presentation?: 'dialog' | 'page'") || sources.includes('surfaceOpen')) {
+  throw new Error('ExternalSources top-level workspace must remain page-only')
 }
 for (const [name, source] of [
   ['StorageStats', storage],

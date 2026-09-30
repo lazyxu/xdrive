@@ -1,3 +1,5 @@
+import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
@@ -247,12 +249,27 @@ export default function AdminUsersPanel({
 
   return (
     <>
-      <XDriveWorkspaceSurface presentation="page" title="用户管理">
+      <XDriveWorkspaceSurface
+        presentation="page"
+        title="用户管理"
+        subtitle="管理账户、角色、登录状态与存储配额。"
+        pageActions={
+          <>
+            <XDriveActionButton
+              startIcon={<RefreshRoundedIcon />}
+              loading={loading}
+              loadingLabel="正在刷新…"
+              onClick={() => void load()}
+            >
+              刷新
+            </XDriveActionButton>
+            <XDriveActionButton intent="primary" startIcon={<PersonAddRoundedIcon />} onClick={openCreate}>
+              创建用户
+            </XDriveActionButton>
+          </>
+        }
+      >
         <Stack spacing={2}>
-            <Stack direction="row" justifyContent="flex-end">
-              <XDriveActionButton intent="primary" onClick={openCreate}>创建用户</XDriveActionButton>
-            </Stack>
-
             {loadError && <XDriveStatusAlert tone="bad">{loadError}</XDriveStatusAlert>}
             {loading && users.length > 0 ? <LinearProgress /> : null}
 

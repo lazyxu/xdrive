@@ -59,7 +59,17 @@ export function XDrivePageHeader({
         ) : null}
       </Box>
       {actions ? (
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ flexShrink: 0 }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          flexWrap="wrap"
+          sx={{
+            flexShrink: 0,
+            width: { xs: '100%', sm: 'auto' },
+            justifyContent: { xs: 'flex-start', sm: 'flex-end' },
+          }}
+        >
           {actions}
         </Stack>
       ) : null}

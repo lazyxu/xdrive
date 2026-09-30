@@ -1,3 +1,4 @@
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -141,6 +142,7 @@ export default function StorageStatsPanel({
   const [cleanupFailureLoading, setCleanupFailureLoading] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -184,7 +186,7 @@ export default function StorageStatsPanel({
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [api, scope])
+  }, [api, scope, reloadKey])
 
   const loadStagingPage = async (page: number, fresh = false) => {
     if (scope !== 'global') return
@@ -279,7 +281,22 @@ export default function StorageStatsPanel({
     <>
       <XDriveWorkspaceSurface
         presentation="page"
-        title={scope === 'global' ? '全局存储统计' : '我的存储统计'}
+        title={scope === 'global' ? '全局存储' : '存储'}
+        subtitle={
+          scope === 'global'
+            ? '查看服务器磁盘、CAS 健康、上传临时空间与历史趋势。'
+            : '查看当前账户的物理占用、逻辑引用与去重统计。'
+        }
+        pageActions={
+          <XDriveActionButton
+            startIcon={<RefreshRoundedIcon />}
+            loading={loading}
+            loadingLabel="正在刷新…"
+            onClick={() => setReloadKey((value) => value + 1)}
+          >
+            刷新
+          </XDriveActionButton>
+        }
       >
           {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
 

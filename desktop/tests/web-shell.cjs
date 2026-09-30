@@ -53,7 +53,7 @@ test('Web first-class workspaces share the same page chrome', () => {
   assert.ok(webApp.includes('XDriveWorkspaceSurface'), 'Web app should reuse the shared workspace surface')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), 'Files page title must use workspace page chrome')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
-  assert.ok(webApp.includes('<ExternalSourcesPanel') && webApp.includes('presentation="page"'), 'External Sources should remain a first-class page')
+  assert.ok(webApp.includes('<ExternalSourcesPanel'), 'External Sources should remain a first-class page')
   assert.ok(webApp.includes('<StorageStatsPanel') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
 })
 
@@ -72,10 +72,13 @@ test('Web admin workspaces are first-class pages while action dialogs stay local
   ]) {
     assert.equal(source.includes("presentation = 'dialog'"), false, `${name} should not expose top-level dialog presentation`)
     assert.equal(source.includes("presentation?: 'dialog' | 'page'"), false, `${name} should be page-only`)
-    assert.ok(source.includes('<XDriveWorkspaceSurface presentation="page"'), `${name} should use page workspace chrome`)
+    assert.ok(source.includes('<XDriveWorkspaceSurface'), `${name} should use page workspace chrome`)
+    assert.ok(source.includes('presentation="page"'), `${name} should stay page-only`)
     assert.ok(source.includes(`title="${title}"`), `${name} workspace title is missing`)
   }
 
+  assert.ok(adminUsers.includes('pageActions={'), 'User Management primary actions should live in the shared page header')
+  assert.ok(adminUsers.includes('正在刷新…'), 'User Management should expose an explicit refresh action')
   assert.ok(adminUsers.includes('open={createOpen}'), 'Create User should remain a local action dialog')
   assert.ok(adminUsers.includes('open={!!quotaUser}'), 'Quota editing should remain a local action dialog')
   assert.ok(adminUsers.includes('open={!!resetUser}'), 'Password reset should remain a local action dialog')
@@ -83,9 +86,20 @@ test('Web admin workspaces are first-class pages while action dialogs stay local
   assert.equal(storageStats.includes("presentation = 'dialog'"), false, 'Storage workspace should be page-only')
   assert.ok(storageStats.includes('<XDriveWorkspaceSurface'), 'Global Storage should reuse storage workspace chrome')
   assert.ok(storageStats.includes('presentation="page"'), 'Storage workspace should render as a page')
-  assert.ok(storageStats.includes("title={scope === 'global' ? '全局存储统计' : '我的存储统计'}"), 'Global Storage title should remain scope-aware')
+  assert.ok(storageStats.includes('subtitle={'), 'Storage workspace should explain the selected storage scope')
+  assert.ok(storageStats.includes('pageActions={'), 'Storage workspace should expose page-level actions')
+  assert.ok(storageStats.includes('setReloadKey((value) => value + 1)'), 'Storage workspace should expose a full-page refresh')
+  assert.ok(storageStats.includes("title={scope === 'global' ? '全局存储' : '存储'}"), 'Global Storage title should align with sidebar navigation')
 })
 
+
+test('Web admin UI favors readable labels while preserving technical identifiers', () => {
+  assert.ok(adminAudit.includes("'auth.login.success': '登录成功'"), 'Audit should map event codes to Chinese labels')
+  assert.ok(adminAudit.includes('getOptionLabel={actionLabel}'), 'Audit filter should display readable action labels')
+  assert.ok(adminAudit.includes('actionLabel(event.action)'), 'Audit table should display readable action labels')
+  assert.ok(adminAudit.includes('actorRoleLabel(event.actor_role)'), 'Audit table should display readable actor roles')
+  assert.ok(adminAudit.includes('{event.action}'), 'Audit table should preserve the exact event code as secondary text')
+})
 
 test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedSidebar.includes('XDriveSidebarNavList'), 'shared sidebar list primitive is missing')
@@ -96,6 +110,8 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedStorageSummary.includes('XDriveSidebarStorageSummary'), 'shared sidebar storage summary is missing')
   assert.ok(sharedStorageSummary.includes('physical') === false, 'shared storage summary should remain presentation-only')
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
+  assert.ok(sharedWorkspace.includes('subtitle={subtitle}'), 'shared workspace page subtitle plumbing is missing')
+  assert.ok(sharedWorkspace.includes('actions={pageActions}'), 'shared workspace page actions plumbing is missing')
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedAccount.includes('XDriveAccountSummary'), 'shared account summary is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
