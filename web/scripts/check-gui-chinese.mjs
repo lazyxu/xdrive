@@ -49,7 +49,8 @@ if (files.app.includes('<div className="brand-mark">x</div>') || files.app.inclu
 }
 requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
 if (/from ['"]antd['"]/.test(files.users) || files.users.includes('@ant-design/icons')) throw new Error('用户管理仍依赖 Ant Design')
-requireText(files.storageStats, ['XDriveStatusBadge', 'XDriveStatusAlert', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+requireText(files.storageStats, ['XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
 requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent'], '审计日志')
