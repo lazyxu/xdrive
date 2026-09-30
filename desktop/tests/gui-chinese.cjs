@@ -136,7 +136,7 @@ test('desktop keeps global sync, settings and account actions in the window titl
   assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
 })
 
-test('desktop sidebar keeps only feature navigation and a secondary diagnostics entry', () => {
+test('desktop sidebar uses compact MUI navigation with icons, state and badges', () => {
   const start = renderer.indexOf('<aside className="sidebar">')
   const end = renderer.indexOf('</aside>', start)
   assert.notEqual(start, -1, 'missing desktop sidebar')
@@ -145,9 +145,26 @@ test('desktop sidebar keeps only feature navigation and a secondary diagnostics 
 
   assert.equal(sidebar.includes("view === 'settings'"), false, 'settings should live in the titlebar, not the feature sidebar')
   assert.equal(sidebar.includes('className="account"'), false, 'legacy sidebar account summary should be removed')
-  assert.ok(sidebar.includes('className="sidebar-secondary"'), 'diagnostics should be separated from primary feature navigation')
-  assert.ok(sidebar.includes("view === 'diagnostics'"), 'secondary diagnostics navigation is missing')
-  assert.ok(styles.includes('.sidebar-secondary {'), 'secondary sidebar navigation styling is missing')
+  assert.equal(sidebar.includes('className={`nav-item'), false, 'legacy native sidebar navigation remains')
+  assert.equal((sidebar.match(/<ListItemButton/g) || []).length, 8, 'all primary and diagnostic destinations must use MUI ListItemButton')
+  for (const icon of [
+    'DashboardRoundedIcon',
+    'FolderRoundedIcon',
+    'PhotoLibraryRoundedIcon',
+    'CloudSyncRoundedIcon',
+    'SwapVertRoundedIcon',
+    'StorageRoundedIcon',
+    'WarningAmberRoundedIcon',
+    'BuildRoundedIcon',
+  ]) {
+    assert.ok(sidebar.includes(icon), `missing sidebar icon: ${icon}`)
+  }
+  assert.equal((sidebar.match(/className="sidebar-nav-badge"/g) || []).length, 2, 'transfer/conflict counts must use the compact MUI badge treatment')
+  assert.ok(sidebar.includes('className="sidebar-nav sidebar-secondary"'), 'diagnostics should stay in the secondary navigation group')
+  assert.ok(styles.includes('grid-template-columns: 184px minmax(0,1fr)'), 'desktop sidebar should use the compact 184px width')
+  assert.ok(styles.includes('grid-template-columns: 176px 1fr'), 'compact desktop layout should narrow the sidebar to 176px')
+  assert.ok(styles.includes('.sidebar-nav-item.Mui-selected'), 'selected navigation styling is missing')
+  assert.ok(styles.includes('.sidebar-nav-item .MuiListItemIcon-root'), 'sidebar icon alignment styling is missing')
 })
 
 test('desktop gates CfAPI-only storage controls by platform', () => {

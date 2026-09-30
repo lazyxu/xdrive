@@ -74,8 +74,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.match(desktopApp, /type View = [^\n]*'gallery'/)
   assert.match(desktopApp, /gallery: '图库'/)
-  assert.match(desktopApp, /view === 'gallery'/)
-  assert.match(desktopApp, />图库<\/button>/)
+  assert.match(desktopApp, /selected=\{view === 'gallery'\}/)
+  assert.match(desktopApp, /<ListItemText primary="图库" \/>/)
 })
 
 test('Web switches between files and Gallery without duplicating the file shell', () => {

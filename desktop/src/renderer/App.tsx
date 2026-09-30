@@ -16,6 +16,8 @@ import {
   FormControlLabel,
   IconButton,
   InputLabel,
+  List,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -29,16 +31,22 @@ import {
   Typography,
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
 import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
+import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
@@ -2331,18 +2339,44 @@ export default function App() {
   return renderDesktopFrame(
     <div className="shell">
       <aside className="sidebar">
-        <nav aria-label="桌面版功能区">
-          <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>概览</button>
-          <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>云端文件</button>
-          <button className={`nav-item ${view === 'gallery' ? 'active' : ''}`} type="button" onClick={() => setView('gallery')}>图库</button>
-          <button className={`nav-item ${view === 'sources' ? 'active' : ''}`} type="button" onClick={() => setView('sources')}>外部来源</button>
-          <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>传输 {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}</button>
-          <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>存储</button>
-          <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>冲突 {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}</button>
-        </nav>
-        <nav className="sidebar-secondary" aria-label="桌面版辅助功能">
-          <button className={`nav-item ${view === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setView('diagnostics')}>诊断</button>
-        </nav>
+        <List component="nav" aria-label="桌面版功能区" disablePadding className="sidebar-nav">
+          <ListItemButton className="sidebar-nav-item" selected={view === 'overview'} onClick={() => setView('overview')}>
+            <ListItemIcon><DashboardRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="概览" />
+          </ListItemButton>
+          <ListItemButton className="sidebar-nav-item" selected={view === 'cloud'} onClick={() => setView('cloud')}>
+            <ListItemIcon><FolderRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="云端文件" />
+          </ListItemButton>
+          <ListItemButton className="sidebar-nav-item" selected={view === 'gallery'} onClick={() => setView('gallery')}>
+            <ListItemIcon><PhotoLibraryRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="图库" />
+          </ListItemButton>
+          <ListItemButton className="sidebar-nav-item" selected={view === 'sources'} onClick={() => setView('sources')}>
+            <ListItemIcon><CloudSyncRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="外部来源" />
+          </ListItemButton>
+          <ListItemButton className="sidebar-nav-item" selected={view === 'transfers'} onClick={() => setView('transfers')}>
+            <ListItemIcon><SwapVertRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="传输" />
+            {activeTransfers.length ? <Chip className="sidebar-nav-badge" size="small" label={activeTransfers.length} /> : null}
+          </ListItemButton>
+          <ListItemButton className="sidebar-nav-item" selected={view === 'files'} onClick={() => setView('files')}>
+            <ListItemIcon><StorageRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="存储" />
+          </ListItemButton>
+          <ListItemButton className="sidebar-nav-item" selected={view === 'conflicts'} onClick={() => setView('conflicts')}>
+            <ListItemIcon><WarningAmberRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="冲突" />
+            {status?.conflict_count ? <Chip className="sidebar-nav-badge" size="small" label={status.conflict_count} /> : null}
+          </ListItemButton>
+        </List>
+        <List component="nav" aria-label="桌面版辅助功能" disablePadding className="sidebar-nav sidebar-secondary">
+          <ListItemButton className="sidebar-nav-item" selected={view === 'diagnostics'} onClick={() => setView('diagnostics')}>
+            <ListItemIcon><BuildRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="诊断" />
+          </ListItemButton>
+        </List>
       </aside>
 
       <main className="content">
