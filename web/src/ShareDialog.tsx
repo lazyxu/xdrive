@@ -1,14 +1,40 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CopyOutlined, DeleteOutlined, LinkOutlined, LockOutlined } from '@ant-design/icons'
-import { Button, Form, Input, InputNumber, Modal, Space, Table, Typography, message } from 'antd'
-import { XDriveShareStatusBadge, XDriveStatusAlert } from '@xdrive/ui/mui'
+import type { FormEvent } from 'react'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
+import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import {
+  Box,
+  Dialog,
+  InputAdornment,
+  LinearProgress,
+  Snackbar,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+} from '@mui/material'
+import {
+  XDriveActionButton,
+  XDriveDialogContent,
+  XDriveDialogTitle,
+  XDriveShareStatusBadge,
+  XDriveStatePanel,
+  XDriveStatusAlert,
+  xDriveDialogPaperProps,
+} from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 import type { FileShare, Node } from '../../ui/shared/src'
 
-type ShareFormValues = {
-  expiresAt?: string
-  password?: string
-  maxDownloads?: number
+type Feedback = {
+  tone: 'good' | 'bad'
+  message: string
 }
 
 function defaultExpiryInput() {
@@ -28,11 +54,16 @@ export default function ShareDialog({
   onClose: () => void
   onError: (error: unknown) => void
 }) {
-  const [form] = Form.useForm<ShareFormValues>()
   const [shares, setShares] = useState<FileShare[]>([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createdLink, setCreatedLink] = useState('')
+  const [expiresAt, setExpiresAt] = useState(defaultExpiryInput)
+  const [password, setPassword] = useState('')
+  const [maxDownloads, setMaxDownloads] = useState(0)
+  const [expiryError, setExpiryError] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
 
   const load = useCallback(async () => {
     if (!node) return
@@ -49,40 +80,51 @@ export default function ShareDialog({
   useEffect(() => {
     if (!node) return
     setCreatedLink('')
-    form.resetFields()
-    form.setFieldsValue({
-      expiresAt: defaultExpiryInput(),
-      password: '',
-      maxDownloads: 0,
-    })
-  }, [form, node?.id])
+    setExpiresAt(defaultExpiryInput())
+    setPassword('')
+    setMaxDownloads(0)
+    setExpiryError('')
+    setPasswordError('')
+  }, [node?.id])
 
   useEffect(() => {
     if (!node) return
     void load()
   }, [load, node])
 
-  const create = async (values: ShareFormValues) => {
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!node) return
-    let expiresAt: string | undefined
-    if (values.expiresAt) {
-      const parsed = new Date(values.expiresAt)
+
+    let nextExpiryError = ''
+    let nextPasswordError = ''
+    let parsedExpiry: string | undefined
+
+    if (expiresAt) {
+      const parsed = new Date(expiresAt)
       if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
-        message.error('过期时间必须晚于当前时间')
-        return
+        nextExpiryError = '过期时间必须晚于当前时间'
+      } else {
+        parsedExpiry = parsed.toISOString()
       }
-      expiresAt = parsed.toISOString()
     }
+    if (password && password.length < 8) {
+      nextPasswordError = '至少需要 8 个字符'
+    }
+
+    setExpiryError(nextExpiryError)
+    setPasswordError(nextPasswordError)
+    if (nextExpiryError || nextPasswordError) return
 
     setCreating(true)
     try {
       const created = await api.createShare(node.id, {
-        expires_at: expiresAt,
-        password: values.password || '',
-        max_downloads: values.maxDownloads || 0,
+        expires_at: parsedExpiry,
+        password,
+        max_downloads: maxDownloads,
       })
       setCreatedLink(`${window.location.origin}/#/s/${created.token}`)
-      message.success('分享链接已创建')
+      setFeedback({ tone: 'good', message: '分享链接已创建' })
       await load()
     } catch (err) {
       onError(err)
@@ -95,125 +137,201 @@ export default function ShareDialog({
     if (!createdLink) return
     try {
       await navigator.clipboard.writeText(createdLink)
-      message.success('分享链接已复制')
+      setFeedback({ tone: 'good', message: '分享链接已复制' })
     } catch {
-      message.error('无法自动复制，请手动复制链接。')
+      setFeedback({ tone: 'bad', message: '无法自动复制，请手动复制链接。' })
+    }
+  }
+
+  const revoke = async (share: FileShare) => {
+    try {
+      await api.revokeShare(share.id)
+      setFeedback({ tone: 'good', message: '分享已撤销' })
+      await load()
+    } catch (err) {
+      onError(err)
     }
   }
 
   return (
-    <Modal
-      title={node ? `分享 — ${node.name}` : '分享'}
-      open={!!node}
-      onCancel={onClose}
-      footer={null}
-      width={940}
-      destroyOnClose
-    >
-      <XDriveStatusAlert tone="neutral" title="分享令牌只显示一次" sx={{ mb: 2.25 }}>
-        xDrive 只保存单向令牌哈希。请立即复制新创建的链接；已有链接可以撤销，但无法再次显示。
-      </XDriveStatusAlert>
+    <>
+      <Dialog
+        open={!!node}
+        onClose={() => {
+          if (!creating) onClose()
+        }}
+        maxWidth="md"
+        fullWidth
+        scroll="paper"
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title={node ? `分享 — ${node.name}` : '分享'}
+          onClose={onClose}
+          closeDisabled={creating}
+        />
+        <XDriveDialogContent dividers>
+          <XDriveStatusAlert tone="neutral" title="分享令牌只显示一次" sx={{ mb: 2.25 }}>
+            xDrive 只保存单向令牌哈希。请立即复制新创建的链接；已有链接可以撤销，但无法再次显示。
+          </XDriveStatusAlert>
 
-      {createdLink && (
-        <Space.Compact style={{ width: '100%', marginBottom: 18 }}>
-          <Input value={createdLink} readOnly prefix={<LinkOutlined />} />
-          <Button icon={<CopyOutlined />} onClick={() => void copyCreatedLink()}>复制</Button>
-        </Space.Compact>
-      )}
-
-      <Typography.Title level={5}>创建下载链接</Typography.Title>
-      <Form form={form} layout="vertical" onFinish={create}>
-        <Space align="start" wrap>
-          <Form.Item name="expiresAt" label="过期时间">
-            <Input type="datetime-local" />
-          </Form.Item>
-          <Form.Item name="maxDownloads" label="最大下载次数" extra="0 表示不限">
-            <InputNumber min={0} precision={0} style={{ width: 180 }} />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            label="密码（可选）"
-            rules={[{
-              validator: async (_, value?: string) => {
-                if (!value || value.length >= 8) return
-                throw new Error('至少需要 8 个字符')
-              },
-            }]}
-          >
-            <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
-          </Form.Item>
-        </Space>
-        <Button type="primary" htmlType="submit" loading={creating} icon={<LinkOutlined />}>
-          创建分享链接
-        </Button>
-      </Form>
-
-      <Typography.Title level={5} style={{ marginTop: 24 }}>已有分享</Typography.Title>
-      <Table<FileShare>
-        rowKey="id"
-        size="small"
-        loading={loading}
-        dataSource={shares}
-        pagination={false}
-        locale={{ emptyText: '此文件暂无分享链接' }}
-        columns={[
-          {
-            title: '创建时间',
-            dataIndex: 'created_at',
-            width: 190,
-            render: (value: string) => new Date(value).toLocaleString(),
-          },
-          {
-            title: '状态',
-            dataIndex: 'status',
-            width: 130,
-            render: (value: FileShare['status']) => <XDriveShareStatusBadge status={value} />,
-          },
-          {
-            title: '保护方式',
-            dataIndex: 'has_password',
-            width: 120,
-            render: (value: boolean) => value ? '密码' : '仅链接',
-          },
-          {
-            title: '过期时间',
-            dataIndex: 'expires_at',
-            width: 190,
-            render: (value?: string) => value ? new Date(value).toLocaleString() : '永不过期',
-          },
-          {
-            title: '下载次数',
-            width: 140,
-            render: (_, share) => share.max_downloads > 0
-              ? `${share.download_count} / ${share.max_downloads}`
-              : `${share.download_count} / 不限`,
-          },
-          {
-            title: '',
-            width: 100,
-            align: 'right',
-            render: (_, share) => (
-              <Button
-                danger
-                type="text"
-                icon={<DeleteOutlined />}
-                disabled={share.status === 'revoked'}
-                onClick={async () => {
-                  try {
-                    await api.revokeShare(share.id)
-                    message.success('分享已撤销')
-                    await load()
-                  } catch (err) {
-                    onError(err)
-                  }
+          {createdLink && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2.25 }}>
+              <TextField
+                fullWidth
+                size="small"
+                value={createdLink}
+                aria-label="新创建的分享链接"
+                slotProps={{
+                  input: {
+                    readOnly: true,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LinkRoundedIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
                 }}
-              >
-                撤销
-              </Button>
-            ),
-          },
-        ]}
-      />
-    </Modal>
+              />
+              <XDriveActionButton startIcon={<ContentCopyRoundedIcon />} onClick={() => void copyCreatedLink()}>
+                复制
+              </XDriveActionButton>
+            </Stack>
+          )}
+
+          <Typography component="h3" variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
+            创建下载链接
+          </Typography>
+          <Box component="form" onSubmit={(event) => void create(event)}>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'flex-start' }}>
+              <TextField
+                size="small"
+                type="datetime-local"
+                label="过期时间"
+                value={expiresAt}
+                error={Boolean(expiryError)}
+                helperText={expiryError || ' '}
+                onChange={(event) => {
+                  setExpiresAt(event.target.value)
+                  if (expiryError) setExpiryError('')
+                }}
+                slotProps={{ inputLabel: { shrink: true } }}
+                sx={{ minWidth: { md: 220 } }}
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="最大下载次数"
+                value={maxDownloads}
+                helperText="0 表示不限"
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value || '0', 10)
+                  setMaxDownloads(Number.isFinite(parsed) ? Math.max(0, parsed) : 0)
+                }}
+                slotProps={{ htmlInput: { min: 0, step: 1 } }}
+                sx={{ width: { md: 180 } }}
+              />
+              <TextField
+                size="small"
+                type="password"
+                label="密码（可选）"
+                value={password}
+                error={Boolean(passwordError)}
+                helperText={passwordError || ' '}
+                autoComplete="new-password"
+                onChange={(event) => {
+                  setPassword(event.target.value)
+                  if (passwordError) setPasswordError('')
+                }}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LockRoundedIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+                sx={{ minWidth: { md: 220 } }}
+              />
+            </Stack>
+            <XDriveActionButton
+              intent="primary"
+              type="submit"
+              loading={creating}
+              loadingLabel="正在创建…"
+              startIcon={<LinkRoundedIcon />}
+            >
+              创建分享链接
+            </XDriveActionButton>
+          </Box>
+
+          <Typography component="h3" variant="subtitle1" fontWeight={700} sx={{ mt: 3, mb: 1.5 }}>
+            已有分享
+          </Typography>
+
+          {loading && shares.length > 0 ? <LinearProgress sx={{ mb: 1 }} /> : null}
+          {loading && shares.length === 0 ? (
+            <XDriveStatePanel variant="plain" loading message="正在加载已有分享…" />
+          ) : shares.length === 0 ? (
+            <XDriveStatePanel variant="plain" message="此文件暂无分享链接" />
+          ) : (
+            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+              <Table size="small" aria-label="已有分享">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>创建时间</TableCell>
+                    <TableCell>状态</TableCell>
+                    <TableCell>保护方式</TableCell>
+                    <TableCell>过期时间</TableCell>
+                    <TableCell>下载次数</TableCell>
+                    <TableCell align="right">操作</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {shares.map((share) => (
+                    <TableRow key={share.id} hover>
+                      <TableCell>{new Date(share.created_at).toLocaleString()}</TableCell>
+                      <TableCell><XDriveShareStatusBadge status={share.status} /></TableCell>
+                      <TableCell>{share.has_password ? '密码' : '仅链接'}</TableCell>
+                      <TableCell>{share.expires_at ? new Date(share.expires_at).toLocaleString() : '永不过期'}</TableCell>
+                      <TableCell>
+                        {share.max_downloads > 0
+                          ? `${share.download_count} / ${share.max_downloads}`
+                          : `${share.download_count} / 不限`}
+                      </TableCell>
+                      <TableCell align="right">
+                        <XDriveActionButton
+                          compact
+                          intent="danger"
+                          startIcon={<DeleteOutlineRoundedIcon />}
+                          disabled={share.status === 'revoked'}
+                          onClick={() => void revoke(share)}
+                        >
+                          撤销
+                        </XDriveActionButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </XDriveDialogContent>
+      </Dialog>
+
+      <Snackbar
+        open={Boolean(feedback)}
+        autoHideDuration={3000}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        onClose={(_event, reason) => {
+          if (reason !== 'clickaway') setFeedback(null)
+        }}
+      >
+        <div>
+          {feedback ? <XDriveStatusAlert tone={feedback.tone}>{feedback.message}</XDriveStatusAlert> : null}
+        </div>
+      </Snackbar>
+    </>
   )
 }
