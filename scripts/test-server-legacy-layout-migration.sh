@@ -101,11 +101,6 @@ fi
 
 if [[ "$1" == "inspect" ]]; then
   id="${2:-}"
-  if [[ "$args" == *".Mounts"* ]]; then
-    case "$id:$args" in
-      server-old:*'/data'*) ;;
-    esac
-  fi
   case "$id" in
     server-old)
       if [[ "$args" == *'.Type'* ]]; then echo volume
@@ -127,6 +122,24 @@ if [[ "$1" == "inspect" ]]; then
       elif [[ "$args" == *'.Destination \"/config\"'* || "$args" == *'Destination "/config"'* ]]; then
         if [[ "$args" == *'.Type'* ]]; then echo volume; else echo xdrive_caddy-config; fi
       fi ;;
+    server-current)
+      if [[ "$args" == *'.Type'* ]]; then echo bind
+      elif [[ "$args" == *'.Source'* ]]; then echo "$TEST_HOME/data/files"
+      else exit 0
+      fi ;;
+    pg-current)
+      if [[ "$args" == *'.State.Running'* ]]; then echo true
+      elif [[ "$args" == *'.Config.Env'* ]]; then echo POSTGRES_PASSWORD=legacy-postgres-password
+      elif [[ "$args" == *'.Type'* ]]; then echo bind
+      elif [[ "$args" == *'.Source'* ]]; then echo "$TEST_HOME/data/postgres"
+      else exit 0
+      fi ;;
+    caddy-current)
+      if [[ "$args" == *'.Destination \"/data\"'* || "$args" == *'Destination "/data"'* ]]; then
+        if [[ "$args" == *'.Type'* ]]; then echo bind; else echo "$TEST_HOME/data/caddy/data"; fi
+      elif [[ "$args" == *'.Destination \"/config\"'* || "$args" == *'Destination "/config"'* ]]; then
+        if [[ "$args" == *'.Type'* ]]; then echo bind; else echo "$TEST_HOME/data/caddy/config"; fi
+      fi ;;
     *) exit 1 ;;
   esac
   exit 0
@@ -145,10 +158,22 @@ if [[ "$1" == "run" ]]; then
   # copy_legacy_volume uses docker run; recording the argv is sufficient for
   # this transaction test because real bind-mount behavior is covered by the
   # deployment integration tests.
+  if [[ "${TEST_FAIL_ON_COPY:-0}" == "1" ]]; then
+    echo "unexpected legacy-volume copy on an already bind-mounted deployment" >&2
+    exit 97
+  fi
   exit 0
 fi
 
 if [[ "$1" == "volume" && "$2" == "ls" ]]; then
+  if [[ "${TEST_RETAINED_LABELS:-0}" == "1" ]]; then
+    case "$args" in
+      *'com.docker.compose.volume=file-data'*) echo xdrive_file-data ;;
+      *'com.docker.compose.volume=postgres-data'*) echo xdrive_postgres-data ;;
+      *'com.docker.compose.volume=caddy-data'*) echo xdrive_caddy-data ;;
+      *'com.docker.compose.volume=caddy-config'*) echo xdrive_caddy-config ;;
+    esac
+  fi
   exit 0
 fi
 
@@ -167,11 +192,19 @@ done
 case "${1:-}" in
   ps)
     service="${@: -1}"
-    case "$service" in
-      server) echo server-old ;;
-      postgres) echo pg-old ;;
-      caddy) echo caddy-old ;;
-    esac
+    if [[ "${TEST_LAYOUT_MODE:-legacy}" == "bind" ]]; then
+      case "$service" in
+        server) echo server-current ;;
+        postgres) echo pg-current ;;
+        caddy) echo caddy-current ;;
+      esac
+    else
+      case "$service" in
+        server) echo server-old ;;
+        postgres) echo pg-old ;;
+        caddy) echo caddy-old ;;
+      esac
+    fi
     exit 0
     ;;
   stop)
@@ -228,5 +261,77 @@ grep -q '^postgres=xdrive_postgres-data$' "$HOME_DIR/state/legacy-volumes-retain
 test -f "$HOME_DIR/.env"
 test -f "$HOME_DIR/docker-compose.yml"
 test -x "$HOME_DIR/bin/xdrive-server"
+
+# Reproduce the post-migration upgrade that used to corrupt live data:
+# retained legacy volumes still carry Compose labels, while the active
+# containers now mount the canonical host bind directories. A later update
+# must trust the active bind mounts and must never copy those stale volumes
+# back over data/files or data/postgres.
+mkdir -p "$TMP/state-second"
+TEST_ROOT="$ROOT" \
+TEST_STATE="$TMP/state-second" \
+TEST_HOME="$HOME_DIR" \
+TEST_LAYOUT_MODE=bind \
+TEST_RETAINED_LABELS=1 \
+TEST_FAIL_ON_COPY=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$HOME_DIR" \
+XD_SHELL_RC_PATH="$TMP/legacy.bashrc" \
+XD_SOURCE_REF="$SHA" \
+XD_IMAGE_TAG="sha-$SHORT" \
+XD_BUILT_CHANNEL=master \
+XD_BUILT_COMMIT="$SHA" \
+XD_BUILT_SOURCE=github \
+XD_IMAGE_REGISTRY=ghcr.io/lazyxu \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+bash "$INSTALLER" >"$TMP/second.out" 2>"$TMP/second.err"
+
+if grep -q 'legacy Docker named-volume deployment detected' "$TMP/second.out"; then
+  echo "retained legacy volumes were incorrectly rediscovered on a bind-mounted upgrade" >&2
+  exit 1
+fi
+if grep -q '/from:ro' "$TMP/state-second/docker-calls"; then
+  echo "a later bind-mounted upgrade attempted to copy retained legacy data" >&2
+  exit 1
+fi
+if grep -q '^volume ls ' "$TMP/state-second/docker-calls"; then
+  echo "a later bind-mounted upgrade should not scan retained volume labels" >&2
+  exit 1
+fi
+
+# Defense in depth: even when an actually mounted legacy named volume is
+# presented again, migration must never clear a non-empty canonical target.
+# This protects live PostgreSQL state if future legacy detection regresses.
+printf 'current-postgres-state-must-survive\n' > "$HOME_DIR/data/postgres/CURRENT_DB_SENTINEL"
+mkdir -p "$TMP/state-overwrite-guard"
+set +e
+TEST_ROOT="$ROOT" \
+TEST_STATE="$TMP/state-overwrite-guard" \
+TEST_HOME="$HOME_DIR" \
+TEST_LAYOUT_MODE=legacy \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$HOME_DIR" \
+XD_SHELL_RC_PATH="$TMP/legacy.bashrc" \
+XD_SOURCE_REF="$SHA" \
+XD_IMAGE_TAG="sha-$SHORT" \
+XD_BUILT_CHANNEL=master \
+XD_BUILT_COMMIT="$SHA" \
+XD_BUILT_SOURCE=github \
+XD_IMAGE_REGISTRY=ghcr.io/lazyxu \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+bash "$INSTALLER" >"$TMP/overwrite-guard.out" 2>"$TMP/overwrite-guard.err"
+overwrite_status=$?
+set -e
+
+[[ "$overwrite_status" -ne 0 ]]
+grep -q 'refusing to overwrite non-empty PostgreSQL data migration target' "$TMP/overwrite-guard.err"
+test -f "$HOME_DIR/data/postgres/CURRENT_DB_SENTINEL"
+grep -q '^current-postgres-state-must-survive$' "$HOME_DIR/data/postgres/CURRENT_DB_SENTINEL"
+if grep -Fq 'xdrive_postgres-data:/from:ro' "$TMP/state-overwrite-guard/docker-calls"; then
+  echo "PostgreSQL legacy volume copy started before the non-empty target guard" >&2
+  exit 1
+fi
 
 echo "server legacy host/data migration tests passed"
