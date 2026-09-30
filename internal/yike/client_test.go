@@ -593,40 +593,28 @@ func TestAPIRetryAfterDoesNotBlockWorkerForLongDelay(t *testing.T) {
 	}
 }
 
-func TestAPIDoesNotRetryAuthenticationOrBusinessRateLimit(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		body string
-		code int
-	}{
-		{name: "http auth", code: http.StatusUnauthorized},
-		{name: "business rate limit", code: http.StatusOK, body: `{"errno":50005}`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var mu sync.Mutex
-			attempts := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				mu.Lock()
-				attempts++
-				mu.Unlock()
-				w.WriteHeader(tc.code)
-				if tc.body != "" {
-					_, _ = w.Write([]byte(tc.body))
-				}
-			}))
-			defer server.Close()
-			client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
-			if err != nil {
-				t.Fatal(err)
-			}
-			client.apiRetryBaseDelay = time.Millisecond
-			_, _ = client.UserInfo(context.Background())
-			mu.Lock()
-			defer mu.Unlock()
-			if attempts != 1 {
-				t.Fatalf("attempts=%d want=1", attempts)
-			}
-		})
+func TestAPIDoesNotRetryAuthentication(t *testing.T) {
+	var mu sync.Mutex
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		mu.Unlock()
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMinInterval = 0
+	_, _ = client.UserInfo(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 1 {
+		t.Fatalf("attempts=%d want=1", attempts)
 	}
 }
 
@@ -699,4 +687,108 @@ func serverURL(r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+func TestClientSpacesYikeAPIRequests(t *testing.T) {
+	var mu sync.Mutex
+	var seen []time.Time
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, time.Now())
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"errno":0,"youa_id":"123"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL, "BDUSS=test", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMinInterval = 30 * time.Millisecond
+
+	if _, err := client.UserInfo(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.UserInfo(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 {
+		t.Fatalf("requests=%d want=2", len(seen))
+	}
+	if delta := seen[1].Sub(seen[0]); delta < 25*time.Millisecond {
+		t.Fatalf("request spacing=%s want at least ~30ms", delta)
+	}
+}
+
+func TestClientRetriesYikeBusinessRateLimit(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			_, _ = w.Write([]byte(`{"errno":50005,"errmsg":"操作过于频繁，请稍后再试"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"errno":0,"youa_id":"123","nickname":"ok"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL, "BDUSS=test", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMinInterval = 0
+	client.apiRateLimitBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 5 * time.Millisecond
+
+	info, err := client.UserInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts=%d want=3", attempts)
+	}
+	if info.YouaID != "123" || info.Nickname != "ok" {
+		t.Fatalf("info=%+v", info)
+	}
+}
+
+func TestClientStopsRetryingYikeBusinessRateLimit(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		_, _ = w.Write([]byte(`{"errno":50005,"errmsg":"操作过于频繁，请稍后再试"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL, "BDUSS=test", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMinInterval = 0
+	client.apiRateLimitBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 5 * time.Millisecond
+
+	_, err = client.UserInfo(context.Background())
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err=%v want ErrRateLimited", err)
+	}
+	if attempts != defaultAPIMaxAttempts {
+		t.Fatalf("attempts=%d want=%d", attempts, defaultAPIMaxAttempts)
+	}
+}
+
+func TestClientRateLimitCooldownIsShared(t *testing.T) {
+	client := &Client{apiMinInterval: time.Millisecond}
+	client.reserveAPICooldown(40 * time.Millisecond)
+
+	start := time.Now()
+	if err := client.waitAPISlot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed < 25*time.Millisecond {
+		t.Fatalf("shared cooldown elapsed=%s want at least ~40ms", elapsed)
+	}
 }

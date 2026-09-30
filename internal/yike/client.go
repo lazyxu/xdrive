@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,8 @@ const (
 	defaultAPIMaxAttempts                = 3
 	defaultAPIRetryBaseDelay             = 500 * time.Millisecond
 	defaultAPIRetryMaxDelay              = 30 * time.Second
+	defaultAPIMinInterval                = 500 * time.Millisecond
+	defaultAPIRateLimitBaseDelay         = 2 * time.Second
 )
 
 var (
@@ -43,6 +46,10 @@ type Client struct {
 	apiMaxAttempts        int
 	apiRetryBaseDelay     time.Duration
 	apiRetryMaxDelay      time.Duration
+	apiMinInterval        time.Duration
+	apiRateLimitBaseDelay time.Duration
+	apiSlotMu             sync.Mutex
+	apiNextSlot           time.Time
 }
 
 func New(cookie string) (*Client, error) {
@@ -79,6 +86,8 @@ func NewWithBaseURL(baseURL, cookie string, httpClient *http.Client) (*Client, e
 		apiMaxAttempts:        defaultAPIMaxAttempts,
 		apiRetryBaseDelay:     defaultAPIRetryBaseDelay,
 		apiRetryMaxDelay:      defaultAPIRetryMaxDelay,
+		apiMinInterval:        defaultAPIMinInterval,
+		apiRateLimitBaseDelay: defaultAPIRateLimitBaseDelay,
 	}, nil
 }
 
@@ -478,6 +487,9 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 
 	attempts := c.apiAttempts()
 	for attempt := 0; attempt < attempts; attempt++ {
+		if err := c.waitAPISlot(ctx); err != nil {
+			return DownloadLink{}, err
+		}
 		req, err := c.request(ctx, http.MethodGet, "/album/v1/download", query)
 		if err != nil {
 			return DownloadLink{}, err
@@ -501,7 +513,17 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			_ = resp.Body.Close()
 			if attempt+1 < attempts {
-				if delay, allowed := c.apiRetryDelay(attempt, retryAfter); allowed {
+				var delay time.Duration
+				var allowed bool
+				if resp.StatusCode == http.StatusTooManyRequests {
+					delay, allowed = c.apiRateLimitDelay(attempt, retryAfter)
+				} else {
+					delay, allowed = c.apiRetryDelay(attempt, retryAfter)
+				}
+				if allowed {
+					if resp.StatusCode == http.StatusTooManyRequests {
+						c.reserveAPICooldown(delay)
+					}
 					if err := sleepContext(ctx, delay); err != nil {
 						return DownloadLink{}, err
 					}
@@ -543,6 +565,9 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 func (c *Client) getJSON(ctx context.Context, path string, query url.Values, target any) error {
 	attempts := c.apiAttempts()
 	for attempt := 0; attempt < attempts; attempt++ {
+		if err := c.waitAPISlot(ctx); err != nil {
+			return err
+		}
 		req, err := c.request(ctx, http.MethodGet, path, query)
 		if err != nil {
 			return err
@@ -571,7 +596,8 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, tar
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			_ = resp.Body.Close()
 			if attempt+1 < attempts {
-				if delay, allowed := c.apiRetryDelay(attempt, retryAfter); allowed {
+				if delay, allowed := c.apiRateLimitDelay(attempt, retryAfter); allowed {
+					c.reserveAPICooldown(delay)
 					if err := sleepContext(ctx, delay); err != nil {
 						return err
 					}
@@ -624,9 +650,81 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, tar
 		if err := json.Unmarshal(data, &envelope); err != nil {
 			return err
 		}
-		return envelope.Err()
+		apiErr := envelope.Err()
+		if apiErr == nil {
+			return nil
+		}
+		if errors.Is(apiErr, ErrRateLimited) && attempt+1 < attempts {
+			if delay, allowed := c.apiRateLimitDelay(attempt, ""); allowed {
+				c.reserveAPICooldown(delay)
+				if err := sleepContext(ctx, delay); err != nil {
+					return err
+				}
+				continue
+			}
+		}
+		return apiErr
 	}
 	return fmt.Errorf("%w: Yike API retries exhausted", ErrUnavailable)
+}
+
+func (c *Client) waitAPISlot(ctx context.Context) error {
+	interval := c.apiMinInterval
+	if interval <= 0 {
+		return nil
+	}
+	now := time.Now()
+	c.apiSlotMu.Lock()
+	slot := now
+	if c.apiNextSlot.After(slot) {
+		slot = c.apiNextSlot
+	}
+	c.apiNextSlot = slot.Add(interval)
+	c.apiSlotMu.Unlock()
+	if delay := time.Until(slot); delay > 0 {
+		return sleepContext(ctx, delay)
+	}
+	return nil
+}
+
+func (c *Client) reserveAPICooldown(delay time.Duration) {
+	if delay <= 0 {
+		return
+	}
+	deadline := time.Now().Add(delay)
+	c.apiSlotMu.Lock()
+	if c.apiNextSlot.Before(deadline) {
+		c.apiNextSlot = deadline
+	}
+	c.apiSlotMu.Unlock()
+}
+
+func (c *Client) apiRateLimitDelay(attempt int, retryAfter string) (time.Duration, bool) {
+	maxDelay := c.apiRetryMaxDelay
+	if maxDelay <= 0 {
+		maxDelay = defaultAPIRetryMaxDelay
+	}
+	if value, ok := parseRetryAfter(retryAfter, time.Now()); ok {
+		if value > maxDelay {
+			return 0, false
+		}
+		return value, true
+	}
+	delay := c.apiRateLimitBaseDelay
+	if delay <= 0 {
+		delay = defaultAPIRateLimitBaseDelay
+	}
+	for i := 0; i < attempt && delay < maxDelay; i++ {
+		if delay > maxDelay/2 {
+			delay = maxDelay
+			break
+		}
+		delay *= 2
+	}
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+	return delay, true
 }
 
 func (c *Client) apiAttempts() int {

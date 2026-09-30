@@ -70,6 +70,7 @@ import {
   normalizeSynologyPhotoSpaces,
   synologyPhotoSpaceOptions,
   yikeConnectorNotice,
+  yikeRateLimitNotice,
   yikeManagedTargetLabel,
 } from '../../ui/shared/src'
 import type {
@@ -1546,6 +1547,7 @@ export default function ExternalSourcesPanel({
                 />
                 <MuiBox>
                   <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</XDriveStatusAlert>
+                  <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
                   <XDriveYikeCookieHelp variant="accordion" />
                   <MuiBox sx={{ mt: 1 }}>
                     <XDriveActionButton
@@ -1793,6 +1795,7 @@ export default function ExternalSourcesPanel({
                       出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
                     </MuiTypography>
                   </XDriveStatusAlert>
+                  <XDriveStatusAlert tone="neutral" sx={{ mb: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
                   <TextField
                     fullWidth
                     size="small"
