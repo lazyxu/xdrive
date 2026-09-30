@@ -52,6 +52,7 @@ import {
   XDriveAccountSummary,
   XDriveActionButton,
   XDriveBrandLockup,
+  XDriveConfirmDialog,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
@@ -1191,35 +1192,17 @@ function FileManager({
         </XDriveDialogContent>
       </Dialog>
 
-      <Dialog
+      <XDriveConfirmDialog
         open={!!confirmAction}
-        onClose={() => {
-          if (!confirmBusy) setConfirmAction(null)
-        }}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title={confirmAction?.title ?? '确认操作'}
-          onClose={() => setConfirmAction(null)}
-          closeDisabled={confirmBusy}
-        />
-        <XDriveDialogContent>
-          <Typography variant="body2">{confirmAction?.description}</Typography>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton disabled={confirmBusy} onClick={() => setConfirmAction(null)}>取消</XDriveActionButton>
-          <XDriveActionButton
-            intent={confirmAction?.intent ?? 'primary'}
-            loading={confirmBusy}
-            loadingLabel="正在处理…"
-            onClick={() => void executeConfirm()}
-          >
-            {confirmAction?.confirmLabel ?? '确认'}
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+        title={confirmAction?.title ?? '确认操作'}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? '确认'}
+        confirmIntent={confirmAction?.intent ?? 'primary'}
+        loading={confirmBusy}
+        loadingLabel="正在处理…"
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={() => void executeConfirm()}
+      />
 
       <ShareDialog api={api} node={shareNode} onClose={() => setShareNode(null)} onError={handleError} />
 

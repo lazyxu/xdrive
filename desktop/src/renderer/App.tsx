@@ -52,6 +52,7 @@ import {
   XDriveAccountSummary,
   XDriveActionButton,
   XDriveBrandLockup,
+  XDriveConfirmDialog,
   XDriveDialogActions,
   XDriveDialogActionSpacer,
   XDriveDialogContent,
@@ -4226,28 +4227,16 @@ export default function App() {
         )}
       </main>
 
-      <Dialog
+      <XDriveConfirmDialog
         open={!!confirmDialog}
-        onClose={() => setConfirmDialog(null)}
-        aria-label="确认操作"
         maxWidth="xs"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle title={confirmDialog?.title ?? '确认操作'} onClose={() => setConfirmDialog(null)} />
-        <XDriveDialogContent>
-          <DialogContentText>{confirmDialog?.message ?? ''}</DialogContentText>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton onClick={() => setConfirmDialog(null)}>取消</XDriveActionButton>
-          <XDriveActionButton
-            intent={confirmDialog?.tone === 'error' ? 'danger' : confirmDialog?.tone === 'warning' ? 'warning' : 'primary'}
-            onClick={() => void confirmPendingAction()}
-          >
-            {confirmDialog?.confirmLabel ?? '确认'}
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+        title={confirmDialog?.title ?? '确认操作'}
+        description={confirmDialog?.message ?? ''}
+        confirmLabel={confirmDialog?.confirmLabel ?? '确认'}
+        confirmIntent={confirmDialog?.tone === 'error' ? 'danger' : confirmDialog?.tone === 'warning' ? 'warning' : 'primary'}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={() => void confirmPendingAction()}
+      />
 
       <Dialog
         open={sourceFailedItemsOpen && sourceFailedItems.length > 0}
