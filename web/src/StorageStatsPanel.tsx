@@ -1,6 +1,5 @@
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
 import {
   Accordion,
   AccordionDetails,
@@ -24,7 +23,10 @@ import {
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDriveMetricCard,
+  XDriveMetricGrid,
   XDrivePaginationControls,
+  XDriveSectionHeading,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveWorkspaceSurface,
@@ -81,42 +83,6 @@ function decisionDescription(decision: StorageDecision) {
     return `${common} 大文件字节占主导且全文件去重收益较低，下一步更适合先做 CDC 小规模评估；该信号不等同于已证明存在块级重复。`
   }
   return `${common} 当前数据不足以支持更换存储格式，继续采样更合理。`
-}
-
-function StorageStatGrid({ children }: { children: ReactNode }) {
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
-        gap: 2,
-      }}
-    >
-      {children}
-    </Box>
-  )
-}
-
-function StorageStat({ title, value, suffix }: { title: ReactNode; value: ReactNode; suffix?: ReactNode }) {
-  return (
-    <Box sx={{ minWidth: 0, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-        {title}
-      </Typography>
-      <Typography variant="h6" component="div" sx={{ lineHeight: 1.3, overflowWrap: 'anywhere' }}>
-        {value}
-      </Typography>
-      {suffix ? (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35 }}>
-          {suffix}
-        </Typography>
-      ) : null}
-    </Box>
-  )
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <Typography component="h3" variant="subtitle1" fontWeight={700}>{children}</Typography>
 }
 
 export default function StorageStatsPanel({
@@ -322,22 +288,22 @@ export default function StorageStatsPanel({
                 stats.disk_available_bytes !== undefined &&
                 stats.xdrive_physical_bytes !== undefined && (
                   <Stack spacing={1.5}>
-                    <SectionTitle>磁盘容量</SectionTitle>
-                    <StorageStatGrid>
-                      <StorageStat title="磁盘总容量" value={formatSize(stats.disk_total_bytes)} />
-                      <StorageStat title="磁盘已用" value={formatSize(stats.disk_used_bytes)} />
-                      <StorageStat title="磁盘可用" value={formatSize(stats.disk_available_bytes)} />
-                      <StorageStat title="xDrive 物理占用" value={formatSize(stats.xdrive_physical_bytes)} />
+                    <XDriveSectionHeading>磁盘容量</XDriveSectionHeading>
+                    <XDriveMetricGrid>
+                      <XDriveMetricCard title="磁盘总容量" value={formatSize(stats.disk_total_bytes)} />
+                      <XDriveMetricCard title="磁盘已用" value={formatSize(stats.disk_used_bytes)} />
+                      <XDriveMetricCard title="磁盘可用" value={formatSize(stats.disk_available_bytes)} />
+                      <XDriveMetricCard title="xDrive 物理占用" value={formatSize(stats.xdrive_physical_bytes)} />
                       {otherDiskUsed !== undefined && (
-                        <StorageStat title="非 xDrive 占用（估算）" value={formatSize(otherDiskUsed)} />
+                        <XDriveMetricCard title="非 xDrive 占用（估算）" value={formatSize(otherDiskUsed)} />
                       )}
-                    </StorageStatGrid>
+                    </XDriveMetricGrid>
                   </Stack>
                 )}
 
               {scope === 'global' && staging && (
                 <Stack spacing={1.5}>
-                  <SectionTitle>上传临时空间</SectionTitle>
+                  <XDriveSectionHeading>上传临时空间</XDriveSectionHeading>
                   {stagingNotice && <XDriveStatusAlert tone="good">{stagingNotice}</XDriveStatusAlert>}
                   {!staging.stats.supported && (
                     <XDriveStatusAlert tone="neutral">当前存储后端不支持 staging 文件系统扫描，仅显示数据库侧会话信息。</XDriveStatusAlert>
@@ -354,18 +320,18 @@ export default function StorageStatsPanel({
                       只有数据库无引用且超过 1 小时的临时文件才会作为 orphan 清理；近期未登记文件不会删除。
                     </XDriveStatusAlert>
                   )}
-                  <StorageStatGrid>
-                    <StorageStat title="活跃 Upload Session" value={staging.stats.active_sessions} />
-                    <StorageStat title="容量 Reservation" value={formatSize(staging.stats.reserved_bytes)} />
-                    <StorageStat title="Staging 实际占用" value={formatSize(staging.stats.staging_bytes)} />
-                    <StorageStat title="Staging 文件" value={staging.stats.staging_files} />
-                    <StorageStat title="已登记 Part" value={staging.stats.part_files} suffix={'/ ' + formatSize(staging.stats.part_bytes)} />
-                    <StorageStat title="近期未登记" value={staging.stats.recent_untracked_files} suffix={'/ ' + formatSize(staging.stats.recent_untracked_bytes)} />
-                    <StorageStat title="可回收临时空间" value={formatSize(staging.stats.reclaimable_bytes)} />
-                    <StorageStat title="Orphan" value={staging.stats.orphan_files} suffix={'/ ' + formatSize(staging.stats.orphan_bytes)} />
-                    <StorageStat title="过期 Session" value={staging.stats.expired_sessions} />
-                    <StorageStat title="缺失 Part" value={staging.stats.missing_part_files} suffix={'/ ' + formatSize(staging.stats.missing_part_bytes)} />
-                  </StorageStatGrid>
+                  <XDriveMetricGrid>
+                    <XDriveMetricCard title="活跃 Upload Session" value={staging.stats.active_sessions} />
+                    <XDriveMetricCard title="容量 Reservation" value={formatSize(staging.stats.reserved_bytes)} />
+                    <XDriveMetricCard title="Staging 实际占用" value={formatSize(staging.stats.staging_bytes)} />
+                    <XDriveMetricCard title="Staging 文件" value={staging.stats.staging_files} />
+                    <XDriveMetricCard title="已登记 Part" value={staging.stats.part_files} suffix={'/ ' + formatSize(staging.stats.part_bytes)} />
+                    <XDriveMetricCard title="近期未登记" value={staging.stats.recent_untracked_files} suffix={'/ ' + formatSize(staging.stats.recent_untracked_bytes)} />
+                    <XDriveMetricCard title="可回收临时空间" value={formatSize(staging.stats.reclaimable_bytes)} />
+                    <XDriveMetricCard title="Orphan" value={staging.stats.orphan_files} suffix={'/ ' + formatSize(staging.stats.orphan_bytes)} />
+                    <XDriveMetricCard title="过期 Session" value={staging.stats.expired_sessions} />
+                    <XDriveMetricCard title="缺失 Part" value={staging.stats.missing_part_files} suffix={'/ ' + formatSize(staging.stats.missing_part_bytes)} />
+                  </XDriveMetricGrid>
                   <Typography variant="body2" color="text.secondary">
                     Reservation 表示活跃 resumable 上传未来仍可能需要写入的峰值空间，不等于当前物理占用；Staging 实际占用已计入 xDrive 物理占用。
                   </Typography>
@@ -390,7 +356,7 @@ export default function StorageStatsPanel({
 
                   {staging.orphans.length > 0 && (
                     <Stack spacing={1}>
-                      <SectionTitle>Orphan staging</SectionTitle>
+                      <XDriveSectionHeading>Orphan staging</XDriveSectionHeading>
                       {stagingLoading ? <LinearProgress /> : null}
                       <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
                         <Table size="small" aria-label="Orphan staging" sx={{ minWidth: 680 }}>
@@ -427,7 +393,7 @@ export default function StorageStatsPanel({
 
               {scope === 'global' && cleanupRuns.length > 0 && (
                 <Stack spacing={1.5}>
-                  <SectionTitle>最近 staging 清理</SectionTitle>
+                  <XDriveSectionHeading>最近 staging 清理</XDriveSectionHeading>
                   <Stack spacing={1}>
                     {cleanupRuns.map((run) => (
                       <Accordion
@@ -494,20 +460,20 @@ export default function StorageStatsPanel({
                   <XDriveStatusAlert tone={decisionTone(history.decision)} title={decisionMessage(history.decision)}>
                     {decisionDescription(history.decision)}
                   </XDriveStatusAlert>
-                  <StorageStatGrid>
-                    <StorageStat title="历史样本" value={history.samples.length} suffix={`/ ${history.retention_days} 天`} />
-                    <StorageStat
+                  <XDriveMetricGrid>
+                    <XDriveMetricCard title="历史样本" value={history.samples.length} suffix={`/ ${history.retention_days} 天`} />
+                    <XDriveMetricCard
                       title="窗口内物理容量变化"
                       value={firstHistory && lastHistory ? signedSize(lastHistory.cas_physical_bytes - firstHistory.cas_physical_bytes) : '—'}
                     />
-                    <StorageStat
+                    <XDriveMetricCard
                       title="窗口内逻辑容量变化"
                       value={firstHistory && lastHistory ? signedSize(lastHistory.cas_logical_referenced_bytes - firstHistory.cas_logical_referenced_bytes) : '—'}
                     />
-                    <StorageStat title="最新去重倍率" value={lastHistory ? `${lastHistory.cas_dedup_ratio.toFixed(2)}×` : '—'} />
-                  </StorageStatGrid>
+                    <XDriveMetricCard title="最新去重倍率" value={lastHistory ? `${lastHistory.cas_dedup_ratio.toFixed(2)}×` : '—'} />
+                  </XDriveMetricGrid>
                   <Stack spacing={1}>
-                    <SectionTitle>历史趋势</SectionTitle>
+                    <XDriveSectionHeading>历史趋势</XDriveSectionHeading>
                     <Typography variant="body2" color="text.secondary">
                       每 {history.sampling_interval_hours} 小时记录一次，保留 {history.retention_days} 天。下表显示最近 12 个快照。
                     </Typography>
@@ -543,16 +509,16 @@ export default function StorageStatsPanel({
                 </Stack>
               )}
 
-              <StorageStatGrid>
-                <StorageStat title="CAS Blob" value={stats.cas_blob_count} />
-                <StorageStat title="CAS 物理容量" value={formatSize(stats.cas_physical_bytes)} />
-                <StorageStat title="逻辑引用容量" value={formatSize(stats.cas_logical_referenced_bytes)} />
-                <StorageStat title="去重节省" value={formatSize(stats.cas_dedup_saved_bytes)} />
-                <StorageStat title="去重倍率" value={`${stats.cas_dedup_ratio.toFixed(2)}×`} />
-                <StorageStat title="节省比例" value={`${(stats.cas_savings_ratio * 100).toFixed(1)}%`} />
-                <StorageStat title="平均 Blob" value={formatSize(stats.average_blob_size_bytes)} />
-                <StorageStat title="P50 / P90 / P99" value={`${formatSize(stats.p50_blob_size_bytes)} / ${formatSize(stats.p90_blob_size_bytes)} / ${formatSize(stats.p99_blob_size_bytes)}`} />
-              </StorageStatGrid>
+              <XDriveMetricGrid>
+                <XDriveMetricCard title="CAS Blob" value={stats.cas_blob_count} />
+                <XDriveMetricCard title="CAS 物理容量" value={formatSize(stats.cas_physical_bytes)} />
+                <XDriveMetricCard title="逻辑引用容量" value={formatSize(stats.cas_logical_referenced_bytes)} />
+                <XDriveMetricCard title="去重节省" value={formatSize(stats.cas_dedup_saved_bytes)} />
+                <XDriveMetricCard title="去重倍率" value={`${stats.cas_dedup_ratio.toFixed(2)}×`} />
+                <XDriveMetricCard title="节省比例" value={`${(stats.cas_savings_ratio * 100).toFixed(1)}%`} />
+                <XDriveMetricCard title="平均 Blob" value={formatSize(stats.average_blob_size_bytes)} />
+                <XDriveMetricCard title="P50 / P90 / P99" value={`${formatSize(stats.p50_blob_size_bytes)} / ${formatSize(stats.p90_blob_size_bytes)} / ${formatSize(stats.p99_blob_size_bytes)}`} />
+              </XDriveMetricGrid>
 
               {stats.legacy_blob_count > 0 && (
                 <XDriveStatusAlert tone="neutral">
@@ -561,7 +527,7 @@ export default function StorageStatsPanel({
               )}
 
               <Stack spacing={1}>
-                <SectionTitle>CAS Blob 尺寸分布</SectionTitle>
+                <XDriveSectionHeading>CAS Blob 尺寸分布</XDriveSectionHeading>
                 <Typography variant="body2" color="text.secondary">
                   区间按 [下界, 上界) 统计，用于判断后续 CDC 与 small-file packing 的实际收益。
                 </Typography>

@@ -19,6 +19,7 @@ const files = {
   accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),
   brandLockup: readRepo('ui/shared/src/mui/BrandLockup.tsx'),
   confirmDialog: readRepo('ui/shared/src/mui/ConfirmDialog.tsx'),
+  metricCards: readRepo('ui/shared/src/mui/MetricCards.tsx'),
   sidebarStorageSummary: readRepo('ui/shared/src/mui/SidebarStorageSummary.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
@@ -69,7 +70,8 @@ if (files.app.includes('className="brand-lockup"') || files.app.includes('classN
 requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveWorkspaceSurface', 'XDriveConfirmDialog', 'confirmIntent={confirmAction?.danger', 'loading={confirmLoading}', 'presentation="page"', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
 if (/from ['"]antd['"]/.test(files.users) || files.users.includes('@ant-design/icons')) throw new Error('用户管理仍依赖 Ant Design')
 requireText(files.workspaceSurface, ['WorkspacePresentation', "presentation === 'page'", 'workspace-page-surface', 'XDriveDialogTitle', 'XDriveDialogContent'], 'Web 工作区表面')
-requireText(files.storageStats, ['WorkspaceSurface', 'presentation="page"', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveConfirmDialog', 'confirmIntent="danger"', 'loading={cleanupLoading}', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+requireText(files.storageStats, ['WorkspaceSurface', 'presentation="page"', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveConfirmDialog', 'confirmIntent="danger"', 'loading={cleanupLoading}', 'XDriveMetricGrid', 'XDriveMetricCard', 'XDriveSectionHeading', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+requireText(files.metricCards, ['XDriveMetricGrid', 'XDriveMetricCard', 'XDriveSectionHeading', 'gridTemplateColumns', 'component="h3"'], '共享统计展示')
 if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
