@@ -2660,11 +2660,18 @@ export default function App() {
         )}
       </XDriveSidebarSurface>
 
-      <main className="content">
-        <XDrivePageHeader title={viewLabel(view)} eyebrow="xDrive" size="large" />
+      <main className={view === 'cloud' ? 'content content-files-workspace' : 'content'}>
+        {view !== 'cloud' ? <XDrivePageHeader title={viewLabel(view)} eyebrow="xDrive" size="large" /> : null}
 
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
-          <Stack spacing={1} sx={{ mt: 2 }}>
+          <Stack
+            spacing={1}
+            sx={{
+              mt: view === 'cloud' ? 1.5 : 2,
+              mx: view === 'cloud' ? 1.5 : 0,
+              flexShrink: 0,
+            }}
+          >
             {status?.last_error ? (
               <XDriveStatusAlert
                 tone="bad"
@@ -3580,7 +3587,7 @@ export default function App() {
         {view === 'cloud' && (
           <section className="panel cloud-panel cloud-explorer-panel">
             {cloudQuota?.over_quota && (
-              <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>
+              <XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>
                 存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
               </XDriveStatusAlert>
             )}
