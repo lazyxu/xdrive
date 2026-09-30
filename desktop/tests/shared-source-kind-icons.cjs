@@ -9,6 +9,7 @@ const sharedSources = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'ex
 const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
 const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const sourceSummaryCard = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
+const sourceBasicFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceBasicFields.tsx'), 'utf8')
 
 test('source kind icons use vendored service artwork', () => {
   for (const filename of ['synology-photos.png', 'synology-file-station.png', 'yike-photos.png']) {
@@ -26,10 +27,11 @@ test('source kind icons use vendored service artwork', () => {
   assert.match(sharedSources, /label: '群晖 File Station'/)
 })
 
-test('Web and Desktop source cards consume the shared branded icon', () => {
+test('Web and Desktop source cards and preset field consume the shared branded icon', () => {
   assert.ok(sourceSummaryCard.includes('icon?: ReactNode'), 'shared source summary card must expose an icon slot')
   assert.ok(sourceSummaryCard.includes('{icon}'), 'shared source summary card must render its icon slot')
   assert.match(web, /icon=\{<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
-  assert.match(web, /<XDriveSourceKindIcon kind=\{item\.kind\} size="small"/)
   assert.match(desktop, /icon=\{<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
+  assert.match(sourceBasicFields, /<XDriveSourceKindIcon kind=\{option\.kind\} size="small"/)
+  assert.ok(sourceBasicFields.includes('externalSourceCreateOptions.map'), 'shared preset field must render the shared Source options')
 })

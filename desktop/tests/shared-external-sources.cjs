@@ -712,3 +712,50 @@ test('Web and Desktop reuse shared source ignore-rules field', () => {
   assert.equal(desktop.includes('<span>忽略规则</span>\n                  <textarea'), false, 'Desktop create should not retain local ignore-rules textarea')
   assert.equal(desktop.includes('<span>忽略规则</span>\n                            <textarea'), false, 'Desktop settings should not retain local ignore-rules textarea')
 })
+
+
+test('Web and Desktop reuse shared source basic fields', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceBasicFields.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const desktopStyles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
+
+  for (const token of [
+    'XDriveSourcePresetField',
+    'XDriveSourceNameField',
+    'XDriveSourceRunModeField',
+    'XDriveSourceStatusField',
+    'externalSourceCreateOptions',
+    'XDriveSourceKindIcon',
+    '来源类型',
+    '来源名称',
+    '运行模式',
+    '启用',
+    '暂停',
+  ]) {
+    assert.ok(sharedFields.includes(token), `shared Source basic fields missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSourcePresetField\b/g) || []).length, 1, 'Web create should reuse shared Source preset field')
+  assert.equal((desktop.match(/<XDriveSourcePresetField\b/g) || []).length, 1, 'Desktop create should reuse shared Source preset field')
+  assert.equal((web.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Web create/settings should reuse shared Source name field')
+  assert.equal((desktop.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Source name field')
+  assert.equal((web.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Web create/settings should reuse shared Source run-mode field')
+  assert.equal((desktop.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Source run-mode field')
+  assert.equal((web.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Web settings should reuse shared Source status field')
+  assert.equal((desktop.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Desktop settings should reuse shared Source status field')
+
+  assert.equal(desktop.includes('<input value={sourceCreateName}'), false, 'Desktop create should not keep native Source name input')
+  assert.equal(desktop.includes('<select value={sourceCreateRunMode}'), false, 'Desktop create should not keep native Source run-mode select')
+  assert.equal(desktop.includes('<input value={sourceEditName}'), false, 'Desktop settings should not keep native Source name input')
+  assert.equal(desktop.includes('<select value={sourceEditRunMode}'), false, 'Desktop settings should not keep native Source run-mode select')
+  assert.equal(desktop.includes('<select value={sourceEditStatus}'), false, 'Desktop settings should not keep native Source status select')
+
+  assert.equal(desktopStyles.includes('.source-create input,'), false, 'Desktop source-create CSS must not broadly override MUI inputs')
+  assert.equal(desktopStyles.includes('.source-create select,'), false, 'Desktop source-create CSS must not broadly override MUI selects')
+  assert.equal(desktopStyles.includes('.source-settings input,'), false, 'Desktop source-settings CSS must not broadly override MUI inputs')
+  assert.equal(desktopStyles.includes('.source-settings select,'), false, 'Desktop source-settings CSS must not broadly override MUI selects')
+  assert.ok(desktopStyles.includes('.source-create > label > input,'), 'Desktop native credential fields should keep scoped legacy styling')
+  assert.ok(desktopStyles.includes('.source-settings > label > input,'), 'Desktop native settings credential fields should keep scoped legacy styling')
+})
