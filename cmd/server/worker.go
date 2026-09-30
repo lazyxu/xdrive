@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,10 +27,12 @@ import (
 )
 
 const (
-	defaultSourcePullInterval = 6 * time.Hour
-	defaultWorkerPollInterval = time.Minute
-	defaultInternalServerURL  = "http://server:8080"
-	sourceWakeReconnectDelay  = 5 * time.Second
+	defaultSourcePullInterval      = 6 * time.Hour
+	defaultWorkerPollInterval      = time.Minute
+	defaultSourceWorkerConcurrency = 2
+	maxSourceWorkerConcurrency     = 8
+	defaultInternalServerURL       = "http://server:8080"
+	sourceWakeReconnectDelay       = 5 * time.Second
 )
 
 func runWorker(args []string) error {
@@ -37,11 +40,12 @@ func runWorker(args []string) error {
 	once := fs.Bool("once", false, "scan eligible pull sources once and exit")
 	intervalRaw := fs.String("interval", "", "per-source scan interval (default XD_SOURCE_PULL_INTERVAL or 6h)")
 	pollRaw := fs.String("poll-interval", "", "scheduler poll interval (default XD_SOURCE_WORKER_POLL_INTERVAL or 1m)")
+	concurrencyRaw := fs.String("concurrency", "", "maximum concurrent pull sources (default XD_SOURCE_WORKER_CONCURRENCY or 2)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: xdrive-server worker [--once] [--interval DURATION] [--poll-interval DURATION]")
+		return fmt.Errorf("usage: xdrive-server worker [--once] [--interval DURATION] [--poll-interval DURATION] [--concurrency N]")
 	}
 
 	cfg, err := config.Load()
@@ -76,6 +80,10 @@ func runWorker(args []string) error {
 	if err != nil {
 		return err
 	}
+	concurrency, err := sourceWorkerConcurrency(*concurrencyRaw)
+	if err != nil {
+		return err
+	}
 
 	yikeRunner := &yikeworker.Runner{
 		DB:        db,
@@ -97,7 +105,8 @@ func runWorker(args []string) error {
 			yikesync.SourceKind:     yikeRunner,
 			synologysync.SourceKind: synologyRunner,
 		},
-		Logger: slog.Default(),
+		Logger:         slog.Default(),
+		MaxConcurrency: concurrency,
 	}
 
 	runImmediate := func(ctx context.Context) error {
@@ -135,6 +144,7 @@ func runWorker(args []string) error {
 		"server_url", serverURL,
 		"scan_interval", interval.String(),
 		"poll_interval", pollInterval.String(),
+		"max_source_concurrency", concurrency,
 	)
 	if err := runDue(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("source_pull_cycle_failed", "error", err)
@@ -240,4 +250,19 @@ func sourcePullInterval(flagValue string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid source pull interval %q; minimum is 1m", value)
 	}
 	return duration, nil
+}
+
+func sourceWorkerConcurrency(flagValue string) (int, error) {
+	value := strings.TrimSpace(flagValue)
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv("XD_SOURCE_WORKER_CONCURRENCY"))
+	}
+	if value == "" {
+		return defaultSourceWorkerConcurrency, nil
+	}
+	concurrency, err := strconv.Atoi(value)
+	if err != nil || concurrency < 1 || concurrency > maxSourceWorkerConcurrency {
+		return 0, fmt.Errorf("invalid source worker concurrency %q; expected 1..%d", value, maxSourceWorkerConcurrency)
+	}
+	return concurrency, nil
 }

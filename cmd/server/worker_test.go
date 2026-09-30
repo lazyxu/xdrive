@@ -113,3 +113,37 @@ func TestSourceRunWakeupsReceivesPostgresNotification(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceWorkerConcurrency(t *testing.T) {
+	t.Setenv("XD_SOURCE_WORKER_CONCURRENCY", "")
+	got, err := sourceWorkerConcurrency("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 2 {
+		t.Fatalf("default concurrency=%d want=2", got)
+	}
+
+	t.Setenv("XD_SOURCE_WORKER_CONCURRENCY", "3")
+	got, err = sourceWorkerConcurrency("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 3 {
+		t.Fatalf("env concurrency=%d want=3", got)
+	}
+
+	got, err = sourceWorkerConcurrency("4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 4 {
+		t.Fatalf("flag concurrency=%d want=4", got)
+	}
+
+	for _, value := range []string{"broken", "0", "-1", "9"} {
+		if _, err := sourceWorkerConcurrency(value); err == nil {
+			t.Fatalf("invalid concurrency %q was accepted", value)
+		}
+	}
+}

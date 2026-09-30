@@ -19,7 +19,7 @@ The following pieces already exist and should be reused rather than rebuilt:
 - Yike Pull already uses stable `yike:<owner_uk>:<fsid>` identities, imports albums, stores capture/create time, MD5 and remote thumbnail hints, rate-limits the private control-plane API to about 2 requests/second, supports Range downloads, resumable xDrive uploads, verified MD5-to-SHA256 reuse, durable cancellation, and incomplete-inventory safety.
 - Synology Pull already uses Photos item identity as `synology:<space>:<item_id>`, supports Personal/Shared spaces, imports logical albums, uses resumable Range downloads, and exposes the Photos `live_type` field in the adapter.
 - Synology Push already has robust filesystem identities, including portable identity state, birth-time-aware remount handling, inode-reuse protection, atomic identity persistence, and fail-closed root replacement detection.
-- The current Pull worker runs eligible sources sequentially in Source ID order and only schedules `sync_mode=backup`.
+- The Pull worker dispatches eligible sources with bounded source-level concurrency (default 2, configurable 1-8), prioritizes pending manual requests, then orders scheduled work by the oldest computed next-run time; persisted retry/backoff remains TODO.
 - Backup mode intentionally never deletes or trashes xDrive content because a source item disappeared.
 
 Therefore Photo Source v2 must **extend the existing layers**, not introduce a second parallel photo database.
@@ -306,26 +306,26 @@ Until Yike or Synology exposes a tested reliable change cursor, continue full pa
 
 ## Scheduler and retry policy
 
-The current Pull runner is sequential. Replace it with bounded source-level concurrency:
+The Pull runner uses bounded source-level concurrency:
 
 - default global active Source limit: 2;
-- configurable, with a conservative upper bound;
-- per-Source transfer concurrency remains 1 initially;
-- connector/account-specific API rate limits remain independent of global Source concurrency;
-- do not let multiple Sources sharing one provider account multiply the provider request rate unintentionally.
+- configurable from 1 through 8;
+- per-Source transfer concurrency remains 1;
+- connector/account-specific API rate limits remain independent of global Source concurrency.
 
-Scheduling priority:
+The implemented queue priority is:
 
 ```text
-P0 manual "run now"
-P1 persisted retryable failure
-P2 severely overdue scheduled Source
-P3 normally due scheduled Source
+P0 pending manual "run now"
+P1 most-overdue scheduled Source
+P2 normally due scheduled Source
 ```
 
-Retries are for transient network/429/5xx/session-recoverable failures only. Authentication, permission, invalid configuration, unsupported API, and deterministic item errors do not enter a fast retry loop.
+The remaining P0 scheduler work is persisted retry priority/backoff. Retries must be limited to transient network/429/5xx/session-recoverable failures. Authentication, permission, invalid configuration, unsupported API, and deterministic item errors must not enter a fast retry loop.
 
-Persist retry state so a worker restart does not erase or multiply retries. Apply bounded exponential backoff with jitter and preserve fairness so one failing Source cannot starve the rest.
+Persist retry state so a worker restart does not erase or multiply retries. Apply bounded exponential backoff with jitter and preserve fairness so one failing Source cannot starve the rest. When persisted retries are implemented they become the P1 queue class between manual work and overdue scheduled work.
+
+If multiple Sources share one provider account, a later connector-account limiter should prevent source-level parallelism from multiplying the provider's effective API request rate beyond the account policy.
 
 ## Deletion semantics
 
@@ -420,8 +420,8 @@ Legend: **Current** = implemented in master; **Foundation** = model/parser exist
 | Full reconciliation | Current | Current | Current |
 | Reliable incremental cursor | TODO if API proven | TODO if API proven | TODO event/API capability |
 | Durable cancellation | Current | Current | Current |
-| Multi-source bounded parallelism | TODO | TODO | N/A for central Pull runner; agent scheduling separate |
-| Manual task priority | Due override exists; priority queue TODO | Due override exists; priority queue TODO | Pending manual request current |
+| Multi-source bounded parallelism | Current | Current | N/A for central Pull runner; agent scheduling separate |
+| Manual/overdue task priority | Current | Current | Pending manual request current |
 | Persisted fast retry scheduling | TODO | TODO | TODO where applicable |
 | Backup deletion safety | Current | Current | Current |
 | Mirror-to-trash mode | TODO | TODO | TODO |
@@ -436,7 +436,7 @@ The ordering prioritizes reliability and identity before feature breadth.
 
 | Phase | TODO | Priority |
 | --- | --- | --- |
-| P0 | Bounded multi-source Pull scheduler, manual/retry/overdue priority, persisted retry backoff | Highest |
+| P0 | Persisted retryable-failure priority/backoff; bounded multi-source scheduler plus manual/overdue priority are implemented | Highest |
 | P1 | `SourceItemAlias` model + planner alias resolution + migration tests | Highest |
 | P2 | Synology Push hybrid Photos-API semantic lane + filesystem fast path + no-duplicate canonical item-ID migration | Highest |
 | P3 | Source semantic capability declarations + normalized scalar/facet storage | High |
