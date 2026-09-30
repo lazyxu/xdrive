@@ -60,6 +60,7 @@ import {
   XDrivePaginationControls,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
+  XDriveSidebarStorageSummary,
   XDRIVE_SIDEBAR_COMPACT_WIDTH,
   XDRIVE_SIDEBAR_WIDTH,
   XDriveStatePanel,
@@ -671,6 +672,21 @@ export default function App() {
     // Navigation, search, mutations and Refresh perform explicit reloads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured])
+
+  useEffect(() => {
+    if (!agent.connected || !configured) return
+    let active = true
+    const refresh = async () => {
+      const result = await window.xdriveDesktop.agent.cloudQuota()
+      if (active && result.ok) setCloudQuota(result.data)
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 60_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [agent.connected, configured, status?.server, status?.username])
 
   const headline = useMemo(() => {
     if (!agent.connected) return 'xdrive-agent 未连接'
@@ -2360,6 +2376,14 @@ export default function App() {
         <XDriveSidebarNavList ariaLabel="桌面版辅助功能" className="sidebar-secondary">
           <XDriveSidebarNavItem appearance="dark" selected={view === 'diagnostics'} icon={<BuildRoundedIcon fontSize="small" />} primary="诊断" onClick={() => setView('diagnostics')} />
         </XDriveSidebarNavList>
+        {cloudQuota && (
+          <XDriveSidebarStorageSummary
+            appearance="dark"
+            usedBytes={cloudQuota.physical_used_bytes}
+            totalBytes={cloudQuota.quota_bytes}
+            sx={{ mt: 1.25 }}
+          />
+        )}
       </aside>
 
       <main className="content">

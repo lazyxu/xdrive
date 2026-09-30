@@ -79,8 +79,10 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
 })
 
 test('Web exposes files, Gallery, External Sources, and Storage as first-class workspace views', () => {
-  assert.match(webApp, /useState<'files' \| 'gallery' \| 'sources' \| 'storage'>\('files'\)/)
+  assert.ok(webApp.includes('type AppView ='), 'Web workspace view type should remain explicit')
+  assert.ok(webApp.includes("useState<AppView>('files')"), 'Files should remain the initial Web workspace')
   for (const view of ['files', 'gallery', 'sources', 'storage']) {
+    assert.ok(webApp.includes(`| '${view}'`), `AppView missing first-class workspace: ${view}`)
     assert.match(webApp, new RegExp(`selected=\\{appView === '${view}'\\}`))
   }
   assert.ok(webApp.includes('primary="文件"'))

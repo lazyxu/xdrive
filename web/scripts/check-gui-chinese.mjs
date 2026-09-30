@@ -18,6 +18,7 @@ const files = {
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
   accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),
   brandLockup: readRepo('ui/shared/src/mui/BrandLockup.tsx'),
+  sidebarStorageSummary: readRepo('ui/shared/src/mui/SidebarStorageSummary.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
@@ -50,6 +51,8 @@ requireText(files.app, ['XDriveActionButton', 'XDriveDialogTitle', 'XDriveDialog
 if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
 requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDrive 品牌图标')
 requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
+requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储空间', '不限配额', 'LinearProgress', 'percentageLabel'], '共享侧栏存储摘要')
+requireText(files.app, ['XDriveSidebarStorageSummary', 'usedBytes={quota.physical_used_bytes}', 'totalBytes={quota.quota_bytes}'], 'Web 侧栏存储摘要')
 requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountSummary', 'web-account-menu', '退出登录'], 'Web 账号菜单')
 requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', '<Avatar'], '共享账号 chrome')
 if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')
@@ -67,7 +70,7 @@ requireText(files.storageStats, ['WorkspaceSurface', "presentation = 'dialog'", 
 if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
-requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent'], '审计日志')
+requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveWorkspaceSurface', "presentation = 'dialog'", "const surfaceOpen = presentation === 'page' || open"], '审计日志')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveShareStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
 if (/<Alert\b/.test(files.share)) throw new Error('分享窗口仍在直接渲染 AntD Alert')

@@ -58,6 +58,7 @@ import {
   XDriveMediaGalleryPage,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
+  XDriveSidebarStorageSummary,
   XDriveStatePanel,
   XDriveWorkspaceSurface,
   XDRIVE_SIDEBAR_WIDTH,
@@ -98,6 +99,15 @@ type ConfirmAction = {
   intent?: 'primary' | 'danger' | 'warning'
   run: () => Promise<void>
 }
+
+type AppView =
+  | 'files'
+  | 'gallery'
+  | 'sources'
+  | 'storage'
+  | 'admin-users'
+  | 'admin-audit'
+  | 'admin-storage'
 
 function initialSession(): AuthSession {
   const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
@@ -372,10 +382,7 @@ function FileManager({
   const [renameNode, setRenameNode] = useState<Node | null>(null)
   const [renameName, setRenameName] = useState('')
   const [renameNameError, setRenameNameError] = useState('')
-  const [adminOpen, setAdminOpen] = useState(false)
-  const [auditOpen, setAuditOpen] = useState(false)
-  const [storageStatsScope, setStorageStatsScope] = useState<'self' | 'global' | null>(null)
-  const [appView, setAppView] = useState<'files' | 'gallery' | 'sources' | 'storage'>('files')
+  const [appView, setAppView] = useState<AppView>('files')
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
@@ -470,6 +477,22 @@ function FileManager({
     // api changes when auth tokens rotate; reload identity and data then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
+
+  useEffect(() => {
+    if (!profile || profile.must_change_password) return
+    const timer = window.setInterval(() => {
+      void api.quota()
+        .then(setQuota)
+        .catch(handleError)
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [api, handleError, profile?.id, profile?.must_change_password])
+
+  useEffect(() => {
+    if (profile && profile.role !== 'admin' && appView.startsWith('admin-')) {
+      setAppView('files')
+    }
+  }, [appView, profile])
 
   const executeConfirm = async () => {
     if (!confirmAction) return
@@ -698,6 +721,7 @@ function FileManager({
           display: { xs: 'block', md: 'grid' },
           gridTemplateColumns: { md: `${XDRIVE_SIDEBAR_WIDTH}px minmax(0, 1fr)` },
           minHeight: { md: 'calc(100vh - 64px)' },
+          height: { md: 'calc(100vh - 64px)' },
         }}
       >
         <Box
@@ -705,12 +729,15 @@ function FileManager({
           aria-label="网页端功能区"
           sx={{
             minWidth: 0,
+            display: { xs: 'block', md: 'flex' },
+            flexDirection: { md: 'column' },
             bgcolor: 'background.paper',
             borderRight: { xs: 0, md: 1 },
             borderBottom: { xs: 1, md: 0 },
             borderColor: 'divider',
             p: { xs: 1, md: 1.5 },
-            overflowX: { xs: 'auto', md: 'visible' },
+            overflowX: { xs: 'auto', md: 'hidden' },
+            overflowY: { md: 'auto' },
           }}
         >
           <XDriveSidebarNavList ariaLabel="网页端功能区导航" responsive>
@@ -721,7 +748,6 @@ function FileManager({
               selected={appView === 'storage'}
               icon={<StorageRoundedIcon fontSize="small" />}
               primary="存储"
-              secondary={quota ? `${formatSize(quota.physical_used_bytes)} / ${quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}` : undefined}
               onClick={() => setAppView('storage')}
             />
           </XDriveSidebarNavList>
@@ -747,15 +773,43 @@ function FileManager({
                 管理
               </Typography>
               <XDriveSidebarNavList ariaLabel="管理员功能" responsive>
-                <XDriveSidebarNavItem icon={<ManageAccountsRoundedIcon fontSize="small" />} primary="用户管理" onClick={() => setAdminOpen(true)} />
-                <XDriveSidebarNavItem icon={<AssessmentRoundedIcon fontSize="small" />} primary="审计日志" onClick={() => setAuditOpen(true)} />
-                <XDriveSidebarNavItem icon={<StorageRoundedIcon fontSize="small" />} primary="全局存储" onClick={() => setStorageStatsScope('global')} />
+                <XDriveSidebarNavItem
+                  selected={appView === 'admin-users'}
+                  icon={<ManageAccountsRoundedIcon fontSize="small" />}
+                  primary="用户管理"
+                  onClick={() => setAppView('admin-users')}
+                />
+                <XDriveSidebarNavItem
+                  selected={appView === 'admin-audit'}
+                  icon={<AssessmentRoundedIcon fontSize="small" />}
+                  primary="审计日志"
+                  onClick={() => setAppView('admin-audit')}
+                />
+                <XDriveSidebarNavItem
+                  selected={appView === 'admin-storage'}
+                  icon={<StorageRoundedIcon fontSize="small" />}
+                  primary="全局存储"
+                  onClick={() => setAppView('admin-storage')}
+                />
               </XDriveSidebarNavList>
+            </Box>
+          )}
+
+          {quota && (
+            <Box sx={{ display: { xs: 'none', md: 'block' }, mt: 'auto', pt: 1.5 }}>
+              <XDriveSidebarStorageSummary
+                usedBytes={quota.physical_used_bytes}
+                totalBytes={quota.quota_bytes}
+              />
             </Box>
           )}
         </Box>
 
-        <Box component="main" className="content-wrap" sx={{ minWidth: 0, width: '100%' }}>
+        <Box
+          component="main"
+          className="content-wrap"
+          sx={{ minWidth: 0, width: '100%', overflowY: { md: 'auto' } }}
+        >
         {appView === 'files' ? (
           <XDriveWorkspaceSurface presentation="page" title="文件">
           <Paper className="file-card" variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 2 }}>
@@ -935,7 +989,7 @@ function FileManager({
             onClose={() => setAppView('files')}
             onError={handleError}
           />
-        ) : (
+        ) : appView === 'storage' ? (
           <StorageStatsModal
             api={api}
             scope="self"
@@ -943,6 +997,34 @@ function FileManager({
             presentation="page"
             onClose={() => setAppView('files')}
           />
+        ) : appView === 'admin-users' && profile?.role === 'admin' ? (
+          <AdminUsersPanel
+            api={api}
+            open
+            presentation="page"
+            currentUserID={profile.id}
+            onClose={() => setAppView('files')}
+            onChanged={() => { void refreshQuota() }}
+          />
+        ) : appView === 'admin-audit' && profile?.role === 'admin' ? (
+          <AdminAuditPanel
+            api={api}
+            open
+            presentation="page"
+            onClose={() => setAppView('files')}
+          />
+        ) : appView === 'admin-storage' && profile?.role === 'admin' ? (
+          <StorageStatsModal
+            api={api}
+            scope="global"
+            open
+            presentation="page"
+            onClose={() => setAppView('files')}
+          />
+        ) : (
+          <XDriveWorkspaceSurface presentation="page" title="文件">
+            <XDriveStatePanel variant="plain" loading message="正在切换工作区…" />
+          </XDriveWorkspaceSurface>
         )}
         </Box>
       </Box>
@@ -1174,26 +1256,6 @@ function FileManager({
       </Dialog>
 
       <ShareDialog api={api} node={shareNode} onClose={() => setShareNode(null)} onError={handleError} />
-
-      <StorageStatsModal
-        api={api}
-        scope={storageStatsScope ?? 'self'}
-        open={storageStatsScope !== null}
-        onClose={() => setStorageStatsScope(null)}
-      />
-
-      {profile?.role === 'admin' && (
-        <>
-          <AdminUsersPanel
-            api={api}
-            open={adminOpen}
-            currentUserID={profile.id}
-            onClose={() => setAdminOpen(false)}
-            onChanged={() => { void refreshQuota() }}
-          />
-          <AdminAuditPanel api={api} open={auditOpen} onClose={() => setAuditOpen(false)} />
-        </>
-      )}
 
       <Snackbar
         open={Boolean(feedback)}
