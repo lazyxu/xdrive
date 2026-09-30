@@ -80,6 +80,7 @@ var desktopIPCCapabilities = []string{
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
+	"open-path",
 	"lifecycle-shutdown",
 }
 
@@ -197,6 +198,7 @@ type desktopIPCController interface {
 	OpenConflict(id string, both bool) error
 	ResolveConflict(id, choice string) error
 	OpenFolder() error
+	OpenManagedPath(path string, reveal bool) error
 }
 
 type desktopIPCServer struct {
@@ -419,6 +421,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/conflicts/open", h.openConflict)
 	mux.HandleFunc("POST /v1/conflicts/resolve", h.resolveConflict)
 	mux.HandleFunc("POST /v1/open-folder", h.openFolder)
+	mux.HandleFunc("POST /v1/open-path", h.openPath)
 	mux.HandleFunc("POST /v1/lifecycle/shutdown", h.shutdownAgent)
 	return desktopIPCAuth(token, mux)
 }
@@ -1707,6 +1710,26 @@ func (h *desktopIPCHandler) resolveConflict(w http.ResponseWriter, r *http.Reque
 
 func (h *desktopIPCHandler) openFolder(w http.ResponseWriter, _ *http.Request) {
 	if err := h.ctrl.OpenFolder(); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) openPath(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Path   string `json:"path"`
+		Reveal bool   `json:"reveal"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Path = strings.TrimSpace(input.Path)
+	if input.Path == "" || filepath.IsAbs(input.Path) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_managed_path", "a relative xDrive path is required")
+		return
+	}
+	if err := h.ctrl.OpenManagedPath(input.Path, input.Reveal); err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}

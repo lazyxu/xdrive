@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 )
 
@@ -22,5 +23,5 @@ func openFilePlatform(path string) error {
 }
 
 func selectFilePlatform(path string) error {
-	return openFolderPlatform(path)
+	return openFolderPlatform(filepath.Dir(path))
 }

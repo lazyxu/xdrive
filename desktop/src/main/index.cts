@@ -1783,6 +1783,22 @@ function registerIPCHandlers() {
     }
   })
 
+  ipcMain.handle('agent:open-path', (_event, pathValue: unknown, revealValue: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'open-path')
+    if (typeof pathValue !== 'string') {
+      throw new AgentIPCError('invalid_input', 0, 'A relative xDrive path is required.')
+    }
+    const relativePath = pathValue.trim()
+    if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes('\0')) {
+      throw new AgentIPCError('invalid_input', 0, 'A safe relative xDrive path is required.')
+    }
+    if (revealValue !== undefined && typeof revealValue !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Reveal must be a boolean.')
+    }
+    return requireAgentClient().openPath(relativePath, revealValue === true)
+  }, false))
+
   ipcMain.handle('agent:cloud-search', (_event, query: unknown) => runAgentAction<AgentCloudSearchResult[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
