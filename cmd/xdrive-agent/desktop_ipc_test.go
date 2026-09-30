@@ -68,6 +68,21 @@ type fakeDesktopIPCController struct {
 	cacheRelease               mount.CacheReleaseResult
 	cloudRoot                  client.Node
 	cloudChildren              []client.Node
+	cloudCreatedDir            client.Node
+	cloudCreateParent          uint64
+	cloudCreateName            string
+	cloudRenamed               client.Node
+	cloudRenameID              uint64
+	cloudRenameRev             uint64
+	cloudRenameName            string
+	cloudMutationDeleteID      uint64
+	cloudMutationDeleteRev     uint64
+	cloudUploaded              client.Node
+	cloudUploadParent          uint64
+	cloudUploadPath            string
+	cloudUploadName            string
+	cloudDownloadID            uint64
+	cloudDownloadDestination   string
 	cloudSearch                []agentCloudSearchResult
 	cloudQuota                 client.QuotaUsage
 	cloudStorage               client.StorageStats
@@ -226,6 +241,31 @@ func (f *fakeDesktopIPCController) CloudRoot(context.Context) (client.Node, erro
 
 func (f *fakeDesktopIPCController) CloudList(context.Context, uint64) ([]client.Node, error) {
 	return append([]client.Node(nil), f.cloudChildren...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCreateDir(_ context.Context, parentID uint64, name string) (client.Node, error) {
+	f.cloudCreateParent, f.cloudCreateName = parentID, name
+	return f.cloudCreatedDir, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRename(_ context.Context, id, revision uint64, name string) (client.Node, error) {
+	f.cloudRenameID, f.cloudRenameRev, f.cloudRenameName = id, revision, name
+	return f.cloudRenamed, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDelete(_ context.Context, id, revision uint64) error {
+	f.cloudMutationDeleteID, f.cloudMutationDeleteRev = id, revision
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint64, localPath, name string) (client.Node, error) {
+	f.cloudUploadParent, f.cloudUploadPath, f.cloudUploadName = parentID, localPath, name
+	return f.cloudUploaded, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDownload(_ context.Context, id uint64, destination string) error {
+	f.cloudDownloadID, f.cloudDownloadDestination = id, destination
+	return f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSearch(context.Context, string) ([]agentCloudSearchResult, error) {
@@ -707,11 +747,14 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 			Path:   "Projects/report.pdf",
 			Crumbs: []agentCloudCrumb{{ID: 1, Name: "My files"}, {ID: 2, Name: "Projects"}},
 		}},
-		cloudQuota:    client.QuotaUsage{QuotaBytes: 1000, PhysicalUsedBytes: 400, AvailableBytes: 600, LogicalFileBytes: 300, TrashBytes: 50, HistoryBytes: 50},
-		cloudStorage:  client.StorageStats{Scope: "self", CASBlobCount: 9, CASPhysicalBytes: 400, CASLogicalReferencedBytes: 600, CASDedupSavedBytes: 200, CASDedupRatio: 1.5, P50BlobSizeBytes: 12},
-		cloudTrash:    []client.Node{{ID: 4, Name: "old.txt", Type: "file", Revision: 3, DeletedAt: &now}},
-		cloudVersions: []client.FileVersion{{ID: 5, NodeID: 3, Revision: 1, Size: 12, CreatedAt: now}},
-		cloudShares:   []client.FileShare{{ID: 6, NodeID: 3, Status: "active"}},
+		cloudCreatedDir: client.Node{ID: 8, ParentID: ptrUint64(1), Name: "New Folder", Type: "dir", Revision: 1},
+		cloudRenamed:    client.Node{ID: 3, ParentID: ptrUint64(2), Name: "renamed.pdf", Type: "file", Revision: 3},
+		cloudUploaded:   client.Node{ID: 9, ParentID: ptrUint64(2), Name: "upload.txt", Type: "file", Revision: 1},
+		cloudQuota:      client.QuotaUsage{QuotaBytes: 1000, PhysicalUsedBytes: 400, AvailableBytes: 600, LogicalFileBytes: 300, TrashBytes: 50, HistoryBytes: 50},
+		cloudStorage:    client.StorageStats{Scope: "self", CASBlobCount: 9, CASPhysicalBytes: 400, CASLogicalReferencedBytes: 600, CASDedupSavedBytes: 200, CASDedupRatio: 1.5, P50BlobSizeBytes: 12},
+		cloudTrash:      []client.Node{{ID: 4, Name: "old.txt", Type: "file", Revision: 3, DeletedAt: &now}},
+		cloudVersions:   []client.FileVersion{{ID: 5, NodeID: 3, Revision: 1, Size: 12, CreatedAt: now}},
+		cloudShares:     []client.FileShare{{ID: 6, NodeID: 3, Status: "active"}},
 		cloudCreated: agentCreatedShare{
 			Share: client.CreatedFileShare{FileShare: client.FileShare{ID: 7, NodeID: 3, Status: "active"}, Token: "token"},
 			URL:   "https://drive.example/#/s/token",
@@ -728,6 +771,11 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}{
 		{http.MethodGet, "/v1/cloud/root", "", "\"id\":1"},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1", "", "\"Projects\""},
+		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
+		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
+		{http.MethodDelete, "/v1/cloud/nodes", `{"id":3,"revision":2}`, "\"ok\":true"},
+		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
+		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodGet, "/v1/cloud/search?q=report", "", "\"Projects/report.pdf\""},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
@@ -748,6 +796,21 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)
+	}
+	if ctrl.cloudCreateParent != 1 || ctrl.cloudCreateName != "New Folder" {
+		t.Fatalf("cloud create not forwarded: parent=%d name=%q", ctrl.cloudCreateParent, ctrl.cloudCreateName)
+	}
+	if ctrl.cloudRenameID != 3 || ctrl.cloudRenameRev != 2 || ctrl.cloudRenameName != "renamed.pdf" {
+		t.Fatalf("cloud rename not forwarded: id=%d revision=%d name=%q", ctrl.cloudRenameID, ctrl.cloudRenameRev, ctrl.cloudRenameName)
+	}
+	if ctrl.cloudMutationDeleteID != 3 || ctrl.cloudMutationDeleteRev != 2 {
+		t.Fatalf("cloud delete not forwarded: id=%d revision=%d", ctrl.cloudMutationDeleteID, ctrl.cloudMutationDeleteRev)
+	}
+	if ctrl.cloudUploadParent != 2 || ctrl.cloudUploadPath != "/tmp/upload.txt" || ctrl.cloudUploadName != "upload.txt" {
+		t.Fatalf("cloud upload not forwarded: parent=%d path=%q name=%q", ctrl.cloudUploadParent, ctrl.cloudUploadPath, ctrl.cloudUploadName)
+	}
+	if ctrl.cloudDownloadID != 3 || ctrl.cloudDownloadDestination != "/tmp/report.pdf" {
+		t.Fatalf("cloud download not forwarded: id=%d destination=%q", ctrl.cloudDownloadID, ctrl.cloudDownloadDestination)
 	}
 }
 

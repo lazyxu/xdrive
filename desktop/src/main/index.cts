@@ -1690,6 +1690,96 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudChildren(parentID)
   }, false))
+  ipcMain.handle('agent:cloud-create-directory', (_event, parentID: unknown, name: unknown) => runAgentAction<AgentCloudNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0 ||
+        typeof name !== 'string' || !name.trim()) {
+      throw new AgentIPCError('invalid_input', 0, 'Parent node id and directory name are required.')
+    }
+    return requireAgentClient().cloudCreateDirectory(parentID, name.trim())
+  }, false))
+  ipcMain.handle('agent:cloud-rename', (_event, id: unknown, revision: unknown, name: unknown) => runAgentAction<AgentCloudNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+        typeof name !== 'string' || !name.trim()) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id, revision, and name are required.')
+    }
+    return requireAgentClient().cloudRename(id, revision, name.trim())
+  }, false))
+  ipcMain.handle('agent:cloud-delete', (_event, id: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id and revision are required.')
+    }
+    return requireAgentClient().cloudDelete(id, revision)
+  }, false))
+  ipcMain.handle('agent:cloud-upload-files', async (_event, parentID: unknown) => {
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Parent node id is required.' } }
+    }
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      const options: OpenDialogOptions = {
+        properties: ['openFile', 'multiSelections'],
+        title: '选择要上传到 xDrive 的文件',
+      }
+      const selected = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options)
+      if (selected.canceled || selected.filePaths.length === 0) {
+        return { ok: true, data: { canceled: true, uploaded: [], failures: [] } }
+      }
+
+      const uploaded: AgentCloudNode[] = []
+      const failures: Array<{ name: string; message: string }> = []
+      for (const localPath of selected.filePaths) {
+        const name = path.basename(localPath)
+        try {
+          uploaded.push(await requireAgentClient().cloudUpload(parentID, localPath, name))
+        } catch (error) {
+          failures.push({ name, message: agentError(error).message })
+        }
+      }
+      return { ok: true, data: { canceled: false, uploaded, failures } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+  ipcMain.handle('agent:cloud-download', async (_event, id: unknown, name: unknown) => {
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof name !== 'string' || !name.trim()) {
+      return { ok: false, error: { code: 'invalid_input', message: 'File id and name are required.' } }
+    }
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      const rawName = path.basename(name.trim())
+      const safeName = process.platform === 'win32'
+        ? rawName.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+        : rawName
+      const options = {
+        title: '下载 xDrive 文件',
+        defaultPath: path.join(app.getPath('downloads'), safeName || 'download'),
+      }
+      const selected = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options)
+      if (selected.canceled || !selected.filePath) {
+        return { ok: true, data: { saved: false } }
+      }
+      await requireAgentClient().cloudDownload(id, selected.filePath)
+      return { ok: true, data: { saved: true } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+
   ipcMain.handle('agent:cloud-search', (_event, query: unknown) => runAgentAction<AgentCloudSearchResult[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
