@@ -1,29 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
-import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import {
   Box,
   Dialog,
-  InputAdornment,
   LinearProgress,
-  Stack,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
-  TextField,
   Typography,
 } from '@mui/material'
 import {
   XDriveActionButton,
+  XDriveCreatedShareLink,
   XDriveDialogContent,
   XDriveDialogTitle,
   XDriveFeedbackSnackbar,
   XDriveSectionHeader,
+  XDriveShareCreateFields,
   XDriveShareStatusBadge,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -177,83 +174,37 @@ export default function ShareDialog({
           </XDriveStatusAlert>
 
           {createdLink && (
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2.25 }}>
-              <TextField
-                fullWidth
-                size="small"
-                value={createdLink}
-                aria-label="新创建的分享链接"
-                slotProps={{
-                  input: {
-                    readOnly: true,
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LinkRoundedIcon fontSize="small" />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-              <XDriveActionButton startIcon={<ContentCopyRoundedIcon />} onClick={() => void copyCreatedLink()}>
-                复制
-              </XDriveActionButton>
-            </Stack>
+            <XDriveCreatedShareLink
+              value={createdLink}
+              onCopy={() => void copyCreatedLink()}
+              sx={{ mb: 2.25 }}
+            />
           )}
 
           <XDriveSectionHeader level="h3" title="创建下载链接" sx={{ mb: 1.5 }} />
           <Box component="form" onSubmit={(event) => void create(event)}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'flex-start' }}>
-              <TextField
-                size="small"
-                type="datetime-local"
-                label="过期时间"
-                value={expiresAt}
-                error={Boolean(expiryError)}
-                helperText={expiryError || ' '}
-                onChange={(event) => {
-                  setExpiresAt(event.target.value)
-                  if (expiryError) setExpiryError('')
-                }}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ minWidth: { md: 220 } }}
-              />
-              <TextField
-                size="small"
-                type="number"
-                label="最大下载次数"
-                value={maxDownloads}
-                helperText="0 表示不限"
-                onChange={(event) => {
-                  const parsed = Number.parseInt(event.target.value || '0', 10)
-                  setMaxDownloads(Number.isFinite(parsed) ? Math.max(0, parsed) : 0)
-                }}
-                slotProps={{ htmlInput: { min: 0, step: 1 } }}
-                sx={{ width: { md: 180 } }}
-              />
-              <TextField
-                size="small"
-                type="password"
-                label="密码（可选）"
-                value={password}
-                error={Boolean(passwordError)}
-                helperText={passwordError || ' '}
-                autoComplete="new-password"
-                onChange={(event) => {
-                  setPassword(event.target.value)
-                  if (passwordError) setPasswordError('')
-                }}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LockRoundedIcon fontSize="small" />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-                sx={{ minWidth: { md: 220 } }}
-              />
-            </Stack>
+            <XDriveShareCreateFields
+              expiryMode="datetime"
+              expiryValue={expiresAt}
+              expiryError={Boolean(expiryError)}
+              expiryHelperText={expiryError || ' '}
+              onExpiryChange={(value) => {
+                setExpiresAt(value)
+                if (expiryError) setExpiryError('')
+              }}
+              maxDownloadsValue={maxDownloads}
+              onMaxDownloadsChange={(value) => {
+                const parsed = Number.parseInt(value || '0', 10)
+                setMaxDownloads(Number.isFinite(parsed) ? Math.max(0, parsed) : 0)
+              }}
+              password={password}
+              passwordError={Boolean(passwordError)}
+              passwordHelperText={passwordError || ' '}
+              onPasswordChange={(value) => {
+                setPassword(value)
+                if (passwordError) setPasswordError('')
+              }}
+            />
             <XDriveActionButton
               intent="primary"
               type="submit"
