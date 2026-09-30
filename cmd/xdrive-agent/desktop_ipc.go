@@ -146,6 +146,11 @@ type desktopIPCController interface {
 	ReleaseReclaimableCache() (mount.CacheReleaseResult, error)
 	CloudRoot(context.Context) (client.Node, error)
 	CloudList(context.Context, uint64) ([]client.Node, error)
+	CloudCreateDir(context.Context, uint64, string) (client.Node, error)
+	CloudRename(context.Context, uint64, uint64, string) (client.Node, error)
+	CloudDelete(context.Context, uint64, uint64) error
+	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
+	CloudDownload(context.Context, uint64, string) error
 	CloudSearch(context.Context, string) ([]agentCloudSearchResult, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudStorageStats(context.Context) (client.StorageStats, error)
@@ -362,6 +367,11 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
+	mux.HandleFunc("POST /v1/cloud/directories", h.cloudCreateDir)
+	mux.HandleFunc("PATCH /v1/cloud/nodes", h.cloudRename)
+	mux.HandleFunc("DELETE /v1/cloud/nodes", h.cloudDelete)
+	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
+	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
@@ -742,6 +752,111 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudCreateDir(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ParentID uint64 `json:"parent_id"`
+		Name     string `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if input.ParentID == 0 || input.Name == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_directory", "parent_id and name are required")
+		return
+	}
+	node, err := h.ctrl.CloudCreateDir(r.Context(), input.ParentID, input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudRename(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID       uint64 `json:"id"`
+		Revision uint64 `json:"revision"`
+		Name     string `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if input.ID == 0 || input.Revision == 0 || input.Name == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_rename", "id, revision, and name are required")
+		return
+	}
+	node, err := h.ctrl.CloudRename(r.Context(), input.ID, input.Revision, input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudDelete(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID       uint64 `json:"id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 || input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_delete", "id and revision are required")
+		return
+	}
+	if err := h.ctrl.CloudDelete(r.Context(), input.ID, input.Revision); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudUpload(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ParentID  uint64 `json:"parent_id"`
+		LocalPath string `json:"local_path"`
+		Name      string `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.LocalPath = strings.TrimSpace(input.LocalPath)
+	input.Name = strings.TrimSpace(input.Name)
+	if input.ParentID == 0 || input.LocalPath == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_upload", "parent_id and local_path are required")
+		return
+	}
+	node, err := h.ctrl.CloudUpload(r.Context(), input.ParentID, input.LocalPath, input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudDownload(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID          uint64 `json:"id"`
+		Destination string `json:"destination"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Destination = strings.TrimSpace(input.Destination)
+	if input.ID == 0 || input.Destination == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_download", "id and destination are required")
+		return
+	}
+	if err := h.ctrl.CloudDownload(r.Context(), input.ID, input.Destination); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) {

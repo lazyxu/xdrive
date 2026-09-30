@@ -770,6 +770,33 @@ export class AgentIPCClient {
     return this.request<AgentCloudNode[]>('GET', `/v1/cloud/children?${query.toString()}`)
   }
 
+  cloudCreateDirectory(parentID: number, name: string) {
+    return this.request<AgentCloudNode>('POST', '/v1/cloud/directories', { parent_id: parentID, name }, 45_000)
+  }
+
+  cloudRename(id: number, revision: number, name: string) {
+    return this.request<AgentCloudNode>('PATCH', '/v1/cloud/nodes', { id, revision, name }, 45_000)
+  }
+
+  cloudDelete(id: number, revision: number) {
+    return this.request<{ ok: boolean }>('DELETE', '/v1/cloud/nodes', { id, revision }, 45_000)
+  }
+
+  cloudUpload(parentID: number, localPath: string, name: string) {
+    return this.request<AgentCloudNode>('POST', '/v1/cloud/upload', {
+      parent_id: parentID,
+      local_path: localPath,
+      name,
+    }, 6 * 60 * 60 * 1000)
+  }
+
+  cloudDownload(id: number, destination: string) {
+    return this.request<{ ok: boolean }>('POST', '/v1/cloud/download', {
+      id,
+      destination,
+    }, 6 * 60 * 60 * 1000)
+  }
+
   cloudSearch(queryText: string) {
     const query = new URLSearchParams({ q: queryText })
     return this.request<AgentCloudSearchResult[]>('GET', `/v1/cloud/search?${query.toString()}`, undefined, 45_000)

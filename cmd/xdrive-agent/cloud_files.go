@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -61,6 +64,168 @@ func (c *agentController) CloudList(ctx context.Context, parentID uint64) ([]cli
 		return nil, err
 	}
 	return cli.List(ctx, parentID)
+}
+
+func (c *agentController) CloudCreateDir(ctx context.Context, parentID uint64, name string) (client.Node, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.Node{}, err
+	}
+	name = strings.TrimSpace(name)
+	if parentID == 0 || name == "" {
+		return client.Node{}, fmt.Errorf("parent id and directory name are required")
+	}
+	node, err := cli.CreateDir(ctx, parentID, name)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return node, err
+}
+
+func (c *agentController) CloudRename(ctx context.Context, id, revision uint64, name string) (client.Node, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.Node{}, err
+	}
+	name = strings.TrimSpace(name)
+	if id == 0 || revision == 0 || name == "" {
+		return client.Node{}, fmt.Errorf("node id, revision, and name are required")
+	}
+	node, err := cli.RenameMove(ctx, id, revision, &name, nil)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return node, err
+}
+
+func (c *agentController) CloudDelete(ctx context.Context, id, revision uint64) error {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	if id == 0 || revision == 0 {
+		return fmt.Errorf("node id and revision are required")
+	}
+	if err := cli.Delete(ctx, id, revision); err != nil {
+		return err
+	}
+	c.requestCloudSync(cfg)
+	return nil
+}
+
+func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, localPath, name string) (client.Node, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.Node{}, err
+	}
+	localPath = filepath.Clean(strings.TrimSpace(localPath))
+	if parentID == 0 || localPath == "." || !filepath.IsAbs(localPath) {
+		return client.Node{}, fmt.Errorf("parent id and absolute local path are required")
+	}
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return client.Node{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return client.Node{}, fmt.Errorf("upload path must reference a regular file")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = filepath.Base(localPath)
+	}
+	node, err := cli.UploadFile(ctx, parentID, localPath, name)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return node, err
+}
+
+func (c *agentController) CloudDownload(ctx context.Context, id uint64, destination string) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	destination = filepath.Clean(strings.TrimSpace(destination))
+	if id == 0 || destination == "." || !filepath.IsAbs(destination) {
+		return fmt.Errorf("node id and absolute destination path are required")
+	}
+	parent := filepath.Dir(destination)
+	if info, statErr := os.Stat(parent); statErr != nil {
+		return statErr
+	} else if !info.IsDir() {
+		return fmt.Errorf("download destination parent is not a directory")
+	}
+
+	tmp, err := os.CreateTemp(parent, ".xdrive-download-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		cleanup()
+		return err
+	}
+	if err := cli.DownloadTo(ctx, id, tmp); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := replaceDownloadedFile(tmpPath, destination); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func replaceDownloadedFile(stagedPath, destination string) error {
+	info, err := os.Stat(destination)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return os.Rename(stagedPath, destination)
+		}
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("download destination is a directory")
+	}
+
+	parent := filepath.Dir(destination)
+	backup, err := os.CreateTemp(parent, ".xdrive-download-backup-*")
+	if err != nil {
+		return err
+	}
+	backupPath := backup.Name()
+	if err := backup.Close(); err != nil {
+		_ = os.Remove(backupPath)
+		return err
+	}
+	if err := os.Remove(backupPath); err != nil {
+		return err
+	}
+
+	if err := os.Rename(destination, backupPath); err != nil {
+		return err
+	}
+	if err := os.Rename(stagedPath, destination); err != nil {
+		restoreErr := os.Rename(backupPath, destination)
+		if restoreErr != nil {
+			return fmt.Errorf("replace downloaded file: %w; restore original: %v", err, restoreErr)
+		}
+		return err
+	}
+	_ = os.Remove(backupPath)
+	return nil
 }
 
 func (c *agentController) CloudSearch(ctx context.Context, query string) ([]agentCloudSearchResult, error) {

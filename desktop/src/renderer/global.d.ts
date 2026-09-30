@@ -203,6 +203,11 @@ declare global {
     path: string
     crumbs: AgentCloudCrumb[]
   }
+  type AgentCloudUploadBatchResult = {
+    canceled: boolean
+    uploaded: AgentCloudNode[]
+    failures: Array<{ name: string; message: string }>
+  }
 
   type AgentDiagnosticCheck = {
     name: string
@@ -291,6 +296,11 @@ declare global {
         triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>
         cloudRoot: () => Promise<DesktopResult<AgentCloudNode>>
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
+        cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
+        cloudRename: (id: number, revision: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
+        cloudDelete: (id: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
+        cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>
         cloudSearch: (query: string) => Promise<DesktopResult<AgentCloudSearchResult[]>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>
