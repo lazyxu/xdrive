@@ -76,6 +76,7 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceFailureItem,
+  XDriveSourceKindIcon,
   XDriveSourceSummaryCard,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
@@ -3030,7 +3031,8 @@ export default function App() {
                     <XDriveSourceSummaryCard
                       key={row.source.id}
                       name={row.source.name}
-                      modeLabel={card.modeLabel}
+                      icon={<XDriveSourceKindIcon kind={row.source.kind} />}
+                      modeLabel={`${card.connector.label} · ${card.modeLabel}`}
                       statusTone={card.state.tone}
                       statusLabel={card.state.label}
                       activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}

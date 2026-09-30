@@ -440,6 +440,17 @@ export function externalSourceConnectorProfile(kind: string, direction?: Externa
       defaultIgnoreRules: '',
     }
   }
+  if (kind === 'synology_files') {
+    return {
+      kind,
+      label: '群晖 File Station',
+      direction: 'pull',
+      credential: 'synology_dsm',
+      manualTriggerExecutor: 'pull_worker',
+      defaultName: '群晖 File Station',
+      defaultIgnoreRules: '',
+    }
+  }
   if (kind === 'synology_photos' && direction === 'pull') {
     return {
       kind,

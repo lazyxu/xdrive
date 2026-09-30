@@ -44,6 +44,7 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceFailureItem,
+  XDriveSourceKindIcon,
   XDriveSourceSummaryCard,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
@@ -1041,7 +1042,8 @@ export default function ExternalSourcesPanel({
                 <XDriveSourceSummaryCard
                   key={row.source.id}
                   name={row.source.name}
-                  modeLabel={card.modeLabel}
+                  icon={<XDriveSourceKindIcon kind={row.source.kind} />}
+                  modeLabel={`${card.connector.label} · ${card.modeLabel}`}
                   statusTone={card.state.tone}
                   statusLabel={card.state.label}
                   activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
@@ -1117,7 +1119,12 @@ export default function ExternalSourcesPanel({
               </XDriveStatusAlert>
             )}
             <SourceDescriptionGrid>
-              <SourceDescriptionItem label="来源类型">{selectedDetail.kindLabel}</SourceDescriptionItem>
+              <SourceDescriptionItem label="来源类型">
+                <Stack direction="row" spacing={0.75} alignItems="center">
+                  <XDriveSourceKindIcon kind={selected.source.kind} size="small" />
+                  <span>{selectedDetail.kindLabel}</span>
+                </Stack>
+              </SourceDescriptionItem>
               <SourceDescriptionItem label="工作方式">{selectedDetail.modeLabel}</SourceDescriptionItem>
               <SourceDescriptionItem label="状态">
                 <XDriveStatusBadge tone={selectedDetail.state.tone} label={selectedDetail.state.label} />
@@ -1459,7 +1466,10 @@ export default function ExternalSourcesPanel({
               helperText={createOption.description}
             >
               {externalSourceCreateOptions.map((item) => (
-                <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
+                <MenuItem key={item.value} value={item.value} sx={{ gap: 1 }}>
+                  <XDriveSourceKindIcon kind={item.kind} size="small" title={item.label} />
+                  <ListItemText primary={item.label} />
+                </MenuItem>
               ))}
             </TextField>
             <TextField
