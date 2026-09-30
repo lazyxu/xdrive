@@ -730,22 +730,7 @@ function FileManager({
             <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
             <Typography variant="h6" fontWeight={700}>xDrive</Typography>
           </div>
-          <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap" justifyContent="flex-end">
-            {profile?.role === 'admin' && (
-              <>
-                <Button color="inherit" size="small" startIcon={<ManageAccountsRoundedIcon />} onClick={() => setAdminOpen(true)}>
-                  用户管理
-                </Button>
-                <Button color="inherit" size="small" startIcon={<AssessmentRoundedIcon />} onClick={() => setAuditOpen(true)}>
-                  审计日志
-                </Button>
-                <Button color="inherit" size="small" startIcon={<StorageRoundedIcon />} onClick={() => setStorageStatsScope('global')}>
-                  全局存储
-                </Button>
-              </>
-            )}
-            <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
-          </Stack>
+          <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
         </Toolbar>
       </AppBar>
 
@@ -816,6 +801,52 @@ function FileManager({
               />
             </ListItemButton>
           </List>
+
+          {profile?.role === 'admin' && (
+            <Box
+              sx={{
+                mt: { xs: 0, md: 1.5 },
+                ml: { xs: 1, md: 0 },
+                pt: { xs: 0, md: 1.5 },
+                pl: { xs: 1, md: 0 },
+                borderTop: { xs: 0, md: 1 },
+                borderLeft: { xs: 1, md: 0 },
+                borderColor: 'divider',
+              }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                fontWeight={700}
+                sx={{ display: { xs: 'none', md: 'block' }, px: 1.25, pb: 0.75 }}
+              >
+                管理
+              </Typography>
+              <List
+                component="nav"
+                aria-label="管理员功能"
+                disablePadding
+                sx={{
+                  display: { xs: 'flex', md: 'grid' },
+                  gap: 0.5,
+                  minWidth: { xs: 'max-content', md: 0 },
+                }}
+              >
+                <ListItemButton onClick={() => setAdminOpen(true)} sx={webSidebarItemSx}>
+                  <ListItemIcon sx={webSidebarIconSx}><ManageAccountsRoundedIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText primary="用户管理" sx={webSidebarTextSx} />
+                </ListItemButton>
+                <ListItemButton onClick={() => setAuditOpen(true)} sx={webSidebarItemSx}>
+                  <ListItemIcon sx={webSidebarIconSx}><AssessmentRoundedIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText primary="审计日志" sx={webSidebarTextSx} />
+                </ListItemButton>
+                <ListItemButton onClick={() => setStorageStatsScope('global')} sx={webSidebarItemSx}>
+                  <ListItemIcon sx={webSidebarIconSx}><StorageRoundedIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText primary="全局存储" sx={webSidebarTextSx} />
+                </ListItemButton>
+              </List>
+            </Box>
+          )}
         </Box>
 
         <Box component="main" className="content-wrap" sx={{ minWidth: 0, width: '100%' }}>
