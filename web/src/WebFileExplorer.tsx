@@ -47,6 +47,7 @@ export default function WebFileExplorer({
   uploadProgress,
   onLoadDirectory,
   onUploadFiles,
+  onUploadDroppedFiles,
   onCreateFolder,
   onOpenTrash,
   onRename,
@@ -65,6 +66,7 @@ export default function WebFileExplorer({
   uploadProgress: number | null
   onLoadDirectory: (id: number, crumbs: Crumb[]) => Promise<void>
   onUploadFiles: (files: FileList | null) => Promise<void>
+  onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onCreateFolder: () => void
   onOpenTrash: () => void
   onRename: (node: Node) => void
@@ -353,6 +355,40 @@ export default function WebFileExplorer({
     }
   }
 
+  const dropItemsToFolder = async (
+    selected: XDriveFileExplorerItem[],
+    target: XDriveFileExplorerItem,
+    operation: 'move' | 'copy',
+  ) => {
+    const targetNode = nodeByID.get(Number(target.id))
+    if (!targetNode || targetNode.type !== 'dir' || clipboardBusy) return
+    const nodes = explorerNodesForItems(selected).filter((node) => node.id !== targetNode.id)
+    if (nodes.length === 0) return
+    setClipboardBusy(true)
+    try {
+      for (const node of nodes) {
+        if (operation === 'copy') await api.copy(node.id, targetNode.id)
+        else await api.move(node.id, node.revision, targetNode.id)
+      }
+      clearSearch()
+      if (current) await onLoadDirectory(current.id, crumbs)
+      await onQuotaChanged()
+      onFeedback('good', operation === 'copy' ? '已复制到目标文件夹。' : '已移动到目标文件夹。')
+    } catch (error) {
+      onError(error)
+    } finally {
+      setClipboardBusy(false)
+    }
+  }
+
+  const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
+    if (!current || files.length === 0) return
+    const targetNode = target ? nodeByID.get(Number(target.id)) : undefined
+    const parentID = targetNode?.type === 'dir' ? targetNode.id : current.id
+    await onUploadDroppedFiles(parentID, files)
+    if (current) await onLoadDirectory(current.id, crumbs)
+  }
+
   const backgroundMenuItems = useMemo<XDriveFileExplorerMenuItem[]>(() => [
     {
       id: 'new-folder',
@@ -440,6 +476,8 @@ export default function WebFileExplorer({
           const nodes = explorerNodesForItems(selected)
           if (nodes.length > 0) onRemoveMany(nodes)
         }}
+        onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
+        onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, UIEvent } from 'react'
+import type { DragEvent as ReactDragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, UIEvent } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
@@ -299,6 +299,8 @@ export function XDriveFileExplorer({
   canPaste = false,
   onDownloadItems,
   onDeleteItems,
+  onDropItemsToFolder,
+  onExternalFilesDrop,
   getItemMenuItems,
   backgroundMenuItems = [],
   viewMode: controlledViewMode,
@@ -341,6 +343,8 @@ export function XDriveFileExplorer({
   canPaste?: boolean
   onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
   onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
+  onDropItemsToFolder?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerItem, operation: 'move' | 'copy') => void
+  onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void
   getItemMenuItems?: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
   backgroundMenuItems?: XDriveFileExplorerMenuItem[]
   viewMode?: XDriveFileExplorerViewMode
@@ -371,6 +375,8 @@ export function XDriveFileExplorer({
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
+  const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
 
   const viewMode = controlledViewMode ?? internalViewMode
   const sort = controlledSort ?? internalSort
@@ -562,6 +568,61 @@ export function XDriveFileExplorer({
       mouseY: event.clientY - 6,
       items: menuItems,
     })
+  }
+
+  const startItemDrag = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
+    if (!onDropItemsToFolder) return
+    const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
+      ? selectedItems
+      : [item]
+    if (!selectedKeySet.has(explorerIDKey(item.id))) {
+      commitSelection([item.id])
+      setSelectionAnchorID(item.id)
+    }
+    setDraggedItems(selection)
+    event.dataTransfer.effectAllowed = 'copyMove'
+    event.dataTransfer.setData('application/x-xdrive-fileexplorer', '1')
+  }
+
+  const endItemDrag = () => {
+    setDraggedItems([])
+    setDropTargetID(null)
+  }
+
+  const dragOverFolder = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
+    const external = event.dataTransfer.types.includes('Files')
+    const internal = draggedItems.length > 0
+    if (item.kind !== 'dir' || (!external && !internal)) return
+    if (internal && draggedItems.some((candidate) => explorerIDKey(candidate.id) === explorerIDKey(item.id))) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = internal && (event.ctrlKey || event.metaKey) ? 'copy' : external ? 'copy' : 'move'
+    setDropTargetID(item.id)
+  }
+
+  const dropOnFolder = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'dir') return
+    event.preventDefault()
+    event.stopPropagation()
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length > 0 && onExternalFilesDrop) {
+      onExternalFilesDrop(files, item)
+      endItemDrag()
+      return
+    }
+    if (draggedItems.length > 0 && onDropItemsToFolder) {
+      const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'
+      onDropItemsToFolder(draggedItems, item, operation)
+    }
+    endItemDrag()
+  }
+
+  const dropExternalFilesOnBackground = (event: ReactDragEvent<HTMLElement>) => {
+    if (!onExternalFilesDrop || !event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length > 0) onExternalFilesDrop(files)
+    endItemDrag()
   }
 
   const contextMenuItems = contextMenu?.items ?? []
@@ -978,6 +1039,13 @@ export function XDriveFileExplorer({
           if (!target.closest('[data-xdrive-file-explorer-item]')) clearSelection()
         }}
         onContextMenu={openBackgroundContextMenu}
+        onDragOver={(event) => {
+          if (onExternalFilesDrop && event.dataTransfer.types.includes('Files')) {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'copy'
+          }
+        }}
+        onDrop={dropExternalFilesOnBackground}
         onKeyDown={(event) => {
           const modifier = event.ctrlKey || event.metaKey
           const key = event.key.toLowerCase()
@@ -1053,6 +1121,14 @@ export function XDriveFileExplorer({
                 data-xdrive-file-explorer-item
                 tabIndex={0}
                 aria-selected={selected}
+                draggable={Boolean(onDropItemsToFolder)}
+                onDragStart={(event) => startItemDrag(event, item)}
+                onDragEnd={endItemDrag}
+                onDragOver={(event) => dragOverFolder(event, item)}
+                onDragLeave={() => {
+                  if (dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)) setDropTargetID(null)
+                }}
+                onDrop={(event) => dropOnFolder(event, item)}
                 onClick={(event) => selectItem(event, item, index)}
                 onDoubleClick={() => onOpenItem?.(item)}
                 onContextMenu={(event) => openItemContextMenu(event, item)}
@@ -1066,7 +1142,12 @@ export function XDriveFileExplorer({
                   px: 1.5,
                   textAlign: 'left',
                   borderRadius: '4px',
-                  bgcolor: selected ? 'action.selected' : 'transparent',
+                  bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+                    ? 'action.hover'
+                    : selected ? 'action.selected' : 'transparent',
+                  outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? '2px solid' : undefined,
+                  outlineColor: 'primary.main',
+                  outlineOffset: -2,
                   '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                   '&:focus-visible': {
                     outline: '2px solid',
@@ -1124,6 +1205,14 @@ export function XDriveFileExplorer({
                 data-xdrive-file-explorer-item
                 tabIndex={0}
                 aria-selected={selected}
+                draggable={Boolean(onDropItemsToFolder)}
+                onDragStart={(event) => startItemDrag(event, item)}
+                onDragEnd={endItemDrag}
+                onDragOver={(event) => dragOverFolder(event, item)}
+                onDragLeave={() => {
+                  if (dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)) setDropTargetID(null)
+                }}
+                onDrop={(event) => dropOnFolder(event, item)}
                 onClick={(event) => selectItem(event, item, index)}
                 onDoubleClick={() => onOpenItem?.(item)}
                 onContextMenu={(event) => openItemContextMenu(event, item)}
@@ -1139,7 +1228,12 @@ export function XDriveFileExplorer({
                   justifyContent: 'flex-start',
                   gap: 0.75,
                   textAlign: 'center',
-                  bgcolor: selected ? 'action.selected' : 'transparent',
+                  bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+                    ? 'action.hover'
+                    : selected ? 'action.selected' : 'transparent',
+                  outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? '2px solid' : undefined,
+                  outlineColor: 'primary.main',
+                  outlineOffset: -2,
                   contentVisibility: 'auto',
                   containIntrinsicSize: '132px 128px',
                   '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },

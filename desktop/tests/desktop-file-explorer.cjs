@@ -128,3 +128,12 @@ test('Desktop FileExplorer supports bulk download and delete', () => {
   assert.ok(app.includes('const removeCloudNodes = (nodes: AgentCloudNode[]) => {'), 'Desktop bulk delete confirmation flow is missing')
   assert.ok(app.includes('for (const node of nodes) {'), 'Desktop bulk delete should process every selected node')
 })
+
+test('Desktop FileExplorer supports internal and external drag and drop', () => {
+  assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Desktop internal drag/drop helper is missing')
+  assert.ok(explorer.includes("operation === 'copy'"), 'Desktop drag/drop operation selection is missing')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCopy(node.id, targetNode.id)'), 'Desktop Ctrl/Cmd drag should copy')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudMove(node.id, node.revision, targetNode.id)'), 'Desktop normal drag should move')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
+  assert.ok(explorer.includes('onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
+})
