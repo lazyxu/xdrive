@@ -64,6 +64,8 @@ import {
   XDriveDialogTitle,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
+  XDriveMetricCard,
+  XDriveMetricGrid,
   XDrivePageHeader,
   XDrivePaginationControls,
   XDriveSidebarNavItem,
@@ -3896,13 +3898,23 @@ export default function App() {
                     <span>当前账号的有效内容、回收站与历史版本占用</span>
                   </div>
                 </div>
-                <div className="cloud-quota-grid">
-                  <div><span>物理占用</span><strong>{formatBinarySize(cloudQuota.physical_used_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? `配额 ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}</small></div>
-                  <div><span>可用空间</span><strong>{formatBinarySize(cloudQuota.available_bytes)}</strong><small>{cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'}</small></div>
-                  <div><span>当前文件</span><strong>{formatBinarySize(cloudQuota.logical_file_bytes)}</strong><small>有效逻辑内容</small></div>
-                  <div><span>回收站</span><strong>{formatBinarySize(cloudQuota.trash_bytes)}</strong><small>计入物理配额</small></div>
-                  <div><span>历史版本</span><strong>{formatBinarySize(cloudQuota.history_bytes)}</strong><small>已保存的历史内容</small></div>
-                </div>
+                <MuiBox sx={{ p: 1.5 }}>
+                  <XDriveMetricGrid>
+                    <XDriveMetricCard
+                      title="物理占用"
+                      value={formatBinarySize(cloudQuota.physical_used_bytes)}
+                      suffix={cloudQuota.quota_bytes > 0 ? `配额 ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}
+                    />
+                    <XDriveMetricCard
+                      title="可用空间"
+                      value={formatBinarySize(cloudQuota.available_bytes)}
+                      suffix={cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'}
+                    />
+                    <XDriveMetricCard title="当前文件" value={formatBinarySize(cloudQuota.logical_file_bytes)} suffix="有效逻辑内容" />
+                    <XDriveMetricCard title="回收站" value={formatBinarySize(cloudQuota.trash_bytes)} suffix="计入物理配额" />
+                    <XDriveMetricCard title="历史版本" value={formatBinarySize(cloudQuota.history_bytes)} suffix="已保存的历史内容" />
+                  </XDriveMetricGrid>
+                </MuiBox>
               </div>
             )}
 
@@ -3914,16 +3926,22 @@ export default function App() {
                     <span>用于评估 CDC 与 small-file packing 的真实收益</span>
                   </div>
                 </div>
-                <div className="cloud-quota-grid">
-                  <div><span>CAS Blob</span><strong>{cloudStorageStats.cas_blob_count.toLocaleString()}</strong><small>唯一物理对象</small></div>
-                  <div><span>CAS 物理容量</span><strong>{formatBinarySize(cloudStorageStats.cas_physical_bytes)}</strong><small>实际占用</small></div>
-                  <div><span>逻辑引用容量</span><strong>{formatBinarySize(cloudStorageStats.cas_logical_referenced_bytes)}</strong><small>含重复引用</small></div>
-                  <div><span>去重节省</span><strong>{formatBinarySize(cloudStorageStats.cas_dedup_saved_bytes)}</strong><small>{cloudStorageStats.cas_dedup_ratio.toFixed(2)}× · {(cloudStorageStats.cas_savings_ratio * 100).toFixed(1)}%</small></div>
-                  <div><span>平均 Blob</span><strong>{formatBinarySize(cloudStorageStats.average_blob_size_bytes)}</strong><small>算术平均</small></div>
-                  <div><span>P50</span><strong>{formatBinarySize(cloudStorageStats.p50_blob_size_bytes)}</strong><small>中位尺寸</small></div>
-                  <div><span>P90</span><strong>{formatBinarySize(cloudStorageStats.p90_blob_size_bytes)}</strong><small>90% Blob 不超过</small></div>
-                  <div><span>P99</span><strong>{formatBinarySize(cloudStorageStats.p99_blob_size_bytes)}</strong><small>99% Blob 不超过</small></div>
-                </div>
+                <MuiBox sx={{ p: 1.5 }}>
+                  <XDriveMetricGrid>
+                    <XDriveMetricCard title="CAS Blob" value={cloudStorageStats.cas_blob_count.toLocaleString()} suffix="唯一物理对象" />
+                    <XDriveMetricCard title="CAS 物理容量" value={formatBinarySize(cloudStorageStats.cas_physical_bytes)} suffix="实际占用" />
+                    <XDriveMetricCard title="逻辑引用容量" value={formatBinarySize(cloudStorageStats.cas_logical_referenced_bytes)} suffix="含重复引用" />
+                    <XDriveMetricCard
+                      title="去重节省"
+                      value={formatBinarySize(cloudStorageStats.cas_dedup_saved_bytes)}
+                      suffix={`${cloudStorageStats.cas_dedup_ratio.toFixed(2)}× · ${(cloudStorageStats.cas_savings_ratio * 100).toFixed(1)}%`}
+                    />
+                    <XDriveMetricCard title="平均 Blob" value={formatBinarySize(cloudStorageStats.average_blob_size_bytes)} suffix="算术平均" />
+                    <XDriveMetricCard title="P50" value={formatBinarySize(cloudStorageStats.p50_blob_size_bytes)} suffix="中位尺寸" />
+                    <XDriveMetricCard title="P90" value={formatBinarySize(cloudStorageStats.p90_blob_size_bytes)} suffix="90% Blob 不超过" />
+                    <XDriveMetricCard title="P99" value={formatBinarySize(cloudStorageStats.p99_blob_size_bytes)} suffix="99% Blob 不超过" />
+                  </XDriveMetricGrid>
+                </MuiBox>
                 <div className="cloud-compact-list">
                   {cloudStorageStats.buckets.map((bucket) => (
                     <div className="cloud-compact-row" key={bucket.key}>
@@ -3948,12 +3966,14 @@ export default function App() {
 
             {storagePoliciesSupported ? (cacheStats ? (
               <div className="cache-card">
-                <div className="cache-metrics">
-                  <div><span>已使用</span><strong>{formatBinarySize(cacheStats.used_bytes)}</strong><small>{cacheStats.cached_files} 个缓存文件</small></div>
-                  <div><span>上限</span><strong>{cacheStats.limit_bytes > 0 ? formatBinarySize(cacheStats.limit_bytes) : '不限'}</strong><small>固定内容受保护</small></div>
-                  <div><span>可释放</span><strong>{formatBinarySize(cacheStats.reclaimable_bytes)}</strong><small>{cacheStats.reclaimable_files} 个文件</small></div>
-                  <div><span>已固定</span><strong>{formatBinarySize(cacheStats.pinned_bytes)}</strong><small>{cacheStats.pinned_files} 个文件</small></div>
-                </div>
+                <MuiBox sx={{ p: 1.5 }}>
+                  <XDriveMetricGrid>
+                    <XDriveMetricCard title="已使用" value={formatBinarySize(cacheStats.used_bytes)} suffix={`${cacheStats.cached_files} 个缓存文件`} />
+                    <XDriveMetricCard title="上限" value={cacheStats.limit_bytes > 0 ? formatBinarySize(cacheStats.limit_bytes) : '不限'} suffix="固定内容受保护" />
+                    <XDriveMetricCard title="可释放" value={formatBinarySize(cacheStats.reclaimable_bytes)} suffix={`${cacheStats.reclaimable_files} 个文件`} />
+                    <XDriveMetricCard title="已固定" value={formatBinarySize(cacheStats.pinned_bytes)} suffix={`${cacheStats.pinned_files} 个文件`} />
+                  </XDriveMetricGrid>
+                </MuiBox>
                 {cacheStats.supported ? (
                   <div className="cache-actions">
                     <p>只会释放已完整同步且未固定的云端文件。“始终保留”的内容永远不会被回收。</p>
@@ -4238,16 +4258,16 @@ export default function App() {
                     {' '}{updateModeDescription(clientUpdate.mode)}
                     {!clientUpdate.install_supported ? ' 当前平台不会后台安装更新；下载后请使用系统包管理器完成安装。' : ''}
                   </p>
-                  <div className="update-metrics">
-                    <div><span>当前版本</span><strong>{clientUpdate.current_version || status?.version || '未知'}</strong></div>
-                    <div><span>最新版本</span><strong>{clientUpdate.latest_version || '尚未检查'}</strong></div>
-                    <div><span>状态</span><strong>{updateStatusLabel(clientUpdate)}</strong></div>
-                    <div><span>发布时间</span><strong>{clientUpdate.published_at ? new Date(clientUpdate.published_at).toLocaleString() : '未知'}</strong></div>
-                    <div><span>发布名称</span><strong>{clientUpdate.release_name || clientUpdate.latest_version || '—'}</strong></div>
-                    <div><span>安装包大小</span><strong>{clientUpdate.bytes_total ? formatBinarySize(clientUpdate.bytes_total) : '未知'}</strong></div>
-                    <div><span>更新通道</span><strong>{clientUpdate.channel || '—'}</strong></div>
-                    <div><span>上次检查</span><strong>{clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'}</strong></div>
-                  </div>
+                  <XDriveMetricGrid>
+                    <XDriveMetricCard title="当前版本" value={clientUpdate.current_version || status?.version || '未知'} />
+                    <XDriveMetricCard title="最新版本" value={clientUpdate.latest_version || '尚未检查'} />
+                    <XDriveMetricCard title="状态" value={updateStatusLabel(clientUpdate)} />
+                    <XDriveMetricCard title="发布时间" value={clientUpdate.published_at ? new Date(clientUpdate.published_at).toLocaleString() : '未知'} />
+                    <XDriveMetricCard title="发布名称" value={clientUpdate.release_name || clientUpdate.latest_version || '—'} />
+                    <XDriveMetricCard title="安装包大小" value={clientUpdate.bytes_total ? formatBinarySize(clientUpdate.bytes_total) : '未知'} />
+                    <XDriveMetricCard title="更新通道" value={clientUpdate.channel || '—'} />
+                    <XDriveMetricCard title="上次检查" value={clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'} />
+                  </XDriveMetricGrid>
                   {clientUpdate.release_notes ? (
                     <MuiBox sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
                       <Typography variant="subtitle2" sx={{ mb: 0.75 }}>发布说明</Typography>

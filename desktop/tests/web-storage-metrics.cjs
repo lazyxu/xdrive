@@ -7,6 +7,8 @@ const repoRoot = path.join(__dirname, '..', '..')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
+const desktopApp = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Web storage statistics use shared metric primitives', () => {
   assert.equal((storageStats.match(/<XDriveMetricGrid\b/g) || []).length, 4)
@@ -19,4 +21,16 @@ test('Web storage statistics use shared metric primitives', () => {
   assert.equal(metricCards.includes('XDriveSectionHeading'), false)
   assert.ok(sectionHeader.includes('component={level}'))
   assert.ok(sectionHeader.includes("level === 'h3'"))
+})
+
+
+test('Desktop storage and update statistics reuse shared metric primitives', () => {
+  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 4)
+  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 25)
+  assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)
+  assert.equal(desktopApp.includes('className="cache-metrics"'), false)
+  assert.equal(desktopApp.includes('className="update-metrics"'), false)
+  assert.equal(desktopStyles.includes('.cloud-quota-grid'), false)
+  assert.equal(desktopStyles.includes('.cache-metrics'), false)
+  assert.equal(desktopStyles.includes('.update-metrics'), false)
 })
