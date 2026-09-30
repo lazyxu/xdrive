@@ -95,29 +95,59 @@ test('desktop auth uses one full-body frame instead of a floating card', () => {
   assert.equal(styles.includes('box-shadow: 0 20px 55px'), false, 'auth surface should not retain the old floating-card shadow')
 })
 
-test('desktop custom titlebar owns the single shared application icon', () => {
+test('desktop custom titlebar owns the application identity and global controls', () => {
   assert.ok(renderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"), 'missing shared desktop brand icon import')
   assert.equal((renderer.match(/src=\{xDriveBrandIcon\}/g) || []).length, 1, 'desktop should render the shared icon only once in the custom titlebar')
   assert.ok(renderer.includes('desktop-titlebar-icon'), 'missing custom titlebar brand icon')
+  assert.equal(renderer.includes('<span>桌面版</span>'), false, 'desktop titlebar should not repeat the platform label')
   assert.equal(renderer.includes('<div className="brand-mark">x</div>'), false, 'legacy text x brand mark remains')
+  assert.ok(renderer.includes('className="desktop-titlebar-actions"'), 'missing titlebar action slot')
+  assert.match(styles, /\.desktop-titlebar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/, 'interactive titlebar actions must opt out of window dragging')
 })
 
-test('desktop keeps sync controls global instead of repeating page status actions', () => {
-  const start = renderer.indexOf('<header className="topbar">')
-  const end = renderer.indexOf('</header>', start)
-  assert.notEqual(start, -1, 'missing desktop topbar')
-  assert.notEqual(end, -1, 'missing desktop topbar end')
-  const topbar = renderer.slice(start, end)
+test('desktop keeps global sync, settings and account actions in the window titlebar', () => {
+  const actionStart = renderer.indexOf('const desktopTitlebarActions =')
+  const shellStart = renderer.indexOf('return renderDesktopFrame(', actionStart)
+  assert.notEqual(actionStart, -1, 'missing desktop titlebar action group')
+  assert.notEqual(shellStart, -1, 'missing configured desktop shell')
+  const titlebarActions = renderer.slice(actionStart, shellStart)
 
-  assert.ok(topbar.includes('<h1>{viewLabel(view)}</h1>'), 'topbar should show the current page title')
-  assert.equal(topbar.includes('{headline}'), false, 'topbar should not repeat sync status as the page title')
-  assert.ok(topbar.includes('ariaLabel="同步状态"'), 'missing global sync status capsule')
-  assert.ok(topbar.includes('aria-label="立即同步"'), 'missing global sync shortcut')
-  assert.ok(topbar.includes('aria-label="更多同步操作"'), 'missing global sync overflow menu')
+  assert.ok(titlebarActions.includes('ariaLabel="同步状态"'), 'missing titlebar sync status capsule')
+  assert.ok(titlebarActions.includes('aria-label="立即同步"'), 'missing titlebar sync shortcut')
+  assert.ok(titlebarActions.includes('aria-label="设置"'), 'missing titlebar settings shortcut')
+  assert.ok(titlebarActions.includes('aria-label="账户菜单"'), 'missing titlebar account menu')
+  assert.ok(titlebarActions.includes('关于 xDrive'), 'account menu is missing About')
+  assert.ok(titlebarActions.includes('退出登录'), 'account menu is missing logout')
+  assert.equal(titlebarActions.includes('aria-label="更多同步操作"'), false, 'redundant sync overflow button should not remain')
   assert.ok(renderer.includes('打开同步文件夹'), 'missing global open-folder action')
+
+  const topbarStart = renderer.indexOf('<header className="topbar">', shellStart)
+  const topbarEnd = renderer.indexOf('</header>', topbarStart)
+  assert.notEqual(topbarStart, -1, 'missing desktop content topbar')
+  assert.notEqual(topbarEnd, -1, 'missing desktop content topbar end')
+  const topbar = renderer.slice(topbarStart, topbarEnd)
+  assert.ok(topbar.includes('<h1>{viewLabel(view)}</h1>'), 'content topbar should show the current page title')
+  assert.equal(topbar.includes('ariaLabel="同步状态"'), false, 'content topbar should not duplicate global sync state')
+  assert.equal(topbar.includes('Desktop ${info?.version'), false, 'content topbar should not duplicate build information')
+  assert.equal(topbar.includes('Server ${status?.server_build'), false, 'content topbar should not duplicate server build information')
+
   assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'missing paused-sync exception banner')
   assert.ok(renderer.includes('发现 {status.conflict_count || 0} 个同步冲突'), 'missing conflict exception banner')
   assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
+})
+
+test('desktop sidebar keeps only feature navigation and a secondary diagnostics entry', () => {
+  const start = renderer.indexOf('<aside className="sidebar">')
+  const end = renderer.indexOf('</aside>', start)
+  assert.notEqual(start, -1, 'missing desktop sidebar')
+  assert.notEqual(end, -1, 'missing desktop sidebar end')
+  const sidebar = renderer.slice(start, end)
+
+  assert.equal(sidebar.includes("view === 'settings'"), false, 'settings should live in the titlebar, not the feature sidebar')
+  assert.equal(sidebar.includes('className="account"'), false, 'legacy sidebar account summary should be removed')
+  assert.ok(sidebar.includes('className="sidebar-secondary"'), 'diagnostics should be separated from primary feature navigation')
+  assert.ok(sidebar.includes("view === 'diagnostics'"), 'secondary diagnostics navigation is missing')
+  assert.ok(styles.includes('.sidebar-secondary {'), 'secondary sidebar navigation styling is missing')
 })
 
 test('desktop gates CfAPI-only storage controls by platform', () => {

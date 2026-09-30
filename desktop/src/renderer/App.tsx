@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from 'react'
 import {
   Alert as MuiAlert,
   Autocomplete,
+  Avatar,
   Box as MuiBox,
   Button as MuiButton,
   Checkbox,
@@ -32,10 +33,12 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
 import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
-import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
-import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
@@ -135,15 +138,23 @@ function platformLabel(platform: string) {
   return platform || '未知'
 }
 
-function DesktopFrame({ children, maximized }: { children: ReactNode; maximized: boolean }) {
+function DesktopFrame({
+  children,
+  maximized,
+  titlebarActions,
+}: {
+  children: ReactNode
+  maximized: boolean
+  titlebarActions?: ReactNode
+}) {
   return (
     <div className="desktop-frame">
       <header className="desktop-titlebar">
         <div className="desktop-titlebar-brand">
           <img className="desktop-titlebar-icon" src={xDriveBrandIcon} alt="" aria-hidden="true" />
           <strong>xDrive</strong>
-          <span>桌面版</span>
         </div>
+        <div className="desktop-titlebar-actions">{titlebarActions}</div>
         <div className="desktop-window-controls">
           <IconButton
             className="desktop-window-control"
@@ -278,6 +289,7 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [syncMenuAnchor, setSyncMenuAnchor] = useState<HTMLElement | null>(null)
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null)
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [clientUpdate, setClientUpdate] = useState<AgentUpdateState | null>(null)
   const [updateCancelling, setUpdateCancelling] = useState(false)
@@ -646,6 +658,16 @@ export default function App() {
     } finally {
       setBusy('')
     }
+  }
+
+  const requestLogout = () => {
+    requestConfirmation(
+      '退出当前设备？',
+      '确定要在此设备上退出 xDrive 吗？',
+      '退出登录',
+      async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
+      'error',
+    )
   }
 
   const restartAgent = async () => {
@@ -1928,8 +1950,8 @@ export default function App() {
     setNotice('')
   }
 
-  const renderDesktopFrame = (content: ReactNode) => (
-    <DesktopFrame maximized={windowMaximized}>
+  const renderDesktopFrame = (content: ReactNode, titlebarActions?: ReactNode) => (
+    <DesktopFrame maximized={windowMaximized} titlebarActions={titlebarActions}>
       {content}
       <Snackbar
         open={Boolean(error || notice)}
@@ -2170,6 +2192,115 @@ export default function App() {
     )
   }
 
+  const accountInitial = status?.username?.trim().slice(0, 1).toUpperCase() || '?'
+  const desktopTitlebarActions = (
+    <Stack direction="row" alignItems="center" spacing={0.25} className="desktop-titlebar-action-row">
+      <XDriveStatusBadge
+        ariaLabel="同步状态"
+        variant="outlined"
+        tone={globalSyncState.tone}
+        label={globalSyncState.label}
+        onClick={(event) => {
+          setAccountMenuAnchor(null)
+          setSyncMenuAnchor(event.currentTarget)
+        }}
+      />
+      <Tooltip title={status?.paused ? '同步已暂停' : '立即同步'}>
+        <span>
+          <IconButton className="desktop-titlebar-action" aria-label="立即同步" size="small" color="primary" disabled={!!busy || status?.paused} onClick={() => void run('sync', () => window.xdriveDesktop.agent.syncNow(), '已请求立即同步。')}>
+            <SyncRoundedIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title="设置">
+        <IconButton className="desktop-titlebar-action" aria-label="设置" size="small" color={view === 'settings' ? 'primary' : 'default'} onClick={() => {
+          setSyncMenuAnchor(null)
+          setAccountMenuAnchor(null)
+          setView('settings')
+        }}>
+          <SettingsRoundedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title={status?.username ? `${status.username} · 账户` : '账户'}>
+        <IconButton className="desktop-titlebar-account-button" aria-label="账户菜单" size="small" onClick={(event) => {
+          setSyncMenuAnchor(null)
+          setAccountMenuAnchor(event.currentTarget)
+        }}>
+          <Avatar sx={{ width: 24, height: 24, fontSize: 12, fontWeight: 700 }}>{accountInitial}</Avatar>
+        </IconButton>
+      </Tooltip>
+
+      <Menu id="global-sync-menu" anchorEl={syncMenuAnchor} open={Boolean(syncMenuAnchor)} onClose={() => setSyncMenuAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        <MuiBox sx={{ minWidth: 260, px: 2, py: 1.25 }}>
+          <Typography variant="body2" fontWeight={700}>{globalSyncState.label}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {status?.auth_status || '已登录'}{status?.server ? ` · ${status.server}` : ''}
+          </Typography>
+        </MuiBox>
+        <MuiDivider />
+        <MenuItem onClick={() => {
+          setSyncMenuAnchor(null)
+          void run('folder', () => window.xdriveDesktop.agent.openFolder())
+        }}>
+          <ListItemIcon><FolderOpenRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>打开同步文件夹</ListItemText>
+        </MenuItem>
+        <MenuItem disabled={!!busy} onClick={() => {
+          setSyncMenuAnchor(null)
+          const nextPaused = !status?.paused
+          void run('pause', () => window.xdriveDesktop.agent.setPaused(nextPaused), nextPaused ? '同步已暂停。' : '同步已恢复。')
+        }}>
+          <ListItemIcon>{status?.paused ? <PlayArrowRoundedIcon fontSize="small" /> : <PauseRoundedIcon fontSize="small" />}</ListItemIcon>
+          <ListItemText>{status?.paused ? '恢复同步' : '暂停同步'}</ListItemText>
+        </MenuItem>
+        {status?.has_conflict ? (
+          <MenuItem onClick={() => {
+            setSyncMenuAnchor(null)
+            setView('conflicts')
+          }}>
+            <ListItemIcon><WarningAmberRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>{`查看冲突（${status.conflict_count || 0}）`}</ListItemText>
+          </MenuItem>
+        ) : null}
+        <MuiDivider />
+        <MenuItem onClick={() => {
+          setSyncMenuAnchor(null)
+          setView('diagnostics')
+        }}>
+          <ListItemIcon><BuildRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>客户端诊断</ListItemText>
+        </MenuItem>
+      </Menu>
+
+      <Menu id="desktop-account-menu" anchorEl={accountMenuAnchor} open={Boolean(accountMenuAnchor)} onClose={() => setAccountMenuAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        <MuiBox sx={{ minWidth: 250, maxWidth: 320, px: 2, py: 1.25 }}>
+          <Typography variant="body2" fontWeight={700} noWrap>{status?.username || '已登录用户'}</Typography>
+          <Typography variant="caption" color="text.secondary" component="div" noWrap>{status?.server || '服务器未提供'}</Typography>
+          <Typography variant="caption" color="text.secondary">{status?.auth_status || '已登录'}</Typography>
+        </MuiBox>
+        <MuiDivider />
+        <MenuItem onClick={() => {
+          setAccountMenuAnchor(null)
+          setView('settings')
+          window.setTimeout(() => {
+            document.getElementById('desktop-build-info')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }, 120)
+        }}>
+          <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="关于 xDrive" secondary={info?.version ? `Desktop ${info.version}` : undefined} />
+        </MenuItem>
+        <MuiDivider />
+        <MenuItem sx={{ color: 'error.main' }} onClick={() => {
+          setAccountMenuAnchor(null)
+          requestLogout()
+        }}>
+          <ListItemIcon sx={{ color: 'inherit' }}><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>退出登录</ListItemText>
+        </MenuItem>
+      </Menu>
+    </Stack>
+  )
+
   return renderDesktopFrame(
     <div className="shell">
       <aside className="sidebar">
@@ -2177,22 +2308,13 @@ export default function App() {
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>概览</button>
           <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>云端文件</button>
           <button className={`nav-item ${view === 'sources' ? 'active' : ''}`} type="button" onClick={() => setView('sources')}>外部来源</button>
-          <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>
-            传输 {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}
-          </button>
+          <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>传输 {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}</button>
           <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>存储</button>
-          <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>
-            冲突 {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}
-          </button>
-          <button className={`nav-item ${view === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setView('diagnostics')}>诊断</button>
-          <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} type="button" onClick={() => setView('settings')}>设置</button>
+          <button className={`nav-item ${view === 'conflicts' ? 'active' : ''}`} type="button" onClick={() => setView('conflicts')}>冲突 {status?.conflict_count ? <span className="badge">{status.conflict_count}</span> : null}</button>
         </nav>
-        <div className="account">
-          <strong>{status?.username}</strong>
-          <span>{status?.server}</span>
-          <span>Agent {status?.version}</span>
-          <span>{info ? `桌面版 ${info.version}` : ''}</span>
-        </div>
+        <nav className="sidebar-secondary" aria-label="桌面版辅助功能">
+          <button className={`nav-item ${view === 'diagnostics' ? 'active' : ''}`} type="button" onClick={() => setView('diagnostics')}>诊断</button>
+        </nav>
       </aside>
 
       <main className="content">
@@ -2201,102 +2323,6 @@ export default function App() {
             <p className="eyebrow">xDrive</p>
             <h1>{viewLabel(view)}</h1>
           </div>
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={0.75}
-            sx={{ flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}
-          >
-            <Tooltip title={info?.commit ? `${info.commit.slice(0, 12)}${info.commit_message ? ` · ${info.commit_message}` : ''}` : 'Desktop 构建信息'}>
-              <Chip size="small" variant="outlined" label={`Desktop ${info?.version || '—'}`} />
-            </Tooltip>
-            <Tooltip title={status?.server_build?.commit ? `${status.server_build.commit.slice(0, 12)}${status.server_build.commit_message ? ` · ${status.server_build.commit_message}` : ''}` : 'Server 构建信息'}>
-              <Chip size="small" variant="outlined" label={`Server ${status?.server_build?.version || '—'}`} />
-            </Tooltip>
-            <XDriveStatusBadge
-              ariaLabel="同步状态"
-              variant="outlined"
-              tone={globalSyncState.tone}
-              label={globalSyncState.label}
-              onClick={(event) => setSyncMenuAnchor(event.currentTarget)}
-            />
-            <Tooltip title={status?.paused ? '同步已暂停' : '立即同步'}>
-              <span>
-                <IconButton
-                  aria-label="立即同步"
-                  size="small"
-                  color="primary"
-                  disabled={!!busy || status?.paused}
-                  onClick={() => void run('sync', () => window.xdriveDesktop.agent.syncNow(), '已请求立即同步。')}
-                >
-                  <SyncRoundedIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="更多同步操作">
-              <IconButton
-                aria-label="更多同步操作"
-                size="small"
-                onClick={(event) => setSyncMenuAnchor(event.currentTarget)}
-              >
-                <MoreHorizRoundedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Menu
-              id="global-sync-menu"
-              anchorEl={syncMenuAnchor}
-              open={Boolean(syncMenuAnchor)}
-              onClose={() => setSyncMenuAnchor(null)}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            >
-              <MuiBox sx={{ minWidth: 260, px: 2, py: 1.25 }}>
-                <Typography variant="body2" fontWeight={700}>{globalSyncState.label}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {status?.auth_status || '已登录'}{status?.server ? ` · ${status.server}` : ''}
-                </Typography>
-              </MuiBox>
-              <MuiDivider />
-              <MenuItem onClick={() => {
-                setSyncMenuAnchor(null)
-                void run('folder', () => window.xdriveDesktop.agent.openFolder())
-              }}>
-                <ListItemIcon><FolderOpenRoundedIcon fontSize="small" /></ListItemIcon>
-                <ListItemText>打开同步文件夹</ListItemText>
-              </MenuItem>
-              <MenuItem disabled={!!busy} onClick={() => {
-                setSyncMenuAnchor(null)
-                const nextPaused = !status?.paused
-                void run(
-                  'pause',
-                  () => window.xdriveDesktop.agent.setPaused(nextPaused),
-                  nextPaused ? '同步已暂停。' : '同步已恢复。',
-                )
-              }}>
-                <ListItemIcon>
-                  {status?.paused ? <PlayArrowRoundedIcon fontSize="small" /> : <PauseRoundedIcon fontSize="small" />}
-                </ListItemIcon>
-                <ListItemText>{status?.paused ? '恢复同步' : '暂停同步'}</ListItemText>
-              </MenuItem>
-              {status?.has_conflict ? (
-                <MenuItem onClick={() => {
-                  setSyncMenuAnchor(null)
-                  setView('conflicts')
-                }}>
-                  <ListItemIcon><WarningAmberRoundedIcon fontSize="small" /></ListItemIcon>
-                  <ListItemText>{`查看冲突（${status.conflict_count || 0}）`}</ListItemText>
-                </MenuItem>
-              ) : null}
-              <MuiDivider />
-              <MenuItem onClick={() => {
-                setSyncMenuAnchor(null)
-                setView('diagnostics')
-              }}>
-                <ListItemIcon><BuildRoundedIcon fontSize="small" /></ListItemIcon>
-                <ListItemText>客户端诊断</ListItemText>
-              </MenuItem>
-            </Menu>
-          </Stack>
         </header>
 
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
@@ -3881,7 +3907,7 @@ export default function App() {
                 重启 Agent
               </XDriveActionButton>
             </div>
-            <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ mb: 2 }}>
+            <Stack id="desktop-build-info" direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ mb: 2 }}>
               <BuildInfoCard title="Desktop 构建信息" info={info} />
               <BuildInfoCard title="Server 构建信息" info={status?.server_build} />
             </Stack>
@@ -4111,21 +4137,6 @@ export default function App() {
                   >
                     保存设置
                   </XDriveActionButton>
-                  <XDriveActionButton
-                    intent="danger"
-                    disabled={!!busy}
-                    onClick={() => {
-                      requestConfirmation(
-                        '退出当前设备？',
-                        '确定要在此设备上退出 xDrive 吗？',
-                        '退出登录',
-                        async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
-                        'error',
-                      )
-                    }}
-                  >
-                    退出登录
-                  </XDriveActionButton>
                 </div>
               </form>
             )}
@@ -4230,6 +4241,7 @@ export default function App() {
         username={status?.username}
         onClose={() => setSynologyGuideSource(null)}
       />
-    </div>
+    </div>,
+    desktopTitlebarActions,
   )
 }
