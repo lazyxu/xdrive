@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { Descriptions, Form, Input, Select, Spin, Typography } from 'antd'
+import { Form, Input, Select } from 'antd'
 import {
   Accordion,
   AccordionDetails,
@@ -9,9 +11,11 @@ import {
   Box as MuiBox,
   Button as MuiButton,
   Card,
+  CircularProgress,
   Dialog,
   DialogContentText,
   Divider as MuiDivider,
+  IconButton,
   MenuItem,
   Snackbar,
   Stack,
@@ -154,7 +158,40 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   return externalSourceCredentialTestErrorLabel(value)
 }
 
+function SourceDescriptionGrid({ children }: { children: ReactNode }) {
+  return (
+    <MuiBox
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+        borderTop: 1,
+        borderLeft: 1,
+        borderColor: 'divider',
+      }}
+    >
+      {children}
+    </MuiBox>
+  )
+}
 
+function SourceDescriptionItem({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <MuiBox
+      sx={{
+        minWidth: 0,
+        p: 1.25,
+        borderRight: 1,
+        borderBottom: 1,
+        borderColor: 'divider',
+      }}
+    >
+      <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.35 }}>
+        {label}
+      </MuiTypography>
+      <MuiBox sx={{ fontSize: 14, overflowWrap: 'anywhere' }}>{children}</MuiBox>
+    </MuiBox>
+  )
+}
 
 export default function ExternalSourcesPanel({
   open,
@@ -904,8 +941,9 @@ export default function ExternalSourcesPanel({
           </XDriveActionButton>
         </Stack>
       </div>
-      <Spin spinning={loading && rows.length === 0}>
-        {rows.length === 0 && !loading ? (
+      {loading && rows.length === 0 ? (
+        <XDriveStatePanel variant="plain" loading message="正在加载外部来源…" />
+      ) : rows.length === 0 ? (
           <XDriveStatePanel variant="plain" message="尚未添加外部来源" />
         ) : (
           <div className="external-source-list">
@@ -919,7 +957,7 @@ export default function ExternalSourcesPanel({
                 <Card key={row.source.id} variant="outlined" className="external-source-card" sx={{ p: '18px 20px', borderRadius: 2 }}>
                   <div className="external-source-card-header">
                     <div>
-                      <Typography.Title level={4} style={{ margin: 0 }}>{row.source.name}</Typography.Title>
+                      <MuiTypography component="h3" variant="h6" fontWeight={700}>{row.source.name}</MuiTypography>
                       <div className="external-source-subtitle">{card.modeLabel}</div>
                     </div>
                     <XDriveStatusBadge tone={card.state.tone} label={card.state.label} />
@@ -985,7 +1023,6 @@ export default function ExternalSourcesPanel({
             })}
           </div>
         )}
-      </Spin>
         </XDriveDialogContent>
         <XDriveDialogActions>
           <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
@@ -1003,26 +1040,26 @@ export default function ExternalSourcesPanel({
                 <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedDetail.error}</MuiTypography>
               </XDriveStatusAlert>
             )}
-            <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-              <Descriptions.Item label="来源类型">{selectedDetail.kindLabel}</Descriptions.Item>
-              <Descriptions.Item label="工作方式">{selectedDetail.modeLabel}</Descriptions.Item>
-              <Descriptions.Item label="状态">
+            <SourceDescriptionGrid>
+              <SourceDescriptionItem label="来源类型">{selectedDetail.kindLabel}</SourceDescriptionItem>
+              <SourceDescriptionItem label="工作方式">{selectedDetail.modeLabel}</SourceDescriptionItem>
+              <SourceDescriptionItem label="状态">
                 <XDriveStatusBadge tone={selectedDetail.state.tone} label={selectedDetail.state.label} />
-              </Descriptions.Item>
-              <Descriptions.Item label="目标目录">
+              </SourceDescriptionItem>
+              <SourceDescriptionItem label="目标目录">
                 {selected.source.kind === 'yike_photos'
                   ? yikeManagedTargetLabel
                   : selectedDetail.targetNodeID ? `节点 #${selectedDetail.targetNodeID}` : '未配置'}
-              </Descriptions.Item>
-              <Descriptions.Item label="调度">{selectedDetail.scheduleLabel}</Descriptions.Item>
-              <Descriptions.Item label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</Descriptions.Item>
-              <Descriptions.Item label="上次成功">{formatExternalSourceTime(selectedDetail.lastSuccessAt)}</Descriptions.Item>
+              </SourceDescriptionItem>
+              <SourceDescriptionItem label="调度">{selectedDetail.scheduleLabel}</SourceDescriptionItem>
+              <SourceDescriptionItem label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</SourceDescriptionItem>
+              <SourceDescriptionItem label="上次成功">{formatExternalSourceTime(selectedDetail.lastSuccessAt)}</SourceDescriptionItem>
               {selectedDetail.credential && (
-                <Descriptions.Item label={selectedDetail.credential.label}>
+                <SourceDescriptionItem label={selectedDetail.credential.label}>
                   {selectedDetail.credential.configured ? '已配置' : '未配置'}
-                </Descriptions.Item>
+                </SourceDescriptionItem>
               )}
-            </Descriptions>
+            </SourceDescriptionGrid>
 
             <MuiDivider textAlign="left" sx={{ my: 2 }}>相册与集合</MuiDivider>
             {collectionsLoading ? (
@@ -1106,7 +1143,6 @@ export default function ExternalSourcesPanel({
             )}
 
             <MuiDivider textAlign="left" sx={{ my: 2 }}>同步历史</MuiDivider>
-            <Spin spinning={historyLoading}>
               {historyRuns.length > 0 ? (
                 <Stack spacing={1}>
                   {historyRuns.map((run) => {
@@ -1137,24 +1173,41 @@ export default function ExternalSourcesPanel({
                               onCancel={() => void cancelRun(selected)}
                             />
                           )}
-                          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
-                            <Descriptions.Item label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</Descriptions.Item>
-                            <Descriptions.Item label="内部运行 ID"><Typography.Text copyable>{run.id}</Typography.Text></Descriptions.Item>
-                            <Descriptions.Item label="运行状态">
+                          <SourceDescriptionGrid>
+                            <SourceDescriptionItem label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</SourceDescriptionItem>
+                            <SourceDescriptionItem label="内部运行 ID">
+                              <Stack direction="row" spacing={0.5} alignItems="center">
+                                <MuiTypography component="code" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{run.id}</MuiTypography>
+                                <Tooltip title="复制运行 ID">
+                                  <IconButton
+                                    size="small"
+                                    aria-label="复制运行 ID"
+                                    onClick={() => {
+                                      void navigator.clipboard.writeText(run.id)
+                                        .then(() => setFeedback('运行 ID 已复制'))
+                                        .catch((error) => showActionError('复制运行 ID 失败', error, '无法自动复制运行 ID，请手动复制。'))
+                                    }}
+                                  >
+                                    <ContentCopyRoundedIcon sx={{ fontSize: 16 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              </Stack>
+                            </SourceDescriptionItem>
+                            <SourceDescriptionItem label="运行状态">
                               <XDriveStatusBadge tone={runDetail.statusTone} label={runDetail.statusLabel} />
-                            </Descriptions.Item>
-                            <Descriptions.Item label="耗时">{runDetail.durationLabel}</Descriptions.Item>
-                            <Descriptions.Item label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</Descriptions.Item>
-                            <Descriptions.Item label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</Descriptions.Item>
-                            <Descriptions.Item label="成功项">{runDetail.successItems.toLocaleString('zh-CN')} 项</Descriptions.Item>
-                            <Descriptions.Item label="失败项">{runDetail.failedItems.toLocaleString('zh-CN')} 项</Descriptions.Item>
+                            </SourceDescriptionItem>
+                            <SourceDescriptionItem label="耗时">{runDetail.durationLabel}</SourceDescriptionItem>
+                            <SourceDescriptionItem label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</SourceDescriptionItem>
+                            <SourceDescriptionItem label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</SourceDescriptionItem>
+                            <SourceDescriptionItem label="成功项">{runDetail.successItems.toLocaleString('zh-CN')} 项</SourceDescriptionItem>
+                            <SourceDescriptionItem label="失败项">{runDetail.failedItems.toLocaleString('zh-CN')} 项</SourceDescriptionItem>
                             {runDetail.metrics.map((metric) => (
-                              <Descriptions.Item key={metric.key} label={metric.label}>
+                              <SourceDescriptionItem key={metric.key} label={metric.label}>
                                 {metric.items.toLocaleString('zh-CN')} 项
                                 {metric.bytes === undefined ? '' : ' · ' + formatSize(metric.bytes)}
-                              </Descriptions.Item>
+                              </SourceDescriptionItem>
                             ))}
-                          </Descriptions>
+                          </SourceDescriptionGrid>
                           <XDriveStatusAlert tone={runDetail.error ? 'bad' : 'good'} sx={{ mt: 1.5 }}>
                             运行日志：{runDetail.error || '无错误日志'}
                           </XDriveStatusAlert>
@@ -1164,7 +1217,7 @@ export default function ExternalSourcesPanel({
                                 本次失败文件
                               </MuiTypography>
                               {failurePage?.loading && !failurePage.loaded ? (
-                                <Spin size="small" />
+                                <CircularProgress size={18} />
                               ) : failurePage?.loaded && failurePage.items.length > 0 ? (
                                 <Stack spacing={0.75}>
                                   {failurePage.items.map((failure) => (
@@ -1216,7 +1269,7 @@ export default function ExternalSourcesPanel({
               ) : (
                 <XDriveStatePanel variant="plain" message={historyLoading ? '正在加载运行历史' : '尚无运行记录'} />
               )}
-            </Spin>
+            
 
             {failedItemsLoading && (
               <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
