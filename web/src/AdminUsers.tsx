@@ -13,7 +13,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -29,6 +28,7 @@ import {
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
+  XDriveTableSurface,
   XDriveWorkspaceSurface,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
@@ -291,7 +291,7 @@ export default function AdminUsersPanel({
             ) : users.length === 0 ? (
               <XDriveStatePanel variant="plain" message="暂无用户" />
             ) : (
-              <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
+              <XDriveTableSurface>
                 <Table size="small" aria-label="用户管理" sx={{ minWidth: 900 }}>
                   <TableHead>
                     <TableRow>
@@ -465,7 +465,7 @@ export default function AdminUsersPanel({
                     ))}
                   </TableBody>
                 </Table>
-              </TableContainer>
+              </XDriveTableSurface>
             )}
         </Stack>
       </XDriveWorkspaceSurface>

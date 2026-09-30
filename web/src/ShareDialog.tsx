@@ -13,7 +13,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -28,6 +27,7 @@ import {
   XDriveShareStatusBadge,
   XDriveStatePanel,
   XDriveStatusAlert,
+  XDriveTableSurface,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
@@ -273,7 +273,7 @@ export default function ShareDialog({
           ) : shares.length === 0 ? (
             <XDriveStatePanel variant="plain" message="此文件暂无分享链接" />
           ) : (
-            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+            <XDriveTableSurface>
               <Table size="small" aria-label="已有分享">
                 <TableHead>
                   <TableRow>
@@ -312,7 +312,7 @@ export default function ShareDialog({
                   ))}
                 </TableBody>
               </Table>
-            </TableContainer>
+            </XDriveTableSurface>
           )}
         </XDriveDialogContent>
       </Dialog>
