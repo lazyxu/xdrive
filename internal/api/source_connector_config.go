@@ -27,24 +27,42 @@ type sourceConnectorConfigDTO struct {
 }
 
 func defaultSourceConnectorConfig(source meta.Source) (json.RawMessage, error) {
-	if source.Kind == synologySourceKind && source.Direction == meta.SourceDirectionPull {
-		return json.Marshal(synology.DefaultPullConfig())
+	if source.Direction != meta.SourceDirectionPull {
+		return nil, errUnsupportedSourceConnectorConfig
 	}
-	return nil, errUnsupportedSourceConnectorConfig
+	switch source.Kind {
+	case synologySourceKind:
+		return json.Marshal(synology.DefaultPullConfig())
+	case synologyFilesSourceKind:
+		return json.Marshal(synology.DefaultFilePullConfig())
+	default:
+		return nil, errUnsupportedSourceConnectorConfig
+	}
 }
 
 func normalizeSourceConnectorConfig(source meta.Source, payload json.RawMessage) (json.RawMessage, error) {
-	if source.Kind != synologySourceKind || source.Direction != meta.SourceDirectionPull {
+	if source.Direction != meta.SourceDirectionPull {
 		return nil, errUnsupportedSourceConnectorConfig
 	}
 	if len(payload) == 0 || len(payload) > maxSourceConnectorConfigBytes {
 		return nil, errInvalidSourceConfig
 	}
-	config, err := synology.ParsePullConfig(payload)
-	if err != nil {
-		return nil, errInvalidSourceConfig
+	switch source.Kind {
+	case synologySourceKind:
+		config, err := synology.ParsePullConfig(payload)
+		if err != nil {
+			return nil, errInvalidSourceConfig
+		}
+		return json.Marshal(config)
+	case synologyFilesSourceKind:
+		config, err := synology.ParseFilePullConfig(payload)
+		if err != nil {
+			return nil, errInvalidSourceConfig
+		}
+		return json.Marshal(config)
+	default:
+		return nil, errUnsupportedSourceConnectorConfig
 	}
-	return json.Marshal(config)
 }
 
 func (s *Server) getSourceConnectorConfig(c *gin.Context) {

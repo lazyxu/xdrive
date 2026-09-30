@@ -114,7 +114,7 @@ func writeSourceCredentialTestError(c *gin.Context, kind string, err error) {
 		switch strings.TrimSpace(kind) {
 		case yikeSourceKind:
 			fail(c, http.StatusGatewayTimeout, "yike_timeout")
-		case synologySourceKind:
+		case synologySourceKind, synologyFilesSourceKind:
 			fail(c, http.StatusGatewayTimeout, "synology_timeout")
 		default:
 			fail(c, http.StatusGatewayTimeout, "source_timeout")
@@ -122,18 +122,20 @@ func writeSourceCredentialTestError(c *gin.Context, kind string, err error) {
 	case errors.Is(err, yike.ErrUnavailable):
 		fail(c, http.StatusBadGateway, "yike_unavailable")
 	default:
-		if strings.TrimSpace(kind) == synologySourceKind {
+		kind = strings.TrimSpace(kind)
+		if kind == synologySourceKind || kind == synologyFilesSourceKind {
 			diagnostic := synology.DiagnoseConnectionError(err)
 			status := http.StatusBadGateway
 			switch diagnostic.Code {
-			case "synology_auth_failed", "synology_photos_unavailable":
+			case "synology_auth_failed", "synology_photos_unavailable", "synology_file_station_unavailable",
+				"synology_permission_denied", "synology_otp_required":
 				status = http.StatusUnprocessableEntity
 			case "synology_timeout":
 				status = http.StatusGatewayTimeout
 			}
 			slog.Warn(
 				"source_credential_test_failed",
-				"kind", synologySourceKind,
+				"kind", kind,
 				"code", diagnostic.Code,
 				"detail", diagnostic.Detail,
 				"error", err,
@@ -180,7 +182,7 @@ func defaultSourceCredentialTester(ctx context.Context, kind string, payload jso
 			AccountExternalID: strings.TrimSpace(info.YouaID),
 			AccountName:       strings.TrimSpace(info.Nickname),
 		}, nil
-	case synologySourceKind:
+	case synologySourceKind, synologyFilesSourceKind:
 		var credential synology.Credential
 		if err := json.Unmarshal(payload, &credential); err != nil {
 			return sourceCredentialTestDTO{}, fmt.Errorf("%w: decode Synology credential: %v", errInvalidSourceCredentialTest, err)
@@ -190,7 +192,12 @@ func defaultSourceCredentialTester(ctx context.Context, kind string, payload jso
 		if err != nil {
 			return sourceCredentialTestDTO{}, fmt.Errorf("%w: %v", errInvalidSourceCredentialTest, err)
 		}
-		info, err := client.Test(ctx)
+		var info synology.AccountInfo
+		if kind == synologyFilesSourceKind {
+			info, err = client.TestFileStation(ctx)
+		} else {
+			info, err = client.Test(ctx)
+		}
 		if err != nil {
 			return sourceCredentialTestDTO{}, err
 		}

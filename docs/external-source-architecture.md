@@ -54,11 +54,13 @@ Uses Synology Photos semantics and stable Photos item identity when available.
 
 It may additionally import albums, capture metadata, people, tags, favorite state, descriptions, GPS, thumbnails, and Live Photo relationships.
 
-### Synology Files Pull — `synology_files` (TODO)
+### Synology Files Pull — `synology_files`
 
 A generic DSM/File Station source for arbitrary shared folders and arbitrary file types.
 
-Target behavior:
+Backend status: File Station API/session, multi-root validation, generic directory execution, recursive scanner, worker registration, credential/config activation gates, cancellation/retry integration, and Backup missing safety are implemented. Web/Desktop creation/configuration UI remains the next delivery step.
+
+Current behavior:
 
 - select one or more DSM shares/subdirectories;
 - recursively preserve directory structure;
@@ -138,7 +140,7 @@ The generic rules remain:
 ## Implementation order
 
 1. SourceItemAlias + explicit canonical identity promotion.
-2. Synology Files Pull (`synology_files`) using DSM/File Station.
+2. Synology Files Pull (`synology_files`) backend complete; add Web/Desktop root selection and source-management UI.
 3. Synology Push Photos-item semantic identity lane.
 4. Provider semantic metadata and media grouping.
 5. Incremental change scanners only where a reliable provider change contract exists.

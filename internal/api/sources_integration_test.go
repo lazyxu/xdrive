@@ -29,7 +29,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceConnectorConfig{}, &meta.SourceCredential{}, &meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -38,6 +38,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.SourceCredential{}, &meta.SourceConnectorConfig{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +87,53 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		map[string]string{"If-Match": `"1"`})
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", yikeManaged.ID), tokenA,
 		nil, http.StatusNoContent, map[string]string{"If-Match": `"1"`})
+
+	// File Station Pull is a generic file source. It starts paused and cannot
+	// become active until both an encrypted DSM credential record and a valid
+	// non-empty root configuration exist.
+	filePush := fmt.Sprintf(`{"name":"Files push invalid","kind":"synology_files","direction":"push","sync_mode":"backup","run_mode":"scan","target_node_id":%d}`, targetA.ID)
+	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(filePush), http.StatusBadRequest)
+
+	fileCreateBody := fmt.Sprintf(`{"name":"Synology Files","kind":"synology_files","direction":"pull","sync_mode":"backup","run_mode":"sync","target_node_id":%d}`, targetA.ID)
+	fileCreate := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(fileCreateBody), http.StatusCreated)
+	var fileSource sourceDTO
+	if err := json.Unmarshal(fileCreate.Body.Bytes(), &fileSource); err != nil {
+		t.Fatal(err)
+	}
+	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 {
+		t.Fatalf("File Station source should start paused: %+v", fileSource)
+	}
+	filePath := fmt.Sprintf("/api/v1/sources/%d", fileSource.ID)
+	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
+		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
+		map[string]string{"If-Match": `"1"`})
+
+	if err := db.Create(&meta.SourceCredential{
+		SourceID: fileSource.ID, Ciphertext: []byte("test-only"), KeyVersion: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
+		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
+		map[string]string{"If-Match": `"1"`})
+
+	if err := db.Create(&meta.SourceConnectorConfig{
+		SourceID: fileSource.ID, Payload: `{"roots":["/documents"]}`, Revision: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	activatedFiles := requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
+		strings.NewReader(`{"status":"active"}`), http.StatusOK,
+		map[string]string{"If-Match": `"1"`})
+	var activeFileSource sourceDTO
+	if err := json.Unmarshal(activatedFiles.Body.Bytes(), &activeFileSource); err != nil {
+		t.Fatal(err)
+	}
+	if activeFileSource.Status != meta.SourceStatusActive || activeFileSource.Revision != 2 {
+		t.Fatalf("File Station source did not activate after readiness: %+v", activeFileSource)
+	}
+	requestWithHeaders(t, router, http.MethodDelete, filePath, tokenA,
+		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})
 
 	createBody := fmt.Sprintf(`{
 		"name":"Synology Photos",
