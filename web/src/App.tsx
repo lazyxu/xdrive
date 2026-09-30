@@ -963,13 +963,10 @@ function FileManager({
           </XDriveWorkspaceSurface>
         ) : appView === 'sources' ? (
           <ExternalSourcesPanel
-            open
-            presentation="page"
             api={api}
             defaultTargetNodeID={current?.id}
             defaultTargetLabel={current?.name ?? '我的文件'}
             defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
-            onClose={() => setAppView('files')}
             onError={handleError}
           />
         ) : appView === 'storage' ? (

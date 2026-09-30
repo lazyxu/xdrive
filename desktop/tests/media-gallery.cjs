@@ -89,7 +89,7 @@ test('Web exposes files, Gallery, External Sources, and Storage as first-class w
   assert.ok(webApp.includes('primary="图库"'))
   assert.ok(webApp.includes('primary="外部来源"'))
   assert.ok(webApp.includes('primary="存储"'))
-  assert.match(webApp, /<ExternalSourcesPanel[\s\S]*presentation="page"/)
+  assert.match(webApp, /<ExternalSourcesPanel[\s\S]*defaultTargetNodeID=/)
   assert.match(webApp, /<StorageStatsPanel[\s\S]*scope="self"/)
   assert.equal(webApp.includes('setSourcesOpen'), false)
   assert.equal(webApp.includes("setStorageStatsScope('self')"), false)

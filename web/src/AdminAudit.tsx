@@ -24,24 +24,36 @@ import {
 import type { XDriveApi } from './api'
 import type { AuditEvent } from '../../ui/shared/src'
 
-const ACTION_OPTIONS = [
-  'auth.login.success',
-  'auth.login.failure',
-  'auth.password.change',
-  'admin.user.create',
-  'admin.user.role_change',
-  'admin.user.disable',
-  'admin.user.enable',
-  'admin.user.quota_change',
-  'admin.user.password_reset',
-  'admin.user.sessions_revoke',
-  'admin.user.delete',
-  'file.permanent_delete',
-  'file.version_restore',
-  'system.backup',
-  'system.restore',
-  'system.update',
-]
+const ACTION_LABELS: Record<string, string> = {
+  'auth.login.success': '登录成功',
+  'auth.login.failure': '登录失败',
+  'auth.password.change': '修改密码',
+  'admin.user.create': '创建用户',
+  'admin.user.role_change': '变更用户角色',
+  'admin.user.disable': '停用用户',
+  'admin.user.enable': '启用用户',
+  'admin.user.quota_change': '调整存储配额',
+  'admin.user.password_reset': '重置用户密码',
+  'admin.user.sessions_revoke': '撤销用户会话',
+  'admin.user.delete': '删除用户',
+  'file.permanent_delete': '永久删除文件',
+  'file.version_restore': '恢复文件版本',
+  'system.backup': '系统备份',
+  'system.restore': '系统恢复',
+  'system.update': '系统更新',
+}
+
+const ACTION_OPTIONS = Object.keys(ACTION_LABELS)
+
+function actionLabel(value: string) {
+  return ACTION_LABELS[value] ?? value
+}
+
+function actorRoleLabel(value: string) {
+  if (value === 'admin') return '管理员'
+  if (value === 'user') return '普通用户'
+  return value
+}
 
 function metadataText(metadata?: Record<string, unknown>) {
   if (!metadata || Object.keys(metadata).length === 0) return '—'
@@ -94,14 +106,27 @@ export default function AdminAuditPanel({
   }, [api])
 
   return (
-    <XDriveWorkspaceSurface presentation="page" title="审计日志">
+    <XDriveWorkspaceSurface
+      presentation="page"
+      title="审计日志"
+      subtitle="记录登录、账户管理、文件与系统操作；可按操作、结果和操作者筛选。"
+    >
       <Stack spacing={2}>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
             <Autocomplete
               size="small"
               options={ACTION_OPTIONS}
               value={action ?? null}
+              getOptionLabel={actionLabel}
               onChange={(_event, value) => setAction(value ?? undefined)}
+              renderOption={(props, option) => (
+                <li {...props}>
+                  <Stack spacing={0.15}>
+                    <Typography variant="body2">{actionLabel(option)}</Typography>
+                    <Typography variant="caption" color="text.secondary">{option}</Typography>
+                  </Stack>
+                </li>
+              )}
               renderInput={(params) => <TextField {...params} label="操作" />}
               sx={{ width: { xs: '100%', sm: 280 } }}
             />
@@ -176,11 +201,20 @@ export default function AdminAuditPanel({
                         <TableCell>
                           <Stack spacing={0.2}>
                             <Typography variant="body2">{event.actor_username || '匿名'}</Typography>
-                            {event.actor_role && <Typography variant="caption" color="text.secondary">{event.actor_role}</Typography>}
+                            {event.actor_role && (
+                              <Typography variant="caption" color="text.secondary">
+                                {actorRoleLabel(event.actor_role)}
+                              </Typography>
+                            )}
                           </Stack>
                         </TableCell>
                         <TableCell>
-                          <Typography component="code" variant="body2">{event.action}</Typography>
+                          <Stack spacing={0.2}>
+                            <Typography variant="body2">{actionLabel(event.action)}</Typography>
+                            <Typography component="code" variant="caption" color="text.secondary">
+                              {event.action}
+                            </Typography>
+                          </Stack>
                         </TableCell>
                         <TableCell>
                           <Stack spacing={0.2}>

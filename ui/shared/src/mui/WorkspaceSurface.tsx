@@ -12,6 +12,8 @@ export function XDriveWorkspaceSurface({
   open = false,
   onClose,
   title,
+  subtitle,
+  pageActions,
   maxWidth = 'lg',
   dialogActions,
   children,
@@ -20,6 +22,8 @@ export function XDriveWorkspaceSurface({
   open?: boolean
   onClose?: () => void
   title: string
+  subtitle?: ReactNode
+  pageActions?: ReactNode
   maxWidth?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | false
   dialogActions?: ReactNode
   children: ReactNode
@@ -29,7 +33,7 @@ export function XDriveWorkspaceSurface({
   if (presentation === 'page') {
     return (
       <Box component="section" className="workspace-page-surface" sx={{ width: '100%', minWidth: 0 }}>
-        <XDrivePageHeader title={title} />
+        <XDrivePageHeader title={title} subtitle={subtitle} actions={pageActions} />
         <Box sx={{ mt: 2 }}>{children}</Box>
       </Box>
     )
