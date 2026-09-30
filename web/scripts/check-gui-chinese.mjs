@@ -55,7 +55,7 @@ requireText(files.app, ['XDriveConfirmDialog', 'confirmIntent={confirmAction?.in
 if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
 requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDrive 品牌图标')
 requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
-requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储空间', '不限配额', '空间紧张', '已用满', '已超额', 'LinearProgress', 'percentageLabel'], '共享侧栏存储摘要')
+requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储', '无容量限制', '已使用', '< 1 KiB', '空间紧张', '已用满', '已超额', 'LinearProgress', 'percentageLabel'], '共享侧栏存储摘要')
 requireText(files.app, ['XDriveSidebarStorageSummary', 'usedBytes={quota.physical_used_bytes}', 'totalBytes={quota.quota_bytes}'], 'Web 侧栏存储摘要')
 requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'web-account-menu', '退出登录'], 'Web 账号菜单')
 requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', 'XDriveAccountMenu', '<Avatar', '<Menu', '<Divider'], '共享账号 chrome')
