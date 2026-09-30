@@ -93,5 +93,6 @@ test('Web exposes files, Gallery, External Sources, and Storage as first-class w
   assert.match(webApp, /<StorageStatsPanel[\s\S]*scope="self"/)
   assert.equal(webApp.includes('setSourcesOpen'), false)
   assert.equal(webApp.includes("setStorageStatsScope('self')"), false)
-  assert.equal((webApp.match(/<Paper className="file-card"/g) || []).length, 1)
+  assert.ok(webApp.includes('<WebFileExplorer'), 'Web files workspace should use the shared Explorer adapter')
+  assert.equal((webApp.match(/<Paper className="file-card"/g) || []).length, 0, 'legacy Web file-card must not return')
 })
