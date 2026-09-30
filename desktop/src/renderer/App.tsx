@@ -4120,12 +4120,12 @@ export default function App() {
 
             {diagnostics ? (
               <>
-                <div className="diagnostic-summary">
-                  <div className="diagnostic-count pass"><strong>{diagnostics.summary.pass}</strong><span>通过</span></div>
-                  <div className="diagnostic-count warn"><strong>{diagnostics.summary.warn}</strong><span>警告</span></div>
-                  <div className="diagnostic-count fail"><strong>{diagnostics.summary.fail}</strong><span>失败</span></div>
-                  <div className="diagnostic-generated"><span>上次检查</span><strong>{new Date(diagnostics.generated_at).toLocaleString()}</strong></div>
-                </div>
+                <XDriveMetricGrid>
+                  <XDriveMetricCard title="通过" value={diagnostics.summary.pass} tone="good" />
+                  <XDriveMetricCard title="警告" value={diagnostics.summary.warn} tone="warning" />
+                  <XDriveMetricCard title="失败" value={diagnostics.summary.fail} tone="bad" />
+                  <XDriveMetricCard title="上次检查" value={new Date(diagnostics.generated_at).toLocaleString()} />
+                </XDriveMetricGrid>
 
                 <div className="diagnostic-actions">
                   <XDriveActionButton

@@ -426,25 +426,11 @@ h2 { margin: 0; font-size: 18px; }
 
 
 .diagnostics-panel { display: grid; gap: 20px; }
-.diagnostic-summary { display: grid; grid-template-columns: repeat(3,minmax(110px,150px)) minmax(220px,1fr); gap: 10px; }
-.diagnostic-count, .diagnostic-generated { border-radius: 12px; padding: 14px; background: var(--surface-muted); display: grid; gap: 4px; }
-.diagnostic-count strong { font-size: 22px; line-height: 1; }
-.diagnostic-count span, .diagnostic-generated span { color: var(--text-muted); font-size: 11px; }
-.diagnostic-count.pass strong { color: var(--success-text); }
-.diagnostic-count.warn strong { color: var(--warning-text); }
-.diagnostic-count.fail strong { color: var(--danger-text); }
-.diagnostic-generated strong { color: var(--text-mid); font-size: 12px; font-weight: 700; }
 .diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .diagnostic-list { display: grid; gap: 8px; }
 .diagnostic-row { display: grid; grid-template-columns: 54px minmax(0,1fr); align-items: start; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
 .diagnostic-row strong { color: var(--text-strong); font-size: 13px; }
 .diagnostic-row p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-
-@media (max-width: 800px) {
-  .diagnostic-summary { grid-template-columns: repeat(3,1fr); }
-  .diagnostic-generated { grid-column: 1 / -1; }
-}
-
 
 .storage-panel { display: grid; gap: 20px; }
 .cache-card { border: 1px solid var(--border); border-radius: 14px; background: var(--surface-soft); overflow: hidden; }
