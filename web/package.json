@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "tsc -b --pretty false && node scripts/check-gui-chinese.mjs && node scripts/check-icon-assets.mjs",
+    "lint": "tsc -b --pretty false && node scripts/check-gui-chinese.mjs && node scripts/check-workspace-surfaces.mjs && node scripts/check-icon-assets.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

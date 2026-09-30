@@ -31,6 +31,7 @@ import {
 } from '@mui/material'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { XDriveApi } from './api'
+import WorkspaceSurface from './WorkspaceSurface'
 import {
   XDriveActionButton,
   XDriveDialogActions,
@@ -248,6 +249,7 @@ function photoSpaceLabel(value: SynologyPhotoSpace) {
 
 export default function ExternalSourcesPanel({
   open,
+  presentation = 'dialog',
   api,
   defaultTargetNodeID,
   defaultTargetLabel,
@@ -256,6 +258,7 @@ export default function ExternalSourcesPanel({
   onError,
 }: {
   open: boolean
+  presentation?: 'dialog' | 'page'
   api: XDriveApi
   defaultTargetNodeID?: number
   defaultTargetLabel: string
@@ -263,6 +266,7 @@ export default function ExternalSourcesPanel({
   onClose: () => void
   onError: (error: unknown) => void
 }) {
+  const surfaceOpen = presentation === 'page' || open
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<ExternalSourceRow | null>(null)
@@ -384,12 +388,12 @@ export default function ExternalSourcesPanel({
   }, [api, onError])
 
   useEffect(() => {
-    if (open) void load()
-  }, [open, load])
+    if (surfaceOpen) void load()
+  }, [surfaceOpen, load])
 
   useEffect(() => {
     const delay = sourceActivityPollDelay(rows)
-    if (!open || delay === null) return
+    if (!surfaceOpen || delay === null) return
 
     let stopped = false
     let timer = 0
@@ -419,7 +423,7 @@ export default function ExternalSourcesPanel({
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [open, rows, load])
+  }, [surfaceOpen, rows, load])
   const loadRunHistory = useCallback(async (sourceID: number, page: number, silent = false) => {
     const nextPage = Math.max(1, Math.trunc(page))
     if (!silent) setHistoryLoading(true)
@@ -438,7 +442,7 @@ export default function ExternalSourcesPanel({
 
   useEffect(() => {
     const delay = selectedSourcePollDelay(selected)
-    if (!open || !selected || historyPage !== 1 || delay === null) return
+    if (!surfaceOpen || !selected || historyPage !== 1 || delay === null) return
 
     let stopped = false
     let timer = 0
@@ -468,7 +472,7 @@ export default function ExternalSourcesPanel({
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [open, selected, historyPage, loadRunHistory])
+  }, [surfaceOpen, selected, historyPage, loadRunHistory])
 
   const openSynologyGuide = (source: ExternalSource) => {
     setGuideSource(source)
@@ -996,9 +1000,14 @@ export default function ExternalSourcesPanel({
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title="外部来源" onClose={onClose} />
-        <XDriveDialogContent dividers>
+      <WorkspaceSurface
+        presentation={presentation}
+        open={open}
+        onClose={onClose}
+        title="外部来源"
+        maxWidth="md"
+        dialogActions={<XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>}
+      >
       <div className="external-sources-toolbar">
         <Stack direction="row" spacing={1}>
           <XDriveActionButton
@@ -1096,11 +1105,7 @@ export default function ExternalSourcesPanel({
             })}
           </div>
         )}
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton onClick={onClose}>关闭</XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+      </WorkspaceSurface>
 
       <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title={selected ? `${selected.source.name} · 来源详情` : '来源详情'} onClose={closeDetails} />

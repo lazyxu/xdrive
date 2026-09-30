@@ -39,6 +39,7 @@ import type {
 } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
+import WorkspaceSurface from './WorkspaceSurface'
 
 const STAGING_PAGE_SIZE = 20
 
@@ -120,13 +121,16 @@ export default function StorageStatsModal({
   api,
   scope,
   open,
+  presentation = 'dialog',
   onClose,
 }: {
   api: XDriveApi
   scope: 'self' | 'global'
   open: boolean
+  presentation?: 'dialog' | 'page'
   onClose: () => void
 }) {
+  const surfaceOpen = presentation === 'page' || open
   const [stats, setStats] = useState<StorageStats | null>(null)
   const [health, setHealth] = useState<StorageHealth | null>(null)
   const [history, setHistory] = useState<StorageHistory | null>(null)
@@ -146,7 +150,7 @@ export default function StorageStatsModal({
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!open) return
+    if (!surfaceOpen) return
     let active = true
     setLoading(true)
     setError('')
@@ -188,7 +192,7 @@ export default function StorageStatsModal({
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [api, open, scope])
+  }, [api, surfaceOpen, scope])
 
   const loadStagingPage = async (page: number, fresh = false) => {
     if (scope !== 'global') return
@@ -281,16 +285,13 @@ export default function StorageStatsModal({
 
   return (
     <>
-      <Dialog
+      <WorkspaceSurface
+        presentation={presentation}
         open={open}
         onClose={onClose}
         maxWidth="lg"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        title={scope === 'global' ? '全局存储统计' : '我的存储统计'}
       >
-        <XDriveDialogTitle title={scope === 'global' ? '全局存储统计' : '我的存储统计'} onClose={onClose} />
-        <XDriveDialogContent dividers>
           {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
 
           {!stats && !error ? (
@@ -584,8 +585,7 @@ export default function StorageStatsModal({
               </Typography>
             </Stack>
           )}
-        </XDriveDialogContent>
-      </Dialog>
+      </WorkspaceSurface>
 
       <Dialog
         open={cleanupConfirmOpen}

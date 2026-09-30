@@ -15,6 +15,7 @@ const files = {
   share: read('src/ShareDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
+  workspaceSurface: read('src/WorkspaceSurface.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
@@ -54,7 +55,8 @@ if (files.app.includes('<div className="brand-mark">x</div>') || files.app.inclu
 }
 requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
 if (/from ['"]antd['"]/.test(files.users) || files.users.includes('@ant-design/icons')) throw new Error('用户管理仍依赖 Ant Design')
-requireText(files.storageStats, ['XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+requireText(files.workspaceSurface, ['WorkspacePresentation', "presentation === 'page'", 'workspace-page-surface', 'XDriveDialogTitle', 'XDriveDialogContent'], 'Web 工作区表面')
+requireText(files.storageStats, ['WorkspaceSurface', "presentation = 'dialog'", "const surfaceOpen = presentation === 'page' || open", 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
 if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
@@ -66,14 +68,14 @@ if (/from ['"]antd['"]/.test(files.share) || files.share.includes('@ant-design/i
 requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数', 'XDriveStatusAlert', 'XDriveActionButton'], '公开分享')
 if (/<Alert\b/.test(files.publicShare)) throw new Error('公开分享仍在直接渲染 AntD Alert')
 if (/from ['"]antd['"]/.test(files.publicShare) || files.publicShare.includes('@ant-design/icons')) throw new Error('公开分享仍依赖 Ant Design')
-requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem + files.paginationControls + files.sourceRunSummary, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', '相册与集合', '该来源暂无相册/集合元数据', 'sourceCollections', 'sourceCollectionItems', 'externalSourceSavedCredentialMask', 'isExternalSourceSavedCredentialMask', '当前已保存的 Cookie 以遮罩显示', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDrivePaginationControls', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '外部来源')
+requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem + files.paginationControls + files.sourceRunSummary, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', '相册与集合', '该来源暂无相册/集合元数据', 'sourceCollections', 'sourceCollectionItems', 'externalSourceSavedCredentialMask', 'isExternalSourceSavedCredentialMask', '当前已保存的 Cookie 以遮罩显示', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDrivePaginationControls', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert', 'WorkspaceSurface', "presentation = 'dialog'", "const surfaceOpen = presentation === 'page' || open"], '外部来源')
 if (files.sources.includes('<DialogTitle')) throw new Error('Web 外部来源仍在直接渲染原生 DialogTitle')
 if (files.sources.includes('<MuiAlert')) throw new Error('Web 外部来源仍在直接渲染原生 MUI Alert')
-if ((files.sources.match(/<XDriveDialogTitle/g) || []).length < 8) throw new Error('Web 外部来源弹窗没有全部复用共享 Dialog chrome')
+if (((files.sources + files.workspaceSurface).match(/<XDriveDialogTitle/g) || []).length < 8) throw new Error('Web 外部来源弹窗没有全部复用共享 Dialog chrome')
 if (files.sources.includes('<DialogActions')) throw new Error('Web 外部来源仍在直接渲染原生 MUI DialogActions')
-if ((files.sources.match(/<XDriveDialogActions>/g) || []).length !== 6) throw new Error('Web 外部来源弹窗没有全部复用共享 DialogActions')
+if (((files.sources + files.workspaceSurface).match(/<XDriveDialogActions/g) || []).length !== 6) throw new Error('Web 外部来源弹窗没有全部复用共享 DialogActions')
 if (/<DialogContent(?:\s|>)/.test(files.sources)) throw new Error('Web 外部来源仍在直接渲染原生 MUI DialogContent')
-if ((files.sources.match(/<XDriveDialogContent/g) || []).length !== 8) throw new Error('Web 外部来源弹窗没有全部复用共享 DialogContent')
+if (((files.sources + files.workspaceSurface).match(/<XDriveDialogContent/g) || []).length !== 8) throw new Error('Web 外部来源弹窗没有全部复用共享 DialogContent')
 if ((files.sources.match(/<XDriveStatusAlert/g) || []).length < 16) throw new Error('Web 外部来源状态提示没有全部复用共享 Alert')
 if (!files.sources.includes('XDriveActionButton')) throw new Error('Web 外部来源没有复用共享操作按钮')
 if ((files.sources.match(/<MuiButton/g) || []).length !== 3) throw new Error('Web 外部来源仅允许保留 3 个 text/inherit 特殊 MUI 按钮')
