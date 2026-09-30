@@ -30,6 +30,8 @@ import {
   IconButton,
   LinearProgress,
   Link,
+  List,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -163,6 +165,23 @@ function WebAccountMenu({
       </Menu>
     </>
   )
+}
+
+const webSidebarItemSx = {
+  minHeight: 40,
+  borderRadius: 1.25,
+  px: 1.25,
+  color: 'text.secondary',
+  '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+  '&.Mui-selected': { bgcolor: 'action.selected', color: 'primary.main' },
+  '&.Mui-selected:hover': { bgcolor: 'action.selected' },
+}
+
+const webSidebarIconSx = { minWidth: 32, color: 'inherit' }
+
+const webSidebarTextSx = {
+  '& .MuiListItemText-primary': { fontSize: 13, fontWeight: 600 },
+  '& .MuiListItemText-secondary': { fontSize: 11, lineHeight: 1.25 },
 }
 
 function App() {
@@ -392,8 +411,7 @@ function FileManager({
   const [adminOpen, setAdminOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
   const [storageStatsScope, setStorageStatsScope] = useState<'self' | 'global' | null>(null)
-  const [sourcesOpen, setSourcesOpen] = useState(false)
-  const [appView, setAppView] = useState<'files' | 'gallery'>('files')
+  const [appView, setAppView] = useState<'files' | 'gallery' | 'sources' | 'storage'>('files')
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
@@ -726,37 +744,81 @@ function FileManager({
                 </Button>
               </>
             )}
-            {quota && (
-              <Tooltip
-                title={
-                  quota.quota_bytes === 0
-                    ? `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)} · 服务器磁盘可用 ${formatSize(quota.disk_available_bytes ?? quota.available_bytes)} · 点击查看 CAS 统计`
-                    : `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)}${quota.reserved_bytes > 0 ? ` · 上传预占 ${formatSize(quota.reserved_bytes)}` : ''} · 可用空间 ${formatSize(quota.available_bytes)} · 点击查看 CAS 统计`
-                }
-              >
-                <Button color="inherit" size="small" startIcon={<StorageRoundedIcon />} onClick={() => setStorageStatsScope('self')}>
-                  存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}
-                  {quota.reserved_bytes > 0 ? ` · 上传预占 ${formatSize(quota.reserved_bytes)}` : ''} · 可用 {formatSize(quota.available_bytes)}
-                </Button>
-              </Tooltip>
-            )}
-            <Button
-              color="inherit"
-              size="small"
-              startIcon={appView === 'gallery' ? <FolderRoundedIcon /> : <PhotoLibraryRoundedIcon />}
-              onClick={() => setAppView((currentView) => currentView === 'gallery' ? 'files' : 'gallery')}
-            >
-              {appView === 'gallery' ? '文件' : '图库'}
-            </Button>
-            <Button color="inherit" size="small" startIcon={<CloudSyncRoundedIcon />} onClick={() => setSourcesOpen(true)}>
-              外部来源
-            </Button>
             <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
           </Stack>
         </Toolbar>
       </AppBar>
 
-      <Box component="main" className="content-wrap">
+      <Box
+        className="web-workspace-shell"
+        sx={{
+          display: { xs: 'block', md: 'grid' },
+          gridTemplateColumns: { md: '184px minmax(0, 1fr)' },
+          minHeight: { md: 'calc(100vh - 64px)' },
+        }}
+      >
+        <Box
+          component="aside"
+          aria-label="网页端功能区"
+          sx={{
+            minWidth: 0,
+            bgcolor: 'background.paper',
+            borderRight: { xs: 0, md: 1 },
+            borderBottom: { xs: 1, md: 0 },
+            borderColor: 'divider',
+            p: { xs: 1, md: 1.5 },
+            overflowX: { xs: 'auto', md: 'visible' },
+          }}
+        >
+          <List
+            component="nav"
+            disablePadding
+            sx={{
+              display: { xs: 'flex', md: 'grid' },
+              gap: 0.5,
+              minWidth: { xs: 'max-content', md: 0 },
+            }}
+          >
+            <ListItemButton
+              selected={appView === 'files'}
+              onClick={() => setAppView('files')}
+              sx={webSidebarItemSx}
+            >
+              <ListItemIcon sx={webSidebarIconSx}><FolderRoundedIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primary="文件" sx={webSidebarTextSx} />
+            </ListItemButton>
+            <ListItemButton
+              selected={appView === 'gallery'}
+              onClick={() => setAppView('gallery')}
+              sx={webSidebarItemSx}
+            >
+              <ListItemIcon sx={webSidebarIconSx}><PhotoLibraryRoundedIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primary="图库" sx={webSidebarTextSx} />
+            </ListItemButton>
+            <ListItemButton
+              selected={appView === 'sources'}
+              onClick={() => setAppView('sources')}
+              sx={webSidebarItemSx}
+            >
+              <ListItemIcon sx={webSidebarIconSx}><CloudSyncRoundedIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primary="外部来源" sx={webSidebarTextSx} />
+            </ListItemButton>
+            <ListItemButton
+              selected={appView === 'storage'}
+              onClick={() => setAppView('storage')}
+              sx={webSidebarItemSx}
+            >
+              <ListItemIcon sx={webSidebarIconSx}><StorageRoundedIcon fontSize="small" /></ListItemIcon>
+              <ListItemText
+                primary="存储"
+                secondary={quota ? `${formatSize(quota.physical_used_bytes)} / ${quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}` : undefined}
+                sx={webSidebarTextSx}
+              />
+            </ListItemButton>
+          </List>
+        </Box>
+
+        <Box component="main" className="content-wrap" sx={{ minWidth: 0, width: '100%' }}>
         {appView === 'files' ? (
           <Paper className="file-card" variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 2 }}>
             <div className="file-toolbar">
@@ -917,22 +979,32 @@ function FileManager({
               </TableContainer>
             )}
           </Paper>
-        ) : (
+        ) : appView === 'gallery' ? (
           <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320, borderRadius: 2 }}>
             <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
           </Paper>
+        ) : appView === 'sources' ? (
+          <ExternalSourcesPanel
+            open
+            presentation="page"
+            api={api}
+            defaultTargetNodeID={current?.id}
+            defaultTargetLabel={current?.name ?? '我的文件'}
+            defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
+            onClose={() => setAppView('files')}
+            onError={handleError}
+          />
+        ) : (
+          <StorageStatsModal
+            api={api}
+            scope="self"
+            open
+            presentation="page"
+            onClose={() => setAppView('files')}
+          />
         )}
+        </Box>
       </Box>
-
-      <ExternalSourcesPanel
-        open={sourcesOpen}
-        api={api}
-        defaultTargetNodeID={current?.id}
-        defaultTargetLabel={current?.name ?? '我的文件'}
-        defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
-        onClose={() => setSourcesOpen(false)}
-        onError={handleError}
-      />
 
       <Dialog open={folderOpen} onClose={() => setFolderOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title="新建文件夹" onClose={() => setFolderOpen(false)} />
