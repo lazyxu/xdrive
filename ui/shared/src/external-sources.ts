@@ -280,6 +280,7 @@ export function externalSourceCreatePresetFor(kind: string, direction: ExternalS
 }
 
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
+export const yikeRateLimitNotice = '为减少一刻相册返回“操作过于频繁（50005）”，xDrive 会将一刻私有 API 请求限制为约 2 次/秒，并在触发限流时自动退避重试。该限制只作用于列表、账号信息和下载链接等 API 请求，不限制照片/视频文件本身的下载速度。'
 export const yikeManagedTargetLabel = '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>'
 
 export const yikeCookieHelp = {

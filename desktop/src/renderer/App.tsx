@@ -92,6 +92,7 @@ import {
   normalizeSynologyPhotoSpaces,
   synologyPhotoSpaceOptions,
   yikeConnectorNotice,
+  yikeRateLimitNotice,
   yikeManagedTargetLabel,
 } from '@xdrive/shared'
 import type {
@@ -2620,6 +2621,7 @@ export default function App() {
                     />
                     <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
                     <XDriveStatusAlert tone="warning" sx={{ mt: 0.5 }}>{yikeConnectorNotice}</XDriveStatusAlert>
+                    <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
                     <XDriveYikeCookieHelp variant="dialog" />
                     <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
                       <XDriveActionButton
@@ -2901,6 +2903,7 @@ export default function App() {
                                   ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
                                   : '当前未配置 Cookie，请粘贴新的 Cookie。'}
                               </small>
+                              <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
                               <XDriveYikeCookieHelp variant="dialog" />
                               <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
                                 <XDriveActionButton

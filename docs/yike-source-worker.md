@@ -202,7 +202,7 @@ The worker poll interval is only a lightweight wake-up cadence. A poll does not 
 
 The minimum interval is one minute. Use `xdrive-server worker --once` only for an intentional administrative run of all eligible active Sources.
 
-Read-only Yike API GETs use bounded transient retries: at most three attempts for transport failures, HTTP 429, and HTTP 5xx responses. Backoff starts at 500 ms; a valid `Retry-After` header is preferred when it is at most 30 seconds. Longer rate-limit delays are returned to the Source run instead of blocking the single Pull worker. Authentication failures and Yike business-level errno responses are not retried.
+Read-only Yike private-API requests are globally paced per connector client with a built-in minimum interval of **500 ms** (about **2 requests/second**) so file pagination, album pagination, account checks, and download-link acquisition cannot burst concurrently. Transport failures and HTTP 5xx responses still use bounded transient retries with 500 ms exponential backoff. HTTP 429 prefers a valid `Retry-After` header when it is at most 30 seconds. Yike business errno `50005` (`操作过于频繁`) is treated as a rate-limit signal and retried within the same three-attempt budget with a slower 2 s then 4 s cooldown. Authentication failures and other business-level errno responses are not retried. Media byte streams themselves are not throttled by this control-plane limiter.
 
 The worker schedules active, credentialed:
 
