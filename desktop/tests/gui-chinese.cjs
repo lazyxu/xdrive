@@ -30,6 +30,7 @@ const sharedPaginationControls = fs.readFileSync(path.join(root, '..', 'ui', 'sh
 const sharedSourceRunSummary = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceRunSummary.tsx'), 'utf8')
 const sharedSourceCollection = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceCollection.tsx'), 'utf8')
 const sharedSourceScheduleFields = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceScheduleFields.tsx'), 'utf8')
+const sharedSourceBasicFields = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceBasicFields.tsx'), 'utf8')
 const sharedSourceIgnoreRulesField = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceIgnoreRulesField.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
@@ -466,8 +467,9 @@ test('desktop uses app-native confirmation dialogs instead of browser confirms',
 })
 
 test('desktop external sources expose Synology Push and Pull without duplicating the UI framework', () => {
-  assert.ok(renderer.includes("value={sourceCreatePreset}"), 'source creation does not use the shared create preset')
-  assert.ok(renderer.includes('externalSourceCreateOptions.map'), 'missing shared source create options')
+  assert.ok(renderer.includes('<XDriveSourcePresetField'), 'source creation does not use the shared create preset field')
+  assert.ok(renderer.includes("value={sourceCreatePreset}"), 'source creation does not pass the selected preset to the shared field')
+  assert.ok(sharedSourceBasicFields.includes('externalSourceCreateOptions.map'), 'shared preset field is missing Source create options')
   assert.ok(sharedExternalSources.includes("label: '群晖 Photos · Push'"), 'missing Synology Push label')
   assert.ok(sharedExternalSources.includes("label: '群晖 Photos · Pull'"), 'missing Synology Pull label')
   assert.ok(renderer.includes('DSM 地址'), 'missing DSM base URL field')

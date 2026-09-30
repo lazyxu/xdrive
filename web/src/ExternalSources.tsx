@@ -47,6 +47,10 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceIgnoreRulesField,
+  XDriveSourceNameField,
+  XDriveSourcePresetField,
+  XDriveSourceRunModeField,
+  XDriveSourceStatusField,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -61,7 +65,6 @@ import {
   externalSourceCardView,
   externalSourceConnectorProfile,
   externalSourceCreateOption,
-  externalSourceCreateOptions,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
   externalSourceSavedCredentialMask,
@@ -1478,45 +1481,25 @@ export default function ExternalSourcesPanel({
         )}
         <MuiBox id="external-source-create-form" component="form" onSubmit={(event) => void createSource(event)}>
           <Stack spacing={2}>
-            <TextField
-              select
-              fullWidth
-              size="small"
-              label="来源类型"
+            <XDriveSourcePresetField
               value={createValues.preset}
-              onChange={(event) => changeCreatePreset(event.target.value as ExternalSourceCreatePreset)}
-              helperText={createOption.description}
-            >
-              {externalSourceCreateOptions.map((item) => (
-                <MenuItem key={item.value} value={item.value} sx={{ gap: 1 }}>
-                  <XDriveSourceKindIcon kind={item.kind} size="small" title={item.label} />
-                  <ListItemText primary={item.label} />
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              fullWidth
-              size="small"
-              label="来源名称"
+              onChange={changeCreatePreset}
+            />
+            <XDriveSourceNameField
               value={createValues.name}
               error={Boolean(createNameError)}
               helperText={createNameError || ' '}
-              onChange={(event) => {
-                setCreateValues((current) => ({ ...current, name: event.target.value }))
+              onChange={(value) => {
+                setCreateValues((current) => ({ ...current, name: value }))
                 if (createNameError) setCreateNameError('')
               }}
             />
-            <TextField
-              select
-              fullWidth
-              size="small"
+            <XDriveSourceRunModeField
               label="初始运行模式"
               value={createValues.run_mode}
-              onChange={(event) => setCreateValues((current) => ({ ...current, run_mode: event.target.value as 'scan' | 'sync' }))}
-            >
-              <MenuItem value="scan">仅扫描（推荐先使用）</MenuItem>
-              <MenuItem value="sync">同步</MenuItem>
-            </TextField>
+              scanLabel="仅扫描（推荐先使用）"
+              onChange={(value) => setCreateValues((current) => ({ ...current, run_mode: value }))}
+            />
             <XDriveSourceScheduleFields
               scheduleType={createScheduleType}
               expression={createScheduleExpression}
@@ -1730,41 +1713,25 @@ export default function ExternalSourcesPanel({
         {setting && (
           <MuiBox id="external-source-settings-form" component="form" onSubmit={(event) => void saveSettings(event)}>
             <Stack spacing={2}>
-              <TextField
+              <XDriveSourceNameField
                 autoFocus
-                fullWidth
-                size="small"
-                label="来源名称"
                 value={settingsValues.name}
                 error={Boolean(settingsNameError)}
                 helperText={settingsNameError || ' '}
-                onChange={(event) => {
-                  setSettingsValues((current) => ({ ...current, name: event.target.value }))
+                onChange={(value) => {
+                  setSettingsValues((current) => ({ ...current, name: value }))
                   if (settingsNameError) setSettingsNameError('')
                 }}
               />
-              <TextField
-                select
-                fullWidth
-                size="small"
-                label="运行模式"
+              <XDriveSourceRunModeField
                 value={settingsValues.run_mode}
-                onChange={(event) => setSettingsValues((current) => ({ ...current, run_mode: event.target.value as 'scan' | 'sync' }))}
-              >
-                <MenuItem value="sync">同步</MenuItem>
-                <MenuItem value="scan">仅扫描</MenuItem>
-              </TextField>
-              <TextField
-                select
-                fullWidth
-                size="small"
+                onChange={(value) => setSettingsValues((current) => ({ ...current, run_mode: value }))}
+              />
+              <XDriveSourceStatusField
                 label="来源状态"
                 value={settingsValues.status}
-                onChange={(event) => setSettingsValues((current) => ({ ...current, status: event.target.value as 'active' | 'paused' }))}
-              >
-                <MenuItem value="active">启用</MenuItem>
-                <MenuItem value="paused">暂停</MenuItem>
-              </TextField>
+                onChange={(value) => setSettingsValues((current) => ({ ...current, status: value }))}
+              />
               <XDriveSourceScheduleFields
                 scheduleType={settingsScheduleType}
                 expression={settingsScheduleExpression}

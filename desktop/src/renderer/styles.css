@@ -624,14 +624,14 @@ h2 { margin: 0; font-size: 18px; }
 
 .source-settings { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); display: grid; gap: 13px; }
 .source-settings-grid { display: grid; grid-template-columns: minmax(0,1.5fr) repeat(2,minmax(130px,.75fr)); gap: 10px; }
-.source-settings label { min-width: 0; display: grid; gap: 6px; color: var(--text-mid); font-size: 11px; font-weight: 700; }
-.source-settings input,
-.source-settings select,
-.source-settings textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; outline: none; }
-.source-settings textarea { resize: vertical; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; line-height: 1.5; }
-.source-settings input:focus,
-.source-settings select:focus,
-.source-settings textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(91,140,255,.13); }
+.source-settings > label { min-width: 0; display: grid; gap: 6px; color: var(--text-mid); font-size: 11px; font-weight: 700; }
+.source-settings > label > input,
+.source-settings > label > select,
+.source-settings > label > textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; outline: none; }
+.source-settings > label > textarea { resize: vertical; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; line-height: 1.5; }
+.source-settings > label > input:focus,
+.source-settings > label > select:focus,
+.source-settings > label > textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(91,140,255,.13); }
 .source-settings-wide { display: grid !important; }
 .source-settings-wide small { color: var(--text-muted); font-size: 10px; font-weight: 500; line-height: 1.45; }
 
@@ -642,14 +642,14 @@ h2 { margin: 0; font-size: 18px; }
 
 .source-create { border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: var(--surface-soft); display: grid; gap: 14px; }
 .source-create-grid { display: grid; grid-template-columns: minmax(170px,1fr) minmax(180px,1.4fr) minmax(130px,.8fr); gap: 10px; }
-.source-create label { min-width: 0; display: grid; gap: 6px; color: var(--text-mid); font-size: 11px; font-weight: 700; }
-.source-create input,
-.source-create select,
-.source-create textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; outline: none; }
-.source-create textarea { resize: vertical; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; line-height: 1.5; }
-.source-create input:focus,
-.source-create select:focus,
-.source-create textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(91,140,255,.13); }
+.source-create > label { min-width: 0; display: grid; gap: 6px; color: var(--text-mid); font-size: 11px; font-weight: 700; }
+.source-create > label > input,
+.source-create > label > select,
+.source-create > label > textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; outline: none; }
+.source-create > label > textarea { resize: vertical; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; line-height: 1.5; }
+.source-create > label > input:focus,
+.source-create > label > select:focus,
+.source-create > label > textarea:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(91,140,255,.13); }
 .source-create-wide { display: grid !important; }
 .source-create-wide small { color: var(--text-muted); font-size: 10px; font-weight: 500; line-height: 1.45; }
 .source-create-note { margin-top: 0; }
