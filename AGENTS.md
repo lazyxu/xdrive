@@ -55,6 +55,15 @@ Provider delivery rules:
 - Do not duplicate cross-surface Source/status/formatting rules in Web and Desktop. Put framework-neutral semantics in `ui/shared`, then render them with MUI in each app.
 - When waiting on GitHub/GitLab CI for the current PR, use that time to **plan** the next small feature: inspect the relevant interfaces, tests, dependency chain, and branch strategy. Do not modify or open the next feature branch until the current small feature is merged, unless the work is an explicitly approved stacked dependency.
 
+### Sync-folder UX contract
+
+- The **user-facing product term is “同步文件夹”**. Web/Desktop UI, dialogs, navigation, empty states, errors, and help copy must not introduce “外部来源”, “来源设置”, or similar Source-centric wording for this feature. Internal code/API/database concepts may remain `Source`, `ExternalSource`, `/sources`, and `xd_sources`; do not rename the backend model merely for product copy.
+- Every new connector-backed sync folder must expose its effective xDrive destination as a server-resolved, database-backed `target_path`. Settings show that path as a **read-only** field. A normal settings save refreshes the path from the server but does not rename, move, recreate, or otherwise mutate a managed target.
+- For a server-managed target, derive/create/bind the target only from connector identity/configuration at the appropriate binding boundary (for example, after credential identity validation). Do not make unrelated settings such as schedule or ignore rules rewrite the folder path.
+- Stored connector credentials are masked by default. If a connector needs a user-visible “显示” action, implement an authenticated **explicit reveal** operation rather than returning plaintext from ordinary list/status APIs. Reveal only the minimum connector-specific field required by the UI, set `Cache-Control: no-store`, audit the reveal without recording secret content, keep plaintext only in renderer memory, clear it when the settings surface closes, and auto-hide it after a short interval (30 seconds by default).
+- Current reveal whitelist examples are Yike `cookie` and Synology DSM `password`. Do not expose an entire stored credential payload when only one secret field is needed, and do not reveal non-secret connection fields through the secret-reveal API.
+- New sync-folder connectors should follow this contract by default unless their provider model makes a specific rule inapplicable; document any exception in `docs/external-source-architecture.md`.
+
 ## CI policy
 
 - Full CI runs for GitHub pull requests or GitLab merge requests targeting `master`, and also for direct pushes to `master` on both providers. Ordinary pushes to short-lived feature/fix branches do not run full CI.

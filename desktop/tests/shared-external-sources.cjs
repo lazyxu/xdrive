@@ -32,7 +32,7 @@ const shared = loadSharedExternalSources()
 function source(overrides = {}) {
   return {
     id: 1,
-    name: '来源',
+    name: '同步文件夹',
     kind: 'synology_photos',
     direction: 'push',
     sync_mode: 'backup',
@@ -148,7 +148,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: true,
-      label: '立即唤醒 Pull worker 扫描此来源；定时轮询作为兜底',
+      label: '立即唤醒 Pull worker 扫描此同步文件夹；定时轮询作为兜底',
     },
   )
 
@@ -171,7 +171,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: false,
-      label: '来源正在运行',
+      label: '同步文件夹正在运行',
     },
   )
 
@@ -183,7 +183,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: false,
-      label: '来源正在取消',
+      label: '同步文件夹正在取消',
     },
   )
 })
@@ -438,7 +438,7 @@ test('shared Synology DSM guide binds the exact Source and keeps secrets out of 
   })
 
   assert.equal(guide.sourceID, 42)
-  assert.match(guide.subtitle, /Source #42/)
+  assert.match(guide.subtitle, /同步文件夹 #42/)
   const bind = guide.steps.find((step) => step.id === 'bind')
   assert.ok(bind)
   assert.match(bind.command, /setup --source-id 42/)
@@ -547,6 +547,10 @@ test('shared saved credential mask is display-only', () => {
   assert.equal(shared.isExternalSourceSavedCredentialMask(shared.externalSourceSavedCredentialMask), true)
   assert.equal(shared.isExternalSourceSavedCredentialMask('BDUSS=real-cookie'), false)
   assert.equal(shared.isExternalSourceSavedCredentialMask(''), false)
+  assert.equal(
+    shared.externalSourceTargetLabel({ kind: 'yike_photos', target_node_id: 42, target_path: '同步文件夹/一刻相册/uid_123_张三' }),
+    '同步文件夹 / 一刻相册 / uid_123_张三',
+  )
 })
 
 test('shared Yike credential test messages are actionable', () => {
@@ -554,7 +558,7 @@ test('shared Yike credential test messages are actionable', () => {
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_rate_limited'), '一刻相册请求过于频繁，请稍后重试')
   assert.equal(
     shared.externalSourceCredentialTestErrorLabel('yike_target_contains_unmanaged_data'),
-    '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加来源',
+    '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加同步文件夹',
   )
   assert.equal(
     shared.externalSourceCredentialTestErrorLabel('yike_target_path_conflict'),
@@ -728,8 +732,8 @@ test('Web and Desktop reuse shared source basic fields', () => {
     'XDriveSourceStatusField',
     'externalSourceCreateOptions',
     'XDriveSourceKindIcon',
-    '来源类型',
-    '来源名称',
+    '同步文件夹类型',
+    '同步文件夹名称',
     '运行模式',
     '启用',
     '暂停',
@@ -791,6 +795,15 @@ test('Web and Desktop reuse shared source credential fields', () => {
   assert.equal(desktop.includes('<span>DSM 地址</span>'), false, 'Desktop create should not keep native DSM address input')
   assert.equal(desktop.includes('<span>更新 DSM 地址</span>'), false, 'Desktop settings should not keep native DSM address input')
   assert.equal(desktop.includes('<span>一刻相册 Cookie</span>'), false, 'Desktop should not keep native Cookie input labels')
+  for (const token of ['XDriveSourceCredentialRevealField', 'XDriveSourceTargetField', '默认遮罩', '30 秒内自动隐藏', '显示', '隐藏']) {
+    assert.ok(sharedFields.includes(token), `shared Source protected credential field missing: ${token}`)
+  }
+  assert.equal((web.match(/<XDriveSourceCredentialRevealField\b/g) || []).length, 2, 'Web should expose Yike Cookie and DSM password through the shared reveal field')
+  assert.equal((desktop.match(/<XDriveSourceCredentialRevealField\b/g) || []).length, 2, 'Desktop should expose Yike Cookie and DSM password through the shared reveal field')
+  assert.equal((web.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'Web settings should show the shared read-only target field')
+  assert.equal((desktop.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'Desktop settings should show the shared read-only target field')
+  assert.ok(web.includes('title="同步文件夹"'), 'Web should use sync-folder terminology')
+  assert.ok(desktop.includes('primary="同步文件夹"'), 'Desktop sidebar should use sync-folder terminology')
 })
 
 

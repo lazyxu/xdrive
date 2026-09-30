@@ -175,6 +175,7 @@ type desktopIPCController interface {
 	CloudSourceCollections(context.Context, uint64, string) ([]client.SourceCollection, error)
 	CloudSourceCollectionItems(context.Context, uint64, uint64, int, int) ([]client.SourceCollectionItem, error)
 	CloudSourceCredentialStatus(context.Context, uint64) (client.SourceCredentialStatus, error)
+	CloudRevealSourceCredential(context.Context, uint64) (client.SourceCredentialReveal, error)
 	CloudTestSourceCredential(context.Context, string, map[string]string) (client.SourceCredentialTestResult, error)
 	CloudTestStoredSourceCredential(context.Context, uint64) (client.SourceCredentialTestResult, error)
 	CloudPutSourceCredential(context.Context, uint64, map[string]string) (client.SourceCredentialStatus, error)
@@ -402,6 +403,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/sources/collections/items", h.sourceCollectionItems)
 	mux.HandleFunc("POST /v1/source-credentials/test", h.testSourceCredential)
 	mux.HandleFunc("GET /v1/sources/credential", h.sourceCredentialStatus)
+	mux.HandleFunc("POST /v1/sources/credential/reveal", h.revealSourceCredential)
 	mux.HandleFunc("POST /v1/sources/credential/test", h.testStoredSourceCredential)
 	mux.HandleFunc("PUT /v1/sources/credential", h.putSourceCredential)
 	mux.HandleFunc("DELETE /v1/sources/credential", h.deleteSourceCredential)
@@ -1413,6 +1415,25 @@ func (h *desktopIPCHandler) testSourceCredential(w http.ResponseWriter, r *http.
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) revealSourceCredential(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SourceID uint64 `json:"source_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.SourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	revealed, err := h.ctrl.CloudRevealSourceCredential(r.Context(), input.SourceID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, revealed)
 }
 
 func (h *desktopIPCHandler) testStoredSourceCredential(w http.ResponseWriter, r *http.Request) {

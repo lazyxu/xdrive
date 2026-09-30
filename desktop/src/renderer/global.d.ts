@@ -3,6 +3,7 @@ import type {
   CreatedFileShare,
   ExternalSource,
   ExternalSourceCredentialStatus,
+  ExternalSourceCredentialReveal,
   ExternalSourceCredentialTestResult,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
@@ -181,6 +182,7 @@ declare global {
   type AgentSourceCollection = ExternalSourceCollection
   type AgentSourceCollectionItem = ExternalSourceCollectionItem
   type AgentSourceCredentialStatus = ExternalSourceCredentialStatus
+  type AgentSourceCredentialReveal = ExternalSourceCredentialReveal
   type AgentSourceCredentialTestResult = ExternalSourceCredentialTestResult
   type AgentSourceConnectorConfig = ExternalSourceConnectorConfig
 
@@ -284,6 +286,7 @@ declare global {
         getSourceCollections: (sourceID: number, state?: string) => Promise<DesktopResult<AgentSourceCollection[]>>
         getSourceCollectionItems: (sourceID: number, collectionID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceCollectionItem[]>>
         getSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialStatus>>
+        revealSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialReveal>>
         testSourceCredential: (kind: string, credential: string | Record<string, string>) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
         testStoredSourceCredential: (sourceID: number) => Promise<DesktopResult<AgentSourceCredentialTestResult>>
         setSourceCredential: (sourceID: number, credential: string | Record<string, string>) => Promise<DesktopResult<AgentSourceCredentialStatus>>

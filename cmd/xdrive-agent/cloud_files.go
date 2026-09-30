@@ -471,6 +471,14 @@ func (c *agentController) CloudSourceCredentialStatus(ctx context.Context, sourc
 	return cli.SourceCredentialStatus(ctx, sourceID)
 }
 
+func (c *agentController) CloudRevealSourceCredential(ctx context.Context, sourceID uint64) (client.SourceCredentialReveal, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.SourceCredentialReveal{}, err
+	}
+	return cli.RevealSourceCredential(ctx, sourceID)
+}
+
 func (c *agentController) CloudTestSourceCredential(ctx context.Context, kind string, payload map[string]string) (client.SourceCredentialTestResult, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

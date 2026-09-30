@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -274,6 +275,19 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		strings.Contains(synologyStatus.Body.String(), "base_url") {
 		t.Fatalf("Synology credential status leaked or missing state: %s", synologyStatus.Body.String())
 	}
+	synologyRevealPath := fmt.Sprintf("/api/v1/sources/%d/credential/reveal", synologyPull.ID)
+	synologyReveal := request(t, router, http.MethodPost, synologyRevealPath, tokenA, strings.NewReader(`{}`), http.StatusOK)
+	var synologyRevealDTO sourceCredentialRevealDTO
+	if err := json.Unmarshal(synologyReveal.Body.Bytes(), &synologyRevealDTO); err != nil {
+		t.Fatal(err)
+	}
+	if synologyRevealDTO.Field != "password" || synologyRevealDTO.Value != "secret" || synologyRevealDTO.ExpiresInSeconds != 30 {
+		t.Fatalf("unexpected Synology credential reveal: %+v", synologyRevealDTO)
+	}
+	if cacheControl := synologyReveal.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("Synology reveal cache-control=%q", cacheControl)
+	}
+	request(t, router, http.MethodPost, synologyRevealPath, tokenB, strings.NewReader(`{}`), http.StatusNotFound)
 	request(t, router, http.MethodDelete, synologyPullCredentialPath, tokenA, nil, http.StatusNoContent)
 	var pausedSynologyPull meta.Source
 	if err := db.First(&pausedSynologyPull, synologyPull.ID).Error; err != nil {
@@ -351,6 +365,31 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	}
 	if logicalTarget != "同步文件夹/一刻相册/uid_12345_张三" {
 		t.Fatalf("managed Yike target=%q", logicalTarget)
+	}
+	sourceRes := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d", source.ID), tokenA, nil, http.StatusOK)
+	var sourceWithPath sourceDTO
+	if err := json.Unmarshal(sourceRes.Body.Bytes(), &sourceWithPath); err != nil {
+		t.Fatal(err)
+	}
+	if sourceWithPath.TargetPath != logicalTarget {
+		t.Fatalf("source target_path=%q want=%q", sourceWithPath.TargetPath, logicalTarget)
+	}
+	revealPath := fmt.Sprintf("/api/v1/sources/%d/credential/reveal", source.ID)
+	revealed := request(t, router, http.MethodPost, revealPath, tokenA, strings.NewReader(`{}`), http.StatusOK)
+	var reveal sourceCredentialRevealDTO
+	if err := json.Unmarshal(revealed.Body.Bytes(), &reveal); err != nil {
+		t.Fatal(err)
+	}
+	if reveal.Field != "cookie" || reveal.Value != "BDUSS=top-secret-cookie" || reveal.ExpiresInSeconds != 30 {
+		t.Fatalf("unexpected Yike credential reveal: %+v", reveal)
+	}
+	var revealAudit meta.AuditEvent
+	if err := db.Where("action = ? AND target_id = ?", "source.credential.reveal", strconv.FormatUint(source.ID, 10)).
+		Order("id DESC").First(&revealAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(revealAudit.Metadata, "top-secret-cookie") || !strings.Contains(revealAudit.Metadata, `"field":"cookie"`) {
+		t.Fatalf("credential reveal audit metadata=%q", revealAudit.Metadata)
 	}
 
 	// The managed target hierarchy is fixed. Ordinary node mutations must not

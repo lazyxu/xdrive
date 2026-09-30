@@ -114,7 +114,7 @@ The Source remains paused and has no target until its Cookie is validated. On th
    └─ uid_<百度UID>_<账号名称>/
 ```
 
-For example: `同步文件夹/一刻相册/uid_12345_张三/`. Invalid filename characters in the account name are replaced safely. This hierarchy exists only in `xd_nodes`; file content still uses xDrive's content-addressed storage (CAS), so the managed folder does not duplicate physical blobs or change deduplication semantics. The target cannot be changed through the Source update API. While a Yike Source is bound, ordinary file-manager rename/move/delete operations are also blocked for the target folder and its managed ancestors so the fixed hierarchy cannot be bypassed; media files inside the target remain normal nodes.
+For example: `同步文件夹/一刻相册/uid_12345_张三/`. Invalid filename characters in the account name are replaced safely. This hierarchy exists only in `xd_nodes`; file content still uses xDrive's content-addressed storage (CAS), so the managed folder does not duplicate physical blobs or change deduplication semantics. Source responses expose the database-resolved path as `target_path`, and Web/Desktop show it as the read-only “目标目录” in **同步文件夹设置**. The target cannot be changed through the Source update API, and saving unrelated settings does not recreate or rename it. While a Yike Source is bound, ordinary file-manager rename/move/delete operations are also blocked for the target folder and its managed ancestors so the fixed hierarchy cannot be bypassed; media files inside the target remain normal nodes.
 
 If a Yike Source was deleted while its imported folder was intentionally kept, re-adding the same account does not silently adopt files by name or size. Credential binding rejects a non-empty detached fixed target with `yike_target_contains_unmanaged_data`; move/archive that detached folder first, then add the Source again. This avoids treating unrelated user files as already-synchronized media.
 
@@ -174,7 +174,33 @@ Body:
 }
 ```
 
-The response contains only credential status metadata. The Cookie is encrypted with the versioned connector keyring and is never returned by GET. For a new Yike Source, target-directory creation, Source binding/activation, and encrypted credential persistence occur in one database transaction. Clearing the Cookie automatically pauses the Source and clears any pending manual request; storing a new valid Cookie for the same UID reactivates it and keeps the existing managed target. Once media has been imported, a Cookie belonging to a different UID is rejected.
+The response contains only credential status metadata. The Cookie is encrypted with the versioned connector keyring and is never returned by ordinary GET/list/status APIs. For a new Yike Source, target-directory creation, Source binding/activation, and encrypted credential persistence occur in one database transaction. Clearing the Cookie automatically pauses the Source and clears any pending manual request; storing a new valid Cookie for the same UID reactivates it and keeps the existing managed target. Once media has been imported, a Cookie belonging to a different UID is rejected.
+
+## Reveal the saved Cookie
+
+同步文件夹设置 keeps the saved Cookie masked by default. A user may explicitly reveal it through:
+
+```http
+POST /api/v1/sources/<source-id>/credential/reveal
+Authorization: Bearer <xdrive-access-token>
+Content-Type: application/json
+
+{}
+```
+
+For a Yike Source the response allowlists only:
+
+```json
+{
+  "field": "cookie",
+  "value": "BDUSS=...; ...",
+  "expires_in_seconds": 30
+}
+```
+
+The reveal endpoint is authenticated and owner-scoped, returns `Cache-Control: no-store`, and records a credential-reveal audit event containing the Source kind and revealed field name but never the Cookie value. Web/Desktop keep the plaintext only in memory and automatically mask it again after 30 seconds or immediately when the settings dialog closes. The revealed value is display-only and is not copied into the replacement-Cookie input automatically.
+
+Synology Pull follows the same reveal contract but allowlists only the DSM `password`; it does not return the saved DSM address or username through this endpoint.
 
 ## Worker schedule
 

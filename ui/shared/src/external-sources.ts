@@ -26,6 +26,7 @@ export interface ExternalSource {
   schedule_timezone?: string
   revision: number
   target_node_id?: number
+  target_path?: string
   ignore_rules?: string
   checkpoint?: string
   last_run_at?: string
@@ -135,6 +136,12 @@ export interface ExternalSourceCredentialStatus {
   configured: boolean
   key_version?: number
   updated_at?: string
+}
+
+export interface ExternalSourceCredentialReveal {
+  field: 'cookie' | 'password'
+  value: string
+  expires_in_seconds: number
 }
 
 export interface SynologyDsmCredentialInput {
@@ -317,6 +324,13 @@ export function externalSourceCreatePresetFor(kind: string, direction: ExternalS
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
 export const yikeRateLimitNotice = '为减少一刻相册返回“操作过于频繁（50005）”，xDrive 会将一刻私有 API 请求限制为约 2 次/秒，并在触发限流时自动退避重试。该限制只作用于列表、账号信息和下载链接等 API 请求，不限制照片/视频文件本身的下载速度。'
 export const yikeManagedTargetLabel = '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>'
+
+export function externalSourceTargetLabel(source: Pick<ExternalSource, 'kind' | 'target_node_id' | 'target_path'>) {
+  const targetPath = String(source.target_path ?? '').trim()
+  if (targetPath) return targetPath.split('/').filter(Boolean).join(' / ')
+  if (source.kind === 'yike_photos') return yikeManagedTargetLabel
+  return source.target_node_id ? `节点 #${source.target_node_id}` : '未配置'
+}
 export const synologyDsmAddressHelp = 'DSM 默认 HTTPS 端口为 5001。使用 https://IP:5001 时，证书必须受 xDrive Server 信任且包含该 IP；如果证书签发给域名，请填写该域名。'
 
 export const yikeCookieHelp = {
@@ -592,15 +606,15 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.run_requested_at) return { ready: false, label: '已提交扫描请求' }
   if (connector.credential && !credential?.configured) return { ready: false, label: `请先配置 ${externalSourceCredentialLabel(connector)}` }
-  if (source.status !== 'active') return { ready: false, label: '来源已暂停' }
+  if (source.status !== 'active') return { ready: false, label: '同步文件夹已暂停' }
   if (latestRun?.status === 'running' && latestRun.cancel_requested_at) {
-    return { ready: false, label: '来源正在取消' }
+    return { ready: false, label: '同步文件夹正在取消' }
   }
-  if (latestRun?.status === 'running') return { ready: false, label: '来源正在运行' }
+  if (latestRun?.status === 'running') return { ready: false, label: '同步文件夹正在运行' }
   if (connector.manualTriggerExecutor === 'source_agent') {
     return { ready: true, label: '提交请求，由群晖 source-agent 下一次任务检查执行' }
   }
-  return { ready: true, label: '立即唤醒 Pull worker 扫描此来源；定时轮询作为兜底' }
+  return { ready: true, label: '立即唤醒 Pull worker 扫描此同步文件夹；定时轮询作为兜底' }
 }
 
 export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
@@ -751,7 +765,7 @@ export function externalSourceCredentialTestErrorLabel(code: string, detail = ''
     yike_timeout: '连接一刻相册超时，请稍后重试',
     yike_unavailable: '一刻相册服务暂时不可用，请稍后重试',
     yike_connection_failed: '无法连接一刻相册，请检查网络后重试',
-    yike_target_contains_unmanaged_data: '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加来源',
+    yike_target_contains_unmanaged_data: '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加同步文件夹',
     yike_target_path_conflict: '固定的一刻相册路径被同名文件占用，请先整理“同步文件夹 / 一刻相册”路径后重试',
     synology_auth_failed: 'Synology DSM 登录失败，请检查地址、用户名和密码',
     synology_multiple_login: 'Synology DSM 检测到重复登录，请稍后重试',
@@ -768,11 +782,11 @@ export function externalSourceCredentialTestErrorLabel(code: string, detail = ''
     synology_api_error: 'Synology DSM API 返回错误',
     synology_unavailable: '无法连接 Synology DSM，请检查 NAS 地址、网络和 HTTPS 配置',
     synology_timeout: '连接 Synology DSM 超时，请稍后重试',
-    source_timeout: '连接来源超时，请稍后重试',
-    source_connection_failed: '无法连接来源，请检查网络和凭据后重试',
-    invalid_source_credential: '来源凭据格式无效，请检查后重试',
-    source_credential_not_configured: '尚未配置来源凭据',
-    unsupported_source_credential_kind: '当前来源不支持连接测试',
+    source_timeout: '连接同步文件夹超时，请稍后重试',
+    source_connection_failed: '无法连接同步文件夹，请检查网络和凭据后重试',
+    invalid_source_credential: '同步文件夹凭据格式无效，请检查后重试',
+    source_credential_not_configured: '尚未配置同步文件夹凭据',
+    unsupported_source_credential_kind: '当前同步文件夹不支持连接测试',
   }
   const label = labels[normalized] || normalized || '连接测试失败'
   const normalizedDetail = String(detail || '').trim()

@@ -90,6 +90,19 @@ The NAS reads its local filesystem and pushes observations/transfers to xDrive. 
 
 A future Photos semantic lane may enrich indexed files with Photos item IDs and metadata without changing the fact that non-media files, sidecars, and unsupported objects remain normal SourceItems.
 
+## Product/UI contract: 同步文件夹
+
+`External Source` remains the internal connector-neutral model and API vocabulary. The user-facing Web/Desktop product surface is named **同步文件夹**. New connectors should use the following defaults:
+
+- The Source response exposes a server-resolved `target_path` derived from the current `xd_nodes` tree. Clients render this real database path instead of reconstructing or hard-coding a display path from connector conventions.
+- Settings show the effective target as read-only. Saving name, mode, schedule, status, connector options, or ignore rules must not implicitly move or rename a managed target. After save, clients reload Source state and display the latest `target_path`.
+- Managed target creation/binding happens only at an identity/configuration boundary that actually determines the destination. Yike, for example, binds `同步文件夹/一刻相册/uid_<UID>_<account>/` after the Cookie identifies the account.
+- Credential status/list APIs return only configured/version/update metadata. Plaintext secrets are never included in Source list/overview or ordinary credential GET responses.
+- An explicit credential-reveal operation may be offered when users need to inspect a saved secret. It must be authenticated, owner-scoped, return only a connector-specific allowlisted field, emit `Cache-Control: no-store`, and write an audit event that excludes the secret value.
+- Web/Desktop keep revealed plaintext only in volatile renderer state, clear it when settings close or the selected sync folder changes, and hide it automatically after 30 seconds by default. Revealed plaintext must not be copied into the edit form automatically, persisted to local storage, or written to diagnostics/logs.
+- Current reveal allowlist: Yike exposes only `cookie`; Synology Photos/File Station Pull expose only DSM `password`. DSM address and username stay outside the secret reveal payload.
+- When adding another connector-backed sync folder, follow this target-path and credential-display contract unless the provider has no persisted target or no stored secret. Document any exception explicitly.
+
 ## Identity aliases are file-generic
 
 `SourceItemAlias` belongs to the Source identity layer, not the media layer.

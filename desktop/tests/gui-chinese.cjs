@@ -49,13 +49,13 @@ test('desktop GUI defaults to Chinese', () => {
   for (const text of [
     '概览',
     '云端文件',
-    '外部来源',
+    '同步文件夹',
     '立即扫描',
-    '来源设置',
+    '同步文件夹设置',
     '保存设置',
-    '添加外部来源',
+    '添加同步文件夹',
     '目标文件夹',
-    '添加来源',
+    '添加同步文件夹',
     '传输中心',
     '存储策略',
     '冲突副本',
@@ -208,7 +208,7 @@ test('desktop gates CfAPI-only storage controls by platform', () => {
 })
 
 test('desktop external sources expose safe source deletion', () => {
-  assert.ok(renderer.includes('删除来源'), 'missing source delete action')
+  assert.ok(renderer.includes('删除同步文件夹'), 'missing source delete action')
   assert.ok(renderer.includes('已同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
   assert.ok(renderer.includes('文件会保留，不会删除'), 'missing non-destructive delete confirmation result')
   assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
@@ -225,7 +225,7 @@ test('desktop transient management surfaces use modal dialogs', () => {
     assert.ok(renderer.includes(openProp), `missing modal dialog state: ${openProp}`)
   }
 
-  for (const label of ['添加外部来源', '来源设置', '回收站', '版本历史', '分享文件']) {
+  for (const label of ['添加同步文件夹', '同步文件夹设置', '回收站', '版本历史', '分享文件']) {
     assert.ok(renderer.includes(`aria-label="${label}"`), `missing modal dialog label: ${label}`)
   }
 
@@ -287,7 +287,7 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('function DesktopActionButton({'), false, 'desktop still owns a local action button implementation')
   assert.ok(sharedActionButton.includes('export function XDriveActionButton({'), 'shared action button is missing')
   assert.ok(sharedActionButton.includes('<CircularProgress size={compact ? 12 : 14}'), 'shared action button does not expose a loading spinner')
-  for (const label of ['重试连接', '添加来源', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
+  for (const label of ['重试连接', '添加同步文件夹', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
     assert.ok(renderer.includes(label), `missing standardized action label: ${label}`)
   }
   assert.ok(renderer.includes('intent="primary"'), 'primary page action hierarchy is missing')
@@ -446,7 +446,7 @@ test('desktop external-source status uses the cross-client MUI badge', () => {
 test('desktop empty and loading states use the cross-client MUI state panel', () => {
   assert.ok(sharedStatePanel.includes('export function XDriveStatePanel({'), 'shared state panel is missing')
   assert.ok(renderer.includes('<XDriveStatePanel loading message="正在加载设置…" />'), 'settings loading state is not shared')
-  assert.ok(renderer.includes('message="尚未添加外部来源。"'), 'source empty state is not shared')
+  assert.ok(renderer.includes('message="尚未添加同步文件夹。"'), 'source empty state is not shared')
   assert.equal(renderer.includes('className="empty-state"'), false, 'legacy desktop empty-state remains')
   assert.equal(renderer.includes('className="cloud-empty"'), false, 'legacy cloud empty-state remains')
   assert.equal(renderer.includes('className="cache-unavailable"'), false, 'legacy cache unavailable state remains')
@@ -525,7 +525,7 @@ test('desktop external-source details expose paged Source collections', () => {
   assert.ok(renderer.includes('<XDriveSourceCollectionItem'), 'missing shared collection item presentation')
   assert.ok(sharedSourceCollection.includes('externalSourceCollectionKindLabel'), 'shared collection summary is missing collection kind label')
   assert.ok(sharedSourceCollection.includes('externalSourceCollectionStateTone'), 'shared collection summary is missing collection state tone')
-  assert.ok(renderer.includes('该来源暂无相册/集合元数据。'), 'missing empty collection state')
+  assert.ok(renderer.includes('该同步文件夹暂无相册/集合元数据。'), 'missing empty collection state')
   assert.ok(renderer.includes('展开后加载成员。'), 'collection members must stay lazy-loaded')
   assert.ok(renderer.includes('labelPrefix="成员"'), 'collection members must use shared pagination')
 })

@@ -43,6 +43,8 @@ import {
   XDriveSourceRunModeField,
   XDriveSourceStatusField,
   XDriveSourceCookieField,
+  XDriveSourceCredentialRevealField,
+  XDriveSourceTargetField,
   XDriveSynologyDsmCredentialFields,
   XDriveSynologyFileRootsField,
   XDriveSynologyPhotoSpacesField,
@@ -69,6 +71,7 @@ import {
   externalSourceDetailView,
   externalSourceRunDetailView,
   externalSourceTriggerActionLabel,
+  externalSourceTargetLabel,
   formatExternalSourceTime,
   formatSize,
   normalizeSynologyFileRoots,
@@ -84,6 +87,7 @@ import type {
   ExternalSourceCollectionItem,
   ExternalSourceConnectorConfig,
   ExternalSourceCreatePreset,
+  ExternalSourceCredentialReveal,
   ExternalSourceCredentialTestResult,
   ExternalSourceItem,
   ExternalSourceRow,
@@ -263,6 +267,8 @@ export default function ExternalSourcesPanel({
   const [testingSettingsCredential, setTestingSettingsCredential] = useState(false)
   const [settingsCredentialTest, setSettingsCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [settingsCredentialTestError, setSettingsCredentialTestError] = useState('')
+  const [settingsCredentialReveal, setSettingsCredentialReveal] = useState<ExternalSourceCredentialReveal | null>(null)
+  const [revealingSettingsCredential, setRevealingSettingsCredential] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ExternalSourceRow | null>(null)
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
   const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
@@ -282,6 +288,19 @@ export default function ExternalSourcesPanel({
   const createPreset = createValues.preset
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
+
+  useEffect(() => {
+    setSettingsCredentialReveal(null)
+  }, [setting?.source.id])
+
+  useEffect(() => {
+    if (!settingsCredentialReveal) return
+    const timeout = window.setTimeout(
+      () => setSettingsCredentialReveal(null),
+      Math.max(1, settingsCredentialReveal.expires_in_seconds || 30) * 1000,
+    )
+    return () => window.clearTimeout(timeout)
+  }, [settingsCredentialReveal])
 
   const showActionError = (title: string, error: unknown, fallback: string, detail?: string) => {
     setErrorDialog({
@@ -531,7 +550,7 @@ export default function ExternalSourcesPanel({
     event.preventDefault()
     const values = createValues
     const normalizedName = values.name.trim()
-    const nameError = !normalizedName ? '请填写来源名称' : normalizedName.length > 128 ? '来源名称不能超过 128 个字符' : ''
+    const nameError = !normalizedName ? '请填写同步文件夹名称' : normalizedName.length > 128 ? '同步文件夹名称不能超过 128 个字符' : ''
     setCreateNameError(nameError)
     const option = externalSourceCreateOption(values.preset)
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
@@ -546,13 +565,13 @@ export default function ExternalSourcesPanel({
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
     if (option.kind !== 'yike_photos' && !defaultTargetNodeID) {
-      setErrorDialog({ title: '无法添加来源', message: '当前目标文件夹尚未加载，请稍后重试。' })
+      setErrorDialog({ title: '无法添加同步文件夹', message: '当前目标文件夹尚未加载，请稍后重试。' })
       return
     }
     const credentialPayload = profile.credential ? createCredentialPayload() : null
     if (profile.credential && !credentialPayload) {
       setErrorDialog({
-        title: '无法添加来源',
+        title: '无法添加同步文件夹',
         message: profile.credential === 'cookie'
           ? '请先填写一刻相册 Cookie。'
           : '请完整填写 Synology DSM 地址、用户名和密码。',
@@ -585,7 +604,7 @@ export default function ExternalSourcesPanel({
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
-      showActionError('添加来源失败', error, '创建外部来源失败，请稍后重试。')
+      showActionError('添加同步文件夹失败', error, '创建同步文件夹失败，请稍后重试。')
       setCreating(false)
       return
     }
@@ -610,7 +629,7 @@ export default function ExternalSourcesPanel({
         await api.deleteSource(created.id, created.revision)
         setErrorDialog({
           title: profile.credential === 'synology_dsm' ? '群晖连接配置失败' : 'Cookie 保存失败',
-          message: `刚创建的${profile.label}来源已自动撤销，请检查配置后重试。`,
+          message: `刚创建的${profile.label}同步文件夹已自动撤销，请检查配置后重试。`,
           detail: sourceActionErrorMessage(error, `保存${credentialLabel}失败`),
         })
         await load()
@@ -618,16 +637,16 @@ export default function ExternalSourcesPanel({
         return
       } catch (rollbackError) {
         setErrorDialog({
-          title: '来源创建未完成',
-          message: `来源已创建，但${credentialLabel}或连接配置保存失败且自动回滚也失败。请进入“设置”修复或删除该来源。`,
+          title: '同步文件夹创建未完成',
+          message: `同步文件夹已创建，但${credentialLabel}或连接配置保存失败且自动回滚也失败。请进入“设置”修复或删除该同步文件夹。`,
           detail: `配置：${sourceActionErrorMessage(error, '保存失败')}；回滚：${sourceActionErrorMessage(rollbackError, '回滚失败')}`,
         })
       }
     }
 
     setFeedback(option.kind === 'synology_files'
-      ? '群晖 File Station Pull 来源已添加；将同步所选目录中的所有文件和文件夹'
-      : '外部来源已添加')
+      ? '群晖 File Station Pull 同步文件夹已添加；将同步所选目录中的所有文件和文件夹'
+      : '同步文件夹已添加')
     setCreateOpen(false)
     setCreateValues(initialCreateSourceValues())
     setCreateNameError('')
@@ -719,6 +738,19 @@ export default function ExternalSourcesPanel({
     }
   }
 
+  const revealSettingsCredential = async () => {
+    if (!setting || !setting.credential?.configured) return
+    setRevealingSettingsCredential(true)
+    try {
+      const revealed = await api.revealSourceCredential(setting.source.id)
+      setSettingsCredentialReveal(revealed)
+    } catch (error) {
+      showActionError('显示凭据失败', error, '无法读取已保存凭据，请稍后重试。')
+    } finally {
+      setRevealingSettingsCredential(false)
+    }
+  }
+
   const settingsCredentialPayload = () => {
     if (!setting) return null
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
@@ -776,7 +808,7 @@ export default function ExternalSourcesPanel({
     if (!setting) return
     const values = settingsValues
     const normalizedName = values.name.trim()
-    const nameError = !normalizedName ? '请填写来源名称' : normalizedName.length > 128 ? '来源名称不能超过 128 个字符' : ''
+    const nameError = !normalizedName ? '请填写同步文件夹名称' : normalizedName.length > 128 ? '同步文件夹名称不能超过 128 个字符' : ''
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     const isSynologyFiles = setting.source.kind === 'synology_files'
     const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
@@ -869,7 +901,7 @@ export default function ExternalSourcesPanel({
         }
       }
 
-      setFeedback('来源设置已保存')
+      setFeedback('同步文件夹设置已保存')
       setSetting(null)
       setSettingsConnectorConfig(null)
       setSettingsValues(emptySourceSettingsValues())
@@ -878,7 +910,7 @@ export default function ExternalSourcesPanel({
       setSettingsRootsError('')
       await load()
     } catch (error) {
-      showActionError('保存来源设置失败', error, '来源设置未保存，请检查后重试。')
+      showActionError('保存同步文件夹设置失败', error, '同步文件夹设置未保存，请检查后重试。')
       await load()
     } finally {
       setSavingSettings(false)
@@ -892,7 +924,7 @@ export default function ExternalSourcesPanel({
     setClearingCookie(true)
     try {
       await api.deleteSourceCredential(setting.source.id)
-      setFeedback(`${label}已清除，来源已自动暂停`)
+      setFeedback(`${label}已清除，同步文件夹已自动暂停`)
       setClearCookieConfirmOpen(false)
       setSetting({
         ...setting,
@@ -920,7 +952,7 @@ export default function ExternalSourcesPanel({
     setDeletingSourceID(row.source.id)
     try {
       await api.deleteSource(row.source.id, row.source.revision)
-      setFeedback('来源已删除；已同步到 xDrive 的文件已保留')
+      setFeedback('同步文件夹已删除；已同步到 xDrive 的文件已保留')
       if (selected?.source.id === row.source.id) setSelected(null)
       if (setting?.source.id === row.source.id) {
         setSetting(null)
@@ -931,7 +963,7 @@ export default function ExternalSourcesPanel({
       setDeleteTarget(null)
       await load()
     } catch (error) {
-      showActionError('删除来源失败', error, '外部来源未删除，请稍后重试。')
+      showActionError('删除同步文件夹失败', error, '同步文件夹未删除，请稍后重试。')
       await load()
     } finally {
       setDeletingSourceID(null)
@@ -943,7 +975,7 @@ export default function ExternalSourcesPanel({
     try {
       setCollections(await api.sourceCollections(sourceID))
     } catch (error) {
-      showActionError('加载相册/集合失败', error, '无法读取该来源的相册/集合，请稍后重试。')
+      showActionError('加载相册/集合失败', error, '无法读取该同步文件夹的相册/集合，请稍后重试。')
     } finally {
       setCollectionsLoading(false)
     }
@@ -1013,7 +1045,7 @@ export default function ExternalSourcesPanel({
       setFailedItems(items)
       setFailedItemsLimitReached(items.length >= 1000)
     } catch (error) {
-      showActionError('加载来源详情失败', error, '无法读取当前失败文件列表，请稍后重试。')
+      showActionError('加载同步文件夹详情失败', error, '无法读取当前失败文件列表，请稍后重试。')
     } finally {
       setFailedItemsLoading(false)
     }
@@ -1040,8 +1072,8 @@ export default function ExternalSourcesPanel({
     <>
       <XDriveWorkspaceSurface
         presentation="page"
-        title="外部来源"
-        subtitle="统一管理外部媒体来源、凭据、调度方式与运行状态。"
+        title="同步文件夹"
+        subtitle="统一管理照片、媒体和文件同步文件夹、凭据、调度方式与运行状态。"
         pageActions={
           <>
             <XDriveActionButton
@@ -1053,15 +1085,15 @@ export default function ExternalSourcesPanel({
               刷新
             </XDriveActionButton>
             <XDriveActionButton intent="primary" startIcon={<AddRoundedIcon />} onClick={openCreate}>
-              添加来源
+              添加同步文件夹
             </XDriveActionButton>
           </>
         }
       >
       {loading && rows.length === 0 ? (
-        <XDriveStatePanel variant="plain" loading message="正在加载外部来源…" />
+        <XDriveStatePanel variant="plain" loading message="正在加载同步文件夹…" />
       ) : rows.length === 0 ? (
-          <XDriveStatePanel variant="plain" message="尚未添加外部来源" />
+          <XDriveStatePanel variant="plain" message="尚未添加同步文件夹" />
         ) : (
           <div className="external-source-list">
             {rows.map((row) => {
@@ -1140,7 +1172,7 @@ export default function ExternalSourcesPanel({
       </XDriveWorkspaceSurface>
 
       <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title={selected ? `${selected.source.name} · 来源详情` : '来源详情'} onClose={closeDetails} />
+        <XDriveDialogTitle title={selected ? `${selected.source.name} · 同步文件夹详情` : '同步文件夹详情'} onClose={closeDetails} />
         <XDriveDialogContent dividers>
         {selected && selectedDetail && (
           <>
@@ -1151,7 +1183,7 @@ export default function ExternalSourcesPanel({
               </XDriveStatusAlert>
             )}
             <XDriveDescriptionGrid>
-              <XDriveDescriptionItem label="来源类型">
+              <XDriveDescriptionItem label="同步文件夹类型">
                 <Stack direction="row" spacing={0.75} alignItems="center">
                   <XDriveSourceKindIcon kind={selected.source.kind} size="small" />
                   <span>{selectedDetail.kindLabel}</span>
@@ -1162,9 +1194,7 @@ export default function ExternalSourcesPanel({
                 <XDriveStatusBadge tone={selectedDetail.state.tone} label={selectedDetail.state.label} />
               </XDriveDescriptionItem>
               <XDriveDescriptionItem label="目标目录">
-                {selected.source.kind === 'yike_photos'
-                  ? yikeManagedTargetLabel
-                  : selectedDetail.targetNodeID ? `节点 #${selectedDetail.targetNodeID}` : '未配置'}
+                {externalSourceTargetLabel(selected.source)}
               </XDriveDescriptionItem>
               <XDriveDescriptionItem label="调度">{selectedDetail.scheduleLabel}</XDriveDescriptionItem>
               <XDriveDescriptionItem label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</XDriveDescriptionItem>
@@ -1180,7 +1210,7 @@ export default function ExternalSourcesPanel({
             {collectionsLoading ? (
               <XDriveStatePanel loading variant="plain" message="正在加载相册/集合" />
             ) : collections.length === 0 ? (
-              <XDriveStatePanel variant="plain" message="该来源暂无相册/集合元数据" />
+              <XDriveStatePanel variant="plain" message="该同步文件夹暂无相册/集合元数据" />
             ) : (
               <Stack spacing={1}>
                 {collections.map((collection) => {
@@ -1436,7 +1466,7 @@ export default function ExternalSourcesPanel({
         slotProps={{ paper: xDriveDialogPaperProps }}
       >
         <XDriveDialogTitle
-          title="添加外部来源"
+          title="添加同步文件夹"
           onClose={() => {
             if (creating) return
             setCreateOpen(false)
@@ -1499,7 +1529,7 @@ export default function ExternalSourcesPanel({
               <>
                 <XDriveSourceCookieField
                   value={createValues.cookie ?? ''}
-                  helperText="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
+                  helperText="Cookie 会加密保存到服务器；只有在设置中主动点击“显示”时才会临时回传。"
                   onChange={(value) => {
                     setCreateValues((current) => ({ ...current, cookie: value }))
                     setCreateCredentialTest(null)
@@ -1620,7 +1650,7 @@ export default function ExternalSourcesPanel({
             loading={creating}
             loadingLabel="正在添加…"
           >
-            添加来源
+            添加同步文件夹
           </XDriveActionButton>
         </XDriveDialogActions>
       </Dialog>
@@ -1640,7 +1670,7 @@ export default function ExternalSourcesPanel({
         slotProps={{ paper: xDriveDialogPaperProps }}
       >
         <XDriveDialogTitle
-          title={setting ? `${setting.source.name} · 设置` : '来源设置'}
+          title={setting ? `${setting.source.name} · 设置` : '同步文件夹设置'}
           onClose={() => {
             if (savingSettings) return
             setClearCookieConfirmOpen(false)
@@ -1664,12 +1694,16 @@ export default function ExternalSourcesPanel({
                   if (settingsNameError) setSettingsNameError('')
                 }}
               />
+              <XDriveSourceTargetField
+                value={externalSourceTargetLabel(setting.source)}
+                managed={setting.source.kind === 'yike_photos'}
+              />
               <XDriveSourceRunModeField
                 value={settingsValues.run_mode}
                 onChange={(value) => setSettingsValues((current) => ({ ...current, run_mode: value }))}
               />
               <XDriveSourceStatusField
-                label="来源状态"
+                label="同步文件夹状态"
                 value={settingsValues.status}
                 onChange={(value) => setSettingsValues((current) => ({ ...current, status: value }))}
               />
@@ -1691,12 +1725,21 @@ export default function ExternalSourcesPanel({
               {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (
                 <>
                   <XDriveSectionHeader level="h3" title="一刻相册凭据" />
+                  <XDriveSourceCredentialRevealField
+                    label="已保存 Cookie"
+                    configured={Boolean(setting.credential?.configured)}
+                    revealedValue={settingsCredentialReveal?.field === 'cookie' ? settingsCredentialReveal.value : undefined}
+                    updatedAtLabel={setting.credential?.updated_at ? formatExternalSourceTime(setting.credential.updated_at) : undefined}
+                    loading={revealingSettingsCredential}
+                    onReveal={() => void revealSettingsCredential()}
+                    onHide={() => setSettingsCredentialReveal(null)}
+                  />
                   <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
                     <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
                     </MuiTypography>
                     <MuiTypography variant="body2">
-                      出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
+                      Cookie 默认保持遮罩；只有主动点击“显示”时才会临时读取明文。
                     </MuiTypography>
                   </XDriveStatusAlert>
                   <XDriveStatusAlert tone="neutral" sx={{ mb: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
@@ -1754,12 +1797,21 @@ export default function ExternalSourcesPanel({
               {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'synology_dsm' && (
                 <>
                   <XDriveSectionHeader level="h3" title="Synology DSM 凭据" />
+                  <XDriveSourceCredentialRevealField
+                    label="已保存 DSM 密码"
+                    configured={Boolean(setting.credential?.configured)}
+                    revealedValue={settingsCredentialReveal?.field === 'password' ? settingsCredentialReveal.value : undefined}
+                    updatedAtLabel={setting.credential?.updated_at ? formatExternalSourceTime(setting.credential.updated_at) : undefined}
+                    loading={revealingSettingsCredential}
+                    onReveal={() => void revealSettingsCredential()}
+                    onHide={() => setSettingsCredentialReveal(null)}
+                  />
                   <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
                     <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {setting.credential?.configured ? 'DSM 凭据已配置' : 'DSM 凭据未配置'}
                     </MuiTypography>
                     <MuiTypography variant="body2">
-                      已保存的 DSM 地址、用户名和密码不会从服务器读取回浏览器；如需更新，请重新完整填写三项。
+                      DSM 密码默认保持遮罩；只有主动点击“显示”时才会临时读取。更新连接信息时仍需重新完整填写地址、用户名和密码。
                     </MuiTypography>
                   </XDriveStatusAlert>
                   <XDriveSynologyDsmCredentialFields
@@ -1853,7 +1905,7 @@ export default function ExternalSourcesPanel({
               disabled={savingSettings || setting.latestRun?.status === 'running'}
               onClick={() => setDeleteTarget(setting)}
             >
-              删除来源
+              删除同步文件夹
             </XDriveActionButton>
             <XDriveDialogActionSpacer />
             <XDriveActionButton
@@ -1882,10 +1934,10 @@ export default function ExternalSourcesPanel({
       </Dialog>
 
       <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title="删除外部来源？" onClose={() => setDeleteTarget(null)} closeDisabled={deletingSourceID !== null} />
+        <XDriveDialogTitle title="删除同步文件夹？" onClose={() => setDeleteTarget(null)} closeDisabled={deletingSourceID !== null} />
         <XDriveDialogContent>
           <DialogContentText>
-            删除“{deleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
+            删除“{deleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、同步文件夹映射和已保存凭据。
             已经同步到 xDrive 的文件会保留，不会删除。
           </DialogContentText>
         </XDriveDialogContent>
@@ -1898,7 +1950,7 @@ export default function ExternalSourcesPanel({
             loadingLabel="正在删除…"
             onClick={() => void deleteSource()}
           >
-            删除来源
+            删除同步文件夹
           </XDriveActionButton>
         </XDriveDialogActions>
       </Dialog>
@@ -1917,7 +1969,7 @@ export default function ExternalSourcesPanel({
         />
         <XDriveDialogContent>
           <DialogContentText>
-            清除后，该 Pull 来源会自动暂停，无法继续扫描或同步，直到重新配置有效凭据。
+            清除后，该 Pull 同步文件夹会自动暂停，无法继续扫描或同步，直到重新配置有效凭据。
           </DialogContentText>
         </XDriveDialogContent>
         <XDriveDialogActions>

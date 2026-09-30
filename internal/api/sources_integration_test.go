@@ -151,7 +151,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	if created.ID == 0 || created.Revision != 1 || created.RunMode != meta.SourceRunModeScan ||
 		created.SyncMode != meta.SourceSyncModeBackup || created.Status != meta.SourceStatusActive ||
-		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID ||
+		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID || created.TargetPath != "Synology" ||
 		created.ScheduleType != "interval" || created.ScheduleExpression != "6h" {
 		t.Fatalf("unexpected created source: %+v", created)
 	}
@@ -181,7 +181,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(overviewRes.Body.Bytes(), &overview); err != nil {
 		t.Fatal(err)
 	}
-	if len(overview) != 1 || overview[0].Source.ID != created.ID || overview[0].LatestRun != nil || overview[0].Credential != nil {
+	if len(overview) != 1 || overview[0].Source.ID != created.ID || overview[0].Source.TargetPath != "Synology" || overview[0].LatestRun != nil || overview[0].Credential != nil {
 		t.Fatalf("unexpected source overview: %+v", overview)
 	}
 	listB := request(t, router, http.MethodGet, "/api/v1/sources", tokenB, nil, http.StatusOK)

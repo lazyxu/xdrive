@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { Stack, TextField } from '@mui/material'
+import { Button, InputAdornment, Stack, TextField } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { synologyDsmAddressHelp } from '../external-sources'
+import { externalSourceSavedCredentialMask, synologyDsmAddressHelp } from '../external-sources'
 
 export function XDriveSourceCookieField({
   value,
@@ -101,3 +101,82 @@ export function XDriveSynologyDsmCredentialFields({
     </Stack>
   )
 }
+
+export function XDriveSourceTargetField({
+  value,
+  managed = false,
+  label = '目标目录',
+  sx,
+}: {
+  value: string
+  managed?: boolean
+  label?: ReactNode
+  sx?: SxProps<Theme>
+}) {
+  return (
+    <TextField
+      fullWidth
+      size="small"
+      label={label}
+      value={value || '未配置'}
+      helperText={managed ? '固定目录由服务器根据已绑定账号管理，不可在此修改。' : '同步目标目录为只读信息。'}
+      slotProps={{ input: { readOnly: true } }}
+      sx={sx}
+    />
+  )
+}
+
+export function XDriveSourceCredentialRevealField({
+  label,
+  configured,
+  revealedValue,
+  updatedAtLabel,
+  loading = false,
+  onReveal,
+  onHide,
+  sx,
+}: {
+  label: ReactNode
+  configured: boolean
+  revealedValue?: string
+  updatedAtLabel?: string
+  loading?: boolean
+  onReveal: () => void
+  onHide: () => void
+  sx?: SxProps<Theme>
+}) {
+  const revealed = Boolean(revealedValue)
+  const helper = configured
+    ? `${updatedAtLabel ? `已保存 · ${updatedAtLabel} · ` : '已保存 · '}默认遮罩；显示后会在 30 秒内自动隐藏。`
+    : '当前未配置凭据。'
+
+  return (
+    <TextField
+      fullWidth
+      size="small"
+      label={label}
+      value={revealed ? revealedValue : configured ? externalSourceSavedCredentialMask : ''}
+      placeholder={configured ? externalSourceSavedCredentialMask : '未配置'}
+      helperText={helper}
+      autoComplete="off"
+      slotProps={{
+        input: {
+          readOnly: true,
+          endAdornment: configured ? (
+            <InputAdornment position="end">
+              <Button
+                size="small"
+                disabled={loading}
+                onClick={revealed ? onHide : onReveal}
+              >
+                {loading ? '正在读取…' : revealed ? '隐藏' : '显示'}
+              </Button>
+            </InputAdornment>
+          ) : undefined,
+        },
+      }}
+      sx={sx}
+    />
+  )
+}
+
