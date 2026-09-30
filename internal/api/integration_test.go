@@ -787,3 +787,119 @@ func TestTrashRestoreRejectsNameCollision(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodPost, fmt.Sprintf("/api/v1/trash/%d/restore", first.ID), token, nil,
 		http.StatusConflict, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", trash[0].Revision)})
 }
+
+func TestCopyAndMoveNodes(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("copy-move-test-secret", time.Hour),
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+
+	tokenA := createTestUser(t, db, router, "copy-user", "password-a")
+	tokenB := createTestUser(t, db, router, "copy-other", "password-b")
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
+	docs := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), tokenA, strings.NewReader(`{"name":"docs"}`), http.StatusCreated)
+	nested := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", docs.ID), tokenA, strings.NewReader(`{"name":"nested"}`), http.StatusCreated)
+	file := uploadTestFile(t, router, tokenA, docs.ID, "report.txt", "shared content")
+
+	copiedDir := requestNode(
+		t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/copy", docs.ID),
+		tokenA, strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, root.ID)), http.StatusCreated,
+	)
+	if copiedDir.Name != "docs - 副本" || copiedDir.Type != meta.NodeTypeDir {
+		t.Fatalf("unexpected copied directory: %+v", copiedDir)
+	}
+	copiedChildrenRes := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", copiedDir.ID), tokenA, nil, http.StatusOK)
+	var copiedChildren []nodeDTO
+	if err := json.Unmarshal(copiedChildrenRes.Body.Bytes(), &copiedChildren); err != nil {
+		t.Fatal(err)
+	}
+	var copiedFile nodeDTO
+	var copiedNested nodeDTO
+	for _, item := range copiedChildren {
+		switch item.Name {
+		case "report.txt":
+			copiedFile = item
+		case "nested":
+			copiedNested = item
+		}
+	}
+	if copiedFile.ID == 0 || copiedNested.ID == 0 {
+		t.Fatalf("recursive copy missing children: %+v", copiedChildren)
+	}
+	content := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", copiedFile.ID), tokenA, nil, http.StatusOK)
+	if content.Body.String() != "shared content" {
+		t.Fatalf("copied content=%q", content.Body.String())
+	}
+	var sourceFile, duplicateFile meta.File
+	if err := db.First(&sourceFile, "node_id = ?", file.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&duplicateFile, "node_id = ?", copiedFile.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sourceFile.StorageKey != duplicateFile.StorageKey {
+		t.Fatalf("copy should reuse storage key: %q != %q", sourceFile.StorageKey, duplicateFile.StorageKey)
+	}
+	if storage.IsContentAddressedKey(sourceFile.StorageKey) {
+		hash, _ := storage.ContentHashFromKey(sourceFile.StorageKey)
+		var blob meta.ContentBlob
+		if err := db.First(&blob, "sha256 = ?", hash).Error; err != nil {
+			t.Fatal(err)
+		}
+		if blob.RefCount != 2 {
+			t.Fatalf("copy ref_count=%d want=2", blob.RefCount)
+		}
+	}
+
+	target := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), tokenA, strings.NewReader(`{"name":"target"}`), http.StatusCreated)
+	moved := requestNodeWithHeaders(
+		t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID),
+		tokenA, strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, target.ID)), http.StatusOK,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", file.Revision)},
+	)
+	if moved.ParentID == nil || *moved.ParentID != target.ID {
+		t.Fatalf("moved parent=%v want=%d", moved.ParentID, target.ID)
+	}
+	oldChildren := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", docs.ID), tokenA, nil, http.StatusOK)
+	if strings.Contains(oldChildren.Body.String(), `"report.txt"`) {
+		t.Fatalf("moved file still present in old directory: %s", oldChildren.Body.String())
+	}
+	newChildren := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", target.ID), tokenA, nil, http.StatusOK)
+	if !strings.Contains(newChildren.Body.String(), `"report.txt"`) {
+		t.Fatalf("moved file missing from target: %s", newChildren.Body.String())
+	}
+
+	request(
+		t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/copy", docs.ID),
+		tokenA, strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, nested.ID)), http.StatusBadRequest,
+	)
+	request(
+		t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/copy", docs.ID),
+		tokenB, strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, root.ID)), http.StatusNotFound,
+	)
+}

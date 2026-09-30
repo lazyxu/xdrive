@@ -50,3 +50,14 @@ test('Web FileExplorer search results preserve paths and directory breadcrumbs',
   assert.ok(explorer.includes('normalizedSearchCrumbs(result)'), 'opening a search directory should restore its breadcrumb path')
   assert.ok(explorer.includes("仅显示前 200 个结果"), 'search pagination truncation must be disclosed')
 })
+
+test('Web FileExplorer wires copy/cut/paste to server copy and move primitives', () => {
+  assert.ok(api.includes('copy(nodeID: number, parentID: number, name?: string)'), 'Web copy API is missing')
+  assert.ok(api.includes('move(nodeID: number, revision: number, parentID: number)'), 'Web move API is missing')
+  assert.ok(explorer.includes("type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }"), 'Web clipboard state is missing')
+  assert.ok(explorer.includes('await api.copy(node.id, current.id)'), 'copy paste must call the server copy endpoint')
+  assert.ok(explorer.includes('await api.move(node.id, node.revision, current.id)'), 'cut paste must call revision-safe move')
+  assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Web shared copy adapter is missing')
+  assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Web shared cut adapter is missing')
+  assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Web shared paste adapter is missing')
+})

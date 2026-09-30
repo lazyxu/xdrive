@@ -39,6 +39,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/nodes/:id/children", suite: "nodes"},
 		{method: "POST", path: "/api/v1/nodes/:id/directories", suite: "nodes"},
 		{method: "POST", path: "/api/v1/nodes/:id/files", suite: "multipart-upload"},
+		{method: "POST", path: "/api/v1/nodes/:id/copy", suite: "nodes"},
 		{method: "PATCH", path: "/api/v1/nodes/:id", suite: "nodes"},
 		{method: "DELETE", path: "/api/v1/nodes/:id", suite: "trash"},
 		{method: "GET", path: "/api/v1/trash", suite: "trash"},
@@ -142,8 +143,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 	if len(missing) != 0 || len(unexpected) != 0 {
 		t.Fatalf("API coverage manifest drift: missing registered routes=%v unexpected registered routes=%v", missing, unexpected)
 	}
-	if len(manifest) != 85 {
-		t.Fatalf("coverage manifest has %d endpoints, want 85", len(manifest))
+	if len(manifest) != 86 {
+		t.Fatalf("coverage manifest has %d endpoints, want 86", len(manifest))
 	}
 }
 

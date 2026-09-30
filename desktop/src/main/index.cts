@@ -1712,6 +1712,25 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudRename(id, revision, name.trim())
   }, false))
+  ipcMain.handle('agent:cloud-copy', (_event, id: unknown, parentID: unknown) => runAgentAction<AgentCloudNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id and target parent id are required.')
+    }
+    return requireAgentClient().cloudCopy(id, parentID)
+  }, false))
+  ipcMain.handle('agent:cloud-move', (_event, id: unknown, revision: unknown, parentID: unknown) => runAgentAction<AgentCloudNode>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+        typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id, revision, and target parent id are required.')
+    }
+    return requireAgentClient().cloudMove(id, revision, parentID)
+  }, false))
   ipcMain.handle('agent:cloud-delete', (_event, id: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')

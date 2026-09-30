@@ -27,6 +27,7 @@ import type {
 } from '@xdrive/ui/mui'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
+type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }
 
 function initialViewMode(): XDriveFileExplorerViewMode {
   return localStorage.getItem(DESKTOP_FILE_VIEW_KEY) === 'grid' ? 'grid' : 'details'
@@ -77,6 +78,7 @@ export default function DesktopFileExplorer({
   const [renameName, setRenameName] = useState('')
   const [renameError, setRenameError] = useState('')
   const [actionBusy, setActionBusy] = useState('')
+  const [clipboard, setClipboard] = useState<DesktopExplorerClipboard | null>(null)
 
   const current = crumbs.at(-1)
 
@@ -440,6 +442,37 @@ export default function DesktopFileExplorer({
     return menu
   }
 
+  const explorerNodesForItems = (selected: XDriveFileExplorerItem[]) => (
+    selected
+      .map((item) => nodeByID.get(Number(item.id)))
+      .filter((node): node is AgentCloudNode => Boolean(node))
+  )
+
+  const pasteClipboard = async () => {
+    if (!current || !clipboard || clipboard.nodes.length === 0 || actionBusy) return
+    setActionBusy('paste')
+    try {
+      for (const node of clipboard.nodes) {
+        const result = clipboard.mode === 'cut'
+          ? (node.parent_id === current.id
+              ? { ok: true, data: node } as DesktopResult<AgentCloudNode>
+              : await window.xdriveDesktop.agent.cloudMove(node.id, node.revision, current.id))
+          : await window.xdriveDesktop.agent.cloudCopy(node.id, current.id)
+        if (!result.ok) {
+          onError(result.error.message)
+          return
+        }
+      }
+      if (clipboard.mode === 'cut') setClipboard(null)
+      clearSearch()
+      await onLoadDirectory(current.id, crumbs)
+      await onQuotaChanged()
+      onFeedback('good', clipboard.mode === 'cut' ? '已移动到当前文件夹。' : '已复制到当前文件夹。')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   const backgroundMenuItems = useMemo<XDriveFileExplorerMenuItem[]>(() => [
     {
       id: 'new-folder',
@@ -504,6 +537,16 @@ export default function DesktopFileExplorer({
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        onCopyItems={(selected) => {
+          const nodes = explorerNodesForItems(selected)
+          if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })
+        }}
+        onCutItems={(selected) => {
+          const nodes = explorerNodesForItems(selected)
+          if (nodes.length > 0) setClipboard({ mode: 'cut', nodes })
+        }}
+        onPaste={() => { void pasteClipboard() }}
+        canPaste={Boolean(clipboard?.nodes.length) && !actionBusy}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(
@@ -515,7 +558,9 @@ export default function DesktopFileExplorer({
           ? `搜索“${searchValue.trim()}”${searchResults.length >= 200 ? ' · 最多显示 200 个结果' : ''}`
           : actionBusy === 'upload'
             ? '正在上传…'
-            : actionBusy.startsWith('download-')
+            : actionBusy === 'paste'
+              ? '正在粘贴…'
+              : actionBusy.startsWith('download-')
               ? '正在另存为…'
               : actionBusy.startsWith('open-')
                 ? '正在打开…'

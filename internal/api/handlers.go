@@ -29,6 +29,7 @@ var (
 	errAccountDisabled     = errors.New("account disabled")
 	errRevisionConflict    = errors.New("revision conflict")
 	errRootMutation        = errors.New("root mutation")
+	errCopyNameConflict    = errors.New("copy name conflict")
 )
 
 type authRequest struct {
@@ -312,6 +313,190 @@ func (s *Server) createDirectory(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, toNodeDTO(n))
+}
+
+func (s *Server) copyNode(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid node id")
+		return
+	}
+	uid := userID(c)
+	source, err := s.ownedNode(uid, id, true)
+	if err != nil {
+		fail(c, http.StatusNotFound, "node not found")
+		return
+	}
+	if source.ParentID == nil {
+		fail(c, http.StatusBadRequest, "root cannot be copied")
+		return
+	}
+	var req struct {
+		ParentID uint64  `json:"parent_id"`
+		Name     *string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.ParentID == 0 {
+		fail(c, http.StatusBadRequest, "parent_id is required")
+		return
+	}
+	if _, err := s.ownedDirectory(uid, req.ParentID); err != nil {
+		fail(c, http.StatusBadRequest, "target directory not found")
+		return
+	}
+	if source.Type == meta.NodeTypeDir && s.isDescendant(uid, req.ParentID, source.ID) {
+		fail(c, http.StatusBadRequest, "cannot copy a directory into its descendant")
+		return
+	}
+
+	var copied meta.Node
+	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		var current meta.Node
+		if err := tx.Preload("File").
+			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", source.ID, uid).
+			First(&current).Error; err != nil {
+			return err
+		}
+		name, err := copyDestinationNameTx(tx, uid, req.ParentID, current.Name, current.Type, req.Name)
+		if err != nil {
+			return err
+		}
+		copied, err = s.copyNodeTx(tx, uid, current, req.ParentID, name)
+		return err
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errCopyNameConflict) || isDuplicate(err):
+			fail(c, http.StatusConflict, "name already exists")
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "node not found")
+		default:
+			fail(c, http.StatusInternalServerError, "copy failed")
+		}
+		return
+	}
+	_ = s.DB.Preload("File").First(&copied, copied.ID).Error
+	c.JSON(http.StatusCreated, toNodeDTO(copied))
+}
+
+func copyDestinationNameTx(
+	tx *gorm.DB,
+	uid, parentID uint64,
+	originalName, nodeType string,
+	requested *string,
+) (string, error) {
+	if requested != nil {
+		name := strings.TrimSpace(*requested)
+		if err := meta.ValidateName(name); err != nil {
+			return "", err
+		}
+		var count int64
+		if err := tx.Model(&meta.Node{}).
+			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL AND lower(name) = lower(?)", uid, parentID, name).
+			Count(&count).Error; err != nil {
+			return "", err
+		}
+		if count > 0 {
+			return "", errCopyNameConflict
+		}
+		return name, nil
+	}
+
+	available := func(name string) (bool, error) {
+		var count int64
+		err := tx.Model(&meta.Node{}).
+			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL AND lower(name) = lower(?)", uid, parentID, name).
+			Count(&count).Error
+		return count == 0, err
+	}
+	if ok, err := available(originalName); err != nil {
+		return "", err
+	} else if ok {
+		return originalName, nil
+	}
+
+	base, ext := originalName, ""
+	if nodeType == meta.NodeTypeFile {
+		if dot := strings.LastIndex(originalName, "."); dot > 0 {
+			base, ext = originalName[:dot], originalName[dot:]
+		}
+	}
+	for index := 1; index <= 9999; index++ {
+		suffix := " - 副本"
+		if index > 1 {
+			suffix = fmt.Sprintf(" - 副本 (%d)", index)
+		}
+		candidate := base + suffix + ext
+		if err := meta.ValidateName(candidate); err != nil {
+			return "", err
+		}
+		if ok, err := available(candidate); err != nil {
+			return "", err
+		} else if ok {
+			return candidate, nil
+		}
+	}
+	return "", errCopyNameConflict
+}
+
+func (s *Server) copyNodeTx(
+	tx *gorm.DB,
+	uid uint64,
+	source meta.Node,
+	parentID uint64,
+	name string,
+) (meta.Node, error) {
+	now := time.Now()
+	copied := meta.Node{
+		ParentID:  &parentID,
+		Name:      name,
+		Type:      source.Type,
+		OwnerID:   uid,
+		Revision:  1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := tx.Create(&copied).Error; err != nil {
+		return meta.Node{}, err
+	}
+	if source.Type == meta.NodeTypeFile {
+		if source.File == nil {
+			var file meta.File
+			if err := tx.Where("node_id = ?", source.ID).First(&file).Error; err != nil {
+				return meta.Node{}, err
+			}
+			source.File = &file
+		}
+		if err := retainExistingContentReferenceTx(tx, *source.File); err != nil {
+			return meta.Node{}, err
+		}
+		file := meta.File{
+			NodeID:     copied.ID,
+			Size:       source.File.Size,
+			StorageKey: source.File.StorageKey,
+			SHA256:     source.File.SHA256,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := tx.Create(&file).Error; err != nil {
+			return meta.Node{}, err
+		}
+		copied.File = &file
+		return copied, nil
+	}
+
+	var children []meta.Node
+	if err := tx.Preload("File").
+		Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", uid, source.ID).
+		Order("type ASC, name ASC").
+		Find(&children).Error; err != nil {
+		return meta.Node{}, err
+	}
+	for _, child := range children {
+		if _, err := s.copyNodeTx(tx, uid, child, copied.ID, child.Name); err != nil {
+			return meta.Node{}, err
+		}
+	}
+	return copied, nil
 }
 
 func (s *Server) uploadFile(c *gin.Context) {

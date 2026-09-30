@@ -98,6 +98,36 @@ func (c *agentController) CloudRename(ctx context.Context, id, revision uint64, 
 	return node, err
 }
 
+func (c *agentController) CloudCopy(ctx context.Context, id, parentID uint64) (client.Node, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.Node{}, err
+	}
+	if id == 0 || parentID == 0 {
+		return client.Node{}, fmt.Errorf("node id and target parent id are required")
+	}
+	node, err := cli.Copy(ctx, id, parentID, nil)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return node, err
+}
+
+func (c *agentController) CloudMove(ctx context.Context, id, revision, parentID uint64) (client.Node, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.Node{}, err
+	}
+	if id == 0 || revision == 0 || parentID == 0 {
+		return client.Node{}, fmt.Errorf("node id, revision, and target parent id are required")
+	}
+	node, err := cli.Move(ctx, id, revision, parentID)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return node, err
+}
+
 func (c *agentController) CloudDelete(ctx context.Context, id, revision uint64) error {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

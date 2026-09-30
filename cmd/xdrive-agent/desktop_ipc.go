@@ -149,6 +149,8 @@ type desktopIPCController interface {
 	CloudList(context.Context, uint64) ([]client.Node, error)
 	CloudCreateDir(context.Context, uint64, string) (client.Node, error)
 	CloudRename(context.Context, uint64, uint64, string) (client.Node, error)
+	CloudCopy(context.Context, uint64, uint64) (client.Node, error)
+	CloudMove(context.Context, uint64, uint64, uint64) (client.Node, error)
 	CloudDelete(context.Context, uint64, uint64) error
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
@@ -371,6 +373,8 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
 	mux.HandleFunc("POST /v1/cloud/directories", h.cloudCreateDir)
 	mux.HandleFunc("PATCH /v1/cloud/nodes", h.cloudRename)
+	mux.HandleFunc("POST /v1/cloud/copy", h.cloudCopy)
+	mux.HandleFunc("PATCH /v1/cloud/move", h.cloudMove)
 	mux.HandleFunc("DELETE /v1/cloud/nodes", h.cloudDelete)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
@@ -793,6 +797,47 @@ func (h *desktopIPCHandler) cloudRename(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	node, err := h.ctrl.CloudRename(r.Context(), input.ID, input.Revision, input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudCopy(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID       uint64 `json:"id"`
+		ParentID uint64 `json:"parent_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 || input.ParentID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_copy", "id and parent_id are required")
+		return
+	}
+	node, err := h.ctrl.CloudCopy(r.Context(), input.ID, input.ParentID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudMove(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID       uint64 `json:"id"`
+		Revision uint64 `json:"revision"`
+		ParentID uint64 `json:"parent_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 || input.Revision == 0 || input.ParentID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_move", "id, revision, and parent_id are required")
+		return
+	}
+	node, err := h.ctrl.CloudMove(r.Context(), input.ID, input.Revision, input.ParentID)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

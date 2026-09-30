@@ -110,3 +110,12 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
   assert.equal(workspaceStyles.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use a hard-coded viewport subtraction')
   assert.ok(app.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'), 'over-quota warning should remain an inset workspace strip')
 })
+
+test('Desktop FileExplorer wires copy/cut/paste through Agent copy and move primitives', () => {
+  assert.ok(explorer.includes("type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }"), 'Desktop clipboard state is missing')
+  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudCopy(node.id, current.id)'), 'Desktop copy paste must use cloudCopy')
+  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudMove(node.id, node.revision, current.id)'), 'Desktop cut paste must use revision-safe cloudMove')
+  assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Desktop shared copy adapter is missing')
+  assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Desktop shared cut adapter is missing')
+  assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Desktop shared paste adapter is missing')
+})

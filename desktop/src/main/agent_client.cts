@@ -778,6 +778,14 @@ export class AgentIPCClient {
     return this.request<AgentCloudNode>('PATCH', '/v1/cloud/nodes', { id, revision, name }, 45_000)
   }
 
+  cloudCopy(id: number, parentID: number) {
+    return this.request<AgentCloudNode>('POST', '/v1/cloud/copy', { id, parent_id: parentID }, 45_000)
+  }
+
+  cloudMove(id: number, revision: number, parentID: number) {
+    return this.request<AgentCloudNode>('PATCH', '/v1/cloud/move', { id, revision, parent_id: parentID }, 45_000)
+  }
+
   cloudDelete(id: number, revision: number) {
     return this.request<{ ok: boolean }>('DELETE', '/v1/cloud/nodes', { id, revision }, 45_000)
   }

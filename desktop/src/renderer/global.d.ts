@@ -298,6 +298,8 @@ declare global {
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
         cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudRename: (id: number, revision: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
+        cloudCopy: (id: number, parentID: number) => Promise<DesktopResult<AgentCloudNode>>
+        cloudMove: (id: number, revision: number, parentID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudDelete: (id: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>

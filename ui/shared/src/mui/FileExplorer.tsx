@@ -4,6 +4,9 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
+import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded'
+import ContentPasteRoundedIcon from '@mui/icons-material/ContentPasteRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
@@ -288,6 +291,10 @@ export function XDriveFileExplorer({
   selectedIDs: controlledSelectedIDs,
   defaultSelectedIDs = [],
   onSelectionChange,
+  onCopyItems,
+  onCutItems,
+  onPaste,
+  canPaste = false,
   getItemMenuItems,
   backgroundMenuItems = [],
   viewMode: controlledViewMode,
@@ -324,6 +331,10 @@ export function XDriveFileExplorer({
   selectedIDs?: readonly XDriveFileExplorerID[]
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
   onSelectionChange?: (ids: XDriveFileExplorerID[]) => void
+  onCopyItems?: (items: XDriveFileExplorerItem[]) => void
+  onCutItems?: (items: XDriveFileExplorerItem[]) => void
+  onPaste?: () => void
+  canPaste?: boolean
   getItemMenuItems?: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
   backgroundMenuItems?: XDriveFileExplorerMenuItem[]
   viewMode?: XDriveFileExplorerViewMode
@@ -399,6 +410,11 @@ export function XDriveFileExplorer({
     return result
   }, [items, sort.direction, sort.key])
 
+  const selectedItems = useMemo(
+    () => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id))),
+    [selectedKeySet, visibleItems],
+  )
+
   const commitSelection = (ids: XDriveFileExplorerID[]) => {
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs(ids)
     onSelectionChange?.(ids)
@@ -469,7 +485,30 @@ export function XDriveFileExplorer({
       commitSelection([item.id])
       setSelectionAnchorID(item.id)
     }
-    const menuItems = getItemMenuItems?.(item) ?? []
+    const actionItems = getItemMenuItems?.(item) ?? []
+    const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
+      ? selectedItems
+      : [item]
+    const clipboardItems: XDriveFileExplorerMenuItem[] = []
+    if (onCutItems) {
+      clipboardItems.push({
+        id: 'cut',
+        label: '剪切',
+        icon: <ContentCutRoundedIcon fontSize="small" />,
+        dividerBefore: actionItems.length > 0,
+        onSelect: () => onCutItems(selection),
+      })
+    }
+    if (onCopyItems) {
+      clipboardItems.push({
+        id: 'copy',
+        label: '复制',
+        icon: <ContentCopyRoundedIcon fontSize="small" />,
+        dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
+        onSelect: () => onCopyItems(selection),
+      })
+    }
+    const menuItems = [...actionItems, ...clipboardItems]
     if (menuItems.length === 0) return
     setContextMenu({
       mouseX: event.clientX + 2,
@@ -479,13 +518,23 @@ export function XDriveFileExplorer({
   }
 
   const openBackgroundContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
-    if (backgroundMenuItems.length === 0) return
+    const menuItems = [...backgroundMenuItems]
+    if (onPaste) {
+      menuItems.unshift({
+        id: 'paste',
+        label: '粘贴',
+        icon: <ContentPasteRoundedIcon fontSize="small" />,
+        disabled: !canPaste,
+        onSelect: onPaste,
+      })
+    }
+    if (menuItems.length === 0) return
     event.preventDefault()
     clearSelection()
     setContextMenu({
       mouseX: event.clientX + 2,
       mouseY: event.clientY - 6,
-      items: backgroundMenuItems,
+      items: menuItems,
     })
   }
 
@@ -783,6 +832,33 @@ export function XDriveFileExplorer({
           '& .MuiToggleButton-root': { width: 32, height: 30, p: 0.5 },
         }}
       >
+        {onCutItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<ContentCutRoundedIcon />}
+            disabled={selectedItems.length === 0}
+            onClick={() => onCutItems(selectedItems)}
+          >
+            剪切
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onCopyItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<ContentCopyRoundedIcon />}
+            disabled={selectedItems.length === 0}
+            onClick={() => onCopyItems(selectedItems)}
+          >
+            复制
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onPaste ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<ContentPasteRoundedIcon />}
+            disabled={!canPaste}
+            onClick={onPaste}
+          >
+            粘贴
+          </XDriveFileExplorerCommandButton>
+        ) : null}
         {onCreateFolder ? (
           <XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
             新建文件夹
@@ -858,9 +934,27 @@ export function XDriveFileExplorer({
         }}
         onContextMenu={openBackgroundContextMenu}
         onKeyDown={(event) => {
+          const modifier = event.ctrlKey || event.metaKey
+          const key = event.key.toLowerCase()
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
             event.preventDefault()
             commitSelection(visibleItems.map((item) => item.id))
+            return
+          }
+          if (modifier && key === 'c' && onCopyItems && selectedItems.length > 0) {
+            event.preventDefault()
+            onCopyItems(selectedItems)
+            return
+          }
+          if (modifier && key === 'x' && onCutItems && selectedItems.length > 0) {
+            event.preventDefault()
+            onCutItems(selectedItems)
+            return
+          }
+          if (modifier && key === 'v' && onPaste && canPaste) {
+            event.preventDefault()
+            onPaste()
+            return
           }
           if (event.key === 'Escape') clearSelection()
         }}

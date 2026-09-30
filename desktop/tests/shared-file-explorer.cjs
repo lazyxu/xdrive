@@ -105,3 +105,22 @@ test('shared FileExplorer status bar summarizes selection', () => {
   assert.ok(explorer.includes('已选择 ${selectedIDs.length} 个'), 'selected item count is missing from the status bar')
   assert.ok(explorer.includes('selectedSize'), 'selected file size summary is missing')
 })
+
+test('shared FileExplorer supports clipboard keyboard, command-bar and context-menu contracts', () => {
+  for (const token of [
+    'onCopyItems?: (items: XDriveFileExplorerItem[]) => void',
+    'onCutItems?: (items: XDriveFileExplorerItem[]) => void',
+    'onPaste?: () => void',
+    "modifier && key === 'c'",
+    "modifier && key === 'x'",
+    "modifier && key === 'v'",
+    "label: '复制'",
+    "label: '剪切'",
+    "label: '粘贴'",
+    '<ContentCopyRoundedIcon',
+    '<ContentCutRoundedIcon',
+    '<ContentPasteRoundedIcon',
+  ]) {
+    assert.ok(explorer.includes(token), `missing FileExplorer clipboard contract: ${token}`)
+  }
+})

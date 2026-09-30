@@ -79,6 +79,13 @@ type fakeDesktopIPCController struct {
 	cloudRenameID              uint64
 	cloudRenameRev             uint64
 	cloudRenameName            string
+	cloudCopied                client.Node
+	cloudCopyID                uint64
+	cloudCopyParent            uint64
+	cloudMoved                 client.Node
+	cloudMoveID                uint64
+	cloudMoveRev               uint64
+	cloudMoveParent            uint64
 	cloudMutationDeleteID      uint64
 	cloudMutationDeleteRev     uint64
 	cloudUploaded              client.Node
@@ -255,6 +262,16 @@ func (f *fakeDesktopIPCController) CloudCreateDir(_ context.Context, parentID ui
 func (f *fakeDesktopIPCController) CloudRename(_ context.Context, id, revision uint64, name string) (client.Node, error) {
 	f.cloudRenameID, f.cloudRenameRev, f.cloudRenameName = id, revision, name
 	return f.cloudRenamed, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCopy(_ context.Context, id, parentID uint64) (client.Node, error) {
+	f.cloudCopyID, f.cloudCopyParent = id, parentID
+	return f.cloudCopied, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMove(_ context.Context, id, revision, parentID uint64) (client.Node, error) {
+	f.cloudMoveID, f.cloudMoveRev, f.cloudMoveParent = id, revision, parentID
+	return f.cloudMoved, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudDelete(_ context.Context, id, revision uint64) error {
@@ -778,6 +795,8 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		}},
 		cloudCreatedDir: client.Node{ID: 8, ParentID: ptrUint64(1), Name: "New Folder", Type: "dir", Revision: 1},
 		cloudRenamed:    client.Node{ID: 3, ParentID: ptrUint64(2), Name: "renamed.pdf", Type: "file", Revision: 3},
+		cloudCopied:     client.Node{ID: 10, ParentID: ptrUint64(8), Name: "report.pdf", Type: "file", Revision: 1},
+		cloudMoved:      client.Node{ID: 3, ParentID: ptrUint64(8), Name: "report.pdf", Type: "file", Revision: 3},
 		cloudUploaded:   client.Node{ID: 9, ParentID: ptrUint64(2), Name: "upload.txt", Type: "file", Revision: 1},
 		cloudQuota:      client.QuotaUsage{QuotaBytes: 1000, PhysicalUsedBytes: 400, AvailableBytes: 600, LogicalFileBytes: 300, TrashBytes: 50, HistoryBytes: 50},
 		cloudStorage:    client.StorageStats{Scope: "self", CASBlobCount: 9, CASPhysicalBytes: 400, CASLogicalReferencedBytes: 600, CASDedupSavedBytes: 200, CASDedupRatio: 1.5, P50BlobSizeBytes: 12},
@@ -802,6 +821,8 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/children?parent_id=1", "", "\"Projects\""},
 		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
 		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
+		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},
+		{http.MethodPatch, "/v1/cloud/move", `{"id":3,"revision":2,"parent_id":8}`, "\"parent_id\":8"},
 		{http.MethodDelete, "/v1/cloud/nodes", `{"id":3,"revision":2}`, "\"ok\":true"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
@@ -831,6 +852,12 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudRenameID != 3 || ctrl.cloudRenameRev != 2 || ctrl.cloudRenameName != "renamed.pdf" {
 		t.Fatalf("cloud rename not forwarded: id=%d revision=%d name=%q", ctrl.cloudRenameID, ctrl.cloudRenameRev, ctrl.cloudRenameName)
+	}
+	if ctrl.cloudCopyID != 3 || ctrl.cloudCopyParent != 8 {
+		t.Fatalf("cloud copy not forwarded: id=%d parent=%d", ctrl.cloudCopyID, ctrl.cloudCopyParent)
+	}
+	if ctrl.cloudMoveID != 3 || ctrl.cloudMoveRev != 2 || ctrl.cloudMoveParent != 8 {
+		t.Fatalf("cloud move not forwarded: id=%d revision=%d parent=%d", ctrl.cloudMoveID, ctrl.cloudMoveRev, ctrl.cloudMoveParent)
 	}
 	if ctrl.cloudMutationDeleteID != 3 || ctrl.cloudMutationDeleteRev != 2 {
 		t.Fatalf("cloud delete not forwarded: id=%d revision=%d", ctrl.cloudMutationDeleteID, ctrl.cloudMutationDeleteRev)

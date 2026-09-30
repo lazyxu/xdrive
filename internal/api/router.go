@@ -62,6 +62,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/nodes/:id/children", s.children)
 	authed.POST("/nodes/:id/directories", s.createDirectory)
 	authed.POST("/nodes/:id/files", s.uploadFile)
+	authed.POST("/nodes/:id/copy", s.copyNode)
 	authed.PATCH("/nodes/:id", s.updateNode)
 	authed.DELETE("/nodes/:id", s.deleteNode)
 	authed.GET("/trash", s.trashList)
