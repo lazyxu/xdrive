@@ -136,6 +136,7 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedWorkspace.includes('actions={pageActions}'), 'shared workspace page actions plumbing is missing')
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedAccount.includes('XDriveAccountSummary'), 'shared account summary is missing')
+  assert.ok(sharedAccount.includes('XDriveAccountMenu'), 'shared account menu container is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
   assert.ok(webApp.includes('XDriveBrandLockup'), 'Web should consume shared brand lockup')
   assert.ok(webApp.includes('XDriveSidebarNavItem'), 'Web should consume shared sidebar navigation')
@@ -144,6 +145,7 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(webApp.includes('XDriveSidebarStorageSummary'), 'Web should consume shared sidebar storage summary')
   assert.ok(desktopApp.includes('XDriveSidebarStorageSummary'), 'Desktop should consume shared sidebar storage summary')
   assert.ok(webApp.includes('XDriveAccountAvatarButton'), 'Web should consume shared account chrome')
+  assert.ok(webApp.includes('XDriveAccountMenu'), 'Web should consume the shared account menu container')
 })
 
 test('Web and Desktop show account storage usage at the bottom of the sidebar', () => {

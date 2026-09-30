@@ -1,5 +1,5 @@
-import type { MouseEventHandler } from 'react'
-import { Avatar, Box, IconButton, Tooltip, Typography } from '@mui/material'
+import type { MouseEventHandler, ReactNode } from 'react'
+import { Avatar, Box, Divider, IconButton, Menu, Tooltip, Typography } from '@mui/material'
 
 export function XDriveAccountAvatarButton({
   username,
@@ -53,5 +53,39 @@ export function XDriveAccountSummary({
         {status || '已登录'}
       </Typography>
     </Box>
+  )
+}
+
+
+export function XDriveAccountMenu({
+  id,
+  anchorEl,
+  onClose,
+  username,
+  secondary,
+  status,
+  children,
+}: {
+  id: string
+  anchorEl: HTMLElement | null
+  onClose: () => void
+  username?: string | null
+  secondary?: string | null
+  status?: string | null
+  children?: ReactNode
+}) {
+  return (
+    <Menu
+      id={id}
+      anchorEl={anchorEl}
+      open={Boolean(anchorEl)}
+      onClose={onClose}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+    >
+      <XDriveAccountSummary username={username} secondary={secondary} status={status} />
+      <Divider />
+      {children}
+    </Menu>
   )
 }

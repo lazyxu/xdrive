@@ -31,7 +31,6 @@ import {
   Link,
   ListItemIcon,
   ListItemText,
-  Menu,
   MenuItem,
   Paper,
   Stack,
@@ -48,7 +47,7 @@ import {
 } from '@mui/material'
 import {
   XDriveAccountAvatarButton,
-  XDriveAccountSummary,
+  XDriveAccountMenu,
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
@@ -133,20 +132,14 @@ function WebAccountMenu({
   return (
     <>
       <XDriveAccountAvatarButton username={username} onClick={(event) => setAnchorEl(event.currentTarget)} />
-      <Menu
+      <XDriveAccountMenu
         id="web-account-menu"
         anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
         onClose={() => setAnchorEl(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        username={username}
+        secondary={`Server ${serverBuild?.version || '未知'}`}
+        status="已登录"
       >
-        <XDriveAccountSummary
-          username={username}
-          secondary={`Server ${serverBuild?.version || '未知'}`}
-          status="已登录"
-        />
-        <Box sx={{ borderTop: 1, borderColor: 'divider' }} />
         <MenuItem
           sx={{ color: 'error.main' }}
           onClick={() => {
@@ -159,7 +152,7 @@ function WebAccountMenu({
           </ListItemIcon>
           <ListItemText>退出登录</ListItemText>
         </MenuItem>
-      </Menu>
+      </XDriveAccountMenu>
     </>
   )
 }
