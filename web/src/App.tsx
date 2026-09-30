@@ -72,6 +72,7 @@ import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
 import StorageStatsModal from './StorageStatsModal'
 import ExternalSourcesPanel from './ExternalSources'
+import WorkspaceSurface from './WorkspaceSurface'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const ACCESS_KEY = 'xdrive.access_token'
@@ -851,6 +852,7 @@ function FileManager({
 
         <Box component="main" className="content-wrap" sx={{ minWidth: 0, width: '100%' }}>
         {appView === 'files' ? (
+          <WorkspaceSurface presentation="page" title="文件">
           <Paper className="file-card" variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 2 }}>
             <div className="file-toolbar">
               <Breadcrumbs aria-label="文件路径">
@@ -1010,10 +1012,13 @@ function FileManager({
               </TableContainer>
             )}
           </Paper>
+          </WorkspaceSurface>
         ) : appView === 'gallery' ? (
-          <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320, borderRadius: 2 }}>
-            <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
-          </Paper>
+          <WorkspaceSurface presentation="page" title="图库">
+            <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320, borderRadius: 2 }}>
+              <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
+            </Paper>
+          </WorkspaceSurface>
         ) : appView === 'sources' ? (
           <ExternalSourcesPanel
             open

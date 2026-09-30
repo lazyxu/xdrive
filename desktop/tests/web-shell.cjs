@@ -33,3 +33,13 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
   assert.ok(sidebar.includes('AssessmentRoundedIcon'), 'missing Audit icon')
   assert.ok(sidebar.includes("setStorageStatsScope('global')"), 'Global Storage action must preserve the existing modal behavior')
 })
+
+
+test('Web first-class workspaces share the same page chrome', () => {
+  assert.ok(webApp.includes("import WorkspaceSurface from './WorkspaceSurface'"), 'Web app should reuse the shared Web workspace surface')
+  assert.equal((webApp.match(/<WorkspaceSurface presentation="page"/g) || []).length, 2, 'Files and Gallery should both use WorkspaceSurface page chrome')
+  assert.ok(webApp.includes('<WorkspaceSurface presentation="page" title="文件">'), 'Files page title must use workspace page chrome')
+  assert.ok(webApp.includes('<WorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
+  assert.ok(webApp.includes('<ExternalSourcesPanel') && webApp.includes('presentation="page"'), 'External Sources should remain a first-class page')
+  assert.ok(webApp.includes('<StorageStatsModal') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
+})
