@@ -31,6 +31,7 @@ const files = {
   sourceFailureItem: readRepo('ui/shared/src/mui/SourceFailureItem.tsx'),
   paginationControls: readRepo('ui/shared/src/mui/PaginationControls.tsx'),
   sourceRunSummary: readRepo('ui/shared/src/mui/SourceRunSummary.tsx'),
+  sourceCollection: readRepo('ui/shared/src/mui/SourceCollection.tsx'),
   main: read('src/main.tsx'),
   styles: read('src/styles.css'),
   packageJson: read('package.json'),
@@ -126,6 +127,10 @@ if (files.sources.includes('失败项第 {failurePage.page}') || files.sources.i
 requireText(files.paginationControls, ['XDriveActionButton', 'page <= 1', 'loading || !hasNext', '上一页', '下一页'], '共享分页控件')
 if ((files.sources.match(/<XDriveSourceRunSummary/g) || []).length !== 1) throw new Error('Web 外部来源运行摘要没有复用共享组件')
 requireText(files.sourceRunSummary, ['ExternalSourceRunDetailView', 'XDriveStatusBadge', 'detail.modeLabel', 'detail.triggerLabel', 'formatExternalSourceTime(detail.startedAt)', '成功', '失败'], '外部来源运行摘要')
+requireText(files.sourceCollection, ['XDriveSourceCollectionSummary', 'XDriveSourceCollectionItem', 'externalSourceCollectionKindLabel', 'externalSourceCollectionStateTone', 'formatExternalSourceTime', '远端缺失', '原始路径'], '共享来源集合展示')
+if ((files.sources.match(/<XDriveSourceCollectionSummary\b/g) || []).length !== 1) throw new Error('Web 来源集合摘要没有复用共享组件')
+if ((files.sources.match(/<XDriveSourceCollectionItem\b/g) || []).length !== 1) throw new Error('Web 来源集合成员没有复用共享组件')
+if (files.sources.includes('externalSourceCollectionKindLabel(collection.kind)') || files.sources.includes("item.state === 'synced' ? 'good'")) throw new Error('Web 来源集合仍保留本地展示逻辑')
 requireText(files.yikeCookieHelp, ['如何获取 Cookie？', '点击展开', '关闭', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '一刻相册 Cookie 帮助')
 if (/<Alert\b/.test(files.yikeCookieHelp)) throw new Error('一刻相册 Cookie 帮助仍在直接渲染原生 MUI Alert')
 if (/<DialogContent(?:\s|>)/.test(files.yikeCookieHelp)) throw new Error('一刻相册 Cookie 帮助仍在直接渲染原生 MUI DialogContent')
