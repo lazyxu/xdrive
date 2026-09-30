@@ -82,14 +82,23 @@ func Plan(current *meta.SourceItem, item DiscoveredItem, matcher *IgnoreMatcher)
 	}
 }
 
+func ValidateExternalID(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || len([]byte(value)) > 512 {
+		return "", fmt.Errorf("external id is required and must be at most 512 bytes")
+	}
+	return value, nil
+}
+
 func ValidateDiscoveredItem(item *DiscoveredItem) error {
 	if item == nil {
 		return fmt.Errorf("discovered item is required")
 	}
-	item.ExternalID = strings.TrimSpace(item.ExternalID)
-	if item.ExternalID == "" || len([]byte(item.ExternalID)) > 512 {
-		return fmt.Errorf("external id is required and must be at most 512 bytes")
+	externalID, err := ValidateExternalID(item.ExternalID)
+	if err != nil {
+		return err
 	}
+	item.ExternalID = externalID
 	if !meta.ValidSourceItemKind(item.Kind) {
 		return fmt.Errorf("invalid source item kind")
 	}
