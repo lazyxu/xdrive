@@ -30,8 +30,6 @@ import {
   IconButton,
   LinearProgress,
   Link,
-  List,
-  ListItemButton,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -56,7 +54,11 @@ import {
   XDriveDialogContent,
   XDriveDialogTitle,
   XDriveMediaGalleryPage,
+  XDriveSidebarNavItem,
+  XDriveSidebarNavList,
   XDriveStatePanel,
+  XDriveWorkspaceSurface,
+  XDRIVE_SIDEBAR_WIDTH,
   XDriveStatusAlert,
   XDriveStatusBadge,
   xDriveDialogPaperProps,
@@ -72,7 +74,6 @@ import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
 import StorageStatsModal from './StorageStatsModal'
 import ExternalSourcesPanel from './ExternalSources'
-import WorkspaceSurface from './WorkspaceSurface'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const ACCESS_KEY = 'xdrive.access_token'
@@ -166,23 +167,6 @@ function WebAccountMenu({
       </Menu>
     </>
   )
-}
-
-const webSidebarItemSx = {
-  minHeight: 40,
-  borderRadius: 1.25,
-  px: 1.25,
-  color: 'text.secondary',
-  '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-  '&.Mui-selected': { bgcolor: 'action.selected', color: 'primary.main' },
-  '&.Mui-selected:hover': { bgcolor: 'action.selected' },
-}
-
-const webSidebarIconSx = { minWidth: 32, color: 'inherit' }
-
-const webSidebarTextSx = {
-  '& .MuiListItemText-primary': { fontSize: 13, fontWeight: 600 },
-  '& .MuiListItemText-secondary': { fontSize: 11, lineHeight: 1.25 },
 }
 
 function App() {
@@ -739,7 +723,7 @@ function FileManager({
         className="web-workspace-shell"
         sx={{
           display: { xs: 'block', md: 'grid' },
-          gridTemplateColumns: { md: '184px minmax(0, 1fr)' },
+          gridTemplateColumns: { md: `${XDRIVE_SIDEBAR_WIDTH}px minmax(0, 1fr)` },
           minHeight: { md: 'calc(100vh - 64px)' },
         }}
       >
@@ -756,52 +740,18 @@ function FileManager({
             overflowX: { xs: 'auto', md: 'visible' },
           }}
         >
-          <List
-            component="nav"
-            disablePadding
-            sx={{
-              display: { xs: 'flex', md: 'grid' },
-              gap: 0.5,
-              minWidth: { xs: 'max-content', md: 0 },
-            }}
-          >
-            <ListItemButton
-              selected={appView === 'files'}
-              onClick={() => setAppView('files')}
-              sx={webSidebarItemSx}
-            >
-              <ListItemIcon sx={webSidebarIconSx}><FolderRoundedIcon fontSize="small" /></ListItemIcon>
-              <ListItemText primary="文件" sx={webSidebarTextSx} />
-            </ListItemButton>
-            <ListItemButton
-              selected={appView === 'gallery'}
-              onClick={() => setAppView('gallery')}
-              sx={webSidebarItemSx}
-            >
-              <ListItemIcon sx={webSidebarIconSx}><PhotoLibraryRoundedIcon fontSize="small" /></ListItemIcon>
-              <ListItemText primary="图库" sx={webSidebarTextSx} />
-            </ListItemButton>
-            <ListItemButton
-              selected={appView === 'sources'}
-              onClick={() => setAppView('sources')}
-              sx={webSidebarItemSx}
-            >
-              <ListItemIcon sx={webSidebarIconSx}><CloudSyncRoundedIcon fontSize="small" /></ListItemIcon>
-              <ListItemText primary="外部来源" sx={webSidebarTextSx} />
-            </ListItemButton>
-            <ListItemButton
+          <XDriveSidebarNavList ariaLabel="网页端功能区导航" responsive>
+            <XDriveSidebarNavItem selected={appView === 'files'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setAppView('files')} />
+            <XDriveSidebarNavItem selected={appView === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setAppView('gallery')} />
+            <XDriveSidebarNavItem selected={appView === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="外部来源" onClick={() => setAppView('sources')} />
+            <XDriveSidebarNavItem
               selected={appView === 'storage'}
+              icon={<StorageRoundedIcon fontSize="small" />}
+              primary="存储"
+              secondary={quota ? `${formatSize(quota.physical_used_bytes)} / ${quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}` : undefined}
               onClick={() => setAppView('storage')}
-              sx={webSidebarItemSx}
-            >
-              <ListItemIcon sx={webSidebarIconSx}><StorageRoundedIcon fontSize="small" /></ListItemIcon>
-              <ListItemText
-                primary="存储"
-                secondary={quota ? `${formatSize(quota.physical_used_bytes)} / ${quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}` : undefined}
-                sx={webSidebarTextSx}
-              />
-            </ListItemButton>
-          </List>
+            />
+          </XDriveSidebarNavList>
 
           {profile?.role === 'admin' && (
             <Box
@@ -823,36 +773,18 @@ function FileManager({
               >
                 管理
               </Typography>
-              <List
-                component="nav"
-                aria-label="管理员功能"
-                disablePadding
-                sx={{
-                  display: { xs: 'flex', md: 'grid' },
-                  gap: 0.5,
-                  minWidth: { xs: 'max-content', md: 0 },
-                }}
-              >
-                <ListItemButton onClick={() => setAdminOpen(true)} sx={webSidebarItemSx}>
-                  <ListItemIcon sx={webSidebarIconSx}><ManageAccountsRoundedIcon fontSize="small" /></ListItemIcon>
-                  <ListItemText primary="用户管理" sx={webSidebarTextSx} />
-                </ListItemButton>
-                <ListItemButton onClick={() => setAuditOpen(true)} sx={webSidebarItemSx}>
-                  <ListItemIcon sx={webSidebarIconSx}><AssessmentRoundedIcon fontSize="small" /></ListItemIcon>
-                  <ListItemText primary="审计日志" sx={webSidebarTextSx} />
-                </ListItemButton>
-                <ListItemButton onClick={() => setStorageStatsScope('global')} sx={webSidebarItemSx}>
-                  <ListItemIcon sx={webSidebarIconSx}><StorageRoundedIcon fontSize="small" /></ListItemIcon>
-                  <ListItemText primary="全局存储" sx={webSidebarTextSx} />
-                </ListItemButton>
-              </List>
+              <XDriveSidebarNavList ariaLabel="管理员功能" responsive>
+                <XDriveSidebarNavItem icon={<ManageAccountsRoundedIcon fontSize="small" />} primary="用户管理" onClick={() => setAdminOpen(true)} />
+                <XDriveSidebarNavItem icon={<AssessmentRoundedIcon fontSize="small" />} primary="审计日志" onClick={() => setAuditOpen(true)} />
+                <XDriveSidebarNavItem icon={<StorageRoundedIcon fontSize="small" />} primary="全局存储" onClick={() => setStorageStatsScope('global')} />
+              </XDriveSidebarNavList>
             </Box>
           )}
         </Box>
 
         <Box component="main" className="content-wrap" sx={{ minWidth: 0, width: '100%' }}>
         {appView === 'files' ? (
-          <WorkspaceSurface presentation="page" title="文件">
+          <XDriveWorkspaceSurface presentation="page" title="文件">
           <Paper className="file-card" variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 2 }}>
             <div className="file-toolbar">
               <Breadcrumbs aria-label="文件路径">
@@ -1012,13 +944,13 @@ function FileManager({
               </TableContainer>
             )}
           </Paper>
-          </WorkspaceSurface>
+          </XDriveWorkspaceSurface>
         ) : appView === 'gallery' ? (
-          <WorkspaceSurface presentation="page" title="图库">
+          <XDriveWorkspaceSurface presentation="page" title="图库">
             <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320, borderRadius: 2 }}>
               <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
             </Paper>
-          </WorkspaceSurface>
+          </XDriveWorkspaceSurface>
         ) : appView === 'sources' ? (
           <ExternalSourcesPanel
             open

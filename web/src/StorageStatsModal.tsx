@@ -25,6 +25,7 @@ import {
   XDrivePaginationControls,
   XDriveStatePanel,
   XDriveStatusAlert,
+  XDriveWorkspaceSurface,
   XDriveStatusBadge,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
@@ -39,7 +40,6 @@ import type {
 } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
-import WorkspaceSurface from './WorkspaceSurface'
 
 const STAGING_PAGE_SIZE = 20
 
@@ -285,7 +285,7 @@ export default function StorageStatsModal({
 
   return (
     <>
-      <WorkspaceSurface
+      <XDriveWorkspaceSurface
         presentation={presentation}
         open={open}
         onClose={onClose}
@@ -585,7 +585,7 @@ export default function StorageStatsModal({
               </Typography>
             </Stack>
           )}
-      </WorkspaceSurface>
+      </XDriveWorkspaceSurface>
 
       <Dialog
         open={cleanupConfirmOpen}

@@ -1,15 +1,12 @@
 import type { ReactNode } from 'react'
 import { Box, Dialog, Typography } from '@mui/material'
-import {
-  XDriveDialogActions,
-  XDriveDialogContent,
-  XDriveDialogTitle,
-  xDriveDialogPaperProps,
-} from '@xdrive/ui/mui'
+import { XDriveDialogActions } from './DialogActions'
+import { XDriveDialogContent } from './DialogContent'
+import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 
-export type WorkspacePresentation = 'dialog' | 'page'
+export type XDriveWorkspacePresentation = 'dialog' | 'page'
 
-export default function WorkspaceSurface({
+export function XDriveWorkspaceSurface({
   presentation = 'dialog',
   open = false,
   onClose,
@@ -18,7 +15,7 @@ export default function WorkspaceSurface({
   dialogActions,
   children,
 }: {
-  presentation?: WorkspacePresentation
+  presentation?: XDriveWorkspacePresentation
   open?: boolean
   onClose?: () => void
   title: string

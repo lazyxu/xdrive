@@ -15,7 +15,7 @@ const files = {
   share: read('src/ShareDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
-  workspaceSurface: read('src/WorkspaceSurface.tsx'),
+  workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),

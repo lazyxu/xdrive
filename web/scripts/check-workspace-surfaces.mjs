@@ -3,9 +3,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const repo = path.resolve(root, '..')
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8')
+const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
-const workspace = read('src/WorkspaceSurface.tsx')
+const workspace = readRepo('ui/shared/src/mui/WorkspaceSurface.tsx')
 const sources = read('src/ExternalSources.tsx')
 const storage = read('src/StorageStatsModal.tsx')
 
@@ -16,29 +18,30 @@ const requireText = (source, values, label) => {
 }
 
 requireText(workspace, [
-  "export type WorkspacePresentation = 'dialog' | 'page'",
+  "export type XDriveWorkspacePresentation = 'dialog' | 'page'",
+  'export function XDriveWorkspaceSurface',
   "presentation === 'page'",
   'workspace-page-surface',
   '<Dialog',
   '<XDriveDialogTitle',
   '<XDriveDialogContent',
-], 'WorkspaceSurface')
+], 'XDriveWorkspaceSurface')
 
 requireText(sources, [
-  "import WorkspaceSurface from './WorkspaceSurface'",
+  'XDriveWorkspaceSurface',
   "presentation = 'dialog'",
   "presentation?: 'dialog' | 'page'",
   "const surfaceOpen = presentation === 'page' || open",
-  '<WorkspaceSurface',
+  '<XDriveWorkspaceSurface',
   'title="外部来源"',
 ], 'ExternalSources')
 
 requireText(storage, [
-  "import WorkspaceSurface from './WorkspaceSurface'",
+  'XDriveWorkspaceSurface',
   "presentation = 'dialog'",
   "presentation?: 'dialog' | 'page'",
   "const surfaceOpen = presentation === 'page' || open",
-  '<WorkspaceSurface',
+  '<XDriveWorkspaceSurface',
   "title={scope === 'global' ? '全局存储统计' : '我的存储统计'}",
 ], 'StorageStats')
 

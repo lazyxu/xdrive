@@ -13,6 +13,7 @@ const sharedActionButton = fs.readFileSync(path.join(root, '..', 'ui', 'shared',
 const sharedStatePanel = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatePanel.tsx'), 'utf8')
 const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusBadge.tsx'), 'utf8')
 const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusAlert.tsx'), 'utf8')
+const sharedSidebarNav = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
 const sharedYikeCookieHelp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'YikeCookieHelp.tsx'), 'utf8')
 const sharedExternalSources = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
@@ -136,7 +137,7 @@ test('desktop keeps global sync, settings and account actions in the window titl
   assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
 })
 
-test('desktop sidebar uses compact MUI navigation with icons, state and badges', () => {
+test('desktop sidebar consumes shared MUI navigation with icons, state and badges', () => {
   const start = renderer.indexOf('<aside className="sidebar">')
   const end = renderer.indexOf('</aside>', start)
   assert.notEqual(start, -1, 'missing desktop sidebar')
@@ -145,8 +146,7 @@ test('desktop sidebar uses compact MUI navigation with icons, state and badges',
 
   assert.equal(sidebar.includes("view === 'settings'"), false, 'settings should live in the titlebar, not the feature sidebar')
   assert.equal(sidebar.includes('className="account"'), false, 'legacy sidebar account summary should be removed')
-  assert.equal(sidebar.includes('className={`nav-item'), false, 'legacy native sidebar navigation remains')
-  assert.equal((sidebar.match(/<ListItemButton/g) || []).length, 8, 'all primary and diagnostic destinations must use MUI ListItemButton')
+  assert.equal((sidebar.match(/<XDriveSidebarNavItem/g) || []).length, 8, 'all primary and diagnostic destinations must use shared sidebar items')
   for (const icon of [
     'DashboardRoundedIcon',
     'FolderRoundedIcon',
@@ -159,14 +159,16 @@ test('desktop sidebar uses compact MUI navigation with icons, state and badges',
   ]) {
     assert.ok(sidebar.includes(icon), `missing sidebar icon: ${icon}`)
   }
-  assert.equal((sidebar.match(/className="sidebar-nav-badge"/g) || []).length, 2, 'transfer/conflict counts must use the compact MUI badge treatment')
-  assert.ok(sidebar.includes('className="sidebar-nav sidebar-secondary"'), 'diagnostics should stay in the secondary navigation group')
-  assert.ok(styles.includes('grid-template-columns: 184px minmax(0,1fr)'), 'desktop sidebar should use the compact 184px width')
-  assert.ok(styles.includes('grid-template-columns: 176px 1fr'), 'compact desktop layout should narrow the sidebar to 176px')
-  assert.ok(styles.includes('.sidebar-nav-item.Mui-selected'), 'selected navigation styling is missing')
-  assert.ok(styles.includes('.sidebar-nav-item .MuiListItemIcon-root'), 'sidebar icon alignment styling is missing')
-  assert.ok(sidebar.includes('<ListItemText primary="文件" />'), 'desktop file navigation should match the Web label')
-  assert.equal(sidebar.includes('<ListItemText primary="云端文件" />'), false, 'desktop sidebar should not use the legacy cloud-files label')
+  assert.equal((sidebar.match(/badge=/g) || []).length, 2, 'transfer/conflict counts must use the shared badge treatment')
+  assert.ok(sidebar.includes('className="sidebar-secondary"'), 'diagnostics should stay in the secondary navigation group')
+  assert.ok(renderer.includes('XDRIVE_SIDEBAR_WIDTH'), 'desktop shell should consume the shared sidebar width token')
+  assert.ok(renderer.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH'), 'desktop shell should consume the shared compact width token')
+  assert.ok(styles.includes('var(--xdrive-sidebar-width, 184px)'), 'desktop shell CSS should use the shared width variable')
+  assert.ok(styles.includes('var(--xdrive-sidebar-compact-width, 176px)'), 'desktop compact CSS should use the shared width variable')
+  assert.ok(sharedSidebarNav.includes("appearance = 'light'"), 'shared sidebar appearance contract is missing')
+  assert.ok(sharedSidebarNav.includes("appearance === 'dark'"), 'shared dark sidebar appearance is missing')
+  assert.ok(sidebar.includes('primary="文件"'), 'desktop file navigation should match the Web label')
+  assert.equal(sidebar.includes('primary="云端文件"'), false, 'desktop sidebar should not use the legacy cloud-files label')
 })
 
 test('desktop gates CfAPI-only storage controls by platform', () => {
