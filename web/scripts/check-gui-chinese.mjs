@@ -14,6 +14,7 @@ const files = {
   storageStats: read('src/StorageStatsPanel.tsx'),
   share: read('src/ShareDialog.tsx'),
   shareFields: readRepo('ui/shared/src/mui/ShareFields.tsx'),
+  shareList: readRepo('ui/shared/src/mui/ShareList.tsx'),
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
@@ -95,8 +96,11 @@ if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw n
 requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', '审计事件详情', '来源 IP', 'Request ID', 'Metadata', '登录成功', '变更用户角色', '系统更新', 'getOptionLabel={actionLabel}', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveWorkspaceSurface', 'XDriveDescriptionGrid', 'XDriveDescriptionItem', 'fullWidth', 'presentation="page"', 'XDriveTableSurface'], '审计日志')
 if ((files.audit.match(/<XDriveDescriptionItem\b/g) || []).length !== 8) throw new Error('审计事件详情没有完整复用共享描述网格')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
-requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveSectionHeader', 'XDriveShareStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton', 'XDriveTableSurface'], '分享窗口')
+requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveSectionHeader', 'XDriveShareList', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
 requireText(files.shareFields, ['XDriveCreatedShareLink', 'XDriveShareCreateFields', '新创建的分享链接', '最大下载次数', '密码（可选）', '有效期', '过期时间', '0 表示不限'], '共享分享字段')
+requireText(files.shareList, ['XDriveShareList', "variant === 'compact'", 'XDriveShareStatusBadge', 'XDriveTableSurface', '保护方式', '过期时间', '下载次数', '密码保护', '永不过期', '撤销'], '共享已有分享列表')
+if ((files.share.match(/<XDriveShareList\b/g) || []).length !== 1) throw new Error('Web 已有分享没有复用共享列表')
+if (files.share.includes('shares.map((share)') || files.share.includes('<XDriveShareStatusBadge')) throw new Error('Web 已有分享仍保留本地映射')
 if ((files.share.match(/<XDriveCreatedShareLink\b/g) || []).length !== 1) throw new Error('Web 新建分享链接没有复用共享展示')
 if ((files.share.match(/<XDriveShareCreateFields\b/g) || []).length !== 1) throw new Error('Web 分享创建字段没有复用共享组件')
 if (files.share.includes('type="datetime-local"') || files.share.includes('label="最大下载次数"') || files.share.includes('label="密码（可选）"')) throw new Error('Web 分享窗口仍保留本地创建字段')
@@ -233,9 +237,9 @@ if ((files.storageStats.match(/<XDriveConfirmDialog/g) || []).length !== 1) thro
 const sharedTableSurfaceExpectations = [
   [files.audit, 1, '审计日志'],
   [files.users, 1, '用户管理'],
-  [files.share, 1, '分享窗口'],
   [files.storageStats, 3, '存储统计'],
 ]
+if ((files.shareList.match(/<XDriveTableSurface\b/g) || []).length !== 1) throw new Error('共享分享列表的表格模式没有复用 TableSurface')
 for (const [source, expected, label] of sharedTableSurfaceExpectations) {
   if ((source.match(/<XDriveTableSurface\b/g) || []).length !== expected) {
     throw new Error(`${label} 没有完整复用共享表格表面`)

@@ -74,7 +74,7 @@ import {
   XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveShareCreateFields,
-  XDriveShareStatusBadge,
+  XDriveShareList,
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceRunProgress,
@@ -3766,21 +3766,16 @@ export default function App() {
                     </XDriveActionButton>
                   </Stack>
 
-                  <div className="cloud-compact-list">
-                    {cloudShares.length === 0 ? <XDriveStatePanel variant="plain" compact message="此文件暂无分享链接。" /> : cloudShares.map((share) => (
-                      <div className="cloud-compact-row" key={share.id}>
-                        <div>
-                          <XDriveShareStatusBadge status={share.status} />
-                          <span>
-                            {share.has_password ? '密码保护' : '仅链接'} ·
-                            {' '}{share.expires_at ? `到期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'} ·
-                            {' '}{share.download_count}{share.max_downloads > 0 ? ` / ${share.max_downloads}` : ' / 不限'} 次下载
-                          </span>
-                        </div>
-                        <XDriveActionButton compact intent="danger" disabled={!!busy || share.status === 'revoked'} onClick={() => void revokeCloudShare(share)}>撤销</XDriveActionButton>
-                      </div>
-                    ))}
-                  </div>
+                  {cloudShares.length === 0 ? (
+                    <XDriveStatePanel variant="plain" compact message="此文件暂无分享链接。" />
+                  ) : (
+                    <XDriveShareList
+                      shares={cloudShares}
+                      variant="compact"
+                      revokeDisabled={!!busy}
+                      onRevoke={(share) => void revokeCloudShare(share)}
+                    />
+                  )}
                 </XDriveDialogContent>
                 <XDriveDialogActions>
                   <XDriveActionButton

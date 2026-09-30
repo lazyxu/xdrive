@@ -23,6 +23,7 @@ const sharedSectionHeader = fs.readFileSync(path.join(root, '..', 'ui', 'shared'
 const sharedPageHeader = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PageHeader.tsx'), 'utf8')
 const sharedConfirmDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ConfirmDialog.tsx'), 'utf8')
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
+const sharedShareList = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareList.tsx'), 'utf8')
 const sharedYikeCookieHelp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'YikeCookieHelp.tsx'), 'utf8')
 const sharedExternalSources = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
 const sharedSourceRunProgress = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceRunProgress.tsx'), 'utf8')
@@ -352,7 +353,8 @@ test('desktop cloud shares use the cross-client MUI share status badge', () => {
   for (const label of ['有效', '已过期', '已达上限', '已撤销']) {
     assert.ok(sharedShareStatusBadge.includes(label), `shared share status badge is missing label: ${label}`)
   }
-  assert.ok(renderer.includes('<XDriveShareStatusBadge status={share.status} />'), 'desktop cloud share status is not shared')
+  assert.ok(renderer.includes('<XDriveShareList'), 'desktop cloud shares do not use the shared list')
+  assert.ok(sharedShareList.includes('<XDriveShareStatusBadge status={share.status} />'), 'shared share list is missing the shared status badge')
   assert.equal(renderer.includes('function shareStatusLabel('), false, 'desktop still owns a share status label mapper')
 })
 
