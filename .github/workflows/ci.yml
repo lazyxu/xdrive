@@ -360,6 +360,8 @@ jobs:
           bash scripts/test-server-rootless-layout.sh
           bash -n scripts/test-server-legacy-layout-migration.sh
           bash scripts/test-server-legacy-layout-migration.sh
+          bash -n scripts/test-server-retained-legacy-volume-upgrade.sh
+          bash scripts/test-server-retained-legacy-volume-upgrade.sh
           bash -n scripts/test-server-uninstall.sh
           bash scripts/test-server-uninstall.sh
           bash -n scripts/xdrive-server-host.sh

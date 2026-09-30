@@ -225,7 +225,7 @@ Migration is transactional.
 7. Only after all health/readiness checks succeed, commit the upgrade and finalize host-layout migration.
 8. If any step fails, restore the old deployment files and continue using the untouched legacy named volumes.
 
-Legacy named volumes are not automatically deleted after a successful migration. Keeping them avoids irreversible data loss. A later explicit cleanup feature may remove them after the operator confirms the bind-mounted deployment and backups are healthy.
+Legacy named volumes are not automatically deleted after a successful migration. Keeping them avoids irreversible data loss. Once the active container is using a bind mount, that live mount is authoritative: retained named volumes are never rediscovered by label and replayed over the bind-mounted data on later upgrades. Legacy copy operations also refuse to overwrite a non-empty bind target. A later explicit cleanup feature may remove retained volumes after the operator confirms the bind-mounted deployment and backups are healthy.
 
 ## Uninstall and retained-data contract
 

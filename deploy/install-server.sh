@@ -1266,23 +1266,37 @@ legacy_volume_by_label() {
     --filter "label=com.docker.compose.volume=$volume_key" </dev/null 2>/dev/null | head -n1 || true
 }
 
+legacy_volume_for_mount() {
+  local service="$1" destination="$2" volume_key="$3" info
+  info="$(existing_mount_info "$service" "$destination")"
+  case "$info" in
+    volume\|*)
+      printf '%s\n' "${info#volume|}"
+      ;;
+    bind\|*)
+      # A live bind mount is authoritative. Old named volumes are intentionally
+      # retained after migration and must never be replayed over current data.
+      return 0
+      ;;
+    "")
+      # A partially broken legacy deployment can lose its container while the
+      # named volume survives. Only in that case is label discovery a fallback.
+      legacy_volume_by_label "$volume_key"
+      ;;
+    *)
+      echo "xDrive server installer: unsupported $service mount for $destination: $info; refusing legacy-volume fallback." >&2
+      return 1
+      ;;
+  esac
+}
+
 capture_legacy_named_volumes() {
-  local info
   [[ "$UPGRADE_EXISTING" == "1" ]] || return 0
 
-  info="$(existing_mount_info server /data)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_FILES_VOLUME="${info#volume|}"; fi
-  info="$(existing_mount_info postgres /var/lib/postgresql/data)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_POSTGRES_VOLUME="${info#volume|}"; fi
-  info="$(existing_mount_info caddy /data)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_CADDY_DATA_VOLUME="${info#volume|}"; fi
-  info="$(existing_mount_info caddy /config)"
-  if [[ "$info" == volume\|* ]]; then LEGACY_CADDY_CONFIG_VOLUME="${info#volume|}"; fi
-
-  [[ -n "$LEGACY_FILES_VOLUME" ]] || LEGACY_FILES_VOLUME="$(legacy_volume_by_label file-data)"
-  [[ -n "$LEGACY_POSTGRES_VOLUME" ]] || LEGACY_POSTGRES_VOLUME="$(legacy_volume_by_label postgres-data)"
-  [[ -n "$LEGACY_CADDY_DATA_VOLUME" ]] || LEGACY_CADDY_DATA_VOLUME="$(legacy_volume_by_label caddy-data)"
-  [[ -n "$LEGACY_CADDY_CONFIG_VOLUME" ]] || LEGACY_CADDY_CONFIG_VOLUME="$(legacy_volume_by_label caddy-config)"
+  LEGACY_FILES_VOLUME="$(legacy_volume_for_mount server /data file-data)"
+  LEGACY_POSTGRES_VOLUME="$(legacy_volume_for_mount postgres /var/lib/postgresql/data postgres-data)"
+  LEGACY_CADDY_DATA_VOLUME="$(legacy_volume_for_mount caddy /data caddy-data)"
+  LEGACY_CADDY_CONFIG_VOLUME="$(legacy_volume_for_mount caddy /config caddy-config)"
 
   if [[ -n "$LEGACY_FILES_VOLUME$LEGACY_POSTGRES_VOLUME$LEGACY_CADDY_DATA_VOLUME$LEGACY_CADDY_CONFIG_VOLUME" ]]; then
     LEGACY_VOLUME_MIGRATION=1
@@ -1291,15 +1305,26 @@ capture_legacy_named_volumes() {
 }
 
 copy_legacy_volume() {
-  local volume="$1" target="$2" helper_image="$3" label="$4"
+  local volume="$1" target="$2" helper_image="$3" label="$4" existing_entry
   [[ -n "$volume" ]] || return 0
   mkdir -p "$target"
+
+  if ! existing_entry="$(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)"; then
+    echo "xDrive server installer: cannot inspect $label migration target: $target" >&2
+    return 1
+  fi
+  if [[ -n "$existing_entry" ]]; then
+    echo "xDrive server installer: refusing to overwrite non-empty $label migration target: $target" >&2
+    echo "The active bind-mounted data directory already contains state; retained legacy volumes will not be replayed." >&2
+    return 1
+  fi
+
   echo "[xDrive] migrating $label: $volume -> $target"
   docker run --rm --entrypoint sh \
     -v "$volume:/from:ro" \
     -v "$target:/to" \
     "$helper_image" \
-    -ec 'find /to -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; cp -a /from/. /to/'
+    -ec 'cp -a /from/. /to/'
 }
 
 migrate_legacy_named_volumes() {
