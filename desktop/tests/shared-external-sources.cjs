@@ -694,3 +694,21 @@ test('Web and Desktop reuse shared source schedule fields', () => {
   assert.equal(web.includes('label="调度方式"'), false, 'Web should not keep local schedule fields')
   assert.equal(desktop.includes('label="调度方式"'), false, 'Desktop should not keep local schedule fields')
 })
+
+
+test('Web and Desktop reuse shared source ignore-rules field', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedIgnore = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceIgnoreRulesField.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+
+  for (const token of ['XDriveSourceIgnoreRulesField', '忽略规则', 'gitignore 风格规则', 'spellCheck: false', 'monospace']) {
+    assert.ok(sharedIgnore.includes(token), `shared Source ignore-rules field missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'Web create/settings should reuse shared ignore-rules field')
+  assert.equal((desktop.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared ignore-rules field')
+  assert.equal(web.includes('label="忽略规则"'), false, 'Web should not retain local ignore-rules field')
+  assert.equal(desktop.includes('<span>忽略规则</span>\n                  <textarea'), false, 'Desktop create should not retain local ignore-rules textarea')
+  assert.equal(desktop.includes('<span>忽略规则</span>\n                            <textarea'), false, 'Desktop settings should not retain local ignore-rules textarea')
+})
