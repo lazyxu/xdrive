@@ -45,3 +45,31 @@ test('shared FileExplorer keeps folders first and owns common client-side sortin
   }
   assert.ok(explorer.includes("sort.direction === 'asc' ? 1 : -1"), 'sort direction handling is missing')
 })
+
+
+test('shared FileExplorer supports Explorer-style selection semantics', () => {
+  assert.ok(explorer.includes('selectedIDs: controlledSelectedIDs'), 'controlled selection contract is missing')
+  assert.ok(explorer.includes('defaultSelectedIDs = []'), 'uncontrolled selection contract is missing')
+  assert.ok(explorer.includes('event.ctrlKey || event.metaKey'), 'Ctrl/Cmd additive selection is missing')
+  assert.ok(explorer.includes('event.shiftKey && selectionAnchorID !== null'), 'Shift range selection is missing')
+  assert.ok(explorer.includes("event.key.toLowerCase() === 'a'"), 'Ctrl/Cmd+A select-all is missing')
+  assert.ok(explorer.includes("event.key === 'Escape'"), 'Escape selection clearing is missing')
+  assert.ok(explorer.includes("event.key === ' '"), 'keyboard Space selection is missing')
+  assert.ok(explorer.includes('aria-selected={selected}'), 'selected rows/items need accessible selected state')
+  assert.ok(explorer.includes("'action.selected'"), 'selected items need a visible selected state')
+})
+
+test('shared FileExplorer provides item and background context-menu contracts', () => {
+  assert.ok(explorer.includes('export type XDriveFileExplorerMenuItem = {'), 'context-menu item contract is missing')
+  assert.ok(explorer.includes('getItemMenuItems?:'), 'item context-menu adapter hook is missing')
+  assert.ok(explorer.includes('backgroundMenuItems?:'), 'background context-menu adapter hook is missing')
+  assert.ok(explorer.includes('onContextMenu={(event) => openItemContextMenu(event, item)}'), 'item right-click handling is missing')
+  assert.ok(explorer.includes('onContextMenu={openBackgroundContextMenu}'), 'background right-click handling is missing')
+  assert.ok(explorer.includes('anchorReference="anchorPosition"'), 'context menu should open at the pointer position')
+  assert.ok(explorer.includes("sx={menuItem.danger ? { color: 'error.main' } : undefined}"), 'destructive context-menu actions need a danger treatment')
+})
+
+test('shared FileExplorer status bar summarizes selection', () => {
+  assert.ok(explorer.includes('已选择 ${selectedIDs.length} 个'), 'selected item count is missing from the status bar')
+  assert.ok(explorer.includes('selectedSize'), 'selected file size summary is missing')
+})
