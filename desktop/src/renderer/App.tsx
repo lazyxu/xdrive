@@ -3,7 +3,6 @@ import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import {
   Alert as MuiAlert,
   Autocomplete,
-  Avatar,
   Box as MuiBox,
   Button as MuiButton,
   Checkbox,
@@ -49,6 +48,8 @@ import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
 import {
+  XDriveAccountAvatarButton,
+  XDriveAccountSummary,
   XDriveActionButton,
   XDriveDialogActions,
   XDriveDialogActionSpacer,
@@ -2231,7 +2232,6 @@ export default function App() {
     )
   }
 
-  const accountInitial = status?.username?.trim().slice(0, 1).toUpperCase() || '?'
   const desktopTitlebarActions = (
     <Stack direction="row" alignItems="center" spacing={0.25} className="desktop-titlebar-action-row">
       <XDriveStatusBadge
@@ -2260,14 +2260,15 @@ export default function App() {
           <SettingsRoundedIcon fontSize="small" />
         </IconButton>
       </Tooltip>
-      <Tooltip title={status?.username ? `${status.username} · 账户` : '账户'}>
-        <IconButton className="desktop-titlebar-account-button" aria-label="账户菜单" size="small" onClick={(event) => {
+      <XDriveAccountAvatarButton
+        username={status?.username}
+        compact
+        className="desktop-titlebar-account-button"
+        onClick={(event) => {
           setSyncMenuAnchor(null)
           setAccountMenuAnchor(event.currentTarget)
-        }}>
-          <Avatar sx={{ width: 24, height: 24, fontSize: 12, fontWeight: 700 }}>{accountInitial}</Avatar>
-        </IconButton>
-      </Tooltip>
+        }}
+      />
 
       <Menu id="global-sync-menu" anchorEl={syncMenuAnchor} open={Boolean(syncMenuAnchor)} onClose={() => setSyncMenuAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <MuiBox sx={{ minWidth: 260, px: 2, py: 1.25 }}>
@@ -2312,11 +2313,11 @@ export default function App() {
       </Menu>
 
       <Menu id="desktop-account-menu" anchorEl={accountMenuAnchor} open={Boolean(accountMenuAnchor)} onClose={() => setAccountMenuAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
-        <MuiBox sx={{ minWidth: 250, maxWidth: 320, px: 2, py: 1.25 }}>
-          <Typography variant="body2" fontWeight={700} noWrap>{status?.username || '已登录用户'}</Typography>
-          <Typography variant="caption" color="text.secondary" component="div" noWrap>{status?.server || '服务器未提供'}</Typography>
-          <Typography variant="caption" color="text.secondary">{status?.auth_status || '已登录'}</Typography>
-        </MuiBox>
+        <XDriveAccountSummary
+          username={status?.username}
+          secondary={status?.server}
+          status={status?.auth_status}
+        />
         <MuiDivider />
         <MenuItem onClick={() => {
           setAccountMenuAnchor(null)

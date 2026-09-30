@@ -20,7 +20,6 @@ import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import {
   AppBar,
-  Avatar as MuiAvatar,
   Box,
   Breadcrumbs,
   Button,
@@ -49,6 +48,8 @@ import {
   Typography,
 } from '@mui/material'
 import {
+  XDriveAccountAvatarButton,
+  XDriveAccountSummary,
   XDriveActionButton,
   XDriveDialogActions,
   XDriveDialogContent,
@@ -116,22 +117,9 @@ function WebAccountMenu({
   onLogout: () => void
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
-  const accountInitial = username.trim().slice(0, 1).toUpperCase() || '?'
-
   return (
     <>
-      <Tooltip title={username ? `${username} · 账户` : '账户'}>
-        <IconButton
-          aria-label="账户菜单"
-          size="small"
-          onClick={(event) => setAnchorEl(event.currentTarget)}
-          sx={{ ml: 0.5, p: 0.5 }}
-        >
-          <MuiAvatar sx={{ width: 28, height: 28, fontSize: 13, fontWeight: 700 }}>
-            {accountInitial}
-          </MuiAvatar>
-        </IconButton>
-      </Tooltip>
+      <XDriveAccountAvatarButton username={username} onClick={(event) => setAnchorEl(event.currentTarget)} />
       <Menu
         id="web-account-menu"
         anchorEl={anchorEl}
@@ -140,17 +128,11 @@ function WebAccountMenu({
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Box sx={{ minWidth: 240, maxWidth: 320, px: 2, py: 1.25 }}>
-          <Typography variant="body2" fontWeight={700} noWrap>
-            {username || '已登录用户'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary" component="div" noWrap>
-            Server {serverBuild?.version || '未知'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            已登录
-          </Typography>
-        </Box>
+        <XDriveAccountSummary
+          username={username}
+          secondary={`Server ${serverBuild?.version || '未知'}`}
+          status="已登录"
+        />
         <Box sx={{ borderTop: 1, borderColor: 'divider' }} />
         <MenuItem
           sx={{ color: 'error.main' }}
