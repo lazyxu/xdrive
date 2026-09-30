@@ -150,6 +150,24 @@ export interface ExternalSourceConnectorConfig {
   updated_at?: string
 }
 
+export interface ExternalSourceBrowseDirectory {
+  name: string
+  path: string
+}
+
+export interface ExternalSourceBrowsePage {
+  path?: string
+  items: ExternalSourceBrowseDirectory[]
+  total: number
+  next_offset?: number
+}
+
+export type ExternalSourceDirectoryBrowser = (
+  path: string,
+  limit?: number,
+  offset?: number,
+) => Promise<ExternalSourceBrowsePage>
+
 export interface ExternalSourceCredentialTestResult {
   valid: boolean
   kind: string

@@ -82,6 +82,7 @@ import {
   type AgentSourceCredentialStatus,
   type AgentSourceCredentialTestResult,
   type AgentSourceConnectorConfig,
+  type AgentSourceBrowsePage,
   type AgentFileAvailability,
   type AgentSettings,
   type AgentUpdateMode,
@@ -1582,6 +1583,19 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
     }
     return requireAgentClient().sourceConnectorConfig(sourceID)
+  }, false))
+  ipcMain.handle('agent:browse-source-directories', (_event, sourceID: unknown, path: unknown = '', limit: unknown = 200, offset: unknown = 0) => runAgentAction<AgentSourceBrowsePage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof path !== 'string' ||
+      typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000 ||
+      typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid Source browse query is required.')
+    }
+    return requireAgentClient().browseSourceDirectories(sourceID, path, limit, offset)
   }, false))
   ipcMain.handle('agent:set-source-connector-config', (_event, sourceID: unknown, revision: unknown, payload: unknown) => runAgentAction<AgentSourceConnectorConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

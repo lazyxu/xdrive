@@ -511,6 +511,19 @@ func (c *agentController) CloudSourceConnectorConfig(ctx context.Context, source
 	return cli.SourceConnectorConfig(ctx, sourceID)
 }
 
+func (c *agentController) CloudBrowseSourceDirectories(
+	ctx context.Context,
+	sourceID uint64,
+	remotePath string,
+	limit, offset int,
+) (client.SourceBrowsePage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.SourceBrowsePage{}, err
+	}
+	return cli.BrowseSourceDirectories(ctx, sourceID, remotePath, limit, offset)
+}
+
 func (c *agentController) CloudPutSourceConnectorConfig(ctx context.Context, sourceID, revision uint64, payload map[string]any) (client.SourceConnectorConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
