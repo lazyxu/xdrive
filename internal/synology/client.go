@@ -30,10 +30,13 @@ const (
 )
 
 var (
-	ErrAuthentication = errors.New("Synology authentication failed")
-	ErrSessionExpired = errors.New("Synology session expired")
-	ErrUnavailable    = errors.New("Synology is unavailable")
-	ErrPhotosMissing  = errors.New("Synology Photos API is unavailable")
+	ErrAuthentication   = errors.New("Synology authentication failed")
+	ErrSessionExpired   = errors.New("Synology session expired")
+	ErrMultipleLogin    = errors.New("Synology multiple login detected")
+	ErrPermissionDenied = errors.New("Synology permission denied")
+	ErrOTPRequired      = errors.New("Synology OTP authentication required")
+	ErrUnavailable      = errors.New("Synology is unavailable")
+	ErrPhotosMissing    = errors.New("Synology Photos API is unavailable")
 )
 
 type Credential struct {
@@ -142,15 +145,32 @@ func DiagnoseConnectionError(err error) ConnectionDiagnostic {
 
 	var dsmError *DSMAPIError
 	if errors.As(err, &dsmError) {
-		if errors.Is(dsmError, ErrAuthentication) {
+		switch {
+		case errors.Is(dsmError, ErrAuthentication):
 			return ConnectionDiagnostic{
 				Code:   "synology_auth_failed",
-				Detail: fmt.Sprintf("DSM 登录/API 鉴权失败（错误码 %d）。", dsmError.Code),
+				Detail: fmt.Sprintf("DSM 登录失败或账号不可用（错误码 %d）。", dsmError.Code),
 			}
-		}
-		return ConnectionDiagnostic{
-			Code:   "synology_api_error",
-			Detail: fmt.Sprintf("DSM API 返回错误码 %d。", dsmError.Code),
+		case errors.Is(dsmError, ErrMultipleLogin):
+			return ConnectionDiagnostic{
+				Code:   "synology_multiple_login",
+				Detail: fmt.Sprintf("DSM 检测到重复登录（错误码 %d）；请稍后重试，并确认没有多个 xDrive/脚本同时使用同一账号登录 Synology Photos。", dsmError.Code),
+			}
+		case errors.Is(dsmError, ErrPermissionDenied):
+			return ConnectionDiagnostic{
+				Code:   "synology_permission_denied",
+				Detail: fmt.Sprintf("DSM 账号没有访问 Synology Photos 所需权限（错误码 %d）。", dsmError.Code),
+			}
+		case errors.Is(dsmError, ErrOTPRequired):
+			return ConnectionDiagnostic{
+				Code:   "synology_otp_required",
+				Detail: fmt.Sprintf("DSM 要求两步验证/OTP，但当前连接器未提供 OTP（错误码 %d）。", dsmError.Code),
+			}
+		default:
+			return ConnectionDiagnostic{
+				Code:   "synology_api_error",
+				Detail: fmt.Sprintf("DSM API 返回错误码 %d。", dsmError.Code),
+			}
 		}
 	}
 	if errors.Is(err, ErrPhotosMissing) {
@@ -216,29 +236,23 @@ func New(credential Credential) (*Client, error) {
 }
 
 func (c *Client) Test(ctx context.Context) (AccountInfo, error) {
-	apis, err := c.apiInfo(ctx)
-	if err != nil {
-		return AccountInfo{}, err
-	}
-	authAPI, ok := apis["SYNO.API.Auth"]
-	if !ok || authAPI.MaxVersion < 1 {
-		return AccountInfo{}, fmt.Errorf("%w: SYNO.API.Auth is missing", ErrUnavailable)
-	}
-	personal := apis["SYNO.Foto.Browse.Item"].MaxVersion > 0 && apis["SYNO.Foto.Download"].MaxVersion > 0
-	shared := apis["SYNO.FotoTeam.Browse.Item"].MaxVersion > 0 && apis["SYNO.FotoTeam.Download"].MaxVersion > 0
-	if !personal && !shared {
-		return AccountInfo{}, fmt.Errorf("%w: install/enable Synology Photos", ErrPhotosMissing)
-	}
-
-	session, err := c.login(ctx, authAPI)
+	session, err := c.Connect(ctx)
 	if err != nil {
 		return AccountInfo{}, err
 	}
 	defer func() {
 		logoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = c.logout(logoutCtx, authAPI, session.SID)
+		_ = session.Close(logoutCtx)
 	}()
+
+	space := SpacePersonal
+	if !session.Available(space) {
+		space = SpaceShared
+	}
+	if _, err := session.ListItemsPage(ctx, space, 0, 1); err != nil {
+		return AccountInfo{}, fmt.Errorf("verify Synology Photos session: %w", err)
+	}
 	return AccountInfo{Username: c.username}, nil
 }
 
@@ -251,9 +265,11 @@ func (c *Client) apiInfo(ctx context.Context) (map[string]apiInfo, error) {
 		"SYNO.API.Auth",
 		"SYNO.Foto.Browse.Folder",
 		"SYNO.Foto.Browse.Item",
+		"SYNO.Foto.Browse.Album",
 		"SYNO.Foto.Download",
 		"SYNO.FotoTeam.Browse.Folder",
 		"SYNO.FotoTeam.Browse.Item",
+		"SYNO.FotoTeam.Browse.Album",
 		"SYNO.FotoTeam.Download",
 	}, ","))
 	endpoint := c.baseURL + "/webapi/entry.cgi?" + values.Encode()
@@ -273,8 +289,8 @@ func (c *Client) apiInfo(ctx context.Context) (map[string]apiInfo, error) {
 
 func (c *Client) login(ctx context.Context, authAPI apiInfo) (authData, error) {
 	version := authAPI.MaxVersion
-	if version > 6 {
-		version = 6
+	if version > 3 {
+		version = 3
 	}
 	if version < 1 {
 		version = 1
@@ -290,10 +306,7 @@ func (c *Client) login(ctx context.Context, authAPI apiInfo) (authData, error) {
 	if version >= 3 {
 		values.Set("enable_syno_token", "yes")
 	}
-	endpoint, err := c.webAPIEndpoint(authAPI.Path)
-	if err != nil {
-		return authData{}, err
-	}
+	endpoint := c.baseURL + "/photo/webapi/auth.cgi"
 	var envelope apiEnvelope
 	if err := c.doJSON(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()), &envelope); err != nil {
 		return authData{}, err
@@ -328,10 +341,7 @@ func (c *Client) logout(ctx context.Context, authAPI apiInfo, sid string) error 
 	values.Set("method", "logout")
 	values.Set("session", "SynologyPhotos")
 	values.Set("_sid", sid)
-	endpoint, err := c.webAPIEndpoint(authAPI.Path)
-	if err != nil {
-		return err
-	}
+	endpoint := c.baseURL + "/photo/webapi/auth.cgi"
 	var envelope apiEnvelope
 	if err := c.doJSON(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()), &envelope); err != nil {
 		return err
@@ -545,10 +555,16 @@ func apiError(envelope apiEnvelope) error {
 		code = envelope.Error.Code
 	}
 	switch code {
-	case 106, 107, 119:
+	case 106, 119:
 		return &DSMAPIError{Code: code, Cause: ErrSessionExpired}
-	case 400, 401, 402, 403, 404:
+	case 107:
+		return &DSMAPIError{Code: code, Cause: ErrMultipleLogin}
+	case 105, 402:
+		return &DSMAPIError{Code: code, Cause: ErrPermissionDenied}
+	case 400, 401:
 		return &DSMAPIError{Code: code, Cause: ErrAuthentication}
+	case 403, 404, 406:
+		return &DSMAPIError{Code: code, Cause: ErrOTPRequired}
 	default:
 		return &DSMAPIError{Code: code, Cause: ErrUnavailable}
 	}
