@@ -822,3 +822,23 @@ test('Web and Desktop reuse shared Synology connector-config fields', () => {
   assert.equal(desktop.includes('<span>File Station 根目录</span>'), false, 'Desktop should not retain native File Station roots field')
   assert.equal(desktop.includes('synologyPhotoSpaceOptions.map'), false, 'Desktop should not retain local Photos space options')
 })
+
+
+test('Desktop source details reuse shared description and section primitives', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
+  const description = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'DescriptionGrid.tsx'), 'utf8')
+
+  assert.ok(description.includes('columns?: 2 | 3 | 4'), 'shared description grid should support the three-column run metrics layout')
+  assert.ok(description.includes("fullColumnsAt?: 'md' | 'lg'"), 'shared description grid should support a desktop full-column breakpoint')
+  assert.ok(desktop.includes('<XDriveDescriptionGrid columns={4} fullColumnsAt="md">'), 'Desktop source details should use the shared four-column description grid')
+  assert.ok(desktop.includes('<XDriveDescriptionGrid columns={3} fullColumnsAt="md" sx={{ p: 1.25 }}>'), 'Desktop run metrics should use the shared three-column description grid')
+  assert.ok(desktop.includes('title="相册与集合"'), 'Desktop collection section should use the shared section header')
+  assert.ok(desktop.includes('title="同步历史"'), 'Desktop history section should use the shared section header')
+
+  for (const legacy of ['source-detail-grid', 'source-run-grid', 'source-ignore', 'source-run-heading']) {
+    assert.equal(desktop.includes(`className="${legacy}"`), false, `Desktop should not retain local ${legacy} markup`)
+    assert.equal(styles.includes(`.${legacy}`), false, `Desktop should not retain local ${legacy} CSS`)
+  }
+})

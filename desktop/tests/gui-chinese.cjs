@@ -692,7 +692,7 @@ test('desktop sections use the shared section header', () => {
   assert.ok(sharedSectionHeader.includes('XDriveSectionHeader'), 'shared section header primitive is missing')
   assert.ok(sharedSectionHeader.includes("level === 'h3'"), 'shared section header needs h2/h3 semantics')
   assert.ok(sharedSectionHeader.includes('actions'), 'shared section header needs an action slot')
-  assert.equal((renderer.match(/<XDriveSectionHeader/g) || []).length, 7, 'desktop should reuse the shared section header for all seven repeated sections')
+  assert.equal((renderer.match(/<XDriveSectionHeader/g) || []).length, 9, 'desktop should reuse the shared section header for all nine repeated sections')
   assert.equal(renderer.includes('className="section-heading"'), false, 'legacy desktop section-heading wrapper should be removed')
   assert.equal(styles.includes('.section-heading {'), false, 'legacy desktop section-heading CSS should be removed')
   assert.equal(styles.includes('.source-heading-actions {'), false, 'legacy source header action CSS should be removed')
