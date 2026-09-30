@@ -83,6 +83,8 @@ import {
   XDriveSourcePresetField,
   XDriveSourceRunModeField,
   XDriveSourceStatusField,
+  XDriveSourceCookieField,
+  XDriveSynologyDsmCredentialFields,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -113,7 +115,6 @@ import {
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
   synologyPhotoSpaceOptions,
-  synologyDsmAddressHelp,
   yikeConnectorNotice,
   yikeRateLimitNotice,
   yikeManagedTargetLabel,
@@ -2959,20 +2960,17 @@ export default function App() {
                   monospace
                 />
                 {sourceCreateProfile.credential === 'cookie' && (
-                  <label className="source-create-wide">
-                    <span>一刻相册 Cookie</span>
-                    <input
-                      type="password"
+                  <MuiBox className="source-create-wide" sx={{ display: 'grid', gap: 0.75 }}>
+                    <XDriveSourceCookieField
                       value={sourceCreateCookie}
-                      onChange={(event) => {
-                        setSourceCreateCookie(event.target.value)
+                      placeholder="粘贴已登录的一刻相册 Web Cookie"
+                      helperText="Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。"
+                      required
+                      onChange={(value) => {
+                        setSourceCreateCookie(value)
                         setSourceCreateCredentialTest(null)
                       }}
-                      autoComplete="off"
-                      placeholder="粘贴已登录的一刻相册 Web Cookie"
-                      required
                     />
-                    <small>Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。</small>
                     <XDriveStatusAlert tone="warning" sx={{ mt: 0.5 }}>{yikeConnectorNotice}</XDriveStatusAlert>
                     <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
                     <XDriveYikeCookieHelp variant="dialog" />
@@ -2992,50 +2990,29 @@ export default function App() {
                         {externalSourceCredentialTestSuccessLabel(sourceCreateCredentialTest)}
                       </XDriveStatusAlert>
                     )}
-                  </label>
+                  </MuiBox>
                 )}
                 {sourceCreateProfile.credential === 'synology_dsm' && (
                   <>
                     <MuiDivider className="source-create-wide" />
-                    <label className="source-create-wide">
-                      <span>DSM 地址</span>
-                      <input
-                        value={sourceCreateDsmBaseURL}
-                        onChange={(event) => {
-                          setSourceCreateDsmBaseURL(event.target.value)
-                          setSourceCreateCredentialTest(null)
-                        }}
-                        autoComplete="off"
-                        placeholder="https://nas.example.com:5001"
-                        required
-                      />
-                      <small>{synologyDsmAddressHelp}</small>
-                    </label>
-                    <label>
-                      <span>DSM 用户名</span>
-                      <input
-                        value={sourceCreateDsmUsername}
-                        onChange={(event) => {
-                          setSourceCreateDsmUsername(event.target.value)
-                          setSourceCreateCredentialTest(null)
-                        }}
-                        autoComplete="username"
-                        required
-                      />
-                    </label>
-                    <label>
-                      <span>DSM 密码</span>
-                      <input
-                        type="password"
-                        value={sourceCreateDsmPassword}
-                        onChange={(event) => {
-                          setSourceCreateDsmPassword(event.target.value)
-                          setSourceCreateCredentialTest(null)
-                        }}
-                        autoComplete="new-password"
-                        required
-                      />
-                    </label>
+                    <XDriveSynologyDsmCredentialFields
+                      baseURL={sourceCreateDsmBaseURL}
+                      username={sourceCreateDsmUsername}
+                      password={sourceCreateDsmPassword}
+                      required
+                      onBaseURLChange={(value) => {
+                        setSourceCreateDsmBaseURL(value)
+                        setSourceCreateCredentialTest(null)
+                      }}
+                      onUsernameChange={(value) => {
+                        setSourceCreateDsmUsername(value)
+                        setSourceCreateCredentialTest(null)
+                      }}
+                      onPasswordChange={(value) => {
+                        setSourceCreateDsmPassword(value)
+                        setSourceCreateCredentialTest(null)
+                      }}
+                    />
                     {sourceCreateKind === 'synology_photos' ? (
                       <div className="source-create-wide">
                         <span>同步空间</span>
@@ -3475,28 +3452,23 @@ export default function App() {
                             monospace
                           />
                           {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'cookie' && (
-                            <label className="source-settings-wide">
-                              <span>一刻相册 Cookie</span>
-                              <input
-                                type="password"
+                            <MuiBox className="source-settings-wide" sx={{ display: 'grid', gap: 0.75 }}>
+                              <XDriveSourceCookieField
                                 value={sourceEditCookie}
+                                placeholder={row.credential?.configured ? externalSourceSavedCredentialMask : '当前未配置，请粘贴 Cookie'}
+                                helperText={row.credential?.configured
+                                  ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                                  : '当前未配置 Cookie，请粘贴新的 Cookie。'}
                                 onFocus={() => {
                                   if (isExternalSourceSavedCredentialMask(sourceEditCookie)) {
                                     setSourceEditCookie('')
                                   }
                                 }}
-                                onChange={(event) => {
-                                  setSourceEditCookie(event.target.value)
+                                onChange={(value) => {
+                                  setSourceEditCookie(value)
                                   setSourceEditCredentialTest(null)
                                 }}
-                                autoComplete="off"
-                                placeholder={row.credential?.configured ? externalSourceSavedCredentialMask : '当前未配置，请粘贴 Cookie'}
                               />
-                              <small>
-                                {row.credential?.configured
-                                  ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
-                                  : '当前未配置 Cookie，请粘贴新的 Cookie。'}
-                              </small>
                               <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
                               <XDriveYikeCookieHelp variant="dialog" />
                               <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
@@ -3515,7 +3487,7 @@ export default function App() {
                                   {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
                                 </XDriveStatusAlert>
                               )}
-                            </label>
+                            </MuiBox>
                           )}
                           {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'synology_dsm' && (
                             <>
@@ -3525,44 +3497,24 @@ export default function App() {
                                   ? 'DSM 凭据已配置。出于安全原因，地址、用户名和密码不会回读；更新时请重新完整填写三项。'
                                   : 'DSM 凭据未配置；Pull 来源会保持暂停，直到保存有效凭据。'}
                               </XDriveStatusAlert>
-                              <label className="source-settings-wide">
-                                <span>更新 DSM 地址</span>
-                                <input
-                                  value={sourceEditDsmBaseURL}
-                                  onChange={(event) => {
-                                    setSourceEditDsmBaseURL(event.target.value)
-                                    setSourceEditCredentialTest(null)
-                                  }}
-                                  autoComplete="off"
-                                  placeholder="留空则保持当前配置不变"
-                                />
-                                <small>{synologyDsmAddressHelp}</small>
-                              </label>
-                              <label>
-                                <span>更新 DSM 用户名</span>
-                                <input
-                                  value={sourceEditDsmUsername}
-                                  onChange={(event) => {
-                                    setSourceEditDsmUsername(event.target.value)
-                                    setSourceEditCredentialTest(null)
-                                  }}
-                                  autoComplete="username"
-                                  placeholder="留空则保持当前配置不变"
-                                />
-                              </label>
-                              <label>
-                                <span>更新 DSM 密码</span>
-                                <input
-                                  type="password"
-                                  value={sourceEditDsmPassword}
-                                  onChange={(event) => {
-                                    setSourceEditDsmPassword(event.target.value)
-                                    setSourceEditCredentialTest(null)
-                                  }}
-                                  autoComplete="new-password"
-                                  placeholder="留空则保持当前配置不变"
-                                />
-                              </label>
+                              <XDriveSynologyDsmCredentialFields
+                                mode="update"
+                                baseURL={sourceEditDsmBaseURL}
+                                username={sourceEditDsmUsername}
+                                password={sourceEditDsmPassword}
+                                onBaseURLChange={(value) => {
+                                  setSourceEditDsmBaseURL(value)
+                                  setSourceEditCredentialTest(null)
+                                }}
+                                onUsernameChange={(value) => {
+                                  setSourceEditDsmUsername(value)
+                                  setSourceEditCredentialTest(null)
+                                }}
+                                onPasswordChange={(value) => {
+                                  setSourceEditDsmPassword(value)
+                                  setSourceEditCredentialTest(null)
+                                }}
+                              />
                               {row.source.kind === 'synology_photos' ? (
                                 <div className="source-settings-wide">
                                   <span>同步空间</span>

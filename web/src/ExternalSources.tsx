@@ -51,6 +51,8 @@ import {
   XDriveSourcePresetField,
   XDriveSourceRunModeField,
   XDriveSourceStatusField,
+  XDriveSourceCookieField,
+  XDriveSynologyDsmCredentialFields,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -80,7 +82,6 @@ import {
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
   synologyPhotoSpaceOptions,
-  synologyDsmAddressHelp,
   yikeConnectorNotice,
   yikeRateLimitNotice,
   yikeManagedTargetLabel,
@@ -1514,16 +1515,11 @@ export default function ExternalSourcesPanel({
             />
             {createProfile.credential === 'cookie' && (
               <>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="password"
-                  label="一刻相册 Cookie"
-                  autoComplete="off"
+                <XDriveSourceCookieField
                   value={createValues.cookie ?? ''}
                   helperText="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
-                  onChange={(event) => {
-                    setCreateValues((current) => ({ ...current, cookie: event.target.value }))
+                  onChange={(value) => {
+                    setCreateValues((current) => ({ ...current, cookie: value }))
                     setCreateCredentialTest(null)
                     setCreateCredentialTestError('')
                   }}
@@ -1555,41 +1551,22 @@ export default function ExternalSourcesPanel({
             {createProfile.credential === 'synology_dsm' && (
               <>
                 <XDriveSectionHeader level="h3" title="Synology DSM 连接" />
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="DSM 地址"
-                  placeholder="https://nas.example.com:5001"
-                  autoComplete="off"
-                  value={createValues.base_url ?? ''}
-                  helperText={synologyDsmAddressHelp}
-                  onChange={(event) => {
-                    setCreateValues((current) => ({ ...current, base_url: event.target.value }))
+                <XDriveSynologyDsmCredentialFields
+                  baseURL={createValues.base_url ?? ''}
+                  username={createValues.username ?? ''}
+                  password={createValues.password ?? ''}
+                  onBaseURLChange={(value) => {
+                    setCreateValues((current) => ({ ...current, base_url: value }))
                     setCreateCredentialTest(null)
                     setCreateCredentialTestError('')
                   }}
-                />
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="DSM 用户名"
-                  autoComplete="username"
-                  value={createValues.username ?? ''}
-                  onChange={(event) => {
-                    setCreateValues((current) => ({ ...current, username: event.target.value }))
+                  onUsernameChange={(value) => {
+                    setCreateValues((current) => ({ ...current, username: value }))
                     setCreateCredentialTest(null)
                     setCreateCredentialTestError('')
                   }}
-                />
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="password"
-                  label="DSM 密码"
-                  autoComplete="new-password"
-                  value={createValues.password ?? ''}
-                  onChange={(event) => {
-                    setCreateValues((current) => ({ ...current, password: event.target.value }))
+                  onPasswordChange={(value) => {
+                    setCreateValues((current) => ({ ...current, password: value }))
                     setCreateCredentialTest(null)
                     setCreateCredentialTestError('')
                   }}
@@ -1759,12 +1736,7 @@ export default function ExternalSourcesPanel({
                     </MuiTypography>
                   </XDriveStatusAlert>
                   <XDriveStatusAlert tone="neutral" sx={{ mb: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="password"
-                    label="一刻相册 Cookie"
-                    autoComplete="off"
+                  <XDriveSourceCookieField
                     value={settingsValues.cookie ?? ''}
                     placeholder={setting.credential?.configured ? externalSourceSavedCredentialMask : '粘贴一刻相册 Cookie'}
                     helperText={setting.credential?.configured
@@ -1775,8 +1747,8 @@ export default function ExternalSourcesPanel({
                         setSettingsValues((current) => ({ ...current, cookie: '' }))
                       }
                     }}
-                    onChange={(event) => {
-                      setSettingsValues((current) => ({ ...current, cookie: event.target.value }))
+                    onChange={(value) => {
+                      setSettingsValues((current) => ({ ...current, cookie: value }))
                       setSettingsCredentialTest(null)
                       setSettingsCredentialTestError('')
                     }}
@@ -1826,43 +1798,23 @@ export default function ExternalSourcesPanel({
                       已保存的 DSM 地址、用户名和密码不会从服务器读取回浏览器；如需更新，请重新完整填写三项。
                     </MuiTypography>
                   </XDriveStatusAlert>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="更新 DSM 地址"
-                    placeholder="留空则保持当前配置不变"
-                    helperText={synologyDsmAddressHelp}
-                    autoComplete="off"
-                    value={settingsValues.base_url ?? ''}
-                    onChange={(event) => {
-                      setSettingsValues((current) => ({ ...current, base_url: event.target.value }))
+                  <XDriveSynologyDsmCredentialFields
+                    mode="update"
+                    baseURL={settingsValues.base_url ?? ''}
+                    username={settingsValues.username ?? ''}
+                    password={settingsValues.password ?? ''}
+                    onBaseURLChange={(value) => {
+                      setSettingsValues((current) => ({ ...current, base_url: value }))
                       setSettingsCredentialTest(null)
                       setSettingsCredentialTestError('')
                     }}
-                  />
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="更新 DSM 用户名"
-                    placeholder="留空则保持当前配置不变"
-                    autoComplete="username"
-                    value={settingsValues.username ?? ''}
-                    onChange={(event) => {
-                      setSettingsValues((current) => ({ ...current, username: event.target.value }))
+                    onUsernameChange={(value) => {
+                      setSettingsValues((current) => ({ ...current, username: value }))
                       setSettingsCredentialTest(null)
                       setSettingsCredentialTestError('')
                     }}
-                  />
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="password"
-                    label="更新 DSM 密码"
-                    placeholder="留空则保持当前配置不变"
-                    autoComplete="new-password"
-                    value={settingsValues.password ?? ''}
-                    onChange={(event) => {
-                      setSettingsValues((current) => ({ ...current, password: event.target.value }))
+                    onPasswordChange={(value) => {
+                      setSettingsValues((current) => ({ ...current, password: value }))
                       setSettingsCredentialTest(null)
                       setSettingsCredentialTestError('')
                     }}

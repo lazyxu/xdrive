@@ -34,6 +34,7 @@ const files = {
   sourceCollection: readRepo('ui/shared/src/mui/SourceCollection.tsx'),
   sourceScheduleFields: readRepo('ui/shared/src/mui/SourceScheduleFields.tsx'),
   sourceBasicFields: readRepo('ui/shared/src/mui/SourceBasicFields.tsx'),
+  sourceCredentialFields: readRepo('ui/shared/src/mui/SourceCredentialFields.tsx'),
   sourceIgnoreRulesField: readRepo('ui/shared/src/mui/SourceIgnoreRulesField.tsx'),
   main: read('src/main.tsx'),
   styles: read('src/styles.css'),
@@ -133,6 +134,14 @@ requireText(files.sourceRunSummary, ['ExternalSourceRunDetailView', 'XDriveStatu
 requireText(files.sourceCollection, ['XDriveSourceCollectionSummary', 'XDriveSourceCollectionItem', 'externalSourceCollectionKindLabel', 'externalSourceCollectionStateTone', 'formatExternalSourceTime', '远端缺失', '原始路径'], '共享来源集合展示')
 requireText(files.sourceScheduleFields, ['XDriveSourceScheduleFields', '调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'onScheduleTypeChange', 'onExpressionChange', 'onTimezoneChange'], '共享来源调度字段')
 requireText(files.sourceBasicFields, ['XDriveSourcePresetField', 'XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '来源类型', '来源名称', '运行模式', '启用', '暂停'], '共享来源基础字段')
+requireText(files.sourceCredentialFields, ['XDriveSourceCookieField', 'XDriveSynologyDsmCredentialFields', '一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '留空则保持当前配置不变', 'synologyDsmAddressHelp'], '共享来源凭据字段')
+if ((files.sources.match(/<XDriveSourceCookieField\b/g) || []).length !== 2) throw new Error('Web Cookie 创建/设置没有完整复用共享字段')
+if ((files.sources.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length !== 2) throw new Error('Web DSM 创建/设置没有完整复用共享字段组')
+for (const legacy of ['一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '更新 DSM 用户名', '更新 DSM 密码']) {
+  const localFieldPattern = new RegExp('<TextField[\\s\\S]{0,220}label="' + legacy + '"')
+  if (localFieldPattern.test(files.sources)) throw new Error(`Web 来源仍保留本地凭据字段：${legacy}`)
+}
+if (files.sources.includes('synologyDsmAddressHelp')) throw new Error('Web 来源仍直接维护 DSM 地址帮助文案')
 if ((files.sources.match(/<XDriveSourcePresetField\b/g) || []).length !== 1) throw new Error('Web 来源创建没有复用共享来源类型字段')
 if ((files.sources.match(/<XDriveSourceNameField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享名称字段')
 if ((files.sources.match(/<XDriveSourceRunModeField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享运行模式字段')

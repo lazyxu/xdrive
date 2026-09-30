@@ -759,3 +759,36 @@ test('Web and Desktop reuse shared source basic fields', () => {
   assert.ok(desktopStyles.includes('.source-create > label > input,'), 'Desktop native credential fields should keep scoped legacy styling')
   assert.ok(desktopStyles.includes('.source-settings > label > input,'), 'Desktop native settings credential fields should keep scoped legacy styling')
 })
+
+
+test('Web and Desktop reuse shared source credential fields', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceCredentialFields.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+
+  for (const token of [
+    'XDriveSourceCookieField',
+    'XDriveSynologyDsmCredentialFields',
+    '一刻相册 Cookie',
+    'DSM 地址',
+    'DSM 用户名',
+    'DSM 密码',
+    '更新 DSM 地址',
+    '留空则保持当前配置不变',
+    'synologyDsmAddressHelp',
+  ]) {
+    assert.ok(sharedFields.includes(token), `shared Source credential fields missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSourceCookieField\b/g) || []).length, 2, 'Web create/settings should reuse shared Cookie field')
+  assert.equal((desktop.match(/<XDriveSourceCookieField\b/g) || []).length, 2, 'Desktop create/settings should reuse shared Cookie field')
+  assert.equal((web.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length, 2, 'Web create/settings should reuse shared DSM field group')
+  assert.equal((desktop.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length, 2, 'Desktop create/settings should reuse shared DSM field group')
+
+  assert.equal(web.includes('synologyDsmAddressHelp'), false, 'Web should not maintain DSM address help locally')
+  assert.equal(desktop.includes('synologyDsmAddressHelp'), false, 'Desktop should not maintain DSM address help locally')
+  assert.equal(desktop.includes('<span>DSM 地址</span>'), false, 'Desktop create should not keep native DSM address input')
+  assert.equal(desktop.includes('<span>更新 DSM 地址</span>'), false, 'Desktop settings should not keep native DSM address input')
+  assert.equal(desktop.includes('<span>一刻相册 Cookie</span>'), false, 'Desktop should not keep native Cookie input labels')
+})
