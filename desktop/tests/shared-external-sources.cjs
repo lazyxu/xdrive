@@ -81,6 +81,14 @@ test('shared external-source state ordering is connector neutral', () => {
 
   assert.deepEqual(
     shared.getExternalSourceState({
+      source: source({ kind: 'yike_photos', direction: 'pull' }),
+      latestRun: { status: 'running', cancel_requested_at: '2026-09-26T01:01:00Z' },
+    }),
+    { key: 'running', tone: 'busy', label: '正在取消…' },
+  )
+
+  assert.deepEqual(
+    shared.getExternalSourceState({
       source: source({ last_error: 'boom' }),
     }),
     { key: 'error', tone: 'bad', label: '异常' },
@@ -166,6 +174,18 @@ test('shared external-source trigger gating matches connector execution model', 
       label: '来源正在运行',
     },
   )
+
+  assert.deepEqual(
+    shared.getExternalSourceTriggerState({
+      source: source({ kind: 'yike_photos', direction: 'pull' }),
+      credential: { configured: true },
+      latestRun: { status: 'running', cancel_requested_at: '2026-09-26T01:01:00Z' },
+    }),
+    {
+      ready: false,
+      label: '来源正在取消',
+    },
+  )
 })
 
 test('shared run detail exposes live progress and cancellation state', () => {
@@ -222,6 +242,7 @@ test('shared run detail exposes live progress and cancellation state', () => {
     },
     cancel_requested_at: '2026-09-27T10:01:00Z',
   })
+  assert.equal(cancelling.statusLabel, '正在取消…')
   assert.equal(cancelling.progress.percent, undefined)
   assert.equal(cancelling.progress.label, '正在取消…')
   assert.equal(cancelling.progress.cancelling, true)
