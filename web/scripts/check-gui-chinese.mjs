@@ -21,6 +21,7 @@ const files = {
   confirmDialog: readRepo('ui/shared/src/mui/ConfirmDialog.tsx'),
   metricCards: readRepo('ui/shared/src/mui/MetricCards.tsx'),
   sidebarStorageSummary: readRepo('ui/shared/src/mui/SidebarStorageSummary.tsx'),
+  descriptionGrid: readRepo('ui/shared/src/mui/DescriptionGrid.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
@@ -56,6 +57,8 @@ if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染
 requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDrive 品牌图标')
 requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
 requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储', '无容量限制', '已使用', '< 1 KiB', '空间紧张', '已用满', '已超额', 'LinearProgress', 'percentageLabel'], '共享侧栏存储摘要')
+requireText(files.descriptionGrid, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', "columns === 4", "bgcolor: 'action.hover'"], '共享描述网格')
+requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem'], '外部来源描述网格')
 requireText(files.app, ['XDriveSidebarStorageSummary', 'usedBytes={quota.physical_used_bytes}', 'totalBytes={quota.quota_bytes}'], 'Web 侧栏存储摘要')
 requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'web-account-menu', '退出登录'], 'Web 账号菜单')
 requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', 'XDriveAccountMenu', '<Avatar', '<Menu', '<Divider'], '共享账号 chrome')
@@ -99,7 +102,7 @@ if (files.sources.includes('@ant-design/icons')) throw new Error('Web 外部来�
 if (files.sources.includes('message.success') || /<Button\b/.test(files.sources) || /<Space\b/.test(files.sources) || /<Divider\b/.test(files.sources)) throw new Error('Web 外部来源外壳仍使用已迁移的 AntD 组件')
 if (/from ['"]antd['"]/.test(files.sources) || files.sources.includes('@ant-design/icons')) throw new Error('Web 外部来源仍依赖 Ant Design')
 if (/<Descriptions\b/.test(files.sources) || /<Spin\b/.test(files.sources) || /<Form\b/.test(files.sources) || /<Input\b/.test(files.sources) || /<Select\b/.test(files.sources) || files.sources.includes('Typography.')) throw new Error('Web 外部来源仍渲染 AntD 组件')
-requireText(files.sources, ['SourceDescriptionGrid', 'SourceDescriptionItem', '复制运行 ID', 'CircularProgress', 'initialCreateSourceValues', 'settingsValues', 'MuiSelect', 'FormControl'], '外部来源 MUI 表单与详情展示')
+requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', '复制运行 ID', 'CircularProgress', 'initialCreateSourceValues', 'settingsValues', 'MuiSelect', 'FormControl'], '外部来源 MUI 表单与详情展示')
 if (files.sources.includes('<LinearProgress')) throw new Error('Web 外部来源仍在直接渲染运行进度条')
 if ((files.sources.match(/<XDriveSourceRunProgress/g) || []).length !== 1) throw new Error('Web 外部来源运行进度没有复用共享组件')
 requireText(files.sourceRunProgress, ['ExternalSourceRunProgressView', 'LinearProgress', '当前文件：', '正在取消…', 'XDriveActionButton'], '外部来源运行进度')

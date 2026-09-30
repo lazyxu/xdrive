@@ -34,6 +34,8 @@ import {
   XDriveActionButton,
   XDriveDialogActions,
   XDriveDialogContent,
+  XDriveDescriptionGrid,
+  XDriveDescriptionItem,
   XDriveDialogTitle,
   XDriveFeedbackSnackbar,
   XDrivePaginationControls,
@@ -170,41 +172,6 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   return externalSourceCredentialTestErrorLabel(
     value,
     error instanceof ApiError ? error.detail : '',
-  )
-}
-
-function SourceDescriptionGrid({ children }: { children: ReactNode }) {
-  return (
-    <MuiBox
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-        borderTop: 1,
-        borderLeft: 1,
-        borderColor: 'divider',
-      }}
-    >
-      {children}
-    </MuiBox>
-  )
-}
-
-function SourceDescriptionItem({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <MuiBox
-      sx={{
-        minWidth: 0,
-        p: 1.25,
-        borderRight: 1,
-        borderBottom: 1,
-        borderColor: 'divider',
-      }}
-    >
-      <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.35 }}>
-        {label}
-      </MuiTypography>
-      <MuiBox sx={{ fontSize: 14, overflowWrap: 'anywhere' }}>{children}</MuiBox>
-    </MuiBox>
   )
 }
 
@@ -1118,31 +1085,31 @@ export default function ExternalSourcesPanel({
                 <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedDetail.error}</MuiTypography>
               </XDriveStatusAlert>
             )}
-            <SourceDescriptionGrid>
-              <SourceDescriptionItem label="来源类型">
+            <XDriveDescriptionGrid>
+              <XDriveDescriptionItem label="来源类型">
                 <Stack direction="row" spacing={0.75} alignItems="center">
                   <XDriveSourceKindIcon kind={selected.source.kind} size="small" />
                   <span>{selectedDetail.kindLabel}</span>
                 </Stack>
-              </SourceDescriptionItem>
-              <SourceDescriptionItem label="工作方式">{selectedDetail.modeLabel}</SourceDescriptionItem>
-              <SourceDescriptionItem label="状态">
+              </XDriveDescriptionItem>
+              <XDriveDescriptionItem label="工作方式">{selectedDetail.modeLabel}</XDriveDescriptionItem>
+              <XDriveDescriptionItem label="状态">
                 <XDriveStatusBadge tone={selectedDetail.state.tone} label={selectedDetail.state.label} />
-              </SourceDescriptionItem>
-              <SourceDescriptionItem label="目标目录">
+              </XDriveDescriptionItem>
+              <XDriveDescriptionItem label="目标目录">
                 {selected.source.kind === 'yike_photos'
                   ? yikeManagedTargetLabel
                   : selectedDetail.targetNodeID ? `节点 #${selectedDetail.targetNodeID}` : '未配置'}
-              </SourceDescriptionItem>
-              <SourceDescriptionItem label="调度">{selectedDetail.scheduleLabel}</SourceDescriptionItem>
-              <SourceDescriptionItem label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</SourceDescriptionItem>
-              <SourceDescriptionItem label="上次成功">{formatExternalSourceTime(selectedDetail.lastSuccessAt)}</SourceDescriptionItem>
+              </XDriveDescriptionItem>
+              <XDriveDescriptionItem label="调度">{selectedDetail.scheduleLabel}</XDriveDescriptionItem>
+              <XDriveDescriptionItem label="上次运行">{formatExternalSourceTime(selectedDetail.lastRunAt)}</XDriveDescriptionItem>
+              <XDriveDescriptionItem label="上次成功">{formatExternalSourceTime(selectedDetail.lastSuccessAt)}</XDriveDescriptionItem>
               {selectedDetail.credential && (
-                <SourceDescriptionItem label={selectedDetail.credential.label}>
+                <XDriveDescriptionItem label={selectedDetail.credential.label}>
                   {selectedDetail.credential.configured ? '已配置' : '未配置'}
-                </SourceDescriptionItem>
+                </XDriveDescriptionItem>
               )}
-            </SourceDescriptionGrid>
+            </XDriveDescriptionGrid>
 
             <MuiDivider textAlign="left" sx={{ my: 2 }}>相册与集合</MuiDivider>
             {collectionsLoading ? (
@@ -1256,9 +1223,9 @@ export default function ExternalSourcesPanel({
                               onCancel={() => void cancelRun(selected)}
                             />
                           )}
-                          <SourceDescriptionGrid>
-                            <SourceDescriptionItem label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</SourceDescriptionItem>
-                            <SourceDescriptionItem label="内部运行 ID">
+                          <XDriveDescriptionGrid>
+                            <XDriveDescriptionItem label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="内部运行 ID">
                               <Stack direction="row" spacing={0.5} alignItems="center">
                                 <MuiTypography component="code" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{run.id}</MuiTypography>
                                 <Tooltip title="复制运行 ID">
@@ -1275,22 +1242,22 @@ export default function ExternalSourcesPanel({
                                   </IconButton>
                                 </Tooltip>
                               </Stack>
-                            </SourceDescriptionItem>
-                            <SourceDescriptionItem label="运行状态">
+                            </XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="运行状态">
                               <XDriveStatusBadge tone={runDetail.statusTone} label={runDetail.statusLabel} />
-                            </SourceDescriptionItem>
-                            <SourceDescriptionItem label="耗时">{runDetail.durationLabel}</SourceDescriptionItem>
-                            <SourceDescriptionItem label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</SourceDescriptionItem>
-                            <SourceDescriptionItem label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</SourceDescriptionItem>
-                            <SourceDescriptionItem label="成功项">{runDetail.successItems.toLocaleString('zh-CN')} 项</SourceDescriptionItem>
-                            <SourceDescriptionItem label="失败项">{runDetail.failedItems.toLocaleString('zh-CN')} 项</SourceDescriptionItem>
+                            </XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="耗时">{runDetail.durationLabel}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="成功项">{runDetail.successItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="失败项">{runDetail.failedItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
                             {runDetail.metrics.map((metric) => (
-                              <SourceDescriptionItem key={metric.key} label={metric.label}>
+                              <XDriveDescriptionItem key={metric.key} label={metric.label}>
                                 {metric.items.toLocaleString('zh-CN')} 项
                                 {metric.bytes === undefined ? '' : ' · ' + formatSize(metric.bytes)}
-                              </SourceDescriptionItem>
+                              </XDriveDescriptionItem>
                             ))}
-                          </SourceDescriptionGrid>
+                          </XDriveDescriptionGrid>
                           <XDriveStatusAlert tone={runDetail.error ? 'bad' : 'good'} sx={{ mt: 1.5 }}>
                             运行日志：{runDetail.error || '无错误日志'}
                           </XDriveStatusAlert>
