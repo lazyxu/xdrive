@@ -46,6 +46,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
+  XDriveSourceIgnoreRulesField,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -1524,14 +1525,9 @@ export default function ExternalSourcesPanel({
               onExpressionChange={(value) => setCreateValues((current) => ({ ...current, schedule_expression: value }))}
               onTimezoneChange={(value) => setCreateValues((current) => ({ ...current, schedule_timezone: value }))}
             />
-            <TextField
-              fullWidth
-              multiline
-              rows={5}
-              label="忽略规则"
-              placeholder="每行一条 gitignore 风格规则"
+            <XDriveSourceIgnoreRulesField
               value={createValues.ignore_rules ?? ''}
-              onChange={(event) => setCreateValues((current) => ({ ...current, ignore_rules: event.target.value }))}
+              onChange={(value) => setCreateValues((current) => ({ ...current, ignore_rules: value }))}
             />
             {createProfile.credential === 'cookie' && (
               <>
@@ -1777,14 +1773,11 @@ export default function ExternalSourcesPanel({
                 onExpressionChange={(value) => setSettingsValues((current) => ({ ...current, schedule_expression: value }))}
                 onTimezoneChange={(value) => setSettingsValues((current) => ({ ...current, schedule_timezone: value }))}
               />
-              <TextField
-                fullWidth
-                multiline
+              <XDriveSourceIgnoreRulesField
                 rows={6}
-                label="忽略规则"
                 placeholder={'每行一条规则，例如：\n@eaDir/\n*.tmp\n!important.jpg'}
                 value={settingsValues.ignore_rules ?? ''}
-                onChange={(event) => setSettingsValues((current) => ({ ...current, ignore_rules: event.target.value }))}
+                onChange={(value) => setSettingsValues((current) => ({ ...current, ignore_rules: value }))}
               />
 
               {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (

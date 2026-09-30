@@ -30,6 +30,7 @@ const sharedPaginationControls = fs.readFileSync(path.join(root, '..', 'ui', 'sh
 const sharedSourceRunSummary = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceRunSummary.tsx'), 'utf8')
 const sharedSourceCollection = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceCollection.tsx'), 'utf8')
 const sharedSourceScheduleFields = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceScheduleFields.tsx'), 'utf8')
+const sharedSourceIgnoreRulesField = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceIgnoreRulesField.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -529,6 +530,14 @@ test('desktop external sources expose per-Source scheduling', () => {
   assert.ok(renderer.includes('detail.scheduleLabel'), 'missing Source schedule detail label')
   assert.ok(main.includes('schedule_expression'), 'Electron main does not forward Source schedule fields')
   assert.ok(main.includes("value.schedule_type !== 'manual'"), 'Electron main does not accept manual-only Source schedules')
+})
+
+test('desktop external sources reuse the shared ignore-rules field', () => {
+  assert.ok(sharedSourceIgnoreRulesField.includes('XDriveSourceIgnoreRulesField'), 'shared ignore-rules field is missing')
+  assert.ok(sharedSourceIgnoreRulesField.includes('label="忽略规则"'), 'shared ignore-rules label is missing')
+  assert.ok(sharedSourceIgnoreRulesField.includes('spellCheck: false'), 'shared ignore-rules field should disable spellcheck')
+  assert.equal((renderer.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'desktop create/settings should reuse shared ignore-rules field')
+  assert.ok(renderer.includes('monospace'), 'desktop ignore-rules fields should preserve code-style text')
 })
 
 test('desktop external sources expose live progress and cooperative cancellation', () => {

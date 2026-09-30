@@ -78,6 +78,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
+  XDriveSourceIgnoreRulesField,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -2954,16 +2955,11 @@ export default function App() {
                 </div>
                 )}
 
-                <label className="source-create-wide">
-                  <span>忽略规则</span>
-                  <textarea
-                    value={sourceCreateIgnoreRules}
-                    onChange={(event) => setSourceCreateIgnoreRules(event.target.value)}
-                    rows={5}
-                    spellCheck={false}
-                    placeholder="每行一条 gitignore 风格规则"
-                  />
-                </label>
+                <XDriveSourceIgnoreRulesField
+                  value={sourceCreateIgnoreRules}
+                  onChange={setSourceCreateIgnoreRules}
+                  monospace
+                />
                 {sourceCreateProfile.credential === 'cookie' && (
                   <label className="source-create-wide">
                     <span>一刻相册 Cookie</span>
@@ -3478,16 +3474,11 @@ export default function App() {
                             wideAt="md"
                             sx={{ mb: 1.5 }}
                           />
-                          <label className="source-settings-wide">
-                            <span>忽略规则</span>
-                            <textarea
-                              value={sourceEditIgnoreRules}
-                              onChange={(event) => setSourceEditIgnoreRules(event.target.value)}
-                              rows={5}
-                              spellCheck={false}
-                              placeholder="每行一条 gitignore 风格规则"
-                            />
-                          </label>
+                          <XDriveSourceIgnoreRulesField
+                            value={sourceEditIgnoreRules}
+                            onChange={setSourceEditIgnoreRules}
+                            monospace
+                          />
                           {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'cookie' && (
                             <label className="source-settings-wide">
                               <span>一刻相册 Cookie</span>

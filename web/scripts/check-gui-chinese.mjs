@@ -33,6 +33,7 @@ const files = {
   sourceRunSummary: readRepo('ui/shared/src/mui/SourceRunSummary.tsx'),
   sourceCollection: readRepo('ui/shared/src/mui/SourceCollection.tsx'),
   sourceScheduleFields: readRepo('ui/shared/src/mui/SourceScheduleFields.tsx'),
+  sourceIgnoreRulesField: readRepo('ui/shared/src/mui/SourceIgnoreRulesField.tsx'),
   main: read('src/main.tsx'),
   styles: read('src/styles.css'),
   packageJson: read('package.json'),
@@ -130,6 +131,9 @@ if ((files.sources.match(/<XDriveSourceRunSummary/g) || []).length !== 1) throw 
 requireText(files.sourceRunSummary, ['ExternalSourceRunDetailView', 'XDriveStatusBadge', 'detail.modeLabel', 'detail.triggerLabel', 'formatExternalSourceTime(detail.startedAt)', '成功', '失败'], '外部来源运行摘要')
 requireText(files.sourceCollection, ['XDriveSourceCollectionSummary', 'XDriveSourceCollectionItem', 'externalSourceCollectionKindLabel', 'externalSourceCollectionStateTone', 'formatExternalSourceTime', '远端缺失', '原始路径'], '共享来源集合展示')
 requireText(files.sourceScheduleFields, ['XDriveSourceScheduleFields', '调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'onScheduleTypeChange', 'onExpressionChange', 'onTimezoneChange'], '共享来源调度字段')
+requireText(files.sourceIgnoreRulesField, ['XDriveSourceIgnoreRulesField', '忽略规则', 'gitignore 风格规则', 'spellCheck: false', 'monospace'], '共享来源忽略规则字段')
+if ((files.sources.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享忽略规则字段')
+if (files.sources.includes('label="忽略规则"')) throw new Error('Web 来源仍保留本地忽略规则字段')
 if ((files.sources.match(/<XDriveSourceScheduleFields\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享调度字段')
 if (files.sources.includes("label=\"调度方式\"") || files.sources.includes("gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }")) throw new Error('Web 来源仍保留本地调度字段组')
 if ((files.sources.match(/<XDriveSourceCollectionSummary\b/g) || []).length !== 1) throw new Error('Web 来源集合摘要没有复用共享组件')
