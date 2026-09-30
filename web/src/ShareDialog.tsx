@@ -1,16 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import {
   Box,
   Dialog,
   LinearProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Typography,
 } from '@mui/material'
 import {
@@ -21,10 +15,9 @@ import {
   XDriveFeedbackSnackbar,
   XDriveSectionHeader,
   XDriveShareCreateFields,
-  XDriveShareStatusBadge,
+  XDriveShareList,
   XDriveStatePanel,
   XDriveStatusAlert,
-  XDriveTableSurface,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
@@ -224,46 +217,11 @@ export default function ShareDialog({
           ) : shares.length === 0 ? (
             <XDriveStatePanel variant="plain" message="此文件暂无分享链接" />
           ) : (
-            <XDriveTableSurface>
-              <Table size="small" aria-label="已有分享">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>创建时间</TableCell>
-                    <TableCell>状态</TableCell>
-                    <TableCell>保护方式</TableCell>
-                    <TableCell>过期时间</TableCell>
-                    <TableCell>下载次数</TableCell>
-                    <TableCell align="right">操作</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {shares.map((share) => (
-                    <TableRow key={share.id} hover>
-                      <TableCell>{new Date(share.created_at).toLocaleString()}</TableCell>
-                      <TableCell><XDriveShareStatusBadge status={share.status} /></TableCell>
-                      <TableCell>{share.has_password ? '密码' : '仅链接'}</TableCell>
-                      <TableCell>{share.expires_at ? new Date(share.expires_at).toLocaleString() : '永不过期'}</TableCell>
-                      <TableCell>
-                        {share.max_downloads > 0
-                          ? `${share.download_count} / ${share.max_downloads}`
-                          : `${share.download_count} / 不限`}
-                      </TableCell>
-                      <TableCell align="right">
-                        <XDriveActionButton
-                          compact
-                          intent="danger"
-                          startIcon={<DeleteOutlineRoundedIcon />}
-                          disabled={share.status === 'revoked'}
-                          onClick={() => void revoke(share)}
-                        >
-                          撤销
-                        </XDriveActionButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </XDriveTableSurface>
+            <XDriveShareList
+              shares={shares}
+              variant="table"
+              onRevoke={(share) => void revoke(share)}
+            />
           )}
         </XDriveDialogContent>
       </Dialog>

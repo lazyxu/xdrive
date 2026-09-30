@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
 const shared = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'ShareFields.tsx'), 'utf8')
+const sharedList = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'ShareList.tsx'), 'utf8')
 const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ShareDialog.tsx'), 'utf8')
 const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
@@ -33,4 +34,29 @@ test('Web and Desktop reuse shared share creation fields', () => {
   assert.equal(desktop.includes('className="share-created-row"'), false, 'Desktop should not retain local created-share shell')
   assert.equal(styles.includes('.share-form {'), false, 'Desktop should not retain duplicate share form CSS')
   assert.equal(styles.includes('.share-created-row {'), false, 'Desktop should not retain duplicate created-share CSS')
+})
+
+
+test('Web and Desktop reuse shared existing-share list presentation', () => {
+  for (const token of [
+    'XDriveShareList',
+    "variant === 'compact'",
+    'XDriveShareStatusBadge',
+    'XDriveTableSurface',
+    '保护方式',
+    '过期时间',
+    '下载次数',
+    '密码保护',
+    '永不过期',
+    '撤销',
+  ]) {
+    assert.ok(sharedList.includes(token), `shared share list missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveShareList\b/g) || []).length, 1, 'Web should reuse shared existing-share list')
+  assert.equal((desktop.match(/<XDriveShareList\b/g) || []).length, 1, 'Desktop should reuse shared existing-share list')
+  assert.equal(web.includes('shares.map((share)'), false, 'Web should not retain local share mapping')
+  assert.equal(desktop.includes('cloudShares.map((share)'), false, 'Desktop should not retain local share mapping')
+  assert.ok(desktop.includes('variant="compact"'), 'Desktop should preserve compact share-list presentation')
+  assert.ok(web.includes('variant="table"'), 'Web should preserve table share-list presentation')
 })
