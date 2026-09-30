@@ -1,9 +1,12 @@
-import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
-import FolderCopyRoundedIcon from '@mui/icons-material/FolderCopyRounded'
-import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import { Box, Tooltip } from '@mui/material'
 import { externalSourceKindLabel } from '../external-sources'
+
+const sourceKindImages: Record<string, string> = {
+  synology_photos: new URL('../../assets/source-icons/synology-photos.png', import.meta.url).href,
+  synology_files: new URL('../../assets/source-icons/synology-file-station.png', import.meta.url).href,
+  yike_photos: new URL('../../assets/source-icons/yike-photos.png', import.meta.url).href,
+}
 
 export interface XDriveSourceKindIconProps {
   kind: string
@@ -11,29 +14,15 @@ export interface XDriveSourceKindIconProps {
   title?: string
 }
 
-function sourceKindIcon(kind: string) {
-  if (kind === 'synology_photos') return PhotoLibraryRoundedIcon
-  if (kind === 'synology_files') return FolderCopyRoundedIcon
-  if (kind === 'yike_photos') return CloudRoundedIcon
-  return StorageRoundedIcon
-}
-
-function sourceKindColor(kind: string) {
-  if (kind === 'synology_photos') return 'primary.main'
-  if (kind === 'synology_files') return 'warning.main'
-  if (kind === 'yike_photos') return 'secondary.main'
-  return 'text.secondary'
-}
-
 export function XDriveSourceKindIcon({
   kind,
   size = 'medium',
   title,
 }: XDriveSourceKindIconProps) {
-  const Icon = sourceKindIcon(kind)
   const label = title || externalSourceKindLabel(kind)
+  const src = sourceKindImages[kind]
   const dimension = size === 'small' ? 28 : 40
-  const iconSize = size === 'small' ? 18 : 24
+  const imageSize = size === 'small' ? 24 : 36
 
   return (
     <Tooltip title={label} enterDelay={500}>
@@ -47,15 +36,28 @@ export function XDriveSourceKindIcon({
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          border: 1,
-          borderColor: 'divider',
-          borderRadius: 1.5,
-          bgcolor: 'background.paper',
-          color: sourceKindColor(kind),
+          overflow: 'hidden',
+          borderRadius: size === 'small' ? 1 : 1.5,
+          bgcolor: 'transparent',
           boxSizing: 'border-box',
         }}
       >
-        <Icon sx={{ fontSize: iconSize }} />
+        {src ? (
+          <Box
+            component="img"
+            src={src}
+            alt=""
+            aria-hidden="true"
+            sx={{
+              display: 'block',
+              width: imageSize,
+              height: imageSize,
+              objectFit: 'contain',
+            }}
+          />
+        ) : (
+          <StorageRoundedIcon sx={{ fontSize: size === 'small' ? 18 : 24, color: 'text.secondary' }} />
+        )}
       </Box>
     </Tooltip>
   )
