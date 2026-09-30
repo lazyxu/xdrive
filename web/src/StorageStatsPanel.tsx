@@ -20,6 +20,7 @@ import {
 } from '@mui/material'
 import {
   XDriveActionButton,
+  XDriveConfirmDialog,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
@@ -593,21 +594,10 @@ export default function StorageStatsPanel({
           )}
       </XDriveWorkspaceSurface>
 
-      <Dialog
+      <XDriveConfirmDialog
         open={cleanupConfirmOpen}
-        onClose={() => {
-          if (!cleanupLoading) setCleanupConfirmOpen(false)
-        }}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title="清理可回收上传临时数据？"
-          onClose={() => setCleanupConfirmOpen(false)}
-          closeDisabled={cleanupLoading}
-        />
-        <XDriveDialogContent>
+        title="清理可回收上传临时数据？"
+        description={(
           <Stack spacing={2}>
             <Typography variant="body2">
               将清理过期 UploadSession，以及超过 1 小时且数据库没有任何引用的 orphan staging 文件。近期未登记文件不会删除。
@@ -621,19 +611,14 @@ export default function StorageStatsPanel({
               </XDriveStatusAlert>
             )}
           </Stack>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton disabled={cleanupLoading} onClick={() => setCleanupConfirmOpen(false)}>取消</XDriveActionButton>
-          <XDriveActionButton
-            intent="danger"
-            loading={cleanupLoading}
-            loadingLabel="正在清理…"
-            onClick={() => void cleanupStaging()}
-          >
-            确认清理
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+        )}
+        confirmLabel="确认清理"
+        confirmIntent="danger"
+        loading={cleanupLoading}
+        loadingLabel="正在清理…"
+        onCancel={() => setCleanupConfirmOpen(false)}
+        onConfirm={() => void cleanupStaging()}
+      />
 
       <Dialog
         open={Boolean(cleanupResultWarning)}

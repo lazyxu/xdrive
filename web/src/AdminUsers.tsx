@@ -22,6 +22,7 @@ import {
 } from '@mui/material'
 import {
   XDriveActionButton,
+  XDriveConfirmDialog,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
@@ -640,35 +641,17 @@ export default function AdminUsersPanel({
         </XDriveDialogContent>
       </Dialog>
 
-      <Dialog
+      <XDriveConfirmDialog
         open={!!confirmAction}
-        onClose={() => {
-          if (!confirmLoading) setConfirmAction(null)
-        }}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title={confirmAction?.title ?? '确认操作'}
-          onClose={() => setConfirmAction(null)}
-          closeDisabled={confirmLoading}
-        />
-        <XDriveDialogContent>
-          <Typography variant="body2">{confirmAction?.description}</Typography>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton disabled={confirmLoading} onClick={() => setConfirmAction(null)}>取消</XDriveActionButton>
-          <XDriveActionButton
-            intent={confirmAction?.danger ? 'danger' : 'primary'}
-            loading={confirmLoading}
-            loadingLabel="正在处理…"
-            onClick={() => void executeConfirmAction()}
-          >
-            {confirmAction?.confirmLabel ?? '确认'}
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+        title={confirmAction?.title ?? '确认操作'}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? '确认'}
+        confirmIntent={confirmAction?.danger ? 'danger' : 'primary'}
+        loading={confirmLoading}
+        loadingLabel="正在处理…"
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={() => void executeConfirmAction()}
+      />
 
       <Dialog
         open={!!actionError}
