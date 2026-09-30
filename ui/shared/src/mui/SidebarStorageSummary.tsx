@@ -23,9 +23,14 @@ export function XDriveSidebarStorageSummary({
   const percentage = hasQuota ? (boundedUsed / boundedTotal) * 100 : null
   const progress = percentage === null ? 0 : Math.max(0, Math.min(100, percentage))
   const overQuota = percentage !== null && percentage > 100
+  const fullQuota = percentage !== null && percentage >= 100 && !overQuota
+  const warningQuota = percentage !== null && percentage >= 85 && percentage < 100
   const percentageLabel = percentage === null
     ? '不限配额'
     : `${percentage >= 10 ? percentage.toFixed(0) : percentage.toFixed(1)}%`
+  const statusLabel = overQuota ? '已超额' : fullQuota ? '已用满' : warningQuota ? '空间紧张' : ''
+  const usageLabel = statusLabel ? `${percentageLabel} · ${statusLabel}` : percentageLabel
+  const progressColor = overQuota || fullQuota ? 'error' : warningQuota ? 'warning' : 'primary'
 
   return (
     <Box
@@ -52,9 +57,17 @@ export function XDriveSidebarStorageSummary({
         <Typography
           variant="caption"
           fontWeight={700}
-          sx={{ color: overQuota ? 'error.main' : dark ? '#9baac2' : 'text.secondary' }}
+          sx={{
+            color: overQuota || fullQuota
+              ? (dark ? 'error.light' : 'error.main')
+              : warningQuota
+                ? (dark ? 'warning.light' : 'warning.dark')
+                : dark
+                  ? '#9baac2'
+                  : 'text.secondary',
+          }}
         >
-          {percentageLabel}
+          {usageLabel}
         </Typography>
       </Stack>
       <Typography
@@ -72,8 +85,8 @@ export function XDriveSidebarStorageSummary({
         <LinearProgress
           variant="determinate"
           value={progress}
-          color={overQuota ? 'error' : 'primary'}
-          aria-label={`${label}使用率 ${percentageLabel}`}
+          color={progressColor}
+          aria-label={`${label}使用率 ${usageLabel}`}
           sx={{
             mt: 0.85,
             height: 5,

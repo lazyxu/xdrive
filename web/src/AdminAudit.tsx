@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   Autocomplete,
+  Dialog,
   LinearProgress,
   MenuItem,
   Stack,
@@ -11,15 +12,18 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
 import {
   XDriveActionButton,
+  XDriveDialogActions,
+  XDriveDialogContent,
+  XDriveDialogTitle,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveWorkspaceSurface,
+  xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 import type { AuditEvent } from '../../ui/shared/src'
@@ -72,6 +76,7 @@ export default function AdminAuditPanel({
   const [actor, setActor] = useState('')
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState('')
+  const [detailEvent, setDetailEvent] = useState<AuditEvent | null>(null)
 
   type Filters = {
     action?: string
@@ -106,6 +111,7 @@ export default function AdminAuditPanel({
   }, [api])
 
   return (
+    <>
     <XDriveWorkspaceSurface
       presentation="page"
       title="审计日志"
@@ -178,23 +184,21 @@ export default function AdminAuditPanel({
             <XDriveStatePanel variant="plain" message="未找到审计事件" />
           ) : (
             <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
-              <Table size="small" aria-label="审计日志" sx={{ minWidth: 1300 }}>
+              <Table size="small" aria-label="审计日志" sx={{ minWidth: 880 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ width: 190 }}>时间</TableCell>
-                    <TableCell sx={{ width: 150 }}>操作者</TableCell>
+                    <TableCell sx={{ width: 180 }}>时间</TableCell>
+                    <TableCell sx={{ width: 140 }}>操作者</TableCell>
                     <TableCell sx={{ width: 220 }}>操作</TableCell>
-                    <TableCell sx={{ width: 190 }}>目标</TableCell>
-                    <TableCell sx={{ width: 100 }}>结果</TableCell>
-                    <TableCell sx={{ width: 220 }}>来源</TableCell>
-                    <TableCell>详情</TableCell>
+                    <TableCell sx={{ width: 200 }}>目标</TableCell>
+                    <TableCell sx={{ width: 90 }}>结果</TableCell>
+                    <TableCell sx={{ width: 80 }}>详情</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {events.map((event) => {
                     const targetLabel = event.target_label || event.target_id || '—'
                     const targetSuffix = event.target_label && event.target_id ? ' · ' + event.target_id : ''
-                    const metadata = metadataText(event.metadata)
                     return (
                       <TableRow key={event.id} hover>
                         <TableCell>{new Date(event.created_at).toLocaleString()}</TableCell>
@@ -211,7 +215,7 @@ export default function AdminAuditPanel({
                         <TableCell>
                           <Stack spacing={0.2}>
                             <Typography variant="body2">{actionLabel(event.action)}</Typography>
-                            <Typography component="code" variant="caption" color="text.secondary">
+                            <Typography component="code" variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
                               {event.action}
                             </Typography>
                           </Stack>
@@ -229,33 +233,9 @@ export default function AdminAuditPanel({
                           />
                         </TableCell>
                         <TableCell>
-                          <Stack spacing={0.2}>
-                            <Typography variant="body2">{event.ip_address || '—'}</Typography>
-                            {event.request_id && (
-                              <Tooltip title={event.request_id}>
-                                <Typography
-                                  variant="caption"
-                                  color="text.secondary"
-                                  noWrap
-                                  sx={{ maxWidth: 200, display: 'block' }}
-                                >
-                                  {event.request_id}
-                                </Typography>
-                              </Tooltip>
-                            )}
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <Tooltip title={metadata}>
-                            <Typography
-                              variant="body2"
-                              color="text.secondary"
-                              noWrap
-                              sx={{ maxWidth: 360 }}
-                            >
-                              {metadata}
-                            </Typography>
-                          </Tooltip>
+                          <XDriveActionButton compact onClick={() => setDetailEvent(event)}>
+                            查看
+                          </XDriveActionButton>
                         </TableCell>
                       </TableRow>
                     )
@@ -274,5 +254,88 @@ export default function AdminAuditPanel({
           )}
       </Stack>
     </XDriveWorkspaceSurface>
+
+    <Dialog
+      open={Boolean(detailEvent)}
+      onClose={() => setDetailEvent(null)}
+      maxWidth="sm"
+      fullWidth
+      slotProps={{ paper: xDriveDialogPaperProps }}
+    >
+      <XDriveDialogTitle title="审计事件详情" onClose={() => setDetailEvent(null)} />
+      <XDriveDialogContent dividers>
+        {detailEvent ? (
+          <Stack spacing={1.5}>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">时间</Typography>
+              <Typography variant="body2">{new Date(detailEvent.created_at).toLocaleString()}</Typography>
+            </Stack>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">操作者</Typography>
+              <Typography variant="body2">
+                {detailEvent.actor_username || '匿名'}
+                {detailEvent.actor_role ? ` · ${actorRoleLabel(detailEvent.actor_role)}` : ''}
+              </Typography>
+            </Stack>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">操作</Typography>
+              <Typography variant="body2">{actionLabel(detailEvent.action)}</Typography>
+              <Typography component="code" variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                {detailEvent.action}
+              </Typography>
+            </Stack>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">目标</Typography>
+              <Typography variant="body2">
+                {detailEvent.target_label || detailEvent.target_id || '—'}
+                {detailEvent.target_label && detailEvent.target_id ? ` · ${detailEvent.target_id}` : ''}
+              </Typography>
+              {detailEvent.target_type ? (
+                <Typography variant="caption" color="text.secondary">{detailEvent.target_type}</Typography>
+              ) : null}
+            </Stack>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">结果</Typography>
+              <XDriveStatusBadge
+                tone={detailEvent.result === 'success' ? 'good' : 'bad'}
+                label={detailEvent.result === 'success' ? '成功' : '失败'}
+              />
+            </Stack>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">来源 IP</Typography>
+              <Typography variant="body2">{detailEvent.ip_address || '—'}</Typography>
+            </Stack>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">Request ID</Typography>
+              <Typography component="code" variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                {detailEvent.request_id || '—'}
+              </Typography>
+            </Stack>
+            <Stack spacing={0.25}>
+              <Typography variant="caption" color="text.secondary">Metadata</Typography>
+              <Typography
+                component="pre"
+                variant="body2"
+                sx={{
+                  m: 0,
+                  p: 1.25,
+                  borderRadius: 1,
+                  bgcolor: 'action.hover',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {metadataText(detailEvent.metadata)}
+              </Typography>
+            </Stack>
+          </Stack>
+        ) : null}
+      </XDriveDialogContent>
+      <XDriveDialogActions>
+        <XDriveActionButton intent="primary" onClick={() => setDetailEvent(null)}>关闭</XDriveActionButton>
+      </XDriveDialogActions>
+    </Dialog>
+    </>
   )
 }
