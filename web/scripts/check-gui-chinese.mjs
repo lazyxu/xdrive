@@ -34,6 +34,7 @@ const files = {
   sourceCollection: readRepo('ui/shared/src/mui/SourceCollection.tsx'),
   sourceScheduleFields: readRepo('ui/shared/src/mui/SourceScheduleFields.tsx'),
   sourceIgnoreRulesField: readRepo('ui/shared/src/mui/SourceIgnoreRulesField.tsx'),
+  sourceCoreFields: readRepo('ui/shared/src/mui/SourceCoreFields.tsx'),
   main: read('src/main.tsx'),
   styles: read('src/styles.css'),
   packageJson: read('package.json'),
@@ -132,6 +133,11 @@ requireText(files.sourceRunSummary, ['ExternalSourceRunDetailView', 'XDriveStatu
 requireText(files.sourceCollection, ['XDriveSourceCollectionSummary', 'XDriveSourceCollectionItem', 'externalSourceCollectionKindLabel', 'externalSourceCollectionStateTone', 'formatExternalSourceTime', '远端缺失', '原始路径'], '共享来源集合展示')
 requireText(files.sourceScheduleFields, ['XDriveSourceScheduleFields', '调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'onScheduleTypeChange', 'onExpressionChange', 'onTimezoneChange'], '共享来源调度字段')
 requireText(files.sourceIgnoreRulesField, ['XDriveSourceIgnoreRulesField', '忽略规则', 'gitignore 风格规则', 'spellCheck: false', 'monospace'], '共享来源忽略规则字段')
+requireText(files.sourceCoreFields, ['XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '来源名称', '运行模式', '来源状态', '仅扫描', '同步', '启用', '暂停'], '共享来源核心字段')
+if ((files.sources.match(/<XDriveSourceNameField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享名称字段')
+if ((files.sources.match(/<XDriveSourceRunModeField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享运行模式字段')
+if ((files.sources.match(/<XDriveSourceStatusField\b/g) || []).length !== 1) throw new Error('Web 来源设置没有复用共享状态字段')
+if (files.sources.includes('label="来源名称"') || files.sources.includes('label="初始运行模式"') || files.sources.includes('label="运行模式"') || files.sources.includes('label="来源状态"')) throw new Error('Web 来源仍保留本地核心字段')
 if ((files.sources.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享忽略规则字段')
 if (files.sources.includes('label="忽略规则"')) throw new Error('Web 来源仍保留本地忽略规则字段')
 if ((files.sources.match(/<XDriveSourceScheduleFields\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享调度字段')

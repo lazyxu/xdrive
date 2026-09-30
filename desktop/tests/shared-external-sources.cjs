@@ -712,3 +712,24 @@ test('Web and Desktop reuse shared source ignore-rules field', () => {
   assert.equal(desktop.includes('<span>忽略规则</span>\n                  <textarea'), false, 'Desktop create should not retain local ignore-rules textarea')
   assert.equal(desktop.includes('<span>忽略规则</span>\n                            <textarea'), false, 'Desktop settings should not retain local ignore-rules textarea')
 })
+
+
+test('Web and Desktop reuse shared source core fields', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedCore = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceCoreFields.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+
+  for (const token of ['XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '来源名称', '运行模式', '来源状态']) {
+    assert.ok(sharedCore.includes(token), `shared Source core field missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSourceNameField\b/g) || []).length, 2)
+  assert.equal((desktop.match(/<XDriveSourceNameField\b/g) || []).length, 2)
+  assert.equal((web.match(/<XDriveSourceRunModeField\b/g) || []).length, 2)
+  assert.equal((desktop.match(/<XDriveSourceRunModeField\b/g) || []).length, 2)
+  assert.equal((web.match(/<XDriveSourceStatusField\b/g) || []).length, 1)
+  assert.equal((desktop.match(/<XDriveSourceStatusField\b/g) || []).length, 1)
+  assert.equal(desktop.includes('<span>名称</span>\n                    <input'), false)
+  assert.equal(desktop.includes('<span>运行模式</span>\n                    <select'), false)
+})

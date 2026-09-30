@@ -79,6 +79,9 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceIgnoreRulesField,
+  XDriveSourceNameField,
+  XDriveSourceRunModeField,
+  XDriveSourceStatusField,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -2887,17 +2890,16 @@ export default function App() {
                     </select>
                     <small>{sourceCreateOption.description}</small>
                   </label>
-                  <label>
-                    <span>名称</span>
-                    <input value={sourceCreateName} onChange={(event) => setSourceCreateName(event.target.value)} maxLength={128} required />
-                  </label>
-                  <label>
-                    <span>运行模式</span>
-                    <select value={sourceCreateRunMode} onChange={(event) => setSourceCreateRunMode(event.target.value as 'scan' | 'sync')}>
-                      <option value="scan">仅扫描</option>
-                      <option value="sync">同步</option>
-                    </select>
-                  </label>
+                  <XDriveSourceNameField
+                    label="名称"
+                    value={sourceCreateName}
+                    onChange={setSourceCreateName}
+                    required
+                  />
+                  <XDriveSourceRunModeField
+                    value={sourceCreateRunMode}
+                    onChange={setSourceCreateRunMode}
+                  />
                 </div>
 
                 <XDriveSourceScheduleFields
@@ -3445,24 +3447,21 @@ export default function App() {
                           <XDriveDialogContent dividers>
                             <form id={`source-settings-form-${row.source.id}`} className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
                           <div className="source-settings-grid">
-                            <label>
-                              <span>名称</span>
-                              <input value={sourceEditName} onChange={(event) => setSourceEditName(event.target.value)} maxLength={128} required />
-                            </label>
-                            <label>
-                              <span>运行模式</span>
-                              <select value={sourceEditRunMode} onChange={(event) => setSourceEditRunMode(event.target.value as 'scan' | 'sync')}>
-                                <option value="scan">仅扫描</option>
-                                <option value="sync">同步</option>
-                              </select>
-                            </label>
-                            <label>
-                              <span>状态</span>
-                              <select value={sourceEditStatus} onChange={(event) => setSourceEditStatus(event.target.value as 'active' | 'paused')}>
-                                <option value="active">启用</option>
-                                <option value="paused">暂停</option>
-                              </select>
-                            </label>
+                            <XDriveSourceNameField
+                              label="名称"
+                              value={sourceEditName}
+                              onChange={setSourceEditName}
+                              required
+                            />
+                            <XDriveSourceRunModeField
+                              value={sourceEditRunMode}
+                              onChange={setSourceEditRunMode}
+                            />
+                            <XDriveSourceStatusField
+                              label="状态"
+                              value={sourceEditStatus}
+                              onChange={setSourceEditStatus}
+                            />
                           </div>
                           <XDriveSourceScheduleFields
                             scheduleType={sourceEditScheduleType}

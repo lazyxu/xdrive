@@ -31,6 +31,7 @@ const sharedSourceRunSummary = fs.readFileSync(path.join(root, '..', 'ui', 'shar
 const sharedSourceCollection = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceCollection.tsx'), 'utf8')
 const sharedSourceScheduleFields = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceScheduleFields.tsx'), 'utf8')
 const sharedSourceIgnoreRulesField = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceIgnoreRulesField.tsx'), 'utf8')
+const sharedSourceCoreFields = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceCoreFields.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -538,6 +539,19 @@ test('desktop external sources reuse the shared ignore-rules field', () => {
   assert.ok(sharedSourceIgnoreRulesField.includes('spellCheck: false'), 'shared ignore-rules field should disable spellcheck')
   assert.equal((renderer.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'desktop create/settings should reuse shared ignore-rules field')
   assert.ok(renderer.includes('monospace'), 'desktop ignore-rules fields should preserve code-style text')
+})
+
+test('desktop external sources reuse shared MUI core fields', () => {
+  for (const token of ['XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '来源名称', '运行模式', '来源状态']) {
+    assert.ok(sharedSourceCoreFields.includes(token), `shared Source core field missing: ${token}`)
+  }
+  assert.equal((renderer.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'desktop create/settings should reuse shared name fields')
+  assert.equal((renderer.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'desktop create/settings should reuse shared run-mode fields')
+  assert.equal((renderer.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'desktop settings should reuse shared status field')
+  assert.equal(styles.includes('.source-create input,'), false, 'legacy broad source-create input CSS must not override MUI fields')
+  assert.equal(styles.includes('.source-settings input,'), false, 'legacy broad source-settings input CSS must not override MUI fields')
+  assert.ok(styles.includes('.source-create-grid > label > input'), 'remaining native source-create controls should retain scoped styling')
+  assert.ok(styles.includes('.source-settings-grid > label > input'), 'remaining native source-settings controls should retain scoped styling')
 })
 
 test('desktop external sources expose live progress and cooperative cancellation', () => {
