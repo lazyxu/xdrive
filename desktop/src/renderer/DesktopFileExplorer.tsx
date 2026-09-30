@@ -5,6 +5,7 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
@@ -234,6 +235,29 @@ export default function DesktopFileExplorer({
     }
   }
 
+  const relativePathForNode = (node: AgentCloudNode) => {
+    const searchResult = searchByID.get(node.id)
+    if (searchResult?.path) return searchResult.path
+    return [...crumbs.slice(1).map((crumb) => crumb.name), node.name].join('/')
+  }
+
+  const openLocalNode = async (node: AgentCloudNode, reveal = false) => {
+    const relativePath = relativePathForNode(node)
+    if (!relativePath) {
+      onError('无法确定本地同步路径。')
+      return
+    }
+    setActionBusy(`${reveal ? 'reveal' : 'open'}-${node.id}`)
+    try {
+      const result = await window.xdriveDesktop.agent.openPath(relativePath, reveal)
+      if (!result.ok) {
+        onError(result.error.message)
+      }
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   const downloadNode = async (node: AgentCloudNode) => {
     setActionBusy(`download-${node.id}`)
     try {
@@ -329,7 +353,7 @@ export default function DesktopFileExplorer({
     const node = nodeByID.get(Number(item.id))
     if (!node) return
     if (node.type === 'file') {
-      await downloadNode(node)
+      await openLocalNode(node)
       return
     }
     const searchResult = searchByID.get(node.id)
@@ -352,13 +376,34 @@ export default function DesktopFileExplorer({
         icon: <FolderOpenRoundedIcon fontSize="small" />,
         onSelect: () => { void openItem(item) },
       })
+      menu.push({
+        id: 'reveal',
+        label: '在文件资源管理器中显示',
+        icon: <OpenInNewRoundedIcon fontSize="small" />,
+        disabled: Boolean(actionBusy),
+        onSelect: () => { void openLocalNode(node, true) },
+      })
     } else {
       menu.push({
+        id: 'open',
+        label: '打开',
+        icon: <OpenInNewRoundedIcon fontSize="small" />,
+        disabled: Boolean(actionBusy),
+        onSelect: () => { void openLocalNode(node) },
+      })
+      menu.push({
         id: 'download',
-        label: '下载',
+        label: '另存为…',
         icon: <DownloadRoundedIcon fontSize="small" />,
         disabled: Boolean(actionBusy),
         onSelect: () => { void downloadNode(node) },
+      })
+      menu.push({
+        id: 'reveal',
+        label: '在文件资源管理器中显示',
+        icon: <FolderOpenRoundedIcon fontSize="small" />,
+        disabled: Boolean(actionBusy),
+        onSelect: () => { void openLocalNode(node, true) },
       })
       menu.push({
         id: 'share',
@@ -471,8 +516,12 @@ export default function DesktopFileExplorer({
           : actionBusy === 'upload'
             ? '正在上传…'
             : actionBusy.startsWith('download-')
-              ? '正在下载…'
-              : undefined}
+              ? '正在另存为…'
+              : actionBusy.startsWith('open-')
+                ? '正在打开…'
+                : actionBusy.startsWith('reveal-')
+                  ? '正在定位…'
+                  : undefined}
       />
 
       <Dialog

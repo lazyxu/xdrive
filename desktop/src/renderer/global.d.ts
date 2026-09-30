@@ -301,6 +301,7 @@ declare global {
         cloudDelete: (id: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>
+        openPath: (relativePath: string, reveal?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
         cloudSearch: (query: string) => Promise<DesktopResult<AgentCloudSearchResult[]>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>

@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -53,6 +55,8 @@ type fakeDesktopIPCController struct {
 	fileAction                 string
 	fileState                  mount.FileAvailability
 	openFolderN                int
+	openManagedPath            string
+	openManagedReveal          bool
 	openID                     string
 	openBoth                   bool
 	resolveID                  string
@@ -499,6 +503,11 @@ func (f *fakeDesktopIPCController) OpenFolder() error {
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) OpenManagedPath(path string, reveal bool) error {
+	f.openManagedPath, f.openManagedReveal = path, reveal
+	return f.err
+}
+
 func desktopIPCRequest(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, "http://127.0.0.1"+path, strings.NewReader(body))
@@ -668,6 +677,7 @@ func TestDesktopIPCActions(t *testing.T) {
 		{http.MethodPost, "/v1/conflicts/open", `{"id":"c1","both":true}`},
 		{http.MethodPost, "/v1/conflicts/resolve", `{"id":"c1","choice":"server"}`},
 		{http.MethodPost, "/v1/open-folder", ""},
+		{http.MethodPost, "/v1/open-path", `{"path":"Projects/report.pdf","reveal":true}`},
 	}
 	for _, tc := range cases {
 		res := desktopIPCRequest(t, handler, tc.method, tc.path, tc.body)
@@ -700,6 +710,25 @@ func TestDesktopIPCActions(t *testing.T) {
 	}
 	if ctrl.openID != "c1" || !ctrl.openBoth || ctrl.resolveID != "c1" || ctrl.resolveChoice != "server" || ctrl.openFolderN != 1 {
 		t.Fatalf("conflict/folder actions not forwarded")
+	}
+	if ctrl.openManagedPath != "Projects/report.pdf" || !ctrl.openManagedReveal {
+		t.Fatalf("managed path action not forwarded: path=%q reveal=%v", ctrl.openManagedPath, ctrl.openManagedReveal)
+	}
+}
+
+func TestDesktopIPCRejectsAbsoluteManagedPath(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{revision: 1}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+	absolutePath := "/tmp/outside.txt"
+	if filepath.Separator == '\\' {
+		absolutePath = `C:\outside.txt`
+	}
+	res := desktopIPCRequest(t, handler, http.MethodPost, "/v1/open-path", fmt.Sprintf(`{"path":%q}`, absolutePath))
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.openManagedPath != "" {
+		t.Fatalf("absolute path should not reach controller: %q", ctrl.openManagedPath)
 	}
 }
 
