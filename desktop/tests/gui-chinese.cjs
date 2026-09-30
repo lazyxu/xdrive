@@ -477,7 +477,7 @@ test('desktop external sources expose Synology Push and Pull without duplicating
   assert.ok(sharedSourceCredentialFields.includes("'DSM 地址'"), 'shared credentials are missing DSM base URL field')
   assert.ok(sharedSourceCredentialFields.includes("'DSM 用户名'"), 'shared credentials are missing DSM username field')
   assert.ok(sharedSourceCredentialFields.includes("'DSM 密码'"), 'shared credentials are missing DSM password field')
-  assert.ok(sharedSourceConnectorFields.includes("'同步空间'"), 'shared connector fields are missing Synology Photos space selector')
+  assert.ok(sharedSourceConnectorFields.includes('同步空间'), 'shared connector fields are missing Synology Photos space selector')
   assert.ok(sharedSourceConnectorFields.includes('synologyPhotoSpaceOptions.map'), 'shared Synology space selector is not driven by shared options')
   assert.ok(renderer.includes('getSourceConnectorConfig'), 'missing Synology connector-config read path')
   assert.ok(renderer.includes('setSourceConnectorConfig'), 'missing Synology connector-config write path')
