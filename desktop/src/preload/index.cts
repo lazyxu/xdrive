@@ -118,6 +118,13 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   getStartup: () => ipcRenderer.invoke('desktop:get-startup'),
   getPreferences: () => ipcRenderer.invoke('desktop:get-preferences'),
   getLoginHistory: () => ipcRenderer.invoke('desktop:get-login-history'),
+  onLoginHistory: (callback: (history: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, history: unknown) => callback(history)
+    ipcRenderer.on('desktop:login-history', handler)
+    return () => ipcRenderer.removeListener('desktop:login-history', handler)
+  },
+  probeServer: (server: string) => ipcRenderer.invoke('desktop:probe-server', server),
+  clearSavedPassword: (server: string, username: string) => ipcRenderer.invoke('desktop:clear-saved-password', server, username),
   getWindowState: () => ipcRenderer.invoke('desktop:get-window-state'),
   minimizeWindow: () => ipcRenderer.send('desktop:window-minimize'),
   toggleMaximizeWindow: () => ipcRenderer.send('desktop:window-toggle-maximize'),

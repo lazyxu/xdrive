@@ -42,6 +42,7 @@ import {
 } from './window_preferences.cjs'
 import {
   automaticLoginProfile,
+  clearSavedPassword,
   disableAutomaticLogin,
   emptyLoginHistory,
   findLoginProfile,
@@ -107,6 +108,7 @@ type DesktopResult<T> =
 let mainWindow: BrowserWindow | null = null
 let desktopPreferences = defaultDesktopPreferences()
 let loginHistory: LoginHistory = emptyLoginHistory()
+let lastAutoLoginError = ''
 let windowStateSaveTimer: NodeJS.Timeout | null = null
 let closeDecisionPending = false
 let pendingDesktopView: DesktopViewTarget | null = null
@@ -297,7 +299,10 @@ function decryptLoginPassword(encryptedPassword: string) {
 }
 
 function loginHistorySnapshot() {
-  return publicLoginHistory(loginHistory, securePasswordStorageAvailable())
+  return {
+    ...publicLoginHistory(loginHistory, securePasswordStorageAvailable()),
+    ...(lastAutoLoginError ? { auto_login_error: lastAutoLoginError } : {}),
+  }
 }
 
 async function persistLoginHistoryBestEffort() {
@@ -305,6 +310,56 @@ async function persistLoginHistoryBestEffort() {
     await saveLoginHistory()
   } catch (error) {
     lifecycleLog?.record('login_history_save_failed', { error: formatLifecycleError(error) })
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop:login-history', loginHistorySnapshot())
+  }
+}
+
+async function probeDesktopServer(serverValue: string): Promise<DesktopResult<{ version?: string }>> {
+  const normalized = serverValue.trim().replace(/\/+$/, '')
+  let parsed: URL
+  try {
+    parsed = new URL(normalized)
+  } catch {
+    return { ok: false, error: { code: 'invalid_server', message: '服务器地址格式无效。' } }
+  }
+  if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password) {
+    return { ok: false, error: { code: 'invalid_server', message: '服务器地址必须是 http(s) 地址，且不能包含用户名或密码。' } }
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5_000)
+  try {
+    const response = await fetch(normalized + '/api/v1/version', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: {
+          code: 'server_unreachable',
+          message: `服务器返回 HTTP ${response.status}。`,
+          status: response.status,
+        },
+      }
+    }
+    const payload = await response.json().catch(() => ({})) as { version?: unknown }
+    return {
+      ok: true,
+      data: typeof payload.version === 'string' && payload.version.trim()
+        ? { version: payload.version.trim() }
+        : {},
+    }
+  } catch (error) {
+    const message = error instanceof Error && error.name === 'AbortError'
+      ? '连接服务器超时。'
+      : formatLifecycleError(error)
+    return { ok: false, error: { code: 'server_unreachable', message } }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -1059,6 +1114,7 @@ async function attemptAutomaticLogin() {
   if (!profile || !profile.encrypted_password || !securePasswordStorageAvailable()) return
   if (!agentState.connected || agentState.status?.configured) return
 
+  lastAutoLoginError = ''
   try {
     const password = decryptLoginPassword(profile.encrypted_password)
     const result = await runAgentAction(() => requireAgentClient().login({
@@ -1068,14 +1124,18 @@ async function attemptAutomaticLogin() {
       ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
     }))
     if (!result.ok) {
+      lastAutoLoginError = result.error.message || '自动登录失败，请手动登录。'
       loginHistory = disableAutomaticLogin(loginHistory)
       await persistLoginHistoryBestEffort()
       lifecycleLog?.record('auto_login_failed', { code: result.error.code, status: result.error.status })
+      return
     }
+    lastAutoLoginError = ''
   } catch (error) {
+    lastAutoLoginError = formatLifecycleError(error)
     loginHistory = disableAutomaticLogin(loginHistory)
     await persistLoginHistoryBestEffort()
-    lifecycleLog?.record('auto_login_failed', { error: formatLifecycleError(error) })
+    lifecycleLog?.record('auto_login_failed', { error: lastAutoLoginError })
   }
 }
 
@@ -1208,6 +1268,26 @@ function registerIPCHandlers() {
   ipcMain.handle('desktop:get-startup', () => ({ start_at_login: desktopPreferences.start_at_login }))
   ipcMain.handle('desktop:get-preferences', () => publicDesktopPreferences())
   ipcMain.handle('desktop:get-login-history', () => loginHistorySnapshot())
+  ipcMain.handle('desktop:probe-server', async (_event, serverValue: unknown) => {
+    if (typeof serverValue !== 'string' || !serverValue.trim()) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Server is required.' } }
+    }
+    return probeDesktopServer(serverValue)
+  })
+  ipcMain.handle('desktop:clear-saved-password', async (_event, serverValue: unknown, usernameValue: unknown) => {
+    if (typeof serverValue !== 'string' || typeof usernameValue !== 'string') {
+      return { ok: false, error: { code: 'invalid_input', message: 'Server and username are required.' } }
+    }
+    const server = serverValue.trim()
+    const username = usernameValue.trim()
+    if (!server || !username) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Server and username are required.' } }
+    }
+    loginHistory = clearSavedPassword(loginHistory, server, username)
+    await persistLoginHistoryBestEffort()
+    lastAutoLoginError = ''
+    return { ok: true, data: loginHistorySnapshot() }
+  })
   ipcMain.handle('desktop:get-window-state', () => desktopWindowState())
   ipcMain.on('desktop:window-minimize', () => mainWindow?.minimize())
   ipcMain.on('desktop:window-toggle-maximize', () => {
@@ -1741,6 +1821,7 @@ function registerIPCHandlers() {
     const rememberPassword = value.remember_password === true
     const autoLogin = value.auto_login === true
     const useSavedPassword = value.use_saved_password === true
+    lastAutoLoginError = ''
     if (!server || !username) {
       return { ok: false, error: { code: 'invalid_input', message: 'Server and username are required.' } }
     }

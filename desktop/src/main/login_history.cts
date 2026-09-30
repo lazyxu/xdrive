@@ -188,3 +188,29 @@ export function replaceSavedPassword(
     }),
   })
 }
+
+export function clearSavedPassword(
+  history: LoginHistory,
+  server: string,
+  username: string,
+): LoginHistory {
+  const normalizedServer = server.trim()
+  const normalizedUsername = username.trim()
+  const normalized = normalizeLoginHistory(history)
+  return normalizeLoginHistory({
+    version: 1,
+    profiles: normalized.profiles.map((profile) => {
+      if (profile.server !== normalizedServer || profile.username !== normalizedUsername) {
+        return profile
+      }
+      return {
+        server: profile.server,
+        username: profile.username,
+        ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
+        last_used_at: profile.last_used_at,
+        remember_password: false,
+        auto_login: false,
+      }
+    }),
+  })
+}

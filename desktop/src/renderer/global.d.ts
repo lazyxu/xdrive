@@ -36,7 +36,7 @@ declare global {
     auto_login: boolean
     password_available: boolean
   }
-  type DesktopLoginHistory = { profiles: DesktopLoginProfile[]; secure_password_storage: boolean }
+  type DesktopLoginHistory = { profiles: DesktopLoginProfile[]; secure_password_storage: boolean; auto_login_error?: string }
   type DesktopWindowState = { maximized: boolean; minimized: boolean; fullscreen: boolean }
   type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
 
@@ -246,6 +246,9 @@ declare global {
       getStartup: () => Promise<DesktopStartup>
       getPreferences: () => Promise<DesktopPreferences>
       getLoginHistory: () => Promise<DesktopLoginHistory>
+      onLoginHistory: (callback: (history: DesktopLoginHistory) => void) => () => void
+      probeServer: (server: string) => Promise<DesktopResult<{ version?: string }>>
+      clearSavedPassword: (server: string, username: string) => Promise<DesktopResult<DesktopLoginHistory>>
       getWindowState: () => Promise<DesktopWindowState>
       minimizeWindow: () => void
       toggleMaximizeWindow: () => void
