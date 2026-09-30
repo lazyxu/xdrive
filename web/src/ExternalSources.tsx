@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Descriptions, Divider, Form, Input, Select, Space, Spin, Tooltip, Typography, message } from 'antd'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import { Descriptions, Form, Input, Select, Spin, Typography } from 'antd'
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
   Box as MuiBox,
   Button as MuiButton,
+  Card,
   Dialog,
   DialogContentText,
+  Divider as MuiDivider,
   MenuItem,
+  Snackbar,
   Stack,
   TextField,
+  Tooltip,
   Typography as MuiTypography,
 } from '@mui/material'
 import type { XDriveApi } from './api'
@@ -204,6 +209,7 @@ export default function ExternalSourcesPanel({
   const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
   const [guideUsername, setGuideUsername] = useState<string | undefined>()
   const [errorDialog, setErrorDialog] = useState<SourceErrorDialogState | null>(null)
+  const [feedback, setFeedback] = useState('')
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
   const [clearingCookie, setClearingCookie] = useState(false)
   const [settingsConnectorConfig, setSettingsConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
@@ -538,7 +544,7 @@ export default function ExternalSourcesPanel({
       }
     }
 
-    message.success('外部来源已添加')
+    setFeedback('外部来源已添加')
     setCreateOpen(false)
     createForm.resetFields()
     await load()
@@ -555,7 +561,7 @@ export default function ExternalSourcesPanel({
     try {
       await api.triggerSource(row.source.id)
       const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-      message.success(profile.manualTriggerExecutor === 'source_agent'
+      setFeedback(profile.manualTriggerExecutor === 'source_agent'
         ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查'
         : '已请求立即扫描，已主动唤醒 Pull worker；定时轮询仅作为兜底')
       await load()
@@ -572,7 +578,7 @@ export default function ExternalSourcesPanel({
     setCancellingRunID(run.id)
     try {
       await api.cancelSourceRun(row.source.id, run.id)
-      message.success('已请求停止当前运行')
+      setFeedback('已请求停止当前运行')
       await load(true)
     } catch (error) {
       showActionError('停止运行失败', error, '无法停止当前运行，请稍后重试。')
@@ -716,7 +722,7 @@ export default function ExternalSourcesPanel({
         }
       }
 
-      message.success('来源设置已保存')
+      setFeedback('来源设置已保存')
       setSetting(null)
       setSettingsConnectorConfig(null)
       settingsForm.resetFields()
@@ -736,7 +742,7 @@ export default function ExternalSourcesPanel({
     setClearingCookie(true)
     try {
       await api.deleteSourceCredential(setting.source.id)
-      message.success(`${label}已清除，来源已自动暂停`)
+      setFeedback(`${label}已清除，来源已自动暂停`)
       setClearCookieConfirmOpen(false)
       setSetting({
         ...setting,
@@ -764,7 +770,7 @@ export default function ExternalSourcesPanel({
     setDeletingSourceID(row.source.id)
     try {
       await api.deleteSource(row.source.id, row.source.revision)
-      message.success('来源已删除；已同步到 xDrive 的文件已保留')
+      setFeedback('来源已删除；已同步到 xDrive 的文件已保留')
       if (selected?.source.id === row.source.id) setSelected(null)
       if (setting?.source.id === row.source.id) {
         setSetting(null)
@@ -884,10 +890,19 @@ export default function ExternalSourcesPanel({
         <XDriveDialogTitle title="外部来源" onClose={onClose} />
         <XDriveDialogContent dividers>
       <div className="external-sources-toolbar">
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>添加来源</Button>
-        </Space>
+        <Stack direction="row" spacing={1}>
+          <XDriveActionButton
+            startIcon={<RefreshRoundedIcon />}
+            loading={loading}
+            loadingLabel="正在刷新…"
+            onClick={() => void load()}
+          >
+            刷新
+          </XDriveActionButton>
+          <XDriveActionButton intent="primary" startIcon={<AddRoundedIcon />} onClick={openCreate}>
+            添加来源
+          </XDriveActionButton>
+        </Stack>
       </div>
       <Spin spinning={loading && rows.length === 0}>
         {rows.length === 0 && !loading ? (
@@ -901,7 +916,7 @@ export default function ExternalSourcesPanel({
                 : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatSize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
 
               return (
-                <Card key={row.source.id} size="small" className="external-source-card">
+                <Card key={row.source.id} variant="outlined" className="external-source-card" sx={{ p: '18px 20px', borderRadius: 2 }}>
                   <div className="external-source-card-header">
                     <div>
                       <Typography.Title level={4} style={{ margin: 0 }}>{row.source.name}</Typography.Title>
@@ -928,22 +943,27 @@ export default function ExternalSourcesPanel({
                     )}
                   </div>
                   <div className="external-source-actions">
-                    <Space size="small">
-                      <Button size="small" disabled={failedItemsLoading} onClick={() => void openDetails(row)}>查看</Button>
+                    <Stack direction="row" spacing={0.75} flexWrap="wrap" justifyContent="flex-end">
+                      <XDriveActionButton compact disabled={failedItemsLoading} onClick={() => void openDetails(row)}>
+                        查看
+                      </XDriveActionButton>
                       {externalSourceConnectorProfile(row.source.kind, row.source.direction).manualTriggerExecutor === 'source_agent' && (
                         <XDriveActionButton compact onClick={() => openSynologyGuide(row.source)}>
                           DSM 配置
                         </XDriveActionButton>
                       )}
                       <Tooltip title={card.trigger.label}>
-                        <Button
-                          size="small"
-                          disabled={!card.trigger.ready}
-                          loading={triggeringSourceID === row.source.id}
-                          onClick={() => void triggerNow(row)}
-                        >
-                          {externalSourceTriggerActionLabel(row)}
-                        </Button>
+                        <span>
+                          <XDriveActionButton
+                            compact
+                            disabled={!card.trigger.ready}
+                            loading={triggeringSourceID === row.source.id}
+                            loadingLabel="正在请求…"
+                            onClick={() => void triggerNow(row)}
+                          >
+                            {externalSourceTriggerActionLabel(row)}
+                          </XDriveActionButton>
+                        </span>
                       </Tooltip>
                       {row.latestRun?.status === 'running' && (
                         <XDriveActionButton
@@ -957,8 +977,8 @@ export default function ExternalSourcesPanel({
                           停止
                         </XDriveActionButton>
                       )}
-                      <Button size="small" onClick={() => openSettings(row)}>设置</Button>
-                    </Space>
+                      <XDriveActionButton compact onClick={() => openSettings(row)}>设置</XDriveActionButton>
+                    </Stack>
                   </div>
                 </Card>
               )
@@ -1004,7 +1024,7 @@ export default function ExternalSourcesPanel({
               )}
             </Descriptions>
 
-            <Divider orientation="left">相册与集合</Divider>
+            <MuiDivider textAlign="left" sx={{ my: 2 }}>相册与集合</MuiDivider>
             {collectionsLoading ? (
               <XDriveStatePanel loading variant="plain" message="正在加载相册/集合" />
             ) : collections.length === 0 ? (
@@ -1085,7 +1105,7 @@ export default function ExternalSourcesPanel({
               </Stack>
             )}
 
-            <Divider orientation="left">同步历史</Divider>
+            <MuiDivider textAlign="left" sx={{ my: 2 }}>同步历史</MuiDivider>
             <Spin spinning={historyLoading}>
               {historyRuns.length > 0 ? (
                 <Stack spacing={1}>
@@ -1395,7 +1415,7 @@ export default function ExternalSourcesPanel({
           )}
           {createProfile.credential === 'synology_dsm' && (
             <>
-              <Divider orientation="left">Synology DSM 连接</Divider>
+              <MuiDivider textAlign="left" sx={{ my: 2 }}>Synology DSM 连接</MuiDivider>
               <Form.Item
                 name="base_url"
                 label="DSM 地址"
@@ -1444,16 +1464,17 @@ export default function ExternalSourcesPanel({
               {createCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mb: 1 }}>{createCredentialTestError}</XDriveStatusAlert>}
             </>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button onClick={() => { setCreateOpen(false); createForm.resetFields() }}>取消</Button>
-            <Button
-              type="primary"
-              htmlType="submit"
+          <MuiBox sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+            <XDriveActionButton onClick={() => { setCreateOpen(false); createForm.resetFields() }}>取消</XDriveActionButton>
+            <XDriveActionButton
+              intent="primary"
+              type="submit"
               loading={creating}
+              loadingLabel="正在添加…"
             >
               添加来源
-            </Button>
-          </div>
+            </XDriveActionButton>
+          </MuiBox>
         </Form>
         </XDriveDialogContent>
       </Dialog>
@@ -1551,7 +1572,7 @@ export default function ExternalSourcesPanel({
 
             {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (
               <>
-                <Divider orientation="left">一刻相册凭据</Divider>
+                <MuiDivider textAlign="left" sx={{ my: 2 }}>一刻相册凭据</MuiDivider>
                 <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 2 }}>
                   <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
                     {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
@@ -1616,7 +1637,7 @@ export default function ExternalSourcesPanel({
             )}
             {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'synology_dsm' && (
               <>
-                <Divider orientation="left">Synology DSM 凭据</Divider>
+                <MuiDivider textAlign="left" sx={{ my: 2 }}>Synology DSM 凭据</MuiDivider>
                 <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 2 }}>
                   <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
                     {setting.credential?.configured ? 'DSM 凭据已配置' : 'DSM 凭据未配置'}
@@ -1690,8 +1711,8 @@ export default function ExternalSourcesPanel({
               >
                 删除来源
               </XDriveActionButton>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button
+              <MuiBox sx={{ display: 'flex', gap: 1 }}>
+                <XDriveActionButton
                   onClick={() => {
                     setClearCookieConfirmOpen(false)
                     setSetting(null)
@@ -1699,9 +1720,16 @@ export default function ExternalSourcesPanel({
                   }}
                 >
                   取消
-                </Button>
-                <Button type="primary" htmlType="submit" loading={savingSettings}>保存设置</Button>
-              </div>
+                </XDriveActionButton>
+                <XDriveActionButton
+                  intent="primary"
+                  type="submit"
+                  loading={savingSettings}
+                  loadingLabel="正在保存…"
+                >
+                  保存设置
+                </XDriveActionButton>
+              </MuiBox>
             </div>
           </Form>
         )}
@@ -1782,6 +1810,19 @@ export default function ExternalSourcesPanel({
           <XDriveActionButton intent="primary" onClick={() => setErrorDialog(null)}>知道了</XDriveActionButton>
         </XDriveDialogActions>
       </Dialog>
+
+      <Snackbar
+        open={Boolean(feedback)}
+        autoHideDuration={3500}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        onClose={(_event, reason) => {
+          if (reason !== 'clickaway') setFeedback('')
+        }}
+      >
+        <div>
+          {feedback ? <XDriveStatusAlert tone="good">{feedback}</XDriveStatusAlert> : null}
+        </div>
+      </Snackbar>
 
       <SynologyDsmGuideDialog
         open={!!guideSource}
