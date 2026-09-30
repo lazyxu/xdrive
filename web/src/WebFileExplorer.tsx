@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -109,7 +109,6 @@ export default function WebFileExplorer({
         kind: node.type,
         size: node.size,
         updatedAt: node.updated_at,
-        typeLabel: node.type === 'dir' ? '文件夹' : '文件',
         secondaryLabel: result?.path || undefined,
       }
     }),
@@ -120,6 +119,16 @@ export default function WebFileExplorer({
     () => crumbs.map((crumb) => ({ id: crumb.id, name: crumb.name })),
     [crumbs],
   )
+
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file') return null
+    try {
+      const blob = await api.mediaThumbnail(Number(item.id))
+      return URL.createObjectURL(blob)
+    } catch {
+      return null
+    }
+  }, [api])
 
   const clearSearch = () => {
     setSearchResults(null)
@@ -335,6 +344,7 @@ export default function WebFileExplorer({
         items={explorerItems}
         crumbs={explorerCrumbs}
         loading={loading || searchLoading}
+        loadThumbnail={loadThumbnail}
         pathValue={crumbs.map((crumb) => crumb.name).join('/')}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}

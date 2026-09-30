@@ -1,17 +1,25 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
-import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, UIEvent } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
+import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import ImageRoundedIcon from '@mui/icons-material/ImageRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
+import MovieRoundedIcon from '@mui/icons-material/MovieRounded'
+import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
+import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
+import ViewCarouselRoundedIcon from '@mui/icons-material/ViewCarouselRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import {
   Box,
@@ -44,6 +52,20 @@ export type XDriveFileExplorerCrumb = {
   name: string
 }
 
+export type XDriveFileExplorerFileKind =
+  | 'folder'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'pdf'
+  | 'document'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'archive'
+  | 'code'
+  | 'text'
+  | 'file'
+
 export type XDriveFileExplorerItem = {
   id: XDriveFileExplorerID
   name: string
@@ -51,9 +73,11 @@ export type XDriveFileExplorerItem = {
   size?: number
   updatedAt?: string
   typeLabel?: string
+  fileKind?: XDriveFileExplorerFileKind
   secondaryLabel?: string
   icon?: ReactNode
   thumbnail?: ReactNode
+  thumbnailEligible?: boolean
 }
 
 export type XDriveFileExplorerSort = {
@@ -71,9 +95,153 @@ export type XDriveFileExplorerMenuItem = {
   onSelect: () => void
 }
 
+const imageExtensions = new Set(['avif', 'bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'tif', 'tiff', 'webp'])
+const videoExtensions = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'webm'])
+const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'wma'])
+const documentExtensions = new Set(['doc', 'docx', 'odt', 'rtf'])
+const spreadsheetExtensions = new Set(['csv', 'ods', 'xls', 'xlsx'])
+const presentationExtensions = new Set(['odp', 'ppt', 'pptx'])
+const archiveExtensions = new Set(['7z', 'bz2', 'gz', 'rar', 'tar', 'tgz', 'xz', 'zip'])
+const codeExtensions = new Set([
+  'c', 'cc', 'cpp', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'json', 'jsx',
+  'kt', 'md', 'php', 'py', 'rb', 'rs', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx',
+  'xml', 'yaml', 'yml',
+])
+const textExtensions = new Set(['ini', 'log', 'text', 'txt'])
+
+function explorerExtension(name: string) {
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0 || dot === name.length - 1) return ''
+  return name.slice(dot + 1).toLowerCase()
+}
+
+export function xDriveFileKind(name: string, kind: 'dir' | 'file'): XDriveFileExplorerFileKind {
+  if (kind === 'dir') return 'folder'
+  const extension = explorerExtension(name)
+  if (imageExtensions.has(extension)) return 'image'
+  if (videoExtensions.has(extension)) return 'video'
+  if (audioExtensions.has(extension)) return 'audio'
+  if (extension === 'pdf') return 'pdf'
+  if (documentExtensions.has(extension)) return 'document'
+  if (spreadsheetExtensions.has(extension)) return 'spreadsheet'
+  if (presentationExtensions.has(extension)) return 'presentation'
+  if (archiveExtensions.has(extension)) return 'archive'
+  if (codeExtensions.has(extension)) return 'code'
+  if (textExtensions.has(extension)) return 'text'
+  return 'file'
+}
+
+export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
+  if (kind === 'dir') return '文件夹'
+  const extension = explorerExtension(name)
+  const fileKind = xDriveFileKind(name, kind)
+  switch (fileKind) {
+    case 'image': return extension ? `${extension.toUpperCase()} 图像` : '图像'
+    case 'video': return extension ? `${extension.toUpperCase()} 视频` : '视频'
+    case 'audio': return extension ? `${extension.toUpperCase()} 音频` : '音频'
+    case 'pdf': return 'PDF 文档'
+    case 'document': return extension ? `${extension.toUpperCase()} 文档` : '文档'
+    case 'spreadsheet': return extension ? `${extension.toUpperCase()} 工作表` : '工作表'
+    case 'presentation': return extension ? `${extension.toUpperCase()} 演示文稿` : '演示文稿'
+    case 'archive': return extension ? `${extension.toUpperCase()} 压缩文件` : '压缩文件'
+    case 'code': return extension ? `${extension.toUpperCase()} 文件` : '代码文件'
+    case 'text': return '文本文档'
+    default: return extension ? `${extension.toUpperCase()} 文件` : '文件'
+  }
+}
+
+export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
+  const fileKind = xDriveFileKind(name, kind)
+  return fileKind === 'image' || fileKind === 'video'
+}
+
 function explorerIDKey(id: XDriveFileExplorerID) {
   return `${typeof id}:${String(id)}`
 }
+
+function XDriveLazyFileThumbnail({
+  item,
+  loadThumbnail,
+  fallback,
+}: {
+  item: XDriveFileExplorerItem
+  loadThumbnail: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
+  fallback: ReactNode
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const [visible, setVisible] = useState(false)
+  const [src, setSrc] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+    setSrc(null)
+  }, [item.id, item.updatedAt])
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host || visible) return
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: '240px' })
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [visible])
+
+  useEffect(() => {
+    if (!visible || failed) return
+    let active = true
+    void loadThumbnail(item)
+      .then((value) => {
+        if (!active) {
+          if (value?.startsWith('blob:')) URL.revokeObjectURL(value)
+          return
+        }
+        if (!value) {
+          setFailed(true)
+          return
+        }
+        setSrc(value)
+      })
+      .catch(() => {
+        if (active) setFailed(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [failed, item.id, item.updatedAt, loadThumbnail, visible])
+
+  useEffect(() => () => {
+    if (src?.startsWith('blob:')) URL.revokeObjectURL(src)
+  }, [src])
+
+  return (
+    <Box ref={hostRef} sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {src ? (
+        <Box
+          component="img"
+          src={src}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : fallback}
+    </Box>
+  )
+}
+
+const detailsRowHeight = 42
+const detailsHeaderHeight = 34
+const detailsVirtualizationThreshold = 240
+const detailsOverscan = 10
 
 export function XDriveFileExplorer({
   items,
@@ -109,6 +277,7 @@ export function XDriveFileExplorer({
   commandBarStart,
   commandBarEnd,
   statusText,
+  loadThumbnail,
 }: {
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
@@ -143,6 +312,7 @@ export function XDriveFileExplorer({
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
   statusText?: ReactNode
+  loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
 }) {
   const [editingPath, setEditingPath] = useState(false)
   const derivedPath = useMemo(
@@ -160,6 +330,9 @@ export function XDriveFileExplorer({
     mouseY: number
     items: XDriveFileExplorerMenuItem[]
   } | null>(null)
+  const scrollHostRef = useRef<HTMLDivElement | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
 
   const viewMode = controlledViewMode ?? internalViewMode
   const sort = controlledSort ?? internalSort
@@ -173,6 +346,17 @@ export function XDriveFileExplorer({
     if (!editingPath) setPathDraft(derivedPath)
   }, [derivedPath, editingPath])
 
+  useEffect(() => {
+    const host = scrollHostRef.current
+    if (!host) return
+    const update = () => setViewportHeight(host.clientHeight)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [])
+
   const visibleItems = useMemo(() => {
     const result = [...items]
     const multiplier = sort.direction === 'asc' ? 1 : -1
@@ -185,7 +369,9 @@ export function XDriveFileExplorer({
         return (leftTime - rightTime) * multiplier
       }
       if (sort.key === 'type') {
-        return (left.typeLabel ?? left.kind).localeCompare(right.typeLabel ?? right.kind, undefined, { numeric: true }) * multiplier
+        const leftType = left.typeLabel || xDriveFileTypeLabel(left.name, left.kind)
+        const rightType = right.typeLabel || xDriveFileTypeLabel(right.name, right.kind)
+        return leftType.localeCompare(rightType, undefined, { numeric: true }) * multiplier
       }
       return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }) * multiplier
     })
@@ -316,16 +502,37 @@ export function XDriveFileExplorer({
   const submitSearch = () => onSearch?.(searchValue.trim())
 
   const defaultTypeLabel = (item: XDriveFileExplorerItem) => (
-    item.kind === 'dir' ? '文件夹' : item.typeLabel || '文件'
+    item.typeLabel || xDriveFileTypeLabel(item.name, item.kind)
   )
 
-  const defaultItemIcon = (item: XDriveFileExplorerItem, large = false) => (
-    item.icon ?? (
-      item.kind === 'dir'
-        ? <FolderRoundedIcon sx={{ fontSize: large ? 52 : 22, color: 'warning.main' }} />
-        : <InsertDriveFileRoundedIcon sx={{ fontSize: large ? 48 : 21, color: 'text.secondary' }} />
+  const defaultItemIcon = (item: XDriveFileExplorerItem, large = false) => {
+    if (item.icon) return item.icon
+    const fontSize = large ? 48 : 21
+    const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
+    if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: large ? 52 : 22, color: 'warning.main' }} />
+    if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'pdf') return <PictureAsPdfRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'spreadsheet') return <TableChartRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'presentation') return <ViewCarouselRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'document' || fileKind === 'text') return <DescriptionRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'code') return <CodeRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    return <InsertDriveFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+  }
+
+  const thumbnailForItem = (item: XDriveFileExplorerItem) => {
+    if (item.thumbnail) return item.thumbnail
+    const eligible = item.thumbnailEligible ?? xDriveFileSupportsThumbnail(item.name, item.kind)
+    if (!eligible || !loadThumbnail) return defaultItemIcon(item, true)
+    return (
+      <XDriveLazyFileThumbnail
+        item={item}
+        loadThumbnail={loadThumbnail}
+        fallback={defaultItemIcon(item, true)}
+      />
     )
-  )
+  }
 
   const itemKeyDown = (event: KeyboardEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     if (event.key === 'Enter') {
@@ -347,6 +554,31 @@ export function XDriveFileExplorer({
     ), 0),
     [items, selectedKeySet],
   )
+
+  const virtualizeDetails = viewMode === 'details' && visibleItems.length >= detailsVirtualizationThreshold
+  const detailsWindow = useMemo(() => {
+    if (!virtualizeDetails) return { start: 0, end: visibleItems.length, before: 0, after: 0 }
+    const effectiveHeight = Math.max(viewportHeight, detailsRowHeight * 8)
+    const rawFirstVisible = Math.max(0, Math.floor(Math.max(0, scrollTop - detailsHeaderHeight) / detailsRowHeight))
+    const firstVisible = Math.min(Math.max(0, visibleItems.length - 1), rawFirstVisible)
+    const visibleCount = Math.ceil(effectiveHeight / detailsRowHeight)
+    const start = Math.max(0, firstVisible - detailsOverscan)
+    const end = Math.min(visibleItems.length, firstVisible + visibleCount + detailsOverscan)
+    return {
+      start,
+      end,
+      before: start * detailsRowHeight,
+      after: Math.max(0, (visibleItems.length - end) * detailsRowHeight),
+    }
+  }, [scrollTop, viewportHeight, virtualizeDetails, visibleItems.length])
+
+  const detailItems = virtualizeDetails
+    ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
+    : visibleItems
+
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (virtualizeDetails) setScrollTop(event.currentTarget.scrollTop)
+  }
 
   return (
     <Paper
@@ -573,8 +805,10 @@ export function XDriveFileExplorer({
       <Divider />
 
       <Box
+        ref={scrollHostRef}
         sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'auto' }}
         tabIndex={0}
+        onScroll={handleScroll}
         onClick={(event) => {
           const target = event.target as HTMLElement
           if (!target.closest('[data-xdrive-file-explorer-item]')) clearSelection()
@@ -617,7 +851,11 @@ export function XDriveFileExplorer({
               <span role="columnheader">类型</span>
               <span role="columnheader">大小</span>
             </Box>
-            {visibleItems.map((item, index) => {
+            {virtualizeDetails && detailsWindow.before > 0 ? (
+              <Box role="presentation" aria-hidden sx={{ height: detailsWindow.before }} />
+            ) : null}
+            {detailItems.map((item, windowIndex) => {
+              const index = virtualizeDetails ? detailsWindow.start + windowIndex : windowIndex
               const selected = selectedKeySet.has(explorerIDKey(item.id))
               return (
               <ButtonBase
@@ -673,6 +911,9 @@ export function XDriveFileExplorer({
               </ButtonBase>
               )
             })}
+            {virtualizeDetails && detailsWindow.after > 0 ? (
+              <Box role="presentation" aria-hidden sx={{ height: detailsWindow.after }} />
+            ) : null}
           </Box>
         ) : (
           <Box
@@ -712,6 +953,8 @@ export function XDriveFileExplorer({
                   gap: 0.75,
                   textAlign: 'center',
                   bgcolor: selected ? 'action.selected' : 'transparent',
+                  contentVisibility: 'auto',
+                  containIntrinsicSize: '132px 128px',
                   '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                   '&:focus-visible': {
                     outline: '2px solid',
@@ -731,7 +974,7 @@ export function XDriveFileExplorer({
                     borderRadius: 1,
                   }}
                 >
-                  {item.thumbnail ?? defaultItemIcon(item, true)}
+                  {thumbnailForItem(item)}
                 </Box>
                 <Typography
                   variant="body2"
