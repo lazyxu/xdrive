@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   Autocomplete,
@@ -87,6 +87,8 @@ import {
   XDriveSourceRunModeField,
   XDriveSourceStatusField,
   XDriveSourceCookieField,
+  XDriveSourceTargetField,
+  XDriveStoredCredentialField,
   XDriveSynologyDsmCredentialFields,
   XDriveSynologyFileRootsField,
   XDriveSynologyPhotoSpacesField,
@@ -107,8 +109,6 @@ import {
   externalSourceCreateOption,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
-  externalSourceSavedCredentialMask,
-  isExternalSourceSavedCredentialMask,
   externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
@@ -282,7 +282,7 @@ function viewLabel(view: View) {
     overview: '概览',
     cloud: '文件',
     gallery: '图库',
-    sources: '外部来源',
+    sources: '同步文件夹',
     transfers: '传输',
     files: '存储',
     conflicts: '冲突',
@@ -347,6 +347,8 @@ export default function App() {
   const [sourceEditDsmBaseURL, setSourceEditDsmBaseURL] = useState('')
   const [sourceEditDsmUsername, setSourceEditDsmUsername] = useState('')
   const [sourceEditDsmPassword, setSourceEditDsmPassword] = useState('')
+  const [sourceEditCredentialReveal, setSourceEditCredentialReveal] = useState<AgentSourceCredentialReveal | null>(null)
+  const [sourceEditCredentialRevealLoading, setSourceEditCredentialRevealLoading] = useState(false)
   const [sourceEditSpaces, setSourceEditSpaces] = useState<SynologyPhotoSpace[]>(['personal', 'shared'])
   const [sourceEditRoots, setSourceEditRoots] = useState<string[]>([])
   const [sourceEditConnectorConfig, setSourceEditConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
@@ -665,7 +667,8 @@ export default function App() {
       setDiagnostics(null)
       setSources([])
       setSelectedSourceID(null)
-      setEditingSourceID(null)
+      setSourceEditCredentialReveal(null)
+      closeSourceSettings()
       setSourceEditCookie('')
       setSourceCreateOpen(false)
       setSourceCreateCookie('')
@@ -1015,7 +1018,7 @@ export default function App() {
     try {
       if (!(agent.hello?.capabilities.includes('external-sources') ?? false)) {
         setSources([])
-        setError('当前 xdrive-agent 不支持外部来源，请更新客户端核心组件。')
+        setError('当前 xdrive-agent 不支持同步文件夹，请更新客户端核心组件。')
         return
       }
       const sourceResult = await window.xdriveDesktop.agent.getSources()
@@ -1289,11 +1292,11 @@ export default function App() {
   const rollbackCreatedSource = async (created: AgentSource, reason: string) => {
     const rollback = await window.xdriveDesktop.agent.deleteSource(created.id, created.revision)
     if (rollback.ok) {
-      setError(`${reason}。刚创建的来源已自动撤销，请检查后重试。`)
+      setError(`${reason}。刚创建的同步文件夹已自动撤销，请检查后重试。`)
       await loadSources()
       return true
     }
-    setError(`${reason}；自动回滚也失败：${rollback.error.message}。请进入“设置”修复或删除该来源。`)
+    setError(`${reason}；自动回滚也失败：${rollback.error.message}。请进入“设置”修复或删除该同步文件夹。`)
     await loadSources()
     return false
   }
@@ -1303,7 +1306,7 @@ export default function App() {
     const name = sourceCreateName.trim()
     const target = sourceTargetCrumbs.at(-1)
     if (!name) {
-      setError('来源名称不能为空。')
+      setError('同步文件夹名称不能为空。')
       return
     }
     if (sourceCreateKind !== 'yike_photos' && !target) {
@@ -1392,7 +1395,7 @@ export default function App() {
       if (sourceCreateKind === 'synology_files') {
         const activated = await window.xdriveDesktop.agent.updateSource(created.data.id, created.data.revision, { status: 'active' })
         if (!activated.ok) {
-          await rollbackCreatedSource(created.data, `启用群晖 File Station 来源失败：${activated.error.message}`)
+          await rollbackCreatedSource(created.data, `启用群晖 File Station 同步文件夹失败：${activated.error.message}`)
           return
         }
       }
@@ -1401,19 +1404,24 @@ export default function App() {
       resetSourceCreateCredential()
       if (sourceCreateProfile.manualTriggerExecutor === 'source_agent') {
         setSynologyGuideSource(created.data)
-        setNotice('群晖 Push 来源已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
+        setNotice('群晖 Push 同步文件夹已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
       } else if (sourceCreateKind === 'yike_photos') {
-        setNotice(`一刻相册来源已添加，目标目录固定为 ${yikeManagedTargetLabel}。`)
+        setNotice(`一刻相册同步文件夹已添加，目标目录固定为 ${yikeManagedTargetLabel}。`)
       } else if (sourceCreateKind === 'synology_files') {
-        setNotice('群晖 File Station Pull 来源已添加；将同步所选目录中的所有文件和文件夹。')
+        setNotice('群晖 File Station Pull 同步文件夹已添加；将同步所选目录中的所有文件和文件夹。')
       } else {
-        setNotice('群晖 Pull 来源已添加；xDrive Server 将按调度直接读取 Synology Photos。')
+        setNotice('群晖 Pull 同步文件夹已添加；xDrive Server 将按调度直接读取 Synology Photos。')
       }
       await loadSources()
     } finally {
       setBusy('')
     }
   }
+
+  const closeSourceSettings = useCallback(() => {
+    setSourceEditCredentialReveal(null)
+    setEditingSourceID(null)
+  }, [])
 
   const openSourceSettings = (row: ExternalSourceRow) => {
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
@@ -1425,7 +1433,8 @@ export default function App() {
     setSourceEditScheduleExpression(row.source.schedule_expression || '6h')
     setSourceEditScheduleTimezone(row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone)
     setSourceEditIgnoreRules(row.source.ignore_rules || '')
-    setSourceEditCookie(profile.credential === 'cookie' && row.credential?.configured ? externalSourceSavedCredentialMask : '')
+    setSourceEditCookie('')
+    setSourceEditCredentialReveal(null)
     setSourceEditDsmBaseURL('')
     setSourceEditDsmUsername('')
     setSourceEditDsmPassword('')
@@ -1458,7 +1467,6 @@ export default function App() {
   const sourceEditCredentialPayload = (row: ExternalSourceRow): Record<string, string> | null | undefined => {
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     if (profile.credential === 'cookie') {
-      if (isExternalSourceSavedCredentialMask(sourceEditCookie)) return null
       const cookie = sourceEditCookie.trim()
       return cookie ? { cookie } : null
     }
@@ -1472,6 +1480,27 @@ export default function App() {
         : undefined
     }
     return null
+  }
+
+  const hideSourceEditCredential = useCallback(() => {
+    setSourceEditCredentialReveal(null)
+  }, [])
+
+  const revealSourceEditCredential = async (row: ExternalSourceRow) => {
+    if (!row.credential?.configured) return
+    setSourceEditCredentialRevealLoading(true)
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.revealSourceCredential(row.source.id)
+      if (!result.ok) {
+        setSourceEditCredentialReveal(null)
+        setError(`显示凭据失败：${result.error.message}`)
+        return
+      }
+      setSourceEditCredentialReveal(result.data)
+    } finally {
+      setSourceEditCredentialRevealLoading(false)
+    }
   }
 
   const testSettingsSourceCredential = async (row: ExternalSourceRow) => {
@@ -1506,7 +1535,7 @@ export default function App() {
     event.preventDefault()
     const name = sourceEditName.trim()
     if (!name) {
-      setError('来源名称不能为空。')
+      setError('同步文件夹名称不能为空。')
       return
     }
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
@@ -1609,7 +1638,7 @@ export default function App() {
       if (pendingCredential) {
         const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, pendingCredential)
         if (!credential.ok) {
-          setError(`来源设置已保存，但${externalSourceCredentialLabel(profile)}更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message, credential.error.detail)}`)
+          setError(`同步文件夹设置已保存，但${externalSourceCredentialLabel(profile)}更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message, credential.error.detail)}`)
           await loadSources()
           return
         }
@@ -1618,7 +1647,7 @@ export default function App() {
       if (stageFileActivation) {
         updated = await window.xdriveDesktop.agent.updateSource(row.source.id, updated.data.revision, { status: 'active' })
         if (!updated.ok) {
-          setError(`连接配置已保存，但启用来源失败：${updated.error.message}`)
+          setError(`连接配置已保存，但启用同步文件夹失败：${updated.error.message}`)
           await loadSources()
           return
         }
@@ -1631,7 +1660,7 @@ export default function App() {
           if (fresh && fresh.status !== 'paused') {
             const paused = await window.xdriveDesktop.agent.updateSource(fresh.id, fresh.revision, { status: 'paused' })
             if (!paused.ok) {
-              setError(`凭据已更新，但重新暂停来源失败：${paused.error.message}`)
+              setError(`凭据已更新，但重新暂停同步文件夹失败：${paused.error.message}`)
               await loadSources()
               return
             }
@@ -1646,7 +1675,7 @@ export default function App() {
       setSourceEditDsmPassword('')
       setSourceEditRoots([])
       setSourceEditConnectorConfig(null)
-      setNotice('来源设置已保存。')
+      setNotice('同步文件夹设置已保存。')
       await loadSources()
     } finally {
       setBusy('')
@@ -1667,6 +1696,7 @@ export default function App() {
           `${label}已清除。`,
         )
         if (data) {
+          setSourceEditCredentialReveal(null)
           setSourceEditCookie('')
           setSourceEditDsmBaseURL('')
           setSourceEditDsmUsername('')
@@ -1685,11 +1715,11 @@ export default function App() {
     const data = await run(
       `source-delete-${row.source.id}`,
       () => window.xdriveDesktop.agent.deleteSource(row.source.id, row.source.revision),
-      '来源已删除；已同步到 xDrive 的文件已保留。',
+      '同步文件夹已删除；已同步到 xDrive 的文件已保留。',
     )
     if (data) {
       if (selectedSourceID === row.source.id) setSelectedSourceID(null)
-      if (editingSourceID === row.source.id) setEditingSourceID(null)
+      if (editingSourceID === row.source.id) closeSourceSettings()
       setSourceDeleteTarget(null)
       await loadSources()
     }
@@ -2749,7 +2779,7 @@ export default function App() {
           <XDriveSidebarNavItem selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
           <XDriveSidebarNavItem selected={view === 'cloud'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setView('cloud')} />
           <XDriveSidebarNavItem selected={view === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setView('gallery')} />
-          <XDriveSidebarNavItem selected={view === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="外部来源" onClick={() => setView('sources')} />
+          <XDriveSidebarNavItem selected={view === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="同步文件夹" onClick={() => setView('sources')} />
           <XDriveSidebarNavItem selected={view === 'transfers'} icon={<SwapVertRoundedIcon fontSize="small" />} primary="传输" badge={activeTransfers.length || undefined} onClick={() => setView('transfers')} />
           <XDriveSidebarNavItem selected={view === 'files'} icon={<StorageRoundedIcon fontSize="small" />} primary="存储" onClick={() => setView('files')} />
           <XDriveSidebarNavItem selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
@@ -2867,9 +2897,9 @@ export default function App() {
         {view === 'sources' && (
           <section className="panel source-panel">
             <XDriveSectionHeader
-              eyebrow="外部来源"
-              title="管理照片与媒体来源"
-              subtitle="来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的来源凭据明文。"
+              eyebrow="同步文件夹"
+              title="管理同步文件夹"
+              subtitle="同步文件夹状态通过 xdrive-agent 的受保护本地 IPC 读取；已保存凭据默认遮罩，仅在用户主动显示时短暂进入界面内存。"
               actions={(
                 <>
                   <XDriveActionButton
@@ -2881,7 +2911,7 @@ export default function App() {
                     刷新
                   </XDriveActionButton>
                   <XDriveActionButton intent="primary" disabled={!!busy} onClick={() => void openSourceCreate()}>
-                    + 添加来源
+                    + 添加同步文件夹
                   </XDriveActionButton>
                 </>
               )}
@@ -2894,11 +2924,11 @@ export default function App() {
                 maxWidth="md"
                 fullWidth
                 scroll="paper"
-                aria-label="添加外部来源"
+                aria-label="添加同步文件夹"
                 slotProps={{ paper: xDriveDialogPaperProps }}
               >
                 <XDriveDialogTitle
-                  title="添加外部来源"
+                  title="添加同步文件夹"
                   subtitle={sourceCreateKind === 'yike_photos'
                     ? '一刻相册目标目录由服务器自动管理。'
                     : sourceCreateDirection === 'pull'
@@ -3080,7 +3110,7 @@ export default function App() {
                 )}
                 {sourceCreateProfile.manualTriggerExecutor === 'source_agent' && (
                   <XDriveStatusAlert tone="warning" className="source-create-note">
-                    创建 Source 后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
+                    创建同步文件夹后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
                   </XDriveStatusAlert>
                 )}
                   </form>
@@ -3095,14 +3125,14 @@ export default function App() {
                     loading={busy === 'source-create'}
                     loadingLabel="正在添加…"
                   >
-                    添加来源
+                    添加同步文件夹
                   </XDriveActionButton>
                 </XDriveDialogActions>
               </Dialog>
             )}
 
             {sources.length === 0 && busy !== 'sources' ? (
-              <XDriveStatePanel message="尚未添加外部来源。" />
+              <XDriveStatePanel message="尚未添加同步文件夹。" />
             ) : (
               <div className="source-list">
                 {sources.map((row) => {
@@ -3166,7 +3196,7 @@ export default function App() {
                           compact
                           disabled={!!busy}
                           onClick={() => editingSourceID === row.source.id
-                            ? setEditingSourceID(null)
+                            ? closeSourceSettings()
                             : openSourceSettings(row)}
                         >
                           {editingSourceID === row.source.id ? '取消设置' : '设置'}
@@ -3176,13 +3206,13 @@ export default function App() {
                       details={selectedSourceID === row.source.id && (
                         <div className="source-detail">
                           <XDriveDescriptionGrid columns={4} fullColumnsAt="md">
-                            <XDriveDescriptionItem label="来源类型">{detail.kindLabel}</XDriveDescriptionItem>
+                            <XDriveDescriptionItem label="同步文件夹类型">{detail.kindLabel}</XDriveDescriptionItem>
                             <XDriveDescriptionItem label="工作方式">{detail.modeLabel}</XDriveDescriptionItem>
                             <XDriveDescriptionItem label="状态">
                               <XDriveStatusBadge tone={detail.state.tone} label={detail.state.label} />
                             </XDriveDescriptionItem>
                             <XDriveDescriptionItem label="目标目录">
-                              {row.source.kind === 'yike_photos' ? yikeManagedTargetLabel : (detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置')}
+                              {row.source.target_path || (detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置')}
                             </XDriveDescriptionItem>
                             <XDriveDescriptionItem label="调度">{detail.scheduleLabel}</XDriveDescriptionItem>
                             <XDriveDescriptionItem label="上次运行">{formatExternalSourceTime(detail.lastRunAt)}</XDriveDescriptionItem>
@@ -3230,7 +3260,7 @@ export default function App() {
                             {sourceCollectionsLoadingID === row.source.id ? (
                               <XDriveStatePanel loading message="正在加载相册/集合…" />
                             ) : sourceCollectionsSourceID !== row.source.id || sourceCollections.length === 0 ? (
-                              <XDriveStatePanel message="该来源暂无相册/集合元数据。" />
+                              <XDriveStatePanel message="该同步文件夹暂无相册/集合元数据。" />
                             ) : (
                               <Stack spacing={1}>
                                 {sourceCollections.map((collection) => {
@@ -3439,17 +3469,17 @@ export default function App() {
                       after={editingSourceID === row.source.id && (
                         <Dialog
                           open={editingSourceID === row.source.id}
-                          onClose={() => { if (!busy) setEditingSourceID(null) }}
+                          onClose={() => { if (!busy) closeSourceSettings() }}
                           maxWidth="md"
                           fullWidth
                           scroll="paper"
-                          aria-label="来源设置"
+                          aria-label="同步文件夹设置"
                           slotProps={{ paper: xDriveDialogPaperProps }}
                         >
                           <XDriveDialogTitle
-                            title="来源设置"
-                            subtitle={`${row.source.name} · 目标节点：${row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}`}
-                            onClose={() => setEditingSourceID(null)}
+                            title="同步文件夹设置"
+                            subtitle={`${row.source.name} · 目标目录：${row.source.target_path || (row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置')}`}
+                            onClose={closeSourceSettings}
                             closeDisabled={!!busy}
                           />
                           <XDriveDialogContent dividers>
@@ -3471,6 +3501,11 @@ export default function App() {
                               onChange={setSourceEditStatus}
                             />
                           </div>
+                          <XDriveSourceTargetField
+                            value={row.source.target_path}
+                            managed={row.source.kind === 'yike_photos'}
+                            sx={{ mb: 1.5 }}
+                          />
                           <XDriveSourceScheduleFields
                             scheduleType={sourceEditScheduleType}
                             expression={sourceEditScheduleExpression}
@@ -3488,17 +3523,23 @@ export default function App() {
                           />
                           {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'cookie' && (
                             <MuiBox className="source-settings-wide" sx={{ display: 'grid', gap: 0.75 }}>
+                              <XDriveStoredCredentialField
+                                label="已保存 Cookie"
+                                configured={Boolean(row.credential?.configured)}
+                                revealedValue={sourceEditCredentialReveal?.field === 'cookie' ? sourceEditCredentialReveal.value : ''}
+                                loading={sourceEditCredentialRevealLoading}
+                                expiresInSeconds={sourceEditCredentialReveal?.expires_in_seconds ?? 30}
+                                updatedAtLabel={row.credential?.updated_at ? new Date(row.credential.updated_at).toLocaleString('zh-CN') : undefined}
+                                onReveal={() => void revealSourceEditCredential(row)}
+                                onHide={hideSourceEditCredential}
+                              />
                               <XDriveSourceCookieField
+                                label="替换 Cookie"
                                 value={sourceEditCookie}
-                                placeholder={row.credential?.configured ? externalSourceSavedCredentialMask : '当前未配置，请粘贴 Cookie'}
+                                placeholder={row.credential?.configured ? '留空则保持当前 Cookie 不变' : '当前未配置，请粘贴 Cookie'}
                                 helperText={row.credential?.configured
-                                  ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                                  ? '只在需要更换 Cookie 时填写；已显示的 Cookie 不会自动带入此输入框。'
                                   : '当前未配置 Cookie，请粘贴新的 Cookie。'}
-                                onFocus={() => {
-                                  if (isExternalSourceSavedCredentialMask(sourceEditCookie)) {
-                                    setSourceEditCookie('')
-                                  }
-                                }}
                                 onChange={(value) => {
                                   setSourceEditCookie(value)
                                   setSourceEditCredentialTest(null)
@@ -3529,9 +3570,20 @@ export default function App() {
                               <MuiDivider className="source-settings-wide" />
                               <XDriveStatusAlert tone={row.credential?.configured ? 'good' : 'warning'} className="source-settings-wide">
                                 {row.credential?.configured
-                                  ? 'DSM 凭据已配置。出于安全原因，地址、用户名和密码不会回读；更新时请重新完整填写三项。'
-                                  : 'DSM 凭据未配置；Pull 来源会保持暂停，直到保存有效凭据。'}
+                                  ? 'DSM 密码默认仅显示遮罩，可按需临时显示 30 秒；更新连接时请重新完整填写地址、用户名和密码。'
+                                  : 'DSM 凭据未配置；Pull 同步文件夹会保持暂停，直到保存有效凭据。'}
                               </XDriveStatusAlert>
+                              <XDriveStoredCredentialField
+                                label="已保存 DSM 密码"
+                                configured={Boolean(row.credential?.configured)}
+                                revealedValue={sourceEditCredentialReveal?.field === 'password' ? sourceEditCredentialReveal.value : ''}
+                                loading={sourceEditCredentialRevealLoading}
+                                expiresInSeconds={sourceEditCredentialReveal?.expires_in_seconds ?? 30}
+                                updatedAtLabel={row.credential?.updated_at ? new Date(row.credential.updated_at).toLocaleString('zh-CN') : undefined}
+                                onReveal={() => void revealSourceEditCredential(row)}
+                                onHide={hideSourceEditCredential}
+                                sx={{ mb: 1.5 }}
+                              />
                               <XDriveSynologyDsmCredentialFields
                                 mode="update"
                                 baseURL={sourceEditDsmBaseURL}
@@ -3616,10 +3668,10 @@ export default function App() {
                               disabled={!!busy || row.latestRun?.status === 'running'}
                               onClick={() => setSourceDeleteTarget(row)}
                             >
-                              删除来源
+                              删除同步文件夹
                             </XDriveActionButton>
                             <XDriveDialogActionSpacer />
-                            <XDriveActionButton disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</XDriveActionButton>
+                            <XDriveActionButton disabled={!!busy} onClick={closeSourceSettings}>取消</XDriveActionButton>
                             <XDriveActionButton
                               intent="primary"
                               type="submit"
@@ -4509,14 +4561,14 @@ export default function App() {
         slotProps={{ paper: xDriveDialogPaperProps }}
       >
         <XDriveDialogTitle
-          title="删除外部来源？"
+          title="删除同步文件夹？"
           subtitle={sourceDeleteTarget?.source.name}
           onClose={() => setSourceDeleteTarget(null)}
           closeDisabled={busy.startsWith('source-delete-')}
         />
         <XDriveDialogContent>
           <DialogContentText>
-            删除“{sourceDeleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、来源映射和已保存凭据。
+            删除“{sourceDeleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、同步映射和已保存凭据。
             已经同步到 xDrive 的文件会保留，不会删除。
           </DialogContentText>
         </XDriveDialogContent>
@@ -4529,7 +4581,7 @@ export default function App() {
             loadingLabel="正在删除…"
             onClick={() => void deleteExternalSource()}
           >
-            删除来源
+            删除同步文件夹
           </XDriveActionButton>
         </XDriveDialogActions>
       </Dialog>

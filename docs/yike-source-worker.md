@@ -174,7 +174,28 @@ Body:
 }
 ```
 
-The response contains only credential status metadata. The Cookie is encrypted with the versioned connector keyring and is never returned by GET. For a new Yike Source, target-directory creation, Source binding/activation, and encrypted credential persistence occur in one database transaction. Clearing the Cookie automatically pauses the Source and clears any pending manual request; storing a new valid Cookie for the same UID reactivates it and keeps the existing managed target. Once media has been imported, a Cookie belonging to a different UID is rejected.
+The credential write response contains only status metadata. The Cookie is encrypted with the versioned connector keyring, and normal Source/credential GET responses never contain plaintext. For a new Yike Source, target-directory creation, Source binding/activation, and encrypted credential persistence occur in one database transaction. Clearing the Cookie automatically pauses the Source and clears any pending manual request; storing a new valid Cookie for the same UID reactivates it and keeps the existing managed target. Once media has been imported, a Cookie belonging to a different UID is rejected.
+The Web/Desktop **同步文件夹** settings page shows the persisted target path returned by the server (for example `同步文件夹/一刻相册/uid_12345_张三`) as a read-only value. Ordinary settings saves do not rewrite this path. The managed hierarchy is checked or adjusted only as part of verified Yike account binding/rebinding.
+
+A configured owner can explicitly inspect the stored Cookie through:
+
+```http
+POST /api/v1/sources/<source-id>/credential/reveal
+Authorization: Bearer <xdrive-access-token>
+```
+
+The endpoint is not used during normal page loading. It returns only:
+
+```json
+{
+  "field": "cookie",
+  "value": "BDUSS=...; ...",
+  "expires_in_seconds": 30
+}
+```
+
+The response is marked `Cache-Control: no-store`, the reveal is audit-logged without the Cookie value, and another user cannot reveal the Source credential. Web/Desktop keep the plaintext only in renderer memory, automatically hide it after about 30 seconds, and clear it when the settings dialog closes. The revealed Cookie is deliberately separate from the **替换 Cookie** input and is never submitted merely because it was displayed.
+
 
 ## Worker schedule
 

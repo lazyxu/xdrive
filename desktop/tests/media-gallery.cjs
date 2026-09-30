@@ -18,7 +18,7 @@ const desktopIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /export function XDriveMediaGalleryPage/)
   assert.match(sharedGallery, /export function XDriveMediaGallery/)
-  assert.match(sharedGallery, /所有 xDrive 图片和视频，包括普通上传和外部来源文件/)
+  assert.match(sharedGallery, /所有 xDrive 图片和视频，包括普通上传和同步文件夹文件/)
   assert.match(sharedGallery, /onOpenAlbum/)
   assert.match(sharedGallery, /图片/)
   assert.match(sharedGallery, /视频/)
@@ -78,7 +78,7 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.match(desktopApp, /<XDriveSidebarNavItem[^\n]*primary="图库"/)
 })
 
-test('Web exposes files, Gallery, External Sources, and Storage as first-class workspace views', () => {
+test('Web exposes files, Gallery, Sync Folders, and Storage as first-class workspace views', () => {
   assert.ok(webApp.includes('type AppView ='), 'Web workspace view type should remain explicit')
   assert.ok(webApp.includes("useState<AppView>('files')"), 'Files should remain the initial Web workspace')
   for (const view of ['files', 'gallery', 'sources', 'storage']) {
@@ -87,7 +87,7 @@ test('Web exposes files, Gallery, External Sources, and Storage as first-class w
   }
   assert.ok(webApp.includes('primary="文件"'))
   assert.ok(webApp.includes('primary="图库"'))
-  assert.ok(webApp.includes('primary="外部来源"'))
+  assert.ok(webApp.includes('primary="同步文件夹"'))
   assert.ok(webApp.includes('primary="存储"'))
   assert.match(webApp, /<ExternalSourcesPanel[\s\S]*defaultTargetNodeID=/)
   assert.match(webApp, /<StorageStatsPanel[\s\S]*scope="self"/)

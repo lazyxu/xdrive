@@ -80,6 +80,7 @@ import {
   type AgentSourceCollection,
   type AgentSourceCollectionItem,
   type AgentSourceCredentialStatus,
+  type AgentSourceCredentialReveal,
   type AgentSourceCredentialTestResult,
   type AgentSourceConnectorConfig,
   type AgentSourceBrowsePage,
@@ -1538,6 +1539,14 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
     }
     return requireAgentClient().sourceCredentialStatus(sourceID)
+  }, false))
+  ipcMain.handle('agent:reveal-source-credential', (_event, sourceID: unknown) => runAgentAction<AgentSourceCredentialReveal>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
+    }
+    return requireAgentClient().revealSourceCredential(sourceID)
   }, false))
   ipcMain.handle('agent:test-source-credential', (_event, kind: unknown, credential: unknown) => runAgentAction<AgentSourceCredentialTestResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

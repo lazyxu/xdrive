@@ -24,6 +24,7 @@ import (
 const (
 	maxSourceCredentialPayloadBytes = 64 << 10
 	sourceCredentialTestTimeout     = 15 * time.Second
+	sourceCredentialRevealSeconds   = 30
 )
 
 var (
@@ -44,6 +45,12 @@ type sourceCredentialStatusDTO struct {
 	Configured bool       `json:"configured"`
 	KeyVersion uint32     `json:"key_version,omitempty"`
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+}
+
+type sourceCredentialRevealDTO struct {
+	Field            string `json:"field"`
+	Value            string `json:"value"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
 }
 
 func (s *Server) testSourceCredentialPayload(ctx context.Context, kind string, payload json.RawMessage) (sourceCredentialTestDTO, error) {
@@ -251,6 +258,76 @@ func (s *Server) testStoredSourceCredential(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func sourceCredentialRevealValue(kind string, plaintext []byte) (string, string, error) {
+	switch strings.TrimSpace(kind) {
+	case yikeSourceKind:
+		var credential struct {
+			Cookie string `json:"cookie"`
+		}
+		if err := json.Unmarshal(plaintext, &credential); err != nil {
+			return "", "", err
+		}
+		if credential.Cookie == "" {
+			return "", "", errInvalidSourceCredentialTest
+		}
+		return "cookie", credential.Cookie, nil
+	case synologySourceKind, synologyFilesSourceKind:
+		var credential synology.Credential
+		if err := json.Unmarshal(plaintext, &credential); err != nil {
+			return "", "", err
+		}
+		if credential.Password == "" {
+			return "", "", errInvalidSourceCredentialTest
+		}
+		return "password", credential.Password, nil
+	default:
+		return "", "", errUnsupportedSourceCredentialTest
+	}
+}
+
+func (s *Server) revealSourceCredential(c *gin.Context) {
+	if s.ConnectorSecrets == nil {
+		fail(c, http.StatusServiceUnavailable, "source credential encryption is not configured")
+		return
+	}
+	sourceID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+	source, err := s.ownedSource(userID(c), sourceID)
+	if err != nil {
+		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if !sourceUsesStoredCredential(source) {
+		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
+		return
+	}
+	plaintext, err := sourcecredential.Get(c.Request.Context(), s.DB, s.ConnectorSecrets, source)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusConflict, "source_credential_not_configured")
+			return
+		}
+		fail(c, http.StatusInternalServerError, "load source credential failed")
+		return
+	}
+	defer clear(plaintext)
+
+	field, value, err := sourceCredentialRevealValue(source.Kind, plaintext)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "reveal source credential failed")
+		return
+	}
+	recordSourceCredentialRevealAudit(c, s.DB, source, field)
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	c.JSON(http.StatusOK, sourceCredentialRevealDTO{
+		Field: field, Value: value, ExpiresInSeconds: sourceCredentialRevealSeconds,
+	})
+}
+
 func (s *Server) getSourceCredentialStatus(c *gin.Context) {
 	sourceID, ok := parseID(c.Param("id"))
 	if !ok {
@@ -424,6 +501,32 @@ func (s *Server) deleteSourceCredential(c *gin.Context) {
 	}
 	recordSourceCredentialAudit(c, s.DB, auditpkg.ActionSourceCredentialDelete, source, 0)
 	c.Status(http.StatusNoContent)
+}
+
+func recordSourceCredentialRevealAudit(c *gin.Context, db *gorm.DB, source meta.Source, field string) {
+	user, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	uid := user.ID
+	if err := auditpkg.Record(db, auditpkg.Event{
+		ActorUserID:   &uid,
+		ActorUsername: user.Username,
+		ActorRole:     user.Role,
+		Action:        auditpkg.ActionSourceCredentialReveal,
+		TargetType:    "source",
+		TargetID:      strconv.FormatUint(source.ID, 10),
+		TargetLabel:   source.Name,
+		Result:        auditpkg.ResultSuccess,
+		RequestID:     c.GetString("requestID"),
+		IPAddress:     c.ClientIP(),
+		Metadata: map[string]any{
+			"source_kind": source.Kind,
+			"field":       field,
+		},
+	}); err != nil {
+		slog.Warn("source_credential_audit_failed", "source_id", source.ID, "action", auditpkg.ActionSourceCredentialReveal, "error", err)
+	}
 }
 
 func recordSourceCredentialAudit(c *gin.Context, db *gorm.DB, action string, source meta.Source, keyVersion uint32) {

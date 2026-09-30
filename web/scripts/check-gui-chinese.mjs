@@ -109,7 +109,7 @@ if (/from ['"]antd['"]/.test(files.share) || files.share.includes('@ant-design/i
 requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数', 'XDriveStatusAlert', 'XDriveActionButton'], '公开分享')
 if (/<Alert\b/.test(files.publicShare)) throw new Error('公开分享仍在直接渲染 AntD Alert')
 if (/from ['"]antd['"]/.test(files.publicShare) || files.publicShare.includes('@ant-design/icons')) throw new Error('公开分享仍依赖 Ant Design')
-requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem + files.paginationControls + files.sourceRunSummary + files.sourceScheduleFields, ['外部来源', '添加来源', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', '相册与集合', '该来源暂无相册/集合元数据', 'sourceCollections', 'sourceCollectionItems', 'externalSourceSavedCredentialMask', 'isExternalSourceSavedCredentialMask', '当前已保存的 Cookie 以遮罩显示', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDrivePaginationControls', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert', 'WorkspaceSurface', 'presentation="page"', 'pageActions={', 'XDriveSectionHeader'], '外部来源')
+requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem + files.paginationControls + files.sourceRunSummary + files.sourceScheduleFields + files.sourceCredentialFields, ['同步文件夹', '添加同步文件夹', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 Photos · Pull', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetLabel', '固定逻辑目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', '相册与集合', '该同步文件夹暂无相册/集合元数据', 'sourceCollections', 'sourceCollectionItems', 'XDriveSourceTargetField', 'XDriveStoredCredentialField', '已保存 Cookie', '已保存 DSM 密码', '替换 Cookie', 'revealSourceCredential', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDrivePaginationControls', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert', 'WorkspaceSurface', 'presentation="page"', 'pageActions={', 'XDriveSectionHeader'], '同步文件夹')
 if (files.sources.includes('<DialogTitle')) throw new Error('Web 外部来源仍在直接渲染原生 DialogTitle')
 if (files.sources.includes('<MuiAlert')) throw new Error('Web 外部来源仍在直接渲染原生 MUI Alert')
 if (((files.sources + files.workspaceSurface).match(/<XDriveDialogTitle/g) || []).length < 8) throw new Error('Web 外部来源弹窗没有全部复用共享 Dialog chrome')
@@ -143,8 +143,8 @@ if ((files.sources.match(/<XDriveSourceRunSummary/g) || []).length !== 1) throw 
 requireText(files.sourceRunSummary, ['ExternalSourceRunDetailView', 'XDriveStatusBadge', 'detail.modeLabel', 'detail.triggerLabel', 'formatExternalSourceTime(detail.startedAt)', '成功', '失败'], '外部来源运行摘要')
 requireText(files.sourceCollection, ['XDriveSourceCollectionSummary', 'XDriveSourceCollectionItem', 'externalSourceCollectionKindLabel', 'externalSourceCollectionStateTone', 'formatExternalSourceTime', '远端缺失', '原始路径'], '共享来源集合展示')
 requireText(files.sourceScheduleFields, ['XDriveSourceScheduleFields', '调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'onScheduleTypeChange', 'onExpressionChange', 'onTimezoneChange'], '共享来源调度字段')
-requireText(files.sourceBasicFields, ['XDriveSourcePresetField', 'XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '来源类型', '来源名称', '运行模式', '启用', '暂停'], '共享来源基础字段')
-requireText(files.sourceCredentialFields, ['XDriveSourceCookieField', 'XDriveSynologyDsmCredentialFields', '一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '留空则保持当前配置不变', 'synologyDsmAddressHelp'], '共享来源凭据字段')
+requireText(files.sourceBasicFields, ['XDriveSourcePresetField', 'XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '同步文件夹类型', '同步文件夹名称', '运行模式', '启用', '暂停'], '共享同步文件夹基础字段')
+requireText(files.sourceCredentialFields, ['XDriveSourceCookieField', 'XDriveSourceTargetField', 'XDriveStoredCredentialField', 'XDriveSynologyDsmCredentialFields', '一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '留空则保持当前配置不变', '目标目录', 'expiresInSeconds = 30', 'synologyDsmAddressHelp'], '共享同步文件夹凭据字段')
 requireText(files.sourceConnectorConfigFields, ['XDriveSynologyPhotoSpacesField', 'XDriveSynologyFileRootsField', '同步空间', 'File Station 根目录', 'synologyPhotoSpaceOptions', 'normalizeSynologyPhotoSpaces', '每行一个 DSM 绝对目录'], '共享来源连接配置字段')
 if ((files.sources.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length !== 2) throw new Error('Web Photos 创建/设置没有完整复用共享空间字段')
 if ((files.sources.match(/<XDriveSynologyFileRootsField\b/g) || []).length !== 2) throw new Error('Web File Station 创建/设置没有完整复用共享根目录字段')
@@ -161,7 +161,7 @@ if ((files.sources.match(/<XDriveSourcePresetField\b/g) || []).length !== 1) thr
 if ((files.sources.match(/<XDriveSourceNameField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享名称字段')
 if ((files.sources.match(/<XDriveSourceRunModeField\b/g) || []).length !== 2) throw new Error('Web 来源创建/设置没有完整复用共享运行模式字段')
 if ((files.sources.match(/<XDriveSourceStatusField\b/g) || []).length !== 1) throw new Error('Web 来源设置没有复用共享状态字段')
-for (const legacy of ['来源名称', '初始运行模式', '运行模式', '来源状态']) {
+for (const legacy of ['同步文件夹名称', '初始运行模式', '运行模式']) {
   const localFieldPattern = new RegExp('<TextField[\\s\\S]{0,220}label="' + legacy + '"')
   if (localFieldPattern.test(files.sources)) throw new Error(`Web 来源仍保留本地基础字段：${legacy}`)
 }

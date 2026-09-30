@@ -739,7 +739,7 @@ function FileManager({
           <XDriveSidebarNavList ariaLabel="网页端功能区导航" responsive>
             <XDriveSidebarNavItem selected={appView === 'files'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setAppView('files')} />
             <XDriveSidebarNavItem selected={appView === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setAppView('gallery')} />
-            <XDriveSidebarNavItem selected={appView === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="外部来源" onClick={() => setAppView('sources')} />
+            <XDriveSidebarNavItem selected={appView === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="同步文件夹" onClick={() => setAppView('sources')} />
             <XDriveSidebarNavItem
               selected={appView === 'storage'}
               icon={<StorageRoundedIcon fontSize="small" />}

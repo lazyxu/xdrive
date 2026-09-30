@@ -75,7 +75,8 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(yikeCreate.Body.Bytes(), &yikeManaged); err != nil {
 		t.Fatal(err)
 	}
-	if yikeManaged.TargetNodeID != nil || yikeManaged.Status != meta.SourceStatusPaused || yikeManaged.Revision != 1 ||
+	if yikeManaged.TargetNodeID != nil || yikeManaged.TargetPath != "" ||
+		yikeManaged.Status != meta.SourceStatusPaused || yikeManaged.Revision != 1 ||
 		yikeManaged.ScheduleType != "manual" || yikeManaged.ScheduleExpression != "" || yikeManaged.ScheduleTimezone != "" {
 		t.Fatalf("unexpected managed Yike source: %+v", yikeManaged)
 	}
@@ -100,8 +101,8 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(fileCreate.Body.Bytes(), &fileSource); err != nil {
 		t.Fatal(err)
 	}
-	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 {
-		t.Fatalf("File Station source should start paused: %+v", fileSource)
+	if fileSource.Status != meta.SourceStatusPaused || fileSource.Revision != 1 || fileSource.TargetPath != "Synology" {
+		t.Fatalf("File Station source should start paused with its persisted target path: %+v", fileSource)
 	}
 	filePath := fmt.Sprintf("/api/v1/sources/%d", fileSource.ID)
 	requestWithHeaders(t, router, http.MethodPatch, filePath, tokenA,
@@ -151,7 +152,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	if created.ID == 0 || created.Revision != 1 || created.RunMode != meta.SourceRunModeScan ||
 		created.SyncMode != meta.SourceSyncModeBackup || created.Status != meta.SourceStatusActive ||
-		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID ||
+		created.TargetNodeID == nil || *created.TargetNodeID != targetA.ID || created.TargetPath != "Synology" ||
 		created.ScheduleType != "interval" || created.ScheduleExpression != "6h" {
 		t.Fatalf("unexpected created source: %+v", created)
 	}
@@ -173,7 +174,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(listA.Body.Bytes(), &sourcesA); err != nil {
 		t.Fatal(err)
 	}
-	if len(sourcesA) != 1 || sourcesA[0].ID != created.ID {
+	if len(sourcesA) != 1 || sourcesA[0].ID != created.ID || sourcesA[0].TargetPath != "Synology" {
 		t.Fatalf("unexpected owner source list: %+v", sourcesA)
 	}
 	overviewRes := request(t, router, http.MethodGet, "/api/v1/sources/overview", tokenA, nil, http.StatusOK)

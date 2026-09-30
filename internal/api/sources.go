@@ -29,6 +29,7 @@ type sourceDTO struct {
 	ScheduleTimezone   string     `json:"schedule_timezone,omitempty"`
 	Revision           uint64     `json:"revision"`
 	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
+	TargetPath         string     `json:"target_path,omitempty"`
 	IgnoreRules        string     `json:"ignore_rules,omitempty"`
 	Checkpoint         string     `json:"checkpoint,omitempty"`
 	LastRunAt          *time.Time `json:"last_run_at,omitempty"`
@@ -101,6 +102,23 @@ func toSourceDTO(source meta.Source) sourceDTO {
 	}
 }
 
+func (s *Server) sourceDTO(source meta.Source) sourceDTO {
+	dto := toSourceDTO(source)
+	if source.TargetNodeID == nil {
+		return dto
+	}
+	var target meta.Node
+	if err := s.DB.
+		Where("id = ? AND owner_id = ? AND deleted_at IS NULL", *source.TargetNodeID, source.OwnerID).
+		First(&target).Error; err != nil {
+		return dto
+	}
+	if targetPath, err := s.logicalPath(target); err == nil {
+		dto.TargetPath = targetPath
+	}
+	return dto
+}
+
 func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 	return syncRunDTO{
 		ID: run.ID, SourceID: run.SourceID, RunNumber: run.RunNumber, SourceRevision: run.SourceRevision,
@@ -131,7 +149,7 @@ func (s *Server) listSources(c *gin.Context) {
 	}
 	out := make([]sourceDTO, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, toSourceDTO(source))
+		out = append(out, s.sourceDTO(source))
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -185,7 +203,7 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 	}
 
 	for _, source := range sources {
-		row := sourceOverviewDTO{Source: toSourceDTO(source)}
+		row := sourceOverviewDTO{Source: s.sourceDTO(source)}
 		if run, ok := latestBySource[source.ID]; ok {
 			dto := toSyncRunDTO(run)
 			row.LatestRun = &dto
@@ -315,7 +333,7 @@ func (s *Server) createSource(c *gin.Context) {
 		return
 	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(source.Revision, 10)))
-	c.JSON(http.StatusCreated, toSourceDTO(source))
+	c.JSON(http.StatusCreated, s.sourceDTO(source))
 }
 
 func (s *Server) getSource(c *gin.Context) {
@@ -330,7 +348,7 @@ func (s *Server) getSource(c *gin.Context) {
 		return
 	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(source.Revision, 10)))
-	c.JSON(http.StatusOK, toSourceDTO(source))
+	c.JSON(http.StatusOK, s.sourceDTO(source))
 }
 
 func (s *Server) updateSource(c *gin.Context) {
@@ -487,7 +505,7 @@ func (s *Server) updateSource(c *gin.Context) {
 		return
 	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(updated.Revision, 10)))
-	c.JSON(http.StatusOK, toSourceDTO(updated))
+	c.JSON(http.StatusOK, s.sourceDTO(updated))
 }
 
 func (s *Server) triggerSource(c *gin.Context) {
@@ -526,7 +544,7 @@ func (s *Server) triggerSource(c *gin.Context) {
 		writeSourceRunError(c, err)
 		return
 	}
-	c.JSON(http.StatusAccepted, toSourceDTO(source))
+	c.JSON(http.StatusAccepted, s.sourceDTO(source))
 }
 
 func (s *Server) deleteSource(c *gin.Context) {

@@ -137,6 +137,29 @@ The generic rules remain:
 - Partial, failed, or cancelled inventories never infer deletion.
 - Remote providers remain read-only by default.
 
+## Synchronization-folder management contract
+
+The backend subsystem remains named **External Source / Source** in code and APIs, but the Web/Desktop product surface calls each configured connector a **同步文件夹**. This distinction is intentional: user terminology can stay stable without forcing a database or API rename.
+
+Every synchronization folder has two management planes that must remain separate:
+
+1. **Target identity**
+   - `target_node_id` is the persisted xDrive binding.
+   - API responses expose `target_path`, resolved from the current Node tree, so clients show the database-backed path instead of reconstructing it from a template.
+   - Settings render the target directory read-only.
+   - Saving ordinary settings does not move, rename, recreate, or rewrite the target.
+   - A target may change only through an explicit target-selection workflow or a connector-owned verified identity/binding transition. A managed connector may repair its deterministic hierarchy in that binding transition while preserving the existing target node/data where required.
+
+2. **Credential identity**
+   - Encrypted credential payloads remain server-side and normal list/status/test APIs expose metadata only.
+   - The owner may explicitly request a short-lived reveal for connector fields that are safe and useful to inspect. The reveal endpoint is owner-scoped, audited, marked `Cache-Control: no-store`, and returns only an allowlisted field rather than the complete credential object.
+   - Current allowlist: Yike Pull -> `cookie`; Synology Photos/File Station Pull -> `password`.
+   - Synology Push is not included because its connector credential lives on the NAS agent rather than xDrive Server.
+   - Web/Desktop show a mask by default, request plaintext only after the user clicks **显示**, hold it only in memory, automatically hide it after roughly 30 seconds, and clear it when settings close.
+   - Revealed plaintext is never copied into the replacement form automatically. “Inspect current secret” and “replace secret” are separate operations.
+
+This contract is the default for new synchronization-folder connectors. A new connector should deviate only when its transport/security model makes one of these operations inapplicable, and that exception should be documented explicitly.
+
 ## Implementation order
 
 1. SourceItemAlias + explicit canonical identity promotion.

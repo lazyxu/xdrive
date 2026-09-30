@@ -25,6 +25,7 @@ type Source struct {
 	ScheduleTimezone   string     `json:"schedule_timezone,omitempty"`
 	Revision           uint64     `json:"revision"`
 	TargetNodeID       *uint64    `json:"target_node_id,omitempty"`
+	TargetPath         string     `json:"target_path,omitempty"`
 	IgnoreRules        string     `json:"ignore_rules,omitempty"`
 	Checkpoint         string     `json:"checkpoint,omitempty"`
 	LastRunAt          *time.Time `json:"last_run_at,omitempty"`
@@ -365,9 +366,21 @@ type SourceCredentialStatus struct {
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
 }
 
+type SourceCredentialReveal struct {
+	Field            string `json:"field"`
+	Value            string `json:"value"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
+}
+
 func (c *Client) SourceCredentialStatus(ctx context.Context, id uint64) (SourceCredentialStatus, error) {
 	var out SourceCredentialStatus
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/credential", id), nil, &out)
+	return out, err
+}
+
+func (c *Client) RevealSourceCredential(ctx context.Context, id uint64) (SourceCredentialReveal, error) {
+	var out SourceCredentialReveal
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/credential/reveal", id), map[string]any{}, &out)
 	return out, err
 }
 

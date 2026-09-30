@@ -63,7 +63,7 @@ export function synologyDsmSetupGuide(input: SynologyDsmGuideInput): SynologyDsm
 
   return {
     title: '群晖 DSM 配置 xdrive-source-agent',
-    subtitle: `绑定 Source #${input.sourceID} · ${input.sourceName}`,
+    subtitle: `绑定同步文件夹 #${input.sourceID} · ${input.sourceName}`,
     sourceID: input.sourceID,
     sourceName: input.sourceName,
     steps: [
@@ -93,8 +93,8 @@ export function synologyDsmSetupGuide(input: SynologyDsmGuideInput): SynologyDsm
       },
       {
         id: 'bind',
-        title: '3. 绑定这个 Source',
-        summary: '使用 Source ID 精确绑定，不再依赖同名匹配；目标目录和当前运行模式默认保留。',
+        title: '3. 绑定这个同步文件夹',
+        summary: '使用同步文件夹 ID 精确绑定，不再依赖同名匹配；目标目录和当前运行模式默认保留。',
         details: [
           '把 DSM_USERNAME 替换为实际 DSM 用户名。',
           '不使用个人空间时删除 --personal；不使用共享空间时删除 --shared。',
