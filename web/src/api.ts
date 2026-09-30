@@ -64,6 +64,22 @@ export interface AuthSession {
   accessExpiresAt: number
 }
 
+export interface SearchBreadcrumb {
+  id: number
+  name: string
+}
+
+export interface SearchResult {
+  node: Node
+  path: string
+  breadcrumbs: SearchBreadcrumb[]
+}
+
+export interface SearchPage {
+  items: SearchResult[]
+  next_cursor?: string
+}
+
 export interface UploadChunkState {
   index: number
   size: number
@@ -513,6 +529,15 @@ export class XDriveApi {
 
   list(parentID: number) {
     return this.request<Node[]>(`/api/v1/nodes/${parentID}/children`)
+  }
+
+  search(query: string, limit = 200, cursor = '') {
+    const params = new URLSearchParams({
+      q: query.trim(),
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+    })
+    if (cursor.trim()) params.set('cursor', cursor.trim())
+    return this.request<SearchPage>(`/api/v1/search?${params.toString()}`)
   }
 
   createDirectory(parentID: number, name: string) {

@@ -2,33 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
-import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
-import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
-import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import {
   AppBar,
   Box,
-  Breadcrumbs,
   Button,
   Card,
   Chip,
   Dialog,
-  IconButton,
-  LinearProgress,
-  Link,
   ListItemIcon,
   ListItemText,
   MenuItem,
@@ -42,7 +29,6 @@ import {
   TableRow,
   TextField,
   Toolbar,
-  Tooltip,
   Typography,
 } from '@mui/material'
 import {
@@ -65,7 +51,6 @@ import {
   XDriveWorkspaceSurface,
   XDRIVE_SIDEBAR_WIDTH,
   XDriveStatusAlert,
-  XDriveStatusBadge,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
@@ -79,6 +64,7 @@ import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
 import StorageStatsPanel from './StorageStatsPanel'
 import ExternalSourcesPanel from './ExternalSources'
+import WebFileExplorer from './WebFileExplorer'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const ACCESS_KEY = 'xdrive.access_token'
@@ -599,8 +585,6 @@ function FileManager({
     )
   }
 
-  const enterDirectory = (node: Node) => void loadDirectory(node.id, [...crumbs, { id: node.id, name: node.name }])
-
   const uploadFiles = async (files: FileList | null) => {
     if (!current || !files?.length) return
     for (const file of Array.from(files)) {
@@ -774,165 +758,32 @@ function FileManager({
         >
         {appView === 'files' ? (
           <XDriveWorkspaceSurface presentation="page" title="文件">
-          <Paper className="file-card" variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 2 }}>
-            <div className="file-toolbar">
-              <Breadcrumbs aria-label="文件路径">
-                {crumbs.map((crumb, index) => (
-                  index === crumbs.length - 1 ? (
-                    <Typography key={crumb.id} variant="body2" color="text.primary">{crumb.name}</Typography>
-                  ) : (
-                    <Link
-                      key={crumb.id}
-                      component="button"
-                      type="button"
-                      underline="hover"
-                      variant="body2"
-                      onClick={() => void loadDirectory(crumb.id, crumbs.slice(0, index + 1))}
-                    >
-                      {crumb.name}
-                    </Link>
-                  )
-                ))}
-              </Breadcrumbs>
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                <XDriveActionButton compact startIcon={<RefreshRoundedIcon />} onClick={() => current && void loadDirectory(current.id)}>
-                  刷新
-                </XDriveActionButton>
-                <XDriveActionButton compact startIcon={<RestoreFromTrashRoundedIcon />} onClick={openTrash}>
-                  回收站
-                </XDriveActionButton>
-                <XDriveActionButton
-                  compact
-                  startIcon={<CreateNewFolderRoundedIcon />}
-                  onClick={() => {
-                    setFolderName('')
-                    setFolderNameError('')
-                    setFolderOpen(true)
-                  }}
-                >
-                  新建文件夹
-                </XDriveActionButton>
-                <Button
-                  size="small"
-                  variant="contained"
-                  startIcon={<UploadRoundedIcon />}
-                  component="label"
-                >
-                  上传
-                  <input
-                    hidden
-                    type="file"
-                    multiple
-                    onChange={(event) => {
-                      void uploadFiles(event.target.files)
-                      event.target.value = ''
-                    }}
-                  />
-                </Button>
-              </Stack>
-            </div>
-
-            {uploadProgress !== null && (
-              <Box className="upload-progress">
-                <LinearProgress variant="determinate" value={Math.max(0, Math.min(100, uploadProgress))} />
-              </Box>
-            )}
-            {loading && items.length > 0 ? <LinearProgress sx={{ mb: 1 }} /> : null}
-
-            {loading && items.length === 0 ? (
-              <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
-            ) : items.length === 0 ? (
-              <XDriveStatePanel variant="plain" message="此文件夹为空" />
-            ) : (
-              <TableContainer sx={{ overflowX: 'auto' }}>
-                <Table size="small" aria-label="文件列表">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>名称</TableCell>
-                      <TableCell sx={{ width: 120, display: { xs: 'none', md: 'table-cell' } }}>大小</TableCell>
-                      <TableCell sx={{ width: 190, display: { xs: 'none', md: 'table-cell' } }}>修改时间</TableCell>
-                      <TableCell align="right" sx={{ width: 220 }}>操作</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {items.map((node) => (
-                      <TableRow key={node.id} hover>
-                        <TableCell>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            {node.type === 'dir'
-                              ? <FolderOpenRoundedIcon className="folder-icon" fontSize="small" />
-                              : <InsertDriveFileRoundedIcon fontSize="small" />}
-                            {node.type === 'dir' ? (
-                              <Link
-                                component="button"
-                                type="button"
-                                underline="hover"
-                                onClick={() => enterDirectory(node)}
-                              >
-                                {node.name}
-                              </Link>
-                            ) : (
-                              <Typography variant="body2">{node.name}</Typography>
-                            )}
-                            {node.type === 'dir' && <XDriveStatusBadge tone="neutral" label="文件夹" />}
-                          </Stack>
-                        </TableCell>
-                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
-                          {node.type === 'dir' ? '—' : formatSize(node.size)}
-                        </TableCell>
-                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
-                          {new Date(node.updated_at).toLocaleString()}
-                        </TableCell>
-                        <TableCell align="right">
-                          <Stack direction="row" spacing={0.25} justifyContent="flex-end">
-                            {node.type === 'file' && (
-                              <Tooltip title="下载">
-                                <IconButton size="small" aria-label={`下载 ${node.name}`} onClick={() => void api.download(node).catch(handleError)}>
-                                  <DownloadRoundedIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            {node.type === 'file' && (
-                              <Tooltip title="分享">
-                                <IconButton size="small" aria-label={`分享 ${node.name}`} onClick={() => setShareNode(node)}>
-                                  <ShareRoundedIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            {node.type === 'file' && (
-                              <Tooltip title="历史版本">
-                                <IconButton size="small" aria-label={`历史版本 ${node.name}`} onClick={() => void openHistory(node)}>
-                                  <HistoryRoundedIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            <Tooltip title="重命名">
-                              <IconButton
-                                size="small"
-                                aria-label={`重命名 ${node.name}`}
-                                onClick={() => {
-                                  setRenameNode(node)
-                                  setRenameName(node.name)
-                                  setRenameNameError('')
-                                }}
-                              >
-                                <EditRoundedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="删除">
-                              <IconButton color="error" size="small" aria-label={`删除 ${node.name}`} onClick={() => remove(node)}>
-                                <DeleteOutlineRoundedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </Paper>
+            <Box sx={{ height: { xs: 560, md: 'calc(100vh - 152px)' }, minHeight: 480 }}>
+              <WebFileExplorer
+                api={api}
+                items={items}
+                crumbs={crumbs}
+                loading={loading}
+                uploadProgress={uploadProgress}
+                onLoadDirectory={async (id, nextCrumbs) => { await loadDirectory(id, nextCrumbs) }}
+                onUploadFiles={uploadFiles}
+                onCreateFolder={() => {
+                  setFolderName('')
+                  setFolderNameError('')
+                  setFolderOpen(true)
+                }}
+                onOpenTrash={openTrash}
+                onRename={(node) => {
+                  setRenameNode(node)
+                  setRenameName(node.name)
+                  setRenameNameError('')
+                }}
+                onRemove={remove}
+                onShare={setShareNode}
+                onHistory={(node) => { void openHistory(node) }}
+                onError={handleError}
+              />
+            </Box>
           </XDriveWorkspaceSurface>
         ) : appView === 'gallery' ? (
           <XDriveWorkspaceSurface presentation="page" title="图库">
