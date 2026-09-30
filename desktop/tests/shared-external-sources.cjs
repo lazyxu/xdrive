@@ -565,6 +565,7 @@ test('shared Yike credential test messages are actionable', () => {
     '连接成功：Alice（123）',
   )
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_auth_failed'), 'Synology DSM 登录失败，请检查地址、用户名和密码')
+  assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_http_forbidden'), 'Synology DSM 或应用入口拒绝访问（HTTP 403），这不代表密码错误')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_multiple_login'), 'Synology DSM 检测到重复登录，请稍后重试')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_permission_denied'), 'Synology DSM 账号没有访问所需服务的权限')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_otp_required'), 'Synology DSM 要求两步验证/OTP，当前连接器尚未提供 OTP')

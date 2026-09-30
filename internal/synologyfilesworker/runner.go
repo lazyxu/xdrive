@@ -185,6 +185,7 @@ func (r *Runner) ClassifyPullRetry(err error) pullworker.RetryClass {
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, synology.ErrSessionExpired):
 		return pullworker.RetryTransient
 	case errors.Is(err, synology.ErrAuthentication),
+		errors.Is(err, synology.ErrHTTPForbidden),
 		errors.Is(err, synology.ErrPermissionDenied),
 		errors.Is(err, synology.ErrOTPRequired),
 		errors.Is(err, synology.ErrFileStationMissing),
@@ -225,6 +226,8 @@ func sourceErrorMessage(err error) string {
 		return "Synology DSM 要求两步验证/OTP，当前连接器尚未提供 OTP"
 	case errors.Is(err, synology.ErrAuthentication):
 		return "Synology DSM 登录失败，请检查账号状态或重新保存凭据"
+	case errors.Is(err, synology.ErrHTTPForbidden):
+		return "Synology DSM 或应用入口返回 HTTP 403；这不代表密码错误，请检查登录门户/反向代理、来源 IP 限制和应用访问权限"
 	case errors.Is(err, synology.ErrFileStationMissing):
 		return "Synology File Station API 不可用，请确认 DSM File Station 服务可用"
 	case errors.Is(err, synology.ErrFileStationOperation):

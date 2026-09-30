@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/pullworker"
@@ -23,6 +24,7 @@ func TestClassifyPullRetrySynology(t *testing.T) {
 		{fmt.Errorf("wrapped: %w", synology.ErrSessionExpired), pullworker.RetryTransient},
 		{context.DeadlineExceeded, pullworker.RetryTransient},
 		{fmt.Errorf("wrapped: %w", synology.ErrAuthentication), pullworker.RetryNone},
+		{fmt.Errorf("wrapped: %w", synology.ErrHTTPForbidden), pullworker.RetryNone},
 		{fmt.Errorf("wrapped: %w", synology.ErrPermissionDenied), pullworker.RetryNone},
 		{fmt.Errorf("wrapped: %w", synology.ErrOTPRequired), pullworker.RetryNone},
 		{fmt.Errorf("wrapped: %w", synology.ErrPhotosMissing), pullworker.RetryNone},
@@ -35,5 +37,12 @@ func TestClassifyPullRetrySynology(t *testing.T) {
 		if got := runner.ClassifyPullRetry(tt.err); got != tt.want {
 			t.Fatalf("ClassifyPullRetry(%v)=%q want=%q", tt.err, got, tt.want)
 		}
+	}
+}
+
+func TestSourceErrorMessageExplainsHTTPForbidden(t *testing.T) {
+	got := sourceErrorMessage(fmt.Errorf("wrapped: %w", synology.ErrHTTPForbidden))
+	if !strings.Contains(got, "不代表密码错误") || !strings.Contains(got, "HTTP 403") {
+		t.Fatalf("message=%q", got)
 	}
 }
