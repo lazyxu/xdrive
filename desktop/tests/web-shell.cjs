@@ -223,3 +223,11 @@ test('Web and Desktop show account storage usage at the bottom of the sidebar', 
   assert.ok(desktopApp.includes('diskAvailableBytes={cloudQuota.disk_available_bytes}'), 'Desktop sidebar should show real server disk availability when the quota API exposes it')
   assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
 })
+
+test('Files App Shell stays full-bleed and delegates scrolling to FileExplorer', () => {
+  assert.ok(webStyles.includes('.file-manager-shell {\n    height: 100vh;\n    overflow: hidden;'), 'wide Web shell should own the viewport without page scrolling')
+  assert.ok(webStyles.includes('.content-wrap.files-workspace {\n    padding: 0;\n    overflow: hidden;'), 'Files workspace should remain full-bleed without dashboard padding')
+  assert.ok(webStyles.includes('.files-workspace-surface {\n    height: 100%;\n    min-height: 0;'), 'Files workspace surface should fill the remaining shell height')
+  assert.ok(webApp.includes("overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }"), 'Files should delegate vertical scrolling to FileExplorer')
+  assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
+})

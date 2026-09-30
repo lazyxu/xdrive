@@ -3679,7 +3679,7 @@ export default function App({
 
 
         {view === 'cloud' && (
-          <section className="panel cloud-panel cloud-explorer-panel">
+          <section className="cloud-explorer-panel">
             {cloudQuota?.over_quota && (
               <XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>
                 存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
