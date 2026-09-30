@@ -45,6 +45,7 @@ Usage:
   xdrive-server backup [create] [server-backup.sh options...]
   xdrive-server backup list
   xdrive-server backup verify [BACKUP_DIR]
+  xdrive-server backup sources BACKUP_DIR
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
   xdrive-server migrate-user USER
@@ -513,6 +514,66 @@ backup_verify_cmd() {
   fi
 }
 
+
+backup_sources_cmd() {
+  [[ $# -eq 1 ]] || {
+    echo "usage: xdrive-server backup sources BACKUP_DIR" >&2
+    return 2
+  }
+  local dir="$1" created
+  [[ -d "$dir" ]] || {
+    echo "xdrive-server: backup directory not found: $dir" >&2
+    return 1
+  }
+  dir="$(cd "$dir" && pwd)"
+  backup_verify_cmd "$dir" >/dev/null
+  [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || {
+    echo "xdrive-server: active deployment configuration is required to inspect a PostgreSQL backup" >&2
+    return 1
+  }
+
+  created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
+  echo "Backup: $dir"
+  [[ -n "$created" ]] && echo "Created: $created"
+  echo
+  printf 'ID\tOWNER_ID\tNAME\tKIND\tDIRECTION\tRUN_MODE\tSTATUS\tUPDATED_AT\n'
+
+  compose_with_stdin exec -T postgres \
+    pg_restore --data-only --table=public.xd_sources --file=- \
+    < "$dir/database.dump" |
+    awk -F '\t' '
+      function field(name, n) {
+        n=col[name]
+        return n > 0 ? $(n) : "-"
+      }
+      /^COPY public\.xd_sources \(/ {
+        header=$0
+        sub(/^COPY public\.xd_sources \(/, "", header)
+        sub(/\) FROM stdin;$/, "", header)
+        count=split(header, columns, /, */)
+        for (i=1; i<=count; i++) col[columns[i]]=i
+        in_rows=1
+        next
+      }
+      in_rows && $0 == "\\." { in_rows=0; next }
+      in_rows {
+        found=1
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+          field("id"),
+          field("owner_id"),
+          field("name"),
+          field("kind"),
+          field("direction"),
+          field("run_mode"),
+          field("status"),
+          field("updated_at")
+      }
+      END {
+        if (!found) print "(no external sources)"
+      }
+    '
+}
+
 backup_create_cmd() {
   local script="$BIN_DIR/server-backup.sh" status
   [[ -x "$script" ]] || {
@@ -538,6 +599,10 @@ backup_cmd() {
     verify)
       shift
       backup_verify_cmd "$@"
+      ;;
+    sources)
+      shift
+      backup_sources_cmd "$@"
       ;;
     create)
       shift
