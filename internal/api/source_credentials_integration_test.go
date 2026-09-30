@@ -165,7 +165,7 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		Kind:         "yike_photos",
 		Direction:    meta.SourceDirectionPull,
 		SyncMode:     meta.SourceSyncModeBackup,
-		RunMode:      meta.SourceRunModeScan,
+		RunMode:      meta.SourceRunModeSync,
 		Status:       meta.SourceStatusActive,
 		Revision:     1,
 		TargetNodeID: &rootA.ID,
@@ -311,8 +311,9 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 	if err := db.First(&boundSource, source.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if boundSource.TargetNodeID == nil || *boundSource.TargetNodeID == rootA.ID || boundSource.Revision != 2 {
-		t.Fatalf("Yike managed target was not bound: %+v", boundSource)
+	if boundSource.TargetNodeID == nil || *boundSource.TargetNodeID == rootA.ID ||
+		boundSource.Revision != 2 || boundSource.RunMode != meta.SourceRunModeSync {
+		t.Fatalf("Yike managed target changed target/revision/run mode unexpectedly: %+v", boundSource)
 	}
 	var target meta.Node
 	if err := db.First(&target, *boundSource.TargetNodeID).Error; err != nil {

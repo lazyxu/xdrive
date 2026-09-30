@@ -445,12 +445,28 @@ test('shared Source collection labels are connector-neutral', () => {
   assert.equal(shared.externalSourceCollectionStateTone('other'), 'neutral')
 })
 
+test('pull source defaults use sync mode instead of silently falling back to scan-only', () => {
+  assert.equal(shared.externalSourceDefaults('yike_photos', 'pull').runMode, 'sync')
+  assert.equal(shared.externalSourceDefaults('synology_photos', 'pull').runMode, 'sync')
+  assert.equal(shared.externalSourceDefaults('synology_photos', 'push').runMode, 'scan')
+})
+
+test('Web and Desktop create flows consume the shared run-mode default', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+
+  assert.equal((web.match(/run_mode: defaults\.runMode/g) || []).length, 2)
+  assert.match(desktop, /useState<'scan' \| 'sync'>\(initialSourceDefaults\.runMode\)/)
+  assert.equal((desktop.match(/setSourceCreateRunMode\(defaults\.runMode\)/g) || []).length, 2)
+})
 test('shared external-source defaults preserve connector-specific setup rules', () => {
   const scheduleTimezone = shared.defaultExternalSourceTimezone()
   assert.deepEqual(shared.externalSourceDefaults('yike_photos'), {
     kind: 'yike_photos',
     name: '一刻相册',
     direction: 'pull',
+    runMode: 'sync',
     ignoreRules: '',
     scheduleType: 'interval',
     scheduleExpression: '6h',
@@ -460,6 +476,7 @@ test('shared external-source defaults preserve connector-specific setup rules', 
     kind: 'synology_photos',
     name: '群晖 Photos',
     direction: 'push',
+    runMode: 'scan',
     ignoreRules: '@eaDir/\n\\#recycle/\n',
     scheduleType: 'interval',
     scheduleExpression: '6h',
@@ -469,6 +486,7 @@ test('shared external-source defaults preserve connector-specific setup rules', 
     kind: 'synology_photos',
     name: '群晖 Photos Pull',
     direction: 'pull',
+    runMode: 'sync',
     ignoreRules: '',
     scheduleType: 'interval',
     scheduleExpression: '6h',

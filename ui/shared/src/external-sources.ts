@@ -219,6 +219,7 @@ export interface ExternalSourceDefaults {
   kind: SupportedExternalSourceKind
   name: string
   direction: ExternalSourceDirection
+  runMode: ExternalSourceRunMode
   ignoreRules: string
   scheduleType: ExternalSourceScheduleType
   scheduleExpression: string
@@ -560,6 +561,7 @@ export function externalSourceDefaults(kind: SupportedExternalSourceKind, direct
     kind,
     name: profile.defaultName,
     direction: profile.direction,
+    runMode: profile.direction === 'pull' ? 'sync' : 'scan',
     ignoreRules: profile.defaultIgnoreRules,
     scheduleType: 'interval',
     scheduleExpression: '6h',
