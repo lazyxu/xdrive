@@ -662,6 +662,22 @@ function FileManager({
     })
   }
 
+  const removeMany = (nodes: Node[]) => {
+    if (nodes.length === 0) return
+    setConfirmAction({
+      title: `将所选 ${nodes.length} 个项目移到回收站？`,
+      description: '所选文件和文件夹会从同步文件夹中移除，但之后仍可从回收站恢复。',
+      confirmLabel: '移到回收站',
+      intent: 'danger',
+      run: async () => {
+        for (const node of nodes) await api.remove(node.id, node.revision)
+        setFeedback({ tone: 'good', message: `已将 ${nodes.length} 个项目移到回收站` })
+        if (current) await loadDirectory(current.id)
+        await refreshQuota()
+      },
+    })
+  }
+
   const loadTrash = async () => {
     setTrashLoading(true)
     try {
@@ -809,6 +825,9 @@ function FileManager({
                   setRenameNameError('')
                 }}
                 onRemove={remove}
+                onRemoveMany={removeMany}
+                onQuotaChanged={refreshQuota}
+                onFeedback={(tone, message) => setFeedback({ tone, message })}
                 onShare={setShareNode}
                 onHistory={(node) => { void openHistory(node) }}
                 onError={handleError}

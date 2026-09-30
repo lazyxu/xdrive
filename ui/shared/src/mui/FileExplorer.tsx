@@ -7,6 +7,8 @@ import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRound
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded'
 import ContentPasteRoundedIcon from '@mui/icons-material/ContentPasteRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
@@ -295,6 +297,8 @@ export function XDriveFileExplorer({
   onCutItems,
   onPaste,
   canPaste = false,
+  onDownloadItems,
+  onDeleteItems,
   getItemMenuItems,
   backgroundMenuItems = [],
   viewMode: controlledViewMode,
@@ -335,6 +339,8 @@ export function XDriveFileExplorer({
   onCutItems?: (items: XDriveFileExplorerItem[]) => void
   onPaste?: () => void
   canPaste?: boolean
+  onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
+  onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
   getItemMenuItems?: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
   backgroundMenuItems?: XDriveFileExplorerMenuItem[]
   viewMode?: XDriveFileExplorerViewMode
@@ -485,10 +491,10 @@ export function XDriveFileExplorer({
       commitSelection([item.id])
       setSelectionAnchorID(item.id)
     }
-    const actionItems = getItemMenuItems?.(item) ?? []
     const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
       ? selectedItems
       : [item]
+    const actionItems = selection.length > 1 ? [] : (getItemMenuItems?.(item) ?? [])
     const clipboardItems: XDriveFileExplorerMenuItem[] = []
     if (onCutItems) {
       clipboardItems.push({
@@ -508,7 +514,27 @@ export function XDriveFileExplorer({
         onSelect: () => onCopyItems(selection),
       })
     }
-    const menuItems = [...actionItems, ...clipboardItems]
+    const bulkItems: XDriveFileExplorerMenuItem[] = []
+    if (selection.length > 1 && onDownloadItems && selection.some((candidate) => candidate.kind === 'file')) {
+      bulkItems.push({
+        id: 'download-selected',
+        label: '下载所选文件',
+        icon: <DownloadRoundedIcon fontSize="small" />,
+        dividerBefore: actionItems.length + clipboardItems.length > 0,
+        onSelect: () => onDownloadItems(selection),
+      })
+    }
+    if (selection.length > 1 && onDeleteItems) {
+      bulkItems.push({
+        id: 'delete-selected',
+        label: '删除所选项目',
+        icon: <DeleteOutlineRoundedIcon fontSize="small" />,
+        danger: true,
+        dividerBefore: actionItems.length + clipboardItems.length > 0 && bulkItems.length === 0,
+        onSelect: () => onDeleteItems(selection),
+      })
+    }
+    const menuItems = [...actionItems, ...clipboardItems, ...bulkItems]
     if (menuItems.length === 0) return
     setContextMenu({
       mouseX: event.clientX + 2,
@@ -859,6 +885,25 @@ export function XDriveFileExplorer({
             粘贴
           </XDriveFileExplorerCommandButton>
         ) : null}
+        {onDownloadItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<DownloadRoundedIcon />}
+            disabled={!selectedItems.some((item) => item.kind === 'file')}
+            onClick={() => onDownloadItems(selectedItems)}
+          >
+            下载
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onDeleteItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<DeleteOutlineRoundedIcon />}
+            disabled={selectedItems.length === 0}
+            onClick={() => onDeleteItems(selectedItems)}
+            sx={{ color: selectedItems.length > 0 ? 'error.main' : undefined }}
+          >
+            删除
+          </XDriveFileExplorerCommandButton>
+        ) : null}
         {onCreateFolder ? (
           <XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
             新建文件夹
@@ -954,6 +999,11 @@ export function XDriveFileExplorer({
           if (modifier && key === 'v' && onPaste && canPaste) {
             event.preventDefault()
             onPaste()
+            return
+          }
+          if (event.key === 'Delete' && onDeleteItems && selectedItems.length > 0) {
+            event.preventDefault()
+            onDeleteItems(selectedItems)
             return
           }
           if (event.key === 'Escape') clearSelection()

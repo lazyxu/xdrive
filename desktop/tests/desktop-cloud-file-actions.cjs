@@ -73,3 +73,13 @@ test('Desktop cloud action types expose upload failures without local path leaka
   assert.ok(types.includes('cloudDownload:'), 'download renderer type is missing')
   assert.ok(agentClient.includes('6 * 60 * 60 * 1000'), 'large cloud transfers need a long IPC timeout')
 })
+
+test('Desktop bulk download chooses one target directory and avoids renderer path exposure', () => {
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-download-files'"), 'Desktop main bulk-download handler is missing')
+  assert.ok(main.includes("properties: ['openDirectory', 'createDirectory']"), 'bulk download should choose one destination directory')
+  assert.ok(main.includes('await access(path.join(directory, candidate))'), 'bulk download should avoid overwriting existing files')
+  assert.ok(main.includes("candidate = \`${stem} (${index})${ext}\`"), 'bulk download should disambiguate duplicate names')
+  assert.ok(preload.includes("cloudDownloadFiles: (files: Array<{ id: number; name: string }>) =>"), 'renderer bulk-download contract is missing')
+  assert.ok(types.includes('type AgentCloudDownloadBatchResult = {'), 'bulk-download result type is missing')
+  assert.equal(preload.includes('cloudDownloadFiles: (files: Array<{ id: number; name: string; destination'), false, 'renderer must not supply bulk-download local paths')
+})

@@ -1996,6 +1996,36 @@ export default function App() {
     )
   }
 
+  const removeCloudNodes = (nodes: AgentCloudNode[]) => {
+    if (nodes.length === 0) return
+    requestConfirmation(
+      `将所选 ${nodes.length} 个项目移到回收站？`,
+      '所选文件和文件夹会从云端文件列表中移除，之后仍可从回收站恢复。',
+      '移到回收站',
+      async () => {
+        setBusy('cloud-delete-many')
+        setError('')
+        try {
+          for (const node of nodes) {
+            const result = await window.xdriveDesktop.agent.cloudDelete(node.id, node.revision)
+            if (!result.ok) {
+              setError(result.error.message)
+              return
+            }
+          }
+          setNotice(`已将 ${nodes.length} 个项目移到回收站。`)
+          await refreshCloudQuota()
+          if (cloudCrumbs.length > 0) {
+            await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
+          }
+        } finally {
+          setBusy('')
+        }
+      },
+      'warning',
+    )
+  }
+
   const restoreCloudTrash = async (node: AgentCloudNode) => {
     const data = await run('cloud-trash-restore', () => window.xdriveDesktop.agent.cloudRestoreTrash(node.id, node.revision), '项目已恢复。')
     if (!data) return
@@ -3628,6 +3658,7 @@ export default function App() {
               onOpenHistory={(node, crumbs) => { void openCloud历史版本(node, crumbs) }}
               onOpenShares={(node) => { void openCloudShares(node) }}
               onDelete={removeCloudNode}
+              onDeleteMany={removeCloudNodes}
               onQuotaChanged={refreshCloudQuota}
               onError={(message) => setError(message)}
               onFeedback={(_tone, message) => setNotice(message)}

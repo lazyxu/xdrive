@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os = require('node:os')
 import path = require('node:path')
 import {
@@ -1811,6 +1811,81 @@ function registerIPCHandlers() {
       }
       await requireAgentClient().cloudDownload(id, selected.filePath)
       return { ok: true, data: { saved: true } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+
+  ipcMain.handle('agent:cloud-download-files', async (_event, input: unknown) => {
+    if (!Array.isArray(input) || input.length === 0 || input.length > 1000) {
+      return { ok: false, error: { code: 'invalid_input', message: 'A non-empty file list is required.' } }
+    }
+    const files: Array<{ id: number; name: string }> = []
+    for (const item of input) {
+      if (
+        typeof item !== 'object' || item === null ||
+        typeof (item as { id?: unknown }).id !== 'number' ||
+        !Number.isSafeInteger((item as { id: number }).id) ||
+        (item as { id: number }).id <= 0 ||
+        typeof (item as { name?: unknown }).name !== 'string' ||
+        !(item as { name: string }).name.trim()
+      ) {
+        return { ok: false, error: { code: 'invalid_input', message: 'Each file requires a valid id and name.' } }
+      }
+      files.push({ id: (item as { id: number }).id, name: (item as { name: string }).name.trim() })
+    }
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      const options: OpenDialogOptions = {
+        properties: ['openDirectory', 'createDirectory'],
+        title: '选择批量下载目录',
+        defaultPath: app.getPath('downloads'),
+      }
+      const selected = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options)
+      const directory = selected.filePaths[0]
+      if (selected.canceled || !directory) {
+        return { ok: true, data: { canceled: true, downloaded: [], failures: [] } }
+      }
+
+      const reserved = new Set<string>()
+      const downloaded: string[] = []
+      const failures: Array<{ name: string; message: string }> = []
+      for (const file of files) {
+        const rawName = path.basename(file.name)
+        const safeName = process.platform === 'win32'
+          ? rawName.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+          : rawName
+        const ext = path.extname(safeName)
+        const stem = path.basename(safeName, ext) || 'download'
+        let candidate = safeName || 'download'
+        for (let index = 2; index <= 10000; index += 1) {
+          const key = process.platform === 'win32' ? candidate.toLowerCase() : candidate
+          let occupied = reserved.has(key)
+          if (!occupied) {
+            try {
+              await access(path.join(directory, candidate))
+              occupied = true
+            } catch {
+              occupied = false
+            }
+          }
+          if (!occupied) {
+            reserved.add(key)
+            break
+          }
+          candidate = `${stem} (${index})${ext}`
+        }
+        try {
+          await requireAgentClient().cloudDownload(file.id, path.join(directory, candidate))
+          downloaded.push(candidate)
+        } catch (error) {
+          failures.push({ name: file.name, message: agentError(error).message })
+        }
+      }
+      return { ok: true, data: { canceled: false, downloaded, failures } }
     } catch (error) {
       return { ok: false, error: agentError(error) }
     }

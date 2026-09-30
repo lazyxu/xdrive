@@ -58,6 +58,7 @@ const agent = Object.freeze({
   cloudDelete: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-delete', id, revision),
   cloudUploadFiles: (parentID: number) => ipcRenderer.invoke('agent:cloud-upload-files', parentID),
   cloudDownload: (id: number, name: string) => ipcRenderer.invoke('agent:cloud-download', id, name),
+  cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => ipcRenderer.invoke('agent:cloud-download-files', files),
   openPath: (relativePath: string, reveal = false) => ipcRenderer.invoke('agent:open-path', relativePath, reveal),
   cloudSearch: (query: string) => ipcRenderer.invoke('agent:cloud-search', query),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),

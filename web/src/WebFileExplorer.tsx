@@ -51,6 +51,9 @@ export default function WebFileExplorer({
   onOpenTrash,
   onRename,
   onRemove,
+  onRemoveMany,
+  onQuotaChanged,
+  onFeedback,
   onShare,
   onHistory,
   onError,
@@ -66,6 +69,9 @@ export default function WebFileExplorer({
   onOpenTrash: () => void
   onRename: (node: Node) => void
   onRemove: (node: Node) => void
+  onRemoveMany: (nodes: Node[]) => void
+  onQuotaChanged: () => Promise<unknown>
+  onFeedback: (tone: 'good' | 'warning', message: string) => void
   onShare: (node: Node) => void
   onHistory: (node: Node) => void
   onError: (error: unknown) => void
@@ -306,6 +312,24 @@ export default function WebFileExplorer({
       .filter((node): node is Node => Boolean(node))
   )
 
+  const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
+    const nodes = explorerNodesForItems(selected)
+    const files = nodes.filter((node) => node.type === 'file')
+    if (files.length === 0) return
+    try {
+      for (const node of files) await api.download(node)
+      const skipped = nodes.length - files.length
+      onFeedback(
+        skipped > 0 ? 'warning' : 'good',
+        skipped > 0
+          ? `已下载 ${files.length} 个文件，跳过 ${skipped} 个文件夹。`
+          : `已开始下载 ${files.length} 个文件。`,
+      )
+    } catch (error) {
+      onError(error)
+    }
+  }
+
   const pasteClipboard = async () => {
     if (!current || !clipboard || clipboard.nodes.length === 0 || clipboardBusy) return
     setClipboardBusy(true)
@@ -321,6 +345,7 @@ export default function WebFileExplorer({
       if (clipboard.mode === 'cut') setClipboard(null)
       clearSearch()
       await onLoadDirectory(current.id, crumbs)
+      await onQuotaChanged()
     } catch (error) {
       onError(error)
     } finally {
@@ -410,6 +435,11 @@ export default function WebFileExplorer({
         }}
         onPaste={() => { void pasteClipboard() }}
         canPaste={Boolean(clipboard?.nodes.length) && !clipboardBusy}
+        onDownloadItems={(selected) => { void downloadSelected(selected) }}
+        onDeleteItems={(selected) => {
+          const nodes = explorerNodesForItems(selected)
+          if (nodes.length > 0) onRemoveMany(nodes)
+        }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(

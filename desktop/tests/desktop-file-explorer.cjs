@@ -119,3 +119,12 @@ test('Desktop FileExplorer wires copy/cut/paste through Agent copy and move prim
   assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Desktop shared cut adapter is missing')
   assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Desktop shared paste adapter is missing')
 })
+
+test('Desktop FileExplorer supports bulk download and delete', () => {
+  assert.ok(explorer.includes('const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {'), 'Desktop bulk download helper is missing')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudDownloadFiles('), 'Desktop bulk download bridge is missing')
+  assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
+  assert.ok(explorer.includes('onDeleteMany(nodes)'), 'Desktop shared bulk delete adapter is missing')
+  assert.ok(app.includes('const removeCloudNodes = (nodes: AgentCloudNode[]) => {'), 'Desktop bulk delete confirmation flow is missing')
+  assert.ok(app.includes('for (const node of nodes) {'), 'Desktop bulk delete should process every selected node')
+})
