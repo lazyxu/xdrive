@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import {
   Alert as MuiAlert,
   Autocomplete,
@@ -16,8 +16,6 @@ import {
   FormControlLabel,
   IconButton,
   InputLabel,
-  List,
-  ListItemButton,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -58,6 +56,10 @@ import {
   XDriveDialogTitle,
   XDriveMediaGalleryPage,
   XDrivePaginationControls,
+  XDriveSidebarNavItem,
+  XDriveSidebarNavList,
+  XDRIVE_SIDEBAR_COMPACT_WIDTH,
+  XDRIVE_SIDEBAR_WIDTH,
   XDriveStatePanel,
   XDriveShareStatusBadge,
   XDriveStatusAlert,
@@ -2339,46 +2341,26 @@ export default function App() {
   )
 
   return renderDesktopFrame(
-    <div className="shell">
+    <div
+      className="shell"
+      style={{
+        '--xdrive-sidebar-width': `${XDRIVE_SIDEBAR_WIDTH}px`,
+        '--xdrive-sidebar-compact-width': `${XDRIVE_SIDEBAR_COMPACT_WIDTH}px`,
+      } as CSSProperties}
+    >
       <aside className="sidebar">
-        <List component="nav" aria-label="桌面版功能区" disablePadding className="sidebar-nav">
-          <ListItemButton className="sidebar-nav-item" selected={view === 'overview'} onClick={() => setView('overview')}>
-            <ListItemIcon><DashboardRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="概览" />
-          </ListItemButton>
-          <ListItemButton className="sidebar-nav-item" selected={view === 'cloud'} onClick={() => setView('cloud')}>
-            <ListItemIcon><FolderRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="文件" />
-          </ListItemButton>
-          <ListItemButton className="sidebar-nav-item" selected={view === 'gallery'} onClick={() => setView('gallery')}>
-            <ListItemIcon><PhotoLibraryRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="图库" />
-          </ListItemButton>
-          <ListItemButton className="sidebar-nav-item" selected={view === 'sources'} onClick={() => setView('sources')}>
-            <ListItemIcon><CloudSyncRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="外部来源" />
-          </ListItemButton>
-          <ListItemButton className="sidebar-nav-item" selected={view === 'transfers'} onClick={() => setView('transfers')}>
-            <ListItemIcon><SwapVertRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="传输" />
-            {activeTransfers.length ? <Chip className="sidebar-nav-badge" size="small" label={activeTransfers.length} /> : null}
-          </ListItemButton>
-          <ListItemButton className="sidebar-nav-item" selected={view === 'files'} onClick={() => setView('files')}>
-            <ListItemIcon><StorageRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="存储" />
-          </ListItemButton>
-          <ListItemButton className="sidebar-nav-item" selected={view === 'conflicts'} onClick={() => setView('conflicts')}>
-            <ListItemIcon><WarningAmberRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="冲突" />
-            {status?.conflict_count ? <Chip className="sidebar-nav-badge" size="small" label={status.conflict_count} /> : null}
-          </ListItemButton>
-        </List>
-        <List component="nav" aria-label="桌面版辅助功能" disablePadding className="sidebar-nav sidebar-secondary">
-          <ListItemButton className="sidebar-nav-item" selected={view === 'diagnostics'} onClick={() => setView('diagnostics')}>
-            <ListItemIcon><BuildRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="诊断" />
-          </ListItemButton>
-        </List>
+        <XDriveSidebarNavList ariaLabel="桌面版功能区">
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'cloud'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setView('cloud')} />
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setView('gallery')} />
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="外部来源" onClick={() => setView('sources')} />
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'transfers'} icon={<SwapVertRoundedIcon fontSize="small" />} primary="传输" badge={activeTransfers.length || undefined} onClick={() => setView('transfers')} />
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'files'} icon={<StorageRoundedIcon fontSize="small" />} primary="存储" onClick={() => setView('files')} />
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
+        </XDriveSidebarNavList>
+        <XDriveSidebarNavList ariaLabel="桌面版辅助功能" className="sidebar-secondary">
+          <XDriveSidebarNavItem appearance="dark" selected={view === 'diagnostics'} icon={<BuildRoundedIcon fontSize="small" />} primary="诊断" onClick={() => setView('diagnostics')} />
+        </XDriveSidebarNavList>
       </aside>
 
       <main className="content">

@@ -32,7 +32,6 @@ import {
 import type { SelectChangeEvent } from '@mui/material/Select'
 import { ApiError } from './api'
 import type { XDriveApi } from './api'
-import WorkspaceSurface from './WorkspaceSurface'
 import {
   XDriveActionButton,
   XDriveDialogActions,
@@ -41,6 +40,7 @@ import {
   XDrivePaginationControls,
   XDriveStatePanel,
   XDriveStatusAlert,
+  XDriveWorkspaceSurface,
   XDriveStatusBadge,
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
@@ -1012,7 +1012,7 @@ export default function ExternalSourcesPanel({
 
   return (
     <>
-      <WorkspaceSurface
+      <XDriveWorkspaceSurface
         presentation={presentation}
         open={open}
         onClose={onClose}
@@ -1117,7 +1117,7 @@ export default function ExternalSourcesPanel({
             })}
           </div>
         )}
-      </WorkspaceSurface>
+      </XDriveWorkspaceSurface>
 
       <Dialog open={!!selected} onClose={closeDetails} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title={selected ? `${selected.source.name} · 来源详情` : '来源详情'} onClose={closeDetails} />

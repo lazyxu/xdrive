@@ -5,6 +5,8 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
+const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
+const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 
 test('Web AppBar keeps global chrome compact while admin tools live in the sidebar', () => {
   const appStart = webApp.indexOf('<AppBar position="static" elevation={1}>', webApp.indexOf('className="app-shell"'))
@@ -25,7 +27,7 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
   const sidebar = webApp.slice(asideStart, asideEnd)
 
   assert.ok(sidebar.includes("profile?.role === 'admin'"), 'admin navigation must remain role-gated')
-  assert.ok(sidebar.includes('aria-label="管理员功能"'), 'missing admin navigation landmark')
+  assert.ok(sidebar.includes('ariaLabel="管理员功能"'), 'missing admin navigation landmark')
   for (const label of ['管理', '用户管理', '审计日志', '全局存储']) {
     assert.ok(sidebar.includes(label), `missing admin sidebar label: ${label}`)
   }
@@ -36,10 +38,20 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
 
 
 test('Web first-class workspaces share the same page chrome', () => {
-  assert.ok(webApp.includes("import WorkspaceSurface from './WorkspaceSurface'"), 'Web app should reuse the shared Web workspace surface')
-  assert.equal((webApp.match(/<WorkspaceSurface presentation="page"/g) || []).length, 2, 'Files and Gallery should both use WorkspaceSurface page chrome')
-  assert.ok(webApp.includes('<WorkspaceSurface presentation="page" title="文件">'), 'Files page title must use workspace page chrome')
-  assert.ok(webApp.includes('<WorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
+  assert.ok(webApp.includes('XDriveWorkspaceSurface'), 'Web app should reuse the shared workspace surface')
+  assert.equal((webApp.match(/<XDriveWorkspaceSurface presentation="page"/g) || []).length, 2, 'Files and Gallery should both use shared workspace page chrome')
+  assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), 'Files page title must use workspace page chrome')
+  assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
   assert.ok(webApp.includes('<ExternalSourcesPanel') && webApp.includes('presentation="page"'), 'External Sources should remain a first-class page')
   assert.ok(webApp.includes('<StorageStatsModal') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
+})
+
+
+test('Web and Desktop shell primitives live in shared MUI', () => {
+  assert.ok(sharedSidebar.includes('XDriveSidebarNavList'), 'shared sidebar list primitive is missing')
+  assert.ok(sharedSidebar.includes('XDriveSidebarNavItem'), 'shared sidebar item primitive is missing')
+  assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_WIDTH = 184'), 'shared sidebar width token is missing')
+  assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH = 176'), 'shared compact sidebar width token is missing')
+  assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
+  assert.ok(webApp.includes('XDriveSidebarNavItem'), 'Web should consume shared sidebar navigation')
 })
