@@ -150,6 +150,12 @@ for (const [name, source] of [
 
 console.log('Web workspace presentation checks passed')
 
+for (const legacyClass of ['.file-card', '.file-toolbar', '.upload-progress', '.folder-icon']) {
+  if (styles.includes(legacyClass)) {
+    throw new Error(`Web files workspace must not retain legacy dashboard file chrome: ${legacyClass}`)
+  }
+}
+
 if (app.includes("calc(100vh - 48px)")) {
   throw new Error('Web workspace must not duplicate AppBar viewport subtraction math')
 }

@@ -27,10 +27,6 @@ a { user-select: none; }
   padding-inline: 16px;
 }
 .content-wrap { padding: 32px clamp(16px, 4vw, 56px); }
-.file-card { max-width: 1280px; margin: 0 auto; overflow: hidden; }
-.file-toolbar { display: flex; gap: 18px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.upload-progress { max-width: 360px; margin: -4px 0 18px auto; }
-.folder-icon { color: #e8a317; }
 
 @media (min-width: 900px) {
   .file-manager-shell {
@@ -52,7 +48,6 @@ a { user-select: none; }
 
 @media (max-width: 720px) {
   .content-wrap { padding: 16px; }
-  .file-toolbar { align-items: flex-start; flex-direction: column; }
 }
 
 
