@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -104,7 +104,6 @@ export default function DesktopFileExplorer({
       kind: node.type,
       size: node.size,
       updatedAt: node.updated_at,
-      typeLabel: node.type === 'dir' ? '文件夹' : '文件',
       secondaryLabel: searchByID.get(node.id)?.path,
     })),
     [activeNodes, searchByID],
@@ -114,6 +113,14 @@ export default function DesktopFileExplorer({
     () => crumbs.map((crumb) => ({ id: crumb.id, name: crumb.name })),
     [crumbs],
   )
+
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file') return null
+    const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
+    if (!result.ok) return null
+    const contentType = result.data.content_type || 'image/jpeg'
+    return `data:${contentType};base64,${result.data.data_base64}`
+  }, [])
 
   const clearSearch = () => {
     setSearchResults(null)
@@ -421,6 +428,7 @@ export default function DesktopFileExplorer({
         items={explorerItems}
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || Boolean(actionBusy)}
+        loadThumbnail={loadThumbnail}
         pathValue={crumbs.map((crumb) => crumb.name).join('/')}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}
