@@ -16,6 +16,8 @@ export function XDriveStatusAlert({
   children,
   action,
   className,
+  variant = 'standard',
+  onClose,
   sx,
 }: {
   tone: XDriveStatusTone
@@ -23,10 +25,12 @@ export function XDriveStatusAlert({
   children?: ReactNode
   action?: ReactNode
   className?: string
+  variant?: 'standard' | 'outlined' | 'filled'
+  onClose?: () => void
   sx?: SxProps<Theme>
 }) {
   return (
-    <Alert severity={severityForTone(tone)} action={action} className={className} sx={sx}>
+    <Alert severity={severityForTone(tone)} action={action} className={className} variant={variant} onClose={onClose} sx={sx}>
       {title ? <AlertTitle>{title}</AlertTitle> : null}
       {children}
     </Alert>

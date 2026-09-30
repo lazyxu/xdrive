@@ -34,7 +34,6 @@ import {
   Menu,
   MenuItem,
   Paper,
-  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -56,6 +55,7 @@ import {
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
@@ -595,13 +595,12 @@ function FileManager({
             </Stack>
           </Card>
         </Box>
-        <Snackbar
+        <XDriveFeedbackSnackbar
           open={Boolean(feedback)}
-          autoHideDuration={3500}
-          onClose={(_event, reason) => { if (reason !== 'clickaway') setFeedback(null) }}
-        >
-          <div>{feedback ? <XDriveStatusAlert tone={feedback.tone}>{feedback.message}</XDriveStatusAlert> : null}</div>
-        </Snackbar>
+          tone={feedback?.tone ?? 'neutral'}
+          message={feedback?.message ?? ''}
+          onClose={() => setFeedback(null)}
+        />
       </Box>
     )
   }
@@ -1206,16 +1205,12 @@ function FileManager({
 
       <ShareDialog api={api} node={shareNode} onClose={() => setShareNode(null)} onError={handleError} />
 
-      <Snackbar
+      <XDriveFeedbackSnackbar
         open={Boolean(feedback)}
-        autoHideDuration={3500}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        onClose={(_event, reason) => {
-          if (reason !== 'clickaway') setFeedback(null)
-        }}
-      >
-        <div>{feedback ? <XDriveStatusAlert tone={feedback.tone}>{feedback.message}</XDriveStatusAlert> : null}</div>
-      </Snackbar>
+        tone={feedback?.tone ?? 'neutral'}
+        message={feedback?.message ?? ''}
+        onClose={() => setFeedback(null)}
+      />
     </Box>
   )
 }
