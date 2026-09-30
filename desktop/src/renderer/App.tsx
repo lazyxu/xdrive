@@ -105,7 +105,9 @@ import {
   externalSourceTriggerActionLabel,
   formatBinarySize,
   formatExternalSourceTime,
+  normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
+  synologyFileRootsValidationError,
   synologyPhotoSpaceOptions,
   synologyDsmAddressHelp,
   yikeConnectorNotice,
@@ -337,6 +339,7 @@ export default function App() {
   const [sourceEditDsmUsername, setSourceEditDsmUsername] = useState('')
   const [sourceEditDsmPassword, setSourceEditDsmPassword] = useState('')
   const [sourceEditSpaces, setSourceEditSpaces] = useState<SynologyPhotoSpace[]>(['personal', 'shared'])
+  const [sourceEditRoots, setSourceEditRoots] = useState<string[]>([])
   const [sourceEditConnectorConfig, setSourceEditConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
   const [sourceCreateOpen, setSourceCreateOpen] = useState(false)
   const initialSourceOption = externalSourceCreateOption('synology_push')
@@ -357,6 +360,7 @@ export default function App() {
   const [sourceCreateDsmUsername, setSourceCreateDsmUsername] = useState('')
   const [sourceCreateDsmPassword, setSourceCreateDsmPassword] = useState('')
   const [sourceCreateSpaces, setSourceCreateSpaces] = useState<SynologyPhotoSpace[]>(['personal', 'shared'])
+  const [sourceCreateRoots, setSourceCreateRoots] = useState<string[]>([])
   const [sourceCreateCredentialTest, setSourceCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [sourceEditCredentialTest, setSourceEditCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
   const [sourceFailedItems, setSourceFailedItems] = useState<ExternalSourceItem[]>([])
@@ -1188,6 +1192,7 @@ export default function App() {
     setSourceCreateDsmUsername('')
     setSourceCreateDsmPassword('')
     setSourceCreateSpaces(['personal', 'shared'])
+    setSourceCreateRoots([])
     setSourceCreateCredentialTest(null)
   }
 
@@ -1303,10 +1308,18 @@ export default function App() {
         : '请完整填写 Synology DSM 地址、用户名和密码。')
       return
     }
-    if (sourceCreateProfile.credential === 'synology_dsm' && sourceCreateSpaces.length === 0) {
+    if (sourceCreateKind === 'synology_photos' && sourceCreateSpaces.length === 0) {
       setError('至少选择一个 Synology Photos 空间。')
       return
     }
+    const rootsError = sourceCreateKind === 'synology_files'
+      ? synologyFileRootsValidationError(sourceCreateRoots)
+      : ''
+    if (rootsError) {
+      setError(rootsError)
+      return
+    }
+    const roots = normalizeSynologyFileRoots(sourceCreateRoots)
 
     setBusy('source-create')
     setError('')
@@ -1341,16 +1354,19 @@ export default function App() {
       if (sourceCreateProfile.credential === 'synology_dsm') {
         const config = await window.xdriveDesktop.agent.getSourceConnectorConfig(created.data.id)
         if (!config.ok) {
-          await rollbackCreatedSource(created.data, `读取群晖空间配置失败：${config.error.message}`)
+          await rollbackCreatedSource(created.data, `读取群晖连接配置失败：${config.error.message}`)
           return
         }
+        const connectorPayload = sourceCreateKind === 'synology_files'
+          ? { roots }
+          : { spaces: normalizeSynologyPhotoSpaces(sourceCreateSpaces) }
         const savedConfig = await window.xdriveDesktop.agent.setSourceConnectorConfig(
           created.data.id,
           config.data.revision,
-          { spaces: normalizeSynologyPhotoSpaces(sourceCreateSpaces) },
+          connectorPayload,
         )
         if (!savedConfig.ok) {
-          await rollbackCreatedSource(created.data, `保存群晖空间配置失败：${savedConfig.error.message}`)
+          await rollbackCreatedSource(created.data, `保存群晖连接配置失败：${savedConfig.error.message}`)
           return
         }
       }
@@ -1364,6 +1380,14 @@ export default function App() {
         }
       }
 
+      if (sourceCreateKind === 'synology_files') {
+        const activated = await window.xdriveDesktop.agent.updateSource(created.data.id, created.data.revision, { status: 'active' })
+        if (!activated.ok) {
+          await rollbackCreatedSource(created.data, `启用群晖 File Station 来源失败：${activated.error.message}`)
+          return
+        }
+      }
+
       setSourceCreateOpen(false)
       resetSourceCreateCredential()
       if (sourceCreateProfile.manualTriggerExecutor === 'source_agent') {
@@ -1371,6 +1395,8 @@ export default function App() {
         setNotice('群晖 Push 来源已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
       } else if (sourceCreateKind === 'yike_photos') {
         setNotice(`一刻相册来源已添加，目标目录固定为 ${yikeManagedTargetLabel}。`)
+      } else if (sourceCreateKind === 'synology_files') {
+        setNotice('群晖 File Station Pull 来源已添加；将同步所选目录中的所有文件和文件夹。')
       } else {
         setNotice('群晖 Pull 来源已添加；xDrive Server 将按调度直接读取 Synology Photos。')
       }
@@ -1395,6 +1421,7 @@ export default function App() {
     setSourceEditDsmUsername('')
     setSourceEditDsmPassword('')
     setSourceEditSpaces(['personal', 'shared'])
+    setSourceEditRoots([])
     setSourceEditConnectorConfig(null)
     setSourceEditCredentialTest(null)
     if (profile.credential === 'synology_dsm') {
@@ -1404,10 +1431,17 @@ export default function App() {
           return
         }
         setSourceEditConnectorConfig(config.data)
-        const spaces = Array.isArray(config.data.payload.spaces)
-          ? config.data.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-          : []
-        setSourceEditSpaces(spaces.length ? spaces : ['personal', 'shared'])
+        if (row.source.kind === 'synology_files') {
+          const roots = Array.isArray(config.data.payload.roots)
+            ? config.data.payload.roots.filter((root): root is string => typeof root === 'string')
+            : []
+          setSourceEditRoots(roots)
+        } else {
+          const spaces = Array.isArray(config.data.payload.spaces)
+            ? config.data.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+            : []
+          setSourceEditSpaces(spaces.length ? spaces : ['personal', 'shared'])
+        }
       })
     }
   }
@@ -1467,15 +1501,23 @@ export default function App() {
       return
     }
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
+    const isSynologyFiles = row.source.kind === 'synology_files'
+    const desiredRoots = normalizeSynologyFileRoots(sourceEditRoots)
     const pendingCredential = sourceEditCredentialPayload(row)
     if (pendingCredential === undefined) {
       setError('更新 DSM 凭据时请完整填写地址、用户名和密码。')
       return
     }
-    if (profile.credential === 'synology_dsm' && sourceEditSpaces.length === 0) {
+    if (row.source.kind === 'synology_photos' && profile.credential === 'synology_dsm' && sourceEditSpaces.length === 0) {
       setError('至少选择一个 Synology Photos 空间。')
       return
     }
+    const rootsError = isSynologyFiles ? synologyFileRootsValidationError(sourceEditRoots) : ''
+    if (rootsError) {
+      setError(rootsError)
+      return
+    }
+
     const busyKey = `source-settings-${row.source.id}`
     setBusy(busyKey)
     setError('')
@@ -1491,10 +1533,47 @@ export default function App() {
         setSourceEditCredentialTest(tested.data)
       }
 
-      const updated = await window.xdriveDesktop.agent.updateSource(row.source.id, row.source.revision, {
+      let config = sourceEditConnectorConfig
+      let configChanged = false
+      let desiredConnectorPayload: Record<string, unknown> | null = null
+      if (profile.credential === 'synology_dsm') {
+        if (!config) {
+          const loaded = await window.xdriveDesktop.agent.getSourceConnectorConfig(row.source.id)
+          if (!loaded.ok) {
+            setError(loaded.error.message)
+            return
+          }
+          config = loaded.data
+        }
+        if (isSynologyFiles) {
+          const currentRoots = Array.isArray(config.payload.roots)
+            ? normalizeSynologyFileRoots(config.payload.roots.filter((root): root is string => typeof root === 'string'))
+            : []
+          configChanged = currentRoots.join('\n') !== desiredRoots.join('\n')
+          desiredConnectorPayload = { roots: desiredRoots }
+        } else {
+          const desiredSpaces = normalizeSynologyPhotoSpaces(sourceEditSpaces)
+          const currentSpaces = Array.isArray(config.payload.spaces)
+            ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+            : []
+          configChanged = currentSpaces.join(',') !== desiredSpaces.join(',')
+          desiredConnectorPayload = { spaces: desiredSpaces }
+        }
+      }
+
+      const stageFileActivation = isSynologyFiles && sourceEditStatus === 'active' && (
+        row.source.status !== 'active' ||
+        pendingCredential !== null ||
+        !row.credential?.configured ||
+        configChanged ||
+        !config?.configured
+      )
+      let updated = await window.xdriveDesktop.agent.updateSource(row.source.id, row.source.revision, {
         name,
         run_mode: sourceEditRunMode,
-        status: pendingCredential && !row.credential?.configured ? 'paused' : sourceEditStatus,
+        status: stageFileActivation
+          ? 'paused'
+          : (pendingCredential && !row.credential?.configured ? 'paused' : sourceEditStatus),
         schedule_type: sourceEditScheduleType,
         schedule_expression: sourceEditScheduleType === 'manual' ? '' : sourceEditScheduleExpression.trim(),
         schedule_timezone: sourceEditScheduleType === 'cron' ? sourceEditScheduleTimezone.trim() : '',
@@ -1505,31 +1584,17 @@ export default function App() {
         return
       }
 
-      if (profile.credential === 'synology_dsm') {
-        let config = sourceEditConnectorConfig
-        if (!config) {
-          const loaded = await window.xdriveDesktop.agent.getSourceConnectorConfig(row.source.id)
-          if (!loaded.ok) {
-            setError(loaded.error.message)
-            return
-          }
-          config = loaded.data
+      if (config && configChanged && desiredConnectorPayload) {
+        const saved = await window.xdriveDesktop.agent.setSourceConnectorConfig(
+          row.source.id,
+          config.revision,
+          desiredConnectorPayload,
+        )
+        if (!saved.ok) {
+          setError(saved.error.message)
+          return
         }
-        const currentSpaces = Array.isArray(config.payload.spaces)
-          ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-          : []
-        if (currentSpaces.join(',') !== normalizeSynologyPhotoSpaces(sourceEditSpaces).join(',')) {
-          const saved = await window.xdriveDesktop.agent.setSourceConnectorConfig(
-            row.source.id,
-            config.revision,
-            { spaces: normalizeSynologyPhotoSpaces(sourceEditSpaces) },
-          )
-          if (!saved.ok) {
-            setError(saved.error.message)
-            return
-          }
-          setSourceEditConnectorConfig(saved.data)
-        }
+        setSourceEditConnectorConfig(saved.data)
       }
 
       if (pendingCredential) {
@@ -1541,7 +1606,16 @@ export default function App() {
         }
       }
 
-      if (pendingCredential && sourceEditStatus === 'paused') {
+      if (stageFileActivation) {
+        updated = await window.xdriveDesktop.agent.updateSource(row.source.id, updated.data.revision, { status: 'active' })
+        if (!updated.ok) {
+          setError(`连接配置已保存，但启用来源失败：${updated.error.message}`)
+          await loadSources()
+          return
+        }
+      }
+
+      if (!isSynologyFiles && pendingCredential && sourceEditStatus === 'paused') {
         const sourcesResult = await window.xdriveDesktop.agent.getSources()
         if (sourcesResult.ok) {
           const fresh = sourcesResult.data.find((source) => source.id === row.source.id)
@@ -1561,6 +1635,7 @@ export default function App() {
       setSourceEditDsmBaseURL('')
       setSourceEditDsmUsername('')
       setSourceEditDsmPassword('')
+      setSourceEditRoots([])
       setSourceEditConnectorConfig(null)
       setNotice('来源设置已保存。')
       await loadSources()
@@ -2970,27 +3045,43 @@ export default function App() {
                         required
                       />
                     </label>
-                    <div className="source-create-wide">
-                      <span>同步空间</span>
-                      <Stack direction="row" spacing={1} flexWrap="wrap">
-                        {synologyPhotoSpaceOptions.map((option) => (
-                          <FormControlLabel
-                            key={option.value}
-                            control={(
-                              <Checkbox
-                                checked={sourceCreateSpaces.includes(option.value)}
-                                onChange={(event) => setSourceCreateSpaces((current) => event.target.checked
-                                  ? Array.from(new Set([...current, option.value]))
-                                  : current.filter((space) => space !== option.value))}
-                              />
-                            )}
-                            label={option.label}
-                          />
-                        ))}
-                      </Stack>
-                    </div>
+                    {sourceCreateKind === 'synology_photos' ? (
+                      <div className="source-create-wide">
+                        <span>同步空间</span>
+                        <Stack direction="row" spacing={1} flexWrap="wrap">
+                          {synologyPhotoSpaceOptions.map((option) => (
+                            <FormControlLabel
+                              key={option.value}
+                              control={(
+                                <Checkbox
+                                  checked={sourceCreateSpaces.includes(option.value)}
+                                  onChange={(event) => setSourceCreateSpaces((current) => event.target.checked
+                                    ? Array.from(new Set([...current, option.value]))
+                                    : current.filter((space) => space !== option.value))}
+                                />
+                              )}
+                              label={option.label}
+                            />
+                          ))}
+                        </Stack>
+                      </div>
+                    ) : (
+                      <label className="source-create-wide">
+                        <span>File Station 根目录</span>
+                        <textarea
+                          rows={4}
+                          value={sourceCreateRoots.join('\n')}
+                          onChange={(event) => setSourceCreateRoots(event.target.value.split(/\r?\n/))}
+                          placeholder={'/documents\n/video/projects'}
+                          spellCheck={false}
+                        />
+                        <small>每行一个 DSM 绝对目录；会同步目录、空目录及其中的任意文件类型。</small>
+                      </label>
+                    )}
                     <XDriveStatusAlert tone="neutral" className="source-create-wide">
-                      DSM 凭据只会在服务器端加密保存；Pull worker 通过 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。
+                      {sourceCreateKind === 'synology_files'
+                        ? 'DSM 凭据只会在服务器端加密保存；Pull worker 通过 File Station API 只读同步所选目录中的所有文件和文件夹，不会修改 NAS 内容。'
+                        : 'DSM 凭据只会在服务器端加密保存；Pull worker 通过 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。'}
                     </XDriveStatusAlert>
                     <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
                       <XDriveActionButton
@@ -3512,26 +3603,40 @@ export default function App() {
                                   placeholder="留空则保持当前配置不变"
                                 />
                               </label>
-                              <div className="source-settings-wide">
-                                <span>同步空间</span>
-                                <Stack direction="row" spacing={1} flexWrap="wrap">
-                                  {synologyPhotoSpaceOptions.map((option) => (
-                                    <FormControlLabel
-                                      key={option.value}
-                                      control={(
-                                        <Checkbox
-                                          checked={sourceEditSpaces.includes(option.value)}
-                                          onChange={(event) => setSourceEditSpaces((current) => event.target.checked
-                                            ? Array.from(new Set([...current, option.value]))
-                                            : current.filter((space) => space !== option.value))}
-                                        />
-                                      )}
-                                      label={option.label}
-                                    />
-                                  ))}
-                                </Stack>
-                                {!sourceEditConnectorConfig && <small>正在读取当前空间配置；默认使用个人空间和共享空间。</small>}
-                              </div>
+                              {row.source.kind === 'synology_photos' ? (
+                                <div className="source-settings-wide">
+                                  <span>同步空间</span>
+                                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                                    {synologyPhotoSpaceOptions.map((option) => (
+                                      <FormControlLabel
+                                        key={option.value}
+                                        control={(
+                                          <Checkbox
+                                            checked={sourceEditSpaces.includes(option.value)}
+                                            onChange={(event) => setSourceEditSpaces((current) => event.target.checked
+                                              ? Array.from(new Set([...current, option.value]))
+                                              : current.filter((space) => space !== option.value))}
+                                          />
+                                        )}
+                                        label={option.label}
+                                      />
+                                    ))}
+                                  </Stack>
+                                  {!sourceEditConnectorConfig && <small>正在读取当前空间配置；默认使用个人空间和共享空间。</small>}
+                                </div>
+                              ) : (
+                                <label className="source-settings-wide">
+                                  <span>File Station 根目录</span>
+                                  <textarea
+                                    rows={4}
+                                    value={sourceEditRoots.join('\n')}
+                                    onChange={(event) => setSourceEditRoots(event.target.value.split(/\r?\n/))}
+                                    placeholder={'/documents\n/video/projects'}
+                                    spellCheck={false}
+                                  />
+                                  <small>每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。</small>
+                                </label>
+                              )}
                               <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
                                 <XDriveActionButton
                                   compact

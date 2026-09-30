@@ -519,18 +519,20 @@ test('shared external-source defaults preserve connector-specific setup rules', 
 })
 
 
-test('shared create presets distinguish Synology Push, Synology Pull, and Yike Pull', () => {
+test('shared create presets distinguish Synology Photos, File Station, and Yike Pull', () => {
   assert.deepEqual(
     shared.externalSourceCreateOptions.map((item) => [item.value, item.kind, item.direction]),
     [
       ['synology_push', 'synology_photos', 'push'],
       ['synology_pull', 'synology_photos', 'pull'],
+      ['synology_files_pull', 'synology_files', 'pull'],
       ['yike_pull', 'yike_photos', 'pull'],
     ],
   )
   assert.equal(shared.externalSourceCreateOption('synology_pull').label, '群晖 Photos · Pull')
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'push'), 'synology_push')
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'pull'), 'synology_pull')
+  assert.equal(shared.externalSourceCreatePresetFor('synology_files', 'pull'), 'synology_files_pull')
   assert.equal(shared.externalSourceCreatePresetFor('yike_photos', 'pull'), 'yike_pull')
 })
 
@@ -564,7 +566,7 @@ test('shared Yike credential test messages are actionable', () => {
   )
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_auth_failed'), 'Synology DSM 登录失败，请检查地址、用户名和密码')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_multiple_login'), 'Synology DSM 检测到重复登录，请稍后重试')
-  assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_permission_denied'), 'Synology DSM 账号没有访问 Synology Photos 所需权限')
+  assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_permission_denied'), 'Synology DSM 账号没有访问所需服务的权限')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_otp_required'), 'Synology DSM 要求两步验证/OTP，当前连接器尚未提供 OTP')
   assert.equal(shared.externalSourceCredentialTestErrorLabel('synology_timeout'), '连接 Synology DSM 超时，请稍后重试')
 })

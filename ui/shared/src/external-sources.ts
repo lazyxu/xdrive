@@ -1,6 +1,6 @@
-export type SupportedExternalSourceKind = 'synology_photos' | 'yike_photos'
+export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
-export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'yike_pull'
+export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull'
 export type SynologyPhotoSpace = 'personal' | 'shared'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceStatus = 'active' | 'paused'
@@ -250,6 +250,13 @@ export const externalSourceCreateOptions: ExternalSourceCreateOption[] = [
     description: '由 xDrive Server 通过 DSM / Synology Photos API 定时读取并同步照片。',
   },
   {
+    value: 'synology_files_pull',
+    kind: 'synology_files',
+    direction: 'pull',
+    label: '群晖 File Station · Pull',
+    description: '由 xDrive Server 通过 DSM / File Station API 同步选定目录中的任意文件和文件夹。',
+  },
+  {
     value: 'yike_pull',
     kind: 'yike_photos',
     direction: 'pull',
@@ -270,12 +277,40 @@ export function normalizeSynologyPhotoSpaces(input: readonly SynologyPhotoSpace[
     .filter((space) => selected.has(space))
 }
 
+export function normalizeSynologyFileRoots(input: readonly string[]) {
+  const roots = input
+    .map((value) => String(value ?? ''))
+    .filter((value) => value.trim() !== '')
+    .map((value) => value.replace(/\/{2,}/g, '/'))
+    .map((value) => value.length > 1 ? value.replace(/\/+$/, '') : value)
+  return Array.from(new Set(roots)).sort((a, b) => a.localeCompare(b))
+}
+
+export function synologyFileRootsValidationError(input: readonly string[]) {
+  const roots = normalizeSynologyFileRoots(input)
+  if (roots.length === 0) return '至少填写一个 File Station 根目录'
+  for (const root of roots) {
+    if (!root.startsWith('/')) return `File Station 根目录必须是绝对路径：${root}`
+    if (root === '/') return '不能选择整个 NAS 根目录 /，请至少选择一个共享文件夹'
+    if (root.includes('\\')) return `File Station 根目录不能包含反斜杠：${root}`
+  }
+  for (let i = 0; i < roots.length; i += 1) {
+    for (let j = i + 1; j < roots.length; j += 1) {
+      if (roots[i].startsWith(`${roots[j]}/`) || roots[j].startsWith(`${roots[i]}/`)) {
+        return `File Station 根目录不能互相包含：${roots[i]} 与 ${roots[j]}`
+      }
+    }
+  }
+  return ''
+}
+
 export function externalSourceCreateOption(value: ExternalSourceCreatePreset) {
   return externalSourceCreateOptions.find((item) => item.value === value) ?? externalSourceCreateOptions[0]
 }
 
 export function externalSourceCreatePresetFor(kind: string, direction: ExternalSourceDirection): ExternalSourceCreatePreset {
   if (kind === 'yike_photos') return 'yike_pull'
+  if (kind === 'synology_files') return 'synology_files_pull'
   return direction === 'pull' ? 'synology_pull' : 'synology_push'
 }
 
@@ -720,9 +755,10 @@ export function externalSourceCredentialTestErrorLabel(code: string, detail = ''
     yike_target_path_conflict: '固定的一刻相册路径被同名文件占用，请先整理“同步文件夹 / 一刻相册”路径后重试',
     synology_auth_failed: 'Synology DSM 登录失败，请检查地址、用户名和密码',
     synology_multiple_login: 'Synology DSM 检测到重复登录，请稍后重试',
-    synology_permission_denied: 'Synology DSM 账号没有访问 Synology Photos 所需权限',
+    synology_permission_denied: 'Synology DSM 账号没有访问所需服务的权限',
     synology_otp_required: 'Synology DSM 要求两步验证/OTP，当前连接器尚未提供 OTP',
     synology_photos_unavailable: 'Synology Photos API 不可用，请确认 NAS 已安装并启用 Synology Photos',
+    synology_file_station_unavailable: 'Synology File Station API 不可用，请确认 DSM 已启用 File Station 且账号有访问权限',
     synology_tls_unknown_authority: 'Synology DSM HTTPS 证书不受信任',
     synology_tls_hostname_mismatch: 'Synology DSM HTTPS 证书与访问地址不匹配',
     synology_tls_certificate_invalid: 'Synology DSM HTTPS 证书无效',
