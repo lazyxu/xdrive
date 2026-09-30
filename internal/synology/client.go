@@ -154,12 +154,17 @@ func DiagnoseConnectionError(err error) ConnectionDiagnostic {
 		case errors.Is(dsmError, ErrMultipleLogin):
 			return ConnectionDiagnostic{
 				Code:   "synology_multiple_login",
-				Detail: fmt.Sprintf("DSM 检测到重复登录（错误码 %d）；请稍后重试，并确认没有多个 xDrive/脚本同时使用同一账号登录 Synology Photos。", dsmError.Code),
+				Detail: fmt.Sprintf("DSM 检测到重复登录（错误码 %d）；请稍后重试，并确认没有多个 xDrive/脚本同时使用同一账号登录 DSM。", dsmError.Code),
 			}
 		case errors.Is(dsmError, ErrPermissionDenied):
 			return ConnectionDiagnostic{
 				Code:   "synology_permission_denied",
-				Detail: fmt.Sprintf("DSM 账号没有访问 Synology Photos 所需权限（错误码 %d）。", dsmError.Code),
+				Detail: fmt.Sprintf("DSM 账号没有访问当前 Synology 来源所需权限（错误码 %d）。", dsmError.Code),
+			}
+		case errors.Is(dsmError, ErrFileStationOperation):
+			return ConnectionDiagnostic{
+				Code:   "synology_file_station_operation",
+				Detail: fmt.Sprintf("File Station API 返回文件操作错误码 %d。", dsmError.Code),
 			}
 		case errors.Is(dsmError, ErrOTPRequired):
 			return ConnectionDiagnostic{
@@ -177,6 +182,18 @@ func DiagnoseConnectionError(err error) ConnectionDiagnostic {
 		return ConnectionDiagnostic{
 			Code:   "synology_photos_unavailable",
 			Detail: "DSM 已连接，但没有发现可用的 Synology Photos API。",
+		}
+	}
+	if errors.Is(err, ErrFileStationMissing) {
+		return ConnectionDiagnostic{
+			Code:   "synology_file_station_unavailable",
+			Detail: "DSM 已连接，但没有发现可用的 Synology File Station API。",
+		}
+	}
+	if errors.Is(err, ErrFileStationOperation) {
+		return ConnectionDiagnostic{
+			Code:   "synology_file_station_operation",
+			Detail: strings.TrimSpace(err.Error()),
 		}
 	}
 	if errors.Is(err, ErrAuthentication) {
