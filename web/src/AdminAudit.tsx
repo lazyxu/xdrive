@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
   Autocomplete,
-  Dialog,
   LinearProgress,
   MenuItem,
   Stack,
@@ -17,12 +16,10 @@ import {
 } from '@mui/material'
 import {
   XDriveActionButton,
-  XDriveDialogContent,
-  XDriveDialogTitle,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
-  xDriveDialogPaperProps,
+  XDriveWorkspaceSurface,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 import type { AuditEvent } from '../../ui/shared/src'
@@ -54,10 +51,12 @@ function metadataText(metadata?: Record<string, unknown>) {
 export default function AdminAuditPanel({
   api,
   open,
+  presentation = 'dialog',
   onClose,
 }: {
   api: XDriveApi
   open: boolean
+  presentation?: 'dialog' | 'page'
   onClose: () => void
 }) {
   const [events, setEvents] = useState<AuditEvent[]>([])
@@ -67,6 +66,7 @@ export default function AdminAuditPanel({
   const [actor, setActor] = useState('')
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState('')
+  const surfaceOpen = presentation === 'page' || open
 
   type Filters = {
     action?: string
@@ -95,23 +95,20 @@ export default function AdminAuditPanel({
   }
 
   useEffect(() => {
-    if (open) void load(true)
+    if (surfaceOpen) void load(true)
     // Filters are applied explicitly with the Apply button.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [surfaceOpen])
 
   return (
-    <Dialog
+    <XDriveWorkspaceSurface
+      presentation={presentation}
       open={open}
       onClose={onClose}
       maxWidth="xl"
-      fullWidth
-      scroll="paper"
-      slotProps={{ paper: xDriveDialogPaperProps }}
+      title="审计日志"
     >
-      <XDriveDialogTitle title="审计日志" onClose={onClose} />
-      <XDriveDialogContent dividers>
-        <Stack spacing={2}>
+      <Stack spacing={2}>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
             <Autocomplete
               size="small"
@@ -254,8 +251,7 @@ export default function AdminAuditPanel({
               </XDriveActionButton>
             </Stack>
           )}
-        </Stack>
-      </XDriveDialogContent>
-    </Dialog>
+      </Stack>
+    </XDriveWorkspaceSurface>
   )
 }

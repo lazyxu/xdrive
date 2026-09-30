@@ -26,6 +26,7 @@ import {
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
+  XDriveWorkspaceSurface,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
@@ -91,12 +92,14 @@ function initialResetValues(): ResetForm {
 export default function AdminUsersPanel({
   api,
   open,
+  presentation = 'dialog',
   currentUserID,
   onClose,
   onChanged,
 }: {
   api: XDriveApi
   open: boolean
+  presentation?: 'dialog' | 'page'
   currentUserID: number
   onClose: () => void
   onChanged: () => void
@@ -118,6 +121,7 @@ export default function AdminUsersPanel({
   const [confirmAction, setConfirmAction] = useState<AdminConfirmAction | null>(null)
   const [confirmLoading, setConfirmLoading] = useState(false)
   const [actionError, setActionError] = useState<AdminActionError | null>(null)
+  const surfaceOpen = presentation === 'page' || open
 
   const load = async () => {
     setLoading(true)
@@ -132,10 +136,10 @@ export default function AdminUsersPanel({
   }
 
   useEffect(() => {
-    if (open) void load()
+    if (surfaceOpen) void load()
     // api is stable for one authenticated session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [surfaceOpen])
 
   const showActionError = (title: string, err: unknown, fallback: string) => {
     setActionError({
@@ -250,17 +254,14 @@ export default function AdminUsersPanel({
 
   return (
     <>
-      <Dialog
+      <XDriveWorkspaceSurface
+        presentation={presentation}
         open={open}
         onClose={onClose}
         maxWidth="xl"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        title="用户管理"
       >
-        <XDriveDialogTitle title="用户管理" onClose={onClose} />
-        <XDriveDialogContent dividers>
-          <Stack spacing={2}>
+        <Stack spacing={2}>
             <Stack direction="row" justifyContent="flex-end">
               <XDriveActionButton intent="primary" onClick={openCreate}>创建用户</XDriveActionButton>
             </Stack>
@@ -447,9 +448,8 @@ export default function AdminUsersPanel({
                 </Table>
               </TableContainer>
             )}
-          </Stack>
-        </XDriveDialogContent>
-      </Dialog>
+        </Stack>
+      </XDriveWorkspaceSurface>
 
       <Dialog
         open={createOpen}

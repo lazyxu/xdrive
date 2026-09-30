@@ -5,10 +5,15 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
+const desktopApp = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
+const sharedStorageSummary = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
+const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers.tsx'), 'utf8')
+const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
+const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsModal.tsx'), 'utf8')
 
 test('Web AppBar keeps global chrome compact while admin tools live in the sidebar', () => {
   const appStart = webApp.indexOf('<AppBar position="static" elevation={1}>', webApp.indexOf('className="app-shell"'))
@@ -23,7 +28,7 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
   assert.equal(appBar.includes('全局存储'), false, 'Global Storage should not remain in the AppBar')
 
   const asideStart = webApp.indexOf('component="aside"')
-  const asideEnd = webApp.indexOf('<Box component="main"', asideStart)
+  const asideEnd = webApp.indexOf('component="main"', asideStart)
   assert.notEqual(asideStart, -1, 'missing Web sidebar')
   assert.notEqual(asideEnd, -1, 'missing Web main content after sidebar')
   const sidebar = webApp.slice(asideStart, asideEnd)
@@ -35,17 +40,47 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
   }
   assert.ok(sidebar.includes('ManageAccountsRoundedIcon'), 'missing User Management icon')
   assert.ok(sidebar.includes('AssessmentRoundedIcon'), 'missing Audit icon')
-  assert.ok(sidebar.includes("setStorageStatsScope('global')"), 'Global Storage action must preserve the existing modal behavior')
+  assert.ok(sidebar.includes("selected={appView === 'admin-users'}"), 'User Management should expose selected page state')
+  assert.ok(sidebar.includes("selected={appView === 'admin-audit'}"), 'Audit should expose selected page state')
+  assert.ok(sidebar.includes("selected={appView === 'admin-storage'}"), 'Global Storage should expose selected page state')
+  assert.ok(sidebar.includes("setAppView('admin-users')"), 'User Management should navigate to a page')
+  assert.ok(sidebar.includes("setAppView('admin-audit')"), 'Audit should navigate to a page')
+  assert.ok(sidebar.includes("setAppView('admin-storage')"), 'Global Storage should navigate to a page')
 })
 
 
 test('Web first-class workspaces share the same page chrome', () => {
   assert.ok(webApp.includes('XDriveWorkspaceSurface'), 'Web app should reuse the shared workspace surface')
-  assert.equal((webApp.match(/<XDriveWorkspaceSurface presentation="page"/g) || []).length, 2, 'Files and Gallery should both use shared workspace page chrome')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), 'Files page title must use workspace page chrome')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
   assert.ok(webApp.includes('<ExternalSourcesPanel') && webApp.includes('presentation="page"'), 'External Sources should remain a first-class page')
   assert.ok(webApp.includes('<StorageStatsModal') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
+})
+
+test('Web admin workspaces are first-class pages while action dialogs stay local', () => {
+  assert.equal(webApp.includes('adminOpen'), false, 'legacy User Management modal state should be removed')
+  assert.equal(webApp.includes('auditOpen'), false, 'legacy Audit modal state should be removed')
+  assert.equal(webApp.includes('storageStatsScope'), false, 'legacy Global Storage modal state should be removed')
+
+  assert.ok(webApp.includes("<AdminUsersPanel\n            api={api}\n            open\n            presentation=\"page\""), 'User Management should render as a page')
+  assert.ok(webApp.includes("<AdminAuditPanel\n            api={api}\n            open\n            presentation=\"page\""), 'Audit should render as a page')
+  assert.ok(webApp.includes("scope=\"global\"\n            open\n            presentation=\"page\""), 'Global Storage should render as a page')
+
+  for (const [name, source, title] of [
+    ['User Management', adminUsers, '用户管理'],
+    ['Audit', adminAudit, '审计日志'],
+  ]) {
+    assert.ok(source.includes("presentation = 'dialog'"), `${name} should preserve optional dialog presentation for reuse`)
+    assert.ok(source.includes("presentation?: 'dialog' | 'page'"), `${name} should type page presentation`)
+    assert.ok(source.includes("const surfaceOpen = presentation === 'page' || open"), `${name} should load in page presentation`)
+    assert.ok(source.includes('<XDriveWorkspaceSurface'), `${name} should use shared workspace chrome`)
+    assert.ok(source.includes(`title="${title}"`), `${name} workspace title is missing`)
+  }
+
+  assert.ok(adminUsers.includes('open={createOpen}'), 'Create User should remain a local action dialog')
+  assert.ok(adminUsers.includes('open={!!quotaUser}'), 'Quota editing should remain a local action dialog')
+  assert.ok(adminUsers.includes('open={!!resetUser}'), 'Password reset should remain a local action dialog')
+  assert.ok(storageStats.includes("title={scope === 'global' ? '全局存储统计' : '我的存储统计'}"), 'Global Storage should reuse storage workspace chrome')
 })
 
 
@@ -54,11 +89,34 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedSidebar.includes('XDriveSidebarNavItem'), 'shared sidebar item primitive is missing')
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_WIDTH = 184'), 'shared sidebar width token is missing')
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH = 176'), 'shared compact sidebar width token is missing')
+  assert.ok(sharedStorageSummary.includes('XDriveSidebarStorageSummary'), 'shared sidebar storage summary is missing')
+  assert.ok(sharedStorageSummary.includes('physical') === false, 'shared storage summary should remain presentation-only')
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedAccount.includes('XDriveAccountSummary'), 'shared account summary is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
   assert.ok(webApp.includes('XDriveBrandLockup'), 'Web should consume shared brand lockup')
   assert.ok(webApp.includes('XDriveSidebarNavItem'), 'Web should consume shared sidebar navigation')
+  assert.ok(webApp.includes('XDriveSidebarStorageSummary'), 'Web should consume shared sidebar storage summary')
+  assert.ok(desktopApp.includes('XDriveSidebarStorageSummary'), 'Desktop should consume shared sidebar storage summary')
   assert.ok(webApp.includes('XDriveAccountAvatarButton'), 'Web should consume shared account chrome')
+})
+
+test('Web and Desktop show account storage usage at the bottom of the sidebar', () => {
+  assert.ok(sharedStorageSummary.includes("label = '存储空间'"), 'shared storage summary should use Chinese storage label')
+  assert.ok(sharedStorageSummary.includes('formatBinarySize(boundedUsed)'), 'shared storage summary should show used capacity')
+  assert.ok(sharedStorageSummary.includes("formatBinarySize(boundedTotal) : '不限'"), 'shared storage summary should show total capacity or unlimited quota')
+  assert.ok(sharedStorageSummary.includes('percentageLabel'), 'shared storage summary should show quota percentage when available')
+  assert.ok(sharedStorageSummary.includes('<LinearProgress'), 'shared storage summary should show quota progress')
+
+  assert.ok(webApp.includes('usedBytes={quota.physical_used_bytes}'), 'Web sidebar should use current account physical usage')
+  assert.ok(webApp.includes('totalBytes={quota.quota_bytes}'), 'Web sidebar should use current account quota')
+  assert.equal(webApp.includes('secondary={quota ?'), false, 'Web Storage nav item should not duplicate quota text')
+  assert.ok(webApp.includes('void api.quota()'), 'Web should refresh sidebar quota outside manual file actions')
+  assert.ok(webApp.includes("height: { md: 'calc(100vh - 64px)' }"), 'Web desktop shell should keep the sidebar viewport-height')
+  assert.ok(webApp.includes("overflowY: { md: 'auto' }"), 'Web desktop content should scroll without pushing sidebar footer away')
+
+  assert.ok(desktopApp.includes('usedBytes={cloudQuota.physical_used_bytes}'), 'Desktop sidebar should use cloud account physical usage')
+  assert.ok(desktopApp.includes('totalBytes={cloudQuota.quota_bytes}'), 'Desktop sidebar should use cloud account quota')
+  assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
 })
