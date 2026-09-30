@@ -13,6 +13,7 @@ const files = {
   audit: read('src/AdminAudit.tsx'),
   storageStats: read('src/StorageStatsPanel.tsx'),
   share: read('src/ShareDialog.tsx'),
+  shareFields: readRepo('ui/shared/src/mui/ShareFields.tsx'),
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
@@ -95,6 +96,10 @@ requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记
 if ((files.audit.match(/<XDriveDescriptionItem\b/g) || []).length !== 8) throw new Error('审计事件详情没有完整复用共享描述网格')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveSectionHeader', 'XDriveShareStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton', 'XDriveTableSurface'], '分享窗口')
+requireText(files.shareFields, ['XDriveCreatedShareLink', 'XDriveShareCreateFields', '新创建的分享链接', '最大下载次数', '密码（可选）', '有效期', '过期时间', '0 表示不限'], '共享分享字段')
+if ((files.share.match(/<XDriveCreatedShareLink\b/g) || []).length !== 1) throw new Error('Web 新建分享链接没有复用共享展示')
+if ((files.share.match(/<XDriveShareCreateFields\b/g) || []).length !== 1) throw new Error('Web 分享创建字段没有复用共享组件')
+if (files.share.includes('type="datetime-local"') || files.share.includes('label="最大下载次数"') || files.share.includes('label="密码（可选）"')) throw new Error('Web 分享窗口仍保留本地创建字段')
 if (/<Alert\b/.test(files.share)) throw new Error('分享窗口仍在直接渲染 AntD Alert')
 if (/from ['"]antd['"]/.test(files.share) || files.share.includes('@ant-design/icons')) throw new Error('分享窗口仍依赖 Ant Design')
 requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数', 'XDriveStatusAlert', 'XDriveActionButton'], '公开分享')

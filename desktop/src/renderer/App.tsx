@@ -54,6 +54,7 @@ import {
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
+  XDriveCreatedShareLink,
   XDriveDescriptionGrid,
   XDriveDescriptionItem,
   XDriveSectionHeader,
@@ -72,6 +73,7 @@ import {
   XDriveSidebarStorageSummary,
   XDriveWorkspaceShell,
   XDriveStatePanel,
+  XDriveShareCreateFields,
   XDriveShareStatusBadge,
   XDriveStatusAlert,
   XDriveStatusBadge,
@@ -3705,30 +3707,28 @@ export default function App() {
                 />
                 <XDriveDialogContent dividers flush>
                   {createdShareURL && (
-                    <div className="share-created-row">
-                      <input value={createdShareURL} readOnly />
-                      <XDriveActionButton intent="primary" onClick={() => void copyShareURL()}>复制链接</XDriveActionButton>
-                    </div>
+                    <XDriveCreatedShareLink
+                      value={createdShareURL}
+                      onCopy={() => void copyShareURL()}
+                      copyLabel="复制链接"
+                      copyIntent="primary"
+                      sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}
+                    />
                   )}
 
-                  <div className="share-form">
-                    <label>
-                      有效期
-                      <div className="input-with-unit">
-                        <input type="number" min="0" max="3650" step="1" value={shareExpiresDays} onChange={(event) => setShareExpiresDays(event.target.value)} />
-                        <span>天</span>
-                      </div>
-                      <small>0 表示永不过期。</small>
-                    </label>
-                    <label>
-                      最大下载次数
-                      <input type="number" min="0" step="1" value={shareMaxDownloads} onChange={(event) => setShareMaxDownloads(event.target.value)} />
-                      <small>0 表示不限次数。</small>
-                    </label>
-                    <label>
-                      密码（可选）
-                      <input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} placeholder="至少 8 个字符" />
-                    </label>
+                  <Stack spacing={1.5} sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}>
+                    <XDriveShareCreateFields
+                      expiryMode="days"
+                      expiryValue={shareExpiresDays}
+                      expiryHelperText="0 表示永不过期。"
+                      onExpiryChange={setShareExpiresDays}
+                      maxDownloadsValue={shareMaxDownloads}
+                      maxDownloadsHelperText="0 表示不限次数。"
+                      onMaxDownloadsChange={setShareMaxDownloads}
+                      password={sharePassword}
+                      passwordPlaceholder="至少 8 个字符"
+                      onPasswordChange={setSharePassword}
+                    />
                     <XDriveActionButton
                       intent="primary"
                       disabled={!!busy}
@@ -3738,7 +3738,7 @@ export default function App() {
                     >
                       创建分享链接
                     </XDriveActionButton>
-                  </div>
+                  </Stack>
 
                   <div className="cloud-compact-list">
                     {cloudShares.length === 0 ? <XDriveStatePanel variant="plain" compact message="此文件暂无分享链接。" /> : cloudShares.map((share) => (
