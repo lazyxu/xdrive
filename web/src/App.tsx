@@ -51,6 +51,7 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountSummary,
   XDriveActionButton,
+  XDriveBrandLockup,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
@@ -288,16 +289,12 @@ function AuthView({
   return (
     <div className="auth-shell">
       <Card className="auth-card" sx={{ p: 3, borderRadius: 2 }}>
-        <div className="brand-lockup">
-          <img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" />
-          <div>
-            <Typography component="h1" variant="h5" fontWeight={700}>xDrive</Typography>
-            <Typography variant="body2" color="text.secondary">将云端文件挂载为本地磁盘。</Typography>
-            <Box sx={{ mt: 0.75 }}>
-              <Chip size="small" label={`Server ${serverBuild?.version || '未知'}`} />
-            </Box>
-          </div>
-        </div>
+        <XDriveBrandLockup
+          iconSrc={xDriveBrandIcon}
+          variant="large"
+          subtitle="将云端文件挂载为本地磁盘。"
+          meta={<Chip size="small" label={`Server ${serverBuild?.version || '未知'}`} />}
+        />
 
         {notice && <XDriveStatusAlert tone="warning" sx={{ mb: 2 }}>{notice}</XDriveStatusAlert>}
         {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
@@ -519,10 +516,7 @@ function FileManager({
       <Box className="app-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
         <AppBar position="static" elevation={1}>
           <Toolbar className="topbar">
-            <div className="brand-lockup compact">
-              <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
-              <Typography variant="h6" fontWeight={700}>xDrive</Typography>
-            </div>
+            <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="compact" />
             <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
           </Toolbar>
         </AppBar>
@@ -693,10 +687,7 @@ function FileManager({
     <Box className="app-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar position="static" elevation={1}>
         <Toolbar className="topbar">
-          <div className="brand-lockup compact">
-            <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
-            <Typography variant="h6" fontWeight={700}>xDrive</Typography>
-          </div>
+          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="compact" />
           <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
         </Toolbar>
       </AppBar>

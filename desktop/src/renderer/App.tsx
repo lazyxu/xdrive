@@ -51,6 +51,7 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountSummary,
   XDriveActionButton,
+  XDriveBrandLockup,
   XDriveDialogActions,
   XDriveDialogActionSpacer,
   XDriveDialogContent,
@@ -164,10 +165,7 @@ function DesktopFrame({
   return (
     <div className="desktop-frame">
       <header className="desktop-titlebar">
-        <div className="desktop-titlebar-brand">
-          <img className="desktop-titlebar-icon" src={xDriveBrandIcon} alt="" aria-hidden="true" />
-          <strong>xDrive</strong>
-        </div>
+        <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" className="desktop-titlebar-brand" />
         <div className="desktop-titlebar-actions">{titlebarActions}</div>
         <div className="desktop-window-controls">
           <IconButton

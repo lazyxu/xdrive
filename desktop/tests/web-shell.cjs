@@ -8,6 +8,7 @@ const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'ut
 const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
+const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 
 test('Web AppBar keeps global chrome compact while admin tools live in the sidebar', () => {
   const appStart = webApp.indexOf('<AppBar position="static" elevation={1}>', webApp.indexOf('className="app-shell"'))
@@ -56,6 +57,8 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedAccount.includes('XDriveAccountSummary'), 'shared account summary is missing')
+  assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
+  assert.ok(webApp.includes('XDriveBrandLockup'), 'Web should consume shared brand lockup')
   assert.ok(webApp.includes('XDriveSidebarNavItem'), 'Web should consume shared sidebar navigation')
   assert.ok(webApp.includes('XDriveAccountAvatarButton'), 'Web should consume shared account chrome')
 })
