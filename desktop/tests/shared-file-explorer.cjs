@@ -124,3 +124,17 @@ test('shared FileExplorer supports clipboard keyboard, command-bar and context-m
     assert.ok(explorer.includes(token), `missing FileExplorer clipboard contract: ${token}`)
   }
 })
+
+test('shared FileExplorer supports selection bulk actions', () => {
+  for (const token of [
+    'onDownloadItems?: (items: XDriveFileExplorerItem[]) => void',
+    'onDeleteItems?: (items: XDriveFileExplorerItem[]) => void',
+    "label: '下载所选文件'",
+    "label: '删除所选项目'",
+    "event.key === 'Delete'",
+    '<DownloadRoundedIcon',
+    '<DeleteOutlineRoundedIcon',
+  ]) {
+    assert.ok(explorer.includes(token), `missing FileExplorer bulk-action contract: ${token}`)
+  }
+})

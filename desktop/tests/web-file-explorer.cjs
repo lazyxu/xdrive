@@ -61,3 +61,12 @@ test('Web FileExplorer wires copy/cut/paste to server copy and move primitives',
   assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Web shared cut adapter is missing')
   assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Web shared paste adapter is missing')
 })
+
+test('Web FileExplorer supports bulk download and delete', () => {
+  assert.ok(explorer.includes('const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {'), 'Web bulk download helper is missing')
+  assert.ok(explorer.includes('for (const node of files) await api.download(node)'), 'Web bulk download must use authenticated downloads')
+  assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Web shared bulk download adapter is missing')
+  assert.ok(explorer.includes('onRemoveMany(nodes)'), 'Web shared bulk delete adapter is missing')
+  assert.ok(app.includes('const removeMany = (nodes: Node[]) => {'), 'Web bulk delete confirmation flow is missing')
+  assert.ok(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), 'Web bulk delete must preserve revision checks')
+})

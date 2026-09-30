@@ -49,6 +49,7 @@ export default function DesktopFileExplorer({
   onOpenHistory,
   onOpenShares,
   onDelete,
+  onDeleteMany,
   onQuotaChanged,
   onError,
   onFeedback,
@@ -61,6 +62,7 @@ export default function DesktopFileExplorer({
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
   onDelete: (node: AgentCloudNode) => void
+  onDeleteMany: (nodes: AgentCloudNode[]) => void
   onQuotaChanged: () => Promise<unknown>
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
@@ -448,6 +450,34 @@ export default function DesktopFileExplorer({
       .filter((node): node is AgentCloudNode => Boolean(node))
   )
 
+  const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
+    const nodes = explorerNodesForItems(selected)
+    const files = nodes.filter((node) => node.type === 'file')
+    if (files.length === 0 || actionBusy) return
+    setActionBusy('download-many')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudDownloadFiles(
+        files.map((node) => ({ id: node.id, name: node.name })),
+      )
+      if (!result.ok) {
+        onError(result.error.message)
+        return
+      }
+      if (result.data.canceled) return
+      const skipped = nodes.length - files.length
+      const failed = result.data.failures.length
+      if (failed > 0) {
+        onFeedback('warning', `已下载 ${result.data.downloaded.length} 个文件，${failed} 个失败。`)
+      } else if (skipped > 0) {
+        onFeedback('warning', `已下载 ${result.data.downloaded.length} 个文件，跳过 ${skipped} 个文件夹。`)
+      } else {
+        onFeedback('good', `已下载 ${result.data.downloaded.length} 个文件。`)
+      }
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   const pasteClipboard = async () => {
     if (!current || !clipboard || clipboard.nodes.length === 0 || actionBusy) return
     setActionBusy('paste')
@@ -547,6 +577,11 @@ export default function DesktopFileExplorer({
         }}
         onPaste={() => { void pasteClipboard() }}
         canPaste={Boolean(clipboard?.nodes.length) && !actionBusy}
+        onDownloadItems={(selected) => { void downloadSelected(selected) }}
+        onDeleteItems={(selected) => {
+          const nodes = explorerNodesForItems(selected)
+          if (nodes.length > 0) onDeleteMany(nodes)
+        }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(
@@ -560,6 +595,8 @@ export default function DesktopFileExplorer({
             ? '正在上传…'
             : actionBusy === 'paste'
               ? '正在粘贴…'
+              : actionBusy === 'download-many'
+                ? '正在批量下载…'
               : actionBusy.startsWith('download-')
               ? '正在另存为…'
               : actionBusy.startsWith('open-')
