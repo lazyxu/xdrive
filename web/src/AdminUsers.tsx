@@ -8,7 +8,6 @@ import {
   InputAdornment,
   LinearProgress,
   MenuItem,
-  Snackbar,
   Stack,
   Switch,
   Table,
@@ -26,6 +25,7 @@ import {
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDriveFeedbackSnackbar,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
@@ -669,16 +669,13 @@ export default function AdminUsersPanel({
         </XDriveDialogActions>
       </Dialog>
 
-      <Snackbar
+      <XDriveFeedbackSnackbar
         open={Boolean(feedback)}
+        tone="good"
+        message={feedback}
         autoHideDuration={3000}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        onClose={(_event, reason) => {
-          if (reason !== 'clickaway') setFeedback('')
-        }}
-      >
-        <div>{feedback ? <XDriveStatusAlert tone="good">{feedback}</XDriveStatusAlert> : null}</div>
-      </Snackbar>
+        onClose={() => setFeedback('')}
+      />
     </>
   )
 }
