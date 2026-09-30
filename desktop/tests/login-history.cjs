@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 
 const {
   automaticLoginProfile,
+  clearSavedPassword,
   disableAutomaticLogin,
   normalizeLoginHistory,
   publicLoginHistory,
@@ -120,4 +121,27 @@ test('saved password replacement preserves remember and auto-login preferences',
   const disabled = disableAutomaticLogin(replaced)
   assert.equal(automaticLoginProfile(disabled), undefined)
   assert.equal(disabled.profiles[0].remember_password, true)
+})
+
+test('saved password can be cleared without deleting the login profile or mount path', () => {
+  const history = normalizeLoginHistory({
+    profiles: [{
+      server: 'https://one.example',
+      username: 'alice',
+      mount_path: '/data/xdrive',
+      last_used_at: '2026-09-02T00:00:00Z',
+      remember_password: true,
+      auto_login: true,
+      encrypted_password: 'ciphertext',
+    }],
+  })
+
+  const cleared = clearSavedPassword(history, 'https://one.example', 'alice')
+  assert.equal(cleared.profiles.length, 1)
+  assert.equal(cleared.profiles[0].server, 'https://one.example')
+  assert.equal(cleared.profiles[0].username, 'alice')
+  assert.equal(cleared.profiles[0].mount_path, '/data/xdrive')
+  assert.equal(cleared.profiles[0].remember_password, false)
+  assert.equal(cleared.profiles[0].auto_login, false)
+  assert.equal(Object.prototype.hasOwnProperty.call(cleared.profiles[0], 'encrypted_password'), false)
 })

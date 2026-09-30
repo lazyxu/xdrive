@@ -90,26 +90,29 @@ test('desktop GUI defaults to Chinese', () => {
   assert.match(html, /<title>xDrive 桌面版<\/title>/)
 })
 
-test('desktop auth uses one full-body frame instead of a floating card', () => {
-  assert.ok(renderer.includes('className="auth-panel auth-panel-form"'), 'login/password forms must use the shared auth content surface')
-  assert.ok(styles.includes('.center-shell { width: calc(100% - 40px); height: calc(100% - 40px); min-height: 0; margin: 20px; overflow: auto; display: grid; place-items: center; padding: 24px; border: 1px solid var(--border-strong); border-radius: 14px; background: transparent; }'), 'auth shell must own the single visible frame')
-  assert.ok(styles.includes('.auth-panel { width: min(520px,100%); border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }'), 'auth content must stay borderless inside the single frame')
-  assert.ok(styles.includes('.auth-panel-form .auth-form { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }'), 'nested auth form surface must stay transparent and borderless')
-  assert.ok(styles.includes('.center-shell { width: calc(100% - 24px); height: calc(100% - 24px); margin: 12px; padding: 18px; }'), 'compact auth frame spacing is missing')
-  assert.equal(styles.includes('radial-gradient(circle at 20% 10%'), false, 'auth shell should not add a second decorative surface')
-  assert.equal(styles.includes('box-shadow: 0 20px 55px'), false, 'auth surface should not retain the old floating-card shadow')
+test('desktop auth removes the oversized outer frame and uses one focused login surface', () => {
+  assert.ok(renderer.includes('className="auth-panel auth-panel-form"'), 'login/password forms must use the dedicated auth surface')
+  assert.match(styles, /\.center-shell\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*display:\s*flex;/s, 'auth shell should use the whole desktop body')
+  assert.doesNotMatch(styles, /\.center-shell\s*\{[^}]*border:/s, 'the oversized outer auth border must not return')
+  assert.equal(styles.includes('width: calc(100% - 24px)'), false, 'compact auth layout must not restore the oversized framed shell')
+  assert.equal(styles.includes('.auth-folder-row'), false, 'obsolete login sync-folder layout styles must be removed')
+  assert.match(styles, /\.auth-panel\s*\{[^}]*width:\s*min\(560px,100%\);[^}]*margin:\s*auto;[^}]*border-radius:\s*18px;/s, 'login surface should have a restrained centered width')
+  assert.ok(styles.includes('.auth-panel-form .auth-form { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }'), 'nested auth form surface must remain transparent')
+  assert.ok(styles.includes('.center-shell { padding: 20px 14px 24px; }'), 'compact auth spacing is missing')
 })
 
 test('desktop custom titlebar owns the application identity and global controls', () => {
   assert.ok(renderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"), 'missing shared desktop brand icon import')
-  assert.equal((renderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length, 1, 'desktop should pass the master icon once to the shared titlebar brand')
-  assert.ok(renderer.includes('XDriveBrandLockup'), 'missing shared titlebar brand lockup')
+  assert.equal((renderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length, 2, 'desktop should reuse the master icon in the titlebar and login identity')
+  assert.ok(renderer.includes('XDriveBrandLockup'), 'missing shared brand lockup')
   assert.ok(renderer.includes('variant="titlebar"'), 'desktop should use the shared titlebar brand variant')
+  assert.ok(renderer.includes('variant="compact"') && renderer.includes('className="auth-brand-lockup"'), 'login should visually connect to the shared xDrive identity')
   assert.ok(sharedBrandLockup.includes('component="img"'), 'shared brand lockup must render the icon image')
   assert.equal(renderer.includes('desktop-titlebar-icon'), false, 'legacy desktop brand icon markup remains')
   assert.equal(renderer.includes('<span>桌面版</span>'), false, 'desktop titlebar should not repeat the platform label')
   assert.ok(renderer.includes('className="desktop-titlebar-actions"'), 'missing titlebar action slot')
   assert.match(styles, /\.desktop-titlebar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/, 'interactive titlebar actions must opt out of window dragging')
+  assert.ok(styles.includes('border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 58%, transparent);'), 'desktop titlebar divider should stay visually subdued')
 })
 
 test('desktop keeps global sync, settings and account actions in the window titlebar', () => {
@@ -270,9 +273,10 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
-  assert.equal((renderer.match(/<MuiButton/g) || []).length, 5, 'unexpected raw MUI action buttons remain')
-  assert.equal((renderer.match(/color="inherit"/g) || []).length, 5, 'raw MUI buttons must be limited to inherit-color alert actions')
-  assert.ok(renderer.includes('className="auth-folder-button"') && renderer.includes('XDriveActionButton'), 'login folder browse action is not shared')
+  assert.equal((renderer.match(/<MuiButton/g) || []).length, 6, 'unexpected raw MUI action buttons remain')
+  assert.equal((renderer.match(/color="inherit"/g) || []).length, 5, 'five raw MUI buttons must remain limited to inherit-color alert actions')
+  assert.ok(renderer.includes('className="auth-inline-action"') && renderer.includes('清除已保存密码'), 'saved-password inline action is missing')
+  assert.equal(renderer.includes('className="auth-folder-button"'), false, 'sync-folder browsing should not remain in the login flow')
   assert.ok(renderer.includes('loadingLabel="正在创建…"'), 'cloud share creation lost shared loading feedback')
   assert.ok(renderer.includes("confirmDialog?.tone === 'error' ? 'danger'"), 'confirmation dialog tone is not mapped to the shared action intent')
 })
@@ -289,9 +293,12 @@ test('desktop persistent sync states use the cross-client MUI status alert', () 
 })
 
 test('desktop page-level status alerts use the shared alert surface', () => {
-  assert.equal((renderer.match(/<MuiAlert/g) || []).length, 2, 'unexpected raw MUI page alerts remain')
+  assert.equal((renderer.match(/<MuiAlert/g) || []).length, 1, 'only the transient Snackbar should use raw MUI Alert')
   assert.ok(renderer.includes('variant="filled"'), 'transient Snackbar alert should remain the filled special case')
-  assert.ok(renderer.includes('className="auth-security-note"'), 'login security note should remain the outlined special case')
+  assert.ok(renderer.includes('className="auth-security-note"'), 'login security note should remain a lightweight non-alert note')
+  assert.ok(renderer.includes('自动登录未成功，已暂时关闭自动登录'), 'auto-login failures need an inline warning')
+  assert.ok(renderer.includes('window.xdriveDesktop.onLoginHistory'), 'auto-login failures must be pushed to the renderer instead of silently falling back')
+  assert.ok(renderer.includes('{error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}'), 'login errors need a stable inline error surface')
   for (const text of [
     '存储空间已超出配额',
     '未计入 CAS 分布',
@@ -559,15 +566,52 @@ test('desktop GUI does not regress to key English labels', () => {
 })
 
 
-test('desktop auth forms use MUI controls without legacy CSS overriding MUI internals', () => {
+test('desktop login keeps self-hosted server configuration visible while simplifying the auth flow', () => {
   assert.ok(renderer.includes('className="auth-panel auth-panel-form"'), 'auth forms must use the dedicated MUI form surface')
-  assert.ok(renderer.includes('className="auth-folder-row"'), 'sync-folder input and browse action need one aligned row')
+  assert.ok(renderer.includes('id="desktop-login-server"'), 'server address must stay directly editable for self-hosted deployments')
+  assert.ok(renderer.includes('支持自建 xDrive 服务器；连接会在登录时再次验证。'), 'self-hosted server purpose should be explicit')
+  assert.ok(renderer.includes('window.xdriveDesktop.probeServer(candidate)'), 'server field should expose reachability feedback before login')
+  assert.ok(main.includes("ipcMain.handle('desktop:probe-server'"), 'main process server probe is missing')
+  assert.ok(main.includes("normalized + '/api/v1/version'"), 'server probe should use the public version endpoint')
+  assert.equal(renderer.includes('label="同步文件夹（可选）"'), false, 'sync-folder configuration should not remain in the login form')
+  assert.equal(renderer.includes('className="auth-folder-row"'), false, 'login folder browse row should be removed')
+  assert.ok(renderer.includes('登录后可在“设置”中修改'), 'login must explain where sync-folder configuration moved')
+})
+
+test('desktop login makes password and automatic-login state explicit', () => {
+  assert.ok(renderer.includes("placeholder={savedPasswordAvailable ? '••••••••••••' : '输入密码'}"), 'saved password must not look like an empty field')
+  assert.ok(renderer.includes('className="auth-saved-chip"') && renderer.includes('label="已保存"'), 'saved password state chip is missing')
+  assert.ok(renderer.includes('VisibilityRoundedIcon') && renderer.includes('VisibilityOffRoundedIcon'), 'password visibility control is missing')
+  assert.ok(renderer.includes('清除已保存密码'), 'saved password must be removable from the login page')
+  assert.ok(main.includes("ipcMain.handle('desktop:clear-saved-password'"), 'saved-password clearing IPC is missing')
+  assert.ok(renderer.includes('if (!checked) setAutoLogin(false)'), 'disabling password storage must also disable auto-login')
+  assert.ok(renderer.includes('if (checked) setRememberPassword(true)'), 'enabling auto-login must enable secure password storage')
+  assert.ok(renderer.includes('disabled={!loginReady || !!busy}'), 'login button must expose a clear disabled state')
+  assert.ok(renderer.includes('loadingLabel="正在登录…"'), 'login button must expose an in-progress state')
+})
+
+test('desktop login explains recovery state and keeps errors from shifting the layout', () => {
+  assert.ok(renderer.includes("status?.auth_status === '需要重新登录'"), 'expired sessions must be distinguished from a fresh login')
+  assert.ok(renderer.includes('登录状态已失效'), 'expired-session heading is missing')
+  assert.ok(renderer.includes('原有同步设置会继续保留'), 'expired-session recovery should explain preserved settings')
+  assert.ok(renderer.includes('className="auth-security-note"'), 'credential-storage explanation needs a lightweight note')
+  assert.ok(renderer.includes('不会以明文写入配置文件'), 'secure-storage copy should be concise and user-facing')
+  assert.ok(renderer.includes('className="auth-version"'), 'desktop version/build information should remain visible on login')
+  assert.ok(renderer.includes('按 Enter 登录'), 'keyboard login hint is missing')
+  assert.equal(renderer.includes('凭据会直接传递给 Go Agent'), false, 'implementation-detail security copy should not remain on the login page')
+  assert.equal(renderer.includes('<p className="eyebrow">登录</p>'), false, 'duplicate login eyebrow should be removed')
+})
+
+test('desktop auth forms use MUI controls without legacy CSS overriding MUI internals', () => {
+  assert.ok(renderer.includes('className="auth-field"'), 'auth fields need one shared external-label layout')
   assert.ok(renderer.includes('className="auth-options"'), 'remember/auto-login controls need one aligned option row')
-  assert.ok(renderer.includes('className="auth-security-note"'), 'credential-storage explanation needs a dedicated feedback surface')
-  assert.ok(renderer.includes('<XDriveActionButton\n              className="auth-submit"'), 'auth submit actions should use the shared MUI action button')
+  assert.equal(renderer.includes('label="服务器"'), false, 'server should not use a notched outlined label')
+  assert.equal(renderer.includes('label="用户名"'), false, 'username should not use a notched outlined label')
+  assert.equal(renderer.includes('label="密码"'), false, 'password should not use a notched outlined label')
+  assert.ok(renderer.includes('<XDriveActionButton\n                className="auth-submit"'), 'auth submit action should use the shared MUI action button')
   assert.equal(renderer.includes('<label>当前密码<input'), false, 'password-change form must not keep native label/input markup')
-  assert.equal(styles.includes('.auth-panel label,'), false, 'legacy auth label CSS must not override MUI InputLabel')
-  assert.equal(styles.includes('.auth-panel input,'), false, 'legacy auth input CSS must not override MUI InputBase')
-  assert.ok(styles.includes('.auth-folder-button.MuiButton-root { min-width: 76px; height: 40px; }'), 'browse button must align to compact TextField height')
+  assert.equal(styles.includes('.auth-panel label,'), false, 'legacy auth label CSS must not override MUI controls')
+  assert.equal(styles.includes('.auth-panel input,'), false, 'legacy auth input CSS must not override MUI controls')
+  assert.ok(styles.includes('.auth-field .MuiOutlinedInput-root {'), 'auth inputs need shared radius/background treatment')
   assert.ok(styles.includes('.auth-options .auth-option.MuiFormControlLabel-root { margin: 0; }'), 'checkbox labels must not inherit detached margins')
 })
