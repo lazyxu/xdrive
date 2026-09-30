@@ -17,6 +17,7 @@ const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedSidebarNav = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedAccountChrome = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrandLockup = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
+const sharedDescriptionGrid = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DescriptionGrid.tsx'), 'utf8')
 const sharedPageHeader = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PageHeader.tsx'), 'utf8')
 const sharedConfirmDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ConfirmDialog.tsx'), 'utf8')
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
@@ -635,7 +636,12 @@ test('desktop login exposes compact pre-login diagnostics beside build informati
 test('desktop auth forms use MUI controls without legacy CSS overriding MUI internals', () => {
   assert.ok(renderer.includes('className="auth-field"'), 'auth fields need one shared external-label layout')
   assert.ok(renderer.includes('className="auth-options"'), 'remember/auto-login controls need one aligned option row')
-  assert.equal(renderer.includes('label="服务器"'), false, 'server should not use a notched outlined label')
+  const authStart = renderer.indexOf('<form className="auth-panel auth-panel-form"')
+  const authEnd = renderer.indexOf('</form>', authStart)
+  assert.notEqual(authStart, -1, 'missing desktop auth form')
+  assert.notEqual(authEnd, -1, 'missing desktop auth form end')
+  const authSection = renderer.slice(authStart, authEnd)
+  assert.equal(authSection.includes('label="服务器"'), false, 'server should not use a notched outlined label')
   assert.equal(renderer.includes('label="用户名"'), false, 'username should not use a notched outlined label')
   assert.equal(renderer.includes('label="密码"'), false, 'password should not use a notched outlined label')
   assert.ok(renderer.includes('<XDriveActionButton\n                className="auth-submit"'), 'auth submit action should use the shared MUI action button')
@@ -644,4 +650,13 @@ test('desktop auth forms use MUI controls without legacy CSS overriding MUI inte
   assert.equal(styles.includes('.auth-panel input,'), false, 'legacy auth input CSS must not override MUI controls')
   assert.ok(styles.includes('.auth-field .MuiOutlinedInput-root {'), 'auth inputs need shared radius/background treatment')
   assert.ok(styles.includes('.auth-options .auth-option.MuiFormControlLabel-root { margin: 0; }'), 'checkbox labels must not inherit detached margins')
+})
+
+
+test('desktop overview uses the shared description grid', () => {
+  assert.ok(sharedDescriptionGrid.includes('XDriveDescriptionGrid'), 'shared description grid primitive is missing')
+  assert.ok(sharedDescriptionGrid.includes('XDriveDescriptionItem'), 'shared description item primitive is missing')
+  assert.ok(renderer.includes('<XDriveDescriptionGrid columns={4}'), 'desktop overview should use the shared four-column description grid')
+  assert.equal(renderer.includes('<dl>'), false, 'legacy desktop overview definition list should be removed')
+  assert.equal(styles.includes('dl { margin:'), false, 'legacy desktop description-grid CSS should be removed')
 })

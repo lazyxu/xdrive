@@ -54,6 +54,8 @@ import {
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
+  XDriveDescriptionGrid,
+  XDriveDescriptionItem,
   XDriveDialogActions,
   XDriveDialogActionSpacer,
   XDriveDialogContent,
@@ -2719,12 +2721,12 @@ export default function App() {
                   打开
                 </XDriveActionButton>
               </div>
-              <dl>
-                <div><dt>服务器</dt><dd>{status?.server}</dd></div>
-                <div><dt>用户</dt><dd>{status?.username}</dd></div>
-                <div><dt>状态</dt><dd>{status?.paused ? '已暂停' : status?.sync_status}</dd></div>
-                <div><dt>修订号</dt><dd>{status?.revision}</dd></div>
-              </dl>
+              <XDriveDescriptionGrid columns={4} sx={{ mt: 2.5 }}>
+                <XDriveDescriptionItem label="服务器">{status?.server}</XDriveDescriptionItem>
+                <XDriveDescriptionItem label="用户">{status?.username}</XDriveDescriptionItem>
+                <XDriveDescriptionItem label="状态">{status?.paused ? '已暂停' : status?.sync_status}</XDriveDescriptionItem>
+                <XDriveDescriptionItem label="修订号">{status?.revision}</XDriveDescriptionItem>
+              </XDriveDescriptionGrid>
             </section>
           </>
         )}
