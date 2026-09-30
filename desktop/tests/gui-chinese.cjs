@@ -15,6 +15,7 @@ const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusAlert.tsx'), 'utf8')
 const sharedSidebarNav = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedAccountChrome = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
+const sharedBrandLockup = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
 const sharedYikeCookieHelp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'YikeCookieHelp.tsx'), 'utf8')
 const sharedExternalSources = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
@@ -99,10 +100,12 @@ test('desktop auth uses one full-body frame instead of a floating card', () => {
 
 test('desktop custom titlebar owns the application identity and global controls', () => {
   assert.ok(renderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"), 'missing shared desktop brand icon import')
-  assert.equal((renderer.match(/src=\{xDriveBrandIcon\}/g) || []).length, 1, 'desktop should render the shared icon only once in the custom titlebar')
-  assert.ok(renderer.includes('desktop-titlebar-icon'), 'missing custom titlebar brand icon')
+  assert.equal((renderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length, 1, 'desktop should pass the master icon once to the shared titlebar brand')
+  assert.ok(renderer.includes('XDriveBrandLockup'), 'missing shared titlebar brand lockup')
+  assert.ok(renderer.includes('variant="titlebar"'), 'desktop should use the shared titlebar brand variant')
+  assert.ok(sharedBrandLockup.includes('component="img"'), 'shared brand lockup must render the icon image')
+  assert.equal(renderer.includes('desktop-titlebar-icon'), false, 'legacy desktop brand icon markup remains')
   assert.equal(renderer.includes('<span>桌面版</span>'), false, 'desktop titlebar should not repeat the platform label')
-  assert.equal(renderer.includes('<div className="brand-mark">x</div>'), false, 'legacy text x brand mark remains')
   assert.ok(renderer.includes('className="desktop-titlebar-actions"'), 'missing titlebar action slot')
   assert.match(styles, /\.desktop-titlebar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/, 'interactive titlebar actions must opt out of window dragging')
 })

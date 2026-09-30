@@ -28,8 +28,8 @@ test('application icon has one SVG source of truth and platform wiring', () => {
     desktopRenderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"),
     'Desktop brand lockups must import the approved master SVG directly',
   )
-  const desktopBrandUses = desktopRenderer.match(/src=\{xDriveBrandIcon\}/g) || []
-  assert.equal(desktopBrandUses.length, 1, 'Desktop must render the xDrive brand icon once in the custom titlebar')
+  const desktopBrandUses = desktopRenderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []
+  assert.equal(desktopBrandUses.length, 1, 'Desktop must pass the master icon once to the shared titlebar brand')
 
   const web = text('web/index.html')
   assert.ok(web.includes('href="/favicon.svg"'), 'Web must expose the generated SVG favicon')
@@ -43,7 +43,7 @@ test('application icon has one SVG source of truth and platform wiring', () => {
     webRenderer.includes("import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'"),
     'Web brand lockups must import the approved master SVG directly',
   )
-  assert.equal((webRenderer.match(/src=\{xDriveBrandIcon\}/g) || []).length, 3, 'Web brand lockups must all use the master icon')
+  assert.equal((webRenderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length, 3, 'Web shared brand lockups must all receive the master icon')
   assert.ok(text('deploy/Caddy.Dockerfile').includes('COPY web/dist/ /srv/'), 'Merged Caddy/Web image must copy the CI-built Web dist')
 
   const linuxDesktop = text('packaging/linux/xdrive.desktop')

@@ -75,9 +75,7 @@ html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 body { margin: 0; min-width: 760px; min-height: 520px; background: var(--page-bg); color: var(--text); }
 .desktop-frame { width: 100%; height: 100vh; display: grid; grid-template-rows: 40px minmax(0,1fr); overflow: hidden; background: var(--page-bg); }
 .desktop-titlebar { height: 40px; display: flex; align-items: center; border-bottom: 1px solid var(--border-soft); background: color-mix(in srgb, var(--surface) 94%, var(--page-bg)); user-select: none; -webkit-app-region: drag; }
-.desktop-titlebar-brand { min-width: 0; padding-left: 12px; display: flex; align-items: center; gap: 7px; color: var(--text-strong); flex: 0 0 auto; }
-.desktop-titlebar-brand strong { font-size: 12px; font-weight: 700; }
-.desktop-titlebar-icon { width: 20px; height: 20px; flex: 0 0 auto; display: block; object-fit: contain; }
+.desktop-titlebar-brand { padding-left: 12px; color: var(--text-strong); flex: 0 0 auto; }
 .desktop-titlebar-actions { height: 40px; margin-left: auto; padding: 0 4px; display: flex; align-items: center; -webkit-app-region: no-drag; }
 .desktop-titlebar-action-row { height: 100%; }
 .desktop-titlebar-actions .MuiIconButton-root { width: 32px; height: 32px; padding: 4px; }

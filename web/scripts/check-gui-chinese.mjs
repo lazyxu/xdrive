@@ -17,6 +17,7 @@ const files = {
   sources: read('src/ExternalSources.tsx'),
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
   accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),
+  brandLockup: readRepo('ui/shared/src/mui/BrandLockup.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
@@ -47,16 +48,17 @@ requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹'
 if (/from ['"]antd['"]/.test(files.app) || files.app.includes('@ant-design/icons')) throw new Error('Web 主文件管理器仍依赖 Ant Design')
 requireText(files.app, ['XDriveActionButton', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveDialogActions', 'XDriveStatePanel', 'XDriveMediaGalleryPage'], 'Web MUI 文件管理器')
 if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
-requireText(files.app, ['src={xDriveBrandIcon}'], 'xDrive 品牌图标')
+requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDrive 品牌图标')
+requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
 requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountSummary', 'web-account-menu', '退出登录'], 'Web 账号菜单')
 requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', '<Avatar'], '共享账号 chrome')
 if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')
 if (files.app.includes('LogoutOutlined')) throw new Error('Web 顶栏仍保留 AntD 退出图标')
-if ((files.app.match(/src=\{xDriveBrandIcon\}/g) || []).length !== 3) {
-  throw new Error('Web 应在登录页和两个导航品牌位统一使用主应用图标')
+if ((files.app.match(/<XDriveBrandLockup/g) || []).length !== 3) {
+  throw new Error('Web 应在登录页和两个导航品牌位统一复用共享品牌区')
 }
-if (files.app.includes('<div className="brand-mark">x</div>') || files.app.includes('<div className="brand-mark small">x</div>')) {
-  throw new Error('Web 仍存在旧的文字 x 品牌标识')
+if (files.app.includes('className="brand-lockup"') || files.app.includes('className="brand-mark"')) {
+  throw new Error('Web 仍保留本地品牌区实现')
 }
 requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
 if (/from ['"]antd['"]/.test(files.users) || files.users.includes('@ant-design/icons')) throw new Error('用户管理仍依赖 Ant Design')
