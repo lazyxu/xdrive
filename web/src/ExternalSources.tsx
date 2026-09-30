@@ -23,7 +23,6 @@ import {
   MenuItem,
   OutlinedInput,
   Select as MuiSelect,
-  Snackbar,
   Stack,
   TextField,
   Tooltip,
@@ -37,6 +36,7 @@ import {
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDriveFeedbackSnackbar,
   XDrivePaginationControls,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -2074,18 +2074,12 @@ export default function ExternalSourcesPanel({
         </XDriveDialogActions>
       </Dialog>
 
-      <Snackbar
+      <XDriveFeedbackSnackbar
         open={Boolean(feedback)}
-        autoHideDuration={3500}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        onClose={(_event, reason) => {
-          if (reason !== 'clickaway') setFeedback('')
-        }}
-      >
-        <div>
-          {feedback ? <XDriveStatusAlert tone="good">{feedback}</XDriveStatusAlert> : null}
-        </div>
-      </Snackbar>
+        tone="good"
+        message={feedback}
+        onClose={() => setFeedback('')}
+      />
 
       <SynologyDsmGuideDialog
         open={!!guideSource}
