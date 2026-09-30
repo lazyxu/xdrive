@@ -58,7 +58,7 @@ func (e *Executor[Ref]) Execute(
 	item sourcepkg.DiscoveredItem,
 	ref Ref,
 ) (client.SourceCommit, error) {
-	if e == nil || e.API == nil || e.TargetNodeID == 0 || e.Open == nil {
+	if e == nil || e.API == nil || e.TargetNodeID == 0 {
 		return client.SourceCommit{}, fmt.Errorf("pull transfer executor is not configured")
 	}
 	action := sourcepkg.PlanAction(plan.Action)
@@ -66,8 +66,15 @@ func (e *Executor[Ref]) Execute(
 		ExternalID: item.ExternalID, Action: string(action), Kind: item.Kind, Path: item.Path,
 		Size: item.Size, ModifiedAt: item.ModifiedAt, RemoteRevision: item.RemoteRevision,
 	}
-	if item.Kind != meta.SourceItemKindFile {
-		return client.SourceCommit{}, fmt.Errorf("pull transfer executor only supports files")
+	switch item.Kind {
+	case meta.SourceItemKindDirectory:
+		return e.executeDirectory(ctx, plan, item, action, commit)
+	case meta.SourceItemKindFile:
+		if e.Open == nil {
+			return client.SourceCommit{}, fmt.Errorf("pull file transfer opener is not configured")
+		}
+	default:
+		return client.SourceCommit{}, fmt.Errorf("unsupported pull source item kind %q", item.Kind)
 	}
 
 	md5Digest := ""
@@ -151,6 +158,61 @@ func (e *Executor[Ref]) Execute(
 	commit.TransferredBytes = transferred
 	commit.Transferred = transferred > 0
 	return commit, nil
+}
+
+func (e *Executor[Ref]) executeDirectory(
+	ctx context.Context,
+	plan client.SourcePlan,
+	item sourcepkg.DiscoveredItem,
+	action sourcepkg.PlanAction,
+	commit client.SourceCommit,
+) (client.SourceCommit, error) {
+	var (
+		node client.Node
+		err  error
+	)
+	switch action {
+	case sourcepkg.ActionCreate:
+		node, err = e.ensureDirectory(ctx, item.Path)
+	case sourcepkg.ActionUpdate:
+		if plan.NodeID == nil || plan.NodeRevision == 0 {
+			return client.SourceCommit{}, fmt.Errorf("pull directory update is missing node identity")
+		}
+		node = client.Node{ID: *plan.NodeID, Revision: plan.NodeRevision, Type: meta.NodeTypeDir}
+	case sourcepkg.ActionMove, sourcepkg.ActionMoveUpdate:
+		if plan.NodeID == nil || plan.NodeRevision == 0 {
+			return client.SourceCommit{}, fmt.Errorf("pull directory move is missing node identity")
+		}
+		node, err = e.moveNodeToPath(ctx, *plan.NodeID, plan.NodeRevision, item.Path)
+	default:
+		return client.SourceCommit{}, fmt.Errorf("unsupported pull directory action %q", action)
+	}
+	if err != nil {
+		return client.SourceCommit{}, err
+	}
+	if node.ID == 0 || node.Revision == 0 {
+		return client.SourceCommit{}, fmt.Errorf("pull directory execution returned invalid node identity")
+	}
+	e.cacheDirectory(item.Path, node)
+	commit.NodeID = node.ID
+	commit.NodeRevision = node.Revision
+	return commit, nil
+}
+
+func (e *Executor[Ref]) cacheDirectory(relativePath string, node client.Node) {
+	if e == nil || node.ID == 0 {
+		return
+	}
+	clean, err := sourcepkg.NormalizeRelativePath(relativePath)
+	if err != nil {
+		return
+	}
+	for key, cached := range e.dirCache {
+		if cached.ID == node.ID && key != clean {
+			delete(e.dirCache, key)
+		}
+	}
+	e.dirCache[clean] = node
 }
 
 func (e *Executor[Ref]) open(ref Ref) client.UploadStreamOpen {
