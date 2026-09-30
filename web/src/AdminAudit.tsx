@@ -8,7 +8,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -24,6 +23,7 @@ import {
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
+  XDriveTableSurface,
   XDriveWorkspaceSurface,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
@@ -185,7 +185,7 @@ export default function AdminAuditPanel({
           ) : events.length === 0 ? (
             <XDriveStatePanel variant="plain" message="未找到审计事件" />
           ) : (
-            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
+            <XDriveTableSurface>
               <Table size="small" aria-label="审计日志" sx={{ minWidth: 880 }}>
                 <TableHead>
                   <TableRow>
@@ -244,7 +244,7 @@ export default function AdminAuditPanel({
                   })}
                 </TableBody>
               </Table>
-            </TableContainer>
+            </XDriveTableSurface>
           )}
 
           {hasMore && (

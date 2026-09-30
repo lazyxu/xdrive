@@ -12,7 +12,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   Typography,
@@ -29,6 +28,7 @@ import {
   XDriveSectionHeader,
   XDriveStatePanel,
   XDriveStatusAlert,
+  XDriveTableSurface,
   XDriveWorkspaceSurface,
   XDriveStatusBadge,
   xDriveDialogPaperProps,
@@ -358,7 +358,7 @@ export default function StorageStatsPanel({
                     <Stack spacing={1}>
                       <XDriveSectionHeader level="h3" title="Orphan staging" />
                       {stagingLoading ? <LinearProgress /> : null}
-                      <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
+                      <XDriveTableSurface>
                         <Table size="small" aria-label="Orphan staging" sx={{ minWidth: 680 }}>
                           <TableHead>
                             <TableRow>
@@ -377,7 +377,7 @@ export default function StorageStatsPanel({
                             ))}
                           </TableBody>
                         </Table>
-                      </TableContainer>
+                      </XDriveTableSurface>
                       <XDrivePaginationControls
                         page={stagingPage}
                         pageSize={STAGING_PAGE_SIZE}
@@ -477,7 +477,7 @@ export default function StorageStatsPanel({
                     <Typography variant="body2" color="text.secondary">
                       每 {history.sampling_interval_hours} 小时记录一次，保留 {history.retention_days} 天。下表显示最近 12 个快照。
                     </Typography>
-                    <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
+                    <XDriveTableSurface>
                       <Table size="small" aria-label="存储历史趋势" sx={{ minWidth: 920 }}>
                         <TableHead>
                           <TableRow>
@@ -504,7 +504,7 @@ export default function StorageStatsPanel({
                           ))}
                         </TableBody>
                       </Table>
-                    </TableContainer>
+                    </XDriveTableSurface>
                   </Stack>
                 </Stack>
               )}
@@ -531,7 +531,7 @@ export default function StorageStatsPanel({
                 <Typography variant="body2" color="text.secondary">
                   区间按 [下界, 上界) 统计，用于判断后续 CDC 与 small-file packing 的实际收益。
                 </Typography>
-                <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+                <XDriveTableSurface>
                   <Table size="small" aria-label="CAS Blob 尺寸分布">
                     <TableHead>
                       <TableRow>
@@ -550,7 +550,7 @@ export default function StorageStatsPanel({
                       ))}
                     </TableBody>
                   </Table>
-                </TableContainer>
+                </XDriveTableSurface>
               </Stack>
 
               <Typography variant="caption" color="text.secondary">
