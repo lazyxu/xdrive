@@ -131,22 +131,24 @@ func TestRunnerBoundsSourceConcurrency(t *testing.T) {
 	}
 }
 
-func TestPrioritizeDueSourcesManualThenMostOverdue(t *testing.T) {
+func TestPrioritizeDueSourcesManualRetryThenMostOverdue(t *testing.T) {
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	lastTwelveHours := now.Add(-12 * time.Hour)
 	lastSevenHours := now.Add(-7 * time.Hour)
 	manualRequested := now.Add(-time.Minute)
+	retryAt := now.Add(-2 * time.Minute)
 	sources := []meta.Source{
 		{ID: 1, ScheduleType: "interval", ScheduleExpression: "6h"},
 		{ID: 2, ScheduleType: "interval", ScheduleExpression: "6h", LastRunAt: &lastSevenHours},
 		{ID: 3, ScheduleType: "interval", ScheduleExpression: "6h", LastRunAt: &lastTwelveHours},
 		{ID: 4, ScheduleType: "manual", RunRequestedAt: &manualRequested},
+		{ID: 5, ScheduleType: "interval", ScheduleExpression: "6h", RetryAttempt: 1, RetryAt: &retryAt, RetryClass: "transient"},
 	}
 	got, err := prioritizeDueSources(sources, now, 6*time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []uint64{4, 3, 2, 1}
+	want := []uint64{4, 5, 3, 2, 1}
 	for i, source := range got {
 		if source.ID != want[i] {
 			t.Fatalf("priority[%d]=%d want=%d; ordered=%+v", i, source.ID, want[i], got)

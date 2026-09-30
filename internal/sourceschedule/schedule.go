@@ -99,6 +99,9 @@ func Due(source meta.Source, now time.Time, fallback time.Duration) (bool, error
 	if spec.Type == TypeManual {
 		return false, nil
 	}
+	if source.RetryAt != nil {
+		return !source.RetryAt.After(now.UTC()), nil
+	}
 	if source.LastRunAt == nil {
 		return true, nil
 	}
@@ -119,6 +122,9 @@ func NextRunAt(source meta.Source, now time.Time, fallback time.Duration) (time.
 	}
 	if spec.Type == TypeManual {
 		return time.Time{}, nil
+	}
+	if source.RetryAt != nil {
+		return source.RetryAt.UTC(), nil
 	}
 	if source.LastRunAt == nil {
 		return now.UTC(), nil
