@@ -9,7 +9,6 @@ import {
   AccordionSummary,
   Box as MuiBox,
   Button as MuiButton,
-  Card,
   Checkbox,
   CircularProgress,
   Dialog,
@@ -45,6 +44,7 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceFailureItem,
+  XDriveSourceSummaryCard,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -1038,34 +1038,30 @@ export default function ExternalSourcesPanel({
                 : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatSize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
 
               return (
-                <Card key={row.source.id} variant="outlined" className="external-source-card" sx={{ p: '18px 20px', borderRadius: 2 }}>
-                  <div className="external-source-card-header">
-                    <div>
-                      <MuiTypography component="h3" variant="h6" fontWeight={700}>{row.source.name}</MuiTypography>
-                      <div className="external-source-subtitle">{card.modeLabel}</div>
-                    </div>
-                    <XDriveStatusBadge tone={card.state.tone} label={card.state.label} />
-                  </div>
-                  <div className="external-source-time">{card.lastActivityLabel}：{formatExternalSourceTime(card.lastActivityAt)}</div>
-                  <div className="external-source-card-meta">
-                    <div className="external-source-stats">{stats}</div>
-                    {row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' && (
-                      <MuiButton
-                        size="small"
-                        color="error"
-                        variant="text"
-                        onClick={() => setErrorDialog({
-                          title: `${row.source.name} · 最近一次运行错误`,
-                          message: row.source.last_error || '未提供具体错误信息',
-                        })}
-                        sx={{ minWidth: 'auto', px: 0, justifyContent: 'flex-start' }}
-                      >
-                        查看最近错误
-                      </MuiButton>
-                    )}
-                  </div>
-                  <div className="external-source-actions">
-                    <Stack direction="row" spacing={0.75} flexWrap="wrap" justifyContent="flex-end">
+                <XDriveSourceSummaryCard
+                  key={row.source.id}
+                  name={row.source.name}
+                  modeLabel={card.modeLabel}
+                  statusTone={card.state.tone}
+                  statusLabel={card.state.label}
+                  activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
+                  stats={stats}
+                  metaAction={row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' ? (
+                    <MuiButton
+                      size="small"
+                      color="error"
+                      variant="text"
+                      onClick={() => setErrorDialog({
+                        title: `${row.source.name} · 最近一次运行错误`,
+                        message: row.source.last_error || '未提供具体错误信息',
+                      })}
+                      sx={{ minWidth: 'auto', px: 0, justifyContent: 'flex-start' }}
+                    >
+                      查看最近错误
+                    </MuiButton>
+                  ) : undefined}
+                  actions={(
+                    <>
                       <XDriveActionButton compact disabled={failedItemsLoading} onClick={() => void openDetails(row)}>
                         查看
                       </XDriveActionButton>
@@ -1100,9 +1096,9 @@ export default function ExternalSourcesPanel({
                         </XDriveActionButton>
                       )}
                       <XDriveActionButton compact onClick={() => openSettings(row)}>设置</XDriveActionButton>
-                    </Stack>
-                  </div>
-                </Card>
+                    </>
+                  )}
+                />
               )
             })}
           </div>
