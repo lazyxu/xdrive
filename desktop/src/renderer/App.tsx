@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CSSProperties, FormEvent, ReactNode } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import {
   Autocomplete,
   Box as MuiBox,
@@ -70,8 +70,7 @@ import {
   XDriveSidebarSurface,
   XDriveSidebarSection,
   XDriveSidebarStorageSummary,
-  XDRIVE_SIDEBAR_COMPACT_WIDTH,
-  XDRIVE_SIDEBAR_WIDTH,
+  XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveShareStatusBadge,
   XDriveStatusAlert,
@@ -2709,13 +2708,7 @@ export default function App() {
   )
 
   return renderDesktopFrame(
-    <div
-      className="shell"
-      style={{
-        '--xdrive-sidebar-width': `${XDRIVE_SIDEBAR_WIDTH}px`,
-        '--xdrive-sidebar-compact-width': `${XDRIVE_SIDEBAR_COMPACT_WIDTH}px`,
-      } as CSSProperties}
-    >
+    <XDriveWorkspaceShell>
       <XDriveSidebarSurface ariaLabel="桌面版侧边栏" className="sidebar">
         <XDriveSidebarNavList ariaLabel="桌面版功能区">
           <XDriveSidebarNavItem selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
@@ -4493,7 +4486,7 @@ export default function App() {
         username={status?.username}
         onClose={() => setSynologyGuideSource(null)}
       />
-    </div>,
+    </XDriveWorkspaceShell>,
     desktopTitlebarActions,
   )
 }

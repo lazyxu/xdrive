@@ -49,7 +49,7 @@ import {
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
   XDriveWorkspaceSurface,
-  XDRIVE_SIDEBAR_WIDTH,
+  XDriveWorkspaceShell,
   XDriveStatusAlert,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
@@ -692,7 +692,15 @@ function FileManager({
   }
 
   return (
-    <Box className="app-shell file-manager-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box
+      className="app-shell file-manager-shell"
+      sx={{
+        minHeight: '100vh',
+        bgcolor: 'background.default',
+        display: { xs: 'block', md: 'flex' },
+        flexDirection: { md: 'column' },
+      }}
+    >
       <AppBar
           position="static"
           elevation={0}
@@ -706,14 +714,10 @@ function FileManager({
         </Toolbar>
       </AppBar>
 
-      <Box
+      <XDriveWorkspaceShell
+        responsive
         className="web-workspace-shell"
-        sx={{
-          display: { xs: 'block', md: 'grid' },
-          gridTemplateColumns: { md: `${XDRIVE_SIDEBAR_WIDTH}px minmax(0, 1fr)` },
-          minHeight: { md: 'calc(100vh - 48px)' },
-          height: { md: 'calc(100vh - 48px)' },
-        }}
+        sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}
       >
         <XDriveSidebarSurface ariaLabel="网页端功能区" responsive>
           <XDriveSidebarNavList ariaLabel="网页端功能区导航" responsive>
@@ -848,7 +852,7 @@ function FileManager({
           </Box>
         )}
         </Box>
-      </Box>
+      </XDriveWorkspaceShell>
 
       <Dialog open={folderOpen} onClose={() => setFolderOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
         <XDriveDialogTitle title="新建文件夹" onClose={() => setFolderOpen(false)} />

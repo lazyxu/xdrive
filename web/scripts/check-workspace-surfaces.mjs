@@ -8,6 +8,7 @@ const read = (name) => fs.readFileSync(path.join(root, name), 'utf8')
 const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
 const workspace = readRepo('ui/shared/src/mui/WorkspaceSurface.tsx')
+const workspaceShell = readRepo('ui/shared/src/mui/WorkspaceShell.tsx')
 const app = read('src/App.tsx')
 const styles = read('src/styles.css')
 const sources = read('src/ExternalSources.tsx')
@@ -33,8 +34,18 @@ requireText(workspace, [
   '<XDriveDialogContent',
 ], 'XDriveWorkspaceSurface')
 
+requireText(workspaceShell, [
+  'export function XDriveWorkspaceShell',
+  'XDRIVE_SIDEBAR_WIDTH',
+  'XDRIVE_SIDEBAR_COMPACT_WIDTH',
+  "'@media (max-width: 960px)'",
+], 'XDriveWorkspaceShell')
+
 requireText(app, [
   'file-manager-shell',
+  'XDriveWorkspaceShell',
+  'className="web-workspace-shell"',
+  "sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}",
   "className={appView === 'files' ? 'content-wrap files-workspace' : 'content-wrap'}",
   'className="files-workspace-surface"',
   "height: { xs: 560, md: '100%' }",
@@ -99,3 +110,7 @@ for (const [name, source] of [
 }
 
 console.log('Web workspace presentation checks passed')
+
+if (app.includes("calc(100vh - 48px)")) {
+  throw new Error('Web workspace must not duplicate AppBar viewport subtraction math')
+}
