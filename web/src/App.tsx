@@ -58,6 +58,7 @@ import {
   XDriveMediaGalleryPage,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
+  XDriveSidebarSurface,
   XDriveSidebarSection,
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
@@ -718,22 +719,7 @@ function FileManager({
           height: { md: 'calc(100vh - 64px)' },
         }}
       >
-        <Box
-          component="aside"
-          aria-label="网页端功能区"
-          sx={{
-            minWidth: 0,
-            display: { xs: 'block', md: 'flex' },
-            flexDirection: { md: 'column' },
-            bgcolor: 'background.paper',
-            borderRight: { xs: 0, md: 1 },
-            borderBottom: { xs: 1, md: 0 },
-            borderColor: 'divider',
-            p: { xs: 1, md: 1.5 },
-            overflowX: { xs: 'auto', md: 'hidden' },
-            overflowY: { md: 'auto' },
-          }}
-        >
+        <XDriveSidebarSurface ariaLabel="网页端功能区" responsive>
           <XDriveSidebarNavList ariaLabel="网页端功能区导航" responsive>
             <XDriveSidebarNavItem selected={appView === 'files'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setAppView('files')} />
             <XDriveSidebarNavItem selected={appView === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setAppView('gallery')} />
@@ -779,7 +765,7 @@ function FileManager({
               />
             </Box>
           )}
-        </Box>
+        </XDriveSidebarSurface>
 
         <Box
           component="main"

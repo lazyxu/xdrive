@@ -64,6 +64,7 @@ import {
   XDrivePaginationControls,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
+  XDriveSidebarSurface,
   XDriveSidebarSection,
   XDriveSidebarStorageSummary,
   XDRIVE_SIDEBAR_COMPACT_WIDTH,
@@ -2640,7 +2641,7 @@ export default function App() {
         '--xdrive-sidebar-compact-width': `${XDRIVE_SIDEBAR_COMPACT_WIDTH}px`,
       } as CSSProperties}
     >
-      <aside className="sidebar">
+      <XDriveSidebarSurface appearance="dark" ariaLabel="桌面版侧边栏" className="sidebar">
         <XDriveSidebarNavList ariaLabel="桌面版功能区">
           <XDriveSidebarNavItem appearance="dark" selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
           <XDriveSidebarNavItem appearance="dark" selected={view === 'cloud'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setView('cloud')} />
@@ -2663,7 +2664,7 @@ export default function App() {
             sx={{ mt: 1.25 }}
           />
         )}
-      </aside>
+      </XDriveSidebarSurface>
 
       <main className="content">
         <XDrivePageHeader title={viewLabel(view)} eyebrow="xDrive" size="large" />

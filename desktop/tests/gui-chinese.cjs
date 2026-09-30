@@ -147,10 +147,10 @@ test('desktop keeps global sync, settings and account actions in the window titl
 })
 
 test('desktop sidebar consumes shared MUI navigation with icons, state and badges', () => {
-  const start = renderer.indexOf('<aside className="sidebar">')
-  const end = renderer.indexOf('</aside>', start)
-  assert.notEqual(start, -1, 'missing desktop sidebar')
-  assert.notEqual(end, -1, 'missing desktop sidebar end')
+  const start = renderer.indexOf('<XDriveSidebarSurface appearance="dark" ariaLabel="桌面版侧边栏" className="sidebar">')
+  const end = renderer.indexOf('</XDriveSidebarSurface>', start)
+  assert.notEqual(start, -1, 'missing shared desktop sidebar surface')
+  assert.notEqual(end, -1, 'missing shared desktop sidebar surface end')
   const sidebar = renderer.slice(start, end)
 
   assert.equal(sidebar.includes("view === 'settings'"), false, 'settings should live in the titlebar, not the feature sidebar')
@@ -174,12 +174,16 @@ test('desktop sidebar consumes shared MUI navigation with icons, state and badge
   assert.ok(renderer.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH'), 'desktop shell should consume the shared compact width token')
   assert.ok(styles.includes('var(--xdrive-sidebar-width, 184px)'), 'desktop shell CSS should use the shared width variable')
   assert.ok(styles.includes('var(--xdrive-sidebar-compact-width, 176px)'), 'desktop compact CSS should use the shared width variable')
+  assert.ok(sharedSidebarNav.includes('export function XDriveSidebarSurface'), 'shared sidebar surface primitive is missing')
+  assert.ok(sharedSidebarNav.includes('component="aside"'), 'shared sidebar surface must own the aside landmark')
+  assert.ok(sharedSidebarNav.includes("responsive ? { xs: 'block', md: 'flex' } : 'flex'"), 'shared responsive sidebar surface behavior is missing')
   assert.ok(sharedSidebarNav.includes("appearance = 'light'"), 'shared sidebar appearance contract is missing')
   assert.ok(sharedSidebarNav.includes("appearance === 'dark'"), 'shared dark sidebar appearance is missing')
   assert.ok(sharedSidebarNav.includes('export function XDriveSidebarSection'), 'shared sidebar section primitive is missing')
   assert.ok(sharedSidebarNav.includes("pinnedBottom ? 'auto'"), 'shared pinned-bottom sidebar section behavior is missing')
   assert.ok(sidebar.includes('primary="文件"'), 'desktop file navigation should match the Web label')
   assert.equal(sidebar.includes('primary="云端文件"'), false, 'desktop sidebar should not use the legacy cloud-files label')
+  assert.equal(styles.includes('.sidebar {'), false, 'Desktop should not keep a duplicate local sidebar surface implementation')
 })
 
 test('desktop gates CfAPI-only storage controls by platform', () => {
