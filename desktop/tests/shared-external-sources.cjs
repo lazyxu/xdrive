@@ -666,3 +666,31 @@ test('Web and Desktop reuse shared source collection presentation', () => {
   assert.equal(web.includes("item.state === 'synced' ? 'good'"), false, 'Web should not retain local collection item state presentation')
   assert.equal(desktop.includes("item.state === 'synced' ? 'good'"), false, 'Desktop should not retain local collection item state presentation')
 })
+
+
+test('Web and Desktop reuse shared source schedule fields', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedSchedule = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceScheduleFields.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+
+  for (const token of [
+    'XDriveSourceScheduleFields',
+    '调度方式',
+    '固定间隔',
+    'Cron 表达式',
+    '运行间隔',
+    'IANA 时区',
+    'onScheduleTypeChange',
+    'onExpressionChange',
+    'onTimezoneChange',
+  ]) {
+    assert.ok(sharedSchedule.includes(token), `shared Source schedule fields missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Web create/settings should reuse shared schedule fields')
+  assert.equal((desktop.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Desktop create/settings should reuse shared schedule fields')
+  assert.ok(desktop.includes('wideAt="md"'), 'Desktop should preserve its md schedule breakpoint')
+  assert.equal(web.includes('label="调度方式"'), false, 'Web should not keep local schedule fields')
+  assert.equal(desktop.includes('label="调度方式"'), false, 'Desktop should not keep local schedule fields')
+})

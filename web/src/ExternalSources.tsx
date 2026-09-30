@@ -46,6 +46,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
+  XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
   XDriveSourceCollectionSummary,
@@ -1515,38 +1516,14 @@ export default function ExternalSourcesPanel({
               <MenuItem value="scan">仅扫描（推荐先使用）</MenuItem>
               <MenuItem value="sync">同步</MenuItem>
             </TextField>
-            <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5 }}>
-              <TextField
-                select
-                size="small"
-                label="调度方式"
-                value={createScheduleType}
-                onChange={(event) => setCreateValues((current) => ({ ...current, schedule_type: event.target.value as ExternalSourceScheduleType }))}
-              >
-                <MenuItem value="interval">固定间隔</MenuItem>
-                <MenuItem value="cron">Cron</MenuItem>
-                <MenuItem value="manual">仅手动</MenuItem>
-              </TextField>
-              {createScheduleType !== 'manual' && (
-                <TextField
-                  size="small"
-                  label={createScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
-                  value={createScheduleExpression}
-                  onChange={(event) => setCreateValues((current) => ({ ...current, schedule_expression: event.target.value }))}
-                  helperText={createScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
-                />
-              )}
-              {createScheduleType === 'cron' && (
-                <TextField
-                  size="small"
-                  label="时区"
-                  value={createScheduleTimezone}
-                  onChange={(event) => setCreateValues((current) => ({ ...current, schedule_timezone: event.target.value }))}
-                  helperText="IANA 时区，例如 Asia/Shanghai"
-                  sx={{ gridColumn: { sm: '2 / 3' } }}
-                />
-              )}
-            </MuiBox>
+            <XDriveSourceScheduleFields
+              scheduleType={createScheduleType}
+              expression={createScheduleExpression}
+              timezone={createScheduleTimezone}
+              onScheduleTypeChange={(value) => setCreateValues((current) => ({ ...current, schedule_type: value }))}
+              onExpressionChange={(value) => setCreateValues((current) => ({ ...current, schedule_expression: value }))}
+              onTimezoneChange={(value) => setCreateValues((current) => ({ ...current, schedule_timezone: value }))}
+            />
             <TextField
               fullWidth
               multiline
@@ -1792,38 +1769,14 @@ export default function ExternalSourcesPanel({
                 <MenuItem value="active">启用</MenuItem>
                 <MenuItem value="paused">暂停</MenuItem>
               </TextField>
-              <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5 }}>
-                <TextField
-                  select
-                  size="small"
-                  label="调度方式"
-                  value={settingsScheduleType}
-                  onChange={(event) => setSettingsValues((current) => ({ ...current, schedule_type: event.target.value as ExternalSourceScheduleType }))}
-                >
-                  <MenuItem value="interval">固定间隔</MenuItem>
-                  <MenuItem value="cron">Cron</MenuItem>
-                  <MenuItem value="manual">仅手动</MenuItem>
-                </TextField>
-                {settingsScheduleType !== 'manual' && (
-                  <TextField
-                    size="small"
-                    label={settingsScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
-                    value={settingsScheduleExpression}
-                    onChange={(event) => setSettingsValues((current) => ({ ...current, schedule_expression: event.target.value }))}
-                    helperText={settingsScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
-                  />
-                )}
-                {settingsScheduleType === 'cron' && (
-                  <TextField
-                    size="small"
-                    label="时区"
-                    value={settingsScheduleTimezone}
-                    onChange={(event) => setSettingsValues((current) => ({ ...current, schedule_timezone: event.target.value }))}
-                    helperText="IANA 时区，例如 Asia/Shanghai"
-                    sx={{ gridColumn: { sm: '2 / 3' } }}
-                  />
-                )}
-              </MuiBox>
+              <XDriveSourceScheduleFields
+                scheduleType={settingsScheduleType}
+                expression={settingsScheduleExpression}
+                timezone={settingsScheduleTimezone}
+                onScheduleTypeChange={(value) => setSettingsValues((current) => ({ ...current, schedule_type: value }))}
+                onExpressionChange={(value) => setSettingsValues((current) => ({ ...current, schedule_expression: value }))}
+                onTimezoneChange={(value) => setSettingsValues((current) => ({ ...current, schedule_timezone: value }))}
+              />
               <TextField
                 fullWidth
                 multiline

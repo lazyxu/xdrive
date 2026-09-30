@@ -29,6 +29,7 @@ const sharedSourceFailureItem = fs.readFileSync(path.join(root, '..', 'ui', 'sha
 const sharedPaginationControls = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PaginationControls.tsx'), 'utf8')
 const sharedSourceRunSummary = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceRunSummary.tsx'), 'utf8')
 const sharedSourceCollection = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceCollection.tsx'), 'utf8')
+const sharedSourceScheduleFields = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceScheduleFields.tsx'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'src', 'renderer', 'styles.css'), 'utf8')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
@@ -519,8 +520,10 @@ test('desktop external-source details expose paged Source collections', () => {
 
 test('desktop external sources expose per-Source scheduling', () => {
   for (const text of ['调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区']) {
-    assert.ok(renderer.includes(text), `missing Source schedule UI label: ${text}`)
+    assert.ok(sharedSourceScheduleFields.includes(text), `missing shared Source schedule UI label: ${text}`)
   }
+  assert.equal((renderer.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'desktop create/settings should reuse shared Source schedule fields')
+  assert.ok(renderer.includes('wideAt="md"'), 'desktop Source schedule fields should preserve the md breakpoint')
   assert.ok(renderer.includes('schedule_type: sourceCreateScheduleType'), 'missing create schedule payload')
   assert.ok(renderer.includes('schedule_type: sourceEditScheduleType'), 'missing update schedule payload')
   assert.ok(renderer.includes('detail.scheduleLabel'), 'missing Source schedule detail label')
