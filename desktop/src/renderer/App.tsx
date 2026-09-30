@@ -2656,6 +2656,7 @@ export default function App() {
             appearance="dark"
             usedBytes={cloudQuota.physical_used_bytes}
             totalBytes={cloudQuota.quota_bytes}
+            diskAvailableBytes={cloudQuota.disk_available_bytes}
             sx={{ mt: 1.25 }}
           />
         )}

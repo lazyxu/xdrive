@@ -172,6 +172,8 @@ test('Web and Desktop show account storage usage at the bottom of the sidebar', 
   assert.ok(sharedStorageSummary.includes("label = '存储'"), 'shared storage summary should use the compact storage label')
   assert.ok(sharedStorageSummary.includes("boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB'"), 'tiny storage usage should avoid byte-level noise')
   assert.ok(sharedStorageSummary.includes("'无容量限制'"), 'unlimited accounts should use a natural capacity label')
+  assert.ok(sharedStorageSummary.includes('diskAvailableBytes?: number'), 'shared storage summary should accept real server disk availability')
+  assert.ok(sharedStorageSummary.includes('磁盘可用 {formatBinarySize(boundedDiskAvailable)}'), 'unlimited storage footer should show remaining server disk space when available')
   assert.equal(sharedStorageSummary.includes("'不限配额'"), false, 'legacy technical unlimited wording should be removed')
   assert.ok(sharedStorageSummary.includes('已使用 {usedLabel}'), 'shared storage summary should describe usage in user-facing language')
   assert.ok(sharedStorageSummary.includes("bgcolor: 'transparent'"), 'shared storage summary should behave like sidebar footer content, not a card')
@@ -186,6 +188,7 @@ test('Web and Desktop show account storage usage at the bottom of the sidebar', 
 
   assert.ok(webApp.includes('usedBytes={quota.physical_used_bytes}'), 'Web sidebar should use current account physical usage')
   assert.ok(webApp.includes('totalBytes={quota.quota_bytes}'), 'Web sidebar should use current account quota')
+  assert.ok(webApp.includes('diskAvailableBytes={quota.disk_available_bytes}'), 'Web sidebar should show real server disk availability when the quota API exposes it')
   assert.equal(webApp.includes('secondary={quota ?'), false, 'Web Storage nav item should not duplicate quota text')
   assert.ok(webApp.includes('void api.quota()'), 'Web should refresh sidebar quota outside manual file actions')
   assert.ok(webApp.includes("height: { md: 'calc(100vh - 48px)' }"), 'Web desktop shell should account for the compact 48px AppBar')
@@ -195,5 +198,6 @@ test('Web and Desktop show account storage usage at the bottom of the sidebar', 
 
   assert.ok(desktopApp.includes('usedBytes={cloudQuota.physical_used_bytes}'), 'Desktop sidebar should use cloud account physical usage')
   assert.ok(desktopApp.includes('totalBytes={cloudQuota.quota_bytes}'), 'Desktop sidebar should use cloud account quota')
+  assert.ok(desktopApp.includes('diskAvailableBytes={cloudQuota.disk_available_bytes}'), 'Desktop sidebar should show real server disk availability when the quota API exposes it')
   assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
 })
