@@ -26,6 +26,7 @@ type Server struct {
 	SourceRunFailureRetention time.Duration
 	ConnectorSecrets          *connectorsecret.Keyring
 	credentialTest            sourceCredentialTester
+	fileStationBrowse         sourceFileStationBrowser
 	obs                       *serverObservability
 	stagingCacheMu            sync.Mutex
 	stagingCacheAt            time.Time
@@ -100,6 +101,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/sources/:id/credential", s.deleteSourceCredential)
 	authed.GET("/sources/:id/connector-config", s.getSourceConnectorConfig)
 	authed.PUT("/sources/:id/connector-config", s.putSourceConnectorConfig)
+	authed.GET("/sources/:id/browse", s.browseSourceDirectories)
 	authed.GET("/sources/:id/items", s.listSourceItems)
 	authed.GET("/sources/:id/collections", s.listSourceCollections)
 	authed.GET("/sources/:id/collections/:collectionID/items", s.listSourceCollectionItems)
