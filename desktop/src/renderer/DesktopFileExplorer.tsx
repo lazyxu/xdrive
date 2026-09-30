@@ -27,6 +27,7 @@ import type {
 } from '@xdrive/ui/mui'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
+const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
 type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }
 
 function initialViewMode(): XDriveFileExplorerViewMode {
@@ -619,6 +620,7 @@ export default function DesktopFileExplorer({
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
           const nodes = explorerNodesForItems(selected)
           if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })

@@ -24,6 +24,7 @@ import type { Node } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
 
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
+const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
 
 type Crumb = { id: number; name: string }
 type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }
@@ -461,6 +462,7 @@ export default function WebFileExplorer({
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
           const nodes = explorerNodesForItems(selected)
           if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })

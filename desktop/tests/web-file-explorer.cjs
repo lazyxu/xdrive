@@ -80,3 +80,8 @@ test('Web FileExplorer supports internal and external drag and drop', () => {
   assert.ok(app.includes('const uploadFilesTo = async (parentID: number, files: File[]) => {'), 'Web target-aware upload helper is missing')
   assert.ok(app.includes('onUploadDroppedFiles={uploadFilesTo}'), 'Web dropped-file upload adapter is not wired')
 })
+
+test('Web uses a dedicated persistent FileExplorer details-column layout', () => {
+  assert.ok(explorer.includes("const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'"), 'Web details layout storage key is missing')
+  assert.ok(explorer.includes('detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}'), 'Web details layout key is not passed to shared FileExplorer')
+})
