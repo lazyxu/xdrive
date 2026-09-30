@@ -239,6 +239,8 @@ function XDriveLazyFileThumbnail({
   )
 }
 
+const xDriveWindowsFolderYellow = '#ffcb3d'
+
 const detailsRowHeight = 38
 const detailsHeaderHeight = 32
 const detailsVirtualizationThreshold = 240
@@ -512,7 +514,7 @@ export function XDriveFileExplorer({
     if (item.icon) return item.icon
     const fontSize = large ? 48 : 21
     const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
-    if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: large ? 52 : 22, color: 'warning.main' }} />
+    if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: large ? 52 : 22, color: xDriveWindowsFolderYellow }} />
     if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
     if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
     if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
