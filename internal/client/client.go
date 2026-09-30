@@ -132,6 +132,7 @@ type AuthResponse struct {
 type APIError struct {
 	Status int
 	Msg    string
+	Detail string
 }
 
 func (e *APIError) Error() string { return fmt.Sprintf("xdrive API: %s (%d)", e.Msg, e.Status) }
@@ -512,13 +513,18 @@ func decodeResponse(resp *http.Response, out any) error {
 
 func responseError(resp *http.Response) error {
 	var e struct {
-		Error string `json:"error"`
+		Error  string `json:"error"`
+		Detail string `json:"detail,omitempty"`
 	}
 	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&e)
 	if e.Error == "" {
 		e.Error = http.StatusText(resp.StatusCode)
 	}
-	return &APIError{Status: resp.StatusCode, Msg: e.Error}
+	return &APIError{
+		Status: resp.StatusCode,
+		Msg:    e.Error,
+		Detail: strings.TrimSpace(e.Detail),
+	}
 }
 
 func ParseNodeID(identity []byte) (uint64, error) {

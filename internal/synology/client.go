@@ -3,15 +3,18 @@ package synology
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -59,6 +62,121 @@ type apiInfo struct {
 	Path       string `json:"path"`
 	MinVersion int    `json:"minVersion"`
 	MaxVersion int    `json:"maxVersion"`
+}
+
+type DSMAPIError struct {
+	Code  int
+	Cause error
+}
+
+func (e *DSMAPIError) Error() string {
+	return fmt.Sprintf("%s: DSM API error %d", e.Cause, e.Code)
+}
+
+func (e *DSMAPIError) Unwrap() error { return e.Cause }
+
+type ConnectionDiagnostic struct {
+	Code   string
+	Detail string
+}
+
+func DiagnoseConnectionError(err error) ConnectionDiagnostic {
+	if err == nil {
+		return ConnectionDiagnostic{}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ConnectionDiagnostic{
+			Code:   "synology_timeout",
+			Detail: "连接 Synology DSM 超时。",
+		}
+	}
+
+	var unknownAuthority x509.UnknownAuthorityError
+	if errors.As(err, &unknownAuthority) {
+		return ConnectionDiagnostic{
+			Code:   "synology_tls_unknown_authority",
+			Detail: "DSM HTTPS 证书不受 xDrive Server 信任；局域网 DSM 使用自签名证书时最常见。建议改用证书覆盖的域名/DDNS，或将签发该证书的 CA 加入 xDrive Server 信任库；xDrive 不会自动跳过 TLS 校验。",
+		}
+	}
+	var hostnameError x509.HostnameError
+	if errors.As(err, &hostnameError) {
+		return ConnectionDiagnostic{
+			Code:   "synology_tls_hostname_mismatch",
+			Detail: "DSM HTTPS 证书与当前访问地址不匹配；使用 IP 地址时，证书可能只签发给 DSM 域名。请改用证书 SAN 中的域名，或使用包含该 IP 地址的证书。",
+		}
+	}
+	var invalidCertificate x509.CertificateInvalidError
+	if errors.As(err, &invalidCertificate) {
+		return ConnectionDiagnostic{
+			Code:   "synology_tls_certificate_invalid",
+			Detail: "DSM HTTPS 证书无效、已过期或尚未生效。",
+		}
+	}
+
+	var dnsError *net.DNSError
+	if errors.As(err, &dnsError) {
+		return ConnectionDiagnostic{
+			Code:   "synology_dns_failed",
+			Detail: "无法解析 Synology DSM 地址：" + dnsError.Error(),
+		}
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return ConnectionDiagnostic{
+			Code:   "synology_connection_refused",
+			Detail: "DSM 主机可达，但目标端口拒绝连接；请确认 DSM HTTPS 端口已监听且防火墙允许访问。",
+		}
+	}
+	if errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EHOSTUNREACH) {
+		return ConnectionDiagnostic{
+			Code:   "synology_network_unreachable",
+			Detail: "xDrive Server 到 Synology DSM 没有可用网络路由；请检查容器/宿主机网络与 NAS 防火墙。",
+		}
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return ConnectionDiagnostic{
+			Code:   "synology_timeout",
+			Detail: "连接 Synology DSM 超时。",
+		}
+	}
+
+	var dsmError *DSMAPIError
+	if errors.As(err, &dsmError) {
+		if errors.Is(dsmError, ErrAuthentication) {
+			return ConnectionDiagnostic{
+				Code:   "synology_auth_failed",
+				Detail: fmt.Sprintf("DSM 登录/API 鉴权失败（错误码 %d）。", dsmError.Code),
+			}
+		}
+		return ConnectionDiagnostic{
+			Code:   "synology_api_error",
+			Detail: fmt.Sprintf("DSM API 返回错误码 %d。", dsmError.Code),
+		}
+	}
+	if errors.Is(err, ErrPhotosMissing) {
+		return ConnectionDiagnostic{
+			Code:   "synology_photos_unavailable",
+			Detail: "DSM 已连接，但没有发现可用的 Synology Photos API。",
+		}
+	}
+	if errors.Is(err, ErrAuthentication) {
+		return ConnectionDiagnostic{
+			Code:   "synology_auth_failed",
+			Detail: "DSM 登录失败；请检查用户名、密码以及账号登录限制。",
+		}
+	}
+	if errors.Is(err, ErrUnavailable) {
+		detail := strings.TrimSpace(err.Error())
+		detail = strings.TrimPrefix(detail, ErrUnavailable.Error()+": ")
+		return ConnectionDiagnostic{
+			Code:   "synology_unavailable",
+			Detail: detail,
+		}
+	}
+	return ConnectionDiagnostic{
+		Code:   "source_connection_failed",
+		Detail: strings.TrimSpace(err.Error()),
+	}
 }
 
 type apiEnvelope struct {
@@ -276,7 +394,7 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body io.Re
 				}
 				continue
 			}
-			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+			return fmt.Errorf("%w: %w", ErrUnavailable, err)
 		}
 
 		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxJSONBytes+1))
@@ -428,10 +546,10 @@ func apiError(envelope apiEnvelope) error {
 	}
 	switch code {
 	case 106, 107, 119:
-		return fmt.Errorf("%w: DSM API error %d", ErrSessionExpired, code)
+		return &DSMAPIError{Code: code, Cause: ErrSessionExpired}
 	case 400, 401, 402, 403, 404:
-		return fmt.Errorf("%w: DSM API error %d", ErrAuthentication, code)
+		return &DSMAPIError{Code: code, Cause: ErrAuthentication}
 	default:
-		return fmt.Errorf("%w: DSM API error %d", ErrUnavailable, code)
+		return &DSMAPIError{Code: code, Cause: ErrUnavailable}
 	}
 }

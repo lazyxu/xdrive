@@ -3,12 +3,14 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
+	"github.com/lazyxu/xdrive/internal/synology"
 	"github.com/lazyxu/xdrive/internal/yike"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -148,6 +151,29 @@ func TestSourceCredentialAPIIsolationEncryptionAndRotation(t *testing.T) {
 		strings.NewReader(synologyTestBody), http.StatusGatewayTimeout, map[string]string{"Content-Type": "application/json"})
 	if !strings.Contains(synologyTimeout.Body.String(), "synology_timeout") {
 		t.Fatalf("Synology timeout response=%s", synologyTimeout.Body.String())
+	}
+
+	credentialTestErr = fmt.Errorf("%w: %w", synology.ErrUnavailable, syscall.ECONNREFUSED)
+	synologyRefused := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
+		strings.NewReader(synologyTestBody), http.StatusBadGateway, map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(synologyRefused.Body.String(), "synology_connection_refused") ||
+		!strings.Contains(synologyRefused.Body.String(), "\"detail\"") ||
+		!strings.Contains(synologyRefused.Body.String(), "端口拒绝连接") {
+		t.Fatalf("Synology refused response=%s", synologyRefused.Body.String())
+	}
+	credentialTestErr = nil
+
+	credentialTestErr = fmt.Errorf(
+		"%w: %w",
+		synology.ErrUnavailable,
+		x509.UnknownAuthorityError{Cert: &x509.Certificate{}},
+	)
+	synologyTLS := requestWithHeaders(t, router, http.MethodPost, "/api/v1/source-credentials/test", tokenA,
+		strings.NewReader(synologyTestBody), http.StatusBadGateway, map[string]string{"Content-Type": "application/json"})
+	if !strings.Contains(synologyTLS.Body.String(), "synology_tls_unknown_authority") ||
+		!strings.Contains(synologyTLS.Body.String(), "\"detail\"") ||
+		!strings.Contains(synologyTLS.Body.String(), "证书") {
+		t.Fatalf("Synology TLS diagnostic response=%s", synologyTLS.Body.String())
 	}
 	credentialTestErr = nil
 

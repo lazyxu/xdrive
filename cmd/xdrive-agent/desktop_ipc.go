@@ -1660,17 +1660,25 @@ func writeDesktopIPCControllerError(w http.ResponseWriter, err error) {
 		case "storage_capacity_exceeded":
 			message = "服务器存储空间不足。请释放服务器磁盘空间后重试。"
 		}
-		writeDesktopIPCError(w, status, code, message)
+		writeDesktopIPCErrorDetail(w, status, code, message, apiErr.Detail)
 		return
 	}
 	writeDesktopIPCError(w, http.StatusBadRequest, "operation_failed", err.Error())
 }
 
 func writeDesktopIPCError(w http.ResponseWriter, status int, code, message string) {
-	writeDesktopIPCJSON(w, status, map[string]string{
+	writeDesktopIPCErrorDetail(w, status, code, message, "")
+}
+
+func writeDesktopIPCErrorDetail(w http.ResponseWriter, status int, code, message, detail string) {
+	payload := map[string]string{
 		"error":   code,
 		"message": message,
-	})
+	}
+	if detail = strings.TrimSpace(detail); detail != "" {
+		payload["detail"] = detail
+	}
+	writeDesktopIPCJSON(w, status, payload)
 }
 
 func writeDesktopIPCJSON(w http.ResponseWriter, status int, value any) {

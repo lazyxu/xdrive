@@ -282,6 +282,7 @@ export function externalSourceCreatePresetFor(kind: string, direction: ExternalS
 export const yikeConnectorNotice = '一刻相册连接依赖当前网页版未公开接口，服务端变化可能导致连接暂时失效。xDrive 仅执行读取与备份，不会上传、删除或修改一刻相册中的内容。'
 export const yikeRateLimitNotice = '为减少一刻相册返回“操作过于频繁（50005）”，xDrive 会将一刻私有 API 请求限制为约 2 次/秒，并在触发限流时自动退避重试。该限制只作用于列表、账号信息和下载链接等 API 请求，不限制照片/视频文件本身的下载速度。'
 export const yikeManagedTargetLabel = '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>'
+export const synologyDsmAddressHelp = 'DSM 默认 HTTPS 端口为 5001。使用 https://IP:5001 时，证书必须受 xDrive Server 信任且包含该 IP；如果证书签发给域名，请填写该域名。'
 
 export const yikeCookieHelp = {
   title: '如何获取 Cookie',
@@ -688,7 +689,7 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
 }
 
 
-export function externalSourceCredentialTestErrorLabel(code: string) {
+export function externalSourceCredentialTestErrorLabel(code: string, detail = '') {
   const normalized = String(code || '').trim()
   const labels: Record<string, string> = {
     yike_auth_failed: '一刻相册登录已失效，请重新获取 Cookie',
@@ -700,6 +701,13 @@ export function externalSourceCredentialTestErrorLabel(code: string) {
     yike_target_path_conflict: '固定的一刻相册路径被同名文件占用，请先整理“同步文件夹 / 一刻相册”路径后重试',
     synology_auth_failed: 'Synology DSM 登录失败，请检查地址、用户名和密码',
     synology_photos_unavailable: 'Synology Photos API 不可用，请确认 NAS 已安装并启用 Synology Photos',
+    synology_tls_unknown_authority: 'Synology DSM HTTPS 证书不受信任',
+    synology_tls_hostname_mismatch: 'Synology DSM HTTPS 证书与访问地址不匹配',
+    synology_tls_certificate_invalid: 'Synology DSM HTTPS 证书无效',
+    synology_dns_failed: '无法解析 Synology DSM 地址',
+    synology_connection_refused: 'Synology DSM 端口拒绝连接',
+    synology_network_unreachable: 'xDrive Server 无法路由到 Synology DSM',
+    synology_api_error: 'Synology DSM API 返回错误',
     synology_unavailable: '无法连接 Synology DSM，请检查 NAS 地址、网络和 HTTPS 配置',
     synology_timeout: '连接 Synology DSM 超时，请稍后重试',
     source_timeout: '连接来源超时，请稍后重试',
@@ -708,7 +716,9 @@ export function externalSourceCredentialTestErrorLabel(code: string) {
     source_credential_not_configured: '尚未配置来源凭据',
     unsupported_source_credential_kind: '当前来源不支持连接测试',
   }
-  return labels[normalized] || normalized || '连接测试失败'
+  const label = labels[normalized] || normalized || '连接测试失败'
+  const normalizedDetail = String(detail || '').trim()
+  return normalizedDetail ? `${label}：${normalizedDetail}` : label
 }
 
 export function externalSourceCredentialTestSuccessLabel(result: ExternalSourceCredentialTestResult) {

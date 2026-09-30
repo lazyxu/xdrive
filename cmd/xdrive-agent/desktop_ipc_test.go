@@ -1217,3 +1217,21 @@ func TestDesktopIPCTranslatesStorage507Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopIPCPreservesAPIDetail(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{
+		revision: 1,
+		err: &client.APIError{
+			Status: http.StatusBadGateway,
+			Msg:    "synology_tls_unknown_authority",
+			Detail: "DSM HTTPS 证书不受 xDrive Server 信任。",
+		},
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/cloud/quota", "")
+	if res.Code != http.StatusBadGateway ||
+		!strings.Contains(res.Body.String(), `"error":"synology_tls_unknown_authority"`) ||
+		!strings.Contains(res.Body.String(), `"detail":"DSM HTTPS 证书不受 xDrive Server 信任。"`) {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+}

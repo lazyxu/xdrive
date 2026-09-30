@@ -2,12 +2,15 @@ package synology
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -157,5 +160,71 @@ func TestAPIErrorClassifiesExpiredSession(t *testing.T) {
 		if err := apiError(envelope); !errors.Is(err, ErrSessionExpired) {
 			t.Fatalf("code=%d err=%v", code, err)
 		}
+	}
+}
+
+func TestDiagnoseConnectionErrorClassifiesSelfSignedTLS(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":{}}`))
+	}))
+	defer server.Close()
+
+	client, err := New(Credential{
+		BaseURL:  server.URL,
+		Username: "alice",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiRetryBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 2 * time.Millisecond
+
+	_, err = client.apiInfo(context.Background())
+	if err == nil {
+		t.Fatal("expected TLS validation error")
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err=%v want ErrUnavailable", err)
+	}
+	diagnostic := DiagnoseConnectionError(err)
+	if diagnostic.Code != "synology_tls_unknown_authority" {
+		t.Fatalf("diagnostic=%+v err=%v", diagnostic, err)
+	}
+	if !strings.Contains(diagnostic.Detail, "证书") {
+		t.Fatalf("detail=%q", diagnostic.Detail)
+	}
+}
+
+func TestDiagnoseConnectionErrorClassifiesHostnameMismatch(t *testing.T) {
+	err := fmt.Errorf(
+		"%w: %w",
+		ErrUnavailable,
+		x509.HostnameError{Certificate: &x509.Certificate{}, Host: "192.168.2.10"},
+	)
+	diagnostic := DiagnoseConnectionError(err)
+	if diagnostic.Code != "synology_tls_hostname_mismatch" {
+		t.Fatalf("diagnostic=%+v", diagnostic)
+	}
+}
+
+func TestDiagnoseConnectionErrorClassifiesConnectionRefused(t *testing.T) {
+	err := fmt.Errorf("%w: %w", ErrUnavailable, syscall.ECONNREFUSED)
+	diagnostic := DiagnoseConnectionError(err)
+	if diagnostic.Code != "synology_connection_refused" {
+		t.Fatalf("diagnostic=%+v", diagnostic)
+	}
+}
+
+func TestDiagnoseConnectionErrorIncludesDSMAPIErrorCode(t *testing.T) {
+	envelope := apiEnvelope{Success: false}
+	envelope.Error = &struct {
+		Code int `json:"code"`
+	}{Code: 400}
+	err := apiError(envelope)
+	diagnostic := DiagnoseConnectionError(err)
+	if diagnostic.Code != "synology_auth_failed" ||
+		!strings.Contains(diagnostic.Detail, "400") {
+		t.Fatalf("diagnostic=%+v", diagnostic)
 	}
 }
