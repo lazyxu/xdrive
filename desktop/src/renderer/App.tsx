@@ -52,7 +52,7 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
 import {
   XDriveAccountAvatarButton,
-  XDriveAccountSummary,
+  XDriveAccountMenu,
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
@@ -2553,13 +2553,14 @@ export default function App() {
         </MenuItem>
       </Menu>
 
-      <Menu id="desktop-account-menu" anchorEl={accountMenuAnchor} open={Boolean(accountMenuAnchor)} onClose={() => setAccountMenuAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
-        <XDriveAccountSummary
-          username={status?.username}
-          secondary={status?.server}
-          status={status?.auth_status}
-        />
-        <MuiDivider />
+      <XDriveAccountMenu
+        id="desktop-account-menu"
+        anchorEl={accountMenuAnchor}
+        onClose={() => setAccountMenuAnchor(null)}
+        username={status?.username}
+        secondary={status?.server}
+        status={status?.auth_status}
+      >
         <MenuItem onClick={() => {
           setAccountMenuAnchor(null)
           setView('settings')
@@ -2578,7 +2579,7 @@ export default function App() {
           <ListItemIcon sx={{ color: 'inherit' }}><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
           <ListItemText>退出登录</ListItemText>
         </MenuItem>
-      </Menu>
+      </XDriveAccountMenu>
     </Stack>
   )
 

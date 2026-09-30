@@ -56,8 +56,8 @@ requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDri
 requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
 requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储空间', '不限配额', '空间紧张', '已用满', '已超额', 'LinearProgress', 'percentageLabel'], '共享侧栏存储摘要')
 requireText(files.app, ['XDriveSidebarStorageSummary', 'usedBytes={quota.physical_used_bytes}', 'totalBytes={quota.quota_bytes}'], 'Web 侧栏存储摘要')
-requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountSummary', 'web-account-menu', '退出登录'], 'Web 账号菜单')
-requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', '<Avatar'], '共享账号 chrome')
+requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'web-account-menu', '退出登录'], 'Web 账号菜单')
+requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', 'XDriveAccountMenu', '<Avatar', '<Menu', '<Divider'], '共享账号 chrome')
 if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')
 if (files.app.includes('LogoutOutlined')) throw new Error('Web 顶栏仍保留 AntD 退出图标')
 if ((files.app.match(/<XDriveBrandLockup/g) || []).length !== 3) {
