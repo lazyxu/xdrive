@@ -27,10 +27,10 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
   assert.equal(appBar.includes('审计日志'), false, 'Audit should not remain in the AppBar')
   assert.equal(appBar.includes('全局存储'), false, 'Global Storage should not remain in the AppBar')
 
-  const asideStart = webApp.indexOf('component="aside"')
-  const asideEnd = webApp.indexOf('component="main"', asideStart)
-  assert.notEqual(asideStart, -1, 'missing Web sidebar')
-  assert.notEqual(asideEnd, -1, 'missing Web main content after sidebar')
+  const asideStart = webApp.indexOf('<XDriveSidebarSurface ariaLabel="网页端功能区" responsive>')
+  const asideEnd = webApp.indexOf('</XDriveSidebarSurface>', asideStart)
+  assert.notEqual(asideStart, -1, 'missing shared Web sidebar surface')
+  assert.notEqual(asideEnd, -1, 'missing shared Web sidebar surface end')
   const sidebar = webApp.slice(asideStart, asideEnd)
 
   assert.ok(sidebar.includes("profile?.role === 'admin'"), 'admin navigation must remain role-gated')
@@ -124,6 +124,8 @@ test('Web admin tables stay useful at common desktop widths', () => {
 })
 
 test('Web and Desktop shell primitives live in shared MUI', () => {
+  assert.ok(sharedSidebar.includes('XDriveSidebarSurface'), 'shared sidebar surface primitive is missing')
+  assert.ok(sharedSidebar.includes('component="aside"'), 'shared sidebar surface must own the aside landmark')
   assert.ok(sharedSidebar.includes('XDriveSidebarNavList'), 'shared sidebar list primitive is missing')
   assert.ok(sharedSidebar.includes('XDriveSidebarNavItem'), 'shared sidebar item primitive is missing')
   assert.ok(sharedSidebar.includes('XDriveSidebarSection'), 'shared sidebar section primitive is missing')
@@ -139,6 +141,7 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedAccount.includes('XDriveAccountMenu'), 'shared account menu container is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
   assert.ok(webApp.includes('XDriveBrandLockup'), 'Web should consume shared brand lockup')
+  assert.ok(webApp.includes('XDriveSidebarSurface'), 'Web should consume shared sidebar surface')
   assert.ok(webApp.includes('XDriveSidebarNavItem'), 'Web should consume shared sidebar navigation')
   assert.ok(webApp.includes('<XDriveSidebarSection label="管理" responsive>'), 'Web admin navigation should use shared sidebar section chrome')
   assert.ok(desktopApp.includes('<XDriveSidebarSection appearance="dark" pinnedBottom>'), 'Desktop diagnostics should use shared sidebar section chrome')

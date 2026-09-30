@@ -6,6 +6,49 @@ export const XDRIVE_SIDEBAR_COMPACT_WIDTH = 176
 
 export type XDriveSidebarAppearance = 'light' | 'dark'
 
+export function XDriveSidebarSurface({
+  children,
+  ariaLabel,
+  appearance = 'light',
+  responsive = false,
+  className,
+}: {
+  children: ReactNode
+  ariaLabel: string
+  appearance?: XDriveSidebarAppearance
+  responsive?: boolean
+  className?: string
+}) {
+  const dark = appearance === 'dark'
+
+  return (
+    <Box
+      component="aside"
+      aria-label={ariaLabel}
+      className={className}
+      sx={{
+        minWidth: 0,
+        minHeight: 0,
+        height: '100%',
+        display: responsive ? { xs: 'block', md: 'flex' } : 'flex',
+        flexDirection: 'column',
+        bgcolor: dark ? '#101827' : 'background.paper',
+        color: dark ? '#e8eef9' : 'text.primary',
+        borderRight: responsive ? { xs: 0, md: 1 } : 0,
+        borderBottom: responsive ? { xs: 1, md: 0 } : 0,
+        borderColor: dark ? 'rgba(255,255,255,.08)' : 'divider',
+        px: responsive ? { xs: 1, md: 1.5 } : 1.5,
+        pt: responsive ? { xs: 1, md: 1.5 } : 2.25,
+        pb: responsive ? { xs: 1, md: 1.5 } : 1.5,
+        overflowX: responsive ? { xs: 'auto', md: 'hidden' } : 'hidden',
+        overflowY: 'auto',
+      }}
+    >
+      {children}
+    </Box>
+  )
+}
+
 export function XDriveSidebarSection({
   children,
   label,
