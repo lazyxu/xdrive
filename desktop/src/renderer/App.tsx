@@ -79,6 +79,8 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceFailureItem,
+  XDriveSourceCollectionItem,
+  XDriveSourceCollectionSummary,
   XDriveSourceKindIcon,
   XDriveSourceSummaryCard,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
@@ -88,9 +90,6 @@ import {
 import type { MediaGalleryDataSource, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
-  externalSourceCollectionKindLabel,
-  externalSourceCollectionStateLabel,
-  externalSourceCollectionStateTone,
   externalSourceConnectorProfile,
   externalSourceCreateOption,
   externalSourceCreateOptions,
@@ -3250,15 +3249,7 @@ export default function App() {
                                       sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
                                     >
                                       <MuiBox component="summary" sx={{ cursor: 'pointer', p: 1.25 }}>
-                                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ width: '100%', pr: 1 }}>
-                                          <MuiBox>
-                                            <Typography variant="body2" fontWeight={700}>{collection.name}</Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                              {externalSourceCollectionKindLabel(collection.kind)} · {collection.item_count.toLocaleString('zh-CN')} 项 · 上次发现 {formatExternalSourceTime(collection.last_seen_at)}
-                                            </Typography>
-                                          </MuiBox>
-                                          <XDriveStatusBadge tone={externalSourceCollectionStateTone(collection.state)} label={externalSourceCollectionStateLabel(collection.state)} />
-                                        </Stack>
+                                        <XDriveSourceCollectionSummary collection={collection} wideAt="md" />
                                       </MuiBox>
                                       <MuiBox sx={{ px: 1.5, pb: 1.5 }}>
                                         {page?.loading && !page.loaded ? (
@@ -3266,24 +3257,12 @@ export default function App() {
                                         ) : page?.loaded && page.items.length > 0 ? (
                                           <Stack spacing={0.75}>
                                             {page.items.map((item) => (
-                                              <MuiBox key={item.external_id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                                                <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.75} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-                                                  <MuiBox sx={{ minWidth: 0 }}>
-                                                    <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
-                                                      {item.path || item.external_id}
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                                                      {item.metadata?.captured_at ? '拍摄 ' + formatExternalSourceTime(item.metadata.captured_at) + ' · ' : ''}
-                                                      {formatBinarySize(item.size)}
-                                                      {item.metadata?.original_path ? ' · 原始路径 ' + item.metadata.original_path : ''}
-                                                    </Typography>
-                                                  </MuiBox>
-                                                  <XDriveStatusBadge
-                                                    tone={item.state === 'synced' ? 'good' : item.state === 'error' ? 'bad' : item.state === 'missing' ? 'warning' : 'neutral'}
-                                                    label={item.state === 'synced' ? '已同步' : item.state === 'missing' ? '远端缺失' : item.state === 'error' ? '失败' : item.state}
-                                                  />
-                                                </Stack>
-                                              </MuiBox>
+                                              <XDriveSourceCollectionItem
+                                                key={item.external_id}
+                                                item={item}
+                                                sizeLabel={formatBinarySize(item.size)}
+                                                wideAt="md"
+                                              />
                                             ))}
                                             <XDrivePaginationControls
                                               page={page.page}

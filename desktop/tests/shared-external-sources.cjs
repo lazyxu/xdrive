@@ -635,3 +635,34 @@ test('Web and Desktop reuse shared source summary card presentation', () => {
   assert.equal(desktopStyles.includes('.source-card-actions {'), false, 'Desktop should not retain duplicate source action styling')
   assert.equal(desktopStyles.includes('.source-card-header, }'), false, 'Desktop source-card cleanup must not leave an invalid responsive selector')
 })
+
+
+test('Web and Desktop reuse shared source collection presentation', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedCollection = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceCollection.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+
+  for (const token of [
+    'XDriveSourceCollectionSummary',
+    'XDriveSourceCollectionItem',
+    'externalSourceCollectionKindLabel',
+    'externalSourceCollectionStateLabel',
+    'externalSourceCollectionStateTone',
+    'formatExternalSourceTime',
+    '远端缺失',
+    '原始路径',
+  ]) {
+    assert.ok(sharedCollection.includes(token), `shared source collection presentation missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSourceCollectionSummary\b/g) || []).length, 1, 'Web should reuse shared collection summary')
+  assert.equal((desktop.match(/<XDriveSourceCollectionSummary\b/g) || []).length, 1, 'Desktop should reuse shared collection summary')
+  assert.equal((web.match(/<XDriveSourceCollectionItem\b/g) || []).length, 1, 'Web should reuse shared collection item')
+  assert.equal((desktop.match(/<XDriveSourceCollectionItem\b/g) || []).length, 1, 'Desktop should reuse shared collection item')
+  assert.ok(desktop.includes('wideAt="md"'), 'Desktop collection presentation should preserve the wider breakpoint')
+  assert.equal(web.includes('externalSourceCollectionKindLabel(collection.kind)'), false, 'Web should not retain local collection summary presentation')
+  assert.equal(desktop.includes('externalSourceCollectionKindLabel(collection.kind)'), false, 'Desktop should not retain local collection summary presentation')
+  assert.equal(web.includes("item.state === 'synced' ? 'good'"), false, 'Web should not retain local collection item state presentation')
+  assert.equal(desktop.includes("item.state === 'synced' ? 'good'"), false, 'Desktop should not retain local collection item state presentation')
+})

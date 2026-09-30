@@ -47,6 +47,8 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceFailureItem,
+  XDriveSourceCollectionItem,
+  XDriveSourceCollectionSummary,
   XDriveSourceKindIcon,
   XDriveSourceSummaryCard,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
@@ -55,9 +57,6 @@ import {
 } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
-  externalSourceCollectionKindLabel,
-  externalSourceCollectionStateLabel,
-  externalSourceCollectionStateTone,
   externalSourceConnectorProfile,
   externalSourceCreateOption,
   externalSourceCreateOptions,
@@ -1210,18 +1209,7 @@ export default function ExternalSourcesPanel({
                       }}
                     >
                       <AccordionSummary>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ width: '100%', pr: 1 }}>
-                          <MuiBox>
-                            <MuiTypography variant="body2" sx={{ fontWeight: 700 }}>{collection.name}</MuiTypography>
-                            <MuiTypography variant="caption" color="text.secondary">
-                              {externalSourceCollectionKindLabel(collection.kind)} · {collection.item_count.toLocaleString('zh-CN')} 项 · 上次发现 {formatExternalSourceTime(collection.last_seen_at)}
-                            </MuiTypography>
-                          </MuiBox>
-                          <XDriveStatusBadge
-                            tone={externalSourceCollectionStateTone(collection.state)}
-                            label={externalSourceCollectionStateLabel(collection.state)}
-                          />
-                        </Stack>
+                        <XDriveSourceCollectionSummary collection={collection} />
                       </AccordionSummary>
                       <AccordionDetails>
                         {page?.loading && !page.loaded ? (
@@ -1229,24 +1217,11 @@ export default function ExternalSourcesPanel({
                         ) : page?.loaded && page.items.length > 0 ? (
                           <Stack spacing={0.75}>
                             {page.items.map((item) => (
-                              <MuiBox key={item.external_id} sx={{ p: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.75} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
-                                  <MuiBox sx={{ minWidth: 0 }}>
-                                    <MuiTypography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-                                      {item.path || item.external_id}
-                                    </MuiTypography>
-                                    <MuiTypography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                                      {item.metadata?.captured_at ? '拍摄 ' + formatExternalSourceTime(item.metadata.captured_at) + ' · ' : ''}
-                                      {formatSize(item.size)}
-                                      {item.metadata?.original_path ? ' · 原始路径 ' + item.metadata.original_path : ''}
-                                    </MuiTypography>
-                                  </MuiBox>
-                                  <XDriveStatusBadge
-                                    tone={item.state === 'synced' ? 'good' : item.state === 'error' ? 'bad' : item.state === 'missing' ? 'warning' : 'neutral'}
-                                    label={item.state === 'synced' ? '已同步' : item.state === 'missing' ? '远端缺失' : item.state === 'error' ? '失败' : item.state}
-                                  />
-                                </Stack>
-                              </MuiBox>
+                              <XDriveSourceCollectionItem
+                                key={item.external_id}
+                                item={item}
+                                sizeLabel={formatSize(item.size)}
+                              />
                             ))}
                             <XDrivePaginationControls
                               page={page.page}
