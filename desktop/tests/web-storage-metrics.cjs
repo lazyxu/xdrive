@@ -24,13 +24,22 @@ test('Web storage statistics use shared metric primitives', () => {
 })
 
 
-test('Desktop storage and update statistics reuse shared metric primitives', () => {
-  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 4)
-  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 25)
+test('Desktop storage, diagnostics and update statistics reuse shared metric primitives', () => {
+  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 5)
+  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 29)
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)
   assert.equal(desktopApp.includes('className="cache-metrics"'), false)
   assert.equal(desktopApp.includes('className="update-metrics"'), false)
   assert.equal(desktopStyles.includes('.cloud-quota-grid'), false)
   assert.equal(desktopStyles.includes('.cache-metrics'), false)
   assert.equal(desktopStyles.includes('.update-metrics'), false)
+  assert.equal(desktopApp.includes('className="diagnostic-summary"'), false)
+  assert.equal(desktopStyles.includes('.diagnostic-summary'), false)
+  assert.equal(desktopStyles.includes('.diagnostic-count'), false)
+  assert.equal(desktopStyles.includes('.diagnostic-generated'), false)
+  assert.ok(desktopApp.includes('tone="good"'))
+  assert.ok(desktopApp.includes('tone="warning"'))
+  assert.ok(desktopApp.includes('tone="bad"'))
+  assert.ok(metricCards.includes('tone?: XDriveStatusTone'))
+  assert.ok(metricCards.includes('metricValueColor(tone)'))
 })
