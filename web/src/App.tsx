@@ -1,57 +1,64 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
+import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
+import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
+import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
+import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
+import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import {
-  AuditOutlined,
-  DatabaseOutlined,
-  DeleteOutlined,
-  DownloadOutlined,
-  EditOutlined,
-  FileOutlined,
-  FolderAddOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  ReloadOutlined,
-  RestOutlined,
-  ShareAltOutlined,
-  UploadOutlined,
-  UserOutlined,
-  CloudSyncOutlined,
-} from '@ant-design/icons'
-import {
-  Breadcrumb,
+  AppBar,
+  Avatar as MuiAvatar,
+  Box,
+  Breadcrumbs,
   Button,
   Card,
-  Form,
-  Input,
-  Layout,
-  Modal,
-  Progress,
-  Space,
+  Chip,
+  Dialog,
+  IconButton,
+  LinearProgress,
+  Link,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Paper,
+  Snackbar,
+  Stack,
   Table,
-  Tag,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Toolbar,
   Tooltip,
   Typography,
-  Upload,
-  message,
-} from 'antd'
-import type { UploadProps } from 'antd'
-import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import {
-  Avatar as MuiAvatar,
-  Box as MuiBox,
-  Button as MuiButton,
-  Divider as MuiDivider,
-  IconButton as MuiIconButton,
-  ListItemIcon as MuiListItemIcon,
-  ListItemText as MuiListItemText,
-  Menu as MuiMenu,
-  MenuItem as MuiMenuItem,
-  Paper as MuiPaper,
-  Tooltip as MuiTooltip,
-  Typography as MuiTypography,
 } from '@mui/material'
-import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
-import { XDriveMediaGalleryPage, XDriveStatusAlert } from '@xdrive/ui/mui'
+import {
+  XDriveActionButton,
+  XDriveDialogActions,
+  XDriveDialogContent,
+  XDriveDialogTitle,
+  XDriveMediaGalleryPage,
+  XDriveStatePanel,
+  XDriveStatusAlert,
+  XDriveStatusBadge,
+  xDriveDialogPaperProps,
+} from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
@@ -65,7 +72,6 @@ import StorageStatsModal from './StorageStatsModal'
 import ExternalSourcesPanel from './ExternalSources'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
-const { Header, Content } = Layout
 const ACCESS_KEY = 'xdrive.access_token'
 const REFRESH_KEY = 'xdrive.refresh_token'
 const EXPIRES_KEY = 'xdrive.access_expires_at'
@@ -73,6 +79,28 @@ const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 
 type Crumb = { id: number; name: string }
+
+type Feedback = {
+  tone: 'good' | 'bad' | 'warning' | 'neutral'
+  message: string
+}
+
+type ConfirmAction = {
+  title: string
+  description: string
+  confirmLabel: string
+  intent?: 'primary' | 'danger' | 'warning'
+  run: () => Promise<void>
+}
+
+function initialSession(): AuthSession {
+  const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
+  return {
+    accessToken: localStorage.getItem(ACCESS_KEY) ?? legacy,
+    refreshToken: localStorage.getItem(REFRESH_KEY) ?? '',
+    accessExpiresAt: Number(localStorage.getItem(EXPIRES_KEY) ?? '0') || 0,
+  }
+}
 
 function WebAccountMenu({
   username,
@@ -88,8 +116,8 @@ function WebAccountMenu({
 
   return (
     <>
-      <MuiTooltip title={username ? `${username} · 账户` : '账户'}>
-        <MuiIconButton
+      <Tooltip title={username ? `${username} · 账户` : '账户'}>
+        <IconButton
           aria-label="账户菜单"
           size="small"
           onClick={(event) => setAnchorEl(event.currentTarget)}
@@ -98,9 +126,9 @@ function WebAccountMenu({
           <MuiAvatar sx={{ width: 28, height: 28, fontSize: 13, fontWeight: 700 }}>
             {accountInitial}
           </MuiAvatar>
-        </MuiIconButton>
-      </MuiTooltip>
-      <MuiMenu
+        </IconButton>
+      </Tooltip>
+      <Menu
         id="web-account-menu"
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
@@ -108,48 +136,40 @@ function WebAccountMenu({
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <MuiBox sx={{ minWidth: 240, maxWidth: 320, px: 2, py: 1.25 }}>
-          <MuiTypography variant="body2" fontWeight={700} noWrap>
+        <Box sx={{ minWidth: 240, maxWidth: 320, px: 2, py: 1.25 }}>
+          <Typography variant="body2" fontWeight={700} noWrap>
             {username || '已登录用户'}
-          </MuiTypography>
-          <MuiTypography variant="caption" color="text.secondary" component="div" noWrap>
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div" noWrap>
             Server {serverBuild?.version || '未知'}
-          </MuiTypography>
-          <MuiTypography variant="caption" color="text.secondary">
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
             已登录
-          </MuiTypography>
-        </MuiBox>
-        <MuiDivider />
-        <MuiMenuItem
+          </Typography>
+        </Box>
+        <Box sx={{ borderTop: 1, borderColor: 'divider' }} />
+        <MenuItem
           sx={{ color: 'error.main' }}
           onClick={() => {
             setAnchorEl(null)
             onLogout()
           }}
         >
-          <MuiListItemIcon sx={{ color: 'inherit' }}>
+          <ListItemIcon sx={{ color: 'inherit' }}>
             <LogoutRoundedIcon fontSize="small" />
-          </MuiListItemIcon>
-          <MuiListItemText>退出登录</MuiListItemText>
-        </MuiMenuItem>
-      </MuiMenu>
+          </ListItemIcon>
+          <ListItemText>退出登录</ListItemText>
+        </MenuItem>
+      </Menu>
     </>
   )
-}
-
-function initialSession(): AuthSession {
-  const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
-  return {
-    accessToken: localStorage.getItem(ACCESS_KEY) ?? legacy,
-    refreshToken: localStorage.getItem(REFRESH_KEY) ?? '',
-    accessExpiresAt: Number(localStorage.getItem(EXPIRES_KEY) ?? '0') || 0,
-  }
 }
 
 function App() {
   const [session, setSession] = useState<AuthSession>(initialSession)
   const [username, setUsername] = useState(() => localStorage.getItem(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
+  const [authNotice, setAuthNotice] = useState('')
 
   const publicShareToken = useMemo(() => {
     const match = window.location.hash.match(/^#\/s\/([^/]+)\/?$/)
@@ -169,7 +189,7 @@ function App() {
     setSession(next)
   }, [])
 
-  const clearSession = useCallback(() => {
+  const clearSession = useCallback((notice = '') => {
     localStorage.removeItem(ACCESS_KEY)
     localStorage.removeItem(LEGACY_TOKEN_KEY)
     localStorage.removeItem(REFRESH_KEY)
@@ -177,6 +197,7 @@ function App() {
     localStorage.removeItem(USER_KEY)
     setSession({ accessToken: '', refreshToken: '', accessExpiresAt: 0 })
     setUsername('')
+    setAuthNotice(notice)
   }, [])
 
   const api = useMemo(
@@ -200,7 +221,7 @@ function App() {
   }, [api])
 
   const signOut = () => {
-    void api.logout().finally(clearSession)
+    void api.logout().finally(() => clearSession())
   }
 
   if (publicShareToken) {
@@ -208,25 +229,69 @@ function App() {
   }
 
   if (!session.accessToken) {
-    return <AuthView api={api} serverBuild={serverBuild} onAuthenticated={(result) => {
-      persistSession(sessionFromAuth(result))
-      localStorage.setItem(USER_KEY, result.username)
-      setUsername(result.username)
-    }} />
+    return (
+      <AuthView
+        api={api}
+        serverBuild={serverBuild}
+        notice={authNotice}
+        onAuthenticated={(result) => {
+          setAuthNotice('')
+          persistSession(sessionFromAuth(result))
+          localStorage.setItem(USER_KEY, result.username)
+          setUsername(result.username)
+        }}
+      />
+    )
   }
 
-  return <FileManager api={api} username={username} serverBuild={serverBuild} onAuthExpired={clearSession} onLogout={signOut} />
+  return (
+    <FileManager
+      api={api}
+      username={username}
+      serverBuild={serverBuild}
+      onAuthExpired={(notice) => clearSession(notice)}
+      onLogout={signOut}
+    />
+  )
 }
 
-function AuthView({ api, serverBuild, onAuthenticated }: { api: XDriveApi; serverBuild: BuildInfo | null; onAuthenticated: (result: AuthResult) => void }) {
+function AuthView({
+  api,
+  serverBuild,
+  notice,
+  onAuthenticated,
+}: {
+  api: XDriveApi
+  serverBuild: BuildInfo | null
+  notice: string
+  onAuthenticated: (result: AuthResult) => void
+}) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [loginUsername, setLoginUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [usernameError, setUsernameError] = useState('')
+  const [passwordError, setPasswordError] = useState('')
 
-  const submit = async (values: { username: string; password: string }) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const username = loginUsername.trim()
+    const nextUsernameError = !username
+      ? '请填写用户名'
+      : username.length < 3 || username.length > 64
+        ? '用户名长度需要 3–64 个字符'
+        : ''
+    const nextPasswordError = password.length < 8 || password.length > 128
+      ? '密码长度需要 8–128 个字符'
+      : ''
+    setUsernameError(nextUsernameError)
+    setPasswordError(nextPasswordError)
+    if (nextUsernameError || nextPasswordError) return
+
     setBusy(true)
     setError('')
     try {
-      onAuthenticated(await api.login(values.username, values.password))
+      onAuthenticated(await api.login(username, password))
     } catch (err) {
       setError(err instanceof Error ? err.message : '请求失败')
     } finally {
@@ -236,35 +301,82 @@ function AuthView({ api, serverBuild, onAuthenticated }: { api: XDriveApi; serve
 
   return (
     <div className="auth-shell">
-      <Card className="auth-card">
+      <Card className="auth-card" sx={{ p: 3, borderRadius: 2 }}>
         <div className="brand-lockup">
           <img className="brand-mark" src={xDriveBrandIcon} alt="" aria-hidden="true" />
           <div>
-            <Typography.Title level={2} style={{ margin: 0 }}>xDrive</Typography.Title>
-            <Typography.Text type="secondary">将云端文件挂载为本地磁盘。</Typography.Text>
-            <div style={{ marginTop: 6 }}><Tag>Server {serverBuild?.version || '未知'}</Tag></div>
+            <Typography component="h1" variant="h5" fontWeight={700}>xDrive</Typography>
+            <Typography variant="body2" color="text.secondary">将云端文件挂载为本地磁盘。</Typography>
+            <Box sx={{ mt: 0.75 }}>
+              <Chip size="small" label={`Server ${serverBuild?.version || '未知'}`} />
+            </Box>
           </div>
         </div>
-        {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
-        <Form layout="vertical" onFinish={submit} requiredMark={false}>
-          <Form.Item label="用户名" name="username" rules={[{ required: true }, { min: 3, max: 64 }]}>
-            <Input autoFocus autoComplete="username" />
-          </Form.Item>
-          <Form.Item label="密码" name="password" rules={[{ required: true }, { min: 8, max: 128 }]}>
-            <Input.Password autoComplete="current-password" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={busy} block>登录</Button>
-        </Form>
-        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0, textAlign: 'center' }}>
+
+        {notice && <XDriveStatusAlert tone="warning" sx={{ mb: 2 }}>{notice}</XDriveStatusAlert>}
+        {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
+
+        <Stack component="form" spacing={2} onSubmit={(event) => void submit(event)}>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="用户名"
+            autoComplete="username"
+            value={loginUsername}
+            error={Boolean(usernameError)}
+            helperText={usernameError || ' '}
+            onChange={(event) => {
+              setLoginUsername(event.target.value)
+              if (usernameError) setUsernameError('')
+            }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            type="password"
+            label="密码"
+            autoComplete="current-password"
+            value={password}
+            error={Boolean(passwordError)}
+            helperText={passwordError || ' '}
+            onChange={(event) => {
+              setPassword(event.target.value)
+              if (passwordError) setPasswordError('')
+            }}
+          />
+          <XDriveActionButton
+            intent="primary"
+            type="submit"
+            fullWidth
+            loading={busy}
+            loadingLabel="正在登录…"
+          >
+            登录
+          </XDriveActionButton>
+        </Stack>
+
+        <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 2 }}>
           账户由 xDrive 管理员创建。
-        </Typography.Paragraph>
+        </Typography>
       </Card>
     </div>
   )
 }
 
-function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { api: XDriveApi; username: string; serverBuild: BuildInfo | null; onAuthExpired: () => void; onLogout: () => void }) {
-  const [modal, modalContext] = Modal.useModal()
+function FileManager({
+  api,
+  username,
+  serverBuild,
+  onAuthExpired,
+  onLogout,
+}: {
+  api: XDriveApi
+  username: string
+  serverBuild: BuildInfo | null
+  onAuthExpired: (notice?: string) => void
+  onLogout: () => void
+}) {
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [quota, setQuota] = useState<QuotaUsage | null>(null)
   const [items, setItems] = useState<Node[]>([])
@@ -272,7 +384,11 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
   const [loading, setLoading] = useState(true)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
+  const [folderName, setFolderName] = useState('')
+  const [folderNameError, setFolderNameError] = useState('')
   const [renameNode, setRenameNode] = useState<Node | null>(null)
+  const [renameName, setRenameName] = useState('')
+  const [renameNameError, setRenameNameError] = useState('')
   const [adminOpen, setAdminOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
   const [storageStatsScope, setStorageStatsScope] = useState<'self' | 'global' | null>(null)
@@ -285,9 +401,11 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
   const [shareNode, setShareNode] = useState<Node | null>(null)
   const [versions, setVersions] = useState<FileVersion[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
-  const [folderForm] = Form.useForm<{ name: string }>()
-  const [renameForm] = Form.useForm<{ name: string }>()
-  const [passwordForm] = Form.useForm<{ current: string; next: string; confirm: string }>()
+  const [passwordValues, setPasswordValues] = useState({ current: '', next: '', confirm: '' })
+  const [passwordError, setPasswordError] = useState('')
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
 
   const current = crumbs.at(-1)
 
@@ -301,25 +419,24 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401 || err.message.includes('account_disabled')) {
-        message.error('登录状态已失效，请重新登录。')
-        onAuthExpired()
+        onAuthExpired('登录状态已失效，请重新登录。')
         return
       }
       if (err.message.includes('password_change_required')) {
         setProfile((currentProfile) => currentProfile ? { ...currentProfile, must_change_password: true } : currentProfile)
-        message.warning('请先修改密码，再使用文件功能。')
+        setFeedback({ tone: 'warning', message: '请先修改密码，再使用文件功能。' })
         return
       }
       if (err.status === 507 && err.message.includes('quota_exceeded')) {
-        message.error('剩余存储配额不足（包含进行中上传的预占空间）。请释放空间、等待/取消其他上传，或联系管理员提高配额。')
+        setFeedback({ tone: 'bad', message: '剩余存储配额不足（包含进行中上传的预占空间）。请释放空间、等待/取消其他上传，或联系管理员提高配额。' })
         return
       }
       if (err.status === 507 && err.message.includes('storage_capacity_exceeded')) {
-        message.error('服务器存储空间不足。请释放服务器磁盘空间后重试。')
+        setFeedback({ tone: 'bad', message: '服务器存储空间不足。请释放服务器磁盘空间后重试。' })
         return
       }
     }
-    message.error(err instanceof Error ? err.message : '请求失败')
+    setFeedback({ tone: 'bad', message: err instanceof Error ? err.message : '请求失败' })
   }, [onAuthExpired])
 
   const loadDirectory = async (id: number, nextCrumbs?: Crumb[]) => {
@@ -372,113 +489,188 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
 
+  const executeConfirm = async () => {
+    if (!confirmAction) return
+    const action = confirmAction
+    setConfirmBusy(true)
+    try {
+      await action.run()
+      setConfirmAction(null)
+    } catch (err) {
+      setConfirmAction(null)
+      handleError(err)
+    } finally {
+      setConfirmBusy(false)
+    }
+  }
+
   if (profile?.must_change_password) {
+    const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!passwordValues.current) {
+        setPasswordError('请填写当前密码')
+        return
+      }
+      if (passwordValues.next.length < 8) {
+        setPasswordError('新密码至少需要 8 个字符')
+        return
+      }
+      if (passwordValues.next !== passwordValues.confirm) {
+        setPasswordError('两次输入的新密码不一致')
+        return
+      }
+      try {
+        await api.changePassword(passwordValues.current, passwordValues.next)
+        setPasswordValues({ current: '', next: '', confirm: '' })
+        setPasswordError('')
+        setFeedback({ tone: 'good', message: '密码已修改' })
+        setProfile({ ...profile, must_change_password: false })
+      } catch (err) {
+        handleError(err)
+      }
+    }
+
     return (
-      <Layout className="app-shell">
-        <Header className="topbar">
-          <div className="brand-lockup compact">
-            <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
-            <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
-          </div>
-          <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
-        </Header>
-        <Content className="content-wrap">
-          <Card className="auth-card" title="修改临时密码">
-            <XDriveStatusAlert tone="warning" sx={{ mb: 2.25 }}>
+      <Box className="app-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+        <AppBar position="static" elevation={1}>
+          <Toolbar className="topbar">
+            <div className="brand-lockup compact">
+              <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
+              <Typography variant="h6" fontWeight={700}>xDrive</Typography>
+            </div>
+            <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
+          </Toolbar>
+        </AppBar>
+        <Box component="main" className="content-wrap">
+          <Card className="auth-card" sx={{ p: 3, mx: 'auto', borderRadius: 2 }}>
+            <Typography component="h2" variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+              修改临时密码
+            </Typography>
+            <XDriveStatusAlert tone="warning" sx={{ mb: 2 }}>
               管理员要求先修改密码，之后才能访问文件。
             </XDriveStatusAlert>
-            <Form
-              form={passwordForm}
-              layout="vertical"
-              onFinish={async (values) => {
-                if (values.next !== values.confirm) {
-                  message.error('两次输入的新密码不一致')
-                  return
-                }
-                try {
-                  await api.changePassword(values.current, values.next)
-                  passwordForm.resetFields()
-                  message.success('密码已修改')
-                  setProfile({ ...profile, must_change_password: false })
-                } catch (err) {
-                  handleError(err)
-                }
-              }}
-            >
-              <Form.Item name="current" label="当前密码" rules={[{ required: true }]}>
-                <Input.Password autoComplete="current-password" />
-              </Form.Item>
-              <Form.Item name="next" label="新密码" rules={[{ required: true }, { min: 8 }]}>
-                <Input.Password autoComplete="new-password" />
-              </Form.Item>
-              <Form.Item name="confirm" label="确认新密码" rules={[{ required: true }, { min: 8 }]}>
-                <Input.Password autoComplete="new-password" />
-              </Form.Item>
-              <Button type="primary" htmlType="submit">修改密码</Button>
-            </Form>
+            {passwordError && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{passwordError}</XDriveStatusAlert>}
+            <Stack component="form" spacing={2} onSubmit={(event) => void submitPassword(event)}>
+              <TextField
+                fullWidth
+                size="small"
+                type="password"
+                label="当前密码"
+                autoComplete="current-password"
+                value={passwordValues.current}
+                onChange={(event) => {
+                  setPasswordValues((currentValues) => ({ ...currentValues, current: event.target.value }))
+                  if (passwordError) setPasswordError('')
+                }}
+              />
+              <TextField
+                fullWidth
+                size="small"
+                type="password"
+                label="新密码"
+                autoComplete="new-password"
+                value={passwordValues.next}
+                onChange={(event) => {
+                  setPasswordValues((currentValues) => ({ ...currentValues, next: event.target.value }))
+                  if (passwordError) setPasswordError('')
+                }}
+              />
+              <TextField
+                fullWidth
+                size="small"
+                type="password"
+                label="确认新密码"
+                autoComplete="new-password"
+                value={passwordValues.confirm}
+                onChange={(event) => {
+                  setPasswordValues((currentValues) => ({ ...currentValues, confirm: event.target.value }))
+                  if (passwordError) setPasswordError('')
+                }}
+              />
+              <XDriveActionButton intent="primary" type="submit">修改密码</XDriveActionButton>
+            </Stack>
           </Card>
-        </Content>
-      </Layout>
+        </Box>
+        <Snackbar
+          open={Boolean(feedback)}
+          autoHideDuration={3500}
+          onClose={(_event, reason) => { if (reason !== 'clickaway') setFeedback(null) }}
+        >
+          <div>{feedback ? <XDriveStatusAlert tone={feedback.tone}>{feedback.message}</XDriveStatusAlert> : null}</div>
+        </Snackbar>
+      </Box>
     )
   }
 
-  const enterDirectory = (node: Node) => loadDirectory(node.id, [...crumbs, { id: node.id, name: node.name }])
+  const enterDirectory = (node: Node) => void loadDirectory(node.id, [...crumbs, { id: node.id, name: node.name }])
 
-  const uploadProps: UploadProps = {
-    showUploadList: false,
-    multiple: true,
-    beforeUpload: async (file) => {
-      if (!current) return Upload.LIST_IGNORE
+  const uploadFiles = async (files: FileList | null) => {
+    if (!current || !files?.length) return
+    for (const file of Array.from(files)) {
       try {
         setUploadProgress(0)
-        await api.upload(current.id, file as File, setUploadProgress)
-        message.success(`${file.name} 已上传`)
-        await loadDirectory(current.id)
-        await refreshQuota()
+        await api.upload(current.id, file, setUploadProgress)
+        setFeedback({ tone: 'good', message: `${file.name} 已上传` })
       } catch (err) {
         handleError(err)
+        break
       } finally {
         setUploadProgress(null)
       }
-      return Upload.LIST_IGNORE
-    },
+    }
+    await loadDirectory(current.id)
+    await refreshQuota()
   }
 
-  const createFolder = async ({ name }: { name: string }) => {
+  const createFolder = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!current) return
+    const name = folderName.trim()
+    const error = !name ? '请填写文件夹名称' : name.length > 255 ? '文件夹名称不能超过 255 个字符' : ''
+    setFolderNameError(error)
+    if (error) return
     try {
       await api.createDirectory(current.id, name)
       setFolderOpen(false)
-      folderForm.resetFields()
+      setFolderName('')
+      setFolderNameError('')
       await loadDirectory(current.id)
-    } catch (err) { handleError(err) }
+    } catch (err) {
+      handleError(err)
+    }
   }
 
-  const rename = async ({ name }: { name: string }) => {
+  const rename = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!renameNode || !current) return
+    const name = renameName.trim()
+    const error = !name ? '请填写名称' : name.length > 255 ? '名称不能超过 255 个字符' : ''
+    setRenameNameError(error)
+    if (error) return
     try {
       await api.rename(renameNode.id, renameNode.revision, name)
       setRenameNode(null)
-      renameForm.resetFields()
+      setRenameName('')
+      setRenameNameError('')
       await loadDirectory(current.id)
-    } catch (err) { handleError(err) }
+    } catch (err) {
+      handleError(err)
+    }
   }
 
   const remove = (node: Node) => {
-    modal.confirm({
+    setConfirmAction({
       title: `将 ${node.name} 移到回收站？`,
-      content: node.type === 'dir'
+      description: node.type === 'dir'
         ? '该文件夹及其中的全部内容会从同步文件夹中移除，但之后仍可恢复。'
         : '该文件会从同步文件夹中移除，但之后仍可恢复。',
-      okText: '移到回收站',
-      okButtonProps: { danger: true },
-      async onOk() {
-        try {
-          await api.remove(node.id, node.revision)
-          message.success('已移到回收站')
-          if (current) await loadDirectory(current.id)
-          await refreshQuota()
-        } catch (err) { handleError(err) }
+      confirmLabel: '移到回收站',
+      intent: 'danger',
+      run: async () => {
+        await api.remove(node.id, node.revision)
+        setFeedback({ tone: 'good', message: '已移到回收站' })
+        if (current) await loadDirectory(current.id)
+        await refreshQuota()
       },
     })
   }
@@ -513,24 +705,23 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
   }
 
   return (
-    <>
-      {modalContext}
-      <Layout className="app-shell">
-        <Header className="topbar">
+    <Box className="app-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+      <AppBar position="static" elevation={1}>
+        <Toolbar className="topbar">
           <div className="brand-lockup compact">
             <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
-            <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
+            <Typography variant="h6" fontWeight={700}>xDrive</Typography>
           </div>
-          <Space>
+          <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap" justifyContent="flex-end">
             {profile?.role === 'admin' && (
               <>
-                <Button type="text" icon={<UserOutlined />} onClick={() => setAdminOpen(true)} className="logout-button">
+                <Button color="inherit" size="small" startIcon={<ManageAccountsRoundedIcon />} onClick={() => setAdminOpen(true)}>
                   用户管理
                 </Button>
-                <Button type="text" icon={<AuditOutlined />} onClick={() => setAuditOpen(true)} className="logout-button">
+                <Button color="inherit" size="small" startIcon={<AssessmentRoundedIcon />} onClick={() => setAuditOpen(true)}>
                   审计日志
                 </Button>
-                <Button type="text" icon={<DatabaseOutlined />} onClick={() => setStorageStatsScope('global')} className="logout-button">
+                <Button color="inherit" size="small" startIcon={<StorageRoundedIcon />} onClick={() => setStorageStatsScope('global')}>
                   全局存储
                 </Button>
               </>
@@ -543,271 +734,465 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
                     : `当前文件 ${formatSize(quota.logical_file_bytes)} · 回收站 ${formatSize(quota.trash_bytes)} · 历史版本 ${formatSize(quota.history_bytes)}${quota.reserved_bytes > 0 ? ` · 上传预占 ${formatSize(quota.reserved_bytes)}` : ''} · 可用空间 ${formatSize(quota.available_bytes)} · 点击查看 CAS 统计`
                 }
               >
-                <Button type="text" icon={<DatabaseOutlined />} onClick={() => setStorageStatsScope('self')} className="logout-button">
+                <Button color="inherit" size="small" startIcon={<StorageRoundedIcon />} onClick={() => setStorageStatsScope('self')}>
                   存储 {formatSize(quota.physical_used_bytes)} / {quota.quota_bytes === 0 ? '不限' : formatSize(quota.quota_bytes)}
                   {quota.reserved_bytes > 0 ? ` · 上传预占 ${formatSize(quota.reserved_bytes)}` : ''} · 可用 {formatSize(quota.available_bytes)}
                 </Button>
               </Tooltip>
             )}
-            <MuiButton
+            <Button
+              color="inherit"
               size="small"
-              variant="text"
               startIcon={appView === 'gallery' ? <FolderRoundedIcon /> : <PhotoLibraryRoundedIcon />}
               onClick={() => setAppView((currentView) => currentView === 'gallery' ? 'files' : 'gallery')}
-              sx={{ color: 'white', minWidth: 0 }}
             >
               {appView === 'gallery' ? '文件' : '图库'}
-            </MuiButton>
-            <Button type="text" icon={<CloudSyncOutlined />} onClick={() => setSourcesOpen(true)} className="logout-button">
+            </Button>
+            <Button color="inherit" size="small" startIcon={<CloudSyncRoundedIcon />} onClick={() => setSourcesOpen(true)}>
               外部来源
             </Button>
             <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
-          </Space>
-        </Header>
-        <Content className="content-wrap">
-          {appView === 'files' ? (
-          <Card className="file-card">
+          </Stack>
+        </Toolbar>
+      </AppBar>
+
+      <Box component="main" className="content-wrap">
+        {appView === 'files' ? (
+          <Paper className="file-card" variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 2 }}>
             <div className="file-toolbar">
-              <Breadcrumb items={crumbs.map((crumb, index) => ({
-                title: index === crumbs.length - 1 ? crumb.name : <a onClick={() => loadDirectory(crumb.id, crumbs.slice(0, index + 1))}>{crumb.name}</a>,
-              }))} />
-              <Space wrap>
-                <Button icon={<ReloadOutlined />} onClick={() => current && loadDirectory(current.id)}>刷新</Button>
-                <Button icon={<RestOutlined />} onClick={openTrash}>回收站</Button>
-                <Button icon={<FolderAddOutlined />} onClick={() => setFolderOpen(true)}>新建文件夹</Button>
-                <Upload {...uploadProps}><Button type="primary" icon={<UploadOutlined />}>上传</Button></Upload>
-              </Space>
+              <Breadcrumbs aria-label="文件路径">
+                {crumbs.map((crumb, index) => (
+                  index === crumbs.length - 1 ? (
+                    <Typography key={crumb.id} variant="body2" color="text.primary">{crumb.name}</Typography>
+                  ) : (
+                    <Link
+                      key={crumb.id}
+                      component="button"
+                      type="button"
+                      underline="hover"
+                      variant="body2"
+                      onClick={() => void loadDirectory(crumb.id, crumbs.slice(0, index + 1))}
+                    >
+                      {crumb.name}
+                    </Link>
+                  )
+                ))}
+              </Breadcrumbs>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                <XDriveActionButton compact startIcon={<RefreshRoundedIcon />} onClick={() => current && void loadDirectory(current.id)}>
+                  刷新
+                </XDriveActionButton>
+                <XDriveActionButton compact startIcon={<RestoreFromTrashRoundedIcon />} onClick={openTrash}>
+                  回收站
+                </XDriveActionButton>
+                <XDriveActionButton
+                  compact
+                  startIcon={<CreateNewFolderRoundedIcon />}
+                  onClick={() => {
+                    setFolderName('')
+                    setFolderNameError('')
+                    setFolderOpen(true)
+                  }}
+                >
+                  新建文件夹
+                </XDriveActionButton>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<UploadRoundedIcon />}
+                  component="label"
+                >
+                  上传
+                  <input
+                    hidden
+                    type="file"
+                    multiple
+                    onChange={(event) => {
+                      void uploadFiles(event.target.files)
+                      event.target.value = ''
+                    }}
+                  />
+                </Button>
+              </Stack>
             </div>
-            {uploadProgress !== null && <div className="upload-progress"><Progress percent={uploadProgress} size="small" /></div>}
-            <Table<Node>
-              rowKey="id"
-              loading={loading}
-              dataSource={items}
-              pagination={false}
-              locale={{ emptyText: '此文件夹为空' }}
-              columns={[
-                {
-                  title: '名称', dataIndex: 'name', key: 'name',
-                  render: (_, node) => (
-                    <Space>
-                      {node.type === 'dir' ? <FolderOpenOutlined className="folder-icon" /> : <FileOutlined />}
-                      {node.type === 'dir' ? <a onDoubleClick={() => enterDirectory(node)} onClick={() => enterDirectory(node)}>{node.name}</a> : <span>{node.name}</span>}
-                      {node.type === 'dir' && <Tag>文件夹</Tag>}
-                    </Space>
-                  ),
-                },
-                { title: '大小', dataIndex: 'size', width: 120, render: (value: number, node: Node) => node.type === 'dir' ? '—' : formatSize(value) },
-                { title: '修改时间', dataIndex: 'updated_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
-                {
-                  title: '', key: 'actions', width: 190, align: 'right',
-                  render: (_, node) => (
-                    <Space size="small">
-                      {node.type === 'file' && <Button type="text" aria-label={`下载 ${node.name}`} icon={<DownloadOutlined />} onClick={() => api.download(node).catch(handleError)} />}
-                      {node.type === 'file' && <Button type="text" aria-label={`分享 ${node.name}`} icon={<ShareAltOutlined />} onClick={() => setShareNode(node)} />}
-                      {node.type === 'file' && <Button type="text" aria-label={`历史版本 ${node.name}`} icon={<HistoryOutlined />} onClick={() => void openHistory(node)} />}
-                      <Button type="text" aria-label={`重命名 ${node.name}`} icon={<EditOutlined />} onClick={() => { setRenameNode(node); renameForm.setFieldsValue({ name: node.name }) }} />
-                      <Button danger type="text" aria-label={`删除 ${node.name}`} icon={<DeleteOutlined />} onClick={() => remove(node)} />
-                    </Space>
-                  ),
-                },
-              ]}
-            />
-          </Card>
-          ) : (
-            <MuiPaper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320 }}>
-              <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
-            </MuiPaper>
-          )}
-        </Content>
 
-        <ExternalSourcesPanel
-          open={sourcesOpen}
-          api={api}
-          defaultTargetNodeID={current?.id}
-          defaultTargetLabel={current?.name ?? '我的文件'}
-          defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
-          onClose={() => setSourcesOpen(false)}
-          onError={handleError}
-        />
+            {uploadProgress !== null && (
+              <Box className="upload-progress">
+                <LinearProgress variant="determinate" value={Math.max(0, Math.min(100, uploadProgress))} />
+              </Box>
+            )}
+            {loading && items.length > 0 ? <LinearProgress sx={{ mb: 1 }} /> : null}
 
-        <Modal title="新建文件夹" open={folderOpen} onCancel={() => setFolderOpen(false)} footer={null} destroyOnClose>
-          <Form form={folderForm} layout="vertical" onFinish={createFolder}>
-            <Form.Item name="name" label="文件夹名称" rules={[{ required: true, whitespace: true, max: 255 }]}>
-              <Input autoFocus />
-            </Form.Item>
-            <Button type="primary" htmlType="submit">创建</Button>
-          </Form>
-        </Modal>
-
-        <Modal title="重命名" open={!!renameNode} onCancel={() => setRenameNode(null)} footer={null} destroyOnClose>
-          <Form form={renameForm} layout="vertical" onFinish={rename}>
-            <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true, max: 255 }]}>
-              <Input autoFocus />
-            </Form.Item>
-            <Button type="primary" htmlType="submit">保存</Button>
-          </Form>
-        </Modal>
-
-        <Modal
-          title="回收站"
-          open={trashOpen}
-          onCancel={() => setTrashOpen(false)}
-          footer={null}
-          width={900}
-        >
-          <Table<Node>
-            rowKey="id"
-            loading={trashLoading}
-            dataSource={trashItems}
-            pagination={false}
-            locale={{ emptyText: '回收站为空' }}
-            columns={[
-              {
-                title: 'Name',
-                dataIndex: 'name',
-                render: (_, node) => (
-                  <Space>
-                    {node.type === 'dir' ? <FolderOpenOutlined /> : <FileOutlined />}
-                    <span>{node.name}</span>
-                  </Space>
-                ),
-              },
-              {
-                title: '删除时间',
-                dataIndex: 'deleted_at',
-                width: 190,
-                render: (value?: string) => value ? new Date(value).toLocaleString() : '—',
-              },
-              {
-                title: '操作',
-                width: 220,
-                render: (_, node) => (
-                  <Space>
-                    <Button
-                      size="small"
-                      onClick={async () => {
-                        try {
-                          await api.restoreTrash(node.id, node.revision)
-                          message.success('已恢复')
-                          await loadTrash()
-                          if (current) await loadDirectory(current.id)
-                          await refreshQuota()
-                        } catch (err) { handleError(err) }
-                      }}
-                    >
-                      恢复
-                    </Button>
-                    <Button
-                      danger
-                      size="small"
-                      onClick={() => modal.confirm({
-                        title: `永久删除 ${node.name}？`,
-                        content: '该项目、当前内容以及所有已保存的历史版本都将被永久删除。',
-                        okText: '永久删除',
-                        okButtonProps: { danger: true },
-                        async onOk() {
-                          try {
-                            await api.permanentlyDeleteTrash(node.id, node.revision)
-                            message.success('已永久删除')
-                            await loadTrash()
-                            await refreshQuota()
-                          } catch (err) { handleError(err) }
-                        },
-                      })}
-                    >
-                      永久删除
-                    </Button>
-                  </Space>
-                ),
-              },
-            ]}
-          />
-        </Modal>
-
-        <Modal
-          title={historyNode ? `版本历史 — ${historyNode.name}` : '版本历史'}
-          open={!!historyNode}
-          onCancel={() => { setHistoryNode(null); setVersions([]) }}
-          footer={null}
-          width={760}
-        >
-          <Table<FileVersion>
-            rowKey="id"
-            loading={versionsLoading}
-            dataSource={versions}
-            pagination={false}
-            locale={{ emptyText: '暂无历史版本' }}
-            columns={[
-              { title: '版本', dataIndex: 'revision', width: 110, render: (value: number) => `r${value}` },
-              { title: '大小', dataIndex: 'size', width: 120, render: (value: number) => formatSize(value) },
-              { title: '保存时间', dataIndex: 'created_at', width: 190, render: (value: string) => new Date(value).toLocaleString() },
-              {
-                title: '操作',
-                render: (_, version) => historyNode && (
-                  <Space>
-                    <Button size="small" onClick={() => api.downloadVersion(historyNode, version).catch(handleError)}>
-                      下载
-                    </Button>
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={() => modal.confirm({
-                        title: `恢复到版本 ${version.revision}？`,
-                        content: '当前内容会先保留为一个新的历史版本。',
-                        okText: '恢复版本',
-                        async onOk() {
-                          try {
-                            const restored = await api.restoreVersion(historyNode.id, historyNode.revision, version.id)
-                            message.success('版本已恢复')
-                            setHistoryNode(restored)
-                            setVersions(await api.versions(restored.id))
-                            if (current) await loadDirectory(current.id)
-                            await refreshQuota()
-                          } catch (err) { handleError(err) }
-                        },
-                      })}
-                    >
-                      恢复
-                    </Button>
-                  </Space>
-                ),
-              },
-            ]}
-          />
-        </Modal>
-
-        <ShareDialog
-          api={api}
-          node={shareNode}
-          onClose={() => setShareNode(null)}
-          onError={handleError}
-        />
-
-        <StorageStatsModal
-          api={api}
-          scope={storageStatsScope ?? 'self'}
-          open={storageStatsScope !== null}
-          onClose={() => setStorageStatsScope(null)}
-        />
-
-        {profile?.role === 'admin' && (
-          <>
-            <AdminUsersPanel
-              api={api}
-              open={adminOpen}
-              currentUserID={profile.id}
-              onClose={() => setAdminOpen(false)}
-              onChanged={() => { void refreshQuota() }}
-            />
-            <AdminAuditPanel
-              api={api}
-              open={auditOpen}
-              onClose={() => setAuditOpen(false)}
-            />
-          </>
+            {loading && items.length === 0 ? (
+              <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
+            ) : items.length === 0 ? (
+              <XDriveStatePanel variant="plain" message="此文件夹为空" />
+            ) : (
+              <TableContainer sx={{ overflowX: 'auto' }}>
+                <Table size="small" aria-label="文件列表">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>名称</TableCell>
+                      <TableCell sx={{ width: 120, display: { xs: 'none', md: 'table-cell' } }}>大小</TableCell>
+                      <TableCell sx={{ width: 190, display: { xs: 'none', md: 'table-cell' } }}>修改时间</TableCell>
+                      <TableCell align="right" sx={{ width: 220 }}>操作</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {items.map((node) => (
+                      <TableRow key={node.id} hover>
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            {node.type === 'dir'
+                              ? <FolderOpenRoundedIcon className="folder-icon" fontSize="small" />
+                              : <InsertDriveFileRoundedIcon fontSize="small" />}
+                            {node.type === 'dir' ? (
+                              <Link
+                                component="button"
+                                type="button"
+                                underline="hover"
+                                onClick={() => enterDirectory(node)}
+                              >
+                                {node.name}
+                              </Link>
+                            ) : (
+                              <Typography variant="body2">{node.name}</Typography>
+                            )}
+                            {node.type === 'dir' && <XDriveStatusBadge tone="neutral" label="文件夹" />}
+                          </Stack>
+                        </TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                          {node.type === 'dir' ? '—' : formatSize(node.size)}
+                        </TableCell>
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                          {new Date(node.updated_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" spacing={0.25} justifyContent="flex-end">
+                            {node.type === 'file' && (
+                              <Tooltip title="下载">
+                                <IconButton size="small" aria-label={`下载 ${node.name}`} onClick={() => void api.download(node).catch(handleError)}>
+                                  <DownloadRoundedIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                            {node.type === 'file' && (
+                              <Tooltip title="分享">
+                                <IconButton size="small" aria-label={`分享 ${node.name}`} onClick={() => setShareNode(node)}>
+                                  <ShareRoundedIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                            {node.type === 'file' && (
+                              <Tooltip title="历史版本">
+                                <IconButton size="small" aria-label={`历史版本 ${node.name}`} onClick={() => void openHistory(node)}>
+                                  <HistoryRoundedIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                            <Tooltip title="重命名">
+                              <IconButton
+                                size="small"
+                                aria-label={`重命名 ${node.name}`}
+                                onClick={() => {
+                                  setRenameNode(node)
+                                  setRenameName(node.name)
+                                  setRenameNameError('')
+                                }}
+                              >
+                                <EditRoundedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="删除">
+                              <IconButton color="error" size="small" aria-label={`删除 ${node.name}`} onClick={() => remove(node)}>
+                                <DeleteOutlineRoundedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Paper>
+        ) : (
+          <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320, borderRadius: 2 }}>
+            <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
+          </Paper>
         )}
-      </Layout>
-    </>
+      </Box>
+
+      <ExternalSourcesPanel
+        open={sourcesOpen}
+        api={api}
+        defaultTargetNodeID={current?.id}
+        defaultTargetLabel={current?.name ?? '我的文件'}
+        defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
+        onClose={() => setSourcesOpen(false)}
+        onError={handleError}
+      />
+
+      <Dialog open={folderOpen} onClose={() => setFolderOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title="新建文件夹" onClose={() => setFolderOpen(false)} />
+        <XDriveDialogContent>
+          <Stack component="form" spacing={2} onSubmit={(event) => void createFolder(event)}>
+            <TextField
+              autoFocus
+              fullWidth
+              size="small"
+              label="文件夹名称"
+              value={folderName}
+              error={Boolean(folderNameError)}
+              helperText={folderNameError || ' '}
+              onChange={(event) => {
+                setFolderName(event.target.value)
+                if (folderNameError) setFolderNameError('')
+              }}
+            />
+            <XDriveActionButton intent="primary" type="submit">创建</XDriveActionButton>
+          </Stack>
+        </XDriveDialogContent>
+      </Dialog>
+
+      <Dialog open={!!renameNode} onClose={() => setRenameNode(null)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title="重命名" onClose={() => setRenameNode(null)} />
+        <XDriveDialogContent>
+          <Stack component="form" spacing={2} onSubmit={(event) => void rename(event)}>
+            <TextField
+              autoFocus
+              fullWidth
+              size="small"
+              label="名称"
+              value={renameName}
+              error={Boolean(renameNameError)}
+              helperText={renameNameError || ' '}
+              onChange={(event) => {
+                setRenameName(event.target.value)
+                if (renameNameError) setRenameNameError('')
+              }}
+            />
+            <XDriveActionButton intent="primary" type="submit">保存</XDriveActionButton>
+          </Stack>
+        </XDriveDialogContent>
+      </Dialog>
+
+      <Dialog open={trashOpen} onClose={() => setTrashOpen(false)} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
+        <XDriveDialogTitle title="回收站" onClose={() => setTrashOpen(false)} />
+        <XDriveDialogContent dividers>
+          {trashLoading && trashItems.length === 0 ? (
+            <XDriveStatePanel variant="plain" loading message="正在加载回收站…" />
+          ) : trashItems.length === 0 ? (
+            <XDriveStatePanel variant="plain" message="回收站为空" />
+          ) : (
+            <TableContainer>
+              <Table size="small" aria-label="回收站">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>名称</TableCell>
+                    <TableCell sx={{ width: 190 }}>删除时间</TableCell>
+                    <TableCell align="right" sx={{ width: 230 }}>操作</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {trashItems.map((node) => (
+                    <TableRow key={node.id} hover>
+                      <TableCell>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          {node.type === 'dir' ? <FolderOpenRoundedIcon fontSize="small" /> : <InsertDriveFileRoundedIcon fontSize="small" />}
+                          <Typography variant="body2">{node.name}</Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>{node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <XDriveActionButton
+                            compact
+                            onClick={() => void (async () => {
+                              try {
+                                await api.restoreTrash(node.id, node.revision)
+                                setFeedback({ tone: 'good', message: '已恢复' })
+                                await loadTrash()
+                                if (current) await loadDirectory(current.id)
+                                await refreshQuota()
+                              } catch (err) {
+                                handleError(err)
+                              }
+                            })()}
+                          >
+                            恢复
+                          </XDriveActionButton>
+                          <XDriveActionButton
+                            compact
+                            intent="danger"
+                            onClick={() => setConfirmAction({
+                              title: `永久删除 ${node.name}？`,
+                              description: '该项目、当前内容以及所有已保存的历史版本都将被永久删除。',
+                              confirmLabel: '永久删除',
+                              intent: 'danger',
+                              run: async () => {
+                                await api.permanentlyDeleteTrash(node.id, node.revision)
+                                setFeedback({ tone: 'good', message: '已永久删除' })
+                                await loadTrash()
+                                await refreshQuota()
+                              },
+                            })}
+                          >
+                            永久删除
+                          </XDriveActionButton>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </XDriveDialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!historyNode}
+        onClose={() => {
+          setHistoryNode(null)
+          setVersions([])
+        }}
+        maxWidth="md"
+        fullWidth
+        scroll="paper"
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title={historyNode ? `版本历史 — ${historyNode.name}` : '版本历史'}
+          onClose={() => {
+            setHistoryNode(null)
+            setVersions([])
+          }}
+        />
+        <XDriveDialogContent dividers>
+          {versionsLoading && versions.length === 0 ? (
+            <XDriveStatePanel variant="plain" loading message="正在加载历史版本…" />
+          ) : versions.length === 0 ? (
+            <XDriveStatePanel variant="plain" message="暂无历史版本" />
+          ) : (
+            <TableContainer>
+              <Table size="small" aria-label="版本历史">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ width: 110 }}>版本</TableCell>
+                    <TableCell sx={{ width: 120 }}>大小</TableCell>
+                    <TableCell sx={{ width: 190 }}>保存时间</TableCell>
+                    <TableCell align="right">操作</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {versions.map((version) => (
+                    <TableRow key={version.id} hover>
+                      <TableCell>{`r${version.revision}`}</TableCell>
+                      <TableCell>{formatSize(version.size)}</TableCell>
+                      <TableCell>{new Date(version.created_at).toLocaleString()}</TableCell>
+                      <TableCell align="right">
+                        {historyNode && (
+                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                            <XDriveActionButton compact onClick={() => void api.downloadVersion(historyNode, version).catch(handleError)}>
+                              下载
+                            </XDriveActionButton>
+                            <XDriveActionButton
+                              compact
+                              intent="primary"
+                              onClick={() => setConfirmAction({
+                                title: `恢复到版本 ${version.revision}？`,
+                                description: '当前内容会先保留为一个新的历史版本。',
+                                confirmLabel: '恢复版本',
+                                intent: 'primary',
+                                run: async () => {
+                                  const restored = await api.restoreVersion(historyNode.id, historyNode.revision, version.id)
+                                  setFeedback({ tone: 'good', message: '版本已恢复' })
+                                  setHistoryNode(restored)
+                                  setVersions(await api.versions(restored.id))
+                                  if (current) await loadDirectory(current.id)
+                                  await refreshQuota()
+                                },
+                              })}
+                            >
+                              恢复
+                            </XDriveActionButton>
+                          </Stack>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </XDriveDialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!confirmAction}
+        onClose={() => {
+          if (!confirmBusy) setConfirmAction(null)
+        }}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title={confirmAction?.title ?? '确认操作'}
+          onClose={() => setConfirmAction(null)}
+          closeDisabled={confirmBusy}
+        />
+        <XDriveDialogContent>
+          <Typography variant="body2">{confirmAction?.description}</Typography>
+        </XDriveDialogContent>
+        <XDriveDialogActions>
+          <XDriveActionButton disabled={confirmBusy} onClick={() => setConfirmAction(null)}>取消</XDriveActionButton>
+          <XDriveActionButton
+            intent={confirmAction?.intent ?? 'primary'}
+            loading={confirmBusy}
+            loadingLabel="正在处理…"
+            onClick={() => void executeConfirm()}
+          >
+            {confirmAction?.confirmLabel ?? '确认'}
+          </XDriveActionButton>
+        </XDriveDialogActions>
+      </Dialog>
+
+      <ShareDialog api={api} node={shareNode} onClose={() => setShareNode(null)} onError={handleError} />
+
+      <StorageStatsModal
+        api={api}
+        scope={storageStatsScope ?? 'self'}
+        open={storageStatsScope !== null}
+        onClose={() => setStorageStatsScope(null)}
+      />
+
+      {profile?.role === 'admin' && (
+        <>
+          <AdminUsersPanel
+            api={api}
+            open={adminOpen}
+            currentUserID={profile.id}
+            onClose={() => setAdminOpen(false)}
+            onChanged={() => { void refreshQuota() }}
+          />
+          <AdminAuditPanel api={api} open={auditOpen} onClose={() => setAuditOpen(false)} />
+        </>
+      )}
+
+      <Snackbar
+        open={Boolean(feedback)}
+        autoHideDuration={3500}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        onClose={(_event, reason) => {
+          if (reason !== 'clickaway') setFeedback(null)
+        }}
+      >
+        <div>{feedback ? <XDriveStatusAlert tone={feedback.tone}>{feedback.message}</XDriveStatusAlert> : null}</div>
+      </Snackbar>
+    </Box>
   )
 }
 
