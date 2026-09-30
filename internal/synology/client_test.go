@@ -16,21 +16,23 @@ import (
 )
 
 func TestClientTestAuthenticatesAndChecksPhotosAPI(t *testing.T) {
-	var loginSeen, logoutSeen bool
+	var loginSeen, logoutSeen, photosSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Query().Get("api") == "SYNO.API.Info":
 			_, _ = w.Write([]byte(`{"success":true,"data":{
-				"SYNO.API.Auth":{"path":"entry.cgi","minVersion":1,"maxVersion":7},
+				"SYNO.API.Auth":{"path":"auth.cgi","minVersion":1,"maxVersion":7},
+				"SYNO.Foto.Browse.Folder":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
+				"SYNO.Foto.Browse.Album":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":2}
 			}}`))
-		case r.URL.Path == "/webapi/entry.cgi":
+		case r.URL.Path == "/photo/webapi/auth.cgi":
 			body, _ := url.ParseQuery(readBody(t, r))
 			switch body.Get("method") {
 			case "login":
 				loginSeen = true
-				if body.Get("version") != "6" || body.Get("account") != "alice" ||
+				if body.Get("version") != "3" || body.Get("account") != "alice" ||
 					body.Get("passwd") != "secret" || body.Get("format") != "sid" {
 					t.Fatalf("unexpected login body: %v", body)
 				}
@@ -44,6 +46,16 @@ func TestClientTestAuthenticatesAndChecksPhotosAPI(t *testing.T) {
 			default:
 				http.NotFound(w, r)
 			}
+		case r.URL.Path == "/photo/webapi/entry.cgi":
+			body, _ := url.ParseQuery(readBody(t, r))
+			photosSeen = true
+			if body.Get("api") != "SYNO.Foto.Browse.Item" ||
+				body.Get("method") != "list" ||
+				body.Get("_sid") != "sid-1" ||
+				body.Get("limit") != "1" {
+				t.Fatalf("unexpected Photos probe body: %v", body)
+			}
+			_, _ = w.Write([]byte(`{"success":true,"data":{"offset":0,"total":0,"list":[]}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -58,8 +70,8 @@ func TestClientTestAuthenticatesAndChecksPhotosAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Username != "alice" || !loginSeen || !logoutSeen {
-		t.Fatalf("info=%+v login=%t logout=%t", info, loginSeen, logoutSeen)
+	if info.Username != "alice" || !loginSeen || !photosSeen || !logoutSeen {
+		t.Fatalf("info=%+v login=%t photos=%t logout=%t", info, loginSeen, photosSeen, logoutSeen)
 	}
 }
 
@@ -67,7 +79,8 @@ func TestClientTestMapsAuthenticationFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("api") == "SYNO.API.Info" {
 			_, _ = w.Write([]byte(`{"success":true,"data":{
-				"SYNO.API.Auth":{"path":"entry.cgi","minVersion":1,"maxVersion":6},
+				"SYNO.API.Auth":{"path":"auth.cgi","minVersion":1,"maxVersion":6},
+				"SYNO.Foto.Browse.Folder":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":1}
 			}}`))
@@ -84,6 +97,60 @@ func TestClientTestMapsAuthenticationFailure(t *testing.T) {
 	_, err = client.Test(context.Background())
 	if !errors.Is(err, ErrAuthentication) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestClientTestRejectsPhotosAPISessionFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		code int
+		want error
+	}{
+		{name: "duplicate login", code: 107, want: ErrMultipleLogin},
+		{name: "permission denied", code: 105, want: ErrPermissionDenied},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Query().Get("api") == "SYNO.API.Info":
+					_, _ = w.Write([]byte(`{"success":true,"data":{
+						"SYNO.API.Auth":{"path":"auth.cgi","minVersion":1,"maxVersion":3},
+						"SYNO.Foto.Browse.Folder":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
+						"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
+						"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":1}
+					}}`))
+				case r.URL.Path == "/photo/webapi/auth.cgi":
+					body, _ := url.ParseQuery(readBody(t, r))
+					if body.Get("method") == "logout" {
+						_, _ = w.Write([]byte(`{"success":true,"data":{}}`))
+						return
+					}
+					_, _ = w.Write([]byte(`{"success":true,"data":{"sid":"sid-1"}}`))
+				case r.URL.Path == "/photo/webapi/entry.cgi":
+					_, _ = w.Write([]byte(fmt.Sprintf(
+						`{"success":false,"error":{"code":%d}}`,
+						tc.code,
+					)))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			client, err := New(Credential{
+				BaseURL:  server.URL,
+				Username: "alice",
+				Password: "secret",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.Test(context.Background())
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err=%v want=%v", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -151,14 +218,29 @@ func TestClientRetriesTransientHTTPFailure(t *testing.T) {
 	}
 }
 
-func TestAPIErrorClassifiesExpiredSession(t *testing.T) {
-	for _, code := range []int{106, 107, 119} {
+func TestAPIErrorClassifiesSynologyCommonAndAuthErrors(t *testing.T) {
+	tests := []struct {
+		code int
+		want error
+	}{
+		{106, ErrSessionExpired},
+		{119, ErrSessionExpired},
+		{107, ErrMultipleLogin},
+		{105, ErrPermissionDenied},
+		{400, ErrAuthentication},
+		{401, ErrAuthentication},
+		{402, ErrPermissionDenied},
+		{403, ErrOTPRequired},
+		{404, ErrOTPRequired},
+		{406, ErrOTPRequired},
+	}
+	for _, tc := range tests {
 		envelope := apiEnvelope{Success: false}
 		envelope.Error = &struct {
 			Code int `json:"code"`
-		}{Code: code}
-		if err := apiError(envelope); !errors.Is(err, ErrSessionExpired) {
-			t.Fatalf("code=%d err=%v", code, err)
+		}{Code: tc.code}
+		if err := apiError(envelope); !errors.Is(err, tc.want) {
+			t.Fatalf("code=%d err=%v want=%v", tc.code, err, tc.want)
 		}
 	}
 }

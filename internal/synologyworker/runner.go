@@ -196,8 +196,14 @@ func sourceErrorMessage(err error) string {
 		return "来源运行已取消"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "群晖 Photos 连接或同步超时"
+	case errors.Is(err, synology.ErrMultipleLogin):
+		return "Synology DSM 检测到重复登录，请稍后重试并检查是否有多个程序同时使用同一账号"
+	case errors.Is(err, synology.ErrPermissionDenied):
+		return "Synology DSM 账号没有访问 Synology Photos 所需权限"
+	case errors.Is(err, synology.ErrOTPRequired):
+		return "Synology DSM 要求两步验证/OTP，当前连接器尚未提供 OTP"
 	case errors.Is(err, synology.ErrAuthentication):
-		return "Synology DSM 登录已失效，请更新凭据"
+		return "Synology DSM 登录失败，请检查账号状态或重新保存凭据"
 	case errors.Is(err, synology.ErrPhotosMissing):
 		return "Synology Photos API 不可用，请确认已安装并启用 Synology Photos"
 	case errors.Is(err, synology.ErrUnavailable):

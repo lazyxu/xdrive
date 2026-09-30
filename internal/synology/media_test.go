@@ -28,7 +28,7 @@ func TestSessionListsSpacesAndOpensRangeDownload(t *testing.T) {
 				"SYNO.FotoTeam.Browse.Album":{"path":"entry.cgi","minVersion":1,"maxVersion":2},
 				"SYNO.FotoTeam.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":2}
 			}}`))
-		case r.URL.Path == "/webapi/entry.cgi":
+		case r.URL.Path == "/photo/webapi/auth.cgi":
 			data, _ := io.ReadAll(r.Body)
 			values, _ := url.ParseQuery(string(data))
 			if values.Get("method") == "login" {
@@ -176,7 +176,7 @@ func newMediaTestServer(t *testing.T, download func(http.ResponseWriter, *http.R
 				"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":1}
 			}}`))
-		case r.URL.Path == "/webapi/entry.cgi":
+		case r.URL.Path == "/photo/webapi/auth.cgi":
 			data, _ := io.ReadAll(r.Body)
 			values, _ := url.ParseQuery(string(data))
 			if values.Get("method") == "login" {
@@ -239,7 +239,7 @@ func TestSessionReauthenticatesAfterSessionTimeout(t *testing.T) {
 				"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":1}
 			}}`))
-		case r.URL.Path == "/webapi/entry.cgi":
+		case r.URL.Path == "/photo/webapi/auth.cgi":
 			data, _ := io.ReadAll(r.Body)
 			values, _ := url.ParseQuery(string(data))
 			if values.Get("method") == "login" {
