@@ -3539,6 +3539,20 @@ export default function App() {
                                   minRows={4}
                                   monospace
                                   helperText="每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。"
+                                  browse={row.credential?.configured
+                                    ? async (path, limit, offset) => {
+                                        const result = await window.xdriveDesktop.agent.browseSourceDirectories(
+                                          row.source.id,
+                                          path,
+                                          limit,
+                                          offset,
+                                        )
+                                        if (!result.ok) {
+                                          throw new Error(result.error.detail || result.error.message)
+                                        }
+                                        return result.data
+                                      }
+                                    : undefined}
                                 />
                               )}
                               <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
