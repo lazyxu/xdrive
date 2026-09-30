@@ -32,14 +32,17 @@ export function XDriveDescriptionGrid({
 export function XDriveDescriptionItem({
   label,
   children,
+  fullWidth = false,
 }: {
   label: ReactNode
   children: ReactNode
+  fullWidth?: boolean
 }) {
   return (
     <Box
       sx={{
         minWidth: 0,
+        gridColumn: fullWidth ? '1 / -1' : undefined,
         px: 1.5,
         py: 1.25,
         borderRadius: 1.25,
