@@ -14,7 +14,9 @@ func TestSourceUsesStoredCredential(t *testing.T) {
 	}{
 		{name: "yike pull", source: meta.Source{Kind: yikeSourceKind, Direction: meta.SourceDirectionPull}, want: true},
 		{name: "synology pull", source: meta.Source{Kind: synologySourceKind, Direction: meta.SourceDirectionPull}, want: true},
+		{name: "synology files pull", source: meta.Source{Kind: synologyFilesSourceKind, Direction: meta.SourceDirectionPull}, want: true},
 		{name: "synology push", source: meta.Source{Kind: synologySourceKind, Direction: meta.SourceDirectionPush}, want: false},
+		{name: "synology files push", source: meta.Source{Kind: synologyFilesSourceKind, Direction: meta.SourceDirectionPush}, want: false},
 		{name: "other pull", source: meta.Source{Kind: "other", Direction: meta.SourceDirectionPull}, want: false},
 	}
 	for _, tt := range tests {

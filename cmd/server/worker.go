@@ -18,6 +18,8 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/pullworker"
 	"github.com/lazyxu/xdrive/internal/sourcewake"
+	"github.com/lazyxu/xdrive/internal/synologyfilesworker"
+	"github.com/lazyxu/xdrive/internal/synologyfilesync"
 	"github.com/lazyxu/xdrive/internal/synologysync"
 	"github.com/lazyxu/xdrive/internal/synologyworker"
 	"github.com/lazyxu/xdrive/internal/yikesync"
@@ -99,11 +101,19 @@ func runWorker(args []string) error {
 		JWTSecret: cfg.JWTSecret,
 		Logger:    slog.Default(),
 	}
+	synologyFilesRunner := &synologyfilesworker.Runner{
+		DB:        db,
+		Keyring:   keyring,
+		ServerURL: serverURL,
+		JWTSecret: cfg.JWTSecret,
+		Logger:    slog.Default(),
+	}
 	runner := &pullworker.Runner{
 		DB: db,
 		Handlers: map[string]pullworker.SourceHandler{
-			yikesync.SourceKind:     yikeRunner,
-			synologysync.SourceKind: synologyRunner,
+			yikesync.SourceKind:         yikeRunner,
+			synologysync.SourceKind:     synologyRunner,
+			synologyfilesync.SourceKind: synologyFilesRunner,
 		},
 		Logger:         slog.Default(),
 		MaxConcurrency: concurrency,

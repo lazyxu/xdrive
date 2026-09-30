@@ -316,7 +316,6 @@ func (s *FileStationSession) listPage(ctx context.Context, method, folderPath st
 			return FileStationPage{}, fmt.Errorf("%w: invalid File Station result path: %v", ErrUnavailable, err)
 		}
 		entries[i].Path = normalized
-		entries[i].Name = strings.TrimSpace(entries[i].Name)
 		if entries[i].Name == "" {
 			entries[i].Name = path.Base(normalized)
 		}
@@ -520,7 +519,6 @@ func (s *FileStationSession) fileStationBaseValues(apiName, method string, auth 
 }
 
 func NormalizeFileStationPath(value string) (string, error) {
-	value = strings.TrimSpace(value)
 	if value == "" || !strings.HasPrefix(value, "/") || strings.ContainsRune(value, 0) ||
 		strings.Contains(value, "\\") || !utf8.ValidString(value) {
 		return "", fmt.Errorf("File Station path must be an absolute UTF-8 DSM path")

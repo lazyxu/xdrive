@@ -256,7 +256,12 @@ func (s *Server) createSource(c *gin.Context) {
 		return
 	}
 	isYike := req.Kind == yikeSourceKind
-	isSynologyPull := req.Kind == synologySourceKind && req.Direction == meta.SourceDirectionPull
+	isSynologyFiles := req.Kind == synologyFilesSourceKind
+	isSynologyPull := (req.Kind == synologySourceKind || isSynologyFiles) && req.Direction == meta.SourceDirectionPull
+	if isSynologyFiles && req.Direction != meta.SourceDirectionPull {
+		fail(c, http.StatusBadRequest, "Synology File Station only supports pull direction")
+		return
+	}
 	if isYike {
 		if req.Direction != meta.SourceDirectionPull {
 			fail(c, http.StatusBadRequest, "Yike Photos only supports pull direction")
@@ -394,16 +399,9 @@ func (s *Server) updateSource(c *gin.Context) {
 			if !meta.ValidSourceStatus(status) {
 				return errInvalidSourceConfig
 			}
-			if sourceUsesStoredCredential(current) && status == meta.SourceStatusActive {
-				if current.TargetNodeID == nil {
-					return errSourceCredentialRequired
-				}
-				var credentialCount int64
-				if err := tx.Model(&meta.SourceCredential{}).Where("source_id = ?", current.ID).Count(&credentialCount).Error; err != nil {
+			if status == meta.SourceStatusActive {
+				if err := requireSourceReadyForActivation(tx, current); err != nil {
 					return err
-				}
-				if credentialCount == 0 {
-					return errSourceCredentialRequired
 				}
 			}
 			updates["status"] = status
@@ -473,6 +471,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			fail(c, http.StatusConflict, "source name already exists")
 		case errors.Is(err, errSourceCredentialRequired):
 			fail(c, http.StatusConflict, "source credential must be configured before activation")
+		case errors.Is(err, errSourceConnectorConfigRequired):
+			fail(c, http.StatusConflict, "source connector config must be configured before activation")
 		case errors.Is(err, errManagedSourceTarget):
 			fail(c, http.StatusBadRequest, "Yike Photos target directory is managed automatically")
 		case errors.Is(err, errInvalidSourceTarget):
@@ -646,13 +646,14 @@ func (s *Server) ownedSource(uid, id uint64) (meta.Source, error) {
 }
 
 var (
-	errInvalidSourceConfig          = errors.New("invalid source configuration")
-	errInvalidSourceTarget          = errors.New("invalid source target")
-	errManagedSourceTarget          = errors.New("managed source target")
-	errSourceCredentialRequired     = errors.New("source credential is required")
-	errYikeAccountAlreadyConfigured = errors.New("Yike account already configured")
-	errYikeAccountMismatch          = errors.New("Yike account does not match managed target")
-	errYikeTargetContainsData       = errors.New("Yike managed target already contains unmanaged data")
-	errYikeTargetPathConflict       = errors.New("Yike managed target path conflict")
-	errSourceNameTaken              = errors.New("source name taken")
+	errInvalidSourceConfig           = errors.New("invalid source configuration")
+	errInvalidSourceTarget           = errors.New("invalid source target")
+	errManagedSourceTarget           = errors.New("managed source target")
+	errSourceCredentialRequired      = errors.New("source credential is required")
+	errSourceConnectorConfigRequired = errors.New("source connector config is required")
+	errYikeAccountAlreadyConfigured  = errors.New("Yike account already configured")
+	errYikeAccountMismatch           = errors.New("Yike account does not match managed target")
+	errYikeTargetContainsData        = errors.New("Yike managed target already contains unmanaged data")
+	errYikeTargetPathConflict        = errors.New("Yike managed target path conflict")
+	errSourceNameTaken               = errors.New("source name taken")
 )

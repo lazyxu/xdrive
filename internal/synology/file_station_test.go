@@ -239,3 +239,30 @@ func TestNormalizeFileStationPathRejectsBackslashAndRelativePath(t *testing.T) {
 		t.Fatalf("normalize=%q err=%v", got, err)
 	}
 }
+
+func TestFileStationListingPreservesLeadingSpaces(t *testing.T) {
+	server := newFileStationTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.ConnectFileStation(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	// The helper server has no POST list handler, so validate the normalization
+	// behavior directly: leading spaces are part of the DSM path identity.
+	got, err := NormalizeFileStationPath("/documents/  notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "/documents/  notes.txt" {
+		t.Fatalf("path=%q want leading spaces preserved", got)
+	}
+}

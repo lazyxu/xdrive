@@ -61,7 +61,7 @@ func TestSourceIdentityAliasPromotionWorksForGenericFiles(t *testing.T) {
 
 	createBody := fmt.Sprintf(`{
 		"name":"Generic Synology files",
-		"kind":"synology_files",
+		"kind":"generic_files",
 		"direction":"push",
 		"sync_mode":"backup",
 		"run_mode":"sync",

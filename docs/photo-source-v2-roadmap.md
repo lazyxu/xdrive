@@ -441,7 +441,7 @@ The ordering prioritizes reliability and identity before feature breadth.
 | --- | --- | --- |
 | P0 | Complete: bounded multi-source scheduler, manual/retry/overdue priority, persisted classified retry backoff | Highest |
 | P1 | `SourceItemAlias` model + planner alias resolution + migration tests | Highest |
-| P2 | Synology Files Pull (`synology_files`) for arbitrary shares/directories and arbitrary file types | Highest |
+| P2 | Synology Files Pull backend for arbitrary shares/directories and arbitrary file types; Web/Desktop root-selection UI remains | Highest |
 | P3 | Synology Push hybrid Photos-API semantic lane + filesystem fast path + no-duplicate canonical item-ID migration | Highest |
 | P4 | Source semantic capability declarations + normalized scalar/facet storage | High |
 | P5 | Synology description/favorite/GPS/address/tag/person import with graceful API capability detection | High |
