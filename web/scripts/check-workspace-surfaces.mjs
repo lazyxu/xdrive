@@ -55,6 +55,15 @@ requireText(fileExplorer, [
   "borderRadius: presentation === 'workspace' ? 0 : 2",
 ], 'Shared FileExplorer workspace presentation')
 
+requireText(fileExplorer, [
+  "const xDriveWindowsFolderYellow = '#ffcb3d'",
+  'color: xDriveWindowsFolderYellow',
+], 'Shared FileExplorer Windows folder color')
+
+if (/fileKind === 'folder'.*warning\.main/.test(fileExplorer)) {
+  throw new Error('Shared FileExplorer folder icon must not fall back to the MUI warning palette')
+}
+
 requireText(webFileExplorer, [
   'presentation="workspace"',
 ], 'Web FileExplorer workspace presentation')
