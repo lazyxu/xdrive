@@ -78,8 +78,18 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.match(desktopApp, /<ListItemText primary="图库" \/>/)
 })
 
-test('Web switches between files and Gallery without duplicating the file shell', () => {
-  assert.match(webApp, /useState<'files' \| 'gallery'>\('files'\)/)
-  assert.match(webApp, /appView === 'gallery' \? '文件' : '图库'/)
+test('Web exposes files, Gallery, External Sources, and Storage as first-class workspace views', () => {
+  assert.match(webApp, /useState<'files' \| 'gallery' \| 'sources' \| 'storage'>\('files'\)/)
+  for (const view of ['files', 'gallery', 'sources', 'storage']) {
+    assert.match(webApp, new RegExp(`selected=\\{appView === '${view}'\\}`))
+  }
+  assert.match(webApp, /<ListItemText primary="文件"/)
+  assert.match(webApp, /<ListItemText primary="图库"/)
+  assert.match(webApp, /<ListItemText primary="外部来源"/)
+  assert.match(webApp, /primary="存储"/)
+  assert.match(webApp, /<ExternalSourcesPanel[\s\S]*presentation="page"/)
+  assert.match(webApp, /<StorageStatsModal[\s\S]*scope="self"[\s\S]*presentation="page"/)
+  assert.equal(webApp.includes('setSourcesOpen'), false)
+  assert.equal(webApp.includes("setStorageStatsScope('self')"), false)
   assert.equal((webApp.match(/<Paper className="file-card"/g) || []).length, 1)
 })
