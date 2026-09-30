@@ -593,20 +593,7 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 .source-panel { display: grid; gap: 18px; }
 .source-note { max-width: 760px; margin: 7px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 .source-list { display: grid; gap: 12px; }
-.source-card { border: 1px solid var(--border); border-radius: 15px; padding: 18px 20px; background: var(--surface); box-shadow: 0 7px 20px color-mix(in srgb, var(--shadow) 45%, transparent); }
-.source-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.source-title { min-width: 0; display: grid; gap: 5px; }
-.source-title strong { color: var(--text-strong); font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-title span { color: var(--text-muted); font-size: 12px; }
-.source-card-meta { margin-top: 16px; display: flex; justify-content: space-between; gap: 16px; color: var(--text-muted); font-size: 12px; }
-.source-error { margin-top: 13px; border-radius: 10px; padding: 9px 11px; background: var(--danger-bg); color: var(--danger-text); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
 
-@media (max-width: 760px) {
-  .source-card-header, .source-card-meta { align-items: flex-start; flex-direction: column; }
-}
-
-
-.source-card-actions { margin-top: 13px; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .source-detail { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); display: grid; gap: 14px; }
 .source-detail-grid, .source-run-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
 .source-detail-grid > div, .source-run-grid > div { min-width: 0; border-radius: 10px; padding: 11px 12px; background: var(--surface-muted); display: grid; gap: 4px; }
@@ -626,8 +613,7 @@ dd { margin: 7px 0 0; color: var(--text-strong); font-weight: 700; font-size: 14
 
 @media (max-width: 640px) {
   .source-detail-grid, .source-run-grid { grid-template-columns: 1fr; }
-  .source-card-actions { justify-content: flex-start; }
-}
+  }
 
 
 .source-settings { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); display: grid; gap: 13px; }

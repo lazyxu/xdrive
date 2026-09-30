@@ -604,3 +604,32 @@ test('shared DSM address help explains certificate matching', () => {
   assert.match(shared.synologyDsmAddressHelp, /证书/)
   assert.match(shared.synologyDsmAddressHelp, /域名/)
 })
+
+
+test('Web and Desktop reuse shared source summary card presentation', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedCard = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const desktopStyles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
+
+  for (const token of [
+    'XDriveSourceSummaryCard',
+    'XDriveStatusBadge',
+    'statusTone',
+    'metaAction',
+    'actions',
+    'details',
+    'after',
+  ]) {
+    assert.ok(sharedCard.includes(token), `shared source summary card missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSourceSummaryCard/g) || []).length, 1, 'Web should render source summaries through the shared card')
+  assert.equal((desktop.match(/<XDriveSourceSummaryCard/g) || []).length, 1, 'Desktop should render source summaries through the shared card')
+  assert.equal(web.includes('<Card key={row.source.id}'), false, 'Web should not retain its local source card shell')
+  assert.equal(desktop.includes('className="source-card"'), false, 'Desktop should not retain its local source card shell')
+  assert.equal(desktopStyles.includes('.source-card {'), false, 'Desktop should not retain duplicate source card styling')
+  assert.equal(desktopStyles.includes('.source-card-actions {'), false, 'Desktop should not retain duplicate source action styling')
+  assert.equal(desktopStyles.includes('.source-card-header, }'), false, 'Desktop source-card cleanup must not leave an invalid responsive selector')
+})

@@ -76,6 +76,7 @@ import {
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
   XDriveSourceFailureItem,
+  XDriveSourceSummaryCard,
   XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
@@ -3026,25 +3027,22 @@ export default function App() {
                   const detail = externalSourceDetailView(row)
                   const failedItems = sourceFailedItemsSourceID === row.source.id ? sourceFailedItems : []
                   return (
-                    <article className="source-card" key={row.source.id}>
-                      <div className="source-card-header">
-                        <div className="source-title">
-                          <strong>{row.source.name}</strong>
-                          <span>{card.modeLabel}</span>
-                        </div>
-                        <XDriveStatusBadge tone={card.state.tone} label={card.state.label} />
-                      </div>
-                      <div className="source-card-meta">
-                        <span>{card.lastActivityLabel}：{formatExternalSourceTime(card.lastActivityAt)}</span>
-                        <span>
-                          {card.scannedItems === undefined || card.scannedBytes === undefined
-                            ? '尚无扫描统计'
-                            : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBinarySize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`}
-                        </span>
-                      </div>
-                      {row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' && <div className="source-error">{row.source.last_error}</div>}
-                      <div className="source-card-actions">
-                        <XDriveActionButton
+                    <XDriveSourceSummaryCard
+                      key={row.source.id}
+                      name={row.source.name}
+                      modeLabel={card.modeLabel}
+                      statusTone={card.state.tone}
+                      statusLabel={card.state.label}
+                      activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
+                      stats={card.scannedItems === undefined || card.scannedBytes === undefined
+                        ? '尚无扫描统计'
+                        : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBinarySize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`}
+                      error={row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running'
+                        ? row.source.last_error
+                        : undefined}
+                      actions={(
+                        <>
+                          <XDriveActionButton
                           compact
                           disabled={sourceFailedItemsLoadingID !== null}
                           loading={sourceFailedItemsLoadingID === row.source.id}
@@ -3089,226 +3087,9 @@ export default function App() {
                         >
                           {editingSourceID === row.source.id ? '取消设置' : '设置'}
                         </XDriveActionButton>
-                      </div>
-                      {editingSourceID === row.source.id && (
-                        <Dialog
-                          open={editingSourceID === row.source.id}
-                          onClose={() => { if (!busy) setEditingSourceID(null) }}
-                          maxWidth="md"
-                          fullWidth
-                          scroll="paper"
-                          aria-label="来源设置"
-                          slotProps={{ paper: xDriveDialogPaperProps }}
-                        >
-                          <XDriveDialogTitle
-                            title="来源设置"
-                            subtitle={`${row.source.name} · 目标节点：${row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}`}
-                            onClose={() => setEditingSourceID(null)}
-                            closeDisabled={!!busy}
-                          />
-                          <XDriveDialogContent dividers>
-                            <form id={`source-settings-form-${row.source.id}`} className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
-                          <div className="source-settings-grid">
-                            <label>
-                              <span>名称</span>
-                              <input value={sourceEditName} onChange={(event) => setSourceEditName(event.target.value)} maxLength={128} required />
-                            </label>
-                            <label>
-                              <span>运行模式</span>
-                              <select value={sourceEditRunMode} onChange={(event) => setSourceEditRunMode(event.target.value as 'scan' | 'sync')}>
-                                <option value="scan">仅扫描</option>
-                                <option value="sync">同步</option>
-                              </select>
-                            </label>
-                            <label>
-                              <span>状态</span>
-                              <select value={sourceEditStatus} onChange={(event) => setSourceEditStatus(event.target.value as 'active' | 'paused')}>
-                                <option value="active">启用</option>
-                                <option value="paused">暂停</option>
-                              </select>
-                            </label>
-                          </div>
-                          <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '180px 1fr' }, gap: 1.5, mb: 1.5 }}>
-                            <TextField select size="small" label="调度方式" value={sourceEditScheduleType} onChange={(event) => setSourceEditScheduleType(event.target.value as ExternalSourceScheduleType)}>
-                              <MenuItem value="interval">固定间隔</MenuItem>
-                              <MenuItem value="cron">Cron</MenuItem>
-                              <MenuItem value="manual">仅手动</MenuItem>
-                            </TextField>
-                            {sourceEditScheduleType !== 'manual' && (
-                              <TextField size="small" label={sourceEditScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceEditScheduleExpression} onChange={(event) => setSourceEditScheduleExpression(event.target.value)} helperText={sourceEditScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
-                            )}
-                            {sourceEditScheduleType === 'cron' && (
-                              <TextField size="small" label="时区" value={sourceEditScheduleTimezone} onChange={(event) => setSourceEditScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
-                            )}
-                          </MuiBox>
-                          <label className="source-settings-wide">
-                            <span>忽略规则</span>
-                            <textarea
-                              value={sourceEditIgnoreRules}
-                              onChange={(event) => setSourceEditIgnoreRules(event.target.value)}
-                              rows={5}
-                              spellCheck={false}
-                              placeholder="每行一条 gitignore 风格规则"
-                            />
-                          </label>
-                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'cookie' && (
-                            <label className="source-settings-wide">
-                              <span>一刻相册 Cookie</span>
-                              <input
-                                type="password"
-                                value={sourceEditCookie}
-                                onFocus={() => {
-                                  if (isExternalSourceSavedCredentialMask(sourceEditCookie)) {
-                                    setSourceEditCookie('')
-                                  }
-                                }}
-                                onChange={(event) => {
-                                  setSourceEditCookie(event.target.value)
-                                  setSourceEditCredentialTest(null)
-                                }}
-                                autoComplete="off"
-                                placeholder={row.credential?.configured ? externalSourceSavedCredentialMask : '当前未配置，请粘贴 Cookie'}
-                              />
-                              <small>
-                                {row.credential?.configured
-                                  ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
-                                  : '当前未配置 Cookie，请粘贴新的 Cookie。'}
-                              </small>
-                              <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                              <XDriveYikeCookieHelp variant="dialog" />
-                              <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
-                                <XDriveActionButton
-                                  compact
-                                  disabled={!!busy}
-                                  loading={busy === `source-credential-test-${row.source.id}`}
-                                  loadingLabel="正在测试…"
-                                  onClick={() => void testSettingsSourceCredential(row)}
-                                >
-                                  测试连接
-                                </XDriveActionButton>
-                              </MuiBox>
-                              {sourceEditCredentialTest && (
-                                <XDriveStatusAlert tone="good" sx={{ mt: 0.5 }}>
-                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
-                                </XDriveStatusAlert>
-                              )}
-                            </label>
-                          )}
-                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'synology_dsm' && (
-                            <>
-                              <MuiDivider className="source-settings-wide" />
-                              <XDriveStatusAlert tone={row.credential?.configured ? 'good' : 'warning'} className="source-settings-wide">
-                                {row.credential?.configured
-                                  ? 'DSM 凭据已配置。出于安全原因，地址、用户名和密码不会回读；更新时请重新完整填写三项。'
-                                  : 'DSM 凭据未配置；Pull 来源会保持暂停，直到保存有效凭据。'}
-                              </XDriveStatusAlert>
-                              <label className="source-settings-wide">
-                                <span>更新 DSM 地址</span>
-                                <input
-                                  value={sourceEditDsmBaseURL}
-                                  onChange={(event) => {
-                                    setSourceEditDsmBaseURL(event.target.value)
-                                    setSourceEditCredentialTest(null)
-                                  }}
-                                  autoComplete="off"
-                                  placeholder="留空则保持当前配置不变"
-                                />
-                                <small>{synologyDsmAddressHelp}</small>
-                              </label>
-                              <label>
-                                <span>更新 DSM 用户名</span>
-                                <input
-                                  value={sourceEditDsmUsername}
-                                  onChange={(event) => {
-                                    setSourceEditDsmUsername(event.target.value)
-                                    setSourceEditCredentialTest(null)
-                                  }}
-                                  autoComplete="username"
-                                  placeholder="留空则保持当前配置不变"
-                                />
-                              </label>
-                              <label>
-                                <span>更新 DSM 密码</span>
-                                <input
-                                  type="password"
-                                  value={sourceEditDsmPassword}
-                                  onChange={(event) => {
-                                    setSourceEditDsmPassword(event.target.value)
-                                    setSourceEditCredentialTest(null)
-                                  }}
-                                  autoComplete="new-password"
-                                  placeholder="留空则保持当前配置不变"
-                                />
-                              </label>
-                              <div className="source-settings-wide">
-                                <span>同步空间</span>
-                                <Stack direction="row" spacing={1} flexWrap="wrap">
-                                  {synologyPhotoSpaceOptions.map((option) => (
-                                    <FormControlLabel
-                                      key={option.value}
-                                      control={(
-                                        <Checkbox
-                                          checked={sourceEditSpaces.includes(option.value)}
-                                          onChange={(event) => setSourceEditSpaces((current) => event.target.checked
-                                            ? Array.from(new Set([...current, option.value]))
-                                            : current.filter((space) => space !== option.value))}
-                                        />
-                                      )}
-                                      label={option.label}
-                                    />
-                                  ))}
-                                </Stack>
-                                {!sourceEditConnectorConfig && <small>正在读取当前空间配置；默认使用个人空间和共享空间。</small>}
-                              </div>
-                              <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
-                                <XDriveActionButton
-                                  compact
-                                  disabled={!!busy}
-                                  loading={busy === `source-credential-test-${row.source.id}`}
-                                  loadingLabel="正在测试…"
-                                  onClick={() => void testSettingsSourceCredential(row)}
-                                >
-                                  测试连接
-                                </XDriveActionButton>
-                              </MuiBox>
-                              {sourceEditCredentialTest && (
-                                <XDriveStatusAlert tone="good" className="source-settings-wide">
-                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
-                                </XDriveStatusAlert>
-                              )}
-                            </>
-                          )}
-                            </form>
-                          </XDriveDialogContent>
-                          <XDriveDialogActions>
-                            {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential && row.credential?.configured && (
-                              <XDriveActionButton intent="danger" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
-                                清除{externalSourceCredentialLabel(externalSourceConnectorProfile(row.source.kind, row.source.direction))}
-                              </XDriveActionButton>
-                            )}
-                            <XDriveActionButton
-                              intent="danger"
-                              disabled={!!busy || row.latestRun?.status === 'running'}
-                              onClick={() => setSourceDeleteTarget(row)}
-                            >
-                              删除来源
-                            </XDriveActionButton>
-                            <XDriveDialogActionSpacer />
-                            <XDriveActionButton disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</XDriveActionButton>
-                            <XDriveActionButton
-                              intent="primary"
-                              type="submit"
-                              form={`source-settings-form-${row.source.id}`}
-                              disabled={!!busy}
-                              loading={busy === `source-settings-${row.source.id}`}
-                              loadingLabel="正在保存…"
-                            >
-                              保存设置
-                            </XDriveActionButton>
-                          </XDriveDialogActions>
-                        </Dialog>
+                        </>
                       )}
-                      {selectedSourceID === row.source.id && (
+                      details={selectedSourceID === row.source.id && (
                         <div className="source-detail">
                           <div className="source-detail-grid">
                             <div><span>来源类型</span><strong>{detail.kindLabel}</strong></div>
@@ -3565,8 +3346,225 @@ export default function App() {
                           )}
                         </div>
                       )}
-
-                    </article>
+                      after={editingSourceID === row.source.id && (
+                        <Dialog
+                          open={editingSourceID === row.source.id}
+                          onClose={() => { if (!busy) setEditingSourceID(null) }}
+                          maxWidth="md"
+                          fullWidth
+                          scroll="paper"
+                          aria-label="来源设置"
+                          slotProps={{ paper: xDriveDialogPaperProps }}
+                        >
+                          <XDriveDialogTitle
+                            title="来源设置"
+                            subtitle={`${row.source.name} · 目标节点：${row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置'}`}
+                            onClose={() => setEditingSourceID(null)}
+                            closeDisabled={!!busy}
+                          />
+                          <XDriveDialogContent dividers>
+                            <form id={`source-settings-form-${row.source.id}`} className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
+                          <div className="source-settings-grid">
+                            <label>
+                              <span>名称</span>
+                              <input value={sourceEditName} onChange={(event) => setSourceEditName(event.target.value)} maxLength={128} required />
+                            </label>
+                            <label>
+                              <span>运行模式</span>
+                              <select value={sourceEditRunMode} onChange={(event) => setSourceEditRunMode(event.target.value as 'scan' | 'sync')}>
+                                <option value="scan">仅扫描</option>
+                                <option value="sync">同步</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>状态</span>
+                              <select value={sourceEditStatus} onChange={(event) => setSourceEditStatus(event.target.value as 'active' | 'paused')}>
+                                <option value="active">启用</option>
+                                <option value="paused">暂停</option>
+                              </select>
+                            </label>
+                          </div>
+                          <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '180px 1fr' }, gap: 1.5, mb: 1.5 }}>
+                            <TextField select size="small" label="调度方式" value={sourceEditScheduleType} onChange={(event) => setSourceEditScheduleType(event.target.value as ExternalSourceScheduleType)}>
+                              <MenuItem value="interval">固定间隔</MenuItem>
+                              <MenuItem value="cron">Cron</MenuItem>
+                              <MenuItem value="manual">仅手动</MenuItem>
+                            </TextField>
+                            {sourceEditScheduleType !== 'manual' && (
+                              <TextField size="small" label={sourceEditScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceEditScheduleExpression} onChange={(event) => setSourceEditScheduleExpression(event.target.value)} helperText={sourceEditScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
+                            )}
+                            {sourceEditScheduleType === 'cron' && (
+                              <TextField size="small" label="时区" value={sourceEditScheduleTimezone} onChange={(event) => setSourceEditScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
+                            )}
+                          </MuiBox>
+                          <label className="source-settings-wide">
+                            <span>忽略规则</span>
+                            <textarea
+                              value={sourceEditIgnoreRules}
+                              onChange={(event) => setSourceEditIgnoreRules(event.target.value)}
+                              rows={5}
+                              spellCheck={false}
+                              placeholder="每行一条 gitignore 风格规则"
+                            />
+                          </label>
+                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'cookie' && (
+                            <label className="source-settings-wide">
+                              <span>一刻相册 Cookie</span>
+                              <input
+                                type="password"
+                                value={sourceEditCookie}
+                                onFocus={() => {
+                                  if (isExternalSourceSavedCredentialMask(sourceEditCookie)) {
+                                    setSourceEditCookie('')
+                                  }
+                                }}
+                                onChange={(event) => {
+                                  setSourceEditCookie(event.target.value)
+                                  setSourceEditCredentialTest(null)
+                                }}
+                                autoComplete="off"
+                                placeholder={row.credential?.configured ? externalSourceSavedCredentialMask : '当前未配置，请粘贴 Cookie'}
+                              />
+                              <small>
+                                {row.credential?.configured
+                                  ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                                  : '当前未配置 Cookie，请粘贴新的 Cookie。'}
+                              </small>
+                              <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
+                              <XDriveYikeCookieHelp variant="dialog" />
+                              <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
+                                <XDriveActionButton
+                                  compact
+                                  disabled={!!busy}
+                                  loading={busy === `source-credential-test-${row.source.id}`}
+                                  loadingLabel="正在测试…"
+                                  onClick={() => void testSettingsSourceCredential(row)}
+                                >
+                                  测试连接
+                                </XDriveActionButton>
+                              </MuiBox>
+                              {sourceEditCredentialTest && (
+                                <XDriveStatusAlert tone="good" sx={{ mt: 0.5 }}>
+                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
+                                </XDriveStatusAlert>
+                              )}
+                            </label>
+                          )}
+                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'synology_dsm' && (
+                            <>
+                              <MuiDivider className="source-settings-wide" />
+                              <XDriveStatusAlert tone={row.credential?.configured ? 'good' : 'warning'} className="source-settings-wide">
+                                {row.credential?.configured
+                                  ? 'DSM 凭据已配置。出于安全原因，地址、用户名和密码不会回读；更新时请重新完整填写三项。'
+                                  : 'DSM 凭据未配置；Pull 来源会保持暂停，直到保存有效凭据。'}
+                              </XDriveStatusAlert>
+                              <label className="source-settings-wide">
+                                <span>更新 DSM 地址</span>
+                                <input
+                                  value={sourceEditDsmBaseURL}
+                                  onChange={(event) => {
+                                    setSourceEditDsmBaseURL(event.target.value)
+                                    setSourceEditCredentialTest(null)
+                                  }}
+                                  autoComplete="off"
+                                  placeholder="留空则保持当前配置不变"
+                                />
+                                <small>{synologyDsmAddressHelp}</small>
+                              </label>
+                              <label>
+                                <span>更新 DSM 用户名</span>
+                                <input
+                                  value={sourceEditDsmUsername}
+                                  onChange={(event) => {
+                                    setSourceEditDsmUsername(event.target.value)
+                                    setSourceEditCredentialTest(null)
+                                  }}
+                                  autoComplete="username"
+                                  placeholder="留空则保持当前配置不变"
+                                />
+                              </label>
+                              <label>
+                                <span>更新 DSM 密码</span>
+                                <input
+                                  type="password"
+                                  value={sourceEditDsmPassword}
+                                  onChange={(event) => {
+                                    setSourceEditDsmPassword(event.target.value)
+                                    setSourceEditCredentialTest(null)
+                                  }}
+                                  autoComplete="new-password"
+                                  placeholder="留空则保持当前配置不变"
+                                />
+                              </label>
+                              <div className="source-settings-wide">
+                                <span>同步空间</span>
+                                <Stack direction="row" spacing={1} flexWrap="wrap">
+                                  {synologyPhotoSpaceOptions.map((option) => (
+                                    <FormControlLabel
+                                      key={option.value}
+                                      control={(
+                                        <Checkbox
+                                          checked={sourceEditSpaces.includes(option.value)}
+                                          onChange={(event) => setSourceEditSpaces((current) => event.target.checked
+                                            ? Array.from(new Set([...current, option.value]))
+                                            : current.filter((space) => space !== option.value))}
+                                        />
+                                      )}
+                                      label={option.label}
+                                    />
+                                  ))}
+                                </Stack>
+                                {!sourceEditConnectorConfig && <small>正在读取当前空间配置；默认使用个人空间和共享空间。</small>}
+                              </div>
+                              <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
+                                <XDriveActionButton
+                                  compact
+                                  disabled={!!busy}
+                                  loading={busy === `source-credential-test-${row.source.id}`}
+                                  loadingLabel="正在测试…"
+                                  onClick={() => void testSettingsSourceCredential(row)}
+                                >
+                                  测试连接
+                                </XDriveActionButton>
+                              </MuiBox>
+                              {sourceEditCredentialTest && (
+                                <XDriveStatusAlert tone="good" className="source-settings-wide">
+                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
+                                </XDriveStatusAlert>
+                              )}
+                            </>
+                          )}
+                            </form>
+                          </XDriveDialogContent>
+                          <XDriveDialogActions>
+                            {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential && row.credential?.configured && (
+                              <XDriveActionButton intent="danger" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
+                                清除{externalSourceCredentialLabel(externalSourceConnectorProfile(row.source.kind, row.source.direction))}
+                              </XDriveActionButton>
+                            )}
+                            <XDriveActionButton
+                              intent="danger"
+                              disabled={!!busy || row.latestRun?.status === 'running'}
+                              onClick={() => setSourceDeleteTarget(row)}
+                            >
+                              删除来源
+                            </XDriveActionButton>
+                            <XDriveDialogActionSpacer />
+                            <XDriveActionButton disabled={!!busy} onClick={() => setEditingSourceID(null)}>取消</XDriveActionButton>
+                            <XDriveActionButton
+                              intent="primary"
+                              type="submit"
+                              form={`source-settings-form-${row.source.id}`}
+                              disabled={!!busy}
+                              loading={busy === `source-settings-${row.source.id}`}
+                              loadingLabel="正在保存…"
+                            >
+                              保存设置
+                            </XDriveActionButton>
+                          </XDriveDialogActions>
+                        </Dialog>
+                      )}
+                    />
                   )
                 })}
               </div>
