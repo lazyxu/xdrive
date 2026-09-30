@@ -66,10 +66,10 @@ if ((files.app.match(/<XDriveBrandLockup/g) || []).length !== 3) {
 if (files.app.includes('className="brand-lockup"') || files.app.includes('className="brand-mark"')) {
   throw new Error('Web 仍保留本地品牌区实现')
 }
-requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveWorkspaceSurface', 'presentation="page"', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
+requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveWorkspaceSurface', 'XDriveConfirmDialog', 'confirmIntent={confirmAction?.danger', 'loading={confirmLoading}', 'presentation="page"', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
 if (/from ['"]antd['"]/.test(files.users) || files.users.includes('@ant-design/icons')) throw new Error('用户管理仍依赖 Ant Design')
 requireText(files.workspaceSurface, ['WorkspacePresentation', "presentation === 'page'", 'workspace-page-surface', 'XDriveDialogTitle', 'XDriveDialogContent'], 'Web 工作区表面')
-requireText(files.storageStats, ['WorkspaceSurface', 'presentation="page"', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+requireText(files.storageStats, ['WorkspaceSurface', 'presentation="page"', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveConfirmDialog', 'confirmIntent="danger"', 'loading={cleanupLoading}', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
 if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
@@ -165,3 +165,6 @@ forbidText(files.share, ['Share tokens are shown only once', 'Create a download 
 forbidText(files.publicShare, ['Secure file share', 'placeholder="Share password"', '>Download'], '公开分享')
 
 console.log('Web Chinese GUI checks passed')
+
+if ((files.users.match(/<XDriveConfirmDialog/g) || []).length !== 1) throw new Error('用户管理危险操作没有统一复用共享确认框')
+if ((files.storageStats.match(/<XDriveConfirmDialog/g) || []).length !== 1) throw new Error('存储清理确认没有统一复用共享确认框')
