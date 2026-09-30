@@ -243,7 +243,7 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		Executor:     executor,
 	}).Scan(runCtx)
 	if err != nil {
-		return finishFailure(err, true)
+		return finishFailure(err, !errors.Is(err, yike.ErrRateLimited))
 	}
 
 	if _, err := sourcemetadata.ApplySnapshot(runCtx, r.DB, source.ID, run.ID, result.Metadata); err != nil {
@@ -303,7 +303,7 @@ func (r *Runner) ClassifyPullRetry(err error) pullworker.RetryClass {
 	case err == nil, errors.Is(err, context.Canceled):
 		return pullworker.RetryNone
 	case errors.Is(err, yike.ErrRateLimited):
-		return pullworker.RetryRateLimited
+		return pullworker.RetryRateLimitedCooldown
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, yike.ErrUnavailable):
 		return pullworker.RetryTransient
 	default:
@@ -318,7 +318,7 @@ func sourceErrorMessage(err error) string {
 	case errors.Is(err, yike.ErrAuthentication):
 		return "一刻相册登录已失效，请更新 Cookie"
 	case errors.Is(err, yike.ErrRateLimited):
-		return "一刻相册请求过于频繁，请稍后重试"
+		return "一刻相册请求过于频繁，已暂停本轮并进入冷却，稍后自动续跑"
 	case errors.Is(err, yike.ErrUnavailable):
 		return "一刻相册服务暂时不可用，请稍后重试"
 	default:

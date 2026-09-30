@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -790,5 +791,153 @@ func TestClientRateLimitCooldownIsShared(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed < 25*time.Millisecond {
 		t.Fatalf("shared cooldown elapsed=%s want at least ~40ms", elapsed)
+	}
+}
+
+func TestDownloadFileLinkUsesQueuedBatchInfo(t *testing.T) {
+	var mu sync.Mutex
+	infoCalls := 0
+	singleCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/youai/file/v1/info":
+			mu.Lock()
+			infoCalls++
+			mu.Unlock()
+			if r.URL.Query().Get("need_dlink") != "1" || r.URL.Query().Get("clienttype") != "70" {
+				t.Fatalf("batch query=%v", r.URL.Query())
+			}
+			var ids []string
+			if err := json.Unmarshal([]byte(r.URL.Query().Get("fsidlist")), &ids); err != nil {
+				t.Fatalf("decode fsidlist: %v", err)
+			}
+			if strings.Join(ids, ",") != "11,12,13" {
+				t.Fatalf("fsidlist=%v", ids)
+			}
+			_, _ = w.Write([]byte(`{"errno":0,"list":[
+				{"fsid":"11","dlink":"` + serverURL(r) + `/download/11"},
+				{"fs_id":"12","download_url":"` + serverURL(r) + `/download/12"},
+				{"file_id":"13","url":"` + serverURL(r) + `/download/13"}
+			]}`))
+		case "/youai/file/v2/download":
+			mu.Lock()
+			singleCalls++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"errno":0,"dlink":"` + serverURL(r) + `/download/single"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMinInterval = 0
+	client.QueueDownloadFileLinks([]int64{11, 12, 13})
+
+	first, err := client.DownloadFileLink(context.Background(), 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.DownloadFileLink(context.Background(), 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(first.URL, "/download/11") || !strings.HasSuffix(second.URL, "/download/12") {
+		t.Fatalf("batched links first=%q second=%q", first.URL, second.URL)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if infoCalls != 1 || singleCalls != 0 {
+		t.Fatalf("batch calls=%d single calls=%d", infoCalls, singleCalls)
+	}
+}
+
+func TestDownloadFileLinkDisablesUnsupportedBatchAndFallsBack(t *testing.T) {
+	var mu sync.Mutex
+	infoCalls := 0
+	singleCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/youai/file/v1/info":
+			mu.Lock()
+			infoCalls++
+			mu.Unlock()
+			http.NotFound(w, r)
+		case "/youai/file/v2/download":
+			mu.Lock()
+			singleCalls++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"errno":0,"dlink":"` + serverURL(r) + `/download/` + r.URL.Query().Get("fsid") + `"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMinInterval = 0
+	client.QueueDownloadFileLinks([]int64{11, 12})
+
+	for _, fsid := range []int64{11, 12} {
+		link, err := client.DownloadFileLink(context.Background(), fsid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(link.URL, "/download/"+strconv.FormatInt(fsid, 10)) {
+			t.Fatalf("fsid=%d URL=%q", fsid, link.URL)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if infoCalls != 1 || singleCalls != 2 {
+		t.Fatalf("batch calls=%d single calls=%d", infoCalls, singleCalls)
+	}
+}
+
+func TestDownloadFileLinkCircuitBreaksOnFirstBusinessRateLimit(t *testing.T) {
+	var mu sync.Mutex
+	infoCalls := 0
+	singleCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/youai/file/v1/info":
+			mu.Lock()
+			infoCalls++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"errno":50005,"errmsg":"操作过于频繁，请稍后再试"}`))
+		case "/youai/file/v2/download":
+			mu.Lock()
+			singleCalls++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"errno":0,"dlink":"` + serverURL(r) + `/download/single"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMinInterval = 0
+	client.apiRateLimitBaseDelay = time.Millisecond
+	client.apiRetryMaxDelay = 5 * time.Millisecond
+	client.QueueDownloadFileLinks([]int64{11, 12})
+
+	_, err = client.DownloadFileLink(context.Background(), 11)
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err=%v want ErrRateLimited", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if infoCalls != 1 || singleCalls != 0 {
+		t.Fatalf("rate-limit batch calls=%d single calls=%d", infoCalls, singleCalls)
 	}
 }

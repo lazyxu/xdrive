@@ -684,8 +684,13 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if err := json.Unmarshal(retryHistoryRes.Body.Bytes(), &retryHistory); err != nil {
 		t.Fatal(err)
 	}
-	if len(retryHistory) != 1 || retryHistory[0].ExternalID != "leftpending" ||
-		retryHistory[0].Error != "source item remained pending when run finished" {
-		t.Fatalf("pending item did not get run failure snapshot: %+v", retryHistory)
+	if len(retryHistory) != 0 {
+		t.Fatalf("failed run manufactured failures for unattempted pending work: %+v", retryHistory)
+	}
+	if err := db.Where("source_id = ? AND external_id = ?", source.ID, "leftpending").First(&failedItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failedItem.State != meta.SourceItemStatePending || failedItem.LastError != "" {
+		t.Fatalf("failed run changed unattempted pending work: %+v", failedItem)
 	}
 }

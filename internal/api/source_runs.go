@@ -1013,9 +1013,13 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 
 		if run.Mode == meta.SourceRunModeSync {
+			unresolvedStates := []string{meta.SourceItemStateError}
+			if status == meta.SyncRunStatusCompleted || status == meta.SyncRunStatusPartial {
+				unresolvedStates = append(unresolvedStates, meta.SourceItemStatePending)
+			}
 			var unresolved []meta.SourceItem
 			if err := tx.Where("source_id = ? AND last_seen_run_id = ? AND state IN ?",
-				sourceID, runID, []string{meta.SourceItemStatePending, meta.SourceItemStateError}).
+				sourceID, runID, unresolvedStates).
 				Find(&unresolved).Error; err != nil {
 				return err
 			}

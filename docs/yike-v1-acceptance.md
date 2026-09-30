@@ -4,7 +4,7 @@ Yike Photos support depends on the current private Web API used by the signed-in
 
 ## Scope that must work
 
-A user must be able to configure a Yike Cookie in Web or Desktop, validate it, have xDrive automatically bind the managed logical target `来源/一刻相册/uid_<百度UID>_<账号名称>/`, run scan-only or sync mode, trigger an immediate run, and let the pull worker run on schedule. Media already copied into xDrive must never be deleted merely because it disappears from Yike.
+A user must be able to configure a Yike Cookie in Web or Desktop, validate it, have xDrive automatically bind the managed logical target `同步文件夹/一刻相册/uid_<百度UID>_<账号名称>/`, run scan-only or sync mode, trigger an immediate run, and let the pull worker run on schedule. Media already copied into xDrive must never be deleted merely because it disappears from Yike.
 
 The V1 release does not require Yike-side uploads/deletes/renames, mirror deletion, inferred Live Photo pairing, EXIF processing, or a Yike-style album browsing UI.
 
@@ -28,12 +28,15 @@ Use a Yike account whose test set includes photos and videos. Complete every blo
 
 - [ ] Web: add a Yike source, expand “如何获取 Cookie”, test the Cookie, and create the source without choosing a target directory.
 - [ ] Desktop: repeat the same create/test flow; Yike must not expose the normal target-folder browser.
-- [ ] After credential persistence, the Source target resolves to `来源/一刻相册/uid_<百度UID>_<账号名称>/`.
+- [ ] After credential persistence, the Source target resolves to `同步文件夹/一刻相册/uid_<百度UID>_<账号名称>/`.
 - [ ] The managed hierarchy is represented by xDrive Nodes only; imported bytes continue to use CAS/dedup storage.
 - [ ] An invalid/expired Cookie is rejected and is not shown as configured.
 - [ ] Replacing a valid stored Cookie with an invalid Cookie is rejected and the previous credential remains usable.
 - [ ] `scan` mode enumerates the root library without downloading media.
 - [ ] `sync` mode downloads normal photos and videos into the managed Yike target.
+- [ ] With multiple new account-owned files queued, dlink acquisition uses the read-only batch-info endpoint when available and falls back to per-file download-link requests when the batch endpoint is unsupported.
+- [ ] Force the batch/single dlink endpoint to return Yike `50005`; the first rate-limit response stops further transfer requests for that run, leaves unattempted work pending rather than listing it as failed, and persists a roughly 10–15 minute Source cooldown for scheduled retry.
+- [ ] After the cooldown/retry, already completed files are not transferred again and the pending items continue through the existing SourceItem/resumable-upload state.
 - [ ] At least one large video completes through resumable upload without worker-local full-file staging.
 - [ ] Root-library media and own albums are traversed successfully.
 - [ ] For media exposing Yike `shoot_time`, Source metadata preserves it as `captured_at` independently from remote `ctime`.

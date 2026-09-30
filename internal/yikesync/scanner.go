@@ -3,6 +3,7 @@ package yikesync
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -23,7 +24,7 @@ const (
 	SourceKind               = "yike_photos"
 	DefaultBatchSize         = 500
 	DefaultSyncBatchSize     = 100
-	DefaultTransferQueueSize = 64
+	DefaultTransferQueueSize = 8
 )
 
 type Remote interface {
@@ -31,6 +32,10 @@ type Remote interface {
 	ListFilesPage(context.Context, string) (yike.FileList, error)
 	ListAlbumsPage(context.Context, string) (yike.AlbumList, error)
 	ListAlbumFilesPage(context.Context, string, string) (yike.AlbumFileList, error)
+}
+
+type downloadLinkQueuer interface {
+	QueueDownloadFileLinks([]int64)
 }
 
 type SourceAPI interface {
@@ -143,6 +148,9 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 			queueSize = DefaultTransferQueueSize
 		}
 		pipeline = pullsync.NewPipeline(ctx, queueSize, "Yike", s.SourceID, s.RunID, s.API, s.Executor)
+		pipeline.SetCircuitBreaker(func(err error) bool {
+			return errors.Is(err, yike.ErrRateLimited)
+		})
 		defer pipeline.Abort()
 	}
 
@@ -181,6 +189,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				})
 			}
 		}
+		queueDownloadLinks(s.Remote, transfers)
 		if err := s.API.UpdateSourceRunSummary(ctx, s.SourceID, s.RunID, result.Summary); err != nil {
 			return err
 		}
@@ -343,6 +352,25 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		return result, fmt.Errorf("report Yike source progress: %w", err)
 	}
 	return result, nil
+}
+
+func queueDownloadLinks(remote Remote, transfers []pullsync.Task[TransferRef]) {
+	queuer, ok := remote.(downloadLinkQueuer)
+	if !ok || len(transfers) == 0 {
+		return
+	}
+	fsids := make([]int64, 0, len(transfers))
+	for _, task := range transfers {
+		action := sourcepkg.PlanAction(task.Plan.Action)
+		if action != sourcepkg.ActionCreate && action != sourcepkg.ActionUpdate && action != sourcepkg.ActionMoveUpdate {
+			continue
+		}
+		if task.Ref.OwnerUK != task.Ref.OwnUK || task.Ref.File.FSID <= 0 {
+			continue
+		}
+		fsids = append(fsids, task.Ref.File.FSID)
+	}
+	queuer.QueueDownloadFileLinks(fsids)
 }
 
 func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {

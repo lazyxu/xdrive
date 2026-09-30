@@ -42,17 +42,18 @@ type WorkerResult struct {
 }
 
 type Pipeline[Ref any] struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	tasks    chan Task[Ref]
-	done     chan WorkerResult
-	closed   bool
-	result   *WorkerResult
-	label    string
-	sourceID uint64
-	runID    string
-	api      RunAPI
-	executor PlanExecutor[Ref]
+	ctx            context.Context
+	cancel         context.CancelFunc
+	tasks          chan Task[Ref]
+	done           chan WorkerResult
+	closed         bool
+	result         *WorkerResult
+	label          string
+	sourceID       uint64
+	runID          string
+	api            RunAPI
+	executor       PlanExecutor[Ref]
+	circuitBreaker func(error) bool
 }
 
 func NewPipeline[Ref any](
@@ -80,6 +81,12 @@ func NewPipeline[Ref any](
 		p.done <- p.runWorker(ctx)
 	}()
 	return p
+}
+
+func (p *Pipeline[Ref]) SetCircuitBreaker(fn func(error) bool) {
+	if p != nil {
+		p.circuitBreaker = fn
+	}
 }
 
 func (p *Pipeline[Ref]) Submit(plan client.SourcePlan, item sourcepkg.DiscoveredItem, ref Ref) error {
@@ -173,6 +180,10 @@ func (p *Pipeline[Ref]) runWorker(ctx context.Context) WorkerResult {
 				sourceFailure(task.Item.ExternalID, err),
 			}); failErr != nil {
 				out.Err = failErr
+				return out
+			}
+			if p.circuitBreaker != nil && p.circuitBreaker(err) {
+				out.Err = err
 				return out
 			}
 			continue

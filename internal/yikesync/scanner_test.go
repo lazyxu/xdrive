@@ -2,6 +2,7 @@ package yikesync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,10 +17,11 @@ import (
 )
 
 type fakeRemote struct {
-	user       yike.UserInfo
-	files      map[string]yike.FileList
-	albums     map[string]yike.AlbumList
-	albumFiles map[string]map[string]yike.AlbumFileList
+	user        yike.UserInfo
+	files       map[string]yike.FileList
+	albums      map[string]yike.AlbumList
+	albumFiles  map[string]map[string]yike.AlbumFileList
+	queuedFSIDs []int64
 }
 
 func (f *fakeRemote) UserInfo(context.Context) (yike.UserInfo, error) {
@@ -36,6 +38,10 @@ func (f *fakeRemote) ListAlbumsPage(_ context.Context, cursor string) (yike.Albu
 
 func (f *fakeRemote) ListAlbumFilesPage(_ context.Context, albumID, cursor string) (yike.AlbumFileList, error) {
 	return f.albumFiles[albumID][cursor], nil
+}
+
+func (f *fakeRemote) QueueDownloadFileLinks(fsids []int64) {
+	f.queuedFSIDs = append(f.queuedFSIDs, fsids...)
 }
 
 type fakeSourceAPI struct {
@@ -446,10 +452,14 @@ func TestScannerRejectsInvalidUserIdentity(t *testing.T) {
 type fakePlanExecutor struct {
 	commits []client.SourceCommit
 	failID  string
+	failErr error
 }
 
 func (f *fakePlanExecutor) Execute(_ context.Context, plan client.SourcePlan, item sourcepkg.DiscoveredItem, _ TransferRef) (client.SourceCommit, error) {
 	if item.ExternalID == f.failID {
+		if f.failErr != nil {
+			return client.SourceCommit{}, f.failErr
+		}
 		return client.SourceCommit{}, fmt.Errorf("download unavailable")
 	}
 	commit := client.SourceCommit{
@@ -491,6 +501,52 @@ func TestScannerSyncExecutesAndCommitsPlans(t *testing.T) {
 	}
 	if api.commits[0][0].ExternalID != "yike:123:1" {
 		t.Fatalf("commit=%+v", api.commits[0][0])
+	}
+	if len(remote.queuedFSIDs) != 1 || remote.queuedFSIDs[0] != 1 {
+		t.Fatalf("queued dlink fsids=%v want=[1]", remote.queuedFSIDs)
+	}
+}
+
+func TestScannerSyncCircuitBreaksOnRateLimit(t *testing.T) {
+	remote := &fakeRemote{
+		user: yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.File{
+					{FSID: 1, Path: "/first.jpg", Size: 10, MTime: 100},
+					{FSID: 2, Path: "/second.jpg", Size: 20, MTime: 200},
+					{FSID: 3, Path: "/third.jpg", Size: 30, MTime: 300},
+				},
+			},
+		},
+		albums:     map[string]yike.AlbumList{"": {Page: yike.Page{HasMore: 0}}},
+		albumFiles: map[string]map[string]yike.AlbumFileList{},
+	}
+	api := &fakeSourceAPI{action: string(sourcepkg.ActionCreate)}
+	executor := &fakePlanExecutor{
+		failID:  "yike:123:1",
+		failErr: fmt.Errorf("dlink throttled: %w", yike.ErrRateLimited),
+	}
+	result, err := (Scanner{
+		Remote: remote, API: api, SourceID: 1, RunID: "run-rate-limit",
+		Mode: meta.SourceRunModeSync, Executor: executor,
+	}).Scan(context.Background())
+	if !errors.Is(err, yike.ErrRateLimited) {
+		t.Fatalf("err=%v want ErrRateLimited", err)
+	}
+	if result.Summary.FailedItems != 1 {
+		t.Fatalf("summary=%+v", result.Summary)
+	}
+	if len(api.failures) != 1 || len(api.failures[0]) != 1 ||
+		api.failures[0][0].ExternalID != "yike:123:1" {
+		t.Fatalf("failures=%+v", api.failures)
+	}
+	if len(executor.commits) != 0 {
+		t.Fatalf("rate-limit circuit breaker continued transfers: %+v", executor.commits)
+	}
+	if got := fmt.Sprint(remote.queuedFSIDs); got != "[1 2 3]" {
+		t.Fatalf("queued dlink fsids=%s want=[1 2 3]", got)
 	}
 }
 
