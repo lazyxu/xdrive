@@ -94,14 +94,6 @@ Backup classes are separated so retention and recovery logic cannot accidentally
 
 Scheduled retention applies only to `backups/snapshots`.
 
-Before restoring an upgrade backup, operators can inspect the external-source rows in its PostgreSQL dump without modifying the live database:
-
-```bash
-xdrive-server backup sources ~/.xd/backups/pre-upgrade/xdrive-backup-<timestamp>
-```
-
-The command verifies backup checksums first, then streams only the `xd_sources` table through `pg_restore` inside the existing PostgreSQL container. It prints source identity and status fields only; connector credential ciphertext is not read or displayed. This is intended for selecting the correct pre-upgrade recovery point before a destructive restore.
-
 ### `logs/`
 
 Contains host-side operational logs, not container logs.

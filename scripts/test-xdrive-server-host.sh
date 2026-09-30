@@ -9,7 +9,7 @@ cleanup() {
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
     for file in \
-      update.out update.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out backup-sources.out restore.out backup-fail.err doctor.out \
+      update.out update.err version.out backup.out backup-create.out backup-list.out backup-verify.out backup-verify-latest.out restore.out backup-fail.err doctor.out \
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
@@ -72,15 +72,6 @@ EOF
     ;;
   *"audit record"*)
     printf '%s\n' "$*" >> "$TEST_STATE/audit-calls"
-    ;;
-  *"exec -T postgres pg_restore --data-only --table=public.xd_sources --file=-"*)
-    cat >/dev/null
-    cat <<'EOF'
-COPY public.xd_sources (id, owner_id, name, kind, direction, sync_mode, run_mode, status, schedule_type, schedule_expression, schedule_timezone, revision, target_node_id, ignore_rules, checkpoint, last_run_at, last_success_at, last_error, run_requested_at, created_at, updated_at) FROM stdin;
-1	1	一刻相册	yike_photos	pull	backup	scan	active	interval	6h	\N	3	10			2026-09-30 08:00:00+00	2026-09-30 08:00:00+00			2026-09-29 00:00:00+00	2026-09-30 08:00:00+00
-2	1	群晖 Photos	synology_photos	pull	backup	sync	active	manual		\N	2	11						2026-09-29 01:00:00+00	2026-09-30 07:30:00+00
-\.
-EOF
     ;;
   *"admin list"*)
     readlink /proc/$$/fd/0 > "$TEST_STATE/admin-list-stdin" 2>/dev/null || true
@@ -274,16 +265,6 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" backup verify >"$TMP/backup-verify-latest.out"
 grep -q "Backup verified: $SNAPSHOT" "$TMP/backup-verify-latest.out"
-
-TEST_STATE="$TMP/state" \
-PATH="$TMP/bin:/usr/bin:/bin" \
-XD_CONFIG_DIR="$TMP/home" \
-bash "$HOST" backup sources "$SNAPSHOT" >"$TMP/backup-sources.out"
-grep -Fq $'ID\tOWNER_ID\tNAME\tKIND\tDIRECTION\tRUN_MODE\tSTATUS\tUPDATED_AT' "$TMP/backup-sources.out"
-grep -Fq $'1\t1\t一刻相册\tyike_photos\tpull\tscan\tactive' "$TMP/backup-sources.out"
-grep -Fq $'2\t1\t群晖 Photos\tsynology_photos\tpull\tsync\tactive' "$TMP/backup-sources.out"
-grep -q "Backup: $SNAPSHOT" "$TMP/backup-sources.out"
-grep -q -- 'exec -T postgres pg_restore --data-only --table=public.xd_sources --file=-' "$TMP/state/docker-args"
 
 CORRUPT="$TMP/home/backups/snapshots/xdrive-backup-20260928T110000Z"
 cp -a "$SNAPSHOT" "$CORRUPT"
