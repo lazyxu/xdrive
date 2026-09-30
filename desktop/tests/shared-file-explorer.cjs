@@ -38,6 +38,21 @@ test('shared FileExplorer provides command bar, details/grid views, and status b
   assert.ok(explorer.includes("event.key === 'Enter'"), 'items need keyboard open support')
 })
 
+test('shared FileExplorer uses compact system-style density without breaking virtualization math', () => {
+  assert.ok(explorer.includes('const detailsRowHeight = 38'), 'details virtualization row height should match the compact visual row')
+  assert.ok(explorer.includes('const detailsHeaderHeight = 32'), 'details virtualization header height should match the compact header')
+  assert.ok(explorer.includes('minHeight: detailsHeaderHeight'), 'details header should consume the virtualization height token')
+  assert.ok(explorer.includes('minHeight: detailsRowHeight'), 'details rows should consume the virtualization height token')
+  assert.ok(explorer.includes('minHeight: 44'), 'navigation/address row should use compact system height')
+  assert.ok(explorer.includes("'& .MuiIconButton-root': { width: 32, height: 32"), 'navigation buttons should use 32px system controls')
+  assert.ok(explorer.includes("height: 36, borderRadius: '6px'"), 'address/search inputs should use compact 36px controls')
+  assert.ok(explorer.includes('minHeight: 40'), 'command bar should use compact 40px height')
+  assert.ok(explorer.includes("'& .MuiToggleButton-root': { width: 32, height: 30"), 'view toggles should stay compact')
+  assert.ok(explorer.includes('minHeight: 28'), 'status bar should use compact system height')
+  assert.equal(explorer.includes('const detailsRowHeight = 42'), false, 'legacy loose row density should be removed')
+  assert.equal(explorer.includes('const detailsHeaderHeight = 34'), false, 'legacy loose header density should be removed')
+})
+
 test('shared FileExplorer keeps folders first and owns common client-side sorting', () => {
   assert.ok(explorer.includes("if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1"), 'folders should remain grouped ahead of files')
   for (const key of ["'name'", "'updated'", "'type'", "'size'"]) {
