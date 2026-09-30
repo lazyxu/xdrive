@@ -1805,6 +1805,9 @@ export default function ExternalSourcesPanel({
                       value={settingsValues.roots ?? []}
                       error={Boolean(settingsRootsError)}
                       helperText={settingsRootsError || '每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。'}
+                      browse={setting.credential?.configured
+                        ? (path, limit, offset) => api.sourceBrowseDirectories(setting.source.id, path, limit, offset)
+                        : undefined}
                       onChange={(value) => {
                         setSettingsValues((current) => ({ ...current, roots: value }))
                         if (settingsRootsError) setSettingsRootsError('')
