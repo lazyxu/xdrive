@@ -101,6 +101,28 @@ test('Web admin UI favors readable labels while preserving technical identifiers
   assert.ok(adminAudit.includes('{event.action}'), 'Audit table should preserve the exact event code as secondary text')
 })
 
+test('User Management prevents duplicate modal submissions', () => {
+  for (const state of ['createSaving', 'quotaSaving', 'resetSaving']) {
+    assert.ok(adminUsers.includes(state), `User Management missing busy state: ${state}`)
+  }
+  for (const label of ['正在创建…', '正在保存…', '正在重置…']) {
+    assert.ok(adminUsers.includes(label), `User Management missing loading label: ${label}`)
+  }
+  assert.ok(adminUsers.includes('closeDisabled={createSaving}'), 'Create User dialog should not close while saving')
+  assert.ok(adminUsers.includes('closeDisabled={quotaSaving}'), 'Quota dialog should not close while saving')
+  assert.ok(adminUsers.includes('closeDisabled={resetSaving}'), 'Password reset dialog should not close while saving')
+})
+
+test('Web admin tables stay useful at common desktop widths', () => {
+  assert.ok(adminUsers.includes('minWidth: 900'), 'User Management table should avoid unnecessary wide-screen scrolling')
+  assert.ok(adminUsers.includes("display: { xs: 'none', xl: 'table-cell' }"), 'User Management should collapse lower-priority columns below xl')
+  assert.ok(adminAudit.includes('minWidth: 880'), 'Audit table should keep its core columns compact')
+  assert.ok(adminAudit.includes('审计事件详情'), 'Audit should move source and metadata into a local detail dialog')
+  assert.ok(adminAudit.includes('setDetailEvent(event)'), 'Audit table should expose a details action')
+  assert.ok(adminAudit.includes('detailEvent.request_id'), 'Audit details should preserve request identifiers')
+  assert.ok(adminAudit.includes('metadataText(detailEvent.metadata)'), 'Audit details should preserve metadata')
+})
+
 test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedSidebar.includes('XDriveSidebarNavList'), 'shared sidebar list primitive is missing')
   assert.ok(sharedSidebar.includes('XDriveSidebarNavItem'), 'shared sidebar item primitive is missing')
@@ -129,6 +151,12 @@ test('Web and Desktop show account storage usage at the bottom of the sidebar', 
   assert.ok(sharedStorageSummary.includes('formatBinarySize(boundedUsed)'), 'shared storage summary should show used capacity')
   assert.ok(sharedStorageSummary.includes("formatBinarySize(boundedTotal) : '不限'"), 'shared storage summary should show total capacity or unlimited quota')
   assert.ok(sharedStorageSummary.includes('percentageLabel'), 'shared storage summary should show quota percentage when available')
+  assert.ok(sharedStorageSummary.includes("warningQuota"), 'shared storage summary should distinguish near-full quota')
+  assert.ok(sharedStorageSummary.includes("'空间紧张'"), 'shared storage summary should label near-full quota')
+  assert.ok(sharedStorageSummary.includes("'已用满'"), 'shared storage summary should label full quota')
+  assert.ok(sharedStorageSummary.includes("'已超额'"), 'shared storage summary should label over-quota usage')
+  assert.ok(sharedStorageSummary.includes("'warning.light'"), 'dark sidebar should keep near-full quota readable')
+  assert.ok(sharedStorageSummary.includes("'error.light'"), 'dark sidebar should keep full quota readable')
   assert.ok(sharedStorageSummary.includes('<LinearProgress'), 'shared storage summary should show quota progress')
 
   assert.ok(webApp.includes('usedBytes={quota.physical_used_bytes}'), 'Web sidebar should use current account physical usage')
