@@ -1,5 +1,7 @@
 # Photo Source v2 roadmap
 
+> **Boundary:** External Source is a generic file synchronization subsystem. See `docs/external-source-architecture.md`. Photo Source v2 only adds media semantics after ordinary files have been preserved; it must never assume every SourceItem is a photo or video. Synology Files Pull (`synology_files`) is therefore a generic External Source connector and syncs arbitrary file types.
+
 This document is the implementation roadmap for turning Yike Photos Pull, Synology Photos Pull, and Synology Photos Push into one mature photo-ingestion subsystem.
 
 It is a **design/TODO document**. It does not describe new runtime behavior until the corresponding phase is implemented.
@@ -439,21 +441,22 @@ The ordering prioritizes reliability and identity before feature breadth.
 | --- | --- | --- |
 | P0 | Complete: bounded multi-source scheduler, manual/retry/overdue priority, persisted classified retry backoff | Highest |
 | P1 | `SourceItemAlias` model + planner alias resolution + migration tests | Highest |
-| P2 | Synology Push hybrid Photos-API semantic lane + filesystem fast path + no-duplicate canonical item-ID migration | Highest |
-| P3 | Source semantic capability declarations + normalized scalar/facet storage | High |
-| P4 | Synology description/favorite/GPS/address/tag/person import with graceful API capability detection | High |
-| P5 | Connector-neutral `MediaGroup` / member projection from validated pair evidence | High |
-| P6 | Synology Live Photo pairing using stable provider relation when available, otherwise validated post-import identifiers | High |
-| P7 | Yike Live Photo / `.livp` discovery, parser, pair projection, and real-account compatibility tests | High |
-| P8 | Yike optional semantic metadata expansion and private-API contract hardening | High |
-| P9 | `ScanFull` / `ScanChanges` capability, checkpoint reset contract, periodic full reconciliation | High |
-| P10 | Mirror mode with reliable deletion evidence, grace period, and xDrive trash only | Medium-high |
-| P11 | RAW metadata/preview, RAW+JPEG, XMP/AAE sidecar, burst and auxiliary-resource grouping | Medium |
-| P12 | Source/media integrity verifier and explicit idempotent repair commands | Medium |
-| P13 | Gallery search/filter projection for person, tag, favorite, description, remote place/GPS | Medium |
-| P14 | Optional provider-thumbnail bootstrap while keeping xDrive-derived preview canonical | Medium-low |
-| P15 | Cross-connector capability/contract tests, sanitized fixtures, live smoke matrix, migration/rebuild acceptance coverage | Continuous |
-| P16 | Optional audited source-side writes / two-way sync; disabled by default and not required for Photo Source v2 | Last |
+| P2 | Synology Files Pull (`synology_files`) for arbitrary shares/directories and arbitrary file types | Highest |
+| P3 | Synology Push hybrid Photos-API semantic lane + filesystem fast path + no-duplicate canonical item-ID migration | Highest |
+| P4 | Source semantic capability declarations + normalized scalar/facet storage | High |
+| P5 | Synology description/favorite/GPS/address/tag/person import with graceful API capability detection | High |
+| P6 | Connector-neutral `MediaGroup` / member projection from validated pair evidence | High |
+| P7 | Synology Live Photo pairing using stable provider relation when available, otherwise validated post-import identifiers | High |
+| P8 | Yike Live Photo / `.livp` discovery, parser, pair projection, and real-account compatibility tests | High |
+| P9 | Yike optional semantic metadata expansion and private-API contract hardening | High |
+| P10 | `ScanFull` / `ScanChanges` capability, checkpoint reset contract, periodic full reconciliation | High |
+| P11 | Mirror mode with reliable deletion evidence, grace period, and xDrive trash only | Medium-high |
+| P12 | RAW metadata/preview, RAW+JPEG, XMP/AAE sidecar, burst and auxiliary-resource grouping | Medium |
+| P13 | Source/media integrity verifier and explicit idempotent repair commands | Medium |
+| P14 | Gallery search/filter projection for person, tag, favorite, description, remote place/GPS | Medium |
+| P15 | Optional provider-thumbnail bootstrap while keeping xDrive-derived preview canonical | Medium-low |
+| P16 | Cross-connector capability/contract tests, sanitized fixtures, live smoke matrix, migration/rebuild acceptance coverage | Continuous |
+| P17 | Optional audited source-side writes / two-way sync; disabled by default and not required for Photo Source v2 | Last |
 
 ## Acceptance criteria for Photo Source v2
 

@@ -369,13 +369,15 @@ func (c *Client) SourceRunFailures(ctx context.Context, id uint64, runID string,
 }
 
 type SourceObservation struct {
-	ExternalID     string     `json:"external_id"`
-	Kind           string     `json:"kind"`
-	Path           string     `json:"path"`
-	Size           int64      `json:"size"`
-	ModifiedAt     *time.Time `json:"modified_at,omitempty"`
-	SHA256         string     `json:"sha256,omitempty"`
-	RemoteRevision string     `json:"remote_revision,omitempty"`
+	ExternalID        string     `json:"external_id"`
+	ExternalIDAliases []string   `json:"external_id_aliases,omitempty"`
+	PromoteExternalID bool       `json:"promote_external_id,omitempty"`
+	Kind              string     `json:"kind"`
+	Path              string     `json:"path"`
+	Size              int64      `json:"size"`
+	ModifiedAt        *time.Time `json:"modified_at,omitempty"`
+	SHA256            string     `json:"sha256,omitempty"`
+	RemoteRevision    string     `json:"remote_revision,omitempty"`
 }
 
 type SourcePlan struct {

@@ -28,13 +28,15 @@ type beginSourceRunRequest struct {
 }
 
 type sourceObservationDTO struct {
-	ExternalID     string     `json:"external_id"`
-	Kind           string     `json:"kind"`
-	Path           string     `json:"path"`
-	Size           int64      `json:"size"`
-	ModifiedAt     *time.Time `json:"modified_at,omitempty"`
-	SHA256         string     `json:"sha256,omitempty"`
-	RemoteRevision string     `json:"remote_revision,omitempty"`
+	ExternalID        string     `json:"external_id"`
+	ExternalIDAliases []string   `json:"external_id_aliases,omitempty"`
+	PromoteExternalID bool       `json:"promote_external_id,omitempty"`
+	Kind              string     `json:"kind"`
+	Path              string     `json:"path"`
+	Size              int64      `json:"size"`
+	ModifiedAt        *time.Time `json:"modified_at,omitempty"`
+	SHA256            string     `json:"sha256,omitempty"`
+	RemoteRevision    string     `json:"remote_revision,omitempty"`
 }
 
 type observeSourceRunRequest struct {
@@ -279,25 +281,24 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 		return
 	}
 
-	items := make([]sourcepkg.DiscoveredItem, 0, len(req.Items))
-	externalIDs := make([]string, 0, len(req.Items))
-	seen := make(map[string]struct{}, len(req.Items))
+	observations := make([]normalizedSourceObservation, 0, len(req.Items))
+	identityKeys := make([]string, 0, len(req.Items)*2)
+	claimed := make(map[string]string, len(req.Items)*2)
 	for _, raw := range req.Items {
-		item := sourcepkg.DiscoveredItem{
-			ExternalID: raw.ExternalID, Kind: raw.Kind, Path: raw.Path, Size: raw.Size,
-			ModifiedAt: raw.ModifiedAt, SHA256: raw.SHA256, RemoteRevision: raw.RemoteRevision,
-		}
-		if err := sourcepkg.ValidateDiscoveredItem(&item); err != nil {
+		observation, err := normalizeSourceObservation(raw)
+		if err != nil {
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if _, exists := seen[item.ExternalID]; exists {
-			fail(c, http.StatusBadRequest, "duplicate external_id in observation batch")
-			return
+		for _, identity := range append([]string{observation.item.ExternalID}, observation.aliases...) {
+			if owner, exists := claimed[identity]; exists {
+				fail(c, http.StatusBadRequest, fmt.Sprintf("source identity %q is claimed by both %q and %q", identity, owner, observation.item.ExternalID))
+				return
+			}
+			claimed[identity] = observation.item.ExternalID
+			identityKeys = append(identityKeys, identity)
 		}
-		seen[item.ExternalID] = struct{}{}
-		items = append(items, item)
-		externalIDs = append(externalIDs, item.ExternalID)
+		observations = append(observations, observation)
 	}
 
 	now := time.Now().UTC()
@@ -325,15 +326,12 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			return fmt.Errorf("compile stored ignore rules: %w", err)
 		}
 
-		var currentItems []meta.SourceItem
-		if err := tx.Where("source_id = ? AND external_id IN ?", sourceID, externalIDs).
-			Find(&currentItems).Error; err != nil {
+		identityIndex, err := loadSourceIdentityIndex(tx, sourceID, identityKeys)
+		if err != nil {
 			return err
 		}
-		currentByExternal := make(map[string]meta.SourceItem, len(currentItems))
-		nodeIDs := make([]uint64, 0, len(currentItems))
-		for _, item := range currentItems {
-			currentByExternal[item.ExternalID] = item
+		nodeIDs := make([]uint64, 0, len(identityIndex.itemsByID))
+		for _, item := range identityIndex.itemsByID {
 			if item.NodeID != nil {
 				nodeIDs = append(nodeIDs, *item.NodeID)
 			}
@@ -351,9 +349,27 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			}
 		}
 
-		plans = make([]sourcePlanDTO, 0, len(items))
-		for _, item := range items {
-			current, exists := currentByExternal[item.ExternalID]
+		plans = make([]sourcePlanDTO, 0, len(observations))
+		resolvedItemIDs := make(map[uint64]string)
+		for _, observation := range observations {
+			item := observation.item
+			current, exists, err := identityIndex.resolve(item.ExternalID, observation.aliases)
+			if err != nil {
+				return err
+			}
+			if observation.promote && !exists {
+				return errSourceIdentityConflict
+			}
+			if exists {
+				if previous, duplicate := resolvedItemIDs[current.ID]; duplicate && previous != item.ExternalID {
+					return errSourceIdentityConflict
+				}
+				resolvedItemIDs[current.ID] = item.ExternalID
+				if err := identityIndex.prepareExisting(tx, sourceID, &current, item.ExternalID, observation.aliases, observation.promote, now); err != nil {
+					return err
+				}
+			}
+
 			var currentPtr *meta.SourceItem
 			if exists {
 				if current.NodeID != nil {
@@ -367,6 +383,7 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 					}
 				}
 				copy := current
+				copy.ExternalID = item.ExternalID
 				currentPtr = &copy
 			}
 
@@ -386,6 +403,11 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			}
 			if err := persistObservedSourceItem(tx, sourceID, runID, now, current, exists, plan, nodeRevision); err != nil {
 				return err
+			}
+			if !exists && plan.Action != sourcepkg.ActionIgnore {
+				if err := identityIndex.registerCreated(tx, sourceID, item.ExternalID, observation.aliases, now); err != nil {
+					return err
+				}
 			}
 
 			dto := sourcePlanDTO{ExternalID: item.ExternalID, Action: string(plan.Action)}
@@ -505,10 +527,8 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			raw := commit.raw
 			action := sourcepkg.PlanAction(raw.Action)
 
-			var current meta.SourceItem
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("source_id = ? AND external_id = ?", sourceID, item.ExternalID).
-				First(&current).Error; err != nil {
+			current, err := findSourceItemByIdentity(tx, sourceID, item.ExternalID)
+			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return errSourceExecutionConflict
 				}
@@ -686,10 +706,8 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 		}
 
 		for _, failure := range failures {
-			var item meta.SourceItem
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("source_id = ? AND external_id = ?", sourceID, failure.ExternalID).
-				First(&item).Error; err != nil {
+			item, err := findSourceItemByIdentity(tx, sourceID, failure.ExternalID)
+			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return errSourceExecutionConflict
 				}
@@ -1244,6 +1262,8 @@ func writeSourceRunError(c *gin.Context, err error) {
 		fail(c, http.StatusConflict, "run_id already belongs to another source")
 	case errors.Is(err, errSourceExecutionConflict):
 		fail(c, http.StatusConflict, "source execution result conflicts with current state")
+	case errors.Is(err, errSourceIdentityConflict):
+		fail(c, http.StatusConflict, "source identity aliases conflict with existing source items")
 	case errors.Is(err, errInvalidSourceConfig):
 		fail(c, http.StatusConflict, "source configuration is not executable")
 	default:
@@ -1259,4 +1279,5 @@ var (
 	errSourceRunCancellationRequested = errors.New("source run cancellation requested")
 	errSourceRunIDConflict            = errors.New("source run id conflict")
 	errSourceExecutionConflict        = errors.New("source execution conflict")
+	errSourceIdentityConflict         = errors.New("source identity conflict")
 )

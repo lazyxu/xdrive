@@ -147,7 +147,7 @@ func TestRunnerScansAndSyncsEncryptedSynologyCredential(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{},
 		&meta.UploadSession{}, &meta.UploadPart{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{},
 		&meta.SourceConnectorConfig{}, &meta.SourceItemMetadata{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 	); err != nil {

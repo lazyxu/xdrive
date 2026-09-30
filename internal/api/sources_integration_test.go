@@ -29,7 +29,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -37,7 +37,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
 	); err != nil {
 		t.Fatal(err)
 	}
