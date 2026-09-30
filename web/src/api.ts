@@ -646,6 +646,21 @@ export class XDriveApi {
     }
   }
 
+  copy(nodeID: number, parentID: number, name?: string) {
+    return this.request<Node>(`/api/v1/nodes/${nodeID}/copy`, {
+      method: 'POST',
+      body: JSON.stringify({ parent_id: parentID, ...(name ? { name } : {}) }),
+    })
+  }
+
+  move(nodeID: number, revision: number, parentID: number) {
+    return this.request<Node>(`/api/v1/nodes/${nodeID}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': `"${revision}"` },
+      body: JSON.stringify({ parent_id: parentID }),
+    })
+  }
+
   rename(nodeID: number, revision: number, name: string) {
     return this.request<Node>(`/api/v1/nodes/${nodeID}`, {
       method: 'PATCH',

@@ -26,6 +26,7 @@ import type { SearchResult, XDriveApi } from './api'
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
 
 type Crumb = { id: number; name: string }
+type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }
 
 function normalizedSearchCrumbs(result: SearchResult): Crumb[] {
   return result.breadcrumbs.map((crumb, index) => ({
@@ -77,6 +78,8 @@ export default function WebFileExplorer({
   const [searchHasMore, setSearchHasMore] = useState(false)
   const [history, setHistory] = useState<Crumb[][]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [clipboard, setClipboard] = useState<WebExplorerClipboard | null>(null)
+  const [clipboardBusy, setClipboardBusy] = useState(false)
 
   const current = crumbs.at(-1)
 
@@ -297,6 +300,34 @@ export default function WebFileExplorer({
     return result
   }
 
+  const explorerNodesForItems = (selected: XDriveFileExplorerItem[]) => (
+    selected
+      .map((item) => nodeByID.get(Number(item.id)))
+      .filter((node): node is Node => Boolean(node))
+  )
+
+  const pasteClipboard = async () => {
+    if (!current || !clipboard || clipboard.nodes.length === 0 || clipboardBusy) return
+    setClipboardBusy(true)
+    try {
+      for (const node of clipboard.nodes) {
+        if (clipboard.mode === 'cut') {
+          if (node.parent_id === current.id) continue
+          await api.move(node.id, node.revision, current.id)
+        } else {
+          await api.copy(node.id, current.id)
+        }
+      }
+      if (clipboard.mode === 'cut') setClipboard(null)
+      clearSearch()
+      await onLoadDirectory(current.id, crumbs)
+    } catch (error) {
+      onError(error)
+    } finally {
+      setClipboardBusy(false)
+    }
+  }
+
   const backgroundMenuItems = useMemo<XDriveFileExplorerMenuItem[]>(() => [
     {
       id: 'new-folder',
@@ -344,7 +375,7 @@ export default function WebFileExplorer({
         presentation="workspace"
         items={explorerItems}
         crumbs={explorerCrumbs}
-        loading={loading || searchLoading}
+        loading={loading || searchLoading || clipboardBusy}
         loadThumbnail={loadThumbnail}
         pathValue={crumbs.map((crumb) => crumb.name).join('/')}
         onPathSubmit={(path) => { void submitPath(path) }}
@@ -369,6 +400,16 @@ export default function WebFileExplorer({
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        onCopyItems={(selected) => {
+          const nodes = explorerNodesForItems(selected)
+          if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })
+        }}
+        onCutItems={(selected) => {
+          const nodes = explorerNodesForItems(selected)
+          if (nodes.length > 0) setClipboard({ mode: 'cut', nodes })
+        }}
+        onPaste={() => { void pasteClipboard() }}
+        canPaste={Boolean(clipboard?.nodes.length) && !clipboardBusy}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(

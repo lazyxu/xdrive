@@ -96,6 +96,30 @@ func (s *Server) retainContentBlobTx(
 	}
 }
 
+func retainExistingContentReferenceTx(tx *gorm.DB, file meta.File) error {
+	if !storage.IsContentAddressedKey(file.StorageKey) {
+		return nil
+	}
+	hash, ok := storage.ContentHashFromKey(file.StorageKey)
+	if !ok {
+		return fmt.Errorf("invalid content-addressed key %q", file.StorageKey)
+	}
+	if err := lockContentHash(tx, hash); err != nil {
+		return err
+	}
+	var blob meta.ContentBlob
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("sha256 = ?", hash).First(&blob).Error; err != nil {
+		return err
+	}
+	if blob.State != meta.ContentBlobStateReady || blob.StorageKey != file.StorageKey || blob.Size != file.Size {
+		return fmt.Errorf("content blob metadata mismatch for %s", hash)
+	}
+	return tx.Model(&meta.ContentBlob{}).
+		Where("sha256 = ?", hash).
+		Update("ref_count", gorm.Expr("ref_count + 1")).Error
+}
+
 func (s *Server) ensureContentBlobObject(ctx context.Context, tempKey, targetKey string, expectedSize int64) error {
 	if existing, err := s.Store.Open(ctx, targetKey); err == nil {
 		healthy := false

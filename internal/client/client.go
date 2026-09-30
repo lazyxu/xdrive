@@ -235,6 +235,20 @@ func (c *Client) CreateDir(ctx context.Context, parentID uint64, name string) (N
 	return out, err
 }
 
+func (c *Client) Copy(ctx context.Context, id, parentID uint64, name *string) (Node, error) {
+	var out Node
+	body := map[string]any{"parent_id": parentID}
+	if name != nil {
+		body["name"] = *name
+	}
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/copy", id), body, &out)
+	return out, err
+}
+
+func (c *Client) Move(ctx context.Context, id, revision, parentID uint64) (Node, error) {
+	return c.RenameMove(ctx, id, revision, nil, &parentID)
+}
+
 func (c *Client) RenameMove(ctx context.Context, id, revision uint64, name *string, parentID *uint64) (Node, error) {
 	var out Node
 	body := map[string]any{}

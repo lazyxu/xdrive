@@ -15,11 +15,15 @@ test('Desktop exposes real cloud file mutation primitives through Agent IPC', ()
   for (const token of [
     'CloudCreateDir(context.Context',
     'CloudRename(context.Context',
+    'CloudCopy(context.Context',
+    'CloudMove(context.Context',
     'CloudDelete(context.Context',
     'CloudUpload(context.Context',
     'CloudDownload(context.Context',
     'POST /v1/cloud/directories',
     'PATCH /v1/cloud/nodes',
+    'POST /v1/cloud/copy',
+    'PATCH /v1/cloud/move',
     'DELETE /v1/cloud/nodes',
     'POST /v1/cloud/upload',
     'POST /v1/cloud/download',
@@ -28,6 +32,8 @@ test('Desktop exposes real cloud file mutation primitives through Agent IPC', ()
   }
   assert.ok(cloudFiles.includes('cli.CreateDir(ctx, parentID, name)'), 'cloud directory creation does not use the real client')
   assert.ok(cloudFiles.includes('cli.RenameMove(ctx, id, revision, &name, nil)'), 'cloud rename does not use optimistic-concurrency client mutation')
+  assert.ok(cloudFiles.includes('cli.Copy(ctx, id, parentID, nil)'), 'cloud copy does not use the server-side copy primitive')
+  assert.ok(cloudFiles.includes('cli.Move(ctx, id, revision, parentID)'), 'cloud move does not use revision-safe move')
   assert.ok(cloudFiles.includes('cli.Delete(ctx, id, revision)'), 'cloud delete does not use the real client')
   assert.ok(cloudFiles.includes('cli.UploadFile(ctx, parentID, localPath, name)'), 'cloud upload does not use resumable client upload')
   assert.ok(cloudFiles.includes('cli.DownloadTo(ctx, id, tmp)'), 'cloud download does not use authenticated client download')
@@ -60,6 +66,8 @@ test('Desktop cloud action types expose upload failures without local path leaka
   assert.ok(types.includes('failures: Array<{ name: string; message: string }>'), 'upload failures should expose filename and message only')
   assert.ok(types.includes('cloudCreateDirectory:'), 'create-directory renderer type is missing')
   assert.ok(types.includes('cloudRename:'), 'rename renderer type is missing')
+  assert.ok(types.includes('cloudCopy:'), 'copy renderer type is missing')
+  assert.ok(types.includes('cloudMove:'), 'move renderer type is missing')
   assert.ok(types.includes('cloudDelete:'), 'delete renderer type is missing')
   assert.ok(types.includes('cloudUploadFiles:'), 'upload renderer type is missing')
   assert.ok(types.includes('cloudDownload:'), 'download renderer type is missing')
