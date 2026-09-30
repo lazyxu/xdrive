@@ -30,6 +30,29 @@ a { user-select: none; }
 .upload-progress { max-width: 360px; margin: -4px 0 18px auto; }
 .folder-icon { color: #e8a317; }
 
+@media (min-width: 900px) {
+  .file-manager-shell {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .content-wrap.files-workspace {
+    padding: 0;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .files-workspace-surface {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .files-workspace-surface [data-xdrive-file-explorer] {
+    border: 0;
+    border-radius: 0;
+  }
+}
+
 @media (max-width: 720px) {
   .username { display: none; }
   .content-wrap { padding: 16px; }

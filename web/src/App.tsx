@@ -686,7 +686,7 @@ function FileManager({
   }
 
   return (
-    <Box className="app-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box className="app-shell file-manager-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar position="static" elevation={1}>
         <Toolbar className="topbar">
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="compact" />
@@ -753,12 +753,25 @@ function FileManager({
 
         <Box
           component="main"
-          className="content-wrap"
-          sx={{ minWidth: 0, width: '100%', overflowY: { md: 'auto' } }}
+          className={appView === 'files' ? 'content-wrap files-workspace' : 'content-wrap'}
+          sx={{
+            minWidth: 0,
+            minHeight: 0,
+            width: '100%',
+            overflowY: { md: appView === 'files' ? 'hidden' : 'auto' },
+          }}
         >
         {appView === 'files' ? (
-          <XDriveWorkspaceSurface presentation="page" title="文件">
-            <Box sx={{ height: { xs: 560, md: 'calc(100vh - 152px)' }, minHeight: 480 }}>
+          <Box
+            className="files-workspace-surface"
+            sx={{
+              height: { xs: 560, md: '100%' },
+              minHeight: { xs: 480, md: 0 },
+              display: 'flex',
+              flexDirection: 'column',
+              bgcolor: 'background.paper',
+            }}
+          >
               <WebFileExplorer
                 api={api}
                 items={items}
@@ -783,8 +796,7 @@ function FileManager({
                 onHistory={(node) => { void openHistory(node) }}
                 onError={handleError}
               />
-            </Box>
-          </XDriveWorkspaceSurface>
+          </Box>
         ) : appView === 'gallery' ? (
           <XDriveWorkspaceSurface presentation="page" title="图库">
             <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320, borderRadius: 2 }}>
@@ -818,9 +830,9 @@ function FileManager({
             scope="global"
           />
         ) : (
-          <XDriveWorkspaceSurface presentation="page" title="文件">
+          <Box className="files-workspace-surface" sx={{ height: { xs: 560, md: '100%' }, minHeight: { xs: 480, md: 0 } }}>
             <XDriveStatePanel variant="plain" loading message="正在切换工作区…" />
-          </XDriveWorkspaceSurface>
+          </Box>
         )}
         </Box>
       </Box>
