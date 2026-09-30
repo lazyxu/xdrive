@@ -255,7 +255,7 @@ function transferKindLabel(kind: string) {
 function viewLabel(view: View) {
   const labels: Record<View, string> = {
     overview: '概览',
-    cloud: '云端文件',
+    cloud: '文件',
     gallery: '图库',
     sources: '外部来源',
     transfers: '传输',
@@ -2348,7 +2348,7 @@ export default function App() {
           </ListItemButton>
           <ListItemButton className="sidebar-nav-item" selected={view === 'cloud'} onClick={() => setView('cloud')}>
             <ListItemIcon><FolderRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="云端文件" />
+            <ListItemText primary="文件" />
           </ListItemButton>
           <ListItemButton className="sidebar-nav-item" selected={view === 'gallery'} onClick={() => setView('gallery')}>
             <ListItemIcon><PhotoLibraryRoundedIcon fontSize="small" /></ListItemIcon>
