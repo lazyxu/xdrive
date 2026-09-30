@@ -9,7 +9,6 @@ import {
   FolderAddOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
-  LogoutOutlined,
   ReloadOutlined,
   RestOutlined,
   ShareAltOutlined,
@@ -37,7 +36,21 @@ import {
 import type { UploadProps } from 'antd'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import { Button as MuiButton, Paper as MuiPaper } from '@mui/material'
+import {
+  Avatar as MuiAvatar,
+  Box as MuiBox,
+  Button as MuiButton,
+  Divider as MuiDivider,
+  IconButton as MuiIconButton,
+  ListItemIcon as MuiListItemIcon,
+  ListItemText as MuiListItemText,
+  Menu as MuiMenu,
+  MenuItem as MuiMenuItem,
+  Paper as MuiPaper,
+  Tooltip as MuiTooltip,
+  Typography as MuiTypography,
+} from '@mui/material'
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import { XDriveMediaGalleryPage, XDriveStatusAlert } from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
@@ -60,6 +73,69 @@ const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 
 type Crumb = { id: number; name: string }
+
+function WebAccountMenu({
+  username,
+  serverBuild,
+  onLogout,
+}: {
+  username: string
+  serverBuild: BuildInfo | null
+  onLogout: () => void
+}) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+  const accountInitial = username.trim().slice(0, 1).toUpperCase() || '?'
+
+  return (
+    <>
+      <MuiTooltip title={username ? `${username} · 账户` : '账户'}>
+        <MuiIconButton
+          aria-label="账户菜单"
+          size="small"
+          onClick={(event) => setAnchorEl(event.currentTarget)}
+          sx={{ ml: 0.5, p: 0.5 }}
+        >
+          <MuiAvatar sx={{ width: 28, height: 28, fontSize: 13, fontWeight: 700 }}>
+            {accountInitial}
+          </MuiAvatar>
+        </MuiIconButton>
+      </MuiTooltip>
+      <MuiMenu
+        id="web-account-menu"
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <MuiBox sx={{ minWidth: 240, maxWidth: 320, px: 2, py: 1.25 }}>
+          <MuiTypography variant="body2" fontWeight={700} noWrap>
+            {username || '已登录用户'}
+          </MuiTypography>
+          <MuiTypography variant="caption" color="text.secondary" component="div" noWrap>
+            Server {serverBuild?.version || '未知'}
+          </MuiTypography>
+          <MuiTypography variant="caption" color="text.secondary">
+            已登录
+          </MuiTypography>
+        </MuiBox>
+        <MuiDivider />
+        <MuiMenuItem
+          sx={{ color: 'error.main' }}
+          onClick={() => {
+            setAnchorEl(null)
+            onLogout()
+          }}
+        >
+          <MuiListItemIcon sx={{ color: 'inherit' }}>
+            <LogoutRoundedIcon fontSize="small" />
+          </MuiListItemIcon>
+          <MuiListItemText>退出登录</MuiListItemText>
+        </MuiMenuItem>
+      </MuiMenu>
+    </>
+  )
+}
 
 function initialSession(): AuthSession {
   const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
@@ -304,13 +380,7 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
             <img className="brand-mark small" src={xDriveBrandIcon} alt="" aria-hidden="true" />
             <Typography.Title level={4} style={{ color: 'white', margin: 0 }}>xDrive</Typography.Title>
           </div>
-          <Space>
-            <Tooltip title={serverBuild?.commit ? `${serverBuild.commit.slice(0, 12)}${serverBuild.commit_message ? ` · ${serverBuild.commit_message}` : ''}` : 'Server 构建信息'}>
-              <Tag>Server {serverBuild?.version || '未知'}</Tag>
-            </Tooltip>
-            <Typography.Text className="username">{username}</Typography.Text>
-            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">退出登录</Button>
-          </Space>
+          <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
         </Header>
         <Content className="content-wrap">
           <Card className="auth-card" title="修改临时密码">
@@ -491,11 +561,7 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
             <Button type="text" icon={<CloudSyncOutlined />} onClick={() => setSourcesOpen(true)} className="logout-button">
               外部来源
             </Button>
-            <Tooltip title={serverBuild?.commit ? `${serverBuild.commit.slice(0, 12)}${serverBuild.commit_message ? ` · ${serverBuild.commit_message}` : ''}` : 'Server 构建信息'}>
-              <Tag>Server {serverBuild?.version || '未知'}</Tag>
-            </Tooltip>
-            <Typography.Text className="username">{username}</Typography.Text>
-            <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} className="logout-button">退出登录</Button>
+            <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
           </Space>
         </Header>
         <Content className="content-wrap">
