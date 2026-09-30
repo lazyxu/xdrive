@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import {
-  Alert as MuiAlert,
   Autocomplete,
   Box as MuiBox,
   Button as MuiButton,
@@ -21,7 +20,6 @@ import {
   Menu,
   MenuItem,
   Select,
-  Snackbar,
   Stack,
   Switch,
   TextField,
@@ -60,6 +58,7 @@ import {
   XDriveDialogActionSpacer,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
   XDrivePageHeader,
   XDrivePaginationControls,
@@ -2099,24 +2098,16 @@ export default function App() {
   const renderDesktopFrame = (content: ReactNode, titlebarActions?: ReactNode) => (
     <DesktopFrame maximized={windowMaximized} titlebarActions={titlebarActions}>
       {content}
-      <Snackbar
+      <XDriveFeedbackSnackbar
         open={Boolean(error || notice) && (configured || !agent.connected)}
+        tone={error ? 'bad' : 'good'}
+        message={error || notice}
+        onClose={dismissFeedback}
         autoHideDuration={error ? null : 4000}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        onClose={(_event, reason) => {
-          if (reason === 'clickaway') return
-          dismissFeedback()
-        }}
-      >
-        <MuiAlert
-          severity={error ? 'error' : 'success'}
-          variant="filled"
-          onClose={dismissFeedback}
-          sx={{ width: '100%', maxWidth: 520, alignItems: 'flex-start', boxShadow: 3 }}
-        >
-          {error || notice}
-        </MuiAlert>
-      </Snackbar>
+        variant="filled"
+        dismissible
+        alertSx={{ width: '100%', maxWidth: 520, alignItems: 'flex-start', boxShadow: 3 }}
+      />
     </DesktopFrame>
   )
 
