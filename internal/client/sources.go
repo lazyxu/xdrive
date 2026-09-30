@@ -300,6 +300,44 @@ func (c *Client) TestStoredSourceCredential(ctx context.Context, id uint64) (Sou
 	return out, err
 }
 
+type SourceBrowseDirectory struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type SourceBrowsePage struct {
+	Path       string                  `json:"path,omitempty"`
+	Items      []SourceBrowseDirectory `json:"items"`
+	Total      int                     `json:"total"`
+	NextOffset *int                    `json:"next_offset,omitempty"`
+}
+
+func (c *Client) BrowseSourceDirectories(
+	ctx context.Context,
+	id uint64,
+	remotePath string,
+	limit int,
+	offset int,
+) (SourceBrowsePage, error) {
+	var out SourceBrowsePage
+	values := url.Values{}
+	if remotePath != "" {
+		values.Set("path", remotePath)
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	path := fmt.Sprintf("/api/v1/sources/%d/browse", id)
+	if query := values.Encode(); query != "" {
+		path += "?" + query
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
 type SourceConnectorConfig struct {
 	Configured bool            `json:"configured"`
 	Revision   uint64          `json:"revision"`
