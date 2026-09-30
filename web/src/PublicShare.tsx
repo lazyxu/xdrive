@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DownloadOutlined, FileOutlined, LockOutlined } from '@ant-design/icons'
-import { Card, Input, Space, Typography } from 'antd'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
+import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import { Card, InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import { XDriveActionButton, XDriveStatePanel, XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import type { PublicShare } from '../../ui/shared/src'
@@ -60,12 +62,12 @@ export default function PublicShareView({ token }: { token: string }) {
 
   return (
     <div className="auth-shell">
-      <Card className="auth-card">
+      <Card className="auth-card" sx={{ p: 3, borderRadius: 2 }}>
         <div className="brand-lockup">
           <div className="brand-mark">x</div>
           <div>
-            <Typography.Title level={2} style={{ margin: 0 }}>xDrive</Typography.Title>
-            <Typography.Text type="secondary">安全文件分享</Typography.Text>
+            <Typography component="h1" variant="h5" fontWeight={700}>xDrive</Typography>
+            <Typography variant="body2" color="text.secondary">安全文件分享</Typography>
           </div>
         </div>
 
@@ -73,31 +75,44 @@ export default function PublicShareView({ token }: { token: string }) {
         {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
 
         {share && (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space align="start">
-              <FileOutlined style={{ fontSize: 28, marginTop: 4 }} />
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1.5} alignItems="flex-start">
+              <InsertDriveFileRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />
               <div>
-                <Typography.Title level={4} style={{ margin: 0 }}>{share.name}</Typography.Title>
-                <Typography.Text type="secondary">{formatSize(share.size)}</Typography.Text>
+                <Typography component="h2" variant="h6" fontWeight={700}>{share.name}</Typography>
+                <Typography variant="body2" color="text.secondary">{formatSize(share.size)}</Typography>
               </div>
-            </Space>
+            </Stack>
 
-            <Typography.Text type="secondary">
+            <Typography variant="body2" color="text.secondary">
               {share.expires_at ? `过期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'}
               {' · '}
               {share.max_downloads > 0
                 ? `剩余 ${Math.max(0, share.max_downloads - share.download_count)} / ${share.max_downloads} 次下载`
                 : '不限下载次数'}
-            </Typography.Text>
+            </Typography>
 
             {share.requires_password && (
-              <Input.Password
+              <TextField
+                fullWidth
+                size="small"
+                type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                onPressEnter={() => void download()}
-                prefix={<LockOutlined />}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void download()
+                }}
                 placeholder="分享密码"
                 autoComplete="current-password"
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LockRoundedIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
               />
             )}
 
@@ -106,7 +121,7 @@ export default function PublicShareView({ token }: { token: string }) {
             <XDriveActionButton
               intent="primary"
               fullWidth
-              startIcon={<DownloadOutlined />}
+              startIcon={<DownloadRoundedIcon />}
               loading={downloading}
               loadingLabel="正在下载…"
               disabled={exhausted || (share.requires_password && !password)}
@@ -114,7 +129,7 @@ export default function PublicShareView({ token }: { token: string }) {
             >
               下载
             </XDriveActionButton>
-          </Space>
+          </Stack>
         )}
       </Card>
     </div>
