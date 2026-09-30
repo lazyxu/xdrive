@@ -758,6 +758,7 @@ function FileManager({
               <XDriveSidebarStorageSummary
                 usedBytes={quota.physical_used_bytes}
                 totalBytes={quota.quota_bytes}
+                diskAvailableBytes={quota.disk_available_bytes}
               />
             </Box>
           )}

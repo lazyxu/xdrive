@@ -6,12 +6,14 @@ import type { XDriveSidebarAppearance } from './SidebarNav'
 export function XDriveSidebarStorageSummary({
   usedBytes,
   totalBytes,
+  diskAvailableBytes,
   appearance = 'light',
   label = '存储',
   sx,
 }: {
   usedBytes: number
   totalBytes: number
+  diskAvailableBytes?: number
   appearance?: XDriveSidebarAppearance
   label?: string
   sx?: SxProps<Theme>
@@ -20,6 +22,8 @@ export function XDriveSidebarStorageSummary({
   const boundedUsed = Math.max(0, Number.isFinite(usedBytes) ? usedBytes : 0)
   const boundedTotal = Math.max(0, Number.isFinite(totalBytes) ? totalBytes : 0)
   const hasQuota = boundedTotal > 0
+  const hasDiskAvailable = diskAvailableBytes !== undefined && Number.isFinite(diskAvailableBytes) && diskAvailableBytes >= 0
+  const boundedDiskAvailable = hasDiskAvailable ? Math.max(0, diskAvailableBytes) : null
   const usedLabel = boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB' : formatBinarySize(boundedUsed)
   const percentage = hasQuota ? (boundedUsed / boundedTotal) * 100 : null
   const progress = percentage === null ? 0 : Math.max(0, Math.min(100, percentage))
@@ -82,6 +86,19 @@ export function XDriveSidebarStorageSummary({
       >
         已使用 {usedLabel}{hasQuota ? ` / ${formatBinarySize(boundedTotal)}` : ''}
       </Typography>
+      {boundedDiskAvailable !== null ? (
+        <Typography
+          variant="caption"
+          sx={{
+            display: 'block',
+            mt: 0.1,
+            color: dark ? '#8291a8' : 'text.secondary',
+            overflowWrap: 'anywhere',
+          }}
+        >
+          磁盘可用 {formatBinarySize(boundedDiskAvailable)}
+        </Typography>
+      ) : null}
       {hasQuota ? (
         <LinearProgress
           variant="determinate"
