@@ -41,6 +41,9 @@ const forbidText = (source, values, label) => {
 requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹', '版本历史', 'XDriveStatusAlert'], '文件管理器')
 if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
 requireText(files.app, ['src={xDriveBrandIcon}'], 'xDrive 品牌图标')
+requireText(files.app, ['WebAccountMenu', 'aria-label="账户菜单"', 'web-account-menu', 'MuiAvatar', '退出登录'], 'Web 账号菜单')
+if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')
+if (files.app.includes('LogoutOutlined')) throw new Error('Web 顶栏仍保留 AntD 退出图标')
 if ((files.app.match(/src=\{xDriveBrandIcon\}/g) || []).length !== 3) {
   throw new Error('Web 应在登录页和两个导航品牌位统一使用主应用图标')
 }
