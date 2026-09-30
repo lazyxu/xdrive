@@ -79,8 +79,34 @@ test('Desktop Files home load does not fetch CAS storage intelligence', () => {
 })
 
 
-test('Desktop FileExplorer occupies a stable full-height workspace', () => {
-  assert.ok(styles.includes('.cloud-explorer-panel {'), 'Desktop Explorer workspace sizing rule is missing')
-  assert.ok(styles.includes('height: calc(100vh - 170px);'), 'Desktop Explorer should fill the available window height')
-  assert.ok(styles.includes('.cloud-explorer-panel > [data-xdrive-file-explorer]'), 'shared Explorer must flex inside the Desktop workspace')
+test('Desktop Files is a full-bleed Explorer workspace without duplicate page chrome', () => {
+  assert.ok(
+    app.includes("className={view === 'cloud' ? 'content content-files-workspace' : 'content'}"),
+    'Desktop Files should switch the main content into full-workspace mode',
+  )
+  assert.ok(
+    app.includes("{view !== 'cloud' ? <XDrivePageHeader title={viewLabel(view)} eyebrow=\"xDrive\" size=\"large\" /> : null}"),
+    'Desktop Files should suppress the generic page header while other views retain it',
+  )
+
+  const workspaceStart = styles.indexOf('.content-files-workspace {')
+  const storageStart = styles.indexOf('.storage-panel > .cloud-subpanel', workspaceStart)
+  assert.ok(workspaceStart >= 0 && storageStart > workspaceStart, 'Desktop Files workspace CSS boundaries are missing')
+  const workspaceStyles = styles.slice(workspaceStart, storageStart)
+
+  for (const token of [
+    'padding: 0;',
+    'overflow: hidden;',
+    '.cloud-explorer-panel {',
+    'flex: 1;',
+    'min-height: 0;',
+    'margin-top: 0;',
+    'border: 0;',
+    'border-radius: 0;',
+    '.cloud-explorer-panel > [data-xdrive-file-explorer]',
+  ]) {
+    assert.ok(workspaceStyles.includes(token), `missing full-workspace Explorer rule: ${token}`)
+  }
+  assert.equal(workspaceStyles.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use a hard-coded viewport subtraction')
+  assert.ok(app.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'), 'over-quota warning should remain an inset workspace strip')
 })
