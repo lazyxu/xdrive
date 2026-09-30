@@ -7,6 +7,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 
 export function XDriveSourceSummaryCard({
   name,
+  icon,
   modeLabel,
   statusTone,
   statusLabel,
@@ -20,6 +21,7 @@ export function XDriveSourceSummaryCard({
   sx,
 }: {
   name: ReactNode
+  icon?: ReactNode
   modeLabel: ReactNode
   statusTone: XDriveStatusTone
   statusLabel: string
@@ -52,14 +54,17 @@ export function XDriveSourceSummaryCard({
           alignItems={{ xs: 'flex-start', sm: 'flex-start' }}
           justifyContent="space-between"
         >
-          <Box sx={{ minWidth: 0 }}>
-            <Typography component="h3" variant="h6" fontWeight={700} noWrap>
-              {name}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {modeLabel}
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+            {icon}
+            <Box sx={{ minWidth: 0 }}>
+              <Typography component="h3" variant="h6" fontWeight={700} noWrap>
+                {name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {modeLabel}
+              </Typography>
+            </Box>
+          </Stack>
           <XDriveStatusBadge tone={statusTone} label={statusLabel} />
         </Stack>
 
