@@ -13,7 +13,6 @@ import {
   CircularProgress,
   Dialog,
   DialogContentText,
-  Divider as MuiDivider,
   FormControl,
   FormHelperText,
   IconButton,
@@ -40,6 +39,7 @@ import {
   XDriveDialogTitle,
   XDriveFeedbackSnackbar,
   XDrivePaginationControls,
+  XDriveSectionHeader,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveWorkspaceSurface,
@@ -1189,7 +1189,7 @@ export default function ExternalSourcesPanel({
               )}
             </XDriveDescriptionGrid>
 
-            <MuiDivider textAlign="left" sx={{ my: 2 }}>相册与集合</MuiDivider>
+            <XDriveSectionHeader level="h3" title="相册与集合" sx={{ my: 2 }} />
             {collectionsLoading ? (
               <XDriveStatePanel loading variant="plain" message="正在加载相册/集合" />
             ) : collections.length === 0 ? (
@@ -1270,7 +1270,7 @@ export default function ExternalSourcesPanel({
               </Stack>
             )}
 
-            <MuiDivider textAlign="left" sx={{ my: 2 }}>同步历史</MuiDivider>
+            <XDriveSectionHeader level="h3" title="同步历史" sx={{ my: 2 }} />
               {historyRuns.length > 0 ? (
                 <Stack spacing={1}>
                   {historyRuns.map((run) => {
@@ -1623,7 +1623,7 @@ export default function ExternalSourcesPanel({
             )}
             {createProfile.credential === 'synology_dsm' && (
               <>
-                <MuiDivider textAlign="left">Synology DSM 连接</MuiDivider>
+                <XDriveSectionHeader level="h3" title="Synology DSM 连接" />
                 <TextField
                   fullWidth
                   size="small"
@@ -1861,7 +1861,7 @@ export default function ExternalSourcesPanel({
 
               {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (
                 <>
-                  <MuiDivider textAlign="left">一刻相册凭据</MuiDivider>
+                  <XDriveSectionHeader level="h3" title="一刻相册凭据" />
                   <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
                     <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
@@ -1929,7 +1929,7 @@ export default function ExternalSourcesPanel({
 
               {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'synology_dsm' && (
                 <>
-                  <MuiDivider textAlign="left">Synology DSM 凭据</MuiDivider>
+                  <XDriveSectionHeader level="h3" title="Synology DSM 凭据" />
                   <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
                     <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {setting.credential?.configured ? 'DSM 凭据已配置' : 'DSM 凭据未配置'}
