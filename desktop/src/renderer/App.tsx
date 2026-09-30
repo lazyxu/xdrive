@@ -78,6 +78,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceRunProgress,
   XDriveSourceRunSummary,
+  XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
   XDriveSourceCollectionSummary,
@@ -2898,19 +2899,16 @@ export default function App() {
                   </label>
                 </div>
 
-                <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '180px 1fr' }, gap: 1.5, mb: 1.5 }}>
-                  <TextField select size="small" label="调度方式" value={sourceCreateScheduleType} onChange={(event) => setSourceCreateScheduleType(event.target.value as ExternalSourceScheduleType)}>
-                    <MenuItem value="interval">固定间隔</MenuItem>
-                    <MenuItem value="cron">Cron</MenuItem>
-                    <MenuItem value="manual">仅手动</MenuItem>
-                  </TextField>
-                  {sourceCreateScheduleType !== 'manual' && (
-                    <TextField size="small" label={sourceCreateScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceCreateScheduleExpression} onChange={(event) => setSourceCreateScheduleExpression(event.target.value)} helperText={sourceCreateScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
-                  )}
-                  {sourceCreateScheduleType === 'cron' && (
-                    <TextField size="small" label="时区" value={sourceCreateScheduleTimezone} onChange={(event) => setSourceCreateScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
-                  )}
-                </MuiBox>
+                <XDriveSourceScheduleFields
+                  scheduleType={sourceCreateScheduleType}
+                  expression={sourceCreateScheduleExpression}
+                  timezone={sourceCreateScheduleTimezone}
+                  onScheduleTypeChange={setSourceCreateScheduleType}
+                  onExpressionChange={setSourceCreateScheduleExpression}
+                  onTimezoneChange={setSourceCreateScheduleTimezone}
+                  wideAt="md"
+                  sx={{ mb: 1.5 }}
+                />
 
                 {sourceCreateKind === 'yike_photos' ? (
                   <XDriveStatusAlert tone="neutral" sx={{ mb: 1.5 }}>
@@ -3470,19 +3468,16 @@ export default function App() {
                               </select>
                             </label>
                           </div>
-                          <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '180px 1fr' }, gap: 1.5, mb: 1.5 }}>
-                            <TextField select size="small" label="调度方式" value={sourceEditScheduleType} onChange={(event) => setSourceEditScheduleType(event.target.value as ExternalSourceScheduleType)}>
-                              <MenuItem value="interval">固定间隔</MenuItem>
-                              <MenuItem value="cron">Cron</MenuItem>
-                              <MenuItem value="manual">仅手动</MenuItem>
-                            </TextField>
-                            {sourceEditScheduleType !== 'manual' && (
-                              <TextField size="small" label={sourceEditScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'} value={sourceEditScheduleExpression} onChange={(event) => setSourceEditScheduleExpression(event.target.value)} helperText={sourceEditScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'} />
-                            )}
-                            {sourceEditScheduleType === 'cron' && (
-                              <TextField size="small" label="时区" value={sourceEditScheduleTimezone} onChange={(event) => setSourceEditScheduleTimezone(event.target.value)} helperText="IANA 时区，例如 Asia/Shanghai" sx={{ gridColumn: { md: '2 / 3' } }} />
-                            )}
-                          </MuiBox>
+                          <XDriveSourceScheduleFields
+                            scheduleType={sourceEditScheduleType}
+                            expression={sourceEditScheduleExpression}
+                            timezone={sourceEditScheduleTimezone}
+                            onScheduleTypeChange={setSourceEditScheduleType}
+                            onExpressionChange={setSourceEditScheduleExpression}
+                            onTimezoneChange={setSourceEditScheduleTimezone}
+                            wideAt="md"
+                            sx={{ mb: 1.5 }}
+                          />
                           <label className="source-settings-wide">
                             <span>忽略规则</span>
                             <textarea
