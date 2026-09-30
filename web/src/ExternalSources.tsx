@@ -72,7 +72,9 @@ import {
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
   formatSize,
+  normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
+  synologyFileRootsValidationError,
   synologyPhotoSpaceOptions,
   synologyDsmAddressHelp,
   yikeConnectorNotice,
@@ -108,7 +110,9 @@ type SourceSettingsValues = {
   username?: string
   password?: string
   spaces?: SynologyPhotoSpace[]
+  roots?: string[]
 }
+
 const SOURCE_HISTORY_PAGE_SIZE = 20
 const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
 const SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50
@@ -157,6 +161,7 @@ type CreateSourceValues = {
   username?: string
   password?: string
   spaces?: SynologyPhotoSpace[]
+  roots?: string[]
 }
 
 type SourceErrorDialogState = {
@@ -192,6 +197,7 @@ function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synolog
     username: '',
     password: '',
     spaces: ['personal', 'shared'],
+    roots: [],
   }
 }
 
@@ -209,6 +215,7 @@ function emptySourceSettingsValues(): SourceSettingsValues {
     username: '',
     password: '',
     spaces: ['personal', 'shared'],
+    roots: [],
   }
 }
 
@@ -255,6 +262,7 @@ export default function ExternalSourcesPanel({
   const [settingsValues, setSettingsValues] = useState<SourceSettingsValues>(emptySourceSettingsValues)
   const [settingsNameError, setSettingsNameError] = useState('')
   const [settingsSpacesError, setSettingsSpacesError] = useState('')
+  const [settingsRootsError, setSettingsRootsError] = useState('')
   const settingsScheduleType = settingsValues.schedule_type
   const settingsScheduleExpression = settingsValues.schedule_expression
   const settingsScheduleTimezone = settingsValues.schedule_timezone
@@ -280,6 +288,7 @@ export default function ExternalSourcesPanel({
   const [createValues, setCreateValues] = useState<CreateSourceValues>(initialCreateSourceValues)
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
+  const [createRootsError, setCreateRootsError] = useState('')
   const createScheduleType = createValues.schedule_type
   const createScheduleExpression = createValues.schedule_expression
   const createScheduleTimezone = createValues.schedule_timezone
@@ -453,6 +462,7 @@ export default function ExternalSourcesPanel({
     setCreateValues(initialCreateSourceValues())
     setCreateNameError('')
     setCreateSpacesError('')
+    setCreateRootsError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
     setCreateOpen(true)
@@ -475,9 +485,11 @@ export default function ExternalSourcesPanel({
       username: '',
       password: '',
       spaces: ['personal', 'shared'],
+      roots: [],
     }))
     setCreateNameError('')
     setCreateSpacesError('')
+    setCreateRootsError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
   }
@@ -536,9 +548,16 @@ export default function ExternalSourcesPanel({
     setCreateNameError(nameError)
     const option = externalSourceCreateOption(values.preset)
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
-    const spacesError = profile.credential === 'synology_dsm' && !(values.spaces?.length) ? '至少选择一个照片空间' : ''
+    const roots = normalizeSynologyFileRoots(values.roots ?? [])
+    const spacesError = option.kind === 'synology_photos' && profile.credential === 'synology_dsm' && !(values.spaces?.length)
+      ? '至少选择一个照片空间'
+      : ''
+    const rootsError = option.kind === 'synology_files'
+      ? synologyFileRootsValidationError(values.roots ?? [])
+      : ''
     setCreateSpacesError(spacesError)
-    if (nameError || spacesError) return
+    setCreateRootsError(rootsError)
+    if (nameError || spacesError || rootsError) return
     if (option.kind !== 'yike_photos' && !defaultTargetNodeID) {
       setErrorDialog({ title: '无法添加来源', message: '当前目标文件夹尚未加载，请稍后重试。' })
       return
@@ -587,10 +606,16 @@ export default function ExternalSourcesPanel({
     try {
       if (profile.credential === 'synology_dsm') {
         const config = await api.sourceConnectorConfig(created.id)
-        await api.setSourceConnectorConfig(created.id, config.revision, { spaces })
+        const connectorPayload = option.kind === 'synology_files'
+          ? { roots }
+          : { spaces }
+        await api.setSourceConnectorConfig(created.id, config.revision, connectorPayload)
       }
       if (profile.credential && credentialPayload) {
         await api.setSourceCredential(created.id, credentialPayload)
+      }
+      if (option.kind === 'synology_files') {
+        created = await api.updateSource(created.id, created.revision, { status: 'active' })
       }
     } catch (error) {
       const credentialLabel = externalSourceCredentialLabel(profile)
@@ -613,11 +638,14 @@ export default function ExternalSourcesPanel({
       }
     }
 
-    setFeedback('外部来源已添加')
+    setFeedback(option.kind === 'synology_files'
+      ? '群晖 File Station Pull 来源已添加；将同步所选目录中的所有文件和文件夹'
+      : '外部来源已添加')
     setCreateOpen(false)
     setCreateValues(initialCreateSourceValues())
     setCreateNameError('')
     setCreateSpacesError('')
+    setCreateRootsError('')
     await load()
     setCreating(false)
 
@@ -675,22 +703,31 @@ export default function ExternalSourcesPanel({
       username: '',
       password: '',
       spaces: ['personal', 'shared'],
+      roots: [],
     })
     setSettingsNameError('')
     setSettingsSpacesError('')
+    setSettingsRootsError('')
     setSettingsCredentialTest(null)
     setSettingsCredentialTestError('')
     if (profile.credential === 'synology_dsm') {
       void api.sourceConnectorConfig(row.source.id)
         .then((config) => {
           setSettingsConnectorConfig(config)
-          const spaces = Array.isArray(config.payload.spaces)
-            ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-            : []
-          setSettingsValues((current) => ({ ...current, spaces: spaces.length ? spaces : ['personal', 'shared'] }))
+          if (row.source.kind === 'synology_files') {
+            const roots = Array.isArray(config.payload.roots)
+              ? config.payload.roots.filter((root): root is string => typeof root === 'string')
+              : []
+            setSettingsValues((current) => ({ ...current, roots }))
+          } else {
+            const spaces = Array.isArray(config.payload.spaces)
+              ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+              : []
+            setSettingsValues((current) => ({ ...current, spaces: spaces.length ? spaces : ['personal', 'shared'] }))
+          }
         })
         .catch((error) => {
-          setSettingsCredentialTestError(sourceActionErrorMessage(error, '读取群晖空间配置失败'))
+          setSettingsCredentialTestError(sourceActionErrorMessage(error, '读取群晖连接配置失败'))
         })
     }
   }
@@ -754,10 +791,18 @@ export default function ExternalSourcesPanel({
     const normalizedName = values.name.trim()
     const nameError = !normalizedName ? '请填写来源名称' : normalizedName.length > 128 ? '来源名称不能超过 128 个字符' : ''
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
-    const spacesError = profile.credential === 'synology_dsm' && !(values.spaces?.length) ? '至少选择一个照片空间' : ''
+    const isSynologyFiles = setting.source.kind === 'synology_files'
+    const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
+    const spacesError = setting.source.kind === 'synology_photos' && profile.credential === 'synology_dsm' && !(values.spaces?.length)
+      ? '至少选择一个照片空间'
+      : ''
+    const rootsError = isSynologyFiles
+      ? synologyFileRootsValidationError(values.roots ?? [])
+      : ''
     setSettingsNameError(nameError)
     setSettingsSpacesError(spacesError)
-    if (nameError || spacesError) return
+    setSettingsRootsError(rootsError)
+    if (nameError || spacesError || rootsError) return
     const pendingCredential = settingsCredentialPayload()
     if (pendingCredential === undefined) {
       setSettingsCredentialTestError('更新 DSM 凭据时请完整填写地址、用户名和密码')
@@ -772,33 +817,64 @@ export default function ExternalSourcesPanel({
       }
     }
     try {
-      await api.updateSource(setting.source.id, setting.source.revision, {
+      let connectorConfig = settingsConnectorConfig
+      let connectorConfigChanged = false
+      let desiredConnectorPayload: Record<string, unknown> | null = null
+      if (profile.credential === 'synology_dsm') {
+        connectorConfig = connectorConfig ?? await api.sourceConnectorConfig(setting.source.id)
+        if (isSynologyFiles) {
+          const currentRoots = Array.isArray(connectorConfig.payload.roots)
+            ? normalizeSynologyFileRoots(connectorConfig.payload.roots.filter((root): root is string => typeof root === 'string'))
+            : []
+          connectorConfigChanged = currentRoots.join('\n') !== desiredRoots.join('\n')
+          desiredConnectorPayload = { roots: desiredRoots }
+        } else {
+          const desiredSpaces = normalizeSynologyPhotoSpaces(values.spaces?.length ? values.spaces : ['personal', 'shared'])
+          const currentSpaces = Array.isArray(connectorConfig.payload.spaces)
+            ? connectorConfig.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+            : []
+          connectorConfigChanged = currentSpaces.join(',') !== desiredSpaces.join(',')
+          desiredConnectorPayload = { spaces: desiredSpaces }
+        }
+      }
+
+      const stageFileActivation = isSynologyFiles && values.status === 'active' && (
+        setting.source.status !== 'active' ||
+        pendingCredential !== null ||
+        !setting.credential?.configured ||
+        connectorConfigChanged ||
+        !connectorConfig?.configured
+      )
+      let updatedSource = await api.updateSource(setting.source.id, setting.source.revision, {
         name: normalizedName,
         run_mode: values.run_mode,
-        status: pendingCredential && !setting.credential?.configured ? 'paused' : values.status,
+        status: stageFileActivation
+          ? 'paused'
+          : (pendingCredential && !setting.credential?.configured ? 'paused' : values.status),
         schedule_type: values.schedule_type,
         schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
         ignore_rules: values.ignore_rules ?? '',
       })
 
-      if (profile.credential === 'synology_dsm') {
-        const desiredSpaces = normalizeSynologyPhotoSpaces(values.spaces?.length ? values.spaces : ['personal', 'shared'])
-        const config = settingsConnectorConfig ?? await api.sourceConnectorConfig(setting.source.id)
-        const currentSpaces = Array.isArray(config.payload.spaces)
-          ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-          : []
-        if (currentSpaces.join(',') !== desiredSpaces.join(',')) {
-          const updatedConfig = await api.setSourceConnectorConfig(setting.source.id, config.revision, { spaces: desiredSpaces })
-          setSettingsConnectorConfig(updatedConfig)
-        }
+      if (connectorConfig && connectorConfigChanged && desiredConnectorPayload) {
+        const updatedConfig = await api.setSourceConnectorConfig(
+          setting.source.id,
+          connectorConfig.revision,
+          desiredConnectorPayload,
+        )
+        setSettingsConnectorConfig(updatedConfig)
       }
 
       if (pendingCredential) {
         await api.setSourceCredential(setting.source.id, pendingCredential)
       }
 
-      if (pendingCredential && values.status === 'paused') {
+      if (stageFileActivation) {
+        updatedSource = await api.updateSource(setting.source.id, updatedSource.revision, { status: 'active' })
+      }
+
+      if (!isSynologyFiles && pendingCredential && values.status === 'paused') {
         const overview = await api.sourceOverview()
         const fresh = overview.find((item) => item.source.id === setting.source.id)?.source
         if (fresh && fresh.status !== 'paused') {
@@ -812,6 +888,7 @@ export default function ExternalSourcesPanel({
       setSettingsValues(emptySourceSettingsValues())
       setSettingsNameError('')
       setSettingsSpacesError('')
+      setSettingsRootsError('')
       await load()
     } catch (error) {
       showActionError('保存来源设置失败', error, '来源设置未保存，请检查后重试。')
@@ -1586,30 +1663,49 @@ export default function ExternalSourcesPanel({
                     setCreateCredentialTestError('')
                   }}
                 />
-                <FormControl fullWidth size="small" error={Boolean(createSpacesError)}>
-                  <InputLabel id="create-source-spaces-label">同步空间</InputLabel>
-                  <MuiSelect<SynologyPhotoSpace[]>
-                    labelId="create-source-spaces-label"
-                    multiple
-                    value={createValues.spaces ?? []}
-                    input={<OutlinedInput label="同步空间" />}
-                    renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
-                    onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
-                      setCreateValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
-                      if (createSpacesError) setCreateSpacesError('')
+                {createOption.kind === 'synology_photos' ? (
+                  <FormControl fullWidth size="small" error={Boolean(createSpacesError)}>
+                    <InputLabel id="create-source-spaces-label">同步空间</InputLabel>
+                    <MuiSelect<SynologyPhotoSpace[]>
+                      labelId="create-source-spaces-label"
+                      multiple
+                      value={createValues.spaces ?? []}
+                      input={<OutlinedInput label="同步空间" />}
+                      renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
+                      onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
+                        setCreateValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
+                        if (createSpacesError) setCreateSpacesError('')
+                      }}
+                    >
+                      {synologyPhotoSpaceOptions.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          <Checkbox checked={(createValues.spaces ?? []).includes(option.value)} />
+                          <ListItemText primary={option.label} />
+                        </MenuItem>
+                      ))}
+                    </MuiSelect>
+                    <FormHelperText>{createSpacesError || '至少选择一个照片空间'}</FormHelperText>
+                  </FormControl>
+                ) : (
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={3}
+                    label="File Station 根目录"
+                    placeholder={'/documents\n/video/projects'}
+                    value={(createValues.roots ?? []).join('\n')}
+                    error={Boolean(createRootsError)}
+                    helperText={createRootsError || '每行一个 DSM 绝对目录；会同步目录、空目录及其中的任意文件类型。'}
+                    onChange={(event) => {
+                      setCreateValues((current) => ({ ...current, roots: event.target.value.split(/\r?\n/) }))
+                      if (createRootsError) setCreateRootsError('')
                     }}
-                  >
-                    {synologyPhotoSpaceOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        <Checkbox checked={(createValues.spaces ?? []).includes(option.value)} />
-                        <ListItemText primary={option.label} />
-                      </MenuItem>
-                    ))}
-                  </MuiSelect>
-                  <FormHelperText>{createSpacesError || '至少选择一个照片空间'}</FormHelperText>
-                </FormControl>
+                  />
+                )}
                 <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>
-                  DSM 凭据只会在服务器端加密保存；Pull worker 使用 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。
+                  {createOption.kind === 'synology_files'
+                    ? 'DSM 凭据只会在服务器端加密保存；Pull worker 通过 File Station API 只读同步所选目录中的所有文件和文件夹，不会修改 NAS 内容。'
+                    : 'DSM 凭据只会在服务器端加密保存；Pull worker 使用 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。'}
                 </XDriveStatusAlert>
                 <MuiBox>
                   <XDriveActionButton
@@ -1640,6 +1736,7 @@ export default function ExternalSourcesPanel({
               setCreateValues(initialCreateSourceValues())
               setCreateNameError('')
               setCreateSpacesError('')
+              setCreateRootsError('')
             }}
           >
             取消
@@ -1663,6 +1760,7 @@ export default function ExternalSourcesPanel({
           setClearCookieConfirmOpen(false)
           setSetting(null)
           setSettingsValues(emptySourceSettingsValues())
+          setSettingsRootsError('')
         }}
         maxWidth="sm"
         fullWidth
@@ -1676,6 +1774,7 @@ export default function ExternalSourcesPanel({
             setClearCookieConfirmOpen(false)
             setSetting(null)
             setSettingsValues(emptySourceSettingsValues())
+            setSettingsRootsError('')
           }}
           closeDisabled={savingSettings}
         />
@@ -1880,32 +1979,51 @@ export default function ExternalSourcesPanel({
                       setSettingsCredentialTestError('')
                     }}
                   />
-                  <FormControl fullWidth size="small" error={Boolean(settingsSpacesError)}>
-                    <InputLabel id="settings-source-spaces-label">同步空间</InputLabel>
-                    <MuiSelect<SynologyPhotoSpace[]>
-                      labelId="settings-source-spaces-label"
-                      multiple
-                      value={settingsValues.spaces ?? []}
-                      input={<OutlinedInput label="同步空间" />}
-                      renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
-                      onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
-                        setSettingsValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
-                        if (settingsSpacesError) setSettingsSpacesError('')
+                  {setting.source.kind === 'synology_photos' ? (
+                    <>
+                      <FormControl fullWidth size="small" error={Boolean(settingsSpacesError)}>
+                        <InputLabel id="settings-source-spaces-label">同步空间</InputLabel>
+                        <MuiSelect<SynologyPhotoSpace[]>
+                          labelId="settings-source-spaces-label"
+                          multiple
+                          value={settingsValues.spaces ?? []}
+                          input={<OutlinedInput label="同步空间" />}
+                          renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
+                          onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
+                            setSettingsValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
+                            if (settingsSpacesError) setSettingsSpacesError('')
+                          }}
+                        >
+                          {synologyPhotoSpaceOptions.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              <Checkbox checked={(settingsValues.spaces ?? []).includes(option.value)} />
+                              <ListItemText primary={option.label} />
+                            </MenuItem>
+                          ))}
+                        </MuiSelect>
+                        <FormHelperText>{settingsSpacesError || '至少选择一个照片空间'}</FormHelperText>
+                      </FormControl>
+                      {!settingsConnectorConfig && (
+                        <MuiTypography variant="caption" color="text.secondary">
+                          正在读取当前空间配置；未配置时默认同步个人空间和共享空间。
+                        </MuiTypography>
+                      )}
+                    </>
+                  ) : (
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={3}
+                      label="File Station 根目录"
+                      placeholder={'/documents\n/video/projects'}
+                      value={(settingsValues.roots ?? []).join('\n')}
+                      error={Boolean(settingsRootsError)}
+                      helperText={settingsRootsError || '每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。'}
+                      onChange={(event) => {
+                        setSettingsValues((current) => ({ ...current, roots: event.target.value.split(/\r?\n/) }))
+                        if (settingsRootsError) setSettingsRootsError('')
                       }}
-                    >
-                      {synologyPhotoSpaceOptions.map((option) => (
-                        <MenuItem key={option.value} value={option.value}>
-                          <Checkbox checked={(settingsValues.spaces ?? []).includes(option.value)} />
-                          <ListItemText primary={option.label} />
-                        </MenuItem>
-                      ))}
-                    </MuiSelect>
-                    <FormHelperText>{settingsSpacesError || '至少选择一个照片空间'}</FormHelperText>
-                  </FormControl>
-                  {!settingsConnectorConfig && (
-                    <MuiTypography variant="caption" color="text.secondary">
-                      正在读取当前空间配置；未配置时默认同步个人空间和共享空间。
-                    </MuiTypography>
+                    />
                   )}
                   <MuiBox>
                     <XDriveActionButton
@@ -1957,6 +2075,7 @@ export default function ExternalSourcesPanel({
                 setClearCookieConfirmOpen(false)
                 setSetting(null)
                 setSettingsValues(emptySourceSettingsValues())
+                setSettingsRootsError('')
                 setSettingsNameError('')
                 setSettingsSpacesError('')
               }}
