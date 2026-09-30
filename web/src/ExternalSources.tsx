@@ -426,7 +426,7 @@ export default function ExternalSourcesPanel({
     createForm.setFieldsValue({
       preset: option.value,
       name: defaults.name,
-      run_mode: 'scan',
+      run_mode: defaults.runMode,
       schedule_type: defaults.scheduleType,
       schedule_expression: defaults.scheduleExpression,
       schedule_timezone: defaults.scheduleTimezone,
@@ -447,6 +447,7 @@ export default function ExternalSourcesPanel({
     const defaults = externalSourceDefaults(option.kind, option.direction)
     createForm.setFieldsValue({
       name: defaults.name,
+      run_mode: defaults.runMode,
       schedule_type: defaults.scheduleType,
       schedule_expression: defaults.scheduleExpression,
       schedule_timezone: defaults.scheduleTimezone,
