@@ -44,6 +44,7 @@ import { XDriveStatePanel } from './StatePanel'
 
 export type XDriveFileExplorerID = string | number
 export type XDriveFileExplorerViewMode = 'details' | 'grid'
+export type XDriveFileExplorerPresentation = 'card' | 'workspace'
 export type XDriveFileExplorerSortKey = 'name' | 'updated' | 'type' | 'size'
 export type XDriveFileExplorerSortDirection = 'asc' | 'desc'
 
@@ -247,6 +248,7 @@ export function XDriveFileExplorer({
   items,
   crumbs,
   loading = false,
+  presentation = 'card',
   emptyMessage = '此文件夹为空',
   pathValue,
   onPathSubmit,
@@ -282,6 +284,7 @@ export function XDriveFileExplorer({
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
   loading?: boolean
+  presentation?: XDriveFileExplorerPresentation
   emptyMessage?: string
   pathValue?: string
   onPathSubmit?: (path: string) => void
@@ -582,15 +585,20 @@ export function XDriveFileExplorer({
 
   return (
     <Paper
-      variant="outlined"
+      variant={presentation === 'workspace' ? 'elevation' : 'outlined'}
+      elevation={0}
+      square={presentation === 'workspace'}
       data-xdrive-file-explorer
+      data-xdrive-file-explorer-presentation={presentation}
       sx={{
         minHeight: 0,
         height: '100%',
+        flex: presentation === 'workspace' ? 1 : undefined,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        borderRadius: 2,
+        border: presentation === 'workspace' ? 0 : undefined,
+        borderRadius: presentation === 'workspace' ? 0 : 2,
         bgcolor: 'background.paper',
       }}
     >

@@ -9,7 +9,11 @@ const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
 const workspace = readRepo('ui/shared/src/mui/WorkspaceSurface.tsx')
 const workspaceShell = readRepo('ui/shared/src/mui/WorkspaceShell.tsx')
+const fileExplorer = readRepo('ui/shared/src/mui/FileExplorer.tsx')
+const desktopFileExplorer = readRepo('desktop/src/renderer/DesktopFileExplorer.tsx')
+const desktopStyles = readRepo('desktop/src/renderer/styles.css')
 const app = read('src/App.tsx')
+const webFileExplorer = read('src/WebFileExplorer.tsx')
 const styles = read('src/styles.css')
 const sources = read('src/ExternalSources.tsx')
 const storage = read('src/StorageStatsPanel.tsx')
@@ -41,6 +45,24 @@ requireText(workspaceShell, [
   "'@media (max-width: 960px)'",
 ], 'XDriveWorkspaceShell')
 
+requireText(fileExplorer, [
+  "export type XDriveFileExplorerPresentation = 'card' | 'workspace'",
+  "presentation = 'card'",
+  'presentation?: XDriveFileExplorerPresentation',
+  "variant={presentation === 'workspace' ? 'elevation' : 'outlined'}",
+  "square={presentation === 'workspace'}",
+  "border: presentation === 'workspace' ? 0 : undefined",
+  "borderRadius: presentation === 'workspace' ? 0 : 2",
+], 'Shared FileExplorer workspace presentation')
+
+requireText(webFileExplorer, [
+  'presentation="workspace"',
+], 'Web FileExplorer workspace presentation')
+
+requireText(desktopFileExplorer, [
+  'presentation="workspace"',
+], 'Desktop FileExplorer workspace presentation')
+
 requireText(app, [
   'file-manager-shell',
   'XDriveWorkspaceShell',
@@ -62,9 +84,17 @@ requireText(styles, [
   '.content-wrap.files-workspace',
   'padding: 0',
   'overflow: hidden',
-  '.files-workspace-surface [data-xdrive-file-explorer]',
-  'border-radius: 0',
 ], 'Web files workspace styles')
+
+if (styles.includes('.files-workspace-surface [data-xdrive-file-explorer]')) {
+  throw new Error('Web must not override shared FileExplorer workspace chrome')
+}
+if (/\.content-wrap\.files-workspace\s*\{[^}]*background\s*:\s*#fff\b/.test(styles)) {
+  throw new Error('Web files workspace must not hard-code a light-only background')
+}
+if (/\.cloud-explorer-panel > \[data-xdrive-file-explorer\]\s*\{[^}]*\b(border|border-radius)\s*:/.test(desktopStyles)) {
+  throw new Error('Desktop must not override shared FileExplorer workspace chrome')
+}
 
 requireText(sources, [
   'XDriveWorkspaceSurface',

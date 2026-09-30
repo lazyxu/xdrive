@@ -341,6 +341,7 @@ export default function WebFileExplorer({
         />
       ) : null}
       <XDriveFileExplorer
+        presentation="workspace"
         items={explorerItems}
         crumbs={explorerCrumbs}
         loading={loading || searchLoading}

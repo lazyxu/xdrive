@@ -425,6 +425,7 @@ export default function DesktopFileExplorer({
   return (
     <>
       <XDriveFileExplorer
+        presentation="workspace"
         items={explorerItems}
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || Boolean(actionBusy)}
