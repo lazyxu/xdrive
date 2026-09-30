@@ -61,6 +61,7 @@ import {
   XDrivePaginationControls,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
+  XDriveSidebarSection,
   XDriveSidebarStorageSummary,
   XDRIVE_SIDEBAR_COMPACT_WIDTH,
   XDRIVE_SIDEBAR_WIDTH,
@@ -2374,9 +2375,11 @@ export default function App() {
           <XDriveSidebarNavItem appearance="dark" selected={view === 'files'} icon={<StorageRoundedIcon fontSize="small" />} primary="存储" onClick={() => setView('files')} />
           <XDriveSidebarNavItem appearance="dark" selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
         </XDriveSidebarNavList>
-        <XDriveSidebarNavList ariaLabel="桌面版辅助功能" className="sidebar-secondary">
-          <XDriveSidebarNavItem appearance="dark" selected={view === 'diagnostics'} icon={<BuildRoundedIcon fontSize="small" />} primary="诊断" onClick={() => setView('diagnostics')} />
-        </XDriveSidebarNavList>
+        <XDriveSidebarSection appearance="dark" pinnedBottom>
+          <XDriveSidebarNavList ariaLabel="桌面版辅助功能">
+            <XDriveSidebarNavItem appearance="dark" selected={view === 'diagnostics'} icon={<BuildRoundedIcon fontSize="small" />} primary="诊断" onClick={() => setView('diagnostics')} />
+          </XDriveSidebarNavList>
+        </XDriveSidebarSection>
         {cloudQuota && (
           <XDriveSidebarStorageSummary
             appearance="dark"

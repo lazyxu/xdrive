@@ -1,10 +1,57 @@
 import type { ReactNode } from 'react'
-import { Chip, List, ListItemButton, ListItemIcon, ListItemText } from '@mui/material'
+import { Box, Chip, List, ListItemButton, ListItemIcon, ListItemText, Typography } from '@mui/material'
 
 export const XDRIVE_SIDEBAR_WIDTH = 184
 export const XDRIVE_SIDEBAR_COMPACT_WIDTH = 176
 
 export type XDriveSidebarAppearance = 'light' | 'dark'
+
+export function XDriveSidebarSection({
+  children,
+  label,
+  appearance = 'light',
+  responsive = false,
+  pinnedBottom = false,
+}: {
+  children: ReactNode
+  label?: ReactNode
+  appearance?: XDriveSidebarAppearance
+  responsive?: boolean
+  pinnedBottom?: boolean
+}) {
+  const dark = appearance === 'dark'
+  const borderColor = dark ? 'rgba(255,255,255,.08)' : 'divider'
+
+  return (
+    <Box
+      sx={{
+        mt: pinnedBottom ? 'auto' : responsive ? { xs: 0, md: 1.5 } : 1.5,
+        ml: responsive ? { xs: 1, md: 0 } : 0,
+        pt: responsive ? { xs: 0, md: 1.5 } : 1.5,
+        pl: responsive ? { xs: 1, md: 0 } : 0,
+        borderTop: responsive ? { xs: 0, md: 1 } : 1,
+        borderLeft: responsive ? { xs: 1, md: 0 } : 0,
+        borderColor,
+      }}
+    >
+      {label ? (
+        <Typography
+          variant="caption"
+          fontWeight={700}
+          sx={{
+            display: responsive ? { xs: 'none', md: 'block' } : 'block',
+            px: 1.25,
+            pb: 0.75,
+            color: dark ? '#9baac2' : 'text.secondary',
+          }}
+        >
+          {label}
+        </Typography>
+      ) : null}
+      {children}
+    </Box>
+  )
+}
 
 export function XDriveSidebarNavList({
   children,

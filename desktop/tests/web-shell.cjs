@@ -90,6 +90,7 @@ test('Web admin workspaces are first-class pages while action dialogs stay local
 test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedSidebar.includes('XDriveSidebarNavList'), 'shared sidebar list primitive is missing')
   assert.ok(sharedSidebar.includes('XDriveSidebarNavItem'), 'shared sidebar item primitive is missing')
+  assert.ok(sharedSidebar.includes('XDriveSidebarSection'), 'shared sidebar section primitive is missing')
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_WIDTH = 184'), 'shared sidebar width token is missing')
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH = 176'), 'shared compact sidebar width token is missing')
   assert.ok(sharedStorageSummary.includes('XDriveSidebarStorageSummary'), 'shared sidebar storage summary is missing')
@@ -100,6 +101,8 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
   assert.ok(webApp.includes('XDriveBrandLockup'), 'Web should consume shared brand lockup')
   assert.ok(webApp.includes('XDriveSidebarNavItem'), 'Web should consume shared sidebar navigation')
+  assert.ok(webApp.includes('<XDriveSidebarSection label="管理" responsive>'), 'Web admin navigation should use shared sidebar section chrome')
+  assert.ok(desktopApp.includes('<XDriveSidebarSection appearance="dark" pinnedBottom>'), 'Desktop diagnostics should use shared sidebar section chrome')
   assert.ok(webApp.includes('XDriveSidebarStorageSummary'), 'Web should consume shared sidebar storage summary')
   assert.ok(desktopApp.includes('XDriveSidebarStorageSummary'), 'Desktop should consume shared sidebar storage summary')
   assert.ok(webApp.includes('XDriveAccountAvatarButton'), 'Web should consume shared account chrome')
