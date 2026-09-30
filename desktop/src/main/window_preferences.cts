@@ -5,7 +5,10 @@ export type DesktopWindowBounds = {
   height: number
 }
 
+export type DesktopAppearance = 'system' | 'light' | 'dark'
+
 export type DesktopPreferences = {
+  appearance: DesktopAppearance
   start_at_login: boolean
   close_to_tray: boolean
   close_behavior_prompted: boolean
@@ -15,6 +18,7 @@ export type DesktopPreferences = {
 
 export function defaultDesktopPreferences(): DesktopPreferences {
   return {
+    appearance: 'system',
     start_at_login: true,
     close_to_tray: true,
     close_behavior_prompted: false,
@@ -48,6 +52,9 @@ export function normalizeDesktopPreferences(value: unknown): DesktopPreferences 
   if (!value || typeof value !== 'object') return defaults
   const candidate = value as Partial<DesktopPreferences>
   return {
+    appearance: candidate.appearance === 'light' || candidate.appearance === 'dark' || candidate.appearance === 'system'
+      ? candidate.appearance
+      : defaults.appearance,
     start_at_login: typeof candidate.start_at_login === 'boolean' ? candidate.start_at_login : defaults.start_at_login,
     close_to_tray: typeof candidate.close_to_tray === 'boolean' ? candidate.close_to_tray : defaults.close_to_tray,
     close_behavior_prompted: typeof candidate.close_behavior_prompted === 'boolean'

@@ -152,6 +152,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   },
   setStartup: (enabled: boolean) => ipcRenderer.invoke('desktop:set-startup', enabled),
   setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('desktop:set-close-to-tray', enabled),
+  setAppearance: (appearance: 'system' | 'light' | 'dark') => ipcRenderer.invoke('desktop:set-appearance', appearance),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
   openExternal: (url: string) => ipcRenderer.invoke('desktop:open-external', url),
   hide: () => ipcRenderer.send('desktop:hide'),

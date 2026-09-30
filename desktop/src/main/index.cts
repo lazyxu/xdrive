@@ -262,6 +262,7 @@ async function saveDesktopPreferences(preferences: DesktopPreferences) {
 
 function publicDesktopPreferences() {
   return {
+    appearance: desktopPreferences.appearance,
     start_at_login: desktopPreferences.start_at_login,
     close_to_tray: desktopPreferences.close_to_tray,
   }
@@ -417,6 +418,15 @@ async function setCloseToTray(enabled: boolean) {
     close_to_tray: enabled,
     close_behavior_prompted: true,
   })
+  return publicDesktopPreferences()
+}
+
+async function setAppearance(appearance: DesktopPreferences['appearance']) {
+  await saveDesktopPreferences({ ...desktopPreferences, appearance })
+  nativeTheme.themeSource = desktopPreferences.appearance
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBackgroundColor(desktopWindowBackground())
+  }
   return publicDesktopPreferences()
 }
 
@@ -1317,6 +1327,16 @@ function registerIPCHandlers() {
     }
     try {
       return { ok: true, data: await setCloseToTray(enabled) }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+  ipcMain.handle('desktop:set-appearance', async (_event, appearance: unknown) => {
+    if (appearance !== 'system' && appearance !== 'light' && appearance !== 'dark') {
+      return { ok: false, error: { code: 'invalid_input', message: 'appearance must be system, light, or dark.' } }
+    }
+    try {
+      return { ok: true, data: await setAppearance(appearance) }
     } catch (error) {
       return { ok: false, error: agentError(error) }
     }
@@ -2397,7 +2417,6 @@ if (!primaryInstance) {
   void app.whenReady().then(async () => {
     startupCheckpoint('electron_ready', { hardware_acceleration: hardwareAccelerationDisabled ? 'disabled' : 'enabled' })
     app.setAppUserModelId('io.github.lazyxu.xdrive.desktop')
-    nativeTheme.themeSource = 'system'
     nativeTheme.on('updated', () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(desktopWindowBackground())
     })
@@ -2406,6 +2425,7 @@ if (!primaryInstance) {
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
 
     desktopPreferences = await loadDesktopPreferences()
+    nativeTheme.themeSource = desktopPreferences.appearance
     loginHistory = await loadLoginHistory()
     startupCheckpoint('preferences_loaded')
     await applyStartAtLogin(desktopPreferences.start_at_login).catch((error) => {

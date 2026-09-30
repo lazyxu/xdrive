@@ -28,7 +28,7 @@ export {}
 declare global {
   type DesktopInfo = BuildInfo & { platform: string; arch: string }
   type DesktopStartup = { start_at_login: boolean }
-  type DesktopPreferences = { start_at_login: boolean; close_to_tray: boolean }
+  type DesktopPreferences = { appearance: 'system' | 'light' | 'dark'; start_at_login: boolean; close_to_tray: boolean }
   type DesktopLoginProfile = {
     server: string
     username: string
@@ -269,6 +269,7 @@ declare global {
       onWindowState: (callback: (state: DesktopWindowState) => void) => () => void
       setStartup: (enabled: boolean) => Promise<DesktopResult<DesktopStartup>>
       setCloseToTray: (enabled: boolean) => Promise<DesktopResult<DesktopPreferences>>
+      setAppearance: (appearance: 'system' | 'light' | 'dark') => Promise<DesktopResult<DesktopPreferences>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
       openExternal: (url: string) => Promise<DesktopResult<{ opened: boolean }>>
       hide: () => void

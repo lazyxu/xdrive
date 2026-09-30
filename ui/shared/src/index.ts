@@ -1,4 +1,5 @@
 export * from './format'
+export * from './preferences'
 export type * from './models'
 export * from './external-sources'
 export * from './synology-dsm-guide'
