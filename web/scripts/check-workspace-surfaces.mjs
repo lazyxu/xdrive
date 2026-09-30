@@ -56,6 +56,20 @@ requireText(fileExplorer, [
 ], 'Shared FileExplorer workspace presentation')
 
 requireText(fileExplorer, [
+  'export function XDriveFileExplorerCommandButton',
+  'variant="text"',
+  'color="inherit"',
+  "color: 'text.primary'",
+  '<XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>',
+  '<XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>',
+  'startIcon={<SortRoundedIcon />}',
+], 'Shared FileExplorer command chrome')
+
+if ((fileExplorer.match(/<XDriveFileExplorerCommandButton/g) || []).length < 3) {
+  throw new Error('Shared FileExplorer must use neutral command chrome for create, upload and sort')
+}
+
+requireText(fileExplorer, [
   "const xDriveWindowsFolderYellow = '#ffcb3d'",
   'color: xDriveWindowsFolderYellow',
 ], 'Shared FileExplorer Windows folder color')
@@ -66,11 +80,19 @@ if (/fileKind === 'folder'.*warning\.main/.test(fileExplorer)) {
 
 requireText(webFileExplorer, [
   'presentation="workspace"',
+  'XDriveFileExplorerCommandButton',
+  '<XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>',
 ], 'Web FileExplorer workspace presentation')
 
 requireText(desktopFileExplorer, [
   'presentation="workspace"',
+  'XDriveFileExplorerCommandButton',
+  '<XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>',
 ], 'Desktop FileExplorer workspace presentation')
+
+if (webFileExplorer.includes('<XDriveActionButton compact startIcon={<RestoreFromTrashRoundedIcon />}') || desktopFileExplorer.includes('<XDriveActionButton compact onClick={onOpenTrash}>')) {
+  throw new Error('FileExplorer command bar extensions must use shared neutral command chrome')
+}
 
 requireText(app, [
   'file-manager-shell',
