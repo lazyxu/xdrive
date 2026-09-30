@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { Form, Input, Select } from 'antd'
 import {
   Accordion,
   AccordionDetails,
@@ -11,18 +10,26 @@ import {
   Box as MuiBox,
   Button as MuiButton,
   Card,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogContentText,
   Divider as MuiDivider,
+  FormControl,
+  FormHelperText,
   IconButton,
+  InputLabel,
+  ListItemText,
   MenuItem,
+  OutlinedInput,
+  Select as MuiSelect,
   Snackbar,
   Stack,
   TextField,
   Tooltip,
   Typography as MuiTypography,
 } from '@mui/material'
+import type { SelectChangeEvent } from '@mui/material/Select'
 import type { XDriveApi } from './api'
 import {
   XDriveActionButton,
@@ -193,6 +200,52 @@ function SourceDescriptionItem({ label, children }: { label: ReactNode; children
   )
 }
 
+function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_push'): CreateSourceValues {
+  const option = externalSourceCreateOption(preset)
+  const defaults = externalSourceDefaults(option.kind, option.direction)
+  return {
+    preset,
+    name: defaults.name,
+    run_mode: defaults.runMode,
+    schedule_type: defaults.scheduleType,
+    schedule_expression: defaults.scheduleExpression,
+    schedule_timezone: defaults.scheduleTimezone,
+    ignore_rules: defaults.ignoreRules,
+    cookie: '',
+    base_url: '',
+    username: '',
+    password: '',
+    spaces: ['personal', 'shared'],
+  }
+}
+
+function emptySourceSettingsValues(): SourceSettingsValues {
+  return {
+    name: '',
+    run_mode: 'sync',
+    status: 'active',
+    schedule_type: 'interval',
+    schedule_expression: '6h',
+    schedule_timezone: 'UTC',
+    ignore_rules: '',
+    cookie: '',
+    base_url: '',
+    username: '',
+    password: '',
+    spaces: ['personal', 'shared'],
+  }
+}
+
+function selectedPhotoSpaces(value: string | SynologyPhotoSpace[]): SynologyPhotoSpace[] {
+  const spaces = (typeof value === 'string' ? value.split(',') : value)
+    .filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+  return normalizeSynologyPhotoSpaces(spaces)
+}
+
+function photoSpaceLabel(value: SynologyPhotoSpace) {
+  return synologyPhotoSpaceOptions.find((option) => option.value === value)?.label ?? value
+}
+
 export default function ExternalSourcesPanel({
   open,
   api,
@@ -227,10 +280,12 @@ export default function ExternalSourcesPanel({
   const [collectionItemPages, setCollectionItemPages] = useState<Record<number, SourceCollectionItemPage>>({})
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
-  const [settingsForm] = Form.useForm<SourceSettingsValues>()
-  const settingsScheduleType = Form.useWatch('schedule_type', settingsForm) ?? 'interval'
-  const settingsScheduleExpression = Form.useWatch('schedule_expression', settingsForm) ?? '6h'
-  const settingsScheduleTimezone = Form.useWatch('schedule_timezone', settingsForm) ?? 'UTC'
+  const [settingsValues, setSettingsValues] = useState<SourceSettingsValues>(emptySourceSettingsValues)
+  const [settingsNameError, setSettingsNameError] = useState('')
+  const [settingsSpacesError, setSettingsSpacesError] = useState('')
+  const settingsScheduleType = settingsValues.schedule_type
+  const settingsScheduleExpression = settingsValues.schedule_expression
+  const settingsScheduleTimezone = settingsValues.schedule_timezone
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
@@ -250,11 +305,13 @@ export default function ExternalSourcesPanel({
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
   const [clearingCookie, setClearingCookie] = useState(false)
   const [settingsConnectorConfig, setSettingsConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
-  const [createForm] = Form.useForm<CreateSourceValues>()
-  const createScheduleType = Form.useWatch('schedule_type', createForm) ?? 'interval'
-  const createScheduleExpression = Form.useWatch('schedule_expression', createForm) ?? '6h'
-  const createScheduleTimezone = Form.useWatch('schedule_timezone', createForm) ?? 'UTC'
-  const createPreset = (Form.useWatch('preset', createForm) ?? 'synology_push') as ExternalSourceCreatePreset
+  const [createValues, setCreateValues] = useState<CreateSourceValues>(initialCreateSourceValues)
+  const [createNameError, setCreateNameError] = useState('')
+  const [createSpacesError, setCreateSpacesError] = useState('')
+  const createScheduleType = createValues.schedule_type
+  const createScheduleExpression = createValues.schedule_expression
+  const createScheduleTimezone = createValues.schedule_timezone
+  const createPreset = createValues.preset
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
 
@@ -421,22 +478,9 @@ export default function ExternalSourcesPanel({
   }
 
   const openCreate = () => {
-    const option = externalSourceCreateOption('synology_push')
-    const defaults = externalSourceDefaults(option.kind, option.direction)
-    createForm.setFieldsValue({
-      preset: option.value,
-      name: defaults.name,
-      run_mode: defaults.runMode,
-      schedule_type: defaults.scheduleType,
-      schedule_expression: defaults.scheduleExpression,
-      schedule_timezone: defaults.scheduleTimezone,
-      ignore_rules: defaults.ignoreRules,
-      cookie: '',
-      base_url: '',
-      username: '',
-      password: '',
-      spaces: ['personal', 'shared'],
-    })
+    setCreateValues(initialCreateSourceValues())
+    setCreateNameError('')
+    setCreateSpacesError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
     setCreateOpen(true)
@@ -445,7 +489,9 @@ export default function ExternalSourcesPanel({
   const changeCreatePreset = (preset: ExternalSourceCreatePreset) => {
     const option = externalSourceCreateOption(preset)
     const defaults = externalSourceDefaults(option.kind, option.direction)
-    createForm.setFieldsValue({
+    setCreateValues((current) => ({
+      ...current,
+      preset,
       name: defaults.name,
       run_mode: defaults.runMode,
       schedule_type: defaults.scheduleType,
@@ -457,20 +503,22 @@ export default function ExternalSourcesPanel({
       username: '',
       password: '',
       spaces: ['personal', 'shared'],
-    })
+    }))
+    setCreateNameError('')
+    setCreateSpacesError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
   }
 
   const createCredentialPayload = () => {
     if (createProfile.credential === 'cookie') {
-      const cookie = String(createForm.getFieldValue('cookie') ?? '').trim()
+      const cookie = String(createValues.cookie ?? '').trim()
       return cookie ? { cookie } : null
     }
     if (createProfile.credential === 'synology_dsm') {
-      const baseURL = String(createForm.getFieldValue('base_url') ?? '').trim()
-      const username = String(createForm.getFieldValue('username') ?? '').trim()
-      const password = String(createForm.getFieldValue('password') ?? '')
+      const baseURL = String(createValues.base_url ?? '').trim()
+      const username = String(createValues.username ?? '').trim()
+      const password = String(createValues.password ?? '')
       return baseURL && username && password
         ? { base_url: baseURL, username, password }
         : null
@@ -505,9 +553,17 @@ export default function ExternalSourcesPanel({
     }
   }
 
-  const createSource = async (values: CreateSourceValues) => {
+  const createSource = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const values = createValues
+    const normalizedName = values.name.trim()
+    const nameError = !normalizedName ? '请填写来源名称' : normalizedName.length > 128 ? '来源名称不能超过 128 个字符' : ''
+    setCreateNameError(nameError)
     const option = externalSourceCreateOption(values.preset)
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
+    const spacesError = profile.credential === 'synology_dsm' && !(values.spaces?.length) ? '至少选择一个照片空间' : ''
+    setCreateSpacesError(spacesError)
+    if (nameError || spacesError) return
     if (option.kind !== 'yike_photos' && !defaultTargetNodeID) {
       setErrorDialog({ title: '无法添加来源', message: '当前目标文件夹尚未加载，请稍后重试。' })
       return
@@ -536,7 +592,7 @@ export default function ExternalSourcesPanel({
     let created: ExternalSource
     try {
       created = await api.createSource({
-        name: values.name.trim(),
+        name: normalizedName,
         kind: option.kind,
         direction: option.direction,
         sync_mode: 'backup',
@@ -584,7 +640,9 @@ export default function ExternalSourcesPanel({
 
     setFeedback('外部来源已添加')
     setCreateOpen(false)
-    createForm.resetFields()
+    setCreateValues(initialCreateSourceValues())
+    setCreateNameError('')
+    setCreateSpacesError('')
     await load()
     setCreating(false)
 
@@ -629,7 +687,7 @@ export default function ExternalSourcesPanel({
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
     setSettingsConnectorConfig(null)
-    settingsForm.setFieldsValue({
+    setSettingsValues({
       name: row.source.name,
       run_mode: row.source.run_mode,
       status: row.source.status,
@@ -643,6 +701,8 @@ export default function ExternalSourcesPanel({
       password: '',
       spaces: ['personal', 'shared'],
     })
+    setSettingsNameError('')
+    setSettingsSpacesError('')
     setSettingsCredentialTest(null)
     setSettingsCredentialTestError('')
     if (profile.credential === 'synology_dsm') {
@@ -652,7 +712,7 @@ export default function ExternalSourcesPanel({
           const spaces = Array.isArray(config.payload.spaces)
             ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
             : []
-          settingsForm.setFieldValue('spaces', spaces.length ? spaces : ['personal', 'shared'])
+          setSettingsValues((current) => ({ ...current, spaces: spaces.length ? spaces : ['personal', 'shared'] }))
         })
         .catch((error) => {
           setSettingsCredentialTestError(sourceActionErrorMessage(error, '读取群晖空间配置失败'))
@@ -664,15 +724,15 @@ export default function ExternalSourcesPanel({
     if (!setting) return null
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     if (profile.credential === 'cookie') {
-      const rawCookie = String(settingsForm.getFieldValue('cookie') ?? '')
+      const rawCookie = String(settingsValues.cookie ?? '')
       if (isExternalSourceSavedCredentialMask(rawCookie)) return null
       const cookie = rawCookie.trim()
       return cookie ? { cookie } : null
     }
     if (profile.credential === 'synology_dsm') {
-      const baseURL = String(settingsForm.getFieldValue('base_url') ?? '').trim()
-      const username = String(settingsForm.getFieldValue('username') ?? '').trim()
-      const password = String(settingsForm.getFieldValue('password') ?? '')
+      const baseURL = String(settingsValues.base_url ?? '').trim()
+      const username = String(settingsValues.username ?? '').trim()
+      const password = String(settingsValues.password ?? '')
       const anyPending = Boolean(baseURL || username || password)
       if (!anyPending) return null
       return baseURL && username && password
@@ -709,9 +769,17 @@ export default function ExternalSourcesPanel({
     }
   }
 
-  const saveSettings = async (values: SourceSettingsValues) => {
+  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!setting) return
+    const values = settingsValues
+    const normalizedName = values.name.trim()
+    const nameError = !normalizedName ? '请填写来源名称' : normalizedName.length > 128 ? '来源名称不能超过 128 个字符' : ''
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
+    const spacesError = profile.credential === 'synology_dsm' && !(values.spaces?.length) ? '至少选择一个照片空间' : ''
+    setSettingsNameError(nameError)
+    setSettingsSpacesError(spacesError)
+    if (nameError || spacesError) return
     const pendingCredential = settingsCredentialPayload()
     if (pendingCredential === undefined) {
       setSettingsCredentialTestError('更新 DSM 凭据时请完整填写地址、用户名和密码')
@@ -727,7 +795,7 @@ export default function ExternalSourcesPanel({
     }
     try {
       await api.updateSource(setting.source.id, setting.source.revision, {
-        name: values.name.trim(),
+        name: normalizedName,
         run_mode: values.run_mode,
         status: pendingCredential && !setting.credential?.configured ? 'paused' : values.status,
         schedule_type: values.schedule_type,
@@ -763,7 +831,9 @@ export default function ExternalSourcesPanel({
       setFeedback('来源设置已保存')
       setSetting(null)
       setSettingsConnectorConfig(null)
-      settingsForm.resetFields()
+      setSettingsValues(emptySourceSettingsValues())
+      setSettingsNameError('')
+      setSettingsSpacesError('')
       await load()
     } catch (error) {
       showActionError('保存来源设置失败', error, '来源设置未保存，请检查后重试。')
@@ -792,7 +862,7 @@ export default function ExternalSourcesPanel({
         },
         credential: { configured: false },
       })
-      settingsForm.setFieldValue('status', 'paused')
+      setSettingsValues((current) => ({ ...current, status: 'paused' }))
       await load()
     } catch (error) {
       setClearCookieConfirmOpen(false)
@@ -812,7 +882,9 @@ export default function ExternalSourcesPanel({
       if (selected?.source.id === row.source.id) setSelected(null)
       if (setting?.source.id === row.source.id) {
         setSetting(null)
-        settingsForm.resetFields()
+        setSettingsValues(emptySourceSettingsValues())
+        setSettingsNameError('')
+        setSettingsSpacesError('')
       }
       setDeleteTarget(null)
       await load()
@@ -1338,7 +1410,7 @@ export default function ExternalSourcesPanel({
         onClose={() => {
           if (creating) return
           setCreateOpen(false)
-          createForm.resetFields()
+          setCreateValues(initialCreateSourceValues())
         }}
         maxWidth="sm"
         fullWidth
@@ -1350,7 +1422,7 @@ export default function ExternalSourcesPanel({
           onClose={() => {
             if (creating) return
             setCreateOpen(false)
-            createForm.resetFields()
+            setCreateValues(initialCreateSourceValues())
           }}
           closeDisabled={creating}
         />
@@ -1372,82 +1444,192 @@ export default function ExternalSourcesPanel({
             )}
           </XDriveStatusAlert>
         )}
-        <Form form={createForm} layout="vertical" onFinish={createSource} requiredMark={false}>
-          <Form.Item name="preset" label="来源类型" rules={[{ required: true }]} extra={createOption.description}>
-            <Select
-              onChange={(value) => changeCreatePreset(value as ExternalSourceCreatePreset)}
-              options={externalSourceCreateOptions.map((item) => ({ value: item.value, label: item.label }))}
-            />
-          </Form.Item>
-          <Form.Item name="name" label="来源名称" rules={[{ required: true, whitespace: true, max: 128 }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="run_mode" label="初始运行模式" rules={[{ required: true }]}>
-            <Select
-              options={[
-                { value: 'scan', label: '仅扫描（推荐先使用）' },
-                { value: 'sync', label: '同步' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="schedule_type" hidden><Input /></Form.Item>
-          <Form.Item name="schedule_expression" hidden><Input /></Form.Item>
-          <Form.Item name="schedule_timezone" hidden><Input /></Form.Item>
-          <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5, mb: 2 }}>
+        <MuiBox component="form" onSubmit={(event) => void createSource(event)}>
+          <Stack spacing={2}>
             <TextField
               select
+              fullWidth
               size="small"
-              label="调度方式"
-              value={createScheduleType}
-              onChange={(event) => createForm.setFieldValue('schedule_type', event.target.value as ExternalSourceScheduleType)}
+              label="来源类型"
+              value={createValues.preset}
+              onChange={(event) => changeCreatePreset(event.target.value as ExternalSourceCreatePreset)}
+              helperText={createOption.description}
             >
-              <MenuItem value="interval">固定间隔</MenuItem>
-              <MenuItem value="cron">Cron</MenuItem>
-              <MenuItem value="manual">仅手动</MenuItem>
+              {externalSourceCreateOptions.map((item) => (
+                <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
+              ))}
             </TextField>
-            {createScheduleType !== 'manual' && (
+            <TextField
+              fullWidth
+              size="small"
+              label="来源名称"
+              value={createValues.name}
+              error={Boolean(createNameError)}
+              helperText={createNameError || ' '}
+              onChange={(event) => {
+                setCreateValues((current) => ({ ...current, name: event.target.value }))
+                if (createNameError) setCreateNameError('')
+              }}
+            />
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="初始运行模式"
+              value={createValues.run_mode}
+              onChange={(event) => setCreateValues((current) => ({ ...current, run_mode: event.target.value as 'scan' | 'sync' }))}
+            >
+              <MenuItem value="scan">仅扫描（推荐先使用）</MenuItem>
+              <MenuItem value="sync">同步</MenuItem>
+            </TextField>
+            <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5 }}>
               <TextField
+                select
                 size="small"
-                label={createScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
-                value={createScheduleExpression}
-                onChange={(event) => createForm.setFieldValue('schedule_expression', event.target.value)}
-                helperText={createScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
-              />
-            )}
-            {createScheduleType === 'cron' && (
-              <TextField
-                size="small"
-                label="时区"
-                value={createScheduleTimezone}
-                onChange={(event) => createForm.setFieldValue('schedule_timezone', event.target.value)}
-                helperText="IANA 时区，例如 Asia/Shanghai"
-                sx={{ gridColumn: { sm: '2 / 3' } }}
-              />
-            )}
-          </MuiBox>
-          <Form.Item name="ignore_rules" label="忽略规则">
-            <Input.TextArea rows={5} placeholder="每行一条 gitignore 风格规则" />
-          </Form.Item>
-          {createProfile.credential === 'cookie' && (
-            <>
-              <Form.Item
-                name="cookie"
-                label="一刻相册 Cookie"
-                rules={[{ required: true, whitespace: true, message: '请填写一刻相册 Cookie' }]}
-                extra="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
+                label="调度方式"
+                value={createScheduleType}
+                onChange={(event) => setCreateValues((current) => ({ ...current, schedule_type: event.target.value as ExternalSourceScheduleType }))}
               >
-                <Input.Password
+                <MenuItem value="interval">固定间隔</MenuItem>
+                <MenuItem value="cron">Cron</MenuItem>
+                <MenuItem value="manual">仅手动</MenuItem>
+              </TextField>
+              {createScheduleType !== 'manual' && (
+                <TextField
+                  size="small"
+                  label={createScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
+                  value={createScheduleExpression}
+                  onChange={(event) => setCreateValues((current) => ({ ...current, schedule_expression: event.target.value }))}
+                  helperText={createScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
+                />
+              )}
+              {createScheduleType === 'cron' && (
+                <TextField
+                  size="small"
+                  label="时区"
+                  value={createScheduleTimezone}
+                  onChange={(event) => setCreateValues((current) => ({ ...current, schedule_timezone: event.target.value }))}
+                  helperText="IANA 时区，例如 Asia/Shanghai"
+                  sx={{ gridColumn: { sm: '2 / 3' } }}
+                />
+              )}
+            </MuiBox>
+            <TextField
+              fullWidth
+              multiline
+              rows={5}
+              label="忽略规则"
+              placeholder="每行一条 gitignore 风格规则"
+              value={createValues.ignore_rules ?? ''}
+              onChange={(event) => setCreateValues((current) => ({ ...current, ignore_rules: event.target.value }))}
+            />
+            {createProfile.credential === 'cookie' && (
+              <>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="password"
+                  label="一刻相册 Cookie"
                   autoComplete="off"
-                  onChange={() => {
+                  value={createValues.cookie ?? ''}
+                  helperText="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
+                  onChange={(event) => {
+                    setCreateValues((current) => ({ ...current, cookie: event.target.value }))
                     setCreateCredentialTest(null)
                     setCreateCredentialTestError('')
                   }}
                 />
-              </Form.Item>
-              <div style={{ marginTop: -12, marginBottom: 16 }}>
-                <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</XDriveStatusAlert>
-                <XDriveYikeCookieHelp variant="accordion" />
-                <MuiBox sx={{ mt: 1 }}>
+                <MuiBox>
+                  <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</XDriveStatusAlert>
+                  <XDriveYikeCookieHelp variant="accordion" />
+                  <MuiBox sx={{ mt: 1 }}>
+                    <XDriveActionButton
+                      compact
+                      disabled={testingCreateCredential}
+                      loading={testingCreateCredential}
+                      loadingLabel="正在测试…"
+                      onClick={() => void testCreateCredential()}
+                    >
+                      测试连接
+                    </XDriveActionButton>
+                  </MuiBox>
+                  {createCredentialTest && (
+                    <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
+                      {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
+                    </XDriveStatusAlert>
+                  )}
+                  {createCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{createCredentialTestError}</XDriveStatusAlert>}
+                </MuiBox>
+              </>
+            )}
+            {createProfile.credential === 'synology_dsm' && (
+              <>
+                <MuiDivider textAlign="left">Synology DSM 连接</MuiDivider>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="DSM 地址"
+                  placeholder="https://nas.example.com:5001"
+                  autoComplete="off"
+                  value={createValues.base_url ?? ''}
+                  helperText="填写 xDrive Server 实际能够访问的 DSM Origin，例如 https://nas.example.com:5001。"
+                  onChange={(event) => {
+                    setCreateValues((current) => ({ ...current, base_url: event.target.value }))
+                    setCreateCredentialTest(null)
+                    setCreateCredentialTestError('')
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="DSM 用户名"
+                  autoComplete="username"
+                  value={createValues.username ?? ''}
+                  onChange={(event) => {
+                    setCreateValues((current) => ({ ...current, username: event.target.value }))
+                    setCreateCredentialTest(null)
+                    setCreateCredentialTestError('')
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="password"
+                  label="DSM 密码"
+                  autoComplete="new-password"
+                  value={createValues.password ?? ''}
+                  onChange={(event) => {
+                    setCreateValues((current) => ({ ...current, password: event.target.value }))
+                    setCreateCredentialTest(null)
+                    setCreateCredentialTestError('')
+                  }}
+                />
+                <FormControl fullWidth size="small" error={Boolean(createSpacesError)}>
+                  <InputLabel id="create-source-spaces-label">同步空间</InputLabel>
+                  <MuiSelect<SynologyPhotoSpace[]>
+                    labelId="create-source-spaces-label"
+                    multiple
+                    value={createValues.spaces ?? []}
+                    input={<OutlinedInput label="同步空间" />}
+                    renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
+                    onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
+                      setCreateValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
+                      if (createSpacesError) setCreateSpacesError('')
+                    }}
+                  >
+                    {synologyPhotoSpaceOptions.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        <Checkbox checked={(createValues.spaces ?? []).includes(option.value)} />
+                        <ListItemText primary={option.label} />
+                      </MenuItem>
+                    ))}
+                  </MuiSelect>
+                  <FormHelperText>{createSpacesError || '至少选择一个照片空间'}</FormHelperText>
+                </FormControl>
+                <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>
+                  DSM 凭据只会在服务器端加密保存；Pull worker 使用 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。
+                </XDriveStatusAlert>
+                <MuiBox>
                   <XDriveActionButton
                     compact
                     disabled={testingCreateCredential}
@@ -1459,77 +1641,35 @@ export default function ExternalSourcesPanel({
                   </XDriveActionButton>
                 </MuiBox>
                 {createCredentialTest && (
-                  <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
+                  <XDriveStatusAlert tone="good">
                     {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
                   </XDriveStatusAlert>
                 )}
-                {createCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{createCredentialTestError}</XDriveStatusAlert>}
-              </div>
-            </>
-          )}
-          {createProfile.credential === 'synology_dsm' && (
-            <>
-              <MuiDivider textAlign="left" sx={{ my: 2 }}>Synology DSM 连接</MuiDivider>
-              <Form.Item
-                name="base_url"
-                label="DSM 地址"
-                rules={[{ required: true, whitespace: true, message: '请填写 DSM 地址' }]}
-                extra="填写 xDrive Server 实际能够访问的 DSM Origin，例如 https://nas.example.com:5001。"
+                {createCredentialTestError && <XDriveStatusAlert tone="bad">{createCredentialTestError}</XDriveStatusAlert>}
+              </>
+            )}
+            <MuiBox sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+              <XDriveActionButton
+                onClick={() => {
+                  setCreateOpen(false)
+                  setCreateValues(initialCreateSourceValues())
+                  setCreateNameError('')
+                  setCreateSpacesError('')
+                }}
               >
-                <Input placeholder="https://nas.example.com:5001" autoComplete="off" onChange={() => {
-                  setCreateCredentialTest(null)
-                  setCreateCredentialTestError('')
-                }} />
-              </Form.Item>
-              <Form.Item name="username" label="DSM 用户名" rules={[{ required: true, whitespace: true, message: '请填写 DSM 用户名' }]}>
-                <Input autoComplete="username" onChange={() => {
-                  setCreateCredentialTest(null)
-                  setCreateCredentialTestError('')
-                }} />
-              </Form.Item>
-              <Form.Item name="password" label="DSM 密码" rules={[{ required: true, message: '请填写 DSM 密码' }]}>
-                <Input.Password autoComplete="new-password" onChange={() => {
-                  setCreateCredentialTest(null)
-                  setCreateCredentialTestError('')
-                }} />
-              </Form.Item>
-              <Form.Item name="spaces" label="同步空间" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个照片空间' }]}>
-                <Select mode="multiple" options={synologyPhotoSpaceOptions} />
-              </Form.Item>
-              <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>
-                DSM 凭据只会在服务器端加密保存；Pull worker 使用 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。
-              </XDriveStatusAlert>
-              <MuiBox sx={{ mb: 1 }}>
-                <XDriveActionButton
-                  compact
-                  disabled={testingCreateCredential}
-                  loading={testingCreateCredential}
-                  loadingLabel="正在测试…"
-                  onClick={() => void testCreateCredential()}
-                >
-                  测试连接
-                </XDriveActionButton>
-              </MuiBox>
-              {createCredentialTest && (
-                <XDriveStatusAlert tone="good" sx={{ mb: 1 }}>
-                  {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
-                </XDriveStatusAlert>
-              )}
-              {createCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mb: 1 }}>{createCredentialTestError}</XDriveStatusAlert>}
-            </>
-          )}
-          <MuiBox sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-            <XDriveActionButton onClick={() => { setCreateOpen(false); createForm.resetFields() }}>取消</XDriveActionButton>
-            <XDriveActionButton
-              intent="primary"
-              type="submit"
-              loading={creating}
-              loadingLabel="正在添加…"
-            >
-              添加来源
-            </XDriveActionButton>
-          </MuiBox>
-        </Form>
+                取消
+              </XDriveActionButton>
+              <XDriveActionButton
+                intent="primary"
+                type="submit"
+                loading={creating}
+                loadingLabel="正在添加…"
+              >
+                添加来源
+              </XDriveActionButton>
+            </MuiBox>
+          </Stack>
+        </MuiBox>
         </XDriveDialogContent>
       </Dialog>
 
@@ -1539,7 +1679,7 @@ export default function ExternalSourcesPanel({
           if (savingSettings) return
           setClearCookieConfirmOpen(false)
           setSetting(null)
-          settingsForm.resetFields()
+          setSettingsValues(emptySourceSettingsValues())
         }}
         maxWidth="sm"
         fullWidth
@@ -1552,113 +1692,237 @@ export default function ExternalSourcesPanel({
             if (savingSettings) return
             setClearCookieConfirmOpen(false)
             setSetting(null)
-            settingsForm.resetFields()
+            setSettingsValues(emptySourceSettingsValues())
           }}
           closeDisabled={savingSettings}
         />
         <XDriveDialogContent dividers>
         {setting && (
-          <Form form={settingsForm} layout="vertical" onFinish={saveSettings} requiredMark={false}>
-            <Form.Item
-              name="name"
-              label="来源名称"
-              rules={[{ required: true, whitespace: true, max: 128 }]}
-            >
-              <Input autoFocus />
-            </Form.Item>
-            <Form.Item name="run_mode" label="运行模式" rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { value: 'sync', label: '同步' },
-                  { value: 'scan', label: '仅扫描' },
-                ]}
+          <MuiBox component="form" onSubmit={(event) => void saveSettings(event)}>
+            <Stack spacing={2}>
+              <TextField
+                autoFocus
+                fullWidth
+                size="small"
+                label="来源名称"
+                value={settingsValues.name}
+                error={Boolean(settingsNameError)}
+                helperText={settingsNameError || ' '}
+                onChange={(event) => {
+                  setSettingsValues((current) => ({ ...current, name: event.target.value }))
+                  if (settingsNameError) setSettingsNameError('')
+                }}
               />
-            </Form.Item>
-            <Form.Item name="status" label="来源状态" rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { value: 'active', label: '启用' },
-                  { value: 'paused', label: '暂停' },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item name="schedule_type" hidden><Input /></Form.Item>
-            <Form.Item name="schedule_expression" hidden><Input /></Form.Item>
-            <Form.Item name="schedule_timezone" hidden><Input /></Form.Item>
-            <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5, mb: 2 }}>
               <TextField
                 select
+                fullWidth
                 size="small"
-                label="调度方式"
-                value={settingsScheduleType}
-                onChange={(event) => settingsForm.setFieldValue('schedule_type', event.target.value as ExternalSourceScheduleType)}
+                label="运行模式"
+                value={settingsValues.run_mode}
+                onChange={(event) => setSettingsValues((current) => ({ ...current, run_mode: event.target.value as 'scan' | 'sync' }))}
               >
-                <MenuItem value="interval">固定间隔</MenuItem>
-                <MenuItem value="cron">Cron</MenuItem>
-                <MenuItem value="manual">仅手动</MenuItem>
+                <MenuItem value="sync">同步</MenuItem>
+                <MenuItem value="scan">仅扫描</MenuItem>
               </TextField>
-              {settingsScheduleType !== 'manual' && (
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="来源状态"
+                value={settingsValues.status}
+                onChange={(event) => setSettingsValues((current) => ({ ...current, status: event.target.value as 'active' | 'paused' }))}
+              >
+                <MenuItem value="active">启用</MenuItem>
+                <MenuItem value="paused">暂停</MenuItem>
+              </TextField>
+              <MuiBox sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' }, gap: 1.5 }}>
                 <TextField
+                  select
                   size="small"
-                  label={settingsScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
-                  value={settingsScheduleExpression}
-                  onChange={(event) => settingsForm.setFieldValue('schedule_expression', event.target.value)}
-                  helperText={settingsScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
-                />
-              )}
-              {settingsScheduleType === 'cron' && (
-                <TextField
-                  size="small"
-                  label="时区"
-                  value={settingsScheduleTimezone}
-                  onChange={(event) => settingsForm.setFieldValue('schedule_timezone', event.target.value)}
-                  helperText="IANA 时区，例如 Asia/Shanghai"
-                  sx={{ gridColumn: { sm: '2 / 3' } }}
-                />
-              )}
-            </MuiBox>
-            <Form.Item name="ignore_rules" label="忽略规则">
-              <Input.TextArea
-                rows={6}
-                placeholder={'每行一条规则，例如：\n@eaDir/\n*.tmp\n!important.jpg'}
-              />
-            </Form.Item>
-
-            {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (
-              <>
-                <MuiDivider textAlign="left" sx={{ my: 2 }}>一刻相册凭据</MuiDivider>
-                <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 2 }}>
-                  <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                    {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
-                  </MuiTypography>
-                  <MuiTypography variant="body2">
-                    出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
-                  </MuiTypography>
-                </XDriveStatusAlert>
-                <Form.Item
-                  name="cookie"
-                  label="一刻相册 Cookie"
-                  extra={setting.credential?.configured
-                    ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
-                    : '当前未配置 Cookie，请粘贴新的 Cookie。'}
+                  label="调度方式"
+                  value={settingsScheduleType}
+                  onChange={(event) => setSettingsValues((current) => ({ ...current, schedule_type: event.target.value as ExternalSourceScheduleType }))}
                 >
-                  <Input.Password
+                  <MenuItem value="interval">固定间隔</MenuItem>
+                  <MenuItem value="cron">Cron</MenuItem>
+                  <MenuItem value="manual">仅手动</MenuItem>
+                </TextField>
+                {settingsScheduleType !== 'manual' && (
+                  <TextField
+                    size="small"
+                    label={settingsScheduleType === 'cron' ? 'Cron 表达式' : '运行间隔'}
+                    value={settingsScheduleExpression}
+                    onChange={(event) => setSettingsValues((current) => ({ ...current, schedule_expression: event.target.value }))}
+                    helperText={settingsScheduleType === 'cron' ? '标准 5 段，例如：0 3 * * *' : '例如：30m、6h、24h'}
+                  />
+                )}
+                {settingsScheduleType === 'cron' && (
+                  <TextField
+                    size="small"
+                    label="时区"
+                    value={settingsScheduleTimezone}
+                    onChange={(event) => setSettingsValues((current) => ({ ...current, schedule_timezone: event.target.value }))}
+                    helperText="IANA 时区，例如 Asia/Shanghai"
+                    sx={{ gridColumn: { sm: '2 / 3' } }}
+                  />
+                )}
+              </MuiBox>
+              <TextField
+                fullWidth
+                multiline
+                rows={6}
+                label="忽略规则"
+                placeholder={'每行一条规则，例如：\n@eaDir/\n*.tmp\n!important.jpg'}
+                value={settingsValues.ignore_rules ?? ''}
+                onChange={(event) => setSettingsValues((current) => ({ ...current, ignore_rules: event.target.value }))}
+              />
+
+              {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (
+                <>
+                  <MuiDivider textAlign="left">一刻相册凭据</MuiDivider>
+                  <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
+                    <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                      {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
+                    </MuiTypography>
+                    <MuiTypography variant="body2">
+                      出于安全原因，已保存的 Cookie 不会从服务器读取回浏览器。
+                    </MuiTypography>
+                  </XDriveStatusAlert>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="password"
+                    label="一刻相册 Cookie"
                     autoComplete="off"
+                    value={settingsValues.cookie ?? ''}
                     placeholder={setting.credential?.configured ? externalSourceSavedCredentialMask : '粘贴一刻相册 Cookie'}
+                    helperText={setting.credential?.configured
+                      ? '当前已保存的 Cookie 以遮罩显示；点击输入框即可替换。不修改直接保存会保留原值。'
+                      : '当前未配置 Cookie，请粘贴新的 Cookie。'}
                     onFocus={() => {
-                      if (isExternalSourceSavedCredentialMask(settingsForm.getFieldValue('cookie'))) {
-                        settingsForm.setFieldValue('cookie', '')
+                      if (isExternalSourceSavedCredentialMask(settingsValues.cookie)) {
+                        setSettingsValues((current) => ({ ...current, cookie: '' }))
                       }
                     }}
-                    onChange={() => {
+                    onChange={(event) => {
+                      setSettingsValues((current) => ({ ...current, cookie: event.target.value }))
                       setSettingsCredentialTest(null)
                       setSettingsCredentialTestError('')
                     }}
                   />
-                </Form.Item>
-                <div style={{ marginTop: -12, marginBottom: 16 }}>
-                  <XDriveYikeCookieHelp variant="accordion" />
-                  <MuiBox sx={{ mt: 1 }}>
+                  <MuiBox>
+                    <XDriveYikeCookieHelp variant="accordion" />
+                    <MuiBox sx={{ mt: 1 }}>
+                      <XDriveActionButton
+                        compact
+                        disabled={testingSettingsCredential}
+                        loading={testingSettingsCredential}
+                        loadingLabel="正在测试…"
+                        onClick={() => void testSettingsCredential()}
+                      >
+                        测试连接
+                      </XDriveActionButton>
+                    </MuiBox>
+                    {settingsCredentialTest && (
+                      <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
+                        {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
+                      </XDriveStatusAlert>
+                    )}
+                    {settingsCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{settingsCredentialTestError}</XDriveStatusAlert>}
+                  </MuiBox>
+                  {setting.credential?.configured && (
+                    <MuiBox>
+                      <XDriveActionButton
+                        intent="danger"
+                        disabled={clearingCookie}
+                        onClick={() => setClearCookieConfirmOpen(true)}
+                      >
+                        清除 Cookie
+                      </XDriveActionButton>
+                    </MuiBox>
+                  )}
+                </>
+              )}
+
+              {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'synology_dsm' && (
+                <>
+                  <MuiDivider textAlign="left">Synology DSM 凭据</MuiDivider>
+                  <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
+                    <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                      {setting.credential?.configured ? 'DSM 凭据已配置' : 'DSM 凭据未配置'}
+                    </MuiTypography>
+                    <MuiTypography variant="body2">
+                      已保存的 DSM 地址、用户名和密码不会从服务器读取回浏览器；如需更新，请重新完整填写三项。
+                    </MuiTypography>
+                  </XDriveStatusAlert>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="更新 DSM 地址"
+                    placeholder="留空则保持当前配置不变"
+                    autoComplete="off"
+                    value={settingsValues.base_url ?? ''}
+                    onChange={(event) => {
+                      setSettingsValues((current) => ({ ...current, base_url: event.target.value }))
+                      setSettingsCredentialTest(null)
+                      setSettingsCredentialTestError('')
+                    }}
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="更新 DSM 用户名"
+                    placeholder="留空则保持当前配置不变"
+                    autoComplete="username"
+                    value={settingsValues.username ?? ''}
+                    onChange={(event) => {
+                      setSettingsValues((current) => ({ ...current, username: event.target.value }))
+                      setSettingsCredentialTest(null)
+                      setSettingsCredentialTestError('')
+                    }}
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="password"
+                    label="更新 DSM 密码"
+                    placeholder="留空则保持当前配置不变"
+                    autoComplete="new-password"
+                    value={settingsValues.password ?? ''}
+                    onChange={(event) => {
+                      setSettingsValues((current) => ({ ...current, password: event.target.value }))
+                      setSettingsCredentialTest(null)
+                      setSettingsCredentialTestError('')
+                    }}
+                  />
+                  <FormControl fullWidth size="small" error={Boolean(settingsSpacesError)}>
+                    <InputLabel id="settings-source-spaces-label">同步空间</InputLabel>
+                    <MuiSelect<SynologyPhotoSpace[]>
+                      labelId="settings-source-spaces-label"
+                      multiple
+                      value={settingsValues.spaces ?? []}
+                      input={<OutlinedInput label="同步空间" />}
+                      renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
+                      onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
+                        setSettingsValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
+                        if (settingsSpacesError) setSettingsSpacesError('')
+                      }}
+                    >
+                      {synologyPhotoSpaceOptions.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          <Checkbox checked={(settingsValues.spaces ?? []).includes(option.value)} />
+                          <ListItemText primary={option.label} />
+                        </MenuItem>
+                      ))}
+                    </MuiSelect>
+                    <FormHelperText>{settingsSpacesError || '至少选择一个照片空间'}</FormHelperText>
+                  </FormControl>
+                  {!settingsConnectorConfig && (
+                    <MuiTypography variant="caption" color="text.secondary">
+                      正在读取当前空间配置；未配置时默认同步个人空间和共享空间。
+                    </MuiTypography>
+                  )}
+                  <MuiBox>
                     <XDriveActionButton
                       compact
                       disabled={testingSettingsCredential}
@@ -1670,122 +1934,57 @@ export default function ExternalSourcesPanel({
                     </XDriveActionButton>
                   </MuiBox>
                   {settingsCredentialTest && (
-                    <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
+                    <XDriveStatusAlert tone="good">
                       {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
                     </XDriveStatusAlert>
                   )}
-                  {settingsCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{settingsCredentialTestError}</XDriveStatusAlert>}
-                </div>
-                {setting.credential?.configured && (
-                  <MuiBox sx={{ mb: 2 }}>
-                    <XDriveActionButton
-                      intent="danger"
-                      disabled={clearingCookie}
-                      onClick={() => setClearCookieConfirmOpen(true)}
-                    >
-                      清除 Cookie
-                    </XDriveActionButton>
-                  </MuiBox>
-                )}
-              </>
-            )}
-            {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'synology_dsm' && (
-              <>
-                <MuiDivider textAlign="left" sx={{ my: 2 }}>Synology DSM 凭据</MuiDivider>
-                <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 2 }}>
-                  <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                    {setting.credential?.configured ? 'DSM 凭据已配置' : 'DSM 凭据未配置'}
-                  </MuiTypography>
-                  <MuiTypography variant="body2">
-                    已保存的 DSM 地址、用户名和密码不会从服务器读取回浏览器；如需更新，请重新完整填写三项。
-                  </MuiTypography>
-                </XDriveStatusAlert>
-                <Form.Item name="base_url" label="更新 DSM 地址">
-                  <Input placeholder="留空则保持当前配置不变" autoComplete="off" onChange={() => {
-                    setSettingsCredentialTest(null)
-                    setSettingsCredentialTestError('')
-                  }} />
-                </Form.Item>
-                <Form.Item name="username" label="更新 DSM 用户名">
-                  <Input placeholder="留空则保持当前配置不变" autoComplete="username" onChange={() => {
-                    setSettingsCredentialTest(null)
-                    setSettingsCredentialTestError('')
-                  }} />
-                </Form.Item>
-                <Form.Item name="password" label="更新 DSM 密码">
-                  <Input.Password placeholder="留空则保持当前配置不变" autoComplete="new-password" onChange={() => {
-                    setSettingsCredentialTest(null)
-                    setSettingsCredentialTestError('')
-                  }} />
-                </Form.Item>
-                <Form.Item name="spaces" label="同步空间" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个照片空间' }]}>
-                  <Select mode="multiple" options={synologyPhotoSpaceOptions} />
-                </Form.Item>
-                {!settingsConnectorConfig && (
-                  <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1, mb: 1 }}>
-                    正在读取当前空间配置；未配置时默认同步个人空间和共享空间。
-                  </MuiTypography>
-                )}
-                <MuiBox sx={{ mb: 1 }}>
+                  {settingsCredentialTestError && <XDriveStatusAlert tone="bad">{settingsCredentialTestError}</XDriveStatusAlert>}
+                  {setting.credential?.configured && (
+                    <MuiBox>
+                      <XDriveActionButton
+                        intent="danger"
+                        disabled={clearingCookie}
+                        onClick={() => setClearCookieConfirmOpen(true)}
+                      >
+                        清除 DSM 凭据
+                      </XDriveActionButton>
+                    </MuiBox>
+                  )}
+                </>
+              )}
+
+              <MuiBox sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                <XDriveActionButton
+                  intent="danger"
+                  disabled={savingSettings || setting.latestRun?.status === 'running'}
+                  onClick={() => setDeleteTarget(setting)}
+                >
+                  删除来源
+                </XDriveActionButton>
+                <MuiBox sx={{ display: 'flex', gap: 1 }}>
                   <XDriveActionButton
-                    compact
-                    disabled={testingSettingsCredential}
-                    loading={testingSettingsCredential}
-                    loadingLabel="正在测试…"
-                    onClick={() => void testSettingsCredential()}
+                    onClick={() => {
+                      setClearCookieConfirmOpen(false)
+                      setSetting(null)
+                      setSettingsValues(emptySourceSettingsValues())
+                      setSettingsNameError('')
+                      setSettingsSpacesError('')
+                    }}
                   >
-                    测试连接
+                    取消
+                  </XDriveActionButton>
+                  <XDriveActionButton
+                    intent="primary"
+                    type="submit"
+                    loading={savingSettings}
+                    loadingLabel="正在保存…"
+                  >
+                    保存设置
                   </XDriveActionButton>
                 </MuiBox>
-                {settingsCredentialTest && (
-                  <XDriveStatusAlert tone="good" sx={{ mb: 1 }}>
-                    {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
-                  </XDriveStatusAlert>
-                )}
-                {settingsCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mb: 1 }}>{settingsCredentialTestError}</XDriveStatusAlert>}
-                {setting.credential?.configured && (
-                  <MuiBox sx={{ mb: 2 }}>
-                    <XDriveActionButton
-                      intent="danger"
-                      disabled={clearingCookie}
-                      onClick={() => setClearCookieConfirmOpen(true)}
-                    >
-                      清除 DSM 凭据
-                    </XDriveActionButton>
-                  </MuiBox>
-                )}
-              </>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <XDriveActionButton
-                intent="danger"
-                disabled={savingSettings || setting.latestRun?.status === 'running'}
-                onClick={() => setDeleteTarget(setting)}
-              >
-                删除来源
-              </XDriveActionButton>
-              <MuiBox sx={{ display: 'flex', gap: 1 }}>
-                <XDriveActionButton
-                  onClick={() => {
-                    setClearCookieConfirmOpen(false)
-                    setSetting(null)
-                    settingsForm.resetFields()
-                  }}
-                >
-                  取消
-                </XDriveActionButton>
-                <XDriveActionButton
-                  intent="primary"
-                  type="submit"
-                  loading={savingSettings}
-                  loadingLabel="正在保存…"
-                >
-                  保存设置
-                </XDriveActionButton>
               </MuiBox>
-            </div>
-          </Form>
+            </Stack>
+          </MuiBox>
         )}
         </XDriveDialogContent>
       </Dialog>
