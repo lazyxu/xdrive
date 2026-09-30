@@ -604,6 +604,19 @@ test('desktop login explains recovery state and keeps errors from shifting the l
   assert.equal(renderer.includes('<p className="eyebrow">登录</p>'), false, 'duplicate login eyebrow should be removed')
 })
 
+test('desktop login exposes compact pre-login diagnostics beside build information', () => {
+  assert.ok(renderer.includes('className="auth-footer"'), 'login build metadata and diagnostics entry need one compact footer')
+  assert.ok(renderer.includes('className="auth-diagnostics-toggle"'), 'pre-login diagnostics toggle is missing')
+  assert.ok(renderer.includes('aria-label="登录诊断"'), 'pre-login diagnostics summary needs an accessible label')
+  for (const label of ['Agent', '服务器', '安全凭据存储', '当前账号密码', '打开日志']) {
+    assert.ok(renderer.includes(label), `missing pre-login diagnostic item: ${label}`)
+  }
+  assert.ok(renderer.includes("run('login-open-logs', () => window.xdriveDesktop.agent.openLogs())"), 'pre-login diagnostics should provide direct log access')
+  assert.ok(styles.includes('.auth-login-diagnostics {'), 'pre-login diagnostics layout is missing')
+  assert.ok(styles.includes('.auth-diagnostic-row strong.good'), 'diagnostic success state styling is missing')
+  assert.ok(styles.includes('.auth-diagnostic-row strong.bad'), 'diagnostic failure state styling is missing')
+})
+
 test('desktop auth forms use MUI controls without legacy CSS overriding MUI internals', () => {
   assert.ok(renderer.includes('className="auth-field"'), 'auth fields need one shared external-label layout')
   assert.ok(renderer.includes('className="auth-options"'), 'remember/auto-login controls need one aligned option row')

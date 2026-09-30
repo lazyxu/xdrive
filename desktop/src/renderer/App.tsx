@@ -447,6 +447,7 @@ export default function App() {
     version?: string
     detail?: string
   }>({ key: 'idle' })
+  const [loginDiagnosticsOpen, setLoginDiagnosticsOpen] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -2411,7 +2412,64 @@ export default function App() {
               </XDriveActionButton>
             </MuiBox>
           </Stack>
-          <p className="auth-version" title={info?.commit || undefined}>{buildLabel}</p>
+
+          <MuiBox className="auth-footer">
+            <Typography component="span" className="auth-version" title={info?.commit || undefined}>
+              {buildLabel}
+            </Typography>
+            <span className="auth-footer-separator" aria-hidden="true">·</span>
+            <XDriveActionButton
+              className="auth-diagnostics-toggle"
+              compact
+              startIcon={<BuildRoundedIcon fontSize="small" />}
+              title={loginDiagnosticsOpen ? '收起登录诊断' : '展开登录诊断'}
+              onClick={() => setLoginDiagnosticsOpen((current) => !current)}
+            >
+              {loginDiagnosticsOpen ? '收起诊断' : '诊断'}
+            </XDriveActionButton>
+          </MuiBox>
+
+          {loginDiagnosticsOpen ? (
+            <MuiBox className="auth-login-diagnostics" aria-label="登录诊断">
+              <div className="auth-diagnostic-row">
+                <span>Agent</span>
+                <strong className="good">已连接</strong>
+              </div>
+              <div className="auth-diagnostic-row">
+                <span>服务器</span>
+                <strong className={serverProbe.key === 'ok' ? 'good' : serverProbe.key === 'error' ? 'bad' : ''}>
+                  {serverProbe.key === 'ok'
+                    ? '可访问'
+                    : serverProbe.key === 'error'
+                      ? '连接失败'
+                      : serverProbe.key === 'checking'
+                        ? '检查中'
+                        : '等待检查'}
+                </strong>
+              </div>
+              <div className="auth-diagnostic-row">
+                <span>安全凭据存储</span>
+                <strong className={loginHistory.secure_password_storage ? 'good' : 'bad'}>
+                  {loginHistory.secure_password_storage ? '可用' : '不可用'}
+                </strong>
+              </div>
+              <div className="auth-diagnostic-row">
+                <span>当前账号密码</span>
+                <strong>{hasStoredPassword ? '已安全保存' : '未保存'}</strong>
+              </div>
+              {serverProbe.key === 'error' && serverProbe.detail ? (
+                <Typography className="auth-diagnostic-detail" variant="caption">{serverProbe.detail}</Typography>
+              ) : null}
+              <XDriveActionButton
+                className="auth-diagnostic-logs"
+                compact
+                disabled={!!busy}
+                onClick={() => void run('login-open-logs', () => window.xdriveDesktop.agent.openLogs())}
+              >
+                打开日志
+              </XDriveActionButton>
+            </MuiBox>
+          ) : null}
         </form>
       </div>
     )
