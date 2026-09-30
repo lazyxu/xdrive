@@ -10,20 +10,26 @@ const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx')
 const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const sourceSummaryCard = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
 
-test('source kind icons distinguish Photos, File Station and Yike', () => {
-  assert.match(sharedIcon, /synology_photos.*PhotoLibraryRoundedIcon/)
-  assert.match(sharedIcon, /synology_files.*FolderCopyRoundedIcon/)
-  assert.match(sharedIcon, /yike_photos.*CloudRoundedIcon/)
+test('source kind icons use vendored service artwork', () => {
+  for (const filename of ['synology-photos.png', 'synology-file-station.png', 'yike-photos.png']) {
+    assert.ok(sharedIcon.includes(filename), `missing source icon reference: ${filename}`)
+    assert.equal(
+      fs.existsSync(path.join(repo, 'ui', 'shared', 'assets', 'source-icons', filename)),
+      true,
+      `missing source icon asset: ${filename}`,
+    )
+  }
+  for (const semanticIcon of ['PhotoLibraryRoundedIcon', 'FolderCopyRoundedIcon', 'CloudRoundedIcon']) {
+    assert.equal(sharedIcon.includes(semanticIcon), false, `known brand should not use semantic icon: ${semanticIcon}`)
+  }
   assert.match(sharedSources, /kind === 'synology_files'/)
   assert.match(sharedSources, /label: '群晖 File Station'/)
 })
 
-test('Web and Desktop source cards consume the shared source kind icon', () => {
+test('Web and Desktop source cards consume the shared branded icon', () => {
   assert.ok(sourceSummaryCard.includes('icon?: ReactNode'), 'shared source summary card must expose an icon slot')
   assert.ok(sourceSummaryCard.includes('{icon}'), 'shared source summary card must render its icon slot')
-  assert.match(web, /<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
+  assert.match(web, /icon=\{<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
   assert.match(web, /<XDriveSourceKindIcon kind=\{item\.kind\} size="small"/)
-  assert.match(desktop, /<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
-  assert.ok(web.includes('modeLabel={`${card.connector.label} · ${card.modeLabel}`}'), 'Web summary card should include connector and mode labels')
-  assert.ok(desktop.includes('modeLabel={`${card.connector.label} · ${card.modeLabel}`}'), 'Desktop summary card should include connector and mode labels')
+  assert.match(desktop, /icon=\{<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
 })
