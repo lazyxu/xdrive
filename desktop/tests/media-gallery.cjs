@@ -81,5 +81,5 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
 test('Web switches between files and Gallery without duplicating the file shell', () => {
   assert.match(webApp, /useState<'files' \| 'gallery'>\('files'\)/)
   assert.match(webApp, /appView === 'gallery' \? '文件' : '图库'/)
-  assert.equal((webApp.match(/<Card className="file-card">/g) || []).length, 1)
+  assert.equal((webApp.match(/<Paper className="file-card"/g) || []).length, 1)
 })

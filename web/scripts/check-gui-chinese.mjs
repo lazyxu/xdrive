@@ -39,6 +39,8 @@ const forbidText = (source, values, label) => {
 }
 
 requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹', '版本历史', 'XDriveStatusAlert'], '文件管理器')
+if (/from ['"]antd['"]/.test(files.app) || files.app.includes('@ant-design/icons')) throw new Error('Web 主文件管理器仍依赖 Ant Design')
+requireText(files.app, ['XDriveActionButton', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveDialogActions', 'XDriveStatePanel', 'XDriveMediaGalleryPage'], 'Web MUI 文件管理器')
 if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
 requireText(files.app, ['src={xDriveBrandIcon}'], 'xDrive 品牌图标')
 requireText(files.app, ['WebAccountMenu', 'aria-label="账户菜单"', 'web-account-menu', 'MuiAvatar', '退出登录'], 'Web 账号菜单')
