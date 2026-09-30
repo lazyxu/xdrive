@@ -591,12 +591,12 @@ function FileManager({
     )
   }
 
-  const uploadFiles = async (files: FileList | null) => {
-    if (!current || !files?.length) return
-    for (const file of Array.from(files)) {
+  const uploadFilesTo = async (parentID: number, files: File[]) => {
+    if (files.length === 0) return
+    for (const file of files) {
       try {
         setUploadProgress(0)
-        await api.upload(current.id, file, setUploadProgress)
+        await api.upload(parentID, file, setUploadProgress)
         setFeedback({ tone: 'good', message: `${file.name} 已上传` })
       } catch (err) {
         handleError(err)
@@ -605,8 +605,13 @@ function FileManager({
         setUploadProgress(null)
       }
     }
-    await loadDirectory(current.id)
+    if (current) await loadDirectory(current.id)
     await refreshQuota()
+  }
+
+  const uploadFiles = async (files: FileList | null) => {
+    if (!current || !files?.length) return
+    await uploadFilesTo(current.id, Array.from(files))
   }
 
   const createFolder = async (event: FormEvent<HTMLFormElement>) => {
@@ -813,6 +818,7 @@ function FileManager({
                 uploadProgress={uploadProgress}
                 onLoadDirectory={async (id, nextCrumbs) => { await loadDirectory(id, nextCrumbs) }}
                 onUploadFiles={uploadFiles}
+                onUploadDroppedFiles={uploadFilesTo}
                 onCreateFolder={() => {
                   setFolderName('')
                   setFolderNameError('')

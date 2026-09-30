@@ -503,6 +503,58 @@ export default function DesktopFileExplorer({
     }
   }
 
+  const dropItemsToFolder = async (
+    selected: XDriveFileExplorerItem[],
+    target: XDriveFileExplorerItem,
+    operation: 'move' | 'copy',
+  ) => {
+    const targetNode = nodeByID.get(Number(target.id))
+    if (!targetNode || targetNode.type !== 'dir' || actionBusy) return
+    const nodes = explorerNodesForItems(selected).filter((node) => node.id !== targetNode.id)
+    if (nodes.length === 0) return
+    setActionBusy('drop-items')
+    try {
+      for (const node of nodes) {
+        const result = operation === 'copy'
+          ? await window.xdriveDesktop.agent.cloudCopy(node.id, targetNode.id)
+          : await window.xdriveDesktop.agent.cloudMove(node.id, node.revision, targetNode.id)
+        if (!result.ok) {
+          onError(result.error.message)
+          return
+        }
+      }
+      clearSearch()
+      if (current) await onLoadDirectory(current.id, crumbs)
+      await onQuotaChanged()
+      onFeedback('good', operation === 'copy' ? '已复制到目标文件夹。' : '已移动到目标文件夹。')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
+    if (!current || files.length === 0 || actionBusy) return
+    const targetNode = target ? nodeByID.get(Number(target.id)) : undefined
+    const parentID = targetNode?.type === 'dir' ? targetNode.id : current.id
+    setActionBusy('drop-upload')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)
+      if (!result.ok) {
+        onError(result.error.message)
+        return
+      }
+      if (result.data.failures.length > 0) {
+        onFeedback('warning', `已上传 ${result.data.uploaded.length} 个文件，${result.data.failures.length} 个失败。`)
+      } else {
+        onFeedback('good', `已上传 ${result.data.uploaded.length} 个文件。`)
+      }
+      if (current) await onLoadDirectory(current.id, crumbs)
+      await onQuotaChanged()
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   const backgroundMenuItems = useMemo<XDriveFileExplorerMenuItem[]>(() => [
     {
       id: 'new-folder',
@@ -582,6 +634,8 @@ export default function DesktopFileExplorer({
           const nodes = explorerNodesForItems(selected)
           if (nodes.length > 0) onDeleteMany(nodes)
         }}
+        onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
+        onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(
@@ -597,6 +651,10 @@ export default function DesktopFileExplorer({
               ? '正在粘贴…'
               : actionBusy === 'download-many'
                 ? '正在批量下载…'
+                : actionBusy === 'drop-items'
+                  ? '正在处理拖拽项目…'
+                  : actionBusy === 'drop-upload'
+                    ? '正在上传拖入文件…'
               : actionBusy.startsWith('download-')
               ? '正在另存为…'
               : actionBusy.startsWith('open-')

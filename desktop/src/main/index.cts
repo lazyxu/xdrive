@@ -1787,6 +1787,34 @@ function registerIPCHandlers() {
       return { ok: false, error: agentError(error) }
     }
   })
+  ipcMain.handle('agent:cloud-upload-paths', async (_event, parentID: unknown, input: unknown) => {
+    if (
+      typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0 ||
+      !Array.isArray(input) || input.length === 0 || input.length > 1000 ||
+      input.some((value) => typeof value !== 'string' || !value.trim() || !path.isAbsolute(value))
+    ) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Parent id and absolute dropped-file paths are required.' } }
+    }
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      const uploaded: AgentCloudNode[] = []
+      const failures: Array<{ name: string; message: string }> = []
+      for (const value of input as string[]) {
+        const localPath = path.resolve(value)
+        const name = path.basename(localPath)
+        try {
+          uploaded.push(await requireAgentClient().cloudUpload(parentID, localPath, name))
+        } catch (error) {
+          failures.push({ name, message: agentError(error).message })
+        }
+      }
+      return { ok: true, data: { canceled: false, uploaded, failures } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+
   ipcMain.handle('agent:cloud-download', async (_event, id: unknown, name: unknown) => {
     if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
         typeof name !== 'string' || !name.trim()) {

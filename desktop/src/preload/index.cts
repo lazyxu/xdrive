@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
@@ -57,6 +57,11 @@ const agent = Object.freeze({
   cloudMove: (id: number, revision: number, parentID: number) => ipcRenderer.invoke('agent:cloud-move', id, revision, parentID),
   cloudDelete: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-delete', id, revision),
   cloudUploadFiles: (parentID: number) => ipcRenderer.invoke('agent:cloud-upload-files', parentID),
+  cloudUploadDroppedFiles: (parentID: number, files: unknown[]) => ipcRenderer.invoke(
+    'agent:cloud-upload-paths',
+    parentID,
+    files.map((file) => webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0])),
+  ),
   cloudDownload: (id: number, name: string) => ipcRenderer.invoke('agent:cloud-download', id, name),
   cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => ipcRenderer.invoke('agent:cloud-download-files', files),
   openPath: (relativePath: string, reveal = false) => ipcRenderer.invoke('agent:open-path', relativePath, reveal),

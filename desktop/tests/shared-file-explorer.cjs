@@ -58,10 +58,9 @@ test('shared FileExplorer details view avoids admin-table chrome', () => {
     explorer.includes("minHeight: detailsHeaderHeight,\n                alignItems: 'center',\n                px: 1.5,\n                bgcolor: 'background.default'"),
     'details header should use the quiet workspace surface',
   )
-  assert.ok(
-    explorer.includes("textAlign: 'left',\n                  borderRadius: '4px',\n                  bgcolor: selected ? 'action.selected' : 'transparent'"),
-    'details rows should use Explorer-style rounded hover/selection surfaces',
-  )
+  assert.ok(explorer.includes("borderRadius: '4px'"), 'details rows should retain Explorer-style rounded surfaces')
+  assert.ok(explorer.includes("selected ? 'action.selected' : 'transparent'"), 'details rows should retain selected state styling')
+  assert.ok(explorer.includes("dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)"), 'details rows should expose drag-target styling')
   assert.equal(
     explorer.includes("textAlign: 'left',\n                  borderBottom: 1,\n                  borderColor: 'divider'"),
     false,
@@ -136,5 +135,20 @@ test('shared FileExplorer supports selection bulk actions', () => {
     '<DeleteOutlineRoundedIcon',
   ]) {
     assert.ok(explorer.includes(token), `missing FileExplorer bulk-action contract: ${token}`)
+  }
+})
+
+test('shared FileExplorer provides internal and external drag and drop contracts', () => {
+  for (const token of [
+    "onDropItemsToFolder?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerItem, operation: 'move' | 'copy') => void",
+    'onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void',
+    "event.dataTransfer.effectAllowed = 'copyMove'",
+    "event.dataTransfer.setData('application/x-xdrive-fileexplorer', '1')",
+    "const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'",
+    "event.dataTransfer.types.includes('Files')",
+    'draggable={Boolean(onDropItemsToFolder)}',
+    'onDrop={dropExternalFilesOnBackground}',
+  ]) {
+    assert.ok(explorer.includes(token), `missing FileExplorer drag/drop contract: ${token}`)
   }
 })

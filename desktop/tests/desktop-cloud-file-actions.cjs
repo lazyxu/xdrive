@@ -83,3 +83,14 @@ test('Desktop bulk download chooses one target directory and avoids renderer pat
   assert.ok(types.includes('type AgentCloudDownloadBatchResult = {'), 'bulk-download result type is missing')
   assert.equal(preload.includes('cloudDownloadFiles: (files: Array<{ id: number; name: string; destination'), false, 'renderer must not supply bulk-download local paths')
 })
+
+test('Desktop uploads dropped files through webUtils without exposing arbitrary renderer paths', () => {
+  assert.ok(preload.includes('webUtils'), 'preload must import Electron webUtils')
+  assert.ok(preload.includes('webUtils.getPathForFile('), 'preload must resolve dropped File objects through webUtils')
+  assert.ok(preload.includes("'agent:cloud-upload-paths'"), 'preload dropped-file upload channel is missing')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-upload-paths'"), 'main dropped-file upload handler is missing')
+  assert.ok(main.includes('!path.isAbsolute(value)'), 'main must reject non-absolute dropped-file paths')
+  assert.ok(main.includes('await requireAgentClient().cloudUpload(parentID, localPath, name)'), 'dropped files must use authenticated Agent upload')
+  assert.ok(types.includes('cloudUploadDroppedFiles: (parentID: number, files: File[])'), 'renderer dropped-file API should expose File[] instead of local paths')
+  assert.equal(types.includes('cloudUploadDroppedFiles: (parentID: number, paths:'), false, 'renderer must not receive raw dropped-file paths')
+})

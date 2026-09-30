@@ -70,3 +70,13 @@ test('Web FileExplorer supports bulk download and delete', () => {
   assert.ok(app.includes('const removeMany = (nodes: Node[]) => {'), 'Web bulk delete confirmation flow is missing')
   assert.ok(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), 'Web bulk delete must preserve revision checks')
 })
+
+test('Web FileExplorer supports internal and external drag and drop', () => {
+  assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Web internal drag/drop helper is missing')
+  assert.ok(explorer.includes("if (operation === 'copy') await api.copy(node.id, targetNode.id)"), 'Ctrl/Cmd drag should copy on Web')
+  assert.ok(explorer.includes('else await api.move(node.id, node.revision, targetNode.id)'), 'normal internal drag should move on Web')
+  assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
+  assert.ok(explorer.includes('onUploadDroppedFiles(parentID, files)'), 'Web external drop should use the target-aware upload adapter')
+  assert.ok(app.includes('const uploadFilesTo = async (parentID: number, files: File[]) => {'), 'Web target-aware upload helper is missing')
+  assert.ok(app.includes('onUploadDroppedFiles={uploadFilesTo}'), 'Web dropped-file upload adapter is not wired')
+})
