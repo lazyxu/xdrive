@@ -117,20 +117,13 @@ function SectionTitle({ children }: { children: ReactNode }) {
   return <Typography component="h3" variant="subtitle1" fontWeight={700}>{children}</Typography>
 }
 
-export default function StorageStatsModal({
+export default function StorageStatsPanel({
   api,
   scope,
-  open,
-  presentation = 'dialog',
-  onClose,
 }: {
   api: XDriveApi
   scope: 'self' | 'global'
-  open: boolean
-  presentation?: 'dialog' | 'page'
-  onClose: () => void
 }) {
-  const surfaceOpen = presentation === 'page' || open
   const [stats, setStats] = useState<StorageStats | null>(null)
   const [health, setHealth] = useState<StorageHealth | null>(null)
   const [history, setHistory] = useState<StorageHistory | null>(null)
@@ -150,7 +143,6 @@ export default function StorageStatsModal({
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!surfaceOpen) return
     let active = true
     setLoading(true)
     setError('')
@@ -192,7 +184,7 @@ export default function StorageStatsModal({
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [api, surfaceOpen, scope])
+  }, [api, scope])
 
   const loadStagingPage = async (page: number, fresh = false) => {
     if (scope !== 'global') return
@@ -286,10 +278,7 @@ export default function StorageStatsModal({
   return (
     <>
       <XDriveWorkspaceSurface
-        presentation={presentation}
-        open={open}
-        onClose={onClose}
-        maxWidth="lg"
+        presentation="page"
         title={scope === 'global' ? '全局存储统计' : '我的存储统计'}
       >
           {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}

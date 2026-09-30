@@ -11,7 +11,7 @@ const files = {
   app: read('src/App.tsx'),
   users: read('src/AdminUsers.tsx'),
   audit: read('src/AdminAudit.tsx'),
-  storageStats: read('src/StorageStatsModal.tsx'),
+  storageStats: read('src/StorageStatsPanel.tsx'),
   share: read('src/ShareDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
@@ -63,14 +63,14 @@ if ((files.app.match(/<XDriveBrandLockup/g) || []).length !== 3) {
 if (files.app.includes('className="brand-lockup"') || files.app.includes('className="brand-mark"')) {
   throw new Error('Web 仍保留本地品牌区实现')
 }
-requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
+requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveWorkspaceSurface', 'presentation="page"', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
 if (/from ['"]antd['"]/.test(files.users) || files.users.includes('@ant-design/icons')) throw new Error('用户管理仍依赖 Ant Design')
 requireText(files.workspaceSurface, ['WorkspacePresentation', "presentation === 'page'", 'workspace-page-surface', 'XDriveDialogTitle', 'XDriveDialogContent'], 'Web 工作区表面')
-requireText(files.storageStats, ['WorkspaceSurface', "presentation = 'dialog'", "const surfaceOpen = presentation === 'page' || open", 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+requireText(files.storageStats, ['WorkspaceSurface', 'presentation="page"', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'StorageStatGrid', 'StorageStat', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
 if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
-requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveWorkspaceSurface', "presentation = 'dialog'", "const surfaceOpen = presentation === 'page' || open"], '审计日志')
+requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveWorkspaceSurface', 'presentation="page"'], '审计日志')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveShareStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
 if (/<Alert\b/.test(files.share)) throw new Error('分享窗口仍在直接渲染 AntD Alert')

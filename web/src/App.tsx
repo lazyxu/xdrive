@@ -75,7 +75,7 @@ import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
-import StorageStatsModal from './StorageStatsModal'
+import StorageStatsPanel from './StorageStatsPanel'
 import ExternalSourcesPanel from './ExternalSources'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
@@ -990,36 +990,22 @@ function FileManager({
             onError={handleError}
           />
         ) : appView === 'storage' ? (
-          <StorageStatsModal
+          <StorageStatsPanel
             api={api}
             scope="self"
-            open
-            presentation="page"
-            onClose={() => setAppView('files')}
           />
         ) : appView === 'admin-users' && profile?.role === 'admin' ? (
           <AdminUsersPanel
             api={api}
-            open
-            presentation="page"
             currentUserID={profile.id}
-            onClose={() => setAppView('files')}
             onChanged={() => { void refreshQuota() }}
           />
         ) : appView === 'admin-audit' && profile?.role === 'admin' ? (
-          <AdminAuditPanel
-            api={api}
-            open
-            presentation="page"
-            onClose={() => setAppView('files')}
-          />
+          <AdminAuditPanel api={api} />
         ) : appView === 'admin-storage' && profile?.role === 'admin' ? (
-          <StorageStatsModal
+          <StorageStatsPanel
             api={api}
             scope="global"
-            open
-            presentation="page"
-            onClose={() => setAppView('files')}
           />
         ) : (
           <XDriveWorkspaceSurface presentation="page" title="文件">
