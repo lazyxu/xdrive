@@ -12,6 +12,8 @@ import type {
   ExternalSourceRunFailure,
   FileShare,
   FileVersion,
+  MediaAlbum,
+  MediaItem,
   Node,
   QuotaUsage,
   StorageStats,
@@ -182,6 +184,10 @@ declare global {
   type AgentSourceCredentialTestResult = ExternalSourceCredentialTestResult
   type AgentSourceConnectorConfig = ExternalSourceConnectorConfig
 
+  type AgentMediaItem = MediaItem
+  type AgentMediaAlbum = MediaAlbum
+  type AgentMediaThumbnail = { content_type: string; data_base64: string }
+
   type AgentCloudNode = Node
   type AgentCloudQuota = QuotaUsage
   type AgentCloudStorageStats = StorageStats
@@ -257,6 +263,10 @@ declare global {
         getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
         getCache: () => Promise<DesktopResult<AgentCacheStats>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
+        getMediaItems: (kind?: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
+        getMediaAlbumItems: (albumID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>

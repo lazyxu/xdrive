@@ -259,3 +259,49 @@ export interface BuildInfo {
   commit_time?: string
   build_time?: string
 }
+
+
+export type MediaKind = 'image' | 'video'
+
+export interface MediaMetadata {
+  media_kind: MediaKind
+  mime_type?: string
+  width?: number
+  height?: number
+  orientation?: number
+  rotation_degrees?: number
+  duration_ms?: number
+  frame_rate?: number
+  bit_rate?: number
+  video_codec?: string
+  audio_codec?: string
+  captured_at?: string
+  latitude?: number
+  longitude?: number
+  altitude_m?: number
+  camera_make?: string
+  camera_model?: string
+  lens_model?: string
+  exif?: Record<string, unknown>
+  video?: Record<string, unknown>
+  index_state: 'ready' | 'unsupported' | 'error' | string
+  index_error?: string
+  has_thumbnail: boolean
+  thumbnail_mime_type?: string
+  thumbnail_width?: number
+  thumbnail_height?: number
+}
+
+export interface MediaItem {
+  node: Node
+  metadata: MediaMetadata
+}
+
+export interface MediaAlbum {
+  id: string
+  kind: 'folder' | 'imported' | string
+  name: string
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}

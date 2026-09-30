@@ -79,6 +79,15 @@ type fakeDesktopIPCController struct {
 	cloudRevokeID              uint64
 	cloudDeleteID              uint64
 	cloudDeleteRev             uint64
+	cloudMediaItems            []client.MediaItem
+	cloudMediaAlbums           []client.MediaAlbum
+	cloudMediaAlbumItems       []client.MediaItem
+	cloudMediaThumbnail        agentMediaThumbnail
+	cloudMediaKind             string
+	cloudMediaLimit            int
+	cloudMediaOffset           int
+	cloudMediaAlbumID          string
+	cloudMediaThumbnailID      uint64
 	cloudSources               []client.Source
 	cloudSourceRuns            []client.SyncRun
 	cloudSourceRunFailures     []client.SourceRunFailure
@@ -263,6 +272,29 @@ func (f *fakeDesktopIPCController) CloudCreateShare(context.Context, uint64, cli
 func (f *fakeDesktopIPCController) CloudRevokeShare(_ context.Context, id uint64) error {
 	f.cloudRevokeID = id
 	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaItems(_ context.Context, kind string, limit, offset int) ([]client.MediaItem, error) {
+	f.cloudMediaKind = kind
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return append([]client.MediaItem(nil), f.cloudMediaItems...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error) {
+	return append([]client.MediaAlbum(nil), f.cloudMediaAlbums...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaAlbumItems(_ context.Context, albumID string, limit, offset int) ([]client.MediaItem, error) {
+	f.cloudMediaAlbumID = albumID
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return append([]client.MediaItem(nil), f.cloudMediaAlbumItems...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
+	f.cloudMediaThumbnailID = nodeID
+	return f.cloudMediaThumbnail, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Source, error) {
@@ -716,6 +748,81 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)
+	}
+}
+
+func TestDesktopIPCMediaGallery(t *testing.T) {
+	now := time.Now().UTC()
+	ctrl := &fakeDesktopIPCController{
+		revision: 1,
+		cloudMediaItems: []client.MediaItem{{
+			Node: client.Node{ID: 31, Name: "photo.jpg", Type: "file", Revision: 1, Size: 123},
+			Metadata: client.MediaMetadata{
+				MediaKind: "image", MIMEType: "image/jpeg", Width: 1920, Height: 1080,
+				IndexState: "ready", HasThumbnail: true,
+			},
+		}},
+		cloudMediaAlbums: []client.MediaAlbum{{
+			ID: "folder:8", Kind: "folder", Name: "Camera Uploads", ItemCount: 1,
+			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
+		}},
+		cloudMediaAlbumItems: []client.MediaItem{{
+			Node: client.Node{ID: 31, Name: "photo.jpg", Type: "file", Revision: 1, Size: 123},
+			Metadata: client.MediaMetadata{
+				MediaKind: "image", MIMEType: "image/jpeg", Width: 1920, Height: 1080,
+				IndexState: "ready", HasThumbnail: true,
+			},
+		}},
+		cloudMediaThumbnail: agentMediaThumbnail{
+			ContentType: "image/jpeg",
+			DataBase64:  "ZmFrZS1qcGVn",
+		},
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/items?kind=image&limit=25&offset=5", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("media items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaKind != "image" || ctrl.cloudMediaLimit != 25 || ctrl.cloudMediaOffset != 5 {
+		t.Fatalf("media item query not forwarded: kind=%q limit=%d offset=%d",
+			ctrl.cloudMediaKind, ctrl.cloudMediaLimit, ctrl.cloudMediaOffset)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/albums", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"Camera Uploads\"") {
+		t.Fatalf("media albums status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/albums/items?album_id=folder%3A8&limit=40&offset=0", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("media album items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaAlbumID != "folder:8" || ctrl.cloudMediaLimit != 40 || ctrl.cloudMediaOffset != 0 {
+		t.Fatalf("media album query not forwarded: id=%q limit=%d offset=%d",
+			ctrl.cloudMediaAlbumID, ctrl.cloudMediaLimit, ctrl.cloudMediaOffset)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/thumbnail?node_id=31", "")
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"content_type\":\"image/jpeg\"") ||
+		!strings.Contains(res.Body.String(), "\"data_base64\":\"ZmFrZS1qcGVn\"") {
+		t.Fatalf("media thumbnail status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaThumbnailID != 31 {
+		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)
+	}
+
+	for _, path := range []string{
+		"/v1/media/items?kind=audio",
+		"/v1/media/items?limit=0",
+		"/v1/media/albums/items?album_id=invalid",
+		"/v1/media/thumbnail?node_id=0",
+	} {
+		res = desktopIPCRequest(t, handler, http.MethodGet, path, "")
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("invalid media query %s status=%d body=%s", path, res.Code, res.Body.String())
+		}
 	}
 }
 

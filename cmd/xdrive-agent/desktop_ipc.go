@@ -70,6 +70,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"media-gallery",
 	"external-sources",
 	"storage-intelligence",
 	"conflicts",
@@ -156,6 +157,10 @@ type desktopIPCController interface {
 	CloudShares(context.Context, uint64) ([]client.FileShare, error)
 	CloudCreateShare(context.Context, uint64, client.CreateShareInput) (agentCreatedShare, error)
 	CloudRevokeShare(context.Context, uint64) error
+	CloudMediaItems(context.Context, string, int, int) ([]client.MediaItem, error)
+	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
+	CloudMediaAlbumItems(context.Context, string, int, int) ([]client.MediaItem, error)
+	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error)
 	CloudSourceRunFailures(context.Context, uint64, string, int, int) ([]client.SourceRunFailure, error)
@@ -368,6 +373,10 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/cloud/shares", h.cloudShares)
 	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
+	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
+	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
+	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
+	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
@@ -911,6 +920,86 @@ func (h *desktopIPCHandler) cloudRevokeShare(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) mediaItems(w http.ResponseWriter, r *http.Request) {
+	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+	if kind != "" && kind != meta.MediaKindImage && kind != meta.MediaKindVideo {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_kind", "kind must be image or video")
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.ctrl.CloudMediaItems(r.Context(), kind, limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaAlbums(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudMediaAlbums(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaAlbumItems(w http.ResponseWriter, r *http.Request) {
+	albumID := strings.TrimSpace(r.URL.Query().Get("album_id"))
+	if albumID == "" || (!strings.HasPrefix(albumID, "folder:") && !strings.HasPrefix(albumID, "source:")) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_id", "album_id must be a Gallery album id")
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.ctrl.CloudMediaAlbumItems(r.Context(), albumID, limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	thumbnail, err := h.ctrl.CloudMediaThumbnail(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, thumbnail)
+}
+
+func desktopIPCMediaWindow(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 500 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 500")
+			return 0, 0, false
+		}
+		limit = value
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offset", "offset must be zero or greater")
+			return 0, 0, false
+		}
+		offset = value
+	}
+	return limit, offset, true
 }
 
 func desktopIPCUint64Query(w http.ResponseWriter, r *http.Request, name string) (uint64, bool) {

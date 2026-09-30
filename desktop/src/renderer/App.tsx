@@ -48,6 +48,7 @@ import {
   XDriveDialogActionSpacer,
   XDriveDialogContent,
   XDriveDialogTitle,
+  XDriveMediaGalleryPage,
   XDrivePaginationControls,
   XDriveStatePanel,
   XDriveShareStatusBadge,
@@ -60,7 +61,7 @@ import {
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
-import type { XDriveStatusTone } from '@xdrive/ui/mui'
+import type { MediaGalleryDataSource, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceCollectionKindLabel,
@@ -121,7 +122,7 @@ type SourceCollectionItemPage = {
   loaded: boolean
 }
 
-type View = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
 
 type ConfirmDialogState = {
   title: string
@@ -245,6 +246,7 @@ function viewLabel(view: View) {
   const labels: Record<View, string> = {
     overview: '概览',
     cloud: '云端文件',
+    gallery: '图库',
     sources: '外部来源',
     transfers: '传输',
     files: '存储',
@@ -371,6 +373,31 @@ export default function App() {
   const [sharePassword, setSharePassword] = useState('')
   const [shareMaxDownloads, setShareMaxDownloads] = useState('0')
   const [createdShareURL, setCreatedShareURL] = useState('')
+
+  const mediaGallerySource = useMemo<MediaGalleryDataSource>(() => ({
+    listItems: async (limit, offset) => {
+      const result = await window.xdriveDesktop.agent.getMediaItems('', limit, offset)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    listAlbums: async () => {
+      const result = await window.xdriveDesktop.agent.getMediaAlbums()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    listAlbumItems: async (albumID, limit, offset) => {
+      const result = await window.xdriveDesktop.agent.getMediaAlbumItems(albumID, limit, offset)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadThumbnail: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.getMediaThumbnail(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      const contentType = result.data.content_type || 'image/jpeg'
+      return `data:${contentType};base64,${result.data.data_base64}`
+    },
+  }), [])
+
 
   const requestConfirmation = (
     title: string,
@@ -2307,6 +2334,7 @@ export default function App() {
         <nav aria-label="桌面版功能区">
           <button className={`nav-item ${view === 'overview' ? 'active' : ''}`} type="button" onClick={() => setView('overview')}>概览</button>
           <button className={`nav-item ${view === 'cloud' ? 'active' : ''}`} type="button" onClick={() => setView('cloud')}>云端文件</button>
+          <button className={`nav-item ${view === 'gallery' ? 'active' : ''}`} type="button" onClick={() => setView('gallery')}>图库</button>
           <button className={`nav-item ${view === 'sources' ? 'active' : ''}`} type="button" onClick={() => setView('sources')}>外部来源</button>
           <button className={`nav-item ${view === 'transfers' ? 'active' : ''}`} type="button" onClick={() => setView('transfers')}>传输 {activeTransfers.length ? <span className="badge">{activeTransfers.length}</span> : null}</button>
           <button className={`nav-item ${view === 'files' ? 'active' : ''}`} type="button" onClick={() => setView('files')}>存储</button>
@@ -2394,6 +2422,17 @@ export default function App() {
         )}
 
 
+
+        {view === 'gallery' && (
+          <section className="panel">
+            <XDriveMediaGalleryPage
+              source={mediaGallerySource}
+              onError={(galleryError) => setError(
+                galleryError instanceof Error ? galleryError.message : String(galleryError),
+              )}
+            />
+          </section>
+        )}
 
         {view === 'sources' && (
           <section className="panel source-panel">

@@ -302,6 +302,54 @@ export type AgentCloudNode = {
   updated_at: string
 }
 
+export type AgentMediaMetadata = {
+  media_kind: 'image' | 'video'
+  mime_type?: string
+  width?: number
+  height?: number
+  orientation?: number
+  rotation_degrees?: number
+  duration_ms?: number
+  frame_rate?: number
+  bit_rate?: number
+  video_codec?: string
+  audio_codec?: string
+  captured_at?: string
+  latitude?: number
+  longitude?: number
+  altitude_m?: number
+  camera_make?: string
+  camera_model?: string
+  lens_model?: string
+  exif?: Record<string, unknown>
+  video?: Record<string, unknown>
+  index_state: string
+  index_error?: string
+  has_thumbnail: boolean
+  thumbnail_mime_type?: string
+  thumbnail_width?: number
+  thumbnail_height?: number
+}
+
+export type AgentMediaItem = {
+  node: AgentCloudNode
+  metadata: AgentMediaMetadata
+}
+
+export type AgentMediaAlbum = {
+  id: string
+  kind: string
+  name: string
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
+export type AgentMediaThumbnail = {
+  content_type: string
+  data_base64: string
+}
+
 export type AgentCloudQuota = {
   quota_bytes: number
   physical_used_bytes: number
@@ -562,6 +610,38 @@ export class AgentIPCClient {
 
   releaseCache() {
     return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
+  }
+
+  mediaItems(kind = '', limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    })
+    if (kind) query.set('kind', kind)
+    return this.request<AgentMediaItem[]>('GET', `/v1/media/items?${query.toString()}`)
+  }
+
+  mediaAlbums() {
+    return this.request<AgentMediaAlbum[]>('GET', '/v1/media/albums')
+  }
+
+  mediaAlbumItems(albumID: string, limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      album_id: albumID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentMediaItem[]>('GET', `/v1/media/albums/items?${query.toString()}`)
+  }
+
+  mediaThumbnail(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaThumbnail>(
+      'GET',
+      `/v1/media/thumbnail?${query.toString()}`,
+      undefined,
+      45_000,
+    )
   }
 
   sources() {
