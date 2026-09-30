@@ -53,6 +53,23 @@ test('shared FileExplorer uses compact system-style density without breaking vir
   assert.equal(explorer.includes('const detailsHeaderHeight = 34'), false, 'legacy loose header density should be removed')
 })
 
+test('shared FileExplorer details view avoids admin-table chrome', () => {
+  assert.ok(
+    explorer.includes("minHeight: detailsHeaderHeight,\n                alignItems: 'center',\n                px: 1.5,\n                bgcolor: 'background.default'"),
+    'details header should use the quiet workspace surface',
+  )
+  assert.ok(
+    explorer.includes("textAlign: 'left',\n                  borderRadius: '4px',\n                  bgcolor: selected ? 'action.selected' : 'transparent'"),
+    'details rows should use Explorer-style rounded hover/selection surfaces',
+  )
+  assert.equal(
+    explorer.includes("textAlign: 'left',\n                  borderBottom: 1,\n                  borderColor: 'divider'"),
+    false,
+    'details rows should not be separated by admin-table grid lines',
+  )
+  assert.ok(explorer.includes('borderRadius: 1,\n                  p: 1,'), 'grid tiles should use restrained system-style corners')
+})
+
 test('shared FileExplorer keeps folders first and owns common client-side sorting', () => {
   assert.ok(explorer.includes("if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1"), 'folders should remain grouped ahead of files')
   for (const key of ["'name'", "'updated'", "'type'", "'size'"]) {

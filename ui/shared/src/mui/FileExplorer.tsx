@@ -857,11 +857,12 @@ export function XDriveFileExplorer({
                 minHeight: detailsHeaderHeight,
                 alignItems: 'center',
                 px: 1.5,
-                bgcolor: 'background.paper',
+                bgcolor: 'background.default',
                 borderBottom: 1,
                 borderColor: 'divider',
                 color: 'text.secondary',
                 fontSize: 12,
+                fontWeight: 500,
               }}
             >
               <span role="columnheader">名称</span>
@@ -895,8 +896,7 @@ export function XDriveFileExplorer({
                   alignItems: 'center',
                   px: 1.5,
                   textAlign: 'left',
-                  borderBottom: 1,
-                  borderColor: 'divider',
+                  borderRadius: '4px',
                   bgcolor: selected ? 'action.selected' : 'transparent',
                   '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                   '&:focus-visible': {
@@ -963,7 +963,7 @@ export function XDriveFileExplorer({
                   minWidth: 0,
                   minHeight: 116,
                   maxWidth: 180,
-                  borderRadius: 1.5,
+                  borderRadius: 1,
                   p: 1,
                   display: 'flex',
                   flexDirection: 'column',
