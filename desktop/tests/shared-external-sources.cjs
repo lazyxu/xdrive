@@ -792,3 +792,33 @@ test('Web and Desktop reuse shared source credential fields', () => {
   assert.equal(desktop.includes('<span>更新 DSM 地址</span>'), false, 'Desktop settings should not keep native DSM address input')
   assert.equal(desktop.includes('<span>一刻相册 Cookie</span>'), false, 'Desktop should not keep native Cookie input labels')
 })
+
+
+test('Web and Desktop reuse shared Synology connector-config fields', () => {
+  const repo = path.join(__dirname, '..', '..')
+  const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorConfigFields.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+
+  for (const token of [
+    'XDriveSynologyPhotoSpacesField',
+    'XDriveSynologyFileRootsField',
+    '同步空间',
+    'File Station 根目录',
+    'synologyPhotoSpaceOptions',
+    'normalizeSynologyPhotoSpaces',
+    '每行一个 DSM 绝对目录',
+  ]) {
+    assert.ok(sharedFields.includes(token), `shared connector-config fields missing: ${token}`)
+  }
+
+  assert.equal((web.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length, 2, 'Web Photos create/settings should reuse shared space field')
+  assert.equal((desktop.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length, 2, 'Desktop Photos create/settings should reuse shared space field')
+  assert.equal((web.match(/<XDriveSynologyFileRootsField\b/g) || []).length, 2, 'Web File Station create/settings should reuse shared roots field')
+  assert.equal((desktop.match(/<XDriveSynologyFileRootsField\b/g) || []).length, 2, 'Desktop File Station create/settings should reuse shared roots field')
+  assert.equal(web.includes('create-source-spaces-label'), false, 'Web should not retain local Photos space selector')
+  assert.equal(web.includes('settings-source-spaces-label'), false, 'Web should not retain local settings space selector')
+  assert.equal(web.includes('label="File Station 根目录"'), false, 'Web should not retain local File Station roots field')
+  assert.equal(desktop.includes('<span>File Station 根目录</span>'), false, 'Desktop should not retain native File Station roots field')
+  assert.equal(desktop.includes('synologyPhotoSpaceOptions.map'), false, 'Desktop should not retain local Photos space options')
+})

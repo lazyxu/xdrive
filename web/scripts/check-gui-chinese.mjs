@@ -35,6 +35,7 @@ const files = {
   sourceScheduleFields: readRepo('ui/shared/src/mui/SourceScheduleFields.tsx'),
   sourceBasicFields: readRepo('ui/shared/src/mui/SourceBasicFields.tsx'),
   sourceCredentialFields: readRepo('ui/shared/src/mui/SourceCredentialFields.tsx'),
+  sourceConnectorConfigFields: readRepo('ui/shared/src/mui/SourceConnectorConfigFields.tsx'),
   sourceIgnoreRulesField: readRepo('ui/shared/src/mui/SourceIgnoreRulesField.tsx'),
   main: read('src/main.tsx'),
   styles: read('src/styles.css'),
@@ -119,7 +120,7 @@ if (files.sources.includes('@ant-design/icons')) throw new Error('Web 外部来�
 if (files.sources.includes('message.success') || /<Button\b/.test(files.sources) || /<Space\b/.test(files.sources) || /<Divider\b/.test(files.sources)) throw new Error('Web 外部来源外壳仍使用已迁移的 AntD 组件')
 if (/from ['"]antd['"]/.test(files.sources) || files.sources.includes('@ant-design/icons')) throw new Error('Web 外部来源仍依赖 Ant Design')
 if (/<Descriptions\b/.test(files.sources) || /<Spin\b/.test(files.sources) || /<Form\b/.test(files.sources) || /<Input\b/.test(files.sources) || /<Select\b/.test(files.sources) || files.sources.includes('Typography.')) throw new Error('Web 外部来源仍渲染 AntD 组件')
-requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', '复制运行 ID', 'CircularProgress', 'initialCreateSourceValues', 'settingsValues', 'MuiSelect', 'FormControl'], '外部来源 MUI 表单与详情展示')
+requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', '复制运行 ID', 'CircularProgress', 'initialCreateSourceValues', 'settingsValues', 'XDriveSynologyPhotoSpacesField', 'XDriveSynologyFileRootsField'], '外部来源 MUI 表单与详情展示')
 if (files.sources.includes('<LinearProgress')) throw new Error('Web 外部来源仍在直接渲染运行进度条')
 if ((files.sources.match(/<XDriveSourceRunProgress/g) || []).length !== 1) throw new Error('Web 外部来源运行进度没有复用共享组件')
 requireText(files.sourceRunProgress, ['ExternalSourceRunProgressView', 'LinearProgress', '当前文件：', '正在取消…', 'XDriveActionButton'], '外部来源运行进度')
@@ -135,6 +136,11 @@ requireText(files.sourceCollection, ['XDriveSourceCollectionSummary', 'XDriveSou
 requireText(files.sourceScheduleFields, ['XDriveSourceScheduleFields', '调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', 'onScheduleTypeChange', 'onExpressionChange', 'onTimezoneChange'], '共享来源调度字段')
 requireText(files.sourceBasicFields, ['XDriveSourcePresetField', 'XDriveSourceNameField', 'XDriveSourceRunModeField', 'XDriveSourceStatusField', '来源类型', '来源名称', '运行模式', '启用', '暂停'], '共享来源基础字段')
 requireText(files.sourceCredentialFields, ['XDriveSourceCookieField', 'XDriveSynologyDsmCredentialFields', '一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '留空则保持当前配置不变', 'synologyDsmAddressHelp'], '共享来源凭据字段')
+requireText(files.sourceConnectorConfigFields, ['XDriveSynologyPhotoSpacesField', 'XDriveSynologyFileRootsField', '同步空间', 'File Station 根目录', 'synologyPhotoSpaceOptions', 'normalizeSynologyPhotoSpaces', '每行一个 DSM 绝对目录'], '共享来源连接配置字段')
+if ((files.sources.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length !== 2) throw new Error('Web Photos 创建/设置没有完整复用共享空间字段')
+if ((files.sources.match(/<XDriveSynologyFileRootsField\b/g) || []).length !== 2) throw new Error('Web File Station 创建/设置没有完整复用共享根目录字段')
+if (files.sources.includes('create-source-spaces-label') || files.sources.includes('settings-source-spaces-label')) throw new Error('Web 仍保留本地 Synology Photos 空间选择器')
+if (files.sources.includes('label="File Station 根目录"')) throw new Error('Web 仍保留本地 File Station 根目录字段')
 if ((files.sources.match(/<XDriveSourceCookieField\b/g) || []).length !== 2) throw new Error('Web Cookie 创建/设置没有完整复用共享字段')
 if ((files.sources.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length !== 2) throw new Error('Web DSM 创建/设置没有完整复用共享字段组')
 for (const legacy of ['一刻相册 Cookie', 'DSM 地址', 'DSM 用户名', 'DSM 密码', '更新 DSM 地址', '更新 DSM 用户名', '更新 DSM 密码']) {
