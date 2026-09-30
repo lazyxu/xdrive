@@ -149,3 +149,26 @@ test('Desktop FileExplorer supplies preview/properties metadata through existing
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Desktop inspector should reuse the protected media thumbnail bridge')
   assert.equal(explorer.includes('localPath:'), false, 'Desktop preview/properties must not expose managed local paths')
 })
+
+test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-shared Explorer CSS', () => {
+  assert.ok(app.includes('<section className="cloud-explorer-panel">'), 'Desktop Files should use only its workspace container')
+  assert.equal(app.includes('panel cloud-panel cloud-explorer-panel'), false, 'Desktop Files must not inherit generic dashboard panel chrome')
+
+  for (const selector of [
+    '.cloud-panel {',
+    '.cloud-note {',
+    '.cloud-heading-actions {',
+    '.cloud-search-row {',
+    '.cloud-search-input {',
+    '.cloud-breadcrumbs {',
+    '.cloud-list {',
+    '.cloud-list-header',
+    '.cloud-row {',
+    '.cloud-name {',
+  ]) {
+    assert.equal(styles.includes(selector), false, `dead legacy Desktop Explorer CSS remains: ${selector}`)
+  }
+
+  assert.ok(styles.includes('.cloud-row-actions {'), 'shared dialog/list row actions are still required')
+  assert.ok(styles.includes('.cloud-compact-row {'), 'trash/version compact rows are still required')
+})
