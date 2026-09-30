@@ -41,6 +41,3 @@ export function XDriveMetricCard({
   )
 }
 
-export function XDriveSectionHeading({ children }: { children: ReactNode }) {
-  return <Typography component="h3" variant="subtitle1" fontWeight={700}>{children}</Typography>
-}
