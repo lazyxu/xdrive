@@ -9,24 +9,15 @@ import {
   AccordionSummary,
   Box as MuiBox,
   Button as MuiButton,
-  Checkbox,
   CircularProgress,
   Dialog,
   DialogContentText,
-  FormControl,
-  FormHelperText,
   IconButton,
-  InputLabel,
-  ListItemText,
   MenuItem,
-  OutlinedInput,
-  Select as MuiSelect,
   Stack,
-  TextField,
   Tooltip,
   Typography as MuiTypography,
 } from '@mui/material'
-import type { SelectChangeEvent } from '@mui/material/Select'
 import { ApiError } from './api'
 import type { XDriveApi } from './api'
 import {
@@ -53,6 +44,8 @@ import {
   XDriveSourceStatusField,
   XDriveSourceCookieField,
   XDriveSynologyDsmCredentialFields,
+  XDriveSynologyFileRootsField,
+  XDriveSynologyPhotoSpacesField,
   XDriveSourceScheduleFields,
   XDriveSourceFailureItem,
   XDriveSourceCollectionItem,
@@ -81,7 +74,6 @@ import {
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
-  synologyPhotoSpaceOptions,
   yikeConnectorNotice,
   yikeRateLimitNotice,
   yikeManagedTargetLabel,
@@ -222,16 +214,6 @@ function emptySourceSettingsValues(): SourceSettingsValues {
     spaces: ['personal', 'shared'],
     roots: [],
   }
-}
-
-function selectedPhotoSpaces(value: string | SynologyPhotoSpace[]): SynologyPhotoSpace[] {
-  const spaces = (typeof value === 'string' ? value.split(',') : value)
-    .filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-  return normalizeSynologyPhotoSpaces(spaces)
-}
-
-function photoSpaceLabel(value: SynologyPhotoSpace) {
-  return synologyPhotoSpaceOptions.find((option) => option.value === value)?.label ?? value
 }
 
 export default function ExternalSourcesPanel({
@@ -1572,40 +1554,22 @@ export default function ExternalSourcesPanel({
                   }}
                 />
                 {createOption.kind === 'synology_photos' ? (
-                  <FormControl fullWidth size="small" error={Boolean(createSpacesError)}>
-                    <InputLabel id="create-source-spaces-label">同步空间</InputLabel>
-                    <MuiSelect<SynologyPhotoSpace[]>
-                      labelId="create-source-spaces-label"
-                      multiple
-                      value={createValues.spaces ?? []}
-                      input={<OutlinedInput label="同步空间" />}
-                      renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
-                      onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
-                        setCreateValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
-                        if (createSpacesError) setCreateSpacesError('')
-                      }}
-                    >
-                      {synologyPhotoSpaceOptions.map((option) => (
-                        <MenuItem key={option.value} value={option.value}>
-                          <Checkbox checked={(createValues.spaces ?? []).includes(option.value)} />
-                          <ListItemText primary={option.label} />
-                        </MenuItem>
-                      ))}
-                    </MuiSelect>
-                    <FormHelperText>{createSpacesError || '至少选择一个照片空间'}</FormHelperText>
-                  </FormControl>
+                  <XDriveSynologyPhotoSpacesField
+                    value={createValues.spaces ?? []}
+                    error={Boolean(createSpacesError)}
+                    helperText={createSpacesError || '至少选择一个照片空间'}
+                    onChange={(value) => {
+                      setCreateValues((current) => ({ ...current, spaces: value }))
+                      if (createSpacesError) setCreateSpacesError('')
+                    }}
+                  />
                 ) : (
-                  <TextField
-                    fullWidth
-                    multiline
-                    minRows={3}
-                    label="File Station 根目录"
-                    placeholder={'/documents\n/video/projects'}
-                    value={(createValues.roots ?? []).join('\n')}
+                  <XDriveSynologyFileRootsField
+                    value={createValues.roots ?? []}
                     error={Boolean(createRootsError)}
                     helperText={createRootsError || '每行一个 DSM 绝对目录；会同步目录、空目录及其中的任意文件类型。'}
-                    onChange={(event) => {
-                      setCreateValues((current) => ({ ...current, roots: event.target.value.split(/\r?\n/) }))
+                    onChange={(value) => {
+                      setCreateValues((current) => ({ ...current, roots: value }))
                       if (createRootsError) setCreateRootsError('')
                     }}
                   />
@@ -1821,28 +1785,15 @@ export default function ExternalSourcesPanel({
                   />
                   {setting.source.kind === 'synology_photos' ? (
                     <>
-                      <FormControl fullWidth size="small" error={Boolean(settingsSpacesError)}>
-                        <InputLabel id="settings-source-spaces-label">同步空间</InputLabel>
-                        <MuiSelect<SynologyPhotoSpace[]>
-                          labelId="settings-source-spaces-label"
-                          multiple
-                          value={settingsValues.spaces ?? []}
-                          input={<OutlinedInput label="同步空间" />}
-                          renderValue={(selected) => selected.map(photoSpaceLabel).join('、')}
-                          onChange={(event: SelectChangeEvent<SynologyPhotoSpace[]>) => {
-                            setSettingsValues((current) => ({ ...current, spaces: selectedPhotoSpaces(event.target.value) }))
-                            if (settingsSpacesError) setSettingsSpacesError('')
-                          }}
-                        >
-                          {synologyPhotoSpaceOptions.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                              <Checkbox checked={(settingsValues.spaces ?? []).includes(option.value)} />
-                              <ListItemText primary={option.label} />
-                            </MenuItem>
-                          ))}
-                        </MuiSelect>
-                        <FormHelperText>{settingsSpacesError || '至少选择一个照片空间'}</FormHelperText>
-                      </FormControl>
+                      <XDriveSynologyPhotoSpacesField
+                        value={settingsValues.spaces ?? []}
+                        error={Boolean(settingsSpacesError)}
+                        helperText={settingsSpacesError || '至少选择一个照片空间'}
+                        onChange={(value) => {
+                          setSettingsValues((current) => ({ ...current, spaces: value }))
+                          if (settingsSpacesError) setSettingsSpacesError('')
+                        }}
+                      />
                       {!settingsConnectorConfig && (
                         <MuiTypography variant="caption" color="text.secondary">
                           正在读取当前空间配置；未配置时默认同步个人空间和共享空间。
@@ -1850,17 +1801,12 @@ export default function ExternalSourcesPanel({
                       )}
                     </>
                   ) : (
-                    <TextField
-                      fullWidth
-                      multiline
-                      minRows={3}
-                      label="File Station 根目录"
-                      placeholder={'/documents\n/video/projects'}
-                      value={(settingsValues.roots ?? []).join('\n')}
+                    <XDriveSynologyFileRootsField
+                      value={settingsValues.roots ?? []}
                       error={Boolean(settingsRootsError)}
                       helperText={settingsRootsError || '每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。'}
-                      onChange={(event) => {
-                        setSettingsValues((current) => ({ ...current, roots: event.target.value.split(/\r?\n/) }))
+                      onChange={(value) => {
+                        setSettingsValues((current) => ({ ...current, roots: value }))
                         if (settingsRootsError) setSettingsRootsError('')
                       }}
                     />
