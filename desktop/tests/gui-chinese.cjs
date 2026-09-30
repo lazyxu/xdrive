@@ -41,7 +41,7 @@ const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8'
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
 
 test('desktop renderer default export is the full App root, not a helper component', () => {
-  assert.match(renderer, /export default function App\(\)/)
+  assert.match(renderer, /export default function App\(\{/)
   assert.equal(renderer.includes('export default function YikeCookieHelpGuide()'), false)
 })
 
@@ -214,8 +214,17 @@ test('desktop external sources expose safe source deletion', () => {
   assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
 })
 
+test('desktop settings use a dialog instead of a workspace page', () => {
+  assert.ok(renderer.includes('open={settingsOpen}'), 'settings dialog state is missing')
+  assert.ok(renderer.includes('title="设置"'), 'settings dialog title is missing')
+  assert.ok(renderer.includes('XDriveAppearanceField'), 'settings dialog must expose appearance controls')
+  assert.ok(renderer.includes('XDriveBuildInfoCard'), 'settings dialog must reuse shared build information')
+  assert.equal(renderer.includes("view === 'settings'"), false, 'settings must not remain a workspace page')
+})
+
 test('desktop transient management surfaces use modal dialogs', () => {
   for (const openProp of [
+    'open={settingsOpen}',
     'open={sourceCreateOpen}',
     'open={editingSourceID === row.source.id}',
     'open={cloudTrashOpen}',
@@ -255,7 +264,7 @@ test('desktop dialogs share one title, paper, content, and action treatment', ()
   assert.ok(dialogContent.includes('export function XDriveDialogContent({'), 'shared dialog content component is missing')
   assert.ok(dialogContent.includes("px: flush ? 0 : { xs: 2, sm: 2.5 }"), 'shared dialog content horizontal spacing is missing')
   assert.ok(dialogContent.includes("py: flush ? 0 : { xs: 2, sm: 2.25 }"), 'shared dialog content vertical spacing is missing')
-  assert.equal((renderer.match(/<XDriveDialogContent/g) || []).length, 7, 'desktop app-local dialogs are not all using shared dialog content')
+  assert.equal((renderer.match(/<XDriveDialogContent/g) || []).length, 8, 'desktop app-local dialogs are not all using shared dialog content')
   assert.ok(sharedConfirmDialog.includes('<XDriveDialogContent>'), 'shared confirmation dialog must use shared dialog content')
   assert.equal((renderer.match(/<XDriveDialogContent dividers flush>/g) || []).length, 3, 'desktop flush dialog surfaces are not preserved')
   assert.equal(/<DialogContent(?:\s|>)/.test(renderer), false, 'raw MUI DialogContent remains in desktop')

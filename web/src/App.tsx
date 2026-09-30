@@ -9,6 +9,7 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import {
   AppBar,
   Box,
@@ -16,6 +17,7 @@ import {
   Card,
   Chip,
   Dialog,
+  Divider,
   ListItemIcon,
   ListItemText,
   MenuItem,
@@ -35,7 +37,9 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
   XDriveActionButton,
+  XDriveAppearanceField,
   XDriveBrandLockup,
+  XDriveBuildInfoCard,
   XDriveConfirmDialog,
   XDriveDialogActions,
   XDriveDialogContent,
@@ -56,7 +60,7 @@ import {
 import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
-import type { FileVersion, MeResult, Node, QuotaUsage } from '../../ui/shared/src'
+import type { FileVersion, MeResult, Node, QuotaUsage, XDriveAppearance } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
@@ -109,13 +113,18 @@ function initialSession(): AuthSession {
 function WebAccountMenu({
   username,
   serverBuild,
+  appearance,
+  onAppearanceChange,
   onLogout,
 }: {
   username: string
   serverBuild: BuildInfo | null
+  appearance: XDriveAppearance
+  onAppearanceChange: (appearance: XDriveAppearance) => void
   onLogout: () => void
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   return (
     <>
       <XDriveAccountAvatarButton username={username} onClick={(event) => setAnchorEl(event.currentTarget)} />
@@ -127,6 +136,16 @@ function WebAccountMenu({
         secondary={`Server ${serverBuild?.version || '未知'}`}
         status="已登录"
       >
+        <MenuItem
+          onClick={() => {
+            setAnchorEl(null)
+            setSettingsOpen(true)
+          }}
+        >
+          <ListItemIcon><SettingsRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>设置</ListItemText>
+        </MenuItem>
+        <Divider />
         <MenuItem
           sx={{ color: 'error.main' }}
           onClick={() => {
@@ -140,11 +159,43 @@ function WebAccountMenu({
           <ListItemText>退出登录</ListItemText>
         </MenuItem>
       </XDriveAccountMenu>
+      <Dialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        maxWidth="md"
+        fullWidth
+        scroll="paper"
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title="设置"
+          subtitle="外观与服务端信息"
+          onClose={() => setSettingsOpen(false)}
+        />
+        <XDriveDialogContent dividers>
+          <Stack spacing={2.5}>
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>外观</Typography>
+              <XDriveAppearanceField value={appearance} onChange={onAppearanceChange} />
+            </Box>
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>服务端</Typography>
+              <XDriveBuildInfoCard title="Server 构建信息" info={serverBuild} />
+            </Box>
+          </Stack>
+        </XDriveDialogContent>
+      </Dialog>
     </>
   )
 }
 
-function App() {
+function App({
+  appearance,
+  onAppearanceChange,
+}: {
+  appearance: XDriveAppearance
+  onAppearanceChange: (appearance: XDriveAppearance) => void
+}) {
   const [session, setSession] = useState<AuthSession>(initialSession)
   const [username, setUsername] = useState(() => localStorage.getItem(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
@@ -228,6 +279,8 @@ function App() {
       api={api}
       username={username}
       serverBuild={serverBuild}
+      appearance={appearance}
+      onAppearanceChange={onAppearanceChange}
       onAuthExpired={(notice) => clearSession(notice)}
       onLogout={signOut}
     />
@@ -343,12 +396,16 @@ function FileManager({
   api,
   username,
   serverBuild,
+  appearance,
+  onAppearanceChange,
   onAuthExpired,
   onLogout,
 }: {
   api: XDriveApi
   username: string
   serverBuild: BuildInfo | null
+  appearance: XDriveAppearance
+  onAppearanceChange: (appearance: XDriveAppearance) => void
   onAuthExpired: (notice?: string) => void
   onLogout: () => void
 }) {
@@ -528,7 +585,13 @@ function FileManager({
         >
           <Toolbar className="topbar">
             <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
-            <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
+            <WebAccountMenu
+              username={username}
+              serverBuild={serverBuild}
+              appearance={appearance}
+              onAppearanceChange={onAppearanceChange}
+              onLogout={onLogout}
+            />
           </Toolbar>
         </AppBar>
         <Box component="main" className="content-wrap">
@@ -731,7 +794,13 @@ function FileManager({
         >
         <Toolbar className="topbar">
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
-          <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
+          <WebAccountMenu
+              username={username}
+              serverBuild={serverBuild}
+              appearance={appearance}
+              onAppearanceChange={onAppearanceChange}
+              onLogout={onLogout}
+            />
         </Toolbar>
       </AppBar>
 

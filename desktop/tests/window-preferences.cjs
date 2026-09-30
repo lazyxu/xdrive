@@ -9,6 +9,7 @@ const {
 
 test('desktop preferences migrate old startup-only settings', () => {
   assert.deepEqual(normalizeDesktopPreferences({ start_at_login: false }), {
+    appearance: 'system',
     start_at_login: false,
     close_to_tray: true,
     close_behavior_prompted: false,
@@ -39,4 +40,11 @@ test('desktop rejects fully off-screen saved bounds', () => {
 
 test('desktop defaults keep background sync on close', () => {
   assert.equal(defaultDesktopPreferences().close_to_tray, true)
+})
+
+test('desktop appearance preference accepts only the three supported modes', () => {
+  assert.equal(normalizeDesktopPreferences({ appearance: 'dark' }).appearance, 'dark')
+  assert.equal(normalizeDesktopPreferences({ appearance: 'light' }).appearance, 'light')
+  assert.equal(normalizeDesktopPreferences({ appearance: 'system' }).appearance, 'system')
+  assert.equal(normalizeDesktopPreferences({ appearance: 'other' }).appearance, 'system')
 })

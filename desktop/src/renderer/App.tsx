@@ -52,7 +52,9 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
   XDriveActionButton,
+  XDriveAppearanceField,
   XDriveBrandLockup,
+  XDriveBuildInfoCard,
   XDriveConfirmDialog,
   XDriveCreatedShareLink,
   XDriveDescriptionGrid,
@@ -125,7 +127,6 @@ import {
 } from '@xdrive/shared'
 import DesktopFileExplorer from './DesktopFileExplorer'
 import type {
-  BuildInfo,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
   ExternalSourceConnectorConfig,
@@ -138,6 +139,7 @@ import type {
   ExternalSourceScheduleType,
   SynologyPhotoSpace,
   SupportedExternalSourceKind,
+  XDriveAppearance,
 } from '@xdrive/shared'
 
 const SOURCE_HISTORY_PAGE_SIZE = 20
@@ -226,28 +228,6 @@ function DesktopFrame({
   )
 }
 
-function buildInfoTime(value?: string) {
-  if (!value) return '—'
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
-}
-
-function BuildInfoCard({ title, info }: { title: string; info?: BuildInfo | null }) {
-  return (
-    <MuiBox sx={{ flex: '1 1 360px', minWidth: 0, border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
-      <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>{title}</Typography>
-      <Stack spacing={0.75}>
-        <Typography variant="body2"><strong>版本：</strong>{info?.version || '未知'}</Typography>
-        <Typography variant="body2"><strong>通道：</strong>{info?.channel || '—'}</Typography>
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}><strong>Commit：</strong>{info?.commit || '—'}</Typography>
-        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}><strong>Commit message：</strong>{info?.commit_message || '—'}</Typography>
-        <Typography variant="body2"><strong>Commit 时间：</strong>{buildInfoTime(info?.commit_time)}</Typography>
-        <Typography variant="body2"><strong>构建时间：</strong>{buildInfoTime(info?.build_time)}</Typography>
-      </Stack>
-    </MuiBox>
-  )
-}
-
 function cacheGiB(bytes: number) {
   if (!bytes) return '0'
   return String(Number((bytes / 1024 ** 3).toFixed(3)))
@@ -312,12 +292,20 @@ function updateModeDescription(mode: AgentUpdateMode) {
   return '不在后台检查更新；只有点击“检查更新”时才访问更新服务。'
 }
 
-export default function App() {
+export default function App({
+  appearance,
+  onAppearanceChange,
+}: {
+  appearance: XDriveAppearance
+  onAppearanceChange: (appearance: XDriveAppearance) => Promise<void>
+}) {
   const [info, setInfo] = useState<DesktopInfo | null>(null)
   const [desktopPreferences, setDesktopPreferences] = useState<DesktopPreferences>({
+    appearance: 'system',
     start_at_login: true,
     close_to_tray: true,
   })
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
   const [view, setView] = useState<View>('overview')
@@ -572,11 +560,13 @@ export default function App() {
     })
     const unsubscribeNavigate = window.xdriveDesktop.onNavigate((target) => {
       if (!active) return
-      if (target === 'settings-update') {
-        setView('settings')
-        window.setTimeout(() => {
-          document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }, 120)
+      if (target === 'settings' || target === 'settings-update') {
+        setSettingsOpen(true)
+        if (target === 'settings-update') {
+          window.setTimeout(() => {
+            document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }, 120)
+        }
         return
       }
       setView(target)
@@ -691,12 +681,12 @@ export default function App() {
       setCreatedShareURL('')
       return
     }
-    if (view === 'settings') void loadSettings()
+    if (settingsOpen) void loadSettings()
     if (view === 'conflicts') void loadConflicts()
     // Refresh lightweight settings/conflict state when the Agent revision changes.
     // Diagnostics are intentionally excluded because they perform network/system checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, agent.connected, configured, status?.revision])
+  }, [view, settingsOpen, agent.connected, configured, status?.revision])
 
   useEffect(() => {
     if (view !== 'sources' || !agent.connected || !configured) return
@@ -827,6 +817,20 @@ export default function App() {
     }
     setDesktopPreferences(result.data)
     setNotice(enabled ? '关闭窗口时将继续在系统托盘后台运行。' : '关闭窗口时将退出 xDrive 桌面版。')
+  }
+
+  const changeAppearance = async (next: XDriveAppearance) => {
+    setBusy('appearance')
+    setError('')
+    try {
+      await onAppearanceChange(next)
+      setDesktopPreferences((current) => ({ ...current, appearance: next }))
+      setNotice(next === 'system' ? '外观已改为跟随系统。' : next === 'dark' ? '已切换到黑夜模式。' : '已切换到白天模式。')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '切换外观失败。')
+    } finally {
+      setBusy('')
+    }
   }
 
   const retry = async () => {
@@ -2682,10 +2686,10 @@ export default function App() {
         </span>
       </Tooltip>
       <Tooltip title="设置">
-        <IconButton className="desktop-titlebar-action" aria-label="设置" size="small" color={view === 'settings' ? 'primary' : 'default'} onClick={() => {
+        <IconButton className="desktop-titlebar-action" aria-label="设置" size="small" color={settingsOpen ? 'primary' : 'default'} onClick={() => {
           setSyncMenuAnchor(null)
           setAccountMenuAnchor(null)
-          setView('settings')
+          setSettingsOpen(true)
         }}>
           <SettingsRoundedIcon fontSize="small" />
         </IconButton>
@@ -2752,7 +2756,7 @@ export default function App() {
       >
         <MenuItem onClick={() => {
           setAccountMenuAnchor(null)
-          setView('settings')
+          setSettingsOpen(true)
           window.setTimeout(() => {
             document.getElementById('desktop-build-info')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }, 120)
@@ -4255,7 +4259,22 @@ export default function App() {
           </section>
         )}
 
-        {view === 'settings' && (
+      </main>
+
+        <Dialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          maxWidth="lg"
+          fullWidth
+          scroll="paper"
+          slotProps={{ paper: xDriveDialogPaperProps }}
+        >
+          <XDriveDialogTitle
+            title="设置"
+            subtitle="外观、客户端更新、同步生命周期与本地缓存"
+            onClose={() => setSettingsOpen(false)}
+          />
+          <XDriveDialogContent dividers>
           <section className="panel">
             <XDriveSectionHeader
               eyebrow="客户端设置"
@@ -4272,9 +4291,16 @@ export default function App() {
               )}
             />
             <Stack id="desktop-build-info" direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ mb: 2 }}>
-              <BuildInfoCard title="Desktop 构建信息" info={info} />
-              <BuildInfoCard title="Server 构建信息" info={status?.server_build} />
+              <XDriveBuildInfoCard title="Desktop 构建信息" info={info} />
+              <XDriveBuildInfoCard title="Server 构建信息" info={status?.server_build} />
             </Stack>
+            <MuiBox sx={{ mb: 2 }}>
+              <XDriveAppearanceField
+                value={appearance}
+                disabled={busy === 'appearance'}
+                onChange={(next) => void changeAppearance(next)}
+              />
+            </MuiBox>
             <Stack spacing={0.5} sx={{ mb: 2 }}>
               <FormControlLabel
                 control={(
@@ -4487,7 +4513,10 @@ export default function App() {
                         : 'Linux 使用 FUSE 远程挂载；“存储”页面提供只读目录视图，不提供 Windows CfAPI 的选择性同步和固定保留。'}
                     </span>
                   </div>
-                  <XDriveActionButton onClick={() => setView('files')}>
+                  <XDriveActionButton onClick={() => {
+                    setSettingsOpen(false)
+                    setView('files')
+                  }}>
                     {storagePoliciesSupported ? '管理存储' : '查看存储'}
                   </XDriveActionButton>
                 </div>
@@ -4505,8 +4534,8 @@ export default function App() {
               </form>
             )}
           </section>
-        )}
-      </main>
+          </XDriveDialogContent>
+        </Dialog>
 
       <XDriveConfirmDialog
         open={!!confirmDialog}

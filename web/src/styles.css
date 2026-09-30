@@ -4,6 +4,21 @@
   background: #f4f6fa;
 }
 
+:root[data-xdrive-theme='dark'] {
+  color: #e7edf7;
+  background: #0f141d;
+}
+
+:root[data-xdrive-theme='dark'] .auth-shell {
+  background: radial-gradient(circle at top, #1b2940, #111822 46%, #0f141d);
+}
+
+:root[data-xdrive-theme='dark'] .external-source-subtitle,
+:root[data-xdrive-theme='dark'] .external-source-time,
+:root[data-xdrive-theme='dark'] .external-source-stats {
+  color: rgba(255, 255, 255, 0.58);
+}
+
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 a { user-select: none; }
