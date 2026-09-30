@@ -27,13 +27,14 @@ func TestClientTestAuthenticatesAndChecksPhotosAPI(t *testing.T) {
 				"SYNO.Foto.Browse.Album":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 				"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":2}
 			}}`))
-		case r.URL.Path == "/photo/webapi/auth.cgi":
+		case r.URL.Path == "/webapi/auth.cgi":
 			body, _ := url.ParseQuery(readBody(t, r))
 			switch body.Get("method") {
 			case "login":
 				loginSeen = true
-				if body.Get("version") != "3" || body.Get("account") != "alice" ||
-					body.Get("passwd") != "secret" || body.Get("format") != "sid" {
+				if body.Get("version") != "6" || body.Get("account") != "alice" ||
+					body.Get("passwd") != "secret" || body.Get("format") != "sid" ||
+					body.Get("session") != "SynologyPhotos" || body.Get("enable_syno_token") != "yes" {
 					t.Fatalf("unexpected login body: %v", body)
 				}
 				_, _ = w.Write([]byte(`{"success":true,"data":{"sid":"sid-1","synotoken":"csrf-1"}}`))
@@ -120,7 +121,7 @@ func TestClientTestRejectsPhotosAPISessionFailures(t *testing.T) {
 						"SYNO.Foto.Browse.Item":{"path":"entry.cgi","minVersion":1,"maxVersion":1},
 						"SYNO.Foto.Download":{"path":"entry.cgi","minVersion":1,"maxVersion":1}
 					}}`))
-				case r.URL.Path == "/photo/webapi/auth.cgi":
+				case r.URL.Path == "/webapi/auth.cgi":
 					body, _ := url.ParseQuery(readBody(t, r))
 					if body.Get("method") == "logout" {
 						_, _ = w.Write([]byte(`{"success":true,"data":{}}`))
@@ -242,6 +243,54 @@ func TestAPIErrorClassifiesSynologyCommonAndAuthErrors(t *testing.T) {
 		if err := apiError(envelope); !errors.Is(err, tc.want) {
 			t.Fatalf("code=%d err=%v want=%v", tc.code, err, tc.want)
 		}
+	}
+}
+
+func TestDoJSONPreservesDSMAPIErrorFromHTTPForbidden(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"success":false,"error":{"code":403}}`))
+	}))
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope apiEnvelope
+	err = client.doJSON(context.Background(), http.MethodPost, server.URL, strings.NewReader("x=1"), &envelope)
+	if !errors.Is(err, ErrOTPRequired) {
+		t.Fatalf("err=%v want ErrOTPRequired", err)
+	}
+	var dsmErr *DSMAPIError
+	if !errors.As(err, &dsmErr) || dsmErr.Code != 403 {
+		t.Fatalf("err=%v dsmErr=%+v", err, dsmErr)
+	}
+}
+
+func TestDoJSONDoesNotMislabelPlainHTTPForbiddenAsBadPassword(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("forbidden"))
+	}))
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope apiEnvelope
+	err = client.doJSON(context.Background(), http.MethodPost, server.URL, strings.NewReader("x=1"), &envelope)
+	if !errors.Is(err, ErrHTTPForbidden) {
+		t.Fatalf("err=%v want ErrHTTPForbidden", err)
+	}
+	if errors.Is(err, ErrAuthentication) {
+		t.Fatalf("plain HTTP 403 must not be classified as bad credentials: %v", err)
+	}
+	diagnostic := DiagnoseConnectionError(err)
+	if diagnostic.Code != "synology_http_forbidden" || !strings.Contains(diagnostic.Detail, "不等同于用户名或密码错误") {
+		t.Fatalf("diagnostic=%+v", diagnostic)
 	}
 }
 

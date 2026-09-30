@@ -31,6 +31,7 @@ const (
 
 var (
 	ErrAuthentication   = errors.New("Synology authentication failed")
+	ErrHTTPForbidden    = errors.New("Synology HTTP access forbidden")
 	ErrSessionExpired   = errors.New("Synology session expired")
 	ErrMultipleLogin    = errors.New("Synology multiple login detected")
 	ErrPermissionDenied = errors.New("Synology permission denied")
@@ -202,6 +203,12 @@ func DiagnoseConnectionError(err error) ConnectionDiagnostic {
 			Detail: "DSM 登录失败；请检查用户名、密码以及账号登录限制。",
 		}
 	}
+	if errors.Is(err, ErrHTTPForbidden) {
+		return ConnectionDiagnostic{
+			Code:   "synology_http_forbidden",
+			Detail: "Synology DSM 或应用入口返回 HTTP 403；这不等同于用户名或密码错误。请检查 DSM 登录门户/反向代理、来源 IP 限制和对应应用的访问权限。",
+		}
+	}
 	if errors.Is(err, ErrUnavailable) {
 		detail := strings.TrimSpace(err.Error())
 		detail = strings.TrimPrefix(detail, ErrUnavailable.Error()+": ")
@@ -306,8 +313,8 @@ func (c *Client) apiInfo(ctx context.Context) (map[string]apiInfo, error) {
 
 func (c *Client) login(ctx context.Context, authAPI apiInfo) (authData, error) {
 	version := authAPI.MaxVersion
-	if version > 3 {
-		version = 3
+	if version > 6 {
+		version = 6
 	}
 	if version < 1 {
 		version = 1
@@ -320,10 +327,13 @@ func (c *Client) login(ctx context.Context, authAPI apiInfo) (authData, error) {
 	values.Set("passwd", c.password)
 	values.Set("session", "SynologyPhotos")
 	values.Set("format", "sid")
-	if version >= 3 {
+	if version >= 6 {
 		values.Set("enable_syno_token", "yes")
 	}
-	endpoint := c.baseURL + "/photo/webapi/auth.cgi"
+	endpoint, err := c.webAPIEndpoint(authAPI.Path)
+	if err != nil {
+		return authData{}, err
+	}
 	var envelope apiEnvelope
 	if err := c.doJSON(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()), &envelope); err != nil {
 		return authData{}, err
@@ -358,7 +368,10 @@ func (c *Client) logout(ctx context.Context, authAPI apiInfo, sid string) error 
 	values.Set("method", "logout")
 	values.Set("session", "SynologyPhotos")
 	values.Set("_sid", sid)
-	endpoint := c.baseURL + "/photo/webapi/auth.cgi"
+	endpoint, err := c.webAPIEndpoint(authAPI.Path)
+	if err != nil {
+		return err
+	}
 	var envelope apiEnvelope
 	if err := c.doJSON(ctx, http.MethodPost, endpoint, strings.NewReader(values.Encode()), &envelope); err != nil {
 		return err
@@ -429,7 +442,17 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body io.Re
 		_ = resp.Body.Close()
 
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			return fmt.Errorf("%w: HTTP %s", ErrAuthentication, resp.Status)
+			if readErr == nil && len(data) <= maxJSONBytes {
+				var envelope apiEnvelope
+				if err := json.Unmarshal(data, &envelope); err == nil &&
+					!envelope.Success && envelope.Error != nil && envelope.Error.Code != 0 {
+					return apiError(envelope)
+				}
+			}
+			if resp.StatusCode == http.StatusUnauthorized {
+				return fmt.Errorf("%w: HTTP %s", ErrAuthentication, resp.Status)
+			}
+			return fmt.Errorf("%w: HTTP %s", ErrHTTPForbidden, resp.Status)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 			if attempt+1 < attempts {
