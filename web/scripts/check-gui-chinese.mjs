@@ -24,6 +24,9 @@ const files = {
   paginationControls: readRepo('ui/shared/src/mui/PaginationControls.tsx'),
   sourceRunSummary: readRepo('ui/shared/src/mui/SourceRunSummary.tsx'),
   main: read('src/main.tsx'),
+  styles: read('src/styles.css'),
+  packageJson: read('package.json'),
+  packageLock: read('package-lock.json'),
   html: read('index.html'),
 }
 
@@ -102,7 +105,35 @@ if (/<DialogContent(?:\s|>)/.test(files.yikeCookieHelp)) throw new Error('一刻
 requireText(files.synologyGuide, ['群晖 DSM 配置', 'DSM 操作示意图', '上一步', '下一步', '完成', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert'], '群晖 DSM 向导')
 if (/<Alert\b/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI Alert')
 if (/<DialogContent(?:\s|>)/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI DialogContent')
-requireText(files.main, ["import zhCN from 'antd/locale/zh_CN'", 'locale={zhCN}'], 'Ant Design')
+requireText(files.main, ['MuiThemeProvider', 'createXDriveMuiTheme', '<App />'], 'MUI Web 入口')
+if (/antd|ConfigProvider|AntApp|zhCN/.test(files.main)) throw new Error('Web 入口仍保留 Ant Design provider')
+if (/\.ant-[a-zA-Z0-9_-]+/.test(files.styles)) throw new Error('Web CSS 仍保留 Ant Design 选择器')
+
+const webPackage = JSON.parse(files.packageJson)
+if (webPackage.dependencies?.antd || webPackage.dependencies?.['@ant-design/icons']) {
+  throw new Error('Web package.json 仍依赖 Ant Design')
+}
+const webLock = JSON.parse(files.packageLock)
+const webLockKeys = Object.keys(webLock.packages ?? {})
+if (webLockKeys.some((key) => key === 'node_modules/antd' || key.startsWith('node_modules/@ant-design/'))) {
+  throw new Error('Web package-lock.json 仍包含 Ant Design 包')
+}
+
+const sourceFiles = []
+const collectSourceFiles = (directory) => {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) collectSourceFiles(fullPath)
+    else if (/\.(?:ts|tsx)$/.test(entry.name)) sourceFiles.push(fullPath)
+  }
+}
+collectSourceFiles(path.join(root, 'src'))
+for (const sourcePath of sourceFiles) {
+  const source = fs.readFileSync(sourcePath, 'utf8')
+  if (/from\s+['"]antd(?:\/[^'"]*)?['"]/.test(source) || /import\s+['"]antd(?:\/[^'"]*)?['"]/.test(source) || source.includes('@ant-design/icons')) {
+    throw new Error(`Web 源码仍依赖 Ant Design：${path.relative(root, sourcePath)}`)
+  }
+}
 requireText(files.html, ['<html lang="zh-CN">', 'xDrive 网页文件管理器'], '网页入口')
 
 forbidText(files.app, [

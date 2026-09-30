@@ -45,7 +45,6 @@ a { user-select: none; }
   .username { display: none; }
   .content-wrap { padding: 16px; }
   .file-toolbar { align-items: flex-start; flex-direction: column; }
-  .ant-table-cell:nth-child(2), .ant-table-cell:nth-child(3) { display: none; }
 }
 
 
