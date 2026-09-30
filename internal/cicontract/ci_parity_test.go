@@ -693,9 +693,21 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"./scripts/build-windows-installer.ps1",
 		"Get-AuthenticodeSignature",
 		"Start-Process -FilePath $installer",
+		`"/DIR=$app"`,
+		`'"stage":"window_shown","visible":true'`,
+		`'"stage":"startup_complete"'`,
+		"$desktopTestRoot",
+		"$desktopLocalAppData",
+		"$desktopUserData",
+		`"--user-data-dir=$desktopUserData"`,
+		"$desktopPidsBefore",
+		"$desktopPidsAfter",
 		"test-windows-client-package.ps1",
 		"test-windows-smoke-package.ps1",
 	)
+	if strings.Contains(gitlabWindowsNative, "MainWindowHandle") {
+		t.Errorf("GitLab service-runner smoke tests must use in-process lifecycle evidence instead of MainWindowHandle")
+	}
 	requireRaw(t, "Windows uninstaller resolver", windowsUninstallerResolver,
 		"UninstallString",
 		"^unins\\d+\\.exe$",

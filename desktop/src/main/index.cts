@@ -739,7 +739,10 @@ function createMainWindow(showOnReady = true) {
   })
   win.once('ready-to-show', () => {
     startupCheckpoint('window_ready_to_show')
-    if (showOnReady) win.show()
+    if (showOnReady) {
+      win.show()
+      startupCheckpoint('window_shown', { visible: win.isVisible() })
+    }
   })
   win.webContents.on('did-finish-load', () => {
     clearRendererLoadTimer()

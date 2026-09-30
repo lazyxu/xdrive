@@ -65,11 +65,11 @@ try {
 
         "SmokeInstall" {
             $installer = (Resolve-Path ./release/xDriveSetup-amd64.exe).Path
-            $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP")
+            $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
+            $args = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/NOSTARTAGENT", "/NOSTARTDESKTOP", "/DIR=$app")
             $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
 
-            $app = Join-Path $env:LOCALAPPDATA "Programs\xDrive"
             $desktopDir = Join-Path $app "desktop"
             $desktopExe = Join-Path $desktopDir "xdrive-desktop.exe"
             if (-not (Test-Path (Join-Path $app "xd.exe"))) { throw "installed xd.exe missing" }
@@ -121,34 +121,56 @@ try {
             # can really start, render a top-level window, and stay alive. Merely checking
             # that xdrive-desktop.exe exists would not catch packaged startup regressions.
             $runnerSession = (Get-Process -Id $PID).SessionId
+            $desktopPidsBefore = @(
+                Get-Process -Name "xdrive-desktop" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.SessionId -eq $runnerSession } |
+                    ForEach-Object { $_.Id }
+            )
             $agentPidsBefore = @(
                 Get-Process -Name "xdrive-agent" -ErrorAction SilentlyContinue |
                     Where-Object { $_.SessionId -eq $runnerSession } |
                     ForEach-Object { $_.Id }
             )
-            $desktopLogDir = Join-Path $env:LOCALAPPDATA "xDrive"
+            $desktopTestRoot = Join-Path $env:TEMP ("xdrive-desktop-smoke-" + [guid]::NewGuid().ToString("N"))
+            $desktopLocalAppData = Join-Path $desktopTestRoot "Local"
+            $desktopUserData = Join-Path $desktopTestRoot "UserData"
+            New-Item -ItemType Directory -Force -Path $desktopLocalAppData, $desktopUserData | Out-Null
+            $desktopLogDir = Join-Path $desktopLocalAppData "xDrive"
             $desktopLog = Join-Path $desktopLogDir "desktop.log"
             $desktopMarker = Join-Path $desktopLogDir "desktop-running.json"
             Remove-Item $desktopLog, $desktopMarker -Force -ErrorAction SilentlyContinue
 
             $desktop = $null
             try {
-                $desktop = Start-Process -FilePath $desktopExe -PassThru
+                $previousLocalAppData = $env:LOCALAPPDATA
+                try {
+                    $env:LOCALAPPDATA = $desktopLocalAppData
+                    $desktop = Start-Process -FilePath $desktopExe -ArgumentList @("--user-data-dir=$desktopUserData") -PassThru
+                } finally {
+                    $env:LOCALAPPDATA = $previousLocalAppData
+                }
                 $deadline = [DateTime]::UtcNow.AddSeconds(20)
                 $windowReady = $false
+                $desktopLifecycle = ""
                 while ([DateTime]::UtcNow -lt $deadline) {
                     Start-Sleep -Milliseconds 250
                     $desktop.Refresh()
                     if ($desktop.HasExited) {
                         throw "installed Desktop exited during startup with code $($desktop.ExitCode)"
                     }
-                    if ($desktop.MainWindowHandle -ne 0) {
+                    if (Test-Path $desktopLog -PathType Leaf) {
+                        $desktopLifecycle = Get-Content -Raw $desktopLog -ErrorAction SilentlyContinue
+                    }
+                    if ($desktopLifecycle -match '"event":"startup_failed"' -or $desktopLifecycle -match '"event":"render_process_gone"') {
+                        throw "installed Desktop reported a startup failure: $desktopLifecycle"
+                    }
+                    if ($desktopLifecycle -match '"stage":"window_shown","visible":true' -and $desktopLifecycle -match '"stage":"startup_complete"') {
                         $windowReady = $true
                         break
                     }
                 }
                 if (-not $windowReady) {
-                    throw "installed Desktop did not create a main window within 20 seconds"
+                    throw "installed Desktop did not report a visible, fully started main window within 20 seconds: $desktopLifecycle"
                 }
 
                 Start-Sleep -Seconds 2
@@ -180,6 +202,21 @@ try {
                         Write-Warning "failed to stop Desktop smoke-test process tree: $($_.Exception.Message)"
                     }
                 }
+
+                # Electron can create multiple processes with the same executable name,
+                # and a service runner cannot reliably observe their top-level HWNDs.
+                # Remove only Desktop processes created by this smoke test in its session.
+                $desktopPidsAfter = @(
+                    Get-Process -Name "xdrive-desktop" -ErrorAction SilentlyContinue |
+                        Where-Object { $_.SessionId -eq $runnerSession } |
+                        ForEach-Object { $_.Id }
+                )
+                foreach ($desktopPid in $desktopPidsAfter) {
+                    if ($desktopPidsBefore -notcontains $desktopPid) {
+                        Stop-Process -Id $desktopPid -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                Remove-Item -LiteralPath $desktopTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 
                 # Desktop may launch the installed Agent independently. Stop only Agent
                 # processes newly created in this runner session; never touch another session.

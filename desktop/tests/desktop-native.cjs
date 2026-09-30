@@ -66,6 +66,7 @@ test('desktop startup lifecycle records checkpoints and non-fatal Windows task r
     'agent_checked',
     'monitors_started',
     'renderer_loaded',
+    'window_shown',
     'startup_complete',
   ]) {
     assert.ok(main.includes(`startupCheckpoint('${stage}'`), `missing startup checkpoint: ${stage}`)
