@@ -39,6 +39,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import type { ButtonProps } from '@mui/material'
 import { formatSize } from '../format'
 import { XDriveStatePanel } from './StatePanel'
 
@@ -240,6 +241,21 @@ function XDriveLazyFileThumbnail({
 }
 
 const xDriveWindowsFolderYellow = '#ffcb3d'
+
+export function XDriveFileExplorerCommandButton({ sx, ...props }: ButtonProps) {
+  return (
+    <Button
+      {...props}
+      size="small"
+      variant="text"
+      color="inherit"
+      sx={[
+        { minHeight: 30, px: 1, borderRadius: 1, color: 'text.primary', whiteSpace: 'nowrap' },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
+    />
+  )
+}
 
 const detailsRowHeight = 38
 const detailsHeaderHeight = 32
@@ -768,14 +784,14 @@ export function XDriveFileExplorer({
         }}
       >
         {onCreateFolder ? (
-          <Button size="small" startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
+          <XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
             新建文件夹
-          </Button>
+          </XDriveFileExplorerCommandButton>
         ) : null}
         {onUpload ? (
-          <Button size="small" startIcon={<UploadRoundedIcon />} onClick={onUpload}>
+          <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>
             上传
-          </Button>
+          </XDriveFileExplorerCommandButton>
         ) : null}
         {commandBarStart}
 
@@ -783,15 +799,14 @@ export function XDriveFileExplorer({
 
         {commandBarEnd}
 
-        <Button
-          size="small"
+        <XDriveFileExplorerCommandButton
           startIcon={<SortRoundedIcon />}
           onClick={(event) => setSortAnchor(event.currentTarget)}
           aria-haspopup="menu"
           aria-expanded={Boolean(sortAnchor)}
         >
           排序
-        </Button>
+        </XDriveFileExplorerCommandButton>
         <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)}>
           {([
             ['name', '名称'],

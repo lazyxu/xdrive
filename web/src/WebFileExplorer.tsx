@@ -11,8 +11,8 @@ import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import { Box, LinearProgress } from '@mui/material'
 import {
-  XDriveActionButton,
   XDriveFileExplorer,
+  XDriveFileExplorerCommandButton,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
@@ -372,9 +372,9 @@ export default function WebFileExplorer({
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(
-          <XDriveActionButton compact startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>
+          <XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>
             回收站
-          </XDriveActionButton>
+          </XDriveFileExplorerCommandButton>
         )}
         statusText={searchResults
           ? `搜索“${searchValue.trim()}”${searchHasMore ? ' · 仅显示前 200 个结果' : ''}`

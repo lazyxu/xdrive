@@ -6,6 +6,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import { Dialog, Stack, TextField } from '@mui/material'
@@ -14,6 +15,7 @@ import {
   XDriveDialogContent,
   XDriveDialogTitle,
   XDriveFileExplorer,
+  XDriveFileExplorerCommandButton,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type {
@@ -460,9 +462,9 @@ export default function DesktopFileExplorer({
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(
-          <XDriveActionButton compact onClick={onOpenTrash}>
+          <XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>
             回收站
-          </XDriveActionButton>
+          </XDriveFileExplorerCommandButton>
         )}
         statusText={searchResults
           ? `搜索“${searchValue.trim()}”${searchResults.length >= 200 ? ' · 最多显示 200 个结果' : ''}`
