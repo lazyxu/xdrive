@@ -18,6 +18,7 @@ const files = {
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
   accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),
   brandLockup: readRepo('ui/shared/src/mui/BrandLockup.tsx'),
+  confirmDialog: readRepo('ui/shared/src/mui/ConfirmDialog.tsx'),
   sidebarStorageSummary: readRepo('ui/shared/src/mui/SidebarStorageSummary.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
@@ -47,7 +48,9 @@ const forbidText = (source, values, label) => {
 
 requireText(files.app, ['登录', '我的文件', '回收站', '新建文件夹', '版本历史', 'XDriveStatusAlert'], '文件管理器')
 if (/from ['"]antd['"]/.test(files.app) || files.app.includes('@ant-design/icons')) throw new Error('Web 主文件管理器仍依赖 Ant Design')
-requireText(files.app, ['XDriveActionButton', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveDialogActions', 'XDriveStatePanel', 'XDriveMediaGalleryPage'], 'Web MUI 文件管理器')
+requireText(files.app, ['XDriveActionButton', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveDialogActions', 'XDriveConfirmDialog', 'XDriveStatePanel', 'XDriveMediaGalleryPage'], 'Web MUI 文件管理器')
+requireText(files.confirmDialog, ['XDriveConfirmDialog', 'aria-label="确认操作"', 'closeDisabled={loading}', 'XDriveActionButton'], '共享确认框')
+requireText(files.app, ['XDriveConfirmDialog', 'confirmIntent={confirmAction?.intent', 'loading={confirmBusy}'], 'Web 确认框')
 if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
 requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDrive 品牌图标')
 requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
