@@ -102,6 +102,7 @@ func (r *Runner) loadSources(ctx context.Context, dueOnly bool, now time.Time, i
 type rankedSource struct {
 	source meta.Source
 	manual bool
+	retry  bool
 	dueAt  time.Time
 }
 
@@ -115,6 +116,9 @@ func prioritizeDueSources(sources []meta.Source, now time.Time, interval time.Du
 		if source.RunRequestedAt != nil {
 			entry.manual = true
 			entry.dueAt = source.RunRequestedAt.UTC()
+		} else if source.RetryAt != nil {
+			entry.retry = true
+			entry.dueAt = source.RetryAt.UTC()
 		} else {
 			next, err := sourceschedule.NextRunAt(source, now, interval)
 			if err != nil {
@@ -128,6 +132,9 @@ func prioritizeDueSources(sources []meta.Source, now time.Time, interval time.Du
 		left, right := ranked[i], ranked[j]
 		if left.manual != right.manual {
 			return left.manual
+		}
+		if left.retry != right.retry {
+			return left.retry
 		}
 		if !left.dueAt.Equal(right.dueAt) {
 			return left.dueAt.Before(right.dueAt)
@@ -226,11 +233,19 @@ scheduleLoop:
 					err = errors.Join(err, fmt.Errorf("record source preflight failure: %w", recordErr))
 				}
 			}
+			if retryErr := r.persistRetryOutcome(ctx, source, job.handler, result.err, now); retryErr != nil {
+				err = errors.Join(err, fmt.Errorf("persist source retry state: %w", retryErr))
+			}
 			report.Failed++
 			errs = append(errs, fmt.Errorf("source %d (%s): %w", source.ID, source.Name, err))
 			r.logger().Error("pull_source_failed",
 				"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind, "error", err)
 			continue
+		}
+		if retryErr := r.persistRetryOutcome(ctx, source, job.handler, nil, now); retryErr != nil {
+			errs = append(errs, fmt.Errorf("source %d (%s) clear retry state: %w", source.ID, source.Name, retryErr))
+			r.logger().Error("pull_source_retry_state_clear_failed",
+				"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind, "error", retryErr)
 		}
 		report.Completed++
 		r.logger().Info("pull_source_completed",

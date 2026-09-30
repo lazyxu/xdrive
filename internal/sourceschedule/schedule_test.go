@@ -96,3 +96,41 @@ func TestLegacyScheduleUsesFallback(t *testing.T) {
 		t.Fatalf("legacy source due=%v err=%v", due, err)
 	}
 }
+
+func TestRetryScheduleOverridesNormalIntervalButNotManualMode(t *testing.T) {
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	last := now.Add(-12 * time.Hour)
+	retryAt := now.Add(5 * time.Minute)
+	source := meta.Source{
+		ScheduleType:       TypeInterval,
+		ScheduleExpression: "6h",
+		LastRunAt:          &last,
+		RetryAttempt:       2,
+		RetryAt:            &retryAt,
+		RetryClass:         "transient",
+	}
+	if due, err := Due(source, now, DefaultInterval); err != nil || due {
+		t.Fatalf("source before retry due=%v err=%v", due, err)
+	}
+	if next, err := NextRunAt(source, now, DefaultInterval); err != nil || !next.Equal(retryAt) {
+		t.Fatalf("next retry=%v err=%v want=%v", next, err, retryAt)
+	}
+	after := retryAt.Add(time.Second)
+	if due, err := Due(source, after, DefaultInterval); err != nil || !due {
+		t.Fatalf("source after retry due=%v err=%v", due, err)
+	}
+
+	requested := now
+	source.RunRequestedAt = &requested
+	if due, err := Due(source, now, DefaultInterval); err != nil || !due {
+		t.Fatalf("manual override due=%v err=%v", due, err)
+	}
+
+	source = meta.Source{ScheduleType: TypeManual, RetryAt: &now, RetryAttempt: 3, RetryClass: "transient"}
+	if due, err := Due(source, now, DefaultInterval); err != nil || due {
+		t.Fatalf("manual schedule must ignore retry state: due=%v err=%v", due, err)
+	}
+	if next, err := NextRunAt(source, now, DefaultInterval); err != nil || !next.IsZero() {
+		t.Fatalf("manual schedule next=%v err=%v want zero", next, err)
+	}
+}

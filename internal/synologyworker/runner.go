@@ -190,6 +190,36 @@ func (r *Runner) logger() *slog.Logger {
 	return slog.Default()
 }
 
+func (r *Runner) ClassifyPullRetry(err error) pullworker.RetryClass {
+	switch {
+	case err == nil, errors.Is(err, context.Canceled):
+		return pullworker.RetryNone
+	case errors.Is(err, synology.ErrMultipleLogin):
+		return pullworker.RetryRateLimited
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, synology.ErrSessionExpired):
+		return pullworker.RetryTransient
+	case errors.Is(err, synology.ErrAuthentication),
+		errors.Is(err, synology.ErrPermissionDenied),
+		errors.Is(err, synology.ErrOTPRequired),
+		errors.Is(err, synology.ErrPhotosMissing):
+		return pullworker.RetryNone
+	case errors.Is(err, synology.ErrUnavailable):
+		diagnostic := synology.DiagnoseConnectionError(err)
+		switch diagnostic.Code {
+		case "synology_timeout",
+			"synology_dns_failed",
+			"synology_connection_refused",
+			"synology_network_unreachable",
+			"synology_unavailable":
+			return pullworker.RetryTransient
+		default:
+			return pullworker.RetryNone
+		}
+	default:
+		return pullworker.RetryNone
+	}
+}
+
 func sourceErrorMessage(err error) string {
 	switch {
 	case errors.Is(err, context.Canceled):

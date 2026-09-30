@@ -19,7 +19,7 @@ The following pieces already exist and should be reused rather than rebuilt:
 - Yike Pull already uses stable `yike:<owner_uk>:<fsid>` identities, imports albums, stores capture/create time, MD5 and remote thumbnail hints, rate-limits the private control-plane API to about 2 requests/second, supports Range downloads, resumable xDrive uploads, verified MD5-to-SHA256 reuse, durable cancellation, and incomplete-inventory safety.
 - Synology Pull already uses Photos item identity as `synology:<space>:<item_id>`, supports Personal/Shared spaces, imports logical albums, uses resumable Range downloads, and exposes the Photos `live_type` field in the adapter.
 - Synology Push already has robust filesystem identities, including portable identity state, birth-time-aware remount handling, inode-reuse protection, atomic identity persistence, and fail-closed root replacement detection.
-- The Pull worker dispatches eligible sources with bounded source-level concurrency (default 2, configurable 1-8), prioritizes pending manual requests, then orders scheduled work by the oldest computed next-run time; persisted retry/backoff remains TODO.
+- The Pull worker dispatches eligible sources with bounded source-level concurrency (default 2, configurable 1-8), prioritizes pending manual requests, then persisted retryable failures, then the oldest computed scheduled next-run time.
 - Backup mode intentionally never deletes or trashes xDrive content because a source item disappeared.
 
 Therefore Photo Source v2 must **extend the existing layers**, not introduce a second parallel photo database.
@@ -313,17 +313,18 @@ The Pull runner uses bounded source-level concurrency:
 - per-Source transfer concurrency remains 1;
 - connector/account-specific API rate limits remain independent of global Source concurrency.
 
-The implemented queue priority is:
+The queue priority is:
 
 ```text
 P0 pending manual "run now"
-P1 most-overdue scheduled Source
-P2 normally due scheduled Source
+P1 due persisted retryable failure
+P2 most-overdue scheduled Source
+P3 normally due scheduled Source
 ```
 
-The remaining P0 scheduler work is persisted retry priority/backoff. Retries must be limited to transient network/429/5xx/session-recoverable failures. Authentication, permission, invalid configuration, unsupported API, and deterministic item errors must not enter a fast retry loop.
+Retry state is persisted on the Source so worker restarts do not erase or multiply retries. Transient failures use exponential backoff starting at about one minute and capped at 30 minutes; rate-limit/multiple-login failures start at about two minutes and cap at one hour. Stable per-Source jitter spreads retries, and the selected `retry_at` deadline is persisted. Explicit `manual` schedule Sources never become automatically due from retry state, preserving the manual-only contract. A user-triggered **立即扫描** request still overrides a pending backoff.
 
-Persist retry state so a worker restart does not erase or multiply retries. Apply bounded exponential backoff with jitter and preserve fairness so one failing Source cannot starve the rest. When persisted retries are implemented they become the P1 queue class between manual work and overdue scheduled work.
+Only connector-classified transient/rate-limit failures enter this source-level retry path. Authentication, permission, OTP, invalid TLS certificates, missing provider capabilities, invalid configuration, and deterministic item errors remain non-retryable at the scheduler level.
 
 If multiple Sources share one provider account, a later connector-account limiter should prevent source-level parallelism from multiplying the provider's effective API request rate beyond the account policy.
 
@@ -422,7 +423,7 @@ Legend: **Current** = implemented in master; **Foundation** = model/parser exist
 | Durable cancellation | Current | Current | Current |
 | Multi-source bounded parallelism | Current | Current | N/A for central Pull runner; agent scheduling separate |
 | Manual/overdue task priority | Current | Current | Pending manual request current |
-| Persisted fast retry scheduling | TODO | TODO | TODO where applicable |
+| Persisted fast retry scheduling | Current | Current | TODO where applicable |
 | Backup deletion safety | Current | Current | Current |
 | Mirror-to-trash mode | TODO | TODO | TODO |
 | Source-side delete/write | Not planned for v2 | Not planned for v2 | Not planned for v2 |
@@ -436,7 +437,7 @@ The ordering prioritizes reliability and identity before feature breadth.
 
 | Phase | TODO | Priority |
 | --- | --- | --- |
-| P0 | Persisted retryable-failure priority/backoff; bounded multi-source scheduler plus manual/overdue priority are implemented | Highest |
+| P0 | Complete: bounded multi-source scheduler, manual/retry/overdue priority, persisted classified retry backoff | Highest |
 | P1 | `SourceItemAlias` model + planner alias resolution + migration tests | Highest |
 | P2 | Synology Push hybrid Photos-API semantic lane + filesystem fast path + no-duplicate canonical item-ID migration | Highest |
 | P3 | Source semantic capability declarations + normalized scalar/facet storage | High |

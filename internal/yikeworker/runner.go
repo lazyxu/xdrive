@@ -298,6 +298,19 @@ func isSourceRunCancellationRequested(err error) bool {
 	return pullworker.IsCancellationRequested(err)
 }
 
+func (r *Runner) ClassifyPullRetry(err error) pullworker.RetryClass {
+	switch {
+	case err == nil, errors.Is(err, context.Canceled):
+		return pullworker.RetryNone
+	case errors.Is(err, yike.ErrRateLimited):
+		return pullworker.RetryRateLimited
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, yike.ErrUnavailable):
+		return pullworker.RetryTransient
+	default:
+		return pullworker.RetryNone
+	}
+}
+
 func sourceErrorMessage(err error) string {
 	switch {
 	case errors.Is(err, context.Canceled):

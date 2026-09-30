@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/pullworker"
 	"github.com/lazyxu/xdrive/internal/yike"
 )
 
@@ -36,5 +37,25 @@ func TestSourceRunCancellationRequestIsTyped(t *testing.T) {
 	}
 	if isSourceRunCancellationRequested(&client.APIError{Status: http.StatusConflict, Msg: "source run is not running"}) {
 		t.Fatal("unrelated conflict was classified as cancellation")
+	}
+}
+
+func TestClassifyPullRetryYike(t *testing.T) {
+	runner := &Runner{}
+	tests := []struct {
+		err  error
+		want pullworker.RetryClass
+	}{
+		{fmt.Errorf("wrapped: %w", yike.ErrRateLimited), pullworker.RetryRateLimited},
+		{fmt.Errorf("wrapped: %w", yike.ErrUnavailable), pullworker.RetryTransient},
+		{context.DeadlineExceeded, pullworker.RetryTransient},
+		{fmt.Errorf("wrapped: %w", yike.ErrAuthentication), pullworker.RetryNone},
+		{context.Canceled, pullworker.RetryNone},
+		{errors.New("deterministic failure"), pullworker.RetryNone},
+	}
+	for _, tt := range tests {
+		if got := runner.ClassifyPullRetry(tt.err); got != tt.want {
+			t.Fatalf("ClassifyPullRetry(%v)=%q want=%q", tt.err, got, tt.want)
+		}
 	}
 }

@@ -61,6 +61,9 @@ type Source struct {
 	LastRunAt          *time.Time `gorm:"index"`
 	LastSuccessAt      *time.Time `gorm:"index"`
 	LastError          string     `gorm:"type:text"`
+	RetryAttempt       int        `gorm:"not null;default:0"`
+	RetryAt            *time.Time `gorm:"index"`
+	RetryClass         string     `gorm:"size:32;index"`
 	RunRequestedAt     *time.Time `gorm:"index"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
