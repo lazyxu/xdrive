@@ -16,6 +16,8 @@ import {
 } from '@mui/material'
 import {
   XDriveActionButton,
+  XDriveDescriptionGrid,
+  XDriveDescriptionItem,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
@@ -265,71 +267,65 @@ export default function AdminAuditPanel({
       <XDriveDialogTitle title="审计事件详情" onClose={() => setDetailEvent(null)} />
       <XDriveDialogContent dividers>
         {detailEvent ? (
-          <Stack spacing={1.5}>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">时间</Typography>
+          <XDriveDescriptionGrid>
+            <XDriveDescriptionItem label="时间">
               <Typography variant="body2">{new Date(detailEvent.created_at).toLocaleString()}</Typography>
-            </Stack>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">操作者</Typography>
+            </XDriveDescriptionItem>
+            <XDriveDescriptionItem label="操作者">
               <Typography variant="body2">
                 {detailEvent.actor_username || '匿名'}
                 {detailEvent.actor_role ? ` · ${actorRoleLabel(detailEvent.actor_role)}` : ''}
               </Typography>
-            </Stack>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">操作</Typography>
-              <Typography variant="body2">{actionLabel(detailEvent.action)}</Typography>
-              <Typography component="code" variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                {detailEvent.action}
-              </Typography>
-            </Stack>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">目标</Typography>
-              <Typography variant="body2">
-                {detailEvent.target_label || detailEvent.target_id || '—'}
-                {detailEvent.target_label && detailEvent.target_id ? ` · ${detailEvent.target_id}` : ''}
-              </Typography>
-              {detailEvent.target_type ? (
-                <Typography variant="caption" color="text.secondary">{detailEvent.target_type}</Typography>
-              ) : null}
-            </Stack>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">结果</Typography>
+            </XDriveDescriptionItem>
+            <XDriveDescriptionItem label="操作">
+              <Stack spacing={0.25}>
+                <Typography variant="body2">{actionLabel(detailEvent.action)}</Typography>
+                <Typography component="code" variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                  {detailEvent.action}
+                </Typography>
+              </Stack>
+            </XDriveDescriptionItem>
+            <XDriveDescriptionItem label="目标">
+              <Stack spacing={0.25}>
+                <Typography variant="body2">
+                  {detailEvent.target_label || detailEvent.target_id || '—'}
+                  {detailEvent.target_label && detailEvent.target_id ? ` · ${detailEvent.target_id}` : ''}
+                </Typography>
+                {detailEvent.target_type ? (
+                  <Typography variant="caption" color="text.secondary">{detailEvent.target_type}</Typography>
+                ) : null}
+              </Stack>
+            </XDriveDescriptionItem>
+            <XDriveDescriptionItem label="结果">
               <XDriveStatusBadge
                 tone={detailEvent.result === 'success' ? 'good' : 'bad'}
                 label={detailEvent.result === 'success' ? '成功' : '失败'}
               />
-            </Stack>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">来源 IP</Typography>
+            </XDriveDescriptionItem>
+            <XDriveDescriptionItem label="来源 IP">
               <Typography variant="body2">{detailEvent.ip_address || '—'}</Typography>
-            </Stack>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">Request ID</Typography>
+            </XDriveDescriptionItem>
+            <XDriveDescriptionItem label="Request ID">
               <Typography component="code" variant="body2" sx={{ overflowWrap: 'anywhere' }}>
                 {detailEvent.request_id || '—'}
               </Typography>
-            </Stack>
-            <Stack spacing={0.25}>
-              <Typography variant="caption" color="text.secondary">Metadata</Typography>
+            </XDriveDescriptionItem>
+            <XDriveDescriptionItem label="Metadata" fullWidth>
               <Typography
                 component="pre"
                 variant="body2"
                 sx={{
                   m: 0,
-                  p: 1.25,
-                  borderRadius: 1,
-                  bgcolor: 'action.hover',
                   whiteSpace: 'pre-wrap',
                   overflowWrap: 'anywhere',
                   fontFamily: 'monospace',
+                  fontWeight: 400,
                 }}
               >
                 {metadataText(detailEvent.metadata)}
               </Typography>
-            </Stack>
-          </Stack>
+            </XDriveDescriptionItem>
+          </XDriveDescriptionGrid>
         ) : null}
       </XDriveDialogContent>
       <XDriveDialogActions>
