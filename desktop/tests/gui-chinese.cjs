@@ -165,6 +165,8 @@ test('desktop sidebar uses compact MUI navigation with icons, state and badges',
   assert.ok(styles.includes('grid-template-columns: 176px 1fr'), 'compact desktop layout should narrow the sidebar to 176px')
   assert.ok(styles.includes('.sidebar-nav-item.Mui-selected'), 'selected navigation styling is missing')
   assert.ok(styles.includes('.sidebar-nav-item .MuiListItemIcon-root'), 'sidebar icon alignment styling is missing')
+  assert.ok(sidebar.includes('<ListItemText primary="文件" />'), 'desktop file navigation should match the Web label')
+  assert.equal(sidebar.includes('<ListItemText primary="云端文件" />'), false, 'desktop sidebar should not use the legacy cloud-files label')
 })
 
 test('desktop gates CfAPI-only storage controls by platform', () => {
