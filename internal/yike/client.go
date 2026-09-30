@@ -27,6 +27,7 @@ const (
 	defaultAPIRetryMaxDelay              = 30 * time.Second
 	defaultAPIMinInterval                = 500 * time.Millisecond
 	defaultAPIRateLimitBaseDelay         = 2 * time.Second
+	defaultDownloadLinkBatchSize         = 20
 )
 
 var (
@@ -37,19 +38,24 @@ var (
 )
 
 type Client struct {
-	baseURL               string
-	cookie                string
-	httpClient            *http.Client
-	userAgent             string
-	downloadHeaderTimeout time.Duration
-	downloadIdleTimeout   time.Duration
-	apiMaxAttempts        int
-	apiRetryBaseDelay     time.Duration
-	apiRetryMaxDelay      time.Duration
-	apiMinInterval        time.Duration
-	apiRateLimitBaseDelay time.Duration
-	apiSlotMu             sync.Mutex
-	apiNextSlot           time.Time
+	baseURL                   string
+	cookie                    string
+	httpClient                *http.Client
+	userAgent                 string
+	downloadHeaderTimeout     time.Duration
+	downloadIdleTimeout       time.Duration
+	apiMaxAttempts            int
+	apiRetryBaseDelay         time.Duration
+	apiRetryMaxDelay          time.Duration
+	apiMinInterval            time.Duration
+	apiRateLimitBaseDelay     time.Duration
+	apiSlotMu                 sync.Mutex
+	apiNextSlot               time.Time
+	downloadLinkMu            sync.Mutex
+	downloadLinkQueue         []int64
+	downloadLinkQueued        map[int64]struct{}
+	downloadLinkCache         map[int64]DownloadLink
+	downloadLinkBatchDisabled bool
 }
 
 func New(cookie string) (*Client, error) {
@@ -284,10 +290,64 @@ func (c *Client) ListAllAlbumFiles(ctx context.Context, albumID string) ([]Album
 	return out, err
 }
 
+func (c *Client) QueueDownloadFileLinks(fsids []int64) {
+	if c == nil || len(fsids) == 0 {
+		return
+	}
+	c.downloadLinkMu.Lock()
+	defer c.downloadLinkMu.Unlock()
+	if c.downloadLinkBatchDisabled {
+		return
+	}
+	if c.downloadLinkQueued == nil {
+		c.downloadLinkQueued = make(map[int64]struct{})
+	}
+	for _, fsid := range fsids {
+		if fsid <= 0 {
+			continue
+		}
+		if c.downloadLinkCache != nil {
+			if _, ok := c.downloadLinkCache[fsid]; ok {
+				continue
+			}
+		}
+		if _, ok := c.downloadLinkQueued[fsid]; ok {
+			continue
+		}
+		c.downloadLinkQueued[fsid] = struct{}{}
+		c.downloadLinkQueue = append(c.downloadLinkQueue, fsid)
+	}
+}
+
 func (c *Client) DownloadFileLink(ctx context.Context, fsid int64) (DownloadLink, error) {
 	if fsid <= 0 {
 		return DownloadLink{}, fmt.Errorf("fsid must be positive")
 	}
+	if link, ok := c.takeCachedDownloadLink(fsid); ok {
+		return link, nil
+	}
+	batch := c.takeDownloadLinkBatch(fsid)
+	if len(batch) > 1 {
+		links, err := c.downloadFileLinksBatch(ctx, batch)
+		if err != nil {
+			if errors.Is(err, ErrRateLimited) || errors.Is(err, ErrAuthentication) {
+				return DownloadLink{}, err
+			}
+			c.disableDownloadLinkBatch()
+		} else {
+			c.storeDownloadLinks(fsid, links)
+			if link, ok := links[fsid]; ok {
+				return link, nil
+			}
+			if len(links) == 0 {
+				c.disableDownloadLinkBatch()
+			}
+		}
+	}
+	return c.downloadFileLinkSingle(ctx, fsid)
+}
+
+func (c *Client) downloadFileLinkSingle(ctx context.Context, fsid int64) (DownloadLink, error) {
 	var out struct {
 		apiEnvelope
 		DLink string `json:"dlink"`
@@ -296,19 +356,186 @@ func (c *Client) DownloadFileLink(ctx context.Context, fsid int64) (DownloadLink
 		"fsid":       {strconv.FormatInt(fsid, 10)},
 		"clienttype": {"70"},
 	}
-	if err := c.getJSON(ctx, "/file/v2/download", query, &out); err != nil {
+	if err := c.getJSONNoRateLimitRetry(ctx, "/file/v2/download", query, &out); err != nil {
 		return DownloadLink{}, err
 	}
 	if strings.TrimSpace(out.DLink) == "" {
 		return DownloadLink{}, fmt.Errorf("Yike download response returned no dlink")
 	}
+	return c.newDownloadLink(out.DLink), nil
+}
+
+func (c *Client) downloadFileLinksBatch(ctx context.Context, fsids []int64) (map[int64]DownloadLink, error) {
+	if len(fsids) == 0 {
+		return map[int64]DownloadLink{}, nil
+	}
+	if len(fsids) > defaultDownloadLinkBatchSize {
+		fsids = fsids[:defaultDownloadLinkBatchSize]
+	}
+	encodedIDs := make([]string, 0, len(fsids))
+	allowed := make(map[int64]struct{}, len(fsids))
+	for _, fsid := range fsids {
+		if fsid <= 0 {
+			continue
+		}
+		encodedIDs = append(encodedIDs, strconv.FormatInt(fsid, 10))
+		allowed[fsid] = struct{}{}
+	}
+	if len(encodedIDs) == 0 {
+		return map[int64]DownloadLink{}, nil
+	}
+	rawIDs, err := json.Marshal(encodedIDs)
+	if err != nil {
+		return nil, fmt.Errorf("encode Yike dlink batch: %w", err)
+	}
+	query := url.Values{
+		"clienttype": {"70"},
+		"web":        {"1"},
+		"fsidlist":   {string(rawIDs)},
+		"need_dlink": {"1"},
+	}
+	var payload any
+	if err := c.getJSONNoRateLimitRetry(ctx, "/file/v1/info", query, &payload); err != nil {
+		return nil, err
+	}
+	rawLinks := make(map[int64]string)
+	collectDownloadLinkHints(payload, rawLinks)
+	links := make(map[int64]DownloadLink)
+	for fsid, rawURL := range rawLinks {
+		if _, ok := allowed[fsid]; !ok || strings.TrimSpace(rawURL) == "" {
+			continue
+		}
+		links[fsid] = c.newDownloadLink(rawURL)
+	}
+	return links, nil
+}
+
+func collectDownloadLinkHints(value any, out map[int64]string) {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			collectDownloadLinkHints(item, out)
+		}
+	case map[string]any:
+		fsid := firstPositiveInt64(typed["fsid"], typed["fs_id"], typed["file_id"])
+		rawURL := firstNonEmptyString(typed["dlink"], typed["download_url"], typed["url"])
+		if fsid > 0 && rawURL != "" {
+			out[fsid] = rawURL
+		}
+		for _, item := range typed {
+			collectDownloadLinkHints(item, out)
+		}
+	}
+}
+
+func firstPositiveInt64(values ...any) int64 {
+	for _, value := range values {
+		switch typed := value.(type) {
+		case float64:
+			candidate := int64(typed)
+			if candidate > 0 && float64(candidate) == typed {
+				return candidate
+			}
+		case string:
+			candidate, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+			if err == nil && candidate > 0 {
+				return candidate
+			}
+		}
+	}
+	return 0
+}
+
+func firstNonEmptyString(values ...any) string {
+	for _, value := range values {
+		if candidate, ok := value.(string); ok {
+			if candidate = strings.TrimSpace(candidate); candidate != "" {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func (c *Client) newDownloadLink(rawURL string) DownloadLink {
 	return DownloadLink{
-		URL: out.DLink,
+		URL: strings.TrimSpace(rawURL),
 		Headers: map[string]string{
 			"User-Agent": c.userAgent,
 			"Referer":    "https://photo.baidu.com/",
 		},
-	}, nil
+	}
+}
+
+func (c *Client) takeCachedDownloadLink(fsid int64) (DownloadLink, bool) {
+	c.downloadLinkMu.Lock()
+	defer c.downloadLinkMu.Unlock()
+	if c.downloadLinkCache == nil {
+		return DownloadLink{}, false
+	}
+	link, ok := c.downloadLinkCache[fsid]
+	if ok {
+		delete(c.downloadLinkCache, fsid)
+	}
+	return link, ok
+}
+
+func (c *Client) takeDownloadLinkBatch(fsid int64) []int64 {
+	c.downloadLinkMu.Lock()
+	defer c.downloadLinkMu.Unlock()
+	if c.downloadLinkBatchDisabled {
+		return nil
+	}
+	batch := []int64{fsid}
+	if c.downloadLinkQueued != nil {
+		delete(c.downloadLinkQueued, fsid)
+	}
+	remaining := c.downloadLinkQueue[:0]
+	for _, queued := range c.downloadLinkQueue {
+		if queued == fsid {
+			continue
+		}
+		if len(batch) < defaultDownloadLinkBatchSize {
+			if c.downloadLinkCache == nil {
+				batch = append(batch, queued)
+				delete(c.downloadLinkQueued, queued)
+				continue
+			}
+			if _, cached := c.downloadLinkCache[queued]; !cached {
+				batch = append(batch, queued)
+				delete(c.downloadLinkQueued, queued)
+				continue
+			}
+		}
+		remaining = append(remaining, queued)
+	}
+	c.downloadLinkQueue = append([]int64(nil), remaining...)
+	return batch
+}
+
+func (c *Client) storeDownloadLinks(requested int64, links map[int64]DownloadLink) {
+	if len(links) == 0 {
+		return
+	}
+	c.downloadLinkMu.Lock()
+	defer c.downloadLinkMu.Unlock()
+	if c.downloadLinkCache == nil {
+		c.downloadLinkCache = make(map[int64]DownloadLink)
+	}
+	for fsid, link := range links {
+		if fsid != requested && strings.TrimSpace(link.URL) != "" {
+			c.downloadLinkCache[fsid] = link
+		}
+	}
+}
+
+func (c *Client) disableDownloadLinkBatch() {
+	c.downloadLinkMu.Lock()
+	defer c.downloadLinkMu.Unlock()
+	c.downloadLinkBatchDisabled = true
+	c.downloadLinkQueue = nil
+	c.downloadLinkQueued = nil
+	c.downloadLinkCache = nil
 }
 
 func (c *Client) OpenDownload(ctx context.Context, link DownloadLink, offset int64) (io.ReadCloser, error) {
@@ -508,30 +735,22 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 			return DownloadLink{}, fmt.Errorf("%w: open shared album download link: %v", ErrUnavailable, err)
 		}
 
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		if resp.StatusCode == http.StatusTooManyRequests {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			return DownloadLink{}, fmt.Errorf("%w: HTTP %d", ErrRateLimited, resp.StatusCode)
+		}
+		if resp.StatusCode >= 500 {
 			retryAfter := resp.Header.Get("Retry-After")
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			_ = resp.Body.Close()
 			if attempt+1 < attempts {
-				var delay time.Duration
-				var allowed bool
-				if resp.StatusCode == http.StatusTooManyRequests {
-					delay, allowed = c.apiRateLimitDelay(attempt, retryAfter)
-				} else {
-					delay, allowed = c.apiRetryDelay(attempt, retryAfter)
-				}
-				if allowed {
-					if resp.StatusCode == http.StatusTooManyRequests {
-						c.reserveAPICooldown(delay)
-					}
+				if delay, allowed := c.apiRetryDelay(attempt, retryAfter); allowed {
 					if err := sleepContext(ctx, delay); err != nil {
 						return DownloadLink{}, err
 					}
 					continue
 				}
-			}
-			if resp.StatusCode == http.StatusTooManyRequests {
-				return DownloadLink{}, fmt.Errorf("%w: HTTP %d", ErrRateLimited, resp.StatusCode)
 			}
 			return DownloadLink{}, fmt.Errorf("%w: HTTP %d", ErrUnavailable, resp.StatusCode)
 		}
@@ -563,6 +782,14 @@ func (c *Client) downloadSharedAlbumFileLink(ctx context.Context, file AlbumFile
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, query url.Values, target any) error {
+	return c.getJSONWithRateLimitRetry(ctx, path, query, target, true)
+}
+
+func (c *Client) getJSONNoRateLimitRetry(ctx context.Context, path string, query url.Values, target any) error {
+	return c.getJSONWithRateLimitRetry(ctx, path, query, target, false)
+}
+
+func (c *Client) getJSONWithRateLimitRetry(ctx context.Context, path string, query url.Values, target any, retryRateLimit bool) error {
 	attempts := c.apiAttempts()
 	for attempt := 0; attempt < attempts; attempt++ {
 		if err := c.waitAPISlot(ctx); err != nil {
@@ -595,6 +822,9 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, tar
 			retryAfter := resp.Header.Get("Retry-After")
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			_ = resp.Body.Close()
+			if !retryRateLimit {
+				return fmt.Errorf("%w: HTTP %d", ErrRateLimited, resp.StatusCode)
+			}
 			if attempt+1 < attempts {
 				if delay, allowed := c.apiRateLimitDelay(attempt, retryAfter); allowed {
 					c.reserveAPICooldown(delay)
@@ -654,7 +884,7 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, tar
 		if apiErr == nil {
 			return nil
 		}
-		if errors.Is(apiErr, ErrRateLimited) && attempt+1 < attempts {
+		if retryRateLimit && errors.Is(apiErr, ErrRateLimited) && attempt+1 < attempts {
 			if delay, allowed := c.apiRateLimitDelay(attempt, ""); allowed {
 				c.reserveAPICooldown(delay)
 				if err := sleepContext(ctx, delay); err != nil {

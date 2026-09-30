@@ -15,12 +15,15 @@ type RetryClass string
 const RetryNone RetryClass = ""
 const RetryTransient RetryClass = "transient"
 const RetryRateLimited RetryClass = "rate_limited"
+const RetryRateLimitedCooldown RetryClass = "rate_limited_cooldown"
 
 const maxPersistedRetryAttempt = 16
 const transientRetryBase = time.Minute
 const transientRetryMax = 30 * time.Minute
 const rateLimitedRetryBase = 2 * time.Minute
 const rateLimitedRetryMax = time.Hour
+const rateLimitedCooldownBase = 12 * time.Minute
+const rateLimitedCooldownMax = time.Hour
 
 type RetryClassifier interface {
 	ClassifyPullRetry(error) RetryClass
@@ -28,7 +31,7 @@ type RetryClassifier interface {
 
 func ValidRetryClass(class RetryClass) bool {
 	switch class {
-	case RetryNone, RetryTransient, RetryRateLimited:
+	case RetryNone, RetryTransient, RetryRateLimited, RetryRateLimitedCooldown:
 		return true
 	default:
 		return false
@@ -65,6 +68,9 @@ func retryDelay(class RetryClass, attempt int, sourceID uint64) time.Duration {
 	base, maximum := transientRetryBase, transientRetryMax
 	if class == RetryRateLimited {
 		base, maximum = rateLimitedRetryBase, rateLimitedRetryMax
+	}
+	if class == RetryRateLimitedCooldown {
+		base, maximum = rateLimitedCooldownBase, rateLimitedCooldownMax
 	}
 	if attempt < 1 {
 		attempt = 1

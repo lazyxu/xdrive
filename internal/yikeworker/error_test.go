@@ -18,7 +18,7 @@ func TestSourceErrorMessageClassifiesYikeFailures(t *testing.T) {
 		want string
 	}{
 		{fmt.Errorf("wrapped: %w", yike.ErrAuthentication), "一刻相册登录已失效，请更新 Cookie"},
-		{fmt.Errorf("wrapped: %w", yike.ErrRateLimited), "一刻相册请求过于频繁，请稍后重试"},
+		{fmt.Errorf("wrapped: %w", yike.ErrRateLimited), "一刻相册请求过于频繁，已暂停本轮并进入冷却，稍后自动续跑"},
 		{fmt.Errorf("wrapped: %w", yike.ErrUnavailable), "一刻相册服务暂时不可用，请稍后重试"},
 		{context.Canceled, "来源运行已取消"},
 		{errors.New("other failure"), "other failure"},
@@ -46,7 +46,7 @@ func TestClassifyPullRetryYike(t *testing.T) {
 		err  error
 		want pullworker.RetryClass
 	}{
-		{fmt.Errorf("wrapped: %w", yike.ErrRateLimited), pullworker.RetryRateLimited},
+		{fmt.Errorf("wrapped: %w", yike.ErrRateLimited), pullworker.RetryRateLimitedCooldown},
 		{fmt.Errorf("wrapped: %w", yike.ErrUnavailable), pullworker.RetryTransient},
 		{context.DeadlineExceeded, pullworker.RetryTransient},
 		{fmt.Errorf("wrapped: %w", yike.ErrAuthentication), pullworker.RetryNone},

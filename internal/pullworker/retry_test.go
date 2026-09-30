@@ -30,6 +30,7 @@ func TestRetryDelayIsBoundedAndJittered(t *testing.T) {
 	}{
 		{RetryTransient, transientRetryBase, transientRetryMax},
 		{RetryRateLimited, rateLimitedRetryBase, rateLimitedRetryMax},
+		{RetryRateLimitedCooldown, rateLimitedCooldownBase, rateLimitedCooldownMax},
 	} {
 		for attempt := 1; attempt <= maxPersistedRetryAttempt; attempt++ {
 			got := retryDelay(tc.class, attempt, 42)
@@ -69,5 +70,12 @@ func TestClassifyPullRetryRequiresExplicitClassifier(t *testing.T) {
 	handler.class = RetryClass("unknown")
 	if got := classifyPullRetry(handler, err); got != RetryNone {
 		t.Fatalf("invalid retry class=%q want none", got)
+	}
+}
+
+func TestRateLimitedCooldownStartsInLongWindow(t *testing.T) {
+	delay := retryDelay(RetryRateLimitedCooldown, 1, 42)
+	if delay < 9*time.Minute || delay > 15*time.Minute {
+		t.Fatalf("first Yike-style cooldown=%s want roughly 10-15m", delay)
 	}
 }
