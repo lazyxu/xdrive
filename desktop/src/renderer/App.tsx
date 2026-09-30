@@ -77,6 +77,7 @@ import {
   XDriveSidebarStorageSummary,
   XDriveWorkspaceShell,
   XDriveStatePanel,
+  XDriveTransferCenter,
   XDriveShareCreateFields,
   XDriveShareList,
   XDriveStatusAlert,
@@ -236,25 +237,6 @@ function cacheGiB(bytes: number) {
 function formatTransferSpeed(bytesPerSecond: number) {
   if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '—'
   return `${formatBinarySize(Math.round(bytesPerSecond))}/s`
-}
-
-function formatElapsed(milliseconds: number) {
-  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '0 秒'
-  const seconds = Math.floor(milliseconds / 1000)
-  if (seconds < 60) return `${seconds} 秒`
-  const minutes = Math.floor(seconds / 60)
-  const remain = seconds % 60
-  if (minutes < 60) return `${minutes} 分 ${remain} 秒`
-  const hours = Math.floor(minutes / 60)
-  return `${hours} 小时 ${minutes % 60} 分`
-}
-
-function transferKindLabel(kind: string) {
-  if (kind === 'upload') return '上传'
-  if (kind === 'download') return '下载'
-  if (kind === 'hydration') return '下载到本地'
-  if (kind === 'dehydration') return '释放空间'
-  return kind
 }
 
 function viewLabel(view: View) {
@@ -490,8 +472,6 @@ export default function App({
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = Boolean(server.trim() && username.trim() && (password || savedPasswordAvailable))
   const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
-  const completedTransfers = transfers.transfers.filter((item) => item.state === 'completed')
-  const failedTransfers = transfers.transfers.filter((item) => item.state === 'failed')
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
@@ -3902,70 +3882,14 @@ export default function App({
             <XDriveSectionHeader
               eyebrow="传输中心"
               title="上传、下载与本地可用性"
-              actions={(
-                <div className="transfer-summary">
-                  <span><strong>{activeTransfers.length}</strong> 进行中</span>
-                  <span><strong>{completedTransfers.length}</strong> 已完成</span>
-                  <span><strong>{failedTransfers.length}</strong> 失败</span>
-                </div>
-              )}
+              subtitle="查看实时进度、速度、开始时间、已耗时、预计剩余时间与历史状态。"
             />
-
-            {([
-              ['进行中', activeTransfers],
-              ['已完成', completedTransfers],
-              ['失败', failedTransfers],
-            ] as Array<[string, AgentTransfer[]]>).map(([label, items]) => (
-              <div className="transfer-section" key={label}>
-                <div className="transfer-section-title"><h3>{label}</h3><span>{items.length}</span></div>
-                {items.length === 0 ? <div className="transfer-empty">暂无{label}任务。</div> : (
-                  <div className="transfer-list">
-                    {items.map((item) => {
-                      const percent = Math.max(0, Math.min(100, item.percent || 0))
-                      const byteProgress = item.bytes_total > 0
-                        ? `${formatBinarySize(item.bytes_done)} / ${formatBinarySize(item.bytes_total)}`
-                        : item.bytes_done > 0 ? formatBinarySize(item.bytes_done) : '暂无字节流'
-                      return (
-                        <article className="transfer-row" key={item.id}>
-                          <div className="transfer-main">
-                            <div className="transfer-title">
-                              <strong title={item.path || item.file_name}>{item.file_name || item.path || item.id}</strong>
-                              <span className={`transfer-kind ${item.kind}`}>{transferKindLabel(item.kind)}</span>
-                            </div>
-                            {(item.state === 'running' || item.state === 'retrying') && (
-                              <div className="transfer-progress">
-                                <div className="transfer-progress-track"><span style={{ width: `${percent}%` }} /></div>
-                                <span>{item.bytes_total > 0 ? `${percent.toFixed(1)}%` : item.state === 'retrying' ? '正在重试' : '处理中'}</span>
-                              </div>
-                            )}
-                            {item.error && <div className="transfer-error">{item.error}</div>}
-                            <div className="transfer-meta">
-                              <span>{transferKindLabel(item.direction)}</span>
-                              <span>{byteProgress}</span>
-                              <span>当前 {formatTransferSpeed(item.instant_bytes_per_second)}</span>
-                              <span>平均 {formatTransferSpeed(item.average_bytes_per_second)}</span>
-                              <span>{formatElapsed(item.elapsed_ms)}</span>
-                              {item.retry_count > 0 && <span>重试 {item.retry_count} 次</span>}
-                            </div>
-                          </div>
-                          {item.state === 'failed' && item.retryable && (
-                            <XDriveActionButton
-                              compact
-                              disabled={!!busy}
-                              loading={busy === `retry-transfer-${item.id}`}
-                              loadingLabel="正在重试…"
-                              onClick={() => void retryTransfer(item.id)}
-                            >
-                              重试
-                            </XDriveActionButton>
-                          )}
-                        </article>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
+            <XDriveTransferCenter
+              transfers={transfers.transfers}
+              retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
+              retryDisabled={!!busy}
+              onRetry={(id) => void retryTransfer(id)}
+            />
           </section>
         )}
 
