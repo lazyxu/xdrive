@@ -9,6 +9,7 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import {
   AppBar,
@@ -52,6 +53,7 @@ import {
   XDriveSidebarSection,
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
+  XDriveTransferCenter,
   XDriveWorkspaceSurface,
   XDriveWorkspaceShell,
   XDriveStatusAlert,
@@ -60,7 +62,7 @@ import {
 import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
-import type { FileVersion, MeResult, Node, QuotaUsage, XDriveAppearance } from '../../ui/shared/src'
+import type { FileVersion, MeResult, Node, QuotaUsage, XDriveAppearance, XDriveTransferTask } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
@@ -96,6 +98,7 @@ type AppView =
   | 'files'
   | 'gallery'
   | 'sources'
+  | 'transfers'
   | 'storage'
   | 'admin-users'
   | 'admin-audit'
@@ -422,6 +425,7 @@ function FileManager({
   const [renameName, setRenameName] = useState('')
   const [renameNameError, setRenameNameError] = useState('')
   const [appView, setAppView] = useState<AppView>('files')
+  const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
@@ -516,6 +520,8 @@ function FileManager({
     // api changes when auth tokens rotate; reload identity and data then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
+
+  useEffect(() => api.onTransfers(setTransfers), [api])
 
   useEffect(() => {
     if (!profile || profile.must_change_password) return
@@ -815,6 +821,13 @@ function FileManager({
             <XDriveSidebarNavItem selected={appView === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setAppView('gallery')} />
             <XDriveSidebarNavItem selected={appView === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="同步文件夹" onClick={() => setAppView('sources')} />
             <XDriveSidebarNavItem
+              selected={appView === 'transfers'}
+              icon={<SwapVertRoundedIcon fontSize="small" />}
+              primary="传输"
+              badge={transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length || undefined}
+              onClick={() => setAppView('transfers')}
+            />
+            <XDriveSidebarNavItem
               selected={appView === 'storage'}
               icon={<StorageRoundedIcon fontSize="small" />}
               primary="存储"
@@ -922,6 +935,22 @@ function FileManager({
             defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
             onError={handleError}
           />
+        ) : appView === 'transfers' ? (
+          <XDriveWorkspaceSurface
+            presentation="page"
+            title="传输"
+            subtitle="查看上传和下载的实时进度与历史记录。"
+            pageActions={(
+              <XDriveActionButton
+                disabled={!transfers.some((item) => item.state === 'completed' || item.state === 'failed')}
+                onClick={() => api.clearTransferHistory()}
+              >
+                清空历史
+              </XDriveActionButton>
+            )}
+          >
+            <XDriveTransferCenter transfers={transfers} />
+          </XDriveWorkspaceSurface>
         ) : appView === 'storage' ? (
           <StorageStatsPanel
             api={api}

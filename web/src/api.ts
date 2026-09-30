@@ -32,7 +32,9 @@ import type {
   UploadStagingCleanup,
   UploadStagingDetail,
   UpdateExternalSourceInput,
+  XDriveTransferTask,
 } from '../../ui/shared/src'
+import { webTransferStore } from './transfers'
 
 export type {
   ExternalSource,
@@ -140,6 +142,18 @@ export class XDriveApi {
       accessExpiresAt: session?.accessExpiresAt ?? 0,
     }
     this.onSession = onSession
+  }
+
+  transfers() {
+    return webTransferStore.snapshot()
+  }
+
+  onTransfers(listener: (items: XDriveTransferTask[]) => void) {
+    return webTransferStore.subscribe(listener)
+  }
+
+  clearTransferHistory() {
+    webTransferStore.clearHistory()
   }
 
   private setSession(session: AuthSession) {
@@ -566,64 +580,82 @@ export class XDriveApi {
   }
 
   async upload(parentID: number, file: File, onProgress?: (percent: number) => void): Promise<Node> {
-    const chunkSize = 8 * 1024 * 1024
-    const chunkCount = file.size === 0 ? 0 : Math.ceil(file.size / chunkSize)
-    const chunkHashes: string[] = []
-    for (let index = 0; index < chunkCount; index += 1) {
-      const start = index * chunkSize
-      const end = Math.min(file.size, start + chunkSize)
-      chunkHashes.push(await sha256Buffer(await file.slice(start, end).arrayBuffer()))
-    }
-
-    const resumeKey = await sha256Buffer(
-      new TextEncoder().encode(`${file.name}\n${file.size}\n${file.lastModified}`).buffer,
-    )
-    const session = await this.request<UploadSessionState>('/api/v1/uploads', {
-      method: 'POST',
-      body: JSON.stringify({
-        parent_id: parentID,
-        name: file.name,
-        size: file.size,
-        chunk_size: chunkSize,
-        chunk_sha256: chunkHashes,
-        resume_key: resumeKey,
-      }),
+    const transferID = webTransferStore.create({
+      fileName: file.name,
+      path: file.name,
+      kind: 'upload',
+      bytesTotal: file.size,
     })
-    if (session.status === 'finalized' && session.result) {
-      onProgress?.(100)
-      return session.result
-    }
-
-    const received = new Map(session.received_chunks.map((part) => [part.index, part]))
-    let completed = 0
-
-    for (let index = 0; index < session.chunk_count; index += 1) {
-      const start = index * session.chunk_size
-      const end = Math.min(file.size, start + session.chunk_size)
-      const expectedSize = end - start
-      const hash = chunkHashes[index]
-      const existing = received.get(index)
-      if (existing && existing.size === expectedSize && existing.sha256 === hash) {
-        completed += expectedSize
-        onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
-        continue
-      }
-
-      const data = await file.slice(start, end).arrayBuffer()
-      const actualHash = await sha256Buffer(data)
-      if (actualHash !== hash) throw new Error(`File changed while uploading chunk ${index}`)
-      await this.putUploadChunk(session.id, index, hash, data)
-      completed += data.byteLength
+    const reportProgress = (completed: number) => {
+      webTransferStore.progress(transferID, completed, file.size)
       onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
     }
 
-    const finalized = await this.request<UploadSessionState>(`/api/v1/uploads/${session.id}/finalize`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
-    if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
-    onProgress?.(100)
-    return finalized.result
+    try {
+      const chunkSize = 8 * 1024 * 1024
+      const chunkCount = file.size === 0 ? 0 : Math.ceil(file.size / chunkSize)
+      const chunkHashes: string[] = []
+      for (let index = 0; index < chunkCount; index += 1) {
+        const start = index * chunkSize
+        const end = Math.min(file.size, start + chunkSize)
+        chunkHashes.push(await sha256Buffer(await file.slice(start, end).arrayBuffer()))
+      }
+
+      const resumeKey = await sha256Buffer(
+        new TextEncoder().encode(`${file.name}\n${file.size}\n${file.lastModified}`).buffer,
+      )
+      const session = await this.request<UploadSessionState>('/api/v1/uploads', {
+        method: 'POST',
+        body: JSON.stringify({
+          parent_id: parentID,
+          name: file.name,
+          size: file.size,
+          chunk_size: chunkSize,
+          chunk_sha256: chunkHashes,
+          resume_key: resumeKey,
+        }),
+      })
+      if (session.status === 'finalized' && session.result) {
+        reportProgress(file.size)
+        webTransferStore.complete(transferID, file.size, file.size)
+        return session.result
+      }
+
+      const received = new Map(session.received_chunks.map((part) => [part.index, part]))
+      let completed = 0
+
+      for (let index = 0; index < session.chunk_count; index += 1) {
+        const start = index * session.chunk_size
+        const end = Math.min(file.size, start + session.chunk_size)
+        const expectedSize = end - start
+        const hash = chunkHashes[index]
+        const existing = received.get(index)
+        if (existing && existing.size === expectedSize && existing.sha256 === hash) {
+          completed += expectedSize
+          reportProgress(completed)
+          continue
+        }
+
+        const data = await file.slice(start, end).arrayBuffer()
+        const actualHash = await sha256Buffer(data)
+        if (actualHash !== hash) throw new Error(`File changed while uploading chunk ${index}`)
+        await this.putUploadChunk(session.id, index, hash, data)
+        completed += data.byteLength
+        reportProgress(completed)
+      }
+
+      const finalized = await this.request<UploadSessionState>(`/api/v1/uploads/${session.id}/finalize`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
+      reportProgress(file.size)
+      webTransferStore.complete(transferID, file.size, file.size)
+      return finalized.result
+    } catch (error) {
+      webTransferStore.fail(transferID, error)
+      throw error
+    }
   }
 
   private async putUploadChunk(sessionID: string, index: number, hash: string, data: ArrayBuffer) {
@@ -791,28 +823,64 @@ export class XDriveApi {
   }
 
   private async downloadAuthenticated(path: string, filename: string) {
-    await this.ensureFresh()
-    let response = await fetch(`${API_BASE}${path}`, {
-      headers: this.session.accessToken ? { Authorization: `Bearer ${this.session.accessToken}` } : undefined,
+    const transferID = webTransferStore.create({
+      fileName: filename,
+      path: filename,
+      kind: 'download',
     })
-    if (response.status === 401 && this.session.refreshToken) {
-      await this.refresh(true)
-      response = await fetch(`${API_BASE}${path}`, {
-        headers: { Authorization: `Bearer ${this.session.accessToken}` },
-      })
-    }
-    if (!response.ok) throw new ApiError(response.status, response.statusText || 'Download failed')
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
+
     try {
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-    } finally {
-      URL.revokeObjectURL(url)
+      await this.ensureFresh()
+      let response = await fetch(`${API_BASE}${path}`, {
+        headers: this.session.accessToken ? { Authorization: `Bearer ${this.session.accessToken}` } : undefined,
+      })
+      if (response.status === 401 && this.session.refreshToken) {
+        await this.refresh(true)
+        response = await fetch(`${API_BASE}${path}`, {
+          headers: { Authorization: `Bearer ${this.session.accessToken}` },
+        })
+      }
+      if (!response.ok) throw new ApiError(response.status, response.statusText || 'Download failed')
+
+      const contentLength = Number(response.headers.get('Content-Length') || '0')
+      const total = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : 0
+      const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
+      let blob: Blob
+      let completed = 0
+
+      if (response.body) {
+        const reader = response.body.getReader()
+        const chunks: BlobPart[] = []
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (!value) continue
+          completed += value.byteLength
+          chunks.push(value as BlobPart)
+          webTransferStore.progress(transferID, completed, total)
+        }
+        blob = new Blob(chunks, { type: contentType })
+      } else {
+        blob = await response.blob()
+        completed = blob.size
+        webTransferStore.progress(transferID, completed, total || completed)
+      }
+
+      const url = URL.createObjectURL(blob)
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+      webTransferStore.complete(transferID, completed, total || completed)
+    } catch (error) {
+      webTransferStore.fail(transferID, error)
+      throw error
     }
   }
 }
