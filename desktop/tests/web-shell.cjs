@@ -93,6 +93,20 @@ test('Web admin workspaces are first-class pages while action dialogs stay local
 })
 
 
+test('User Management prevents duplicate modal submissions and keeps admin tables compact', () => {
+  for (const state of ['createSaving', 'quotaSaving', 'resetSaving']) {
+    assert.ok(adminUsers.includes(state), `User Management missing busy state: ${state}`)
+  }
+  for (const label of ['正在创建…', '正在保存…', '正在重置…']) {
+    assert.ok(adminUsers.includes(label), `User Management missing loading label: ${label}`)
+  }
+  assert.ok(adminUsers.includes('closeDisabled={createSaving}'), 'Create User dialog should not close while saving')
+  assert.ok(adminUsers.includes('closeDisabled={quotaSaving}'), 'Quota dialog should not close while saving')
+  assert.ok(adminUsers.includes('closeDisabled={resetSaving}'), 'Password reset dialog should not close while saving')
+  assert.ok(adminUsers.includes('minWidth: 1080'), 'User Management table should fit common desktop widths better')
+  assert.ok(adminAudit.includes('minWidth: 1120'), 'Audit table should fit common desktop widths better')
+})
+
 test('Web admin UI favors readable labels while preserving technical identifiers', () => {
   assert.ok(adminAudit.includes("'auth.login.success': '登录成功'"), 'Audit should map event codes to Chinese labels')
   assert.ok(adminAudit.includes('getOptionLabel={actionLabel}'), 'Audit filter should display readable action labels')
@@ -129,6 +143,9 @@ test('Web and Desktop show account storage usage at the bottom of the sidebar', 
   assert.ok(sharedStorageSummary.includes('formatBinarySize(boundedUsed)'), 'shared storage summary should show used capacity')
   assert.ok(sharedStorageSummary.includes("formatBinarySize(boundedTotal) : '不限'"), 'shared storage summary should show total capacity or unlimited quota')
   assert.ok(sharedStorageSummary.includes('percentageLabel'), 'shared storage summary should show quota percentage when available')
+  assert.ok(sharedStorageSummary.includes('percentage >= 85'), 'shared storage summary should warn when quota is nearly full')
+  assert.ok(sharedStorageSummary.includes('percentage >= 100'), 'shared storage summary should mark a full quota as an error')
+  assert.ok(sharedStorageSummary.includes("fullQuota ? 'error' : nearQuota ? 'warning' : 'primary'"), 'shared storage progress should expose warning/error tones')
   assert.ok(sharedStorageSummary.includes('<LinearProgress'), 'shared storage summary should show quota progress')
 
   assert.ok(webApp.includes('usedBytes={quota.physical_used_bytes}'), 'Web sidebar should use current account physical usage')

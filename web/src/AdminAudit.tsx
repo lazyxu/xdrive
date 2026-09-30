@@ -178,15 +178,15 @@ export default function AdminAuditPanel({
             <XDriveStatePanel variant="plain" message="未找到审计事件" />
           ) : (
             <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
-              <Table size="small" aria-label="审计日志" sx={{ minWidth: 1300 }}>
+              <Table size="small" aria-label="审计日志" sx={{ minWidth: 1120 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ width: 190 }}>时间</TableCell>
-                    <TableCell sx={{ width: 150 }}>操作者</TableCell>
-                    <TableCell sx={{ width: 220 }}>操作</TableCell>
-                    <TableCell sx={{ width: 190 }}>目标</TableCell>
-                    <TableCell sx={{ width: 100 }}>结果</TableCell>
-                    <TableCell sx={{ width: 220 }}>来源</TableCell>
+                    <TableCell sx={{ width: 175 }}>时间</TableCell>
+                    <TableCell sx={{ width: 125 }}>操作者</TableCell>
+                    <TableCell sx={{ width: 190 }}>操作</TableCell>
+                    <TableCell sx={{ width: 160 }}>目标</TableCell>
+                    <TableCell sx={{ width: 80 }}>结果</TableCell>
+                    <TableCell sx={{ width: 180 }}>来源</TableCell>
                     <TableCell>详情</TableCell>
                   </TableRow>
                 </TableHead>
@@ -211,7 +211,7 @@ export default function AdminAuditPanel({
                         <TableCell>
                           <Stack spacing={0.2}>
                             <Typography variant="body2">{actionLabel(event.action)}</Typography>
-                            <Typography component="code" variant="caption" color="text.secondary">
+                            <Typography component="code" variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
                               {event.action}
                             </Typography>
                           </Stack>

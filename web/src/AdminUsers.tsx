@@ -105,13 +105,16 @@ export default function AdminUsersPanel({
   const [loadError, setLoadError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [createSaving, setCreateSaving] = useState(false)
   const [createValues, setCreateValues] = useState<CreateForm>(initialCreateValues)
   const [createUsernameError, setCreateUsernameError] = useState('')
   const [createPasswordError, setCreatePasswordError] = useState('')
   const [quotaUser, setQuotaUser] = useState<AdminUser | null>(null)
+  const [quotaSaving, setQuotaSaving] = useState(false)
   const [quotaGiB, setQuotaGiB] = useState(0)
   const [quotaError, setQuotaError] = useState('')
   const [resetUser, setResetUser] = useState<AdminUser | null>(null)
+  const [resetSaving, setResetSaving] = useState(false)
   const [resetValues, setResetValues] = useState<ResetForm>(initialResetValues)
   const [resetPasswordError, setResetPasswordError] = useState('')
   const [confirmAction, setConfirmAction] = useState<AdminConfirmAction | null>(null)
@@ -194,6 +197,7 @@ export default function AdminUsersPanel({
     setCreatePasswordError(passwordError)
     if (usernameError || passwordError) return
 
+    setCreateSaving(true)
     try {
       await api.adminCreateUser({
         username,
@@ -208,6 +212,8 @@ export default function AdminUsersPanel({
       await load()
     } catch (err) {
       showActionError('创建用户失败', err, '无法创建用户，请检查输入后重试。')
+    } finally {
+      setCreateSaving(false)
     }
   }
 
@@ -218,6 +224,7 @@ export default function AdminUsersPanel({
     setQuotaError(nextError)
     if (nextError) return
 
+    setQuotaSaving(true)
     try {
       await api.adminUpdateUser(quotaUser.id, { quota_bytes: gibToBytes(quotaGiB) })
       setFeedback('存储配额已更新')
@@ -226,6 +233,8 @@ export default function AdminUsersPanel({
       onChanged()
     } catch (err) {
       showActionError('更新存储配额失败', err, '无法更新存储配额，请稍后重试。')
+    } finally {
+      setQuotaSaving(false)
     }
   }
 
@@ -236,6 +245,7 @@ export default function AdminUsersPanel({
     setResetPasswordError(nextError)
     if (nextError) return
 
+    setResetSaving(true)
     try {
       await api.adminResetPassword(resetUser.id, resetValues.password, resetValues.must_change_password)
       setFeedback('密码已重置，现有会话已撤销')
@@ -244,6 +254,8 @@ export default function AdminUsersPanel({
       await load()
     } catch (err) {
       showActionError('重置密码失败', err, '无法重置该用户密码，请稍后重试。')
+    } finally {
+      setResetSaving(false)
     }
   }
 
@@ -279,16 +291,16 @@ export default function AdminUsersPanel({
               <XDriveStatePanel variant="plain" message="暂无用户" />
             ) : (
               <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
-                <Table size="small" aria-label="用户管理" sx={{ minWidth: 1180 }}>
+                <Table size="small" aria-label="用户管理" sx={{ minWidth: 1080 }}>
                   <TableHead>
                     <TableRow>
-                      <TableCell>用户</TableCell>
-                      <TableCell sx={{ width: 140 }}>角色</TableCell>
-                      <TableCell sx={{ width: 100 }}>启用</TableCell>
-                      <TableCell sx={{ width: 150 }}>密码</TableCell>
-                      <TableCell sx={{ width: 340 }}>存储</TableCell>
-                      <TableCell sx={{ width: 190 }}>上次登录</TableCell>
-                      <TableCell sx={{ width: 330 }}>操作</TableCell>
+                      <TableCell sx={{ width: 120 }}>用户</TableCell>
+                      <TableCell sx={{ width: 110 }}>角色</TableCell>
+                      <TableCell sx={{ width: 70 }}>启用</TableCell>
+                      <TableCell sx={{ width: 115 }}>密码</TableCell>
+                      <TableCell sx={{ width: 260 }}>存储</TableCell>
+                      <TableCell sx={{ width: 160 }}>上次登录</TableCell>
+                      <TableCell sx={{ width: 245 }}>操作</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -457,18 +469,19 @@ export default function AdminUsersPanel({
 
       <Dialog
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => { if (!createSaving) setCreateOpen(false) }}
         maxWidth="sm"
         fullWidth
         slotProps={{ paper: xDriveDialogPaperProps }}
       >
-        <XDriveDialogTitle title="创建用户" onClose={() => setCreateOpen(false)} />
+        <XDriveDialogTitle title="创建用户" onClose={() => setCreateOpen(false)} closeDisabled={createSaving} />
         <XDriveDialogContent>
           <Stack component="form" spacing={2} onSubmit={(event) => void createUser(event)}>
             <TextField
               autoFocus
               fullWidth
               size="small"
+              disabled={createSaving}
               label="用户名"
               autoComplete="off"
               value={createValues.username}
@@ -483,6 +496,7 @@ export default function AdminUsersPanel({
               fullWidth
               size="small"
               type="password"
+              disabled={createSaving}
               label="临时密码"
               autoComplete="new-password"
               value={createValues.password}
@@ -497,6 +511,7 @@ export default function AdminUsersPanel({
               select
               fullWidth
               size="small"
+              disabled={createSaving}
               label="角色"
               value={createValues.role}
               onChange={(event) => setCreateValues((current) => ({ ...current, role: event.target.value as 'user' | 'admin' }))}
@@ -508,6 +523,7 @@ export default function AdminUsersPanel({
               fullWidth
               size="small"
               type="number"
+              disabled={createSaving}
               label="存储配额"
               value={createValues.quota_gib}
               helperText="0 表示不限。当前文件、回收站内容和历史版本都会计入配额。"
@@ -524,19 +540,20 @@ export default function AdminUsersPanel({
               control={
                 <Switch
                   checked={createValues.must_change_password}
+                  disabled={createSaving}
                   onChange={(_event, checked) => setCreateValues((current) => ({ ...current, must_change_password: checked }))}
                 />
               }
               label="首次登录时要求修改密码"
             />
-            <XDriveActionButton intent="primary" type="submit">创建</XDriveActionButton>
+            <XDriveActionButton intent="primary" type="submit" loading={createSaving} loadingLabel="正在创建…">创建</XDriveActionButton>
           </Stack>
         </XDriveDialogContent>
       </Dialog>
 
       <Dialog
         open={!!quotaUser}
-        onClose={() => setQuotaUser(null)}
+        onClose={() => { if (!quotaSaving) setQuotaUser(null) }}
         maxWidth="sm"
         fullWidth
         slotProps={{ paper: xDriveDialogPaperProps }}
@@ -544,6 +561,7 @@ export default function AdminUsersPanel({
         <XDriveDialogTitle
           title={quotaUser ? `存储配额 — ${quotaUser.username}` : '存储配额'}
           onClose={() => setQuotaUser(null)}
+          closeDisabled={quotaSaving}
         />
         <XDriveDialogContent>
           <Stack component="form" spacing={2} onSubmit={(event) => void saveQuota(event)}>
@@ -555,6 +573,7 @@ export default function AdminUsersPanel({
               fullWidth
               size="small"
               type="number"
+              disabled={quotaSaving}
               label="配额"
               value={quotaGiB}
               error={Boolean(quotaError)}
@@ -569,14 +588,14 @@ export default function AdminUsersPanel({
                 input: { endAdornment: <InputAdornment position="end">GiB</InputAdornment> },
               }}
             />
-            <XDriveActionButton intent="primary" type="submit">保存配额</XDriveActionButton>
+            <XDriveActionButton intent="primary" type="submit" loading={quotaSaving} loadingLabel="正在保存…">保存配额</XDriveActionButton>
           </Stack>
         </XDriveDialogContent>
       </Dialog>
 
       <Dialog
         open={!!resetUser}
-        onClose={() => setResetUser(null)}
+        onClose={() => { if (!resetSaving) setResetUser(null) }}
         maxWidth="sm"
         fullWidth
         slotProps={{ paper: xDriveDialogPaperProps }}
@@ -584,6 +603,7 @@ export default function AdminUsersPanel({
         <XDriveDialogTitle
           title={resetUser ? `重置密码 — ${resetUser.username}` : '重置密码'}
           onClose={() => setResetUser(null)}
+          closeDisabled={resetSaving}
         />
         <XDriveDialogContent>
           <Stack component="form" spacing={2} onSubmit={(event) => void resetPassword(event)}>
@@ -592,6 +612,7 @@ export default function AdminUsersPanel({
               fullWidth
               size="small"
               type="password"
+              disabled={resetSaving}
               label="新临时密码"
               autoComplete="new-password"
               value={resetValues.password}
@@ -606,12 +627,13 @@ export default function AdminUsersPanel({
               control={
                 <Switch
                   checked={resetValues.must_change_password}
+                  disabled={resetSaving}
                   onChange={(_event, checked) => setResetValues((current) => ({ ...current, must_change_password: checked }))}
                 />
               }
               label="下次登录时要求修改密码"
             />
-            <XDriveActionButton intent="primary" type="submit">重置密码</XDriveActionButton>
+            <XDriveActionButton intent="primary" type="submit" loading={resetSaving} loadingLabel="正在重置…">重置密码</XDriveActionButton>
           </Stack>
         </XDriveDialogContent>
       </Dialog>

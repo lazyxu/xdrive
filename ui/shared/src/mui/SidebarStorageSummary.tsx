@@ -22,7 +22,16 @@ export function XDriveSidebarStorageSummary({
   const hasQuota = boundedTotal > 0
   const percentage = hasQuota ? (boundedUsed / boundedTotal) * 100 : null
   const progress = percentage === null ? 0 : Math.max(0, Math.min(100, percentage))
-  const overQuota = percentage !== null && percentage > 100
+  const nearQuota = percentage !== null && percentage >= 85
+  const fullQuota = percentage !== null && percentage >= 100
+  const progressColor = fullQuota ? 'error' : nearQuota ? 'warning' : 'primary'
+  const percentageColor = fullQuota
+    ? (dark ? 'error.light' : 'error.main')
+    : nearQuota
+      ? (dark ? 'warning.light' : 'warning.dark')
+      : dark
+        ? '#9baac2'
+        : 'text.secondary'
   const percentageLabel = percentage === null
     ? '不限配额'
     : `${percentage >= 10 ? percentage.toFixed(0) : percentage.toFixed(1)}%`
@@ -52,7 +61,7 @@ export function XDriveSidebarStorageSummary({
         <Typography
           variant="caption"
           fontWeight={700}
-          sx={{ color: overQuota ? 'error.main' : dark ? '#9baac2' : 'text.secondary' }}
+          sx={{ color: percentageColor }}
         >
           {percentageLabel}
         </Typography>
@@ -72,7 +81,7 @@ export function XDriveSidebarStorageSummary({
         <LinearProgress
           variant="determinate"
           value={progress}
-          color={overQuota ? 'error' : 'primary'}
+          color={progressColor}
           aria-label={`${label}使用率 ${percentageLabel}`}
           sx={{
             mt: 0.85,
