@@ -238,8 +238,8 @@ function XDriveLazyFileThumbnail({
   )
 }
 
-const detailsRowHeight = 42
-const detailsHeaderHeight = 34
+const detailsRowHeight = 38
+const detailsHeaderHeight = 32
 const detailsVirtualizationThreshold = 240
 const detailsOverscan = 10
 
@@ -598,7 +598,13 @@ export function XDriveFileExplorer({
         direction="row"
         alignItems="center"
         spacing={0.5}
-        sx={{ px: 1.25, py: 1, minWidth: 0 }}
+        sx={{
+          px: 1,
+          py: 0.5,
+          minWidth: 0,
+          minHeight: 44,
+          '& .MuiIconButton-root': { width: 32, height: 32, borderRadius: 1 },
+        }}
       >
         <Tooltip title="后退">
           <span>
@@ -641,6 +647,7 @@ export function XDriveFileExplorer({
               onKeyDown={handlePathKeyDown}
               onBlur={submitPath}
               slotProps={{ htmlInput: { spellCheck: false } }}
+              sx={{ '& .MuiOutlinedInput-root': { height: 36, borderRadius: '6px' } }}
             />
           ) : (
             <Paper
@@ -658,8 +665,9 @@ export function XDriveFileExplorer({
                 }
               }}
               sx={{
-                minHeight: 40,
+                minHeight: 36,
                 px: 1,
+                borderRadius: '6px',
                 display: 'flex',
                 alignItems: 'center',
                 minWidth: 0,
@@ -716,7 +724,11 @@ export function XDriveFileExplorer({
           }}
           placeholder="搜索"
           aria-label="搜索文件和文件夹"
-          sx={{ width: { xs: 150, sm: 220, lg: 300 }, flexShrink: 0 }}
+          sx={{
+            width: { xs: 150, sm: 220, lg: 280 },
+            flexShrink: 0,
+            '& .MuiOutlinedInput-root': { height: 36, borderRadius: '6px' },
+          }}
           slotProps={{
             input: {
               endAdornment: (
@@ -737,7 +749,13 @@ export function XDriveFileExplorer({
         direction="row"
         alignItems="center"
         spacing={0.75}
-        sx={{ px: 1.25, py: 0.75, minHeight: 44 }}
+        sx={{
+          px: 1.25,
+          py: 0.5,
+          minHeight: 40,
+          '& .MuiButton-root': { minHeight: 30, px: 1, borderRadius: 1 },
+          '& .MuiToggleButton-root': { width: 32, height: 30, p: 0.5 },
+        }}
       >
         {onCreateFolder ? (
           <Button size="small" startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
@@ -836,7 +854,7 @@ export function XDriveFileExplorer({
                 zIndex: 1,
                 display: 'grid',
                 gridTemplateColumns: 'minmax(260px, 1fr) 190px 150px 120px',
-                minHeight: 34,
+                minHeight: detailsHeaderHeight,
                 alignItems: 'center',
                 px: 1.5,
                 bgcolor: 'background.paper',
@@ -873,7 +891,7 @@ export function XDriveFileExplorer({
                   width: '100%',
                   display: 'grid',
                   gridTemplateColumns: 'minmax(260px, 1fr) 190px 150px 120px',
-                  minHeight: 42,
+                  minHeight: detailsRowHeight,
                   alignItems: 'center',
                   px: 1.5,
                   textAlign: 'left',
@@ -1041,7 +1059,7 @@ export function XDriveFileExplorer({
         alignItems="center"
         justifyContent="space-between"
         spacing={2}
-        sx={{ minHeight: 32, px: 1.5, color: 'text.secondary' }}
+        sx={{ minHeight: 28, px: 1.25, color: 'text.secondary', bgcolor: 'background.default' }}
       >
         <Typography variant="caption">
           {items.length} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
