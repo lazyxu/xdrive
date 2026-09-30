@@ -32,6 +32,7 @@ import { ApiError } from './api'
 import type { XDriveApi } from './api'
 import {
   XDriveActionButton,
+  XDriveDialogActionSpacer,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDescriptionGrid,
@@ -1421,7 +1422,7 @@ export default function ExternalSourcesPanel({
             )}
           </XDriveStatusAlert>
         )}
-        <MuiBox component="form" onSubmit={(event) => void createSource(event)}>
+        <MuiBox id="external-source-create-form" component="form" onSubmit={(event) => void createSource(event)}>
           <Stack spacing={2}>
             <TextField
               select
@@ -1629,29 +1630,30 @@ export default function ExternalSourcesPanel({
                 {createCredentialTestError && <XDriveStatusAlert tone="bad">{createCredentialTestError}</XDriveStatusAlert>}
               </>
             )}
-            <MuiBox sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-              <XDriveActionButton
-                onClick={() => {
-                  setCreateOpen(false)
-                  setCreateValues(initialCreateSourceValues())
-                  setCreateNameError('')
-                  setCreateSpacesError('')
-                }}
-              >
-                取消
-              </XDriveActionButton>
-              <XDriveActionButton
-                intent="primary"
-                type="submit"
-                loading={creating}
-                loadingLabel="正在添加…"
-              >
-                添加来源
-              </XDriveActionButton>
-            </MuiBox>
           </Stack>
         </MuiBox>
         </XDriveDialogContent>
+        <XDriveDialogActions>
+          <XDriveActionButton
+            onClick={() => {
+              setCreateOpen(false)
+              setCreateValues(initialCreateSourceValues())
+              setCreateNameError('')
+              setCreateSpacesError('')
+            }}
+          >
+            取消
+          </XDriveActionButton>
+          <XDriveActionButton
+            intent="primary"
+            type="submit"
+            form="external-source-create-form"
+            loading={creating}
+            loadingLabel="正在添加…"
+          >
+            添加来源
+          </XDriveActionButton>
+        </XDriveDialogActions>
       </Dialog>
 
       <Dialog
@@ -1679,7 +1681,7 @@ export default function ExternalSourcesPanel({
         />
         <XDriveDialogContent dividers>
         {setting && (
-          <MuiBox component="form" onSubmit={(event) => void saveSettings(event)}>
+          <MuiBox id="external-source-settings-form" component="form" onSubmit={(event) => void saveSettings(event)}>
             <Stack spacing={2}>
               <TextField
                 autoFocus
@@ -1936,40 +1938,42 @@ export default function ExternalSourcesPanel({
                 </>
               )}
 
-              <MuiBox sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-                <XDriveActionButton
-                  intent="danger"
-                  disabled={savingSettings || setting.latestRun?.status === 'running'}
-                  onClick={() => setDeleteTarget(setting)}
-                >
-                  删除来源
-                </XDriveActionButton>
-                <MuiBox sx={{ display: 'flex', gap: 1 }}>
-                  <XDriveActionButton
-                    onClick={() => {
-                      setClearCookieConfirmOpen(false)
-                      setSetting(null)
-                      setSettingsValues(emptySourceSettingsValues())
-                      setSettingsNameError('')
-                      setSettingsSpacesError('')
-                    }}
-                  >
-                    取消
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    intent="primary"
-                    type="submit"
-                    loading={savingSettings}
-                    loadingLabel="正在保存…"
-                  >
-                    保存设置
-                  </XDriveActionButton>
-                </MuiBox>
-              </MuiBox>
             </Stack>
           </MuiBox>
         )}
         </XDriveDialogContent>
+        {setting && (
+          <XDriveDialogActions>
+            <XDriveActionButton
+              intent="danger"
+              disabled={savingSettings || setting.latestRun?.status === 'running'}
+              onClick={() => setDeleteTarget(setting)}
+            >
+              删除来源
+            </XDriveActionButton>
+            <XDriveDialogActionSpacer />
+            <XDriveActionButton
+              onClick={() => {
+                setClearCookieConfirmOpen(false)
+                setSetting(null)
+                setSettingsValues(emptySourceSettingsValues())
+                setSettingsNameError('')
+                setSettingsSpacesError('')
+              }}
+            >
+              取消
+            </XDriveActionButton>
+            <XDriveActionButton
+              intent="primary"
+              type="submit"
+              form="external-source-settings-form"
+              loading={savingSettings}
+              loadingLabel="正在保存…"
+            >
+              保存设置
+            </XDriveActionButton>
+          </XDriveDialogActions>
+        )}
       </Dialog>
 
       <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
