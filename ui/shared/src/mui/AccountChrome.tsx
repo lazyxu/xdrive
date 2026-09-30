@@ -1,5 +1,6 @@
 import type { MouseEventHandler, ReactNode } from 'react'
-import { Avatar, Box, Divider, IconButton, Menu, Tooltip, Typography } from '@mui/material'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
+import { Avatar, Box, ButtonBase, Divider, IconButton, Menu, Tooltip, Typography } from '@mui/material'
 
 export function XDriveAccountAvatarButton({
   username,
@@ -13,21 +14,58 @@ export function XDriveAccountAvatarButton({
   onClick?: MouseEventHandler<HTMLButtonElement>
 }) {
   const initial = username?.trim().slice(0, 1).toUpperCase() || '?'
-  const size = compact ? 24 : 28
+
+  if (compact) {
+    return (
+      <Tooltip title={username ? `${username} · 账户` : '账户'}>
+        <IconButton
+          className={className}
+          aria-label="账户菜单"
+          size="small"
+          onClick={onClick}
+          sx={{ p: 0.5 }}
+        >
+          <Avatar sx={{ width: 24, height: 24, fontSize: 12, fontWeight: 700 }}>
+            {initial}
+          </Avatar>
+        </IconButton>
+      </Tooltip>
+    )
+  }
 
   return (
-    <Tooltip title={username ? `${username} · 账户` : '账户'}>
-      <IconButton
+    <Tooltip title="账户菜单">
+      <ButtonBase
         className={className}
         aria-label="账户菜单"
-        size="small"
         onClick={onClick}
-        sx={{ ml: compact ? 0 : 0.5, p: 0.5 }}
+        sx={{
+          ml: 0.5,
+          minWidth: 0,
+          minHeight: 36,
+          maxWidth: 220,
+          px: 0.75,
+          pr: 0.5,
+          gap: 0.75,
+          borderRadius: 1,
+          color: 'text.primary',
+          justifyContent: 'flex-start',
+          '&:hover': { bgcolor: 'action.hover' },
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: -2,
+          },
+        }}
       >
-        <Avatar sx={{ width: size, height: size, fontSize: compact ? 12 : 13, fontWeight: 700 }}>
+        <Avatar sx={{ width: 28, height: 28, fontSize: 13, fontWeight: 700 }}>
           {initial}
         </Avatar>
-      </IconButton>
+        <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 150 }}>
+          {username || '账户'}
+        </Typography>
+        <ExpandMoreRoundedIcon sx={{ flexShrink: 0, fontSize: 18, color: 'text.secondary' }} />
+      </ButtonBase>
     </Tooltip>
   )
 }
@@ -55,7 +93,6 @@ export function XDriveAccountSummary({
     </Box>
   )
 }
-
 
 export function XDriveAccountMenu({
   id,

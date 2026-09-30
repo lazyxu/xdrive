@@ -167,6 +167,17 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(webApp.includes('XDriveAccountMenu'), 'Web should consume the shared account menu container')
 })
 
+test('shared account trigger is informative on Web and compact on Desktop', () => {
+  assert.ok(sharedAccount.includes("import ExpandMoreRoundedIcon"), 'full account trigger should expose a dropdown affordance')
+  assert.ok(sharedAccount.includes('if (compact) {'), 'shared account trigger should retain an avatar-only compact mode')
+  assert.ok(sharedAccount.includes('<ButtonBase'), 'full account trigger should use a compact labeled button surface')
+  assert.ok(sharedAccount.includes("{username || '账户'}"), 'full account trigger should show the signed-in username')
+  assert.ok(sharedAccount.includes('<ExpandMoreRoundedIcon'), 'full account trigger should show a dropdown arrow')
+  assert.ok(sharedAccount.includes('minHeight: 36'), 'full account trigger should align with compact application chrome')
+  assert.ok(webApp.includes('<XDriveAccountAvatarButton username={username}'), 'Web should use the full shared account trigger')
+  assert.ok(desktopApp.includes('compact\n        className="desktop-titlebar-account-button"'), 'Desktop titlebar should retain compact avatar-only account chrome')
+})
+
 test('Shared sidebar uses compact system navigation chrome', () => {
   assert.ok(sharedSidebar.includes('minHeight: 36'), 'shared sidebar nav items should use compact 36px rows')
   assert.ok(sharedSidebar.includes("borderRadius: '8px'"), 'shared sidebar nav items should use restrained 8px corners')
