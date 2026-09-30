@@ -57,6 +57,7 @@ import {
   XDriveDialogContent,
   XDriveDialogTitle,
   XDriveMediaGalleryPage,
+  XDrivePageHeader,
   XDrivePaginationControls,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
@@ -2387,12 +2388,7 @@ export default function App() {
       </aside>
 
       <main className="content">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">xDrive</p>
-            <h1>{viewLabel(view)}</h1>
-          </div>
-        </header>
+        <XDrivePageHeader title={viewLabel(view)} eyebrow="xDrive" size="large" />
 
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack spacing={1} sx={{ mt: 2 }}>

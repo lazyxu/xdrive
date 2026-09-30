@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
-import { Box, Dialog, Typography } from '@mui/material'
+import { Box, Dialog } from '@mui/material'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDrivePageHeader } from './PageHeader'
 
 export type XDriveWorkspacePresentation = 'dialog' | 'page'
 
@@ -28,9 +29,7 @@ export function XDriveWorkspaceSurface({
   if (presentation === 'page') {
     return (
       <Box component="section" className="workspace-page-surface" sx={{ width: '100%', minWidth: 0 }}>
-        <Typography component="h1" variant="h5" fontWeight={700}>
-          {title}
-        </Typography>
+        <XDrivePageHeader title={title} />
         <Box sx={{ mt: 2 }}>{children}</Box>
       </Box>
     )
