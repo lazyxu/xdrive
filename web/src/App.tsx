@@ -35,7 +35,11 @@ import {
   message,
 } from 'antd'
 import type { UploadProps } from 'antd'
-import { XDriveStatusAlert } from '@xdrive/ui/mui'
+import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import { Button as MuiButton, Paper as MuiPaper } from '@mui/material'
+import { XDriveMediaGalleryPage, XDriveStatusAlert } from '@xdrive/ui/mui'
+import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type { FileVersion, MeResult, Node, QuotaUsage } from '../../ui/shared/src'
@@ -197,6 +201,7 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
   const [auditOpen, setAuditOpen] = useState(false)
   const [storageStatsScope, setStorageStatsScope] = useState<'self' | 'global' | null>(null)
   const [sourcesOpen, setSourcesOpen] = useState(false)
+  const [appView, setAppView] = useState<'files' | 'gallery'>('files')
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashItems, setTrashItems] = useState<Node[]>([])
   const [trashLoading, setTrashLoading] = useState(false)
@@ -209,6 +214,13 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
   const [passwordForm] = Form.useForm<{ current: string; next: string; confirm: string }>()
 
   const current = crumbs.at(-1)
+
+  const gallerySource = useMemo<MediaGalleryDataSource>(() => ({
+    listItems: (limit, offset) => api.mediaItems('', limit, offset),
+    listAlbums: () => api.mediaAlbums(),
+    listAlbumItems: (albumID, limit, offset) => api.mediaAlbumItems(albumID, limit, offset),
+    loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
+  }), [api])
 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
@@ -467,6 +479,15 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
                 </Button>
               </Tooltip>
             )}
+            <MuiButton
+              size="small"
+              variant="text"
+              startIcon={appView === 'gallery' ? <FolderRoundedIcon /> : <PhotoLibraryRoundedIcon />}
+              onClick={() => setAppView((currentView) => currentView === 'gallery' ? 'files' : 'gallery')}
+              sx={{ color: 'white', minWidth: 0 }}
+            >
+              {appView === 'gallery' ? '文件' : '图库'}
+            </MuiButton>
             <Button type="text" icon={<CloudSyncOutlined />} onClick={() => setSourcesOpen(true)} className="logout-button">
               外部来源
             </Button>
@@ -478,6 +499,7 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
           </Space>
         </Header>
         <Content className="content-wrap">
+          {appView === 'files' ? (
           <Card className="file-card">
             <div className="file-toolbar">
               <Breadcrumb items={crumbs.map((crumb, index) => ({
@@ -525,6 +547,11 @@ function FileManager({ api, username, serverBuild, onAuthExpired, onLogout }: { 
               ]}
             />
           </Card>
+          ) : (
+            <MuiPaper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320 }}>
+              <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
+            </MuiPaper>
+          )}
         </Content>
 
         <ExternalSourcesPanel

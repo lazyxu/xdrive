@@ -17,6 +17,8 @@ import type {
   BuildInfo,
   FileVersion,
   MeResult,
+  MediaAlbum,
+  MediaItem,
   Node,
   PublicShare,
   QuotaUsage,
@@ -329,6 +331,52 @@ export class XDriveApi {
 
   adminDeleteUser(id: number) {
     return this.request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' })
+  }
+
+  mediaItems(kind = '', limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    if (kind) query.set('kind', kind)
+    return this.request<MediaItem[]>(`/api/v1/media/items?${query.toString()}`)
+  }
+
+  mediaAlbums() {
+    return this.request<MediaAlbum[]>('/api/v1/media/albums')
+  }
+
+  mediaAlbumItems(albumID: string, limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<MediaItem[]>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}/items?${query.toString()}`,
+    )
+  }
+
+  async mediaThumbnail(nodeID: number): Promise<Blob> {
+    await this.ensureFresh()
+    const path = `/api/v1/media/items/${nodeID}/thumbnail`
+    let response = await fetch(`${API_BASE}${path}`, {
+      headers: this.session.accessToken
+        ? { Authorization: `Bearer ${this.session.accessToken}` }
+        : undefined,
+    })
+    if (response.status === 401 && this.session.refreshToken) {
+      await this.refresh(true)
+      response = await fetch(`${API_BASE}${path}`, {
+        headers: { Authorization: `Bearer ${this.session.accessToken}` },
+      })
+    }
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        response.statusText || 'Thumbnail unavailable',
+      )
+    }
+    return response.blob()
   }
 
   sources() {

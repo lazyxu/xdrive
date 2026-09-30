@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strings"
@@ -27,6 +28,11 @@ type agentCloudSearchResult struct {
 type agentCreatedShare struct {
 	Share client.CreatedFileShare `json:"share"`
 	URL   string                  `json:"url"`
+}
+
+type agentMediaThumbnail struct {
+	ContentType string `json:"content_type"`
+	DataBase64  string `json:"data_base64"`
 }
 
 func (c *agentController) cloudClient() (*client.Client, userconfig.Config, error) {
@@ -227,6 +233,45 @@ func (c *agentController) CloudCancelSourceRun(ctx context.Context, sourceID uin
 		return client.SyncRun{}, err
 	}
 	return cli.CancelSourceRun(ctx, sourceID, runID)
+}
+
+func (c *agentController) CloudMediaItems(ctx context.Context, kind string, limit, offset int) ([]client.MediaItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaItems(ctx, kind, limit, offset)
+}
+
+func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaAlbums(ctx)
+}
+
+func (c *agentController) CloudMediaAlbumItems(ctx context.Context, albumID string, limit, offset int) ([]client.MediaItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaAlbumItems(ctx, albumID, limit, offset)
+}
+
+func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	data, contentType, err := cli.MediaThumbnail(ctx, nodeID)
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	return agentMediaThumbnail{
+		ContentType: contentType,
+		DataBase64:  base64.StdEncoding.EncodeToString(data),
+	}, nil
 }
 
 func (c *agentController) CloudSourceItems(ctx context.Context, sourceID uint64, state string, limit, offset int) ([]client.SourceItem, error) {

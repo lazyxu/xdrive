@@ -67,6 +67,9 @@ import {
   type AgentCloudShare,
   type AgentCreatedCloudShare,
   type AgentCloudSearchResult,
+  type AgentMediaItem,
+  type AgentMediaAlbum,
+  type AgentMediaThumbnail,
   type AgentSource,
   type AgentCreateSourceInput,
   type AgentUpdateSourceInput,
@@ -1317,6 +1320,83 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cancelSourceRun(sourceID, runID.trim())
   }, false))
+  ipcMain.handle('agent:get-media-items', (_event, kind: unknown = '', limit: unknown = 100, offset: unknown = 0) => runAgentAction<AgentMediaItem[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof kind !== 'string' ||
+      (kind.trim() && !['image', 'video'].includes(kind.trim()))
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
+    }
+    const requestedLimit = limit === undefined ? 100 : limit
+    const requestedOffset = offset === undefined ? 0 : offset
+    if (
+      typeof requestedLimit !== 'number' ||
+      !Number.isSafeInteger(requestedLimit) ||
+      requestedLimit < 1 ||
+      requestedLimit > 500
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media limit must be between 1 and 500.')
+    }
+    if (
+      typeof requestedOffset !== 'number' ||
+      !Number.isSafeInteger(requestedOffset) ||
+      requestedOffset < 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media offset must be zero or greater.')
+    }
+    return requireAgentClient().mediaItems(kind.trim(), requestedLimit, requestedOffset)
+  }, false))
+
+  ipcMain.handle('agent:get-media-albums', () => runAgentAction<AgentMediaAlbum[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    return requireAgentClient().mediaAlbums()
+  }, false))
+
+  ipcMain.handle('agent:get-media-album-items', (_event, albumID: unknown, limit: unknown = 100, offset: unknown = 0) => runAgentAction<AgentMediaItem[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' ||
+      (!albumID.startsWith('folder:') && !albumID.startsWith('source:'))
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
+    }
+    const requestedLimit = limit === undefined ? 100 : limit
+    const requestedOffset = offset === undefined ? 0 : offset
+    if (
+      typeof requestedLimit !== 'number' ||
+      !Number.isSafeInteger(requestedLimit) ||
+      requestedLimit < 1 ||
+      requestedLimit > 500
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media limit must be between 1 and 500.')
+    }
+    if (
+      typeof requestedOffset !== 'number' ||
+      !Number.isSafeInteger(requestedOffset) ||
+      requestedOffset < 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media offset must be zero or greater.')
+    }
+    return requireAgentClient().mediaAlbumItems(albumID, requestedLimit, requestedOffset)
+  }, false))
+
+  ipcMain.handle('agent:get-media-thumbnail', (_event, nodeID: unknown) => runAgentAction<AgentMediaThumbnail>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
+    }
+    return requireAgentClient().mediaThumbnail(nodeID)
+  }, false))
+
   ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')
