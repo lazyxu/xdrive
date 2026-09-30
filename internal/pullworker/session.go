@@ -14,6 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const defaultRunCancellationPollInterval = 250 * time.Millisecond
+
 type RunSession struct {
 	Source  meta.Source
 	Owner   meta.User
@@ -68,6 +70,25 @@ func BeginRunSession(
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	api.SetCancelRun(cancel)
+	go watchRunCancellation(
+		runCtx,
+		defaultRunCancellationPollInterval,
+		func(checkCtx context.Context) (bool, error) {
+			var state struct {
+				CancelRequestedAt *time.Time
+			}
+			err := db.WithContext(checkCtx).
+				Model(&meta.SyncRun{}).
+				Select("cancel_requested_at").
+				Where("id = ? AND source_id = ?", run.ID, source.ID).
+				Take(&state).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return false, nil
+			}
+			return state.CancelRequestedAt != nil, err
+		},
+		cancel,
+	)
 	return &RunSession{
 		Source: source, Owner: owner, Run: run, API: api,
 		Context: runCtx, cancel: cancel,
@@ -77,6 +98,43 @@ func BeginRunSession(
 func (s *RunSession) Close() {
 	if s != nil && s.cancel != nil {
 		s.cancel()
+	}
+}
+
+func watchRunCancellation(
+	ctx context.Context,
+	interval time.Duration,
+	check func(context.Context) (bool, error),
+	cancel context.CancelFunc,
+) {
+	if check == nil || cancel == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = defaultRunCancellationPollInterval
+	}
+	checkNow := func() bool {
+		requested, err := check(ctx)
+		if err == nil && requested {
+			cancel()
+			return true
+		}
+		return false
+	}
+	if checkNow() {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if checkNow() {
+				return
+			}
+		}
 	}
 }
 

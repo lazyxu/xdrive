@@ -523,6 +523,9 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.status === 'paused') return { key: 'paused', tone: 'neutral', label: '已暂停' }
+  if (latestRun?.status === 'running' && latestRun.cancel_requested_at) {
+    return { key: 'running', tone: 'busy', label: '正在取消…' }
+  }
   if (latestRun?.status === 'running') return { key: 'running', tone: 'busy', label: '运行中' }
   if (source.run_requested_at) return { key: 'pending', tone: 'busy', label: '等待执行' }
   if (source.last_error) return { key: 'error', tone: 'bad', label: '异常' }
@@ -544,6 +547,9 @@ export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalS
   if (source.run_requested_at) return { ready: false, label: '已提交扫描请求' }
   if (connector.credential && !credential?.configured) return { ready: false, label: `请先配置 ${externalSourceCredentialLabel(connector)}` }
   if (source.status !== 'active') return { ready: false, label: '来源已暂停' }
+  if (latestRun?.status === 'running' && latestRun.cancel_requested_at) {
+    return { ready: false, label: '来源正在取消' }
+  }
   if (latestRun?.status === 'running') return { ready: false, label: '来源正在运行' }
   if (connector.manualTriggerExecutor === 'source_agent') {
     return { ready: true, label: '提交请求，由群晖 source-agent 下一次任务检查执行' }
@@ -659,7 +665,9 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
     : undefined
 
   return {
-    statusLabel: externalSourceRunStatusLabel(run.status),
+    statusLabel: run.status === 'running' && run.cancel_requested_at
+      ? '正在取消…'
+      : externalSourceRunStatusLabel(run.status),
     statusTone: externalSourceRunStatusTone(run.status),
     modeLabel: run.mode === 'sync' ? '同步' : '扫描',
     triggerLabel: externalSourceRunTriggerLabel(run.trigger),
