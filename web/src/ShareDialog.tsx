@@ -24,6 +24,7 @@ import {
   XDriveDialogContent,
   XDriveDialogTitle,
   XDriveFeedbackSnackbar,
+  XDriveSectionHeader,
   XDriveShareStatusBadge,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -199,9 +200,7 @@ export default function ShareDialog({
             </Stack>
           )}
 
-          <Typography component="h3" variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
-            创建下载链接
-          </Typography>
+          <XDriveSectionHeader level="h3" title="创建下载链接" sx={{ mb: 1.5 }} />
           <Box component="form" onSubmit={(event) => void create(event)}>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'flex-start' }}>
               <TextField
@@ -266,9 +265,7 @@ export default function ShareDialog({
             </XDriveActionButton>
           </Box>
 
-          <Typography component="h3" variant="subtitle1" fontWeight={700} sx={{ mt: 3, mb: 1.5 }}>
-            已有分享
-          </Typography>
+          <XDriveSectionHeader level="h3" title="已有分享" sx={{ mt: 3, mb: 1.5 }} />
 
           {loading && shares.length > 0 ? <LinearProgress sx={{ mb: 1 }} /> : null}
           {loading && shares.length === 0 ? (

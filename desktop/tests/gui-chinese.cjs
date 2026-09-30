@@ -18,6 +18,7 @@ const sharedSidebarNav = fs.readFileSync(path.join(root, '..', 'ui', 'shared', '
 const sharedAccountChrome = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrandLockup = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 const sharedDescriptionGrid = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DescriptionGrid.tsx'), 'utf8')
+const sharedSectionHeader = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
 const sharedPageHeader = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PageHeader.tsx'), 'utf8')
 const sharedConfirmDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ConfirmDialog.tsx'), 'utf8')
 const sharedShareStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareStatusBadge.tsx'), 'utf8')
@@ -659,4 +660,18 @@ test('desktop overview uses the shared description grid', () => {
   assert.ok(renderer.includes('<XDriveDescriptionGrid columns={4}'), 'desktop overview should use the shared four-column description grid')
   assert.equal(renderer.includes('<dl>'), false, 'legacy desktop overview definition list should be removed')
   assert.equal(styles.includes('dl { margin:'), false, 'legacy desktop description-grid CSS should be removed')
+})
+
+
+test('desktop sections use the shared section header', () => {
+  assert.ok(sharedSectionHeader.includes('XDriveSectionHeader'), 'shared section header primitive is missing')
+  assert.ok(sharedSectionHeader.includes("level === 'h3'"), 'shared section header needs h2/h3 semantics')
+  assert.ok(sharedSectionHeader.includes('actions'), 'shared section header needs an action slot')
+  assert.equal((renderer.match(/<XDriveSectionHeader/g) || []).length, 7, 'desktop should reuse the shared section header for all seven repeated sections')
+  assert.equal(renderer.includes('className="section-heading"'), false, 'legacy desktop section-heading wrapper should be removed')
+  assert.equal(styles.includes('.section-heading {'), false, 'legacy desktop section-heading CSS should be removed')
+  assert.equal(styles.includes('.source-heading-actions {'), false, 'legacy source header action CSS should be removed')
+  assert.equal(styles.includes('.source-note {'), false, 'legacy source header note CSS should be removed')
+  assert.equal(styles.includes('.storage-note {'), false, 'legacy storage header note CSS should be removed')
+  assert.equal(styles.includes('.diagnostic-note {'), false, 'legacy diagnostics header note CSS should be removed')
 })

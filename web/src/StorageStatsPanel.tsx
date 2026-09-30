@@ -26,7 +26,7 @@ import {
   XDriveMetricCard,
   XDriveMetricGrid,
   XDrivePaginationControls,
-  XDriveSectionHeading,
+  XDriveSectionHeader,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveWorkspaceSurface,
@@ -288,7 +288,7 @@ export default function StorageStatsPanel({
                 stats.disk_available_bytes !== undefined &&
                 stats.xdrive_physical_bytes !== undefined && (
                   <Stack spacing={1.5}>
-                    <XDriveSectionHeading>磁盘容量</XDriveSectionHeading>
+                    <XDriveSectionHeader level="h3" title="磁盘容量" />
                     <XDriveMetricGrid>
                       <XDriveMetricCard title="磁盘总容量" value={formatSize(stats.disk_total_bytes)} />
                       <XDriveMetricCard title="磁盘已用" value={formatSize(stats.disk_used_bytes)} />
@@ -303,7 +303,7 @@ export default function StorageStatsPanel({
 
               {scope === 'global' && staging && (
                 <Stack spacing={1.5}>
-                  <XDriveSectionHeading>上传临时空间</XDriveSectionHeading>
+                  <XDriveSectionHeader level="h3" title="上传临时空间" />
                   {stagingNotice && <XDriveStatusAlert tone="good">{stagingNotice}</XDriveStatusAlert>}
                   {!staging.stats.supported && (
                     <XDriveStatusAlert tone="neutral">当前存储后端不支持 staging 文件系统扫描，仅显示数据库侧会话信息。</XDriveStatusAlert>
@@ -356,7 +356,7 @@ export default function StorageStatsPanel({
 
                   {staging.orphans.length > 0 && (
                     <Stack spacing={1}>
-                      <XDriveSectionHeading>Orphan staging</XDriveSectionHeading>
+                      <XDriveSectionHeader level="h3" title="Orphan staging" />
                       {stagingLoading ? <LinearProgress /> : null}
                       <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflowX: 'auto' }}>
                         <Table size="small" aria-label="Orphan staging" sx={{ minWidth: 680 }}>
@@ -393,7 +393,7 @@ export default function StorageStatsPanel({
 
               {scope === 'global' && cleanupRuns.length > 0 && (
                 <Stack spacing={1.5}>
-                  <XDriveSectionHeading>最近 staging 清理</XDriveSectionHeading>
+                  <XDriveSectionHeader level="h3" title="最近 staging 清理" />
                   <Stack spacing={1}>
                     {cleanupRuns.map((run) => (
                       <Accordion
@@ -473,7 +473,7 @@ export default function StorageStatsPanel({
                     <XDriveMetricCard title="最新去重倍率" value={lastHistory ? `${lastHistory.cas_dedup_ratio.toFixed(2)}×` : '—'} />
                   </XDriveMetricGrid>
                   <Stack spacing={1}>
-                    <XDriveSectionHeading>历史趋势</XDriveSectionHeading>
+                    <XDriveSectionHeader level="h3" title="历史趋势" />
                     <Typography variant="body2" color="text.secondary">
                       每 {history.sampling_interval_hours} 小时记录一次，保留 {history.retention_days} 天。下表显示最近 12 个快照。
                     </Typography>
@@ -527,7 +527,7 @@ export default function StorageStatsPanel({
               )}
 
               <Stack spacing={1}>
-                <XDriveSectionHeading>CAS Blob 尺寸分布</XDriveSectionHeading>
+                <XDriveSectionHeader level="h3" title="CAS Blob 尺寸分布" />
                 <Typography variant="body2" color="text.secondary">
                   区间按 [下界, 上界) 统计，用于判断后续 CDC 与 small-file packing 的实际收益。
                 </Typography>

@@ -56,6 +56,7 @@ import {
   XDriveConfirmDialog,
   XDriveDescriptionGrid,
   XDriveDescriptionItem,
+  XDriveSectionHeader,
   XDriveDialogActions,
   XDriveDialogActionSpacer,
   XDriveDialogContent,
@@ -2718,16 +2719,19 @@ export default function App() {
             </section>
 
             <section className="system-card">
-              <div className="section-heading">
-                <div><p className="eyebrow">同步位置</p><h2>{status?.mount_path || '默认 xDrive 文件夹'}</h2></div>
-                <XDriveActionButton
-                  loading={busy === 'folder'}
-                  loadingLabel="正在打开…"
-                  onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}
-                >
-                  打开
-                </XDriveActionButton>
-              </div>
+              <XDriveSectionHeader
+                eyebrow="同步位置"
+                title={status?.mount_path || '默认 xDrive 文件夹'}
+                actions={(
+                  <XDriveActionButton
+                    loading={busy === 'folder'}
+                    loadingLabel="正在打开…"
+                    onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}
+                  >
+                    打开
+                  </XDriveActionButton>
+                )}
+              />
               <XDriveDescriptionGrid columns={4} sx={{ mt: 2.5 }}>
                 <XDriveDescriptionItem label="服务器">{status?.server}</XDriveDescriptionItem>
                 <XDriveDescriptionItem label="用户">{status?.username}</XDriveDescriptionItem>
@@ -2753,26 +2757,26 @@ export default function App() {
 
         {view === 'sources' && (
           <section className="panel source-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">外部来源</p>
-                <h2>管理照片与媒体来源</h2>
-                <p className="source-note">来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的来源凭据明文。</p>
-              </div>
-              <div className="source-heading-actions">
-                <XDriveActionButton
-                  disabled={!!busy}
-                  loading={busy === 'sources'}
-                  loadingLabel="正在刷新…"
-                  onClick={() => void loadSources()}
-                >
-                  刷新
-                </XDriveActionButton>
-                <XDriveActionButton intent="primary" disabled={!!busy} onClick={() => void openSourceCreate()}>
-                  + 添加来源
-                </XDriveActionButton>
-              </div>
-            </div>
+            <XDriveSectionHeader
+              eyebrow="外部来源"
+              title="管理照片与媒体来源"
+              subtitle="来源状态通过 xdrive-agent 的受保护本地 IPC 读取，渲染进程不会接触服务器令牌或已保存的来源凭据明文。"
+              actions={(
+                <>
+                  <XDriveActionButton
+                    disabled={!!busy}
+                    loading={busy === 'sources'}
+                    loadingLabel="正在刷新…"
+                    onClick={() => void loadSources()}
+                  >
+                    刷新
+                  </XDriveActionButton>
+                  <XDriveActionButton intent="primary" disabled={!!busy} onClick={() => void openSourceCreate()}>
+                    + 添加来源
+                  </XDriveActionButton>
+                </>
+              )}
+            />
 
             {sourceCreateOpen && (
               <Dialog
@@ -3791,17 +3795,17 @@ export default function App() {
 
         {view === 'transfers' && (
           <section className="panel transfer-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">传输中心</p>
-                <h2>上传、下载与本地可用性</h2>
-              </div>
-              <div className="transfer-summary">
-                <span><strong>{activeTransfers.length}</strong> 进行中</span>
-                <span><strong>{completedTransfers.length}</strong> 已完成</span>
-                <span><strong>{failedTransfers.length}</strong> 失败</span>
-              </div>
-            </div>
+            <XDriveSectionHeader
+              eyebrow="传输中心"
+              title="上传、下载与本地可用性"
+              actions={(
+                <div className="transfer-summary">
+                  <span><strong>{activeTransfers.length}</strong> 进行中</span>
+                  <span><strong>{completedTransfers.length}</strong> 已完成</span>
+                  <span><strong>{failedTransfers.length}</strong> 失败</span>
+                </div>
+              )}
+            />
 
             {([
               ['进行中', activeTransfers],
@@ -3863,25 +3867,25 @@ export default function App() {
 
         {view === 'files' && (
           <section className="panel storage-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">存储策略</p>
-                <h2>{storagePoliciesSupported ? '选择此设备保留的内容' : 'Linux FUSE 挂载'}</h2>
-                <p className="storage-note">
-                  {storagePoliciesSupported
-                    ? '策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。'
-                    : 'Linux 当前使用 FUSE 远程挂载；目录在此处只读展示，文件内容在打开时按需获取。'}
-                </p>
-              </div>
-              <XDriveActionButton
-                disabled={!!busy}
-                loading={busy === 'storage'}
-                loadingLabel="正在刷新…"
-                onClick={() => void loadStorage()}
-              >
-                刷新
-              </XDriveActionButton>
-            </div>
+            <XDriveSectionHeader
+              eyebrow="存储策略"
+              title={storagePoliciesSupported ? '选择此设备保留的内容' : 'Linux FUSE 挂载'}
+              subtitle={
+                storagePoliciesSupported
+                  ? '策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。'
+                  : 'Linux 当前使用 FUSE 远程挂载；目录在此处只读展示，文件内容在打开时按需获取。'
+              }
+              actions={(
+                <XDriveActionButton
+                  disabled={!!busy}
+                  loading={busy === 'storage'}
+                  loadingLabel="正在刷新…"
+                  onClick={() => void loadStorage()}
+                >
+                  刷新
+                </XDriveActionButton>
+              )}
+            />
 
             {cloudQuota && (
               <div className="cloud-subpanel">
@@ -3986,10 +3990,11 @@ export default function App() {
 
         {view === 'conflicts' && (
           <section className="panel">
-            <div className="section-heading">
-              <div><p className="eyebrow">冲突副本</p><h2>解决同步冲突</h2></div>
-              <XDriveActionButton disabled={!!busy} onClick={() => void loadConflicts()}>刷新</XDriveActionButton>
-            </div>
+            <XDriveSectionHeader
+              eyebrow="冲突副本"
+              title="解决同步冲突"
+              actions={<XDriveActionButton disabled={!!busy} onClick={() => void loadConflicts()}>刷新</XDriveActionButton>}
+            />
             {conflicts.length === 0 ? <XDriveStatePanel message="没有未解决的冲突。" /> : (
               <div className="conflict-list">
                 {conflicts.map((item) => (
@@ -4030,22 +4035,22 @@ export default function App() {
 
         {view === 'diagnostics' && (
           <section className="panel diagnostics-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">诊断与自修复</p>
-                <h2>客户端诊断</h2>
-                <p className="diagnostic-note">Agent 会运行与 <code>xd doctor</code> 相同的脱敏检查。密钥、会话 ID 和用户目录路径不会暴露给渲染进程。</p>
-              </div>
-              <XDriveActionButton
-                intent="primary"
-                disabled={!!busy}
-                loading={busy === 'diagnostics'}
-                loadingLabel="正在检查…"
-                onClick={() => void loadDiagnostics()}
-              >
-                运行诊断
-              </XDriveActionButton>
-            </div>
+            <XDriveSectionHeader
+              eyebrow="诊断与自修复"
+              title="客户端诊断"
+              subtitle={<>Agent 会运行与 <code>xd doctor</code> 相同的脱敏检查。密钥、会话 ID 和用户目录路径不会暴露给渲染进程。</>}
+              actions={(
+                <XDriveActionButton
+                  intent="primary"
+                  disabled={!!busy}
+                  loading={busy === 'diagnostics'}
+                  loadingLabel="正在检查…"
+                  onClick={() => void loadDiagnostics()}
+                >
+                  运行诊断
+                </XDriveActionButton>
+              )}
+            />
 
             {diagnostics ? (
               <>
@@ -4134,17 +4139,20 @@ export default function App() {
 
         {view === 'settings' && (
           <section className="panel">
-            <div className="section-heading">
-              <div><p className="eyebrow">客户端设置</p><h2>同步、更新、生命周期与缓存</h2></div>
-              <XDriveActionButton
-                disabled={!!busy}
-                loading={busy === 'restart-agent'}
-                loadingLabel="正在重启 Agent…"
-                onClick={() => void restartAgent()}
-              >
-                重启 Agent
-              </XDriveActionButton>
-            </div>
+            <XDriveSectionHeader
+              eyebrow="客户端设置"
+              title="同步、更新、生命周期与缓存"
+              actions={(
+                <XDriveActionButton
+                  disabled={!!busy}
+                  loading={busy === 'restart-agent'}
+                  loadingLabel="正在重启 Agent…"
+                  onClick={() => void restartAgent()}
+                >
+                  重启 Agent
+                </XDriveActionButton>
+              )}
+            />
             <Stack id="desktop-build-info" direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ mb: 2 }}>
               <BuildInfoCard title="Desktop 构建信息" info={info} />
               <BuildInfoCard title="Server 构建信息" info={status?.server_build} />

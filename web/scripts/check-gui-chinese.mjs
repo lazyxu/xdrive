@@ -22,6 +22,7 @@ const files = {
   metricCards: readRepo('ui/shared/src/mui/MetricCards.tsx'),
   sidebarStorageSummary: readRepo('ui/shared/src/mui/SidebarStorageSummary.tsx'),
   descriptionGrid: readRepo('ui/shared/src/mui/DescriptionGrid.tsx'),
+  sectionHeader: readRepo('ui/shared/src/mui/SectionHeader.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
@@ -58,6 +59,7 @@ requireText(files.app, ['XDriveBrandLockup', 'iconSrc={xDriveBrandIcon}'], 'xDri
 requireText(files.brandLockup, ['XDriveBrandLockup', "variant === 'titlebar'", "variant === 'large'", 'component="img"', 'xDrive'], '共享品牌区')
 requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储', '无容量限制', '已使用', '< 1 KiB', '空间紧张', '已用满', '已超额', 'LinearProgress', 'percentageLabel'], '共享侧栏存储摘要')
 requireText(files.descriptionGrid, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', "columns === 4", "bgcolor: 'action.hover'"], '共享描述网格')
+requireText(files.sectionHeader, ['XDriveSectionHeader', "level === 'h3'", 'eyebrow', 'subtitle', 'actions', 'component={level}'], '共享分区标题')
 requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem'], '外部来源描述网格')
 requireText(files.app, ['XDriveSidebarStorageSummary', 'usedBytes={quota.physical_used_bytes}', 'totalBytes={quota.quota_bytes}'], 'Web 侧栏存储摘要')
 requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'web-account-menu', '退出登录'], 'Web 账号菜单')
@@ -73,14 +75,15 @@ if (files.app.includes('className="brand-lockup"') || files.app.includes('classN
 requireText(files.users, ['用户管理', '创建用户', '设置配额', '重置密码', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveWorkspaceSurface', 'XDriveConfirmDialog', 'confirmIntent={confirmAction?.danger', 'loading={confirmLoading}', 'presentation="page"', '当前用户', '需要修改', '已设置', '已超配额'], '用户管理')
 if (/from ['"]antd['"]/.test(files.users) || files.users.includes('@ant-design/icons')) throw new Error('用户管理仍依赖 Ant Design')
 requireText(files.workspaceSurface, ['WorkspacePresentation', "presentation === 'page'", 'workspace-page-surface', 'XDriveDialogTitle', 'XDriveDialogContent'], 'Web 工作区表面')
-requireText(files.storageStats, ['WorkspaceSurface', 'presentation="page"', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveConfirmDialog', 'confirmIntent="danger"', 'loading={cleanupLoading}', 'XDriveMetricGrid', 'XDriveMetricCard', 'XDriveSectionHeading', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
-requireText(files.metricCards, ['XDriveMetricGrid', 'XDriveMetricCard', 'XDriveSectionHeading', 'gridTemplateColumns', 'component="h3"'], '共享统计展示')
+requireText(files.storageStats, ['WorkspaceSurface', 'presentation="page"', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveConfirmDialog', 'confirmIntent="danger"', 'loading={cleanupLoading}', 'XDriveMetricGrid', 'XDriveMetricCard', 'XDriveSectionHeader', "run.status === 'success' ? 'good'", "health.status === 'fail' ? 'bad'", '部分失败', 'CAS 元数据健康', 'decisionTone'], '存储状态')
+requireText(files.metricCards, ['XDriveMetricGrid', 'XDriveMetricCard', 'gridTemplateColumns'], '共享统计展示')
+if (files.metricCards.includes('XDriveSectionHeading')) throw new Error('共享统计组件仍内嵌旧 SectionHeading')
 if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
 requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', '审计事件详情', '来源 IP', 'Request ID', 'Metadata', '登录成功', '变更用户角色', '系统更新', 'getOptionLabel={actionLabel}', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveWorkspaceSurface', 'presentation="page"'], '审计日志')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
-requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveShareStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
+requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveSectionHeader', 'XDriveShareStatusBadge', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
 if (/<Alert\b/.test(files.share)) throw new Error('分享窗口仍在直接渲染 AntD Alert')
 if (/from ['"]antd['"]/.test(files.share) || files.share.includes('@ant-design/icons')) throw new Error('分享窗口仍依赖 Ant Design')
 requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数', 'XDriveStatusAlert', 'XDriveActionButton'], '公开分享')
