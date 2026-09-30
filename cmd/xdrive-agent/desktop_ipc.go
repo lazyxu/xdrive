@@ -179,6 +179,7 @@ type desktopIPCController interface {
 	CloudPutSourceCredential(context.Context, uint64, map[string]string) (client.SourceCredentialStatus, error)
 	CloudDeleteSourceCredential(context.Context, uint64) error
 	CloudSourceConnectorConfig(context.Context, uint64) (client.SourceConnectorConfig, error)
+	CloudBrowseSourceDirectories(context.Context, uint64, string, int, int) (client.SourceBrowsePage, error)
 	CloudPutSourceConnectorConfig(context.Context, uint64, uint64, map[string]any) (client.SourceConnectorConfig, error)
 	CloudCreateSource(context.Context, client.CreateSourceInput) (client.Source, error)
 	CloudUpdateSource(context.Context, uint64, uint64, client.UpdateSourceInput) (client.Source, error)
@@ -404,6 +405,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("PUT /v1/sources/credential", h.putSourceCredential)
 	mux.HandleFunc("DELETE /v1/sources/credential", h.deleteSourceCredential)
 	mux.HandleFunc("GET /v1/sources/connector-config", h.sourceConnectorConfig)
+	mux.HandleFunc("GET /v1/sources/browse", h.browseSourceDirectories)
 	mux.HandleFunc("PUT /v1/sources/connector-config", h.putSourceConnectorConfig)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
@@ -1499,6 +1501,39 @@ func (h *desktopIPCHandler) sourceConnectorConfig(w http.ResponseWriter, r *http
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, config)
+}
+
+func (h *desktopIPCHandler) browseSourceDirectories(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	limit := 200
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 1000 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_browse_limit", "limit must be between 1 and 1000")
+			return
+		}
+		limit = value
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_browse_offset", "offset must be zero or greater")
+			return
+		}
+		offset = value
+	}
+	page, err := h.ctrl.CloudBrowseSourceDirectories(r.Context(), sourceID, r.URL.Query().Get("path"), limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) putSourceConnectorConfig(w http.ResponseWriter, r *http.Request) {

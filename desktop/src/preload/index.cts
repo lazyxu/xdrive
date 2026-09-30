@@ -23,6 +23,7 @@ const agent = Object.freeze({
   setSourceCredential: (sourceID: number, credential: string | Record<string, string>) => ipcRenderer.invoke('agent:set-source-credential', sourceID, credential),
   deleteSourceCredential: (sourceID: number) => ipcRenderer.invoke('agent:delete-source-credential', sourceID),
   getSourceConnectorConfig: (sourceID: number) => ipcRenderer.invoke('agent:get-source-connector-config', sourceID),
+  browseSourceDirectories: (sourceID: number, path = '', limit = 200, offset = 0) => ipcRenderer.invoke('agent:browse-source-directories', sourceID, path, limit, offset),
   setSourceConnectorConfig: (sourceID: number, revision: number, payload: Record<string, unknown>) => ipcRenderer.invoke('agent:set-source-connector-config', sourceID, revision, payload),
   createSource: (input: {
     name: string

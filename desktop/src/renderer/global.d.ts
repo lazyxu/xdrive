@@ -7,6 +7,7 @@ import type {
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
   ExternalSourceConnectorConfig,
+  ExternalSourceBrowsePage,
   ExternalSourceItem,
   ExternalSourceRun,
   ExternalSourceRunFailure,
@@ -289,6 +290,7 @@ declare global {
         setSourceCredential: (sourceID: number, credential: string | Record<string, string>) => Promise<DesktopResult<AgentSourceCredentialStatus>>
         deleteSourceCredential: (sourceID: number) => Promise<DesktopResult<{ ok: boolean }>>
         getSourceConnectorConfig: (sourceID: number) => Promise<DesktopResult<AgentSourceConnectorConfig>>
+        browseSourceDirectories: (sourceID: number, path?: string, limit?: number, offset?: number) => Promise<DesktopResult<ExternalSourceBrowsePage>>
         setSourceConnectorConfig: (sourceID: number, revision: number, payload: Record<string, unknown>) => Promise<DesktopResult<AgentSourceConnectorConfig>>
         createSource: (input: AgentCreateSourceInput) => Promise<DesktopResult<AgentSource>>
         updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>

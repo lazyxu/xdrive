@@ -282,6 +282,18 @@ export type AgentSourceConnectorConfig = {
   updated_at?: string
 }
 
+export type AgentSourceBrowseDirectory = {
+  name: string
+  path: string
+}
+
+export type AgentSourceBrowsePage = {
+  path?: string
+  items: AgentSourceBrowseDirectory[]
+  total: number
+  next_offset?: number
+}
+
 export type AgentSourceCredentialTestResult = {
   valid: boolean
   kind: string
@@ -731,6 +743,16 @@ export class AgentIPCClient {
   sourceConnectorConfig(sourceID: number) {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentSourceConnectorConfig>('GET', `/v1/sources/connector-config?${query.toString()}`)
+  }
+
+  browseSourceDirectories(sourceID: number, path = '', limit = 200, offset = 0) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      limit: String(limit),
+      offset: String(offset),
+    })
+    if (path) query.set('path', path)
+    return this.request<AgentSourceBrowsePage>('GET', `/v1/sources/browse?${query.toString()}`)
   }
 
   setSourceConnectorConfig(sourceID: number, revision: number, payload: Record<string, unknown>) {

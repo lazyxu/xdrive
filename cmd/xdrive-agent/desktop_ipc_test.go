@@ -122,6 +122,11 @@ type fakeDesktopIPCController struct {
 	cloudPutCredentialPayload  map[string]string
 	cloudDeleteCredential      uint64
 	cloudConnectorConfig       client.SourceConnectorConfig
+	cloudSourceBrowse          client.SourceBrowsePage
+	cloudBrowseSourceID        uint64
+	cloudBrowsePath            string
+	cloudBrowseLimit           int
+	cloudBrowseOffset          int
 	cloudPutConnectorConfig    client.SourceConnectorConfig
 	cloudConnectorConfigID     uint64
 	cloudPutConnectorID        uint64
@@ -395,6 +400,19 @@ func (f *fakeDesktopIPCController) CloudDeleteSourceCredential(_ context.Context
 func (f *fakeDesktopIPCController) CloudSourceConnectorConfig(_ context.Context, sourceID uint64) (client.SourceConnectorConfig, error) {
 	f.cloudConnectorConfigID = sourceID
 	return f.cloudConnectorConfig, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudBrowseSourceDirectories(
+	_ context.Context,
+	sourceID uint64,
+	remotePath string,
+	limit, offset int,
+) (client.SourceBrowsePage, error) {
+	f.cloudBrowseSourceID = sourceID
+	f.cloudBrowsePath = remotePath
+	f.cloudBrowseLimit = limit
+	f.cloudBrowseOffset = offset
+	return f.cloudSourceBrowse, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudPutSourceConnectorConfig(_ context.Context, sourceID, revision uint64, payload map[string]any) (client.SourceConnectorConfig, error) {
@@ -934,6 +952,12 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		cloudPutConnectorConfig: client.SourceConnectorConfig{
 			Configured: true, Revision: 3, Payload: json.RawMessage(`{"spaces":["personal"]}`),
 		},
+		cloudSourceBrowse: client.SourceBrowsePage{
+			Path:       "/documents",
+			Items:      []client.SourceBrowseDirectory{{Name: "Projects", Path: "/documents/Projects"}},
+			Total:      4,
+			NextOffset: ptrInt(2),
+		},
 		cloudCreatedSource:   client.Source{ID: 10, Name: "群晖 Photos", Kind: "synology_photos", Direction: "push", SyncMode: "backup", RunMode: "scan", Status: "active", Revision: 1},
 		cloudUpdatedSource:   client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4},
 		cloudTriggeredSource: client.Source{ID: 9, Name: "一刻相册", Kind: "yike_photos", Direction: "pull", SyncMode: "backup", RunMode: "sync", Status: "active", Revision: 4, RunRequestedAt: &now},
@@ -952,12 +976,18 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		{"/v1/sources/collections/items?source_id=9&collection_id=21&limit=50&offset=0", "\"path\":\"family.jpg\""},
 		{"/v1/sources/credential?source_id=9", "\"configured\":true"},
 		{"/v1/sources/connector-config?source_id=9", "\"spaces\":[\"personal\",\"shared\"]"},
+		{"/v1/sources/browse?source_id=9&path=%2Fdocuments&limit=2&offset=0", "\"path\":\"/documents\""},
 	}
 	for _, tc := range cases {
 		res := desktopIPCRequest(t, handler, http.MethodGet, tc.path, "")
 		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), tc.want) {
 			t.Fatalf("GET %s status=%d body=%s", tc.path, res.Code, res.Body.String())
 		}
+	}
+
+	if ctrl.cloudBrowseSourceID != 9 || ctrl.cloudBrowsePath != "/documents" || ctrl.cloudBrowseLimit != 2 || ctrl.cloudBrowseOffset != 0 {
+		t.Fatalf("browse query not forwarded: source=%d path=%q limit=%d offset=%d",
+			ctrl.cloudBrowseSourceID, ctrl.cloudBrowsePath, ctrl.cloudBrowseLimit, ctrl.cloudBrowseOffset)
 	}
 
 	for _, path := range []string{
@@ -977,6 +1007,9 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		"/v1/sources/collections/items?source_id=9&collection_id=21&offset=-1",
 		"/v1/sources/credential?source_id=bad",
 		"/v1/sources/connector-config?source_id=bad",
+		"/v1/sources/browse?source_id=0",
+		"/v1/sources/browse?source_id=9&limit=1001",
+		"/v1/sources/browse?source_id=9&offset=-1",
 	} {
 		res := desktopIPCRequest(t, handler, http.MethodGet, path, "")
 		if res.Code != http.StatusBadRequest {
@@ -1098,6 +1131,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 }
 
 func ptrUint64(value uint64) *uint64 { return &value }
+func ptrInt(value int) *int          { return &value }
 
 func TestDesktopIPCTransfers(t *testing.T) {
 	manager := transfer.NewManager(10)

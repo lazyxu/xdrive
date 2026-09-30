@@ -9,6 +9,7 @@ import type {
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialTestResult,
   ExternalSourceConnectorConfig,
+  ExternalSourceBrowsePage,
   ExternalSourceItem,
   ExternalSourceOverview,
   ExternalSourceRun,
@@ -513,6 +514,15 @@ export class XDriveApi {
 
   sourceConnectorConfig(sourceID: number) {
     return this.request<ExternalSourceConnectorConfig>(`/api/v1/sources/${sourceID}/connector-config`)
+  }
+
+  sourceBrowseDirectories(sourceID: number, path = '', limit = 200, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    })
+    if (path) query.set('path', path)
+    return this.request<ExternalSourceBrowsePage>(`/api/v1/sources/${sourceID}/browse?${query.toString()}`)
   }
 
   setSourceConnectorConfig(sourceID: number, revision: number, payload: Record<string, unknown>) {
