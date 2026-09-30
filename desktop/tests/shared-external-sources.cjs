@@ -756,8 +756,8 @@ test('Web and Desktop reuse shared source basic fields', () => {
   assert.equal(desktopStyles.includes('.source-create select,'), false, 'Desktop source-create CSS must not broadly override MUI selects')
   assert.equal(desktopStyles.includes('.source-settings input,'), false, 'Desktop source-settings CSS must not broadly override MUI inputs')
   assert.equal(desktopStyles.includes('.source-settings select,'), false, 'Desktop source-settings CSS must not broadly override MUI selects')
-  assert.ok(desktopStyles.includes('.source-create > label > input,'), 'Desktop native credential fields should keep scoped legacy styling')
-  assert.ok(desktopStyles.includes('.source-settings > label > input,'), 'Desktop native settings credential fields should keep scoped legacy styling')
+  assert.equal(desktopStyles.includes('.source-create > label'), false, 'Desktop Source create should no longer keep native field CSS')
+  assert.equal(desktopStyles.includes('.source-settings > label'), false, 'Desktop Source settings should no longer keep native field CSS')
 })
 
 
