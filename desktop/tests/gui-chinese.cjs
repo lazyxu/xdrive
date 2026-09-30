@@ -248,10 +248,15 @@ test('desktop dialogs share one title, paper, content, and action treatment', ()
   assert.equal(renderer.includes('source-settings-heading'), false, 'legacy source settings panel heading remains inside the dialog')
 })
 
-test('desktop transient feedback uses one non-layout-shifting Snackbar', () => {
-  assert.ok(renderer.includes('<Snackbar'), 'missing shared Snackbar feedback surface')
+test('desktop transient feedback uses the shared non-layout-shifting Snackbar', () => {
+  assert.ok(renderer.includes('<XDriveFeedbackSnackbar'), 'missing shared feedback Snackbar surface')
   assert.ok(renderer.includes("autoHideDuration={error ? null : 4000}"), 'success/error feedback lifetime contract is missing')
-  assert.ok(renderer.includes("severity={error ? 'error' : 'success'}"), 'Snackbar does not distinguish error and success feedback')
+  assert.ok(renderer.includes("tone={error ? 'bad' : 'good'}"), 'shared Snackbar does not distinguish error and success feedback')
+  assert.ok(renderer.includes('variant="filled"'), 'transient Snackbar alert should remain the filled special case')
+  assert.ok(renderer.includes('dismissible'), 'desktop feedback should remain manually dismissible')
+  assert.ok(renderer.includes("maxWidth: 520"), 'desktop feedback width contract drifted')
+  assert.equal(renderer.includes('<Snackbar'), false, 'desktop must not render raw MUI Snackbar directly')
+  assert.equal(renderer.includes('<MuiAlert'), false, 'desktop must not render raw MUI Alert directly')
   assert.equal(renderer.includes('className="alert error"'), false, 'legacy inline error feedback remains')
   assert.equal(renderer.includes('className="alert success"'), false, 'legacy inline success feedback remains')
   assert.equal(renderer.includes('className="alert warning"'), false, 'legacy alert panels remain')
@@ -295,7 +300,8 @@ test('desktop persistent sync states use the cross-client MUI status alert', () 
 })
 
 test('desktop page-level status alerts use the shared alert surface', () => {
-  assert.equal((renderer.match(/<MuiAlert/g) || []).length, 1, 'only the transient Snackbar should use raw MUI Alert')
+  assert.equal((renderer.match(/<MuiAlert/g) || []).length, 0, 'desktop should not render raw MUI Alert after shared feedback migration')
+  assert.equal(renderer.includes('<Snackbar'), false, 'desktop should not render raw MUI Snackbar after shared feedback migration')
   assert.ok(renderer.includes('variant="filled"'), 'transient Snackbar alert should remain the filled special case')
   assert.ok(renderer.includes('className="auth-security-note"'), 'login security note should remain a lightweight non-alert note')
   assert.ok(renderer.includes('自动登录未成功，已暂时关闭自动登录'), 'auto-login failures need an inline warning')
