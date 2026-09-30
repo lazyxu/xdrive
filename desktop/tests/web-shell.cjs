@@ -7,6 +7,7 @@ const repoRoot = path.join(__dirname, '..', '..')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
 const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
+const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 
 test('Web AppBar keeps global chrome compact while admin tools live in the sidebar', () => {
   const appStart = webApp.indexOf('<AppBar position="static" elevation={1}>', webApp.indexOf('className="app-shell"'))
@@ -53,5 +54,8 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_WIDTH = 184'), 'shared sidebar width token is missing')
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH = 176'), 'shared compact sidebar width token is missing')
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
+  assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
+  assert.ok(sharedAccount.includes('XDriveAccountSummary'), 'shared account summary is missing')
   assert.ok(webApp.includes('XDriveSidebarNavItem'), 'Web should consume shared sidebar navigation')
+  assert.ok(webApp.includes('XDriveAccountAvatarButton'), 'Web should consume shared account chrome')
 })

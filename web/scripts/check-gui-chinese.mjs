@@ -16,6 +16,7 @@ const files = {
   publicShare: read('src/PublicShare.tsx'),
   sources: read('src/ExternalSources.tsx'),
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
+  accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),
   externalSourcesShared: readRepo('ui/shared/src/external-sources.ts'),
   synologyGuide: readRepo('ui/shared/src/mui/SynologyDsmGuideDialog.tsx'),
   yikeCookieHelp: readRepo('ui/shared/src/mui/YikeCookieHelp.tsx'),
@@ -47,7 +48,8 @@ if (/from ['"]antd['"]/.test(files.app) || files.app.includes('@ant-design/icons
 requireText(files.app, ['XDriveActionButton', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveDialogActions', 'XDriveStatePanel', 'XDriveMediaGalleryPage'], 'Web MUI 文件管理器')
 if (/<Alert\b/.test(files.app)) throw new Error('Web 主界面仍在直接渲染 AntD Alert')
 requireText(files.app, ['src={xDriveBrandIcon}'], 'xDrive 品牌图标')
-requireText(files.app, ['WebAccountMenu', 'aria-label="账户菜单"', 'web-account-menu', 'MuiAvatar', '退出登录'], 'Web 账号菜单')
+requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountSummary', 'web-account-menu', '退出登录'], 'Web 账号菜单')
+requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', '<Avatar'], '共享账号 chrome')
 if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')
 if (files.app.includes('LogoutOutlined')) throw new Error('Web 顶栏仍保留 AntD 退出图标')
 if ((files.app.match(/src=\{xDriveBrandIcon\}/g) || []).length !== 3) {
