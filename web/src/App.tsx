@@ -519,9 +519,15 @@ function FileManager({
 
     return (
       <Box className="app-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-        <AppBar position="static" elevation={1}>
+        <AppBar
+          position="static"
+          elevation={0}
+          color="inherit"
+          className="web-appbar"
+          sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
+        >
           <Toolbar className="topbar">
-            <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="compact" />
+            <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
             <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
           </Toolbar>
         </AppBar>
@@ -687,9 +693,15 @@ function FileManager({
 
   return (
     <Box className="app-shell file-manager-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar position="static" elevation={1}>
+      <AppBar
+          position="static"
+          elevation={0}
+          color="inherit"
+          className="web-appbar"
+          sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
+        >
         <Toolbar className="topbar">
-          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="compact" />
+          <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
           <WebAccountMenu username={username} serverBuild={serverBuild} onLogout={onLogout} />
         </Toolbar>
       </AppBar>
@@ -699,8 +711,8 @@ function FileManager({
         sx={{
           display: { xs: 'block', md: 'grid' },
           gridTemplateColumns: { md: `${XDRIVE_SIDEBAR_WIDTH}px minmax(0, 1fr)` },
-          minHeight: { md: 'calc(100vh - 64px)' },
-          height: { md: 'calc(100vh - 64px)' },
+          minHeight: { md: 'calc(100vh - 48px)' },
+          height: { md: 'calc(100vh - 48px)' },
         }}
       >
         <XDriveSidebarSurface ariaLabel="网页端功能区" responsive>
