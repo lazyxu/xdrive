@@ -103,3 +103,30 @@ test('Desktop Agent bridge exposes cursor-paged cloud children without changing 
   assert.ok(types.includes('type AgentCloudChildrenPage = {'), 'renderer paged children type is missing')
   assert.ok(types.includes('cloudChildren: (parentID: number)'), 'legacy cloudChildren contract should remain available')
 })
+
+test('Desktop exposes atomic cloud batch mutations through every IPC layer', () => {
+  for (const token of [
+    'CloudBatchCopy(context.Context, []client.BatchNodeRef, uint64)',
+    'CloudBatchMove(context.Context, []client.BatchNodeRef, uint64)',
+    'CloudBatchDelete(context.Context, []client.BatchNodeRef)',
+    'POST /v1/cloud/batch/copy',
+    'POST /v1/cloud/batch/move',
+    'POST /v1/cloud/batch/delete',
+  ]) {
+    assert.ok(agentIPC.includes(token), `missing Agent batch IPC contract: ${token}`)
+  }
+  for (const token of [
+    'cloudBatchCopy(items: AgentCloudBatchNodeRef[], parentID: number)',
+    'cloudBatchMove(items: AgentCloudBatchNodeRef[], parentID: number)',
+    'cloudBatchDelete(items: AgentCloudBatchNodeRef[])',
+  ]) {
+    assert.ok(agentClient.includes(token), `missing Electron Agent batch client: ${token}`)
+  }
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-copy'"), 'main batch-copy handler is missing')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-move'"), 'main batch-move handler is missing')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-delete'"), 'main batch-delete handler is missing')
+  assert.ok(main.includes('normalizeCloudBatchItems(items)'), 'main must validate renderer batch items')
+  assert.ok(preload.includes('cloudBatchCopy: (items: Array<{ id: number; revision: number }>, parentID: number)'), 'preload batch-copy bridge is missing')
+  assert.ok(types.includes('type AgentCloudBatchResult = {'), 'renderer batch result type is missing')
+  assert.ok(types.includes('cloudBatchDelete: (items: AgentCloudBatchNodeRef[])'), 'renderer batch-delete method type is missing')
+})

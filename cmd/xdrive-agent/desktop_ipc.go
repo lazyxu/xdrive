@@ -154,6 +154,9 @@ type desktopIPCController interface {
 	CloudCopy(context.Context, uint64, uint64) (client.Node, error)
 	CloudMove(context.Context, uint64, uint64, uint64) (client.Node, error)
 	CloudDelete(context.Context, uint64, uint64) error
+	CloudBatchCopy(context.Context, []client.BatchNodeRef, uint64) (client.BatchNodesResult, error)
+	CloudBatchMove(context.Context, []client.BatchNodeRef, uint64) (client.BatchNodesResult, error)
+	CloudBatchDelete(context.Context, []client.BatchNodeRef) (client.BatchNodesResult, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
 	CloudSearch(context.Context, string) ([]agentCloudSearchResult, error)
@@ -382,6 +385,9 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/cloud/copy", h.cloudCopy)
 	mux.HandleFunc("PATCH /v1/cloud/move", h.cloudMove)
 	mux.HandleFunc("DELETE /v1/cloud/nodes", h.cloudDelete)
+	mux.HandleFunc("POST /v1/cloud/batch/copy", h.cloudBatchCopy)
+	mux.HandleFunc("POST /v1/cloud/batch/move", h.cloudBatchMove)
+	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
@@ -896,6 +902,53 @@ func (h *desktopIPCHandler) cloudDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudBatchCopy(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Items    []client.BatchNodeRef `json:"items"`
+		ParentID uint64                `json:"parent_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	result, err := h.ctrl.CloudBatchCopy(r.Context(), input.Items, input.ParentID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudBatchMove(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Items    []client.BatchNodeRef `json:"items"`
+		ParentID uint64                `json:"parent_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	result, err := h.ctrl.CloudBatchMove(r.Context(), input.Items, input.ParentID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudBatchDelete(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Items []client.BatchNodeRef `json:"items"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	result, err := h.ctrl.CloudBatchDelete(r.Context(), input.Items)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudUpload(w http.ResponseWriter, r *http.Request) {

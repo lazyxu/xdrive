@@ -210,6 +210,12 @@ declare global {
   type AgentMediaAlbum = MediaAlbum
   type AgentMediaThumbnail = { content_type: string; data_base64: string }
 
+  type AgentCloudBatchNodeRef = { id: number; revision: number }
+  type AgentCloudBatchResult = {
+    operation_id: string
+    items?: AgentCloudNode[]
+    deleted_ids?: number[]
+  }
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = {
     items: AgentCloudNode[]
@@ -342,6 +348,9 @@ declare global {
         cloudCopy: (id: number, parentID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudMove: (id: number, revision: number, parentID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudDelete: (id: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudBatchCopy: (items: AgentCloudBatchNodeRef[], parentID: number) => Promise<DesktopResult<AgentCloudBatchResult>>
+        cloudBatchMove: (items: AgentCloudBatchNodeRef[], parentID: number) => Promise<DesktopResult<AgentCloudBatchResult>>
+        cloudBatchDelete: (items: AgentCloudBatchNodeRef[]) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>

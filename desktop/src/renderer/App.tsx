@@ -2176,12 +2176,12 @@ export default function App({
         setBusy('cloud-delete-many')
         setError('')
         try {
-          for (const node of nodes) {
-            const result = await window.xdriveDesktop.agent.cloudDelete(node.id, node.revision)
-            if (!result.ok) {
-              setError(result.error.message)
-              return
-            }
+          const result = await window.xdriveDesktop.agent.cloudBatchDelete(
+            nodes.map((node) => ({ id: node.id, revision: node.revision })),
+          )
+          if (!result.ok) {
+            setError(result.error.message)
+            return
           }
           setNotice(`已将 ${nodes.length} 个项目移到回收站。`)
           await refreshCloudQuota()

@@ -103,6 +103,17 @@ export interface ChildrenOptions {
   order?: 'asc' | 'desc'
 }
 
+export interface BatchNodeRef {
+  id: number
+  revision: number
+}
+
+export interface BatchNodesResult {
+  operation_id: string
+  items?: Node[]
+  deleted_ids?: number[]
+}
+
 export interface UploadChunkState {
   index: number
   size: number
@@ -738,6 +749,27 @@ export class XDriveApi {
       method: 'PATCH',
       headers: { 'If-Match': `"${revision}"` },
       body: JSON.stringify({ parent_id: parentID }),
+    })
+  }
+
+  batchCopy(items: BatchNodeRef[], parentID: number) {
+    return this.request<BatchNodesResult>('/api/v1/nodes/batch/copy', {
+      method: 'POST',
+      body: JSON.stringify({ items, parent_id: parentID }),
+    })
+  }
+
+  batchMove(items: BatchNodeRef[], parentID: number) {
+    return this.request<BatchNodesResult>('/api/v1/nodes/batch/move', {
+      method: 'POST',
+      body: JSON.stringify({ items, parent_id: parentID }),
+    })
+  }
+
+  batchDelete(items: BatchNodeRef[]) {
+    return this.request<BatchNodesResult>('/api/v1/nodes/batch/delete', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
     })
   }
 

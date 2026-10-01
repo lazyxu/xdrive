@@ -85,6 +85,17 @@ type ChildrenPage struct {
 	Order      string `json:"order"`
 }
 
+type BatchNodeRef struct {
+	ID       uint64 `json:"id"`
+	Revision uint64 `json:"revision"`
+}
+
+type BatchNodesResult struct {
+	OperationID string   `json:"operation_id"`
+	Items       []Node   `json:"items,omitempty"`
+	DeletedIDs  []uint64 `json:"deleted_ids,omitempty"`
+}
+
 type QuotaUsage struct {
 	QuotaBytes         int64  `json:"quota_bytes"`
 	PhysicalUsedBytes  int64  `json:"physical_used_bytes"`
@@ -320,6 +331,24 @@ func (c *Client) Copy(ctx context.Context, id, parentID uint64, name *string) (N
 
 func (c *Client) Move(ctx context.Context, id, revision, parentID uint64) (Node, error) {
 	return c.RenameMove(ctx, id, revision, nil, &parentID)
+}
+
+func (c *Client) BatchCopy(ctx context.Context, items []BatchNodeRef, parentID uint64) (BatchNodesResult, error) {
+	var out BatchNodesResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/nodes/batch/copy", map[string]any{"items": items, "parent_id": parentID}, &out)
+	return out, err
+}
+
+func (c *Client) BatchMove(ctx context.Context, items []BatchNodeRef, parentID uint64) (BatchNodesResult, error) {
+	var out BatchNodesResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/nodes/batch/move", map[string]any{"items": items, "parent_id": parentID}, &out)
+	return out, err
+}
+
+func (c *Client) BatchDelete(ctx context.Context, items []BatchNodeRef) (BatchNodesResult, error) {
+	var out BatchNodesResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/nodes/batch/delete", map[string]any{"items": items}, &out)
+	return out, err
 }
 
 func (c *Client) RenameMove(ctx context.Context, id, revision uint64, name *string, parentID *uint64) (Node, error) {

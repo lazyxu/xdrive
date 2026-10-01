@@ -918,7 +918,7 @@ function FileManager({
       confirmLabel: '移到回收站',
       intent: 'danger',
       run: async () => {
-        for (const node of nodes) await api.remove(node.id, node.revision)
+        await api.batchDelete(nodes.map((node) => ({ id: node.id, revision: node.revision })))
         setFeedback({ tone: 'good', message: `已将 ${nodes.length} 个项目移到回收站` })
         if (current) await loadDirectory(current.id)
         await refreshQuota()
