@@ -87,6 +87,9 @@ import {
   formatBinarySize,
 } from '@xdrive/shared'
 import DesktopFileExplorer from './DesktopFileExplorer'
+import { DesktopOverviewPage } from './DesktopOverviewPage'
+import { DesktopConflictsPage } from './DesktopConflictsPage'
+import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import { desktopShareDialogAdapter } from './shareDialogAdapter'
 import type {
@@ -1969,39 +1972,15 @@ export default function App({
         ) : null}
 
         {view === 'overview' && (
-          <>
-            <section className="status-grid">
-              <article className="status-card"><span className={`status-dot ${status?.paused ? 'waiting' : 'ready'}`} /><div><strong>同步</strong><p>{status?.sync_status}</p></div></article>
-              <article className="status-card"><span className={`status-dot ${status?.has_conflict ? 'warning' : 'ready'}`} /><div><strong>冲突</strong><p>{status?.conflict_count || 0} 个未解决</p></div></article>
-              <article className="status-card"><span className="status-dot ready" /><div><strong>Agent</strong><p>{status?.auth_status} · v{agent.hello?.agent_version || status?.version} · IPC {agent.hello?.protocol_min ?? '?'}-{agent.hello?.protocol_max ?? '?'}</p></div></article>
-              <article className="status-card"><span className="status-dot ready" /><div><strong>桌面桥接</strong><p>已通过受保护的本地 IPC 连接。</p></div></article>
-            </section>
-
-            <section className="system-card">
-              <XDriveSectionHeader
-                eyebrow="同步位置"
-                title={status?.mount_path || '默认 xDrive 文件夹'}
-                actions={(
-                  <XDriveActionButton
-                    loading={busy === 'folder'}
-                    loadingLabel="正在打开…"
-                    onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}
-                  >
-                    打开
-                  </XDriveActionButton>
-                )}
-              />
-              <XDriveDescriptionGrid columns={4} sx={{ mt: 2.5 }}>
-                <XDriveDescriptionItem label="服务器">{status?.server}</XDriveDescriptionItem>
-                <XDriveDescriptionItem label="用户">{status?.username}</XDriveDescriptionItem>
-                <XDriveDescriptionItem label="状态">{status?.paused ? '已暂停' : status?.sync_status}</XDriveDescriptionItem>
-                <XDriveDescriptionItem label="修订号">{status?.revision}</XDriveDescriptionItem>
-              </XDriveDescriptionGrid>
-            </section>
-          </>
+          <DesktopOverviewPage
+            status={status}
+            hello={agent.hello}
+            openFolderLoading={busy === 'folder'}
+            onOpenFolder={() => {
+              void run('folder', () => window.xdriveDesktop.agent.openFolder())
+            }}
+          />
         )}
-
-
 
         {view === 'gallery' && (
           <section className="panel">
@@ -2316,152 +2295,64 @@ export default function App({
         )}
 
         {view === 'conflicts' && (
-          <section className="panel">
-            <XDriveSectionHeader
-              eyebrow="冲突副本"
-              title="解决同步冲突"
-              actions={<XDriveActionButton disabled={!!busy} onClick={() => void loadConflicts()}>刷新</XDriveActionButton>}
-            />
-            {conflicts.length === 0 ? <XDriveStatePanel message="没有未解决的冲突。" /> : (
-              <div className="conflict-list">
-                {conflicts.map((item) => (
-                  <article className="conflict-row" key={item.id}>
-                    <div className="conflict-copy">
-                      <strong>{item.original_path}</strong>
-                      <span>冲突副本：{item.conflict_path}</span>
-                      <span>{new Date(item.created_at).toLocaleString()}</span>
-                    </div>
-                    <div className="row-actions">
-                      <XDriveActionButton compact onClick={() => void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))}>同时打开</XDriveActionButton>
-                      <XDriveActionButton compact onClick={() => {
-                        requestConfirmation(
-                          '保留服务器版本？',
-                          '这会保留服务器版本并删除本地冲突副本。',
-                          '保留服务器版本',
-                          () => run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts()),
-                          'warning',
-                        )
-                      }}>保留服务器版本</XDriveActionButton>
-                      <XDriveActionButton compact intent="primary" onClick={() => {
-                        requestConfirmation(
-                          '保留本地版本？',
-                          '这会使用本地冲突副本替换服务器版本。',
-                          '保留本地版本',
-                          () => run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts()),
-                          'warning',
-                        )
-                      }}>保留本地版本</XDriveActionButton>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+          <DesktopConflictsPage
+            conflicts={conflicts}
+            busy={Boolean(busy)}
+            onRefresh={() => { void loadConflicts() }}
+            onOpenBoth={(item) => {
+              void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))
+            }}
+            onKeepServer={(item) => {
+              requestConfirmation(
+                '保留服务器版本？',
+                '这会保留服务器版本并删除本地冲突副本。',
+                '保留服务器版本',
+                () => run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts()),
+                'warning',
+              )
+            }}
+            onKeepLocal={(item) => {
+              requestConfirmation(
+                '保留本地版本？',
+                '这会使用本地冲突副本替换服务器版本。',
+                '保留本地版本',
+                () => run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts()),
+                'warning',
+              )
+            }}
+          />
         )}
 
-
         {view === 'diagnostics' && (
-          <section className="panel diagnostics-panel">
-            <XDriveSectionHeader
-              eyebrow="诊断与自修复"
-              title="客户端诊断"
-              subtitle={<>Agent 会运行与 <code>xd doctor</code> 相同的脱敏检查。密钥、会话 ID 和用户目录路径不会暴露给渲染进程。</>}
-              actions={(
-                <XDriveActionButton
-                  intent="primary"
-                  disabled={!!busy}
-                  loading={busy === 'diagnostics'}
-                  loadingLabel="正在检查…"
-                  onClick={() => void loadDiagnostics()}
-                >
-                  运行诊断
-                </XDriveActionButton>
-              )}
-            />
-
-            {diagnostics ? (
-              <>
-                <XDriveMetricGrid>
-                  <XDriveMetricCard title="通过" value={diagnostics.summary.pass} tone="good" />
-                  <XDriveMetricCard title="警告" value={diagnostics.summary.warn} tone="warning" />
-                  <XDriveMetricCard title="失败" value={diagnostics.summary.fail} tone="bad" />
-                  <XDriveMetricCard title="上次检查" value={new Date(diagnostics.generated_at).toLocaleString()} />
-                </XDriveMetricGrid>
-
-                <div className="diagnostic-actions">
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    loading={busy === 'restart-agent'}
-                    loadingLabel="正在重启 Agent…"
-                    onClick={() => void restartAgent().then(() => loadDiagnostics())}
-                  >
-                    重启 Agent
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy || status?.paused}
-                    loading={busy === 'reconnect'}
-                    loadingLabel="正在重新连接…"
-                    onClick={() => void runDiagnosticAction(
-                      'reconnect',
-                      () => window.xdriveDesktop.agent.reconnect(),
-                      '同步引擎已重新连接。',
-                    )}
-                  >
-                    重新连接
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy || status?.paused}
-                    loading={busy === 'repair-sync-root'}
-                    loadingLabel="正在修复…"
-                    onClick={() => void runDiagnosticAction(
-                      'repair-sync-root',
-                      () => window.xdriveDesktop.agent.repairSyncRoot(),
-                      '同步根目录已修复并重新连接。',
-                    )}
-                  >
-                    修复同步根目录
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    loading={busy === 'open-logs'}
-                    loadingLabel="正在打开…"
-                    onClick={() => void run(
-                      'open-logs',
-                      () => window.xdriveDesktop.agent.openLogs(),
-                      '已打开 xDrive 日志。',
-                    )}
-                  >
-                    打开日志
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    loading={busy === 'export-diagnostics'}
-                    loadingLabel="正在导出…"
-                    onClick={() => void exportDiagnostics()}
-                  >
-                    导出报告
-                  </XDriveActionButton>
-                </div>
-
-                <div className="diagnostic-list">
-                  {diagnostics.checks.map((check, index) => (
-                    <article className="diagnostic-row" key={`${check.name}:${index}`}>
-                      <XDriveStatusBadge
-                        tone={check.status === 'PASS' ? 'good' : check.status === 'WARN' ? 'warning' : 'bad'}
-                        label={check.status}
-                      />
-                      <div>
-                        <strong>{check.name}</strong>
-                        <p>{check.detail}</p>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <XDriveStatePanel message="运行诊断可检查服务器/TLS、登录与凭据存储、Agent/IPC、同步根目录、CfAPI/FUSE、缓存策略、版本兼容性和磁盘空间。" />
-            )}
-          </section>
+          <DesktopDiagnosticsPage
+            diagnostics={diagnostics}
+            busy={busy}
+            paused={Boolean(status?.paused)}
+            onRun={() => { void loadDiagnostics() }}
+            onRestartAgent={() => { void restartAgent().then(() => loadDiagnostics()) }}
+            onReconnect={() => {
+              void runDiagnosticAction(
+                'reconnect',
+                () => window.xdriveDesktop.agent.reconnect(),
+                '同步引擎已重新连接。',
+              )
+            }}
+            onRepairSyncRoot={() => {
+              void runDiagnosticAction(
+                'repair-sync-root',
+                () => window.xdriveDesktop.agent.repairSyncRoot(),
+                '同步根目录已修复并重新连接。',
+              )
+            }}
+            onOpenLogs={() => {
+              void run(
+                'open-logs',
+                () => window.xdriveDesktop.agent.openLogs(),
+                '已打开 xDrive 日志。',
+              )
+            }}
+            onExport={() => { void exportDiagnostics() }}
+          />
         )}
 
       </main>
