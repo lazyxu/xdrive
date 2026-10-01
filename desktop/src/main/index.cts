@@ -62,6 +62,7 @@ import {
   type AgentCacheStats,
   type AgentCacheReleaseResult,
   type AgentCloudNode,
+  type AgentCloudChildrenPage,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
   type AgentCloudVersion,
@@ -1735,6 +1736,41 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
     }
     return requireAgentClient().cloudChildren(parentID)
+  }, false))
+  ipcMain.handle('agent:cloud-children-page', (
+    _event,
+    parentID: unknown,
+    optionsValue: unknown,
+  ) => runAgentAction<AgentCloudChildrenPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
+    }
+    const options = (typeof optionsValue === 'object' && optionsValue !== null ? optionsValue : {}) as {
+      limit?: unknown
+      cursor?: unknown
+      sort?: unknown
+      order?: unknown
+    }
+    const limit = options.limit === undefined ? 200 : options.limit
+    const cursor = options.cursor === undefined ? '' : options.cursor
+    const sort = options.sort === undefined ? 'name' : options.sort
+    const order = options.order === undefined ? 'asc' : options.order
+    if (
+      typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 500 ||
+      typeof cursor !== 'string' ||
+      typeof sort !== 'string' || !['name', 'updated', 'type', 'size'].includes(sort) ||
+      typeof order !== 'string' || !['asc', 'desc'].includes(order)
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid cloud children page options.')
+    }
+    return requireAgentClient().cloudChildrenPage(parentID, {
+      limit,
+      cursor,
+      sort: sort as 'name' | 'updated' | 'type' | 'size',
+      order: order as 'asc' | 'desc',
+    })
   }, false))
   ipcMain.handle('agent:cloud-create-directory', (_event, parentID: unknown, name: unknown) => runAgentAction<AgentCloudNode>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

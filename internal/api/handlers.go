@@ -270,6 +270,10 @@ func (s *Server) children(c *gin.Context) {
 		fail(c, statusForLookup(err), "directory not found")
 		return
 	}
+	if childrenPaginationRequested(c) {
+		s.childrenPage(c, parentID)
+		return
+	}
 	var nodes []meta.Node
 	if err := s.DB.Preload("File").Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", userID(c), parentID).Order("type ASC, name ASC").Find(&nodes).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list failed")

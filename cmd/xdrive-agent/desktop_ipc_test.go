@@ -261,6 +261,16 @@ func (f *fakeDesktopIPCController) CloudList(context.Context, uint64) ([]client.
 	return append([]client.Node(nil), f.cloudChildren...), f.err
 }
 
+func (f *fakeDesktopIPCController) CloudListPage(_ context.Context, _ uint64, options client.ChildrenOptions) (client.ChildrenPage, error) {
+	return client.ChildrenPage{
+		Items: append([]client.Node(nil), f.cloudChildren...),
+		NextCursor: "next-page",
+		HasMore: true,
+		Sort: options.Sort,
+		Order: options.Order,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudCreateDir(_ context.Context, parentID uint64, name string) (client.Node, error) {
 	f.cloudCreateParent, f.cloudCreateName = parentID, name
 	return f.cloudCreatedDir, f.err
@@ -844,6 +854,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}{
 		{http.MethodGet, "/v1/cloud/root", "", "\"id\":1"},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1", "", "\"Projects\""},
+		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=200&sort=name&order=asc", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
 		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
 		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},

@@ -105,7 +105,7 @@ import {
   XDriveYikeCookieHelp,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
-import type { MediaGalleryDataSource, XDriveStatusTone } from '@xdrive/ui/mui'
+import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
@@ -365,6 +365,10 @@ export default function App({
   const [sourceTargetLoading, setSourceTargetLoading] = useState(false)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
+  const [cloudChildrenCursor, setCloudChildrenCursor] = useState('')
+  const [cloudChildrenHasMore, setCloudChildrenHasMore] = useState(false)
+  const [cloudChildrenLoadingMore, setCloudChildrenLoadingMore] = useState(false)
+  const [cloudChildrenSort, setCloudChildrenSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
   const [cloudStorageStats, setCloudStorageStats] = useState<AgentCloudStorageStats | null>(null)
   const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
@@ -1926,19 +1930,56 @@ export default function App({
     return result.data
   }
 
-  const loadCloudDirectory = async (id: number, crumbs: AgentCloudCrumb[]) => {
+  const loadCloudDirectory = async (
+    id: number,
+    crumbs: AgentCloudCrumb[],
+    sort: XDriveFileExplorerSort = cloudChildrenSort,
+  ) => {
     setBusy('cloud-directory')
     setError('')
+    setCloudChildrenSort(sort)
     try {
-      const result = await window.xdriveDesktop.agent.cloudChildren(id)
+      const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, {
+        limit: 200,
+        sort: sort.key,
+        order: sort.direction,
+      })
       if (!result.ok) {
         setError(result.error.message)
         return
       }
-      setCloudItems(result.data)
+      setCloudItems(result.data.items)
+      setCloudChildrenCursor(result.data.next_cursor ?? '')
+      setCloudChildrenHasMore(result.data.has_more)
       setCloudCrumbs(crumbs)
     } finally {
       setBusy('')
+    }
+  }
+
+  const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort = cloudChildrenSort) => {
+    if (!cloudChildrenHasMore || cloudChildrenLoadingMore || !cloudChildrenCursor) return
+    setCloudChildrenLoadingMore(true)
+    setError('')
+    try {
+      const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, {
+        limit: 200,
+        cursor: cloudChildrenCursor,
+        sort: sort.key,
+        order: sort.direction,
+      })
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setCloudItems((currentItems) => {
+        const existing = new Set(currentItems.map((item) => item.id))
+        return [...currentItems, ...result.data.items.filter((item) => !existing.has(item.id))]
+      })
+      setCloudChildrenCursor(result.data.next_cursor ?? '')
+      setCloudChildrenHasMore(result.data.has_more)
+    } finally {
+      setCloudChildrenLoadingMore(false)
     }
   }
 
@@ -1958,12 +1999,18 @@ export default function App({
         setError(quotaResult.error.message)
         return
       }
-      const childrenResult = await window.xdriveDesktop.agent.cloudChildren(rootResult.data.id)
+      const childrenResult = await window.xdriveDesktop.agent.cloudChildrenPage(rootResult.data.id, {
+        limit: 200,
+        sort: cloudChildrenSort.key,
+        order: cloudChildrenSort.direction,
+      })
       if (!childrenResult.ok) {
         setError(childrenResult.error.message)
         return
       }
-      setCloudItems(childrenResult.data)
+      setCloudItems(childrenResult.data.items)
+      setCloudChildrenCursor(childrenResult.data.next_cursor ?? '')
+      setCloudChildrenHasMore(childrenResult.data.has_more)
       setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
       setCloudQuota(quotaResult.data)
     } finally {
@@ -3689,7 +3736,16 @@ export default function App({
               items={cloudItems}
               crumbs={cloudCrumbs}
               loading={busy === 'cloud-load' || busy === 'cloud-directory'}
+              hasMore={cloudChildrenHasMore}
+              loadingMore={cloudChildrenLoadingMore}
+              sort={cloudChildrenSort}
               onLoadDirectory={loadCloudDirectory}
+              onLoadMore={loadMoreCloudDirectory}
+              onSortChange={(sort) => {
+                setCloudChildrenSort(sort)
+                const currentCloud = cloudCrumbs.at(-1)
+                if (currentCloud) void loadCloudDirectory(currentCloud.id, cloudCrumbs, sort)
+              }}
               onOpenTrash={() => { void loadCloudTrash() }}
               onOpenHistory={(node, crumbs) => { void openCloud历史版本(node, crumbs) }}
               onOpenShares={(node) => { void openCloudShares(node) }}

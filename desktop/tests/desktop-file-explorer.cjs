@@ -172,3 +172,11 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
   assert.ok(styles.includes('.cloud-row-actions {'), 'shared dialog/list row actions are still required')
   assert.ok(styles.includes('.cloud-compact-row {'), 'trash/version compact rows are still required')
 })
+
+test('Desktop FileExplorer pages directory children through the Agent bridge', () => {
+  assert.ok(app.includes("const [cloudChildrenCursor, setCloudChildrenCursor] = useState('')"), 'Desktop cursor state is missing')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudChildrenPage(id, {'), 'Desktop initial page must use cloudChildrenPage')
+  assert.ok(app.includes('cursor: cloudChildrenCursor'), 'Desktop load-more must forward the server cursor')
+  assert.ok(explorer.includes('sort: XDriveFileExplorerSort'), 'Desktop Explorer sort must be controlled')
+  assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Desktop Explorer must request the next page near the scroll boundary')
+})

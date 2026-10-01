@@ -195,3 +195,17 @@ test('shared FileExplorer provides a preview and properties inspector', () => {
   }
   assert.ok(explorer.includes("width: 'clamp(248px, 27vw, 328px)'"), 'inspector should use a bounded system-style side pane')
 })
+
+test('shared FileExplorer supports incremental directory loading', () => {
+  for (const token of [
+    'hasMore?: boolean',
+    'loadingMore?: boolean',
+    'onLoadMore?: () => void',
+    'loadMoreRequestedRef',
+    'host.scrollHeight - host.scrollTop - host.clientHeight < 500',
+    '正在加载更多…',
+    '继续滚动以加载更多',
+  ]) {
+    assert.ok(explorer.includes(token), `missing incremental-loading contract: ${token}`)
+  }
+})

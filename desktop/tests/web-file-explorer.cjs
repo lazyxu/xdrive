@@ -92,3 +92,14 @@ test('Web FileExplorer supplies preview/properties metadata without a new plaint
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Web inspector should reuse the protected thumbnail loader')
   assert.equal(api.includes('previewPlaintext'), false, 'Web must not add a plaintext preview API')
 })
+
+test('Web FileExplorer pages directory children with server-side sorting', () => {
+  assert.ok(api.includes('export interface ChildrenPage {'), 'Web children page contract is missing')
+  assert.ok(api.includes('listPage(parentID: number, options: ChildrenListOptions = {})'), 'Web paged children API is missing')
+  assert.ok(app.includes("const [childrenCursor, setChildrenCursor] = useState('')"), 'Web cursor state is missing')
+  assert.ok(app.includes('const [childrenHasMore, setChildrenHasMore] = useState(false)'), 'Web has-more state is missing')
+  assert.ok(app.includes('await api.listPage(id, { limit: 200, sort: sort.key, order: sort.direction })'), 'Web initial directory page must be server-sorted')
+  assert.ok(app.includes('cursor: childrenCursor'), 'Web load-more must continue from the server cursor')
+  assert.ok(explorer.includes('sort: XDriveFileExplorerSort'), 'Web Explorer sort must be controlled')
+  assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Web Explorer must request the next page near the scroll boundary')
+})

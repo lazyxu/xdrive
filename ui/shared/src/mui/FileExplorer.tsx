@@ -373,6 +373,9 @@ export function XDriveFileExplorer({
   commandBarStart,
   commandBarEnd,
   statusText,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
   loadThumbnail,
 }: {
   items: XDriveFileExplorerItem[]
@@ -418,6 +421,9 @@ export function XDriveFileExplorer({
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
   statusText?: ReactNode
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
   loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
 }) {
   const [editingPath, setEditingPath] = useState(false)
@@ -440,6 +446,7 @@ export function XDriveFileExplorer({
     items: XDriveFileExplorerMenuItem[]
   } | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
+  const loadMoreRequestedRef = useRef(false)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
@@ -478,6 +485,10 @@ export function XDriveFileExplorer({
     if (!detailsPreferencesKey || typeof window === 'undefined') return
     window.localStorage.setItem(detailsPreferencesKey, JSON.stringify(detailsLayout))
   }, [detailsLayout, detailsPreferencesKey])
+
+  useEffect(() => {
+    if (!loadingMore) loadMoreRequestedRef.current = false
+  }, [items.length, loadingMore])
 
   useEffect(() => {
     const host = scrollHostRef.current
@@ -876,7 +887,18 @@ export function XDriveFileExplorer({
     : visibleItems
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
-    if (virtualizeDetails) setScrollTop(event.currentTarget.scrollTop)
+    const host = event.currentTarget
+    if (virtualizeDetails) setScrollTop(host.scrollTop)
+    if (
+      hasMore &&
+      !loadingMore &&
+      !loadMoreRequestedRef.current &&
+      onLoadMore &&
+      host.scrollHeight - host.scrollTop - host.clientHeight < 500
+    ) {
+      loadMoreRequestedRef.current = true
+      onLoadMore()
+    }
   }
 
   return (
@@ -1499,6 +1521,16 @@ export function XDriveFileExplorer({
             })}
           </Box>
         )}
+
+        {loadingMore ? (
+          <Box sx={{ py: 1.25, textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary">正在加载更多…</Typography>
+          </Box>
+        ) : hasMore ? (
+          <Box sx={{ py: 0.75, textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary">继续滚动以加载更多</Typography>
+          </Box>
+        ) : null}
 
         {loading && visibleItems.length > 0 ? (
           <Box

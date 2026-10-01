@@ -24,6 +24,7 @@ import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
   XDriveFileExplorerViewMode,
+  XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
@@ -45,7 +46,12 @@ export default function DesktopFileExplorer({
   items,
   crumbs,
   loading,
+  hasMore,
+  loadingMore,
+  sort,
   onLoadDirectory,
+  onLoadMore,
+  onSortChange,
   onOpenTrash,
   onOpenHistory,
   onOpenShares,
@@ -58,7 +64,12 @@ export default function DesktopFileExplorer({
   items: AgentCloudNode[]
   crumbs: AgentCloudCrumb[]
   loading: boolean
-  onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[]) => Promise<void>
+  hasMore: boolean
+  loadingMore: boolean
+  sort: XDriveFileExplorerSort
+  onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[], sort: XDriveFileExplorerSort) => Promise<void>
+  onLoadMore: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
+  onSortChange: (sort: XDriveFileExplorerSort) => void
   onOpenTrash: () => void
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
@@ -147,7 +158,7 @@ export default function DesktopFileExplorer({
   const navigateTo = async (nextCrumbs: AgentCloudCrumb[], record = true) => {
     const target = nextCrumbs.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, nextCrumbs)
+    await onLoadDirectory(target.id, nextCrumbs, sort)
     if (record) recordHistory(nextCrumbs)
     clearSearch()
     setSearchValue('')
@@ -159,7 +170,7 @@ export default function DesktopFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
     setSearchValue('')
@@ -171,7 +182,7 @@ export default function DesktopFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
     setSearchValue('')
@@ -290,7 +301,7 @@ export default function DesktopFileExplorer({
       }
       if (result.data.canceled) return
       if (result.data.uploaded.length > 0) {
-        await onLoadDirectory(current.id, crumbs)
+        await onLoadDirectory(current.id, crumbs, sort)
         await onQuotaChanged()
       }
       if (result.data.failures.length > 0) {
@@ -325,7 +336,7 @@ export default function DesktopFileExplorer({
       setCreateOpen(false)
       setCreateName('')
       setCreateError('')
-      await onLoadDirectory(current.id, crumbs)
+      await onLoadDirectory(current.id, crumbs, sort)
       onFeedback('good', '文件夹已创建。')
     } finally {
       setActionBusy('')
@@ -349,7 +360,7 @@ export default function DesktopFileExplorer({
       setRenameNode(null)
       setRenameName('')
       setRenameError('')
-      await onLoadDirectory(current.id, crumbs)
+      await onLoadDirectory(current.id, crumbs, sort)
       onFeedback('good', '已重命名。')
     } finally {
       setActionBusy('')
@@ -498,7 +509,7 @@ export default function DesktopFileExplorer({
       }
       if (clipboard.mode === 'cut') setClipboard(null)
       clearSearch()
-      await onLoadDirectory(current.id, crumbs)
+      await onLoadDirectory(current.id, crumbs, sort)
       await onQuotaChanged()
       onFeedback('good', clipboard.mode === 'cut' ? '已移动到当前文件夹。' : '已复制到当前文件夹。')
     } finally {
@@ -527,7 +538,7 @@ export default function DesktopFileExplorer({
         }
       }
       clearSearch()
-      if (current) await onLoadDirectory(current.id, crumbs)
+      if (current) await onLoadDirectory(current.id, crumbs, sort)
       await onQuotaChanged()
       onFeedback('good', operation === 'copy' ? '已复制到目标文件夹。' : '已移动到目标文件夹。')
     } finally {
@@ -551,7 +562,7 @@ export default function DesktopFileExplorer({
       } else {
         onFeedback('good', `已上传 ${result.data.uploaded.length} 个文件。`)
       }
-      if (current) await onLoadDirectory(current.id, crumbs)
+      if (current) await onLoadDirectory(current.id, crumbs, sort)
       await onQuotaChanged()
     } finally {
       setActionBusy('')
@@ -582,10 +593,10 @@ export default function DesktopFileExplorer({
       icon: <RefreshRoundedIcon fontSize="small" />,
       dividerBefore: true,
       onSelect: () => {
-        if (current) void onLoadDirectory(current.id, crumbs)
+        if (current) void onLoadDirectory(current.id, crumbs, sort)
       },
     },
-  ], [actionBusy, crumbs, current, onLoadDirectory])
+  ], [actionBusy, crumbs, current, onLoadDirectory, sort])
 
   return (
     <>
@@ -610,7 +621,7 @@ export default function DesktopFileExplorer({
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}
         onRefresh={() => {
-          if (current) void onLoadDirectory(current.id, crumbs)
+          if (current) void onLoadDirectory(current.id, crumbs, sort)
         }}
         onCrumbClick={(_crumb, index) => { void navigateTo(crumbs.slice(0, index + 1)) }}
         onCreateFolder={() => {
@@ -640,6 +651,16 @@ export default function DesktopFileExplorer({
         }}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
+        sort={sort}
+        onSortChange={(nextSort) => {
+          clearSearch()
+          onSortChange(nextSort)
+        }}
+        hasMore={!searchResults && hasMore}
+        loadingMore={!searchResults && loadingMore}
+        onLoadMore={() => {
+          if (current && !searchResults) void onLoadMore(current.id, sort)
+        }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(
