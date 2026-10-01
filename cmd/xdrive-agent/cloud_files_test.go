@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/transfer"
 )
 
 func TestAgentCloudCrumbsLocalizesRoot(t *testing.T) {
@@ -91,5 +93,78 @@ func TestReplaceDownloadedFileRejectsDirectoryDestination(t *testing.T) {
 	}
 	if err := replaceDownloadedFile(staged, destination); err == nil {
 		t.Fatal("expected directory destination to be rejected")
+	}
+}
+
+func TestAgentCloudTransferProgressAndCompletion(t *testing.T) {
+	manager := transfer.NewManager(10)
+	handle, progress := startAgentCloudTransfer(
+		manager,
+		transfer.KindUpload,
+		"upload",
+		"report.pdf",
+		"/tmp/report.pdf",
+		100,
+	)
+	if handle == nil || progress == nil {
+		t.Fatal("expected transfer handle and progress callback")
+	}
+
+	progress(40, 100)
+	_, items := manager.Snapshot()
+	if len(items) != 1 {
+		t.Fatalf("items=%d want 1", len(items))
+	}
+	if got := items[0]; got.State != transfer.StateRunning ||
+		got.Kind != transfer.KindUpload ||
+		got.Direction != "upload" ||
+		got.FileName != "report.pdf" ||
+		got.BytesDone != 40 ||
+		got.BytesTotal != 100 {
+		t.Fatalf("running transfer=%+v", got)
+	}
+
+	progress(75, 100)
+	finishAgentCloudTransfer(handle, nil)
+	_, items = manager.Snapshot()
+	if len(items) != 1 {
+		t.Fatalf("items=%d want 1", len(items))
+	}
+	if got := items[0]; got.State != transfer.StateCompleted ||
+		got.BytesDone != 100 ||
+		got.BytesTotal != 100 ||
+		got.Percent != 100 ||
+		got.CompletedAt == nil {
+		t.Fatalf("completed transfer=%+v", got)
+	}
+}
+
+func TestAgentCloudTransferFailureIsRetainedInHistory(t *testing.T) {
+	manager := transfer.NewManager(10)
+	handle, progress := startAgentCloudTransfer(
+		manager,
+		transfer.KindDownload,
+		"download",
+		"archive.zip",
+		"/tmp/archive.zip",
+		0,
+	)
+	progress(25, 200)
+	wantErr := errors.New("network interrupted")
+	finishAgentCloudTransfer(handle, wantErr)
+
+	_, items := manager.Snapshot()
+	if len(items) != 1 {
+		t.Fatalf("items=%d want 1", len(items))
+	}
+	got := items[0]
+	if got.State != transfer.StateFailed ||
+		got.Kind != transfer.KindDownload ||
+		got.Direction != "download" ||
+		got.BytesDone != 25 ||
+		got.BytesTotal != 200 ||
+		got.Error != wantErr.Error() ||
+		got.CompletedAt == nil {
+		t.Fatalf("failed transfer=%+v", got)
 	}
 }

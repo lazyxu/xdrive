@@ -12,6 +12,7 @@ const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const web = read('web', 'src', 'App.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webStore = read('web', 'src', 'transfers.ts')
+const agentCloudFiles = read('cmd', 'xdrive-agent', 'cloud_files.go')
 
 test('shared transfer center exposes detailed progress and history fields', () => {
   for (const token of [
@@ -55,4 +56,13 @@ test('Web upload and download operations feed persistent transfer history', () =
   assert.ok(webStore.includes("xdrive.web.transfer_history"), 'Web transfer history must survive navigation/reload')
   assert.ok(webStore.includes('MAX_HISTORY = 200'), 'Web transfer history must be bounded')
   assert.ok(webStore.includes('页面刷新后无法继续跟踪该传输'), 'stale active Web transfers must fail closed after reload')
+})
+
+
+test('Desktop manual upload and download operations feed the Agent transfer manager', () => {
+  assert.ok(agentCloudFiles.includes('transfer.KindUpload'), 'Desktop manual upload must create an upload transfer')
+  assert.ok(agentCloudFiles.includes('UploadFileResumable(ctx'), 'Desktop manual upload must report resumable byte progress')
+  assert.ok(agentCloudFiles.includes('transfer.KindDownload'), 'Desktop manual download must create a download transfer')
+  assert.ok(agentCloudFiles.includes('DownloadToProgress(ctx'), 'Desktop manual download must report streamed byte progress')
+  assert.ok(agentCloudFiles.includes('finishAgentCloudTransfer'), 'Desktop manual transfers must retain success/failure history')
 })
