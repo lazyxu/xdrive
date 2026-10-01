@@ -474,12 +474,13 @@ test('pull source defaults use sync mode instead of silently falling back to sca
 
 test('Web and Desktop create flows consume the shared run-mode default', () => {
   const repo = path.join(__dirname, '..', '..')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   assert.equal((web.match(/run_mode: defaults\.runMode/g) || []).length, 2)
-  assert.match(desktop, /useState<'scan' \| 'sync'>\(initialSourceDefaults\.runMode\)/)
-  assert.equal((desktop.match(/setSourceCreateRunMode\(defaults\.runMode\)/g) || []).length, 2)
+  assert.equal((desktop.match(/run_mode: defaults\.runMode/g) || []).length, 2)
+  assert.ok(web.includes('<XDriveSourceManager'), 'Web must mount the shared Source manager')
+  assert.ok(desktop.includes('<XDriveSourceManager'), 'Desktop must mount the shared Source manager')
 })
 test('shared external-source defaults preserve connector-specific setup rules', () => {
   const scheduleTimezone = shared.defaultExternalSourceTimezone()
@@ -612,8 +613,8 @@ test('shared DSM address help explains certificate matching', () => {
 test('Web and Desktop reuse shared source summary card presentation', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedCard = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
   const desktopStyles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
   for (const token of [
@@ -641,8 +642,8 @@ test('Web and Desktop reuse shared source summary card presentation', () => {
 test('Web and Desktop reuse shared source collection presentation', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedCollection = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceCollection.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSourceCollectionSummary',
@@ -672,8 +673,8 @@ test('Web and Desktop reuse shared source collection presentation', () => {
 test('Web and Desktop reuse shared source schedule fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedSchedule = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceScheduleFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSourceScheduleFields',
@@ -700,8 +701,8 @@ test('Web and Desktop reuse shared source schedule fields', () => {
 test('Web and Desktop reuse shared source ignore-rules field', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedIgnore = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceIgnoreRulesField.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of ['XDriveSourceIgnoreRulesField', '忽略规则', 'gitignore 风格规则', 'spellCheck: false', 'monospace']) {
     assert.ok(sharedIgnore.includes(token), `shared Source ignore-rules field missing: ${token}`)
@@ -718,8 +719,8 @@ test('Web and Desktop reuse shared source ignore-rules field', () => {
 test('Web and Desktop reuse shared source basic fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceBasicFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
   const desktopStyles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
   for (const token of [
@@ -765,8 +766,8 @@ test('Web and Desktop reuse shared source basic fields', () => {
 test('Web and Desktop reuse shared source credential fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceCredentialFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSourceCookieField',
@@ -810,8 +811,8 @@ test('Web and Desktop reuse shared source credential fields', () => {
 test('Web and Desktop reuse shared Synology connector-config fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorConfigFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSynologyPhotoSpacesField',
@@ -839,7 +840,7 @@ test('Web and Desktop reuse shared Synology connector-config fields', () => {
 
 test('Desktop source details reuse shared description and section primitives', () => {
   const repo = path.join(__dirname, '..', '..')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
   const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
   const description = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'DescriptionGrid.tsx'), 'utf8')
 
