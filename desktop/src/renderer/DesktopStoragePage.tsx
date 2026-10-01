@@ -4,7 +4,7 @@ import {
   XDriveActionButton,
   XDriveMetricCard,
   XDriveMetricGrid,
-  XDriveSectionHeader,
+  XDriveWorkspaceSurface,
   XDriveStatePanel,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
@@ -32,26 +32,26 @@ export function DesktopStoragePage({
   onReleaseCache: () => void
 }) {
   return (
-    <section className="panel storage-panel">
-      <XDriveSectionHeader
-        eyebrow="存储策略"
-        title={storagePoliciesSupported ? '选择此设备保留的内容' : 'Linux FUSE 挂载'}
-        subtitle={
-          storagePoliciesSupported
-            ? '策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。'
-            : 'Linux 当前使用 FUSE 远程挂载；目录在此处只读展示，文件内容在打开时按需获取。'
-        }
-        actions={(
-          <XDriveActionButton
-            disabled={Boolean(busy)}
-            loading={busy === 'storage'}
-            loadingLabel="正在刷新…"
-            onClick={onRefresh}
-          >
-            刷新
-          </XDriveActionButton>
-        )}
-      />
+    <XDriveWorkspaceSurface
+      presentation="page"
+      title="存储"
+      subtitle={
+        storagePoliciesSupported
+          ? '策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。'
+          : 'Linux 当前使用 FUSE 远程挂载；目录在此处只读展示，文件内容在打开时按需获取。'
+      }
+      pageActions={(
+        <XDriveActionButton
+          disabled={Boolean(busy)}
+          loading={busy === 'storage'}
+          loadingLabel="正在刷新…"
+          onClick={onRefresh}
+        >
+          刷新
+        </XDriveActionButton>
+      )}
+    >
+      <div className="storage-panel">
 
       {cloudQuota ? (
         <div className="cloud-subpanel">
@@ -171,6 +171,7 @@ export function DesktopStoragePage({
       ) : (
         <div className="storage-tree">{(storageTree.children || []).map((node) => renderStorageNode(node))}</div>
       )}
-    </section>
+      </div>
+    </XDriveWorkspaceSurface>
   )
 }
