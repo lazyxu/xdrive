@@ -1262,7 +1262,7 @@ export function XDriveSourceManager({
                 <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedDetail.error}</MuiTypography>
               </XDriveStatusAlert>
             )}
-            <XDriveDescriptionGrid>
+            <XDriveDescriptionGrid columns={4} fullColumnsAt="md">
               <XDriveDescriptionItem label="同步文件夹类型">
                 <Stack direction="row" spacing={0.75} alignItems="center">
                   <XDriveSourceKindIcon kind={selected.source.kind} size="small" />
@@ -1307,7 +1307,7 @@ export function XDriveSourceManager({
                       }}
                     >
                       <AccordionSummary>
-                        <XDriveSourceCollectionSummary collection={collection} />
+                        <XDriveSourceCollectionSummary collection={collection} wideAt="md" />
                       </AccordionSummary>
                       <AccordionDetails>
                         {page?.loading && !page.loaded ? (
@@ -1374,7 +1374,7 @@ export function XDriveSourceManager({
                               onCancel={() => void cancelRun(selected)}
                             />
                           )}
-                          <XDriveDescriptionGrid>
+                          <XDriveDescriptionGrid columns={3} fullColumnsAt="md" sx={{ p: 1.25 }}>
                             <XDriveDescriptionItem label="运行编号">#{run.run_number > 0 ? run.run_number : '—'}</XDriveDescriptionItem>
                             <XDriveDescriptionItem label="内部运行 ID">
                               <Stack direction="row" spacing={0.5} alignItems="center">
