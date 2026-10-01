@@ -503,9 +503,7 @@ func appendLimitedError(messages []string, message string) []string {
 		return messages
 	}
 	const maxBytes = 2048
-	if len(message) > maxBytes {
-		message = message[:maxBytes]
-	}
+	message = trimUTF8Bytes(message, maxBytes)
 	return append(messages, message)
 }
 
