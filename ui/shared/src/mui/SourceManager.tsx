@@ -1857,6 +1857,7 @@ export function XDriveSourceManager({
                 placeholder={'每行一条规则，例如：\n@eaDir/\n*.tmp\n!important.jpg'}
                 value={settingsValues.ignore_rules ?? ''}
                 onChange={(value) => setSettingsValues((current) => ({ ...current, ignore_rules: value }))}
+                monospace
               />
 
               {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (
