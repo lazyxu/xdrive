@@ -7,8 +7,6 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogContentText,
   Divider as MuiDivider,
   FormControl,
   FormControlLabel,
@@ -58,10 +56,7 @@ import {
   XDriveDescriptionItem,
   XDriveSectionHeader,
   XDriveSettingsDialog,
-  XDriveDialogActions,
   XDriveDialogActionSpacer,
-  XDriveDialogContent,
-  XDriveDialogTitle,
   XDriveFeedbackSnackbar,
   XDriveMetricCard,
   XDriveMetricGrid,
@@ -73,11 +68,9 @@ import {
   XDriveSidebarStorageSummary,
   XDriveWorkspaceShell,
   XDriveStatePanel,
-  XDriveShareDialog,
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceManager,
-  xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
