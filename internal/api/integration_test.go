@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -901,5 +902,175 @@ func TestCopyAndMoveNodes(t *testing.T) {
 	request(
 		t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/copy", docs.ID),
 		tokenB, strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, root.ID)), http.StatusNotFound,
+	)
+}
+
+
+func TestChildrenCursorPaginationAndSorting(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("children-page-test-secret", time.Hour),
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+
+	tokenA := createTestUser(t, db, router, "page-user", "password-a")
+	tokenB := createTestUser(t, db, router, "page-other", "password-b")
+	rootA := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
+	rootB := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenB, nil, http.StatusOK)
+
+	var rootAModel meta.Node
+	if err := db.First(&rootAModel, rootA.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	folders := []meta.Node{
+		{ParentID: &rootA.ID, Name: "Alpha Folder", Type: meta.NodeTypeDir, OwnerID: rootAModel.OwnerID, UpdatedAt: now.Add(5 * time.Minute)},
+		{ParentID: &rootA.ID, Name: "Zulu Folder", Type: meta.NodeTypeDir, OwnerID: rootAModel.OwnerID, UpdatedAt: now.Add(1 * time.Minute)},
+	}
+	for index := range folders {
+		if err := db.Create(&folders[index]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := []struct {
+		name    string
+		size    int64
+		updated time.Time
+	}{
+		{name: "alpha.txt", size: 30, updated: now.Add(4 * time.Minute)},
+		{name: "beta.pdf", size: 50, updated: now.Add(3 * time.Minute)},
+		{name: "gamma.log", size: 10, updated: now.Add(2 * time.Minute)},
+		{name: "omega.zip", size: 40, updated: now.Add(1 * time.Minute)},
+	}
+	for index, item := range files {
+		node := meta.Node{
+			ParentID: &rootA.ID, Name: item.name, Type: meta.NodeTypeFile, OwnerID: rootAModel.OwnerID,
+			CreatedAt: item.updated, UpdatedAt: item.updated,
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.File{
+			NodeID: node.ID, Size: item.size,
+			StorageKey: fmt.Sprintf("test-pagination-%d", index),
+			SHA256: fmt.Sprintf("%064d", index+1),
+			CreatedAt: item.updated, UpdatedAt: item.updated,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	legacy := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", rootA.ID), tokenA, nil, http.StatusOK)
+	var legacyItems []nodeDTO
+	if err := json.Unmarshal(legacy.Body.Bytes(), &legacyItems); err != nil {
+		t.Fatalf("legacy children response is no longer an array: %v body=%s", err, legacy.Body.String())
+	}
+	if len(legacyItems) != 6 {
+		t.Fatalf("legacy children count=%d want=6", len(legacyItems))
+	}
+
+	type pageResponse struct {
+		Items      []nodeDTO `json:"items"`
+		NextCursor string    `json:"next_cursor"`
+		HasMore    bool      `json:"has_more"`
+		Sort       string    `json:"sort"`
+		Order      string    `json:"order"`
+	}
+	loadPage := func(path string) pageResponse {
+		t.Helper()
+		res := request(t, router, http.MethodGet, path, tokenA, nil, http.StatusOK)
+		var page pageResponse
+		if err := json.Unmarshal(res.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+
+	first := loadPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=name&order=asc", rootA.ID))
+	if len(first.Items) != 2 || !first.HasMore || first.NextCursor == "" || first.Sort != "name" || first.Order != "asc" {
+		t.Fatalf("first page=%+v", first)
+	}
+	if first.Items[0].Name != "Alpha Folder" || first.Items[1].Name != "Zulu Folder" {
+		t.Fatalf("folders should stay first and name-sorted: %+v", first.Items)
+	}
+
+	all := append([]nodeDTO(nil), first.Items...)
+	cursor := first.NextCursor
+	for cursor != "" {
+		page := loadPage(fmt.Sprintf(
+			"/api/v1/nodes/%d/children?limit=2&sort=name&order=asc&cursor=%s",
+			rootA.ID, url.QueryEscape(cursor),
+		))
+		all = append(all, page.Items...)
+		if page.HasMore {
+			if page.NextCursor == "" {
+				t.Fatal("has_more page is missing next_cursor")
+			}
+			cursor = page.NextCursor
+		} else {
+			cursor = ""
+		}
+	}
+	if len(all) != 6 {
+		t.Fatalf("paged children count=%d want=6", len(all))
+	}
+	seen := map[uint64]bool{}
+	for _, item := range all {
+		if seen[item.ID] {
+			t.Fatalf("duplicate paged node id=%d", item.ID)
+		}
+		seen[item.ID] = true
+	}
+	wantOrder := []string{"Alpha Folder", "Zulu Folder", "alpha.txt", "beta.pdf", "gamma.log", "omega.zip"}
+	for index, want := range wantOrder {
+		if all[index].Name != want {
+			t.Fatalf("name page order[%d]=%q want=%q", index, all[index].Name, want)
+		}
+	}
+
+	sizePage := loadPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=6&sort=size&order=desc", rootA.ID))
+	wantSizeOrder := []string{"Zulu Folder", "Alpha Folder", "beta.pdf", "omega.zip", "alpha.txt", "gamma.log"}
+	if len(sizePage.Items) != len(wantSizeOrder) {
+		t.Fatalf("size page count=%d", len(sizePage.Items))
+	}
+	for index, want := range wantSizeOrder {
+		if sizePage.Items[index].Name != want {
+			t.Fatalf("size order[%d]=%q want=%q", index, sizePage.Items[index].Name, want)
+		}
+	}
+
+	request(
+		t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=size&order=asc&cursor=%s", rootA.ID, url.QueryEscape(first.NextCursor)),
+		tokenA, nil, http.StatusBadRequest,
+	)
+	request(
+		t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=name&order=asc", rootB.ID),
+		tokenA, nil, http.StatusNotFound,
 	)
 }

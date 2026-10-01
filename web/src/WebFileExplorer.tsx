@@ -45,8 +45,12 @@ export default function WebFileExplorer({
   items,
   crumbs,
   loading,
+  hasMore,
+  loadingMore,
   uploadProgress,
   onLoadDirectory,
+  onLoadMore,
+  onSortChange,
   onUploadFiles,
   onUploadDroppedFiles,
   onCreateFolder,
@@ -64,8 +68,12 @@ export default function WebFileExplorer({
   items: Node[]
   crumbs: Crumb[]
   loading: boolean
+  hasMore: boolean
+  loadingMore: boolean
   uploadProgress: number | null
   onLoadDirectory: (id: number, crumbs: Crumb[]) => Promise<void>
+  onLoadMore: () => void
+  onSortChange: (sort: import('@xdrive/ui/mui').XDriveFileExplorerSort) => void
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onCreateFolder: () => void
@@ -440,6 +448,13 @@ export default function WebFileExplorer({
         items={explorerItems}
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || clipboardBusy}
+        loadingMore={!searchResults && loadingMore}
+        hasMore={!searchResults && hasMore}
+        onLoadMore={!searchResults ? onLoadMore : undefined}
+        serverSorted={!searchResults}
+        onSortChange={(next) => {
+          if (!searchResults) onSortChange(next)
+        }}
         loadThumbnail={loadThumbnail}
         pathValue={crumbs.map((crumb) => crumb.name).join('/')}
         onPathSubmit={(path) => { void submitPath(path) }}
@@ -493,7 +508,11 @@ export default function WebFileExplorer({
           ? `搜索“${searchValue.trim()}”${searchHasMore ? ' · 仅显示前 200 个结果' : ''}`
           : uploadProgress !== null
             ? `上传中 ${Math.round(uploadProgress)}%`
-            : undefined}
+            : loadingMore
+              ? '正在加载更多…'
+              : hasMore
+                ? '继续滚动加载更多'
+                : undefined}
       />
     </Box>
   )

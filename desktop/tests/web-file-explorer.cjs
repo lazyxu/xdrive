@@ -92,3 +92,15 @@ test('Web FileExplorer supplies preview/properties metadata without a new plaint
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Web inspector should reuse the protected thumbnail loader')
   assert.equal(api.includes('previewPlaintext'), false, 'Web must not add a plaintext preview API')
 })
+
+test('Web FileExplorer uses cursor-paged server directory loading and server sorting', () => {
+  assert.ok(api.includes('export interface ChildrenPage {'), 'Web children page type is missing')
+  assert.ok(api.includes('listPage(parentID: number, options: ChildrenPageOptions = {})'), 'Web paged children API is missing')
+  assert.ok(app.includes("const [childrenCursor, setChildrenCursor] = useState('')"), 'Web page cursor state is missing')
+  assert.ok(app.includes('const loadMoreDirectory = async () => {'), 'Web incremental directory loader is missing')
+  assert.ok(app.includes('cursor: childrenCursor'), 'Web load-more must send the current cursor')
+  assert.ok(app.includes('setItems((currentItems) => {'), 'Web load-more should append instead of replacing')
+  assert.ok(app.includes('const changeFileSort = async (next: XDriveFileExplorerSort) => {'), 'Web server-sort reload is missing')
+  assert.ok(explorer.includes('serverSorted={!searchResults}'), 'normal Web directory pages should preserve server order')
+  assert.ok(explorer.includes('onLoadMore={!searchResults ? onLoadMore : undefined}'), 'Web search results must not consume the directory cursor')
+})

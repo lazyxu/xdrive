@@ -333,6 +333,10 @@ export function XDriveFileExplorer({
   items,
   crumbs,
   loading = false,
+  loadingMore = false,
+  hasMore = false,
+  serverSorted = false,
+  onLoadMore,
   presentation = 'card',
   emptyMessage = '此文件夹为空',
   pathValue,
@@ -378,6 +382,10 @@ export function XDriveFileExplorer({
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
   loading?: boolean
+  loadingMore?: boolean
+  hasMore?: boolean
+  serverSorted?: boolean
+  onLoadMore?: () => void
   presentation?: XDriveFileExplorerPresentation
   emptyMessage?: string
   pathValue?: string
@@ -492,6 +500,7 @@ export function XDriveFileExplorer({
 
   const visibleItems = useMemo(() => {
     const result = [...items]
+    if (serverSorted) return result
     const multiplier = sort.direction === 'asc' ? 1 : -1
     result.sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1
@@ -509,7 +518,7 @@ export function XDriveFileExplorer({
       return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }) * multiplier
     })
     return result
-  }, [items, sort.direction, sort.key])
+  }, [items, serverSorted, sort.direction, sort.key])
 
   const selectedItems = useMemo(
     () => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id))),
@@ -875,9 +884,22 @@ export function XDriveFileExplorer({
     ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
     : visibleItems
 
+  const requestMoreIfNeeded = (host: HTMLDivElement) => {
+    if (!hasMore || loadingMore || !onLoadMore) return
+    const remaining = host.scrollHeight - host.scrollTop - host.clientHeight
+    if (remaining <= 500) onLoadMore()
+  }
+
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     if (virtualizeDetails) setScrollTop(event.currentTarget.scrollTop)
+    requestMoreIfNeeded(event.currentTarget)
   }
+
+  useEffect(() => {
+    const host = scrollHostRef.current
+    if (!host || !hasMore || loadingMore || !onLoadMore) return
+    if (host.scrollHeight <= host.clientHeight + 500) onLoadMore()
+  }, [hasMore, items.length, loadingMore, onLoadMore, viewportHeight])
 
   return (
     <Paper
@@ -1500,6 +1522,12 @@ export function XDriveFileExplorer({
           </Box>
         )}
 
+        {loadingMore ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', py: 1, textAlign: 'center' }}>
+            正在加载更多…
+          </Typography>
+        ) : null}
+
         {loading && visibleItems.length > 0 ? (
           <Box
             aria-label="正在刷新文件"
@@ -1635,7 +1663,7 @@ export function XDriveFileExplorer({
         sx={{ minHeight: 28, px: 1.25, color: 'text.secondary', bgcolor: 'background.default' }}
       >
         <Typography variant="caption">
-          {items.length} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
+          {items.length} 个项目{hasMore ? ' · 已加载部分' : ''}{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
         </Typography>
         <Typography variant="caption">
           {statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}

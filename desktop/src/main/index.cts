@@ -62,6 +62,7 @@ import {
   type AgentCacheStats,
   type AgentCacheReleaseResult,
   type AgentCloudNode,
+  type AgentCloudChildrenPage,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
   type AgentCloudVersion,
@@ -1735,6 +1736,34 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
     }
     return requireAgentClient().cloudChildren(parentID)
+  }, false))
+  ipcMain.handle('agent:cloud-children-page', (
+    _event,
+    parentID: unknown,
+    options: unknown,
+  ) => runAgentAction<AgentCloudChildrenPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
+    }
+    const value = typeof options === 'object' && options !== null
+      ? options as { limit?: unknown; cursor?: unknown; sort?: unknown; order?: unknown }
+      : {}
+    if (
+      (value.limit !== undefined && (typeof value.limit !== 'number' || !Number.isSafeInteger(value.limit) || value.limit < 1 || value.limit > 500)) ||
+      (value.cursor !== undefined && typeof value.cursor !== 'string') ||
+      (value.sort !== undefined && !['name', 'updated', 'size', 'type'].includes(String(value.sort))) ||
+      (value.order !== undefined && !['asc', 'desc'].includes(String(value.order)))
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid cloud children page options.')
+    }
+    return requireAgentClient().cloudChildrenPage(parentID, {
+      ...(value.limit === undefined ? {} : { limit: value.limit as number }),
+      ...(value.cursor === undefined ? {} : { cursor: (value.cursor as string).trim() }),
+      ...(value.sort === undefined ? {} : { sort: value.sort as 'name' | 'updated' | 'size' | 'type' }),
+      ...(value.order === undefined ? {} : { order: value.order as 'asc' | 'desc' }),
+    })
   }, false))
   ipcMain.handle('agent:cloud-create-directory', (_event, parentID: unknown, name: unknown) => runAgentAction<AgentCloudNode>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

@@ -59,7 +59,7 @@ import {
   XDriveStatusAlert,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
-import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
+import type { MediaGalleryDataSource, XDriveFileExplorerSort } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type { FileVersion, MeResult, Node, QuotaUsage, XDriveAppearance, XDriveTransferTask } from '../../ui/shared/src'
@@ -417,6 +417,10 @@ function FileManager({
   const [items, setItems] = useState<Node[]>([])
   const [crumbs, setCrumbs] = useState<Crumb[]>([])
   const [loading, setLoading] = useState(true)
+  const [childrenCursor, setChildrenCursor] = useState('')
+  const [childrenHasMore, setChildrenHasMore] = useState(false)
+  const [childrenLoadingMore, setChildrenLoadingMore] = useState(false)
+  const [fileSort, setFileSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
@@ -471,17 +475,51 @@ function FileManager({
     setFeedback({ tone: 'bad', message: err instanceof Error ? err.message : '请求失败' })
   }, [onAuthExpired])
 
-  const loadDirectory = async (id: number, nextCrumbs?: Crumb[]) => {
+  const loadDirectory = async (
+    id: number,
+    nextCrumbs?: Crumb[],
+    sort: XDriveFileExplorerSort = fileSort,
+  ) => {
     setLoading(true)
     try {
-      const list = await api.list(id)
-      setItems(list)
+      const page = await api.listPage(id, { limit: 200, sort: sort.key, order: sort.direction })
+      setItems(page.items)
+      setChildrenCursor(page.next_cursor ?? '')
+      setChildrenHasMore(page.has_more)
       if (nextCrumbs) setCrumbs(nextCrumbs)
     } catch (err) {
       handleError(err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const loadMoreDirectory = async () => {
+    if (!current || !childrenHasMore || !childrenCursor || childrenLoadingMore || loading) return
+    setChildrenLoadingMore(true)
+    try {
+      const page = await api.listPage(current.id, {
+        limit: 200,
+        cursor: childrenCursor,
+        sort: fileSort.key,
+        order: fileSort.direction,
+      })
+      setItems((currentItems) => {
+        const seen = new Set(currentItems.map((item) => item.id))
+        return [...currentItems, ...page.items.filter((item) => !seen.has(item.id))]
+      })
+      setChildrenCursor(page.next_cursor ?? '')
+      setChildrenHasMore(page.has_more)
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setChildrenLoadingMore(false)
+    }
+  }
+
+  const changeFileSort = async (next: XDriveFileExplorerSort) => {
+    setFileSort(next)
+    if (current) await loadDirectory(current.id, crumbs, next)
   }
 
   const refreshQuota = async () => {
@@ -500,9 +538,11 @@ function FileManager({
       if (me.must_change_password) return
       setQuota(await api.quota())
       const root = await api.root()
-      const list = await api.list(root.id)
+      const page = await api.listPage(root.id, { limit: 200, sort: fileSort.key, order: fileSort.direction })
       setCrumbs([{ id: root.id, name: '我的文件' }])
-      setItems(list)
+      setItems(page.items)
+      setChildrenCursor(page.next_cursor ?? '')
+      setChildrenHasMore(page.has_more)
     } catch (err) {
       handleError(err)
     } finally {
@@ -897,8 +937,12 @@ function FileManager({
                 items={items}
                 crumbs={crumbs}
                 loading={loading}
+                hasMore={childrenHasMore}
+                loadingMore={childrenLoadingMore}
                 uploadProgress={uploadProgress}
                 onLoadDirectory={async (id, nextCrumbs) => { await loadDirectory(id, nextCrumbs) }}
+                onLoadMore={() => { void loadMoreDirectory() }}
+                onSortChange={(next) => { void changeFileSort(next) }}
                 onUploadFiles={uploadFiles}
                 onUploadDroppedFiles={uploadFilesTo}
                 onCreateFolder={() => {

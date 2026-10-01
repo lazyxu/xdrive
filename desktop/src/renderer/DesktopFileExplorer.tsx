@@ -45,7 +45,11 @@ export default function DesktopFileExplorer({
   items,
   crumbs,
   loading,
+  hasMore,
+  loadingMore,
   onLoadDirectory,
+  onLoadMore,
+  onSortChange,
   onOpenTrash,
   onOpenHistory,
   onOpenShares,
@@ -58,7 +62,11 @@ export default function DesktopFileExplorer({
   items: AgentCloudNode[]
   crumbs: AgentCloudCrumb[]
   loading: boolean
+  hasMore: boolean
+  loadingMore: boolean
   onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[]) => Promise<void>
+  onLoadMore: () => void
+  onSortChange: (sort: import('@xdrive/ui/mui').XDriveFileExplorerSort) => void
   onOpenTrash: () => void
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
@@ -594,6 +602,13 @@ export default function DesktopFileExplorer({
         items={explorerItems}
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || Boolean(actionBusy)}
+        loadingMore={!searchResults && loadingMore}
+        hasMore={!searchResults && hasMore}
+        onLoadMore={!searchResults ? onLoadMore : undefined}
+        serverSorted={!searchResults}
+        onSortChange={(next) => {
+          if (!searchResults) onSortChange(next)
+        }}
         loadThumbnail={loadThumbnail}
         pathValue={crumbs.map((crumb) => crumb.name).join('/')}
         onPathSubmit={(path) => { void submitPath(path) }}
@@ -665,7 +680,11 @@ export default function DesktopFileExplorer({
                 ? '正在打开…'
                 : actionBusy.startsWith('reveal-')
                   ? '正在定位…'
-                  : undefined}
+                  : loadingMore
+                    ? '正在加载更多…'
+                    : hasMore
+                      ? '继续滚动加载更多'
+                      : undefined}
       />
 
       <Dialog
