@@ -2,6 +2,7 @@ package synologyfilesync
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,5 +180,56 @@ func TestDiscoveredItemUsesMTimeWithoutMediaSemantics(t *testing.T) {
 	}
 	if !item.ModifiedAt.Equal(time.Unix(1_700_000_000, 0).UTC()) {
 		t.Fatalf("mtime=%v", item.ModifiedAt)
+	}
+}
+
+func TestNextOffsetRejectsGapsAndOverlaps(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		requested int
+		returned  int
+		total     int
+		count     int
+	}{
+		{name: "provider skipped ahead", requested: 100, returned: 200, total: 500, count: 100},
+		{name: "provider overlapped prior page", requested: 100, returned: 99, total: 500, count: 100},
+		{name: "page exceeds total", requested: 400, returned: 400, total: 450, count: 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, err := nextOffset(tc.requested, tc.returned, tc.total, tc.count); err == nil {
+				t.Fatalf("nextOffset(%d,%d,%d,%d) accepted inconsistent pagination",
+					tc.requested, tc.returned, tc.total, tc.count)
+			}
+		})
+	}
+	if next, done, err := nextOffset(100, 100, 150, 50); err != nil || !done || next != 150 {
+		t.Fatalf("valid final page next=%d done=%t err=%v", next, done, err)
+	}
+}
+
+type duplicateFileStationRemote struct{}
+
+func (r *duplicateFileStationRemote) ListFolderPage(_ context.Context, folder string, offset, _ int) (synology.FileStationPage, error) {
+	if folder != "/documents" {
+		return synology.FileStationPage{Offset: offset, Total: 0}, nil
+	}
+	return synology.FileStationPage{
+		Offset: offset,
+		Total:  2,
+		Entries: []synology.FileStationEntry{{
+			Name: "same.txt", Path: "/documents/same.txt",
+			Additional: synology.FileStationAdditional{Size: 1},
+		}},
+	}, nil
+}
+
+func TestScannerRejectsDuplicateRemotePathAcrossPages(t *testing.T) {
+	_, err := (Scanner{
+		Remote: &duplicateFileStationRemote{}, API: &fakeFileStationAPI{},
+		SourceID: 1, RunID: "run-duplicate", Mode: meta.SourceRunModeScan,
+		Roots: []string{"/documents"},
+	}).Scan(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "path repeated") {
+		t.Fatalf("duplicate path err=%v", err)
 	}
 }

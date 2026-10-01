@@ -470,3 +470,53 @@ func TestNormalizeSpacesDefaultsAndDeduplicates(t *testing.T) {
 		t.Fatal("unknown Synology space was accepted")
 	}
 }
+
+func TestNextOffsetRejectsGapsAndOverlaps(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		requested int
+		returned  int
+		total     int
+		count     int
+	}{
+		{name: "provider skipped ahead", requested: 100, returned: 200, total: 500, count: 100},
+		{name: "provider overlapped prior page", requested: 100, returned: 99, total: 500, count: 100},
+		{name: "page exceeds total", requested: 400, returned: 400, total: 450, count: 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, err := nextOffset(tc.requested, tc.returned, tc.total, tc.count); err == nil {
+				t.Fatalf("nextOffset(%d,%d,%d,%d) accepted inconsistent pagination",
+					tc.requested, tc.returned, tc.total, tc.count)
+			}
+		})
+	}
+	if next, done, err := nextOffset(100, 100, 150, 50); err != nil || !done || next != 150 {
+		t.Fatalf("valid final page next=%d done=%t err=%v", next, done, err)
+	}
+}
+
+type duplicateItemRemote struct {
+	*fakeRemote
+}
+
+func (r *duplicateItemRemote) ListItemsPage(_ context.Context, _ synology.Space, offset, _ int) (synology.ItemPage, error) {
+	return synology.ItemPage{
+		Offset: offset,
+		Total:  2,
+		List: []synology.Item{{
+			ID: 1, Filename: "a.jpg", Filesize: 10, FolderID: 10,
+			IndexedTime: 1_700_000_000_000, Space: synology.SpacePersonal,
+		}},
+	}, nil
+}
+
+func TestScannerRejectsDuplicateItemIdentityAcrossPages(t *testing.T) {
+	remote := &duplicateItemRemote{fakeRemote: &fakeRemote{}}
+	_, err := (Scanner{
+		Remote: remote, API: &fakeAPI{}, SourceID: 1, RunID: "run-duplicate",
+		Mode: meta.SourceRunModeScan, Spaces: []synology.Space{synology.SpacePersonal},
+	}).Scan(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "identity repeated") {
+		t.Fatalf("duplicate item err=%v", err)
+	}
+}
