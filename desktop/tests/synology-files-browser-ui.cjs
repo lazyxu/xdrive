@@ -28,7 +28,7 @@ test('shared File Station roots field keeps manual input and adds directory brow
 
 test('Web browses existing File Station sources through the Server API', () => {
   assert.match(webApi, /sourceBrowseDirectories\(sourceID: number/)
-  assert.match(web, //adapter\\.sourceBrowseDirectories\\(setting\\.source\\.id, path, limit, offset\\)/g/)
+  assert.match(sourceManager, /adapter\.sourceBrowseDirectories\(setting\.source\.id, path, limit, offset\)/)
   assert.match(web, /setting\.credential\?\.configured/)
   assert.equal((sourceManager.match(/sourceBrowseDirectories\(/g) || []).length >= 1, true)
 })
