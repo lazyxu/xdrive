@@ -66,6 +66,21 @@ func (c *agentController) CloudList(ctx context.Context, parentID uint64) ([]cli
 	return cli.List(ctx, parentID)
 }
 
+func (c *agentController) CloudListPage(
+	ctx context.Context,
+	parentID uint64,
+	options client.ChildrenOptions,
+) (client.ChildrenPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.ChildrenPage{}, err
+	}
+	if parentID == 0 {
+		return client.ChildrenPage{}, fmt.Errorf("parent id is required")
+	}
+	return cli.ListPage(ctx, parentID, options)
+}
+
 func (c *agentController) CloudCreateDir(ctx context.Context, parentID uint64, name string) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

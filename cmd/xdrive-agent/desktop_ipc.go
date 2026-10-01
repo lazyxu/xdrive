@@ -147,6 +147,7 @@ type desktopIPCController interface {
 	ReleaseReclaimableCache() (mount.CacheReleaseResult, error)
 	CloudRoot(context.Context) (client.Node, error)
 	CloudList(context.Context, uint64) ([]client.Node, error)
+	CloudListPage(context.Context, uint64, client.ChildrenOptions) (client.ChildrenPage, error)
 	CloudCreateDir(context.Context, uint64, string) (client.Node, error)
 	CloudRename(context.Context, uint64, uint64, string) (client.Node, error)
 	CloudCopy(context.Context, uint64, uint64) (client.Node, error)
@@ -757,12 +758,44 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	items, err := h.ctrl.CloudList(r.Context(), parentID)
+	query := r.URL.Query()
+	paged := query.Get("limit") != "" ||
+		query.Get("cursor") != "" ||
+		query.Get("sort") != "" ||
+		query.Get("order") != ""
+	if !paged {
+		items, err := h.ctrl.CloudList(r.Context(), parentID)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, items)
+		return
+	}
+	options := client.ChildrenOptions{
+		Cursor: strings.TrimSpace(query.Get("cursor")),
+		Sort:   strings.TrimSpace(query.Get("sort")),
+		Order:  strings.TrimSpace(query.Get("order")),
+	}
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 500 {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_cloud_children_limit",
+				"limit must be between 1 and 500",
+			)
+			return
+		}
+		options.Limit = limit
+	}
+	page, err := h.ctrl.CloudListPage(r.Context(), parentID, options)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
-	writeDesktopIPCJSON(w, http.StatusOK, items)
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) cloudCreateDir(w http.ResponseWriter, r *http.Request) {

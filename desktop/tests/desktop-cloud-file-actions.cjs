@@ -94,3 +94,16 @@ test('Desktop uploads dropped files through webUtils without exposing arbitrary 
   assert.ok(types.includes('cloudUploadDroppedFiles: (parentID: number, files: File[])'), 'renderer dropped-file API should expose File[] instead of local paths')
   assert.equal(types.includes('cloudUploadDroppedFiles: (parentID: number, paths:'), false, 'renderer must not receive raw dropped-file paths')
 })
+
+test('Desktop paged directory listing remains separate from legacy full-list mount semantics', () => {
+  assert.ok(cloudFiles.includes('func (c *agentController) CloudListPage('), 'Agent paged directory method is missing')
+  assert.ok(cloudFiles.includes('return cli.ListPage(ctx, parentID, options)'), 'Agent paged directory method must use client ListPage')
+  assert.ok(agentIPC.includes('CloudListPage(context.Context'), 'Desktop IPC controller paged contract is missing')
+  assert.ok(agentIPC.includes('query.Get("limit") != ""'), 'Agent IPC children route must detect paged requests')
+  assert.ok(agentClient.includes('cloudChildrenPage(parentID: number, options: AgentCloudChildrenOptions = {})'), 'Desktop main paged Agent client is missing')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-children-page'"), 'Desktop paged children IPC handler is missing')
+  assert.ok(preload.includes('cloudChildrenPage: ('), 'Desktop preload paged children bridge is missing')
+  assert.ok(types.includes('type AgentCloudChildrenPage = {'), 'Desktop renderer paged children type is missing')
+  assert.ok(types.includes('cloudChildrenPage: ('), 'Desktop renderer paged children method is missing')
+  assert.ok(agentClient.includes('cloudChildren(parentID: number)'), 'legacy full-list Desktop Agent method must remain available')
+})

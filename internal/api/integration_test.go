@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -901,5 +902,226 @@ func TestCopyAndMoveNodes(t *testing.T) {
 	request(
 		t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/copy", docs.ID),
 		tokenB, strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, root.ID)), http.StatusNotFound,
+	)
+}
+
+
+func TestChildrenPaginationAndSorting(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("children-pagination-secret", time.Hour),
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+
+	tokenA := createTestUser(t, db, router, "children-a", "password-a")
+	tokenB := createTestUser(t, db, router, "children-b", "password-b")
+	rootA := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
+	rootB := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenB, nil, http.StatusOK)
+	paged := requestNode(
+		t,
+		router,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", rootA.ID),
+		tokenA,
+		strings.NewReader(`{"name":"paged"}`),
+		http.StatusCreated,
+	)
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	var ownerA meta.User
+	if err := db.First(&ownerA, "username = ?", "children-a").Error; err != nil {
+		t.Fatal(err)
+	}
+	directoryNames := []string{"Gamma", "alpha", "Zeta", "Beta", "delta"}
+	for index, name := range directoryNames {
+		updated := now.Add(time.Duration(index) * time.Minute)
+		node := meta.Node{
+			ParentID:  &paged.ID,
+			Name:      name,
+			Type:      meta.NodeTypeDir,
+			OwnerID:   ownerA.ID,
+			Revision:  1,
+			CreatedAt: updated,
+			UpdatedAt: updated,
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index := 0; index < 19; index++ {
+		updated := now.Add(time.Duration(30+index) * time.Minute)
+		node := meta.Node{
+			ParentID:  &paged.ID,
+			Name:      fmt.Sprintf("file-%02d.%s", index, []string{"txt", "pdf", "jpg"}[index%3]),
+			Type:      meta.NodeTypeFile,
+			OwnerID:   ownerA.ID,
+			Revision:  1,
+			CreatedAt: updated,
+			UpdatedAt: updated,
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.File{
+			NodeID:     node.ID,
+			Size:       int64((index + 1) * 100),
+			StorageKey: fmt.Sprintf("pagination-test/%d", node.ID),
+			SHA256:     fmt.Sprintf("%064x", node.ID),
+			CreatedAt:  updated,
+			UpdatedAt:  updated,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	legacy := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children", paged.ID),
+		tokenA,
+		nil,
+		http.StatusOK,
+	)
+	var legacyItems []nodeDTO
+	if err := json.Unmarshal(legacy.Body.Bytes(), &legacyItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyItems) != len(directoryNames)+19 {
+		t.Fatalf("legacy children count=%d", len(legacyItems))
+	}
+
+	seen := map[uint64]bool{}
+	collected := make([]nodeDTO, 0, len(legacyItems))
+	cursor := ""
+	for {
+		path := fmt.Sprintf("/api/v1/nodes/%d/children?limit=4&sort=name&order=asc", paged.ID)
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+		res := request(t, router, http.MethodGet, path, tokenA, nil, http.StatusOK)
+		var page childrenPageDTO
+		if err := json.Unmarshal(res.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if page.Sort != "name" || page.Order != "asc" {
+			t.Fatalf("unexpected page sort: %+v", page)
+		}
+		if len(page.Items) == 0 {
+			t.Fatal("paged children returned an empty page before completion")
+		}
+		for _, item := range page.Items {
+			if seen[item.ID] {
+				t.Fatalf("duplicate paged node id %d", item.ID)
+			}
+			seen[item.ID] = true
+			collected = append(collected, item)
+		}
+		if !page.HasMore {
+			if page.NextCursor != "" {
+				t.Fatalf("final page unexpectedly returned cursor %q", page.NextCursor)
+			}
+			break
+		}
+		if page.NextCursor == "" {
+			t.Fatal("paged children has_more=true without next_cursor")
+		}
+		cursor = page.NextCursor
+	}
+	if len(collected) != len(legacyItems) {
+		t.Fatalf("paged children count=%d want=%d", len(collected), len(legacyItems))
+	}
+	for index := 0; index < len(directoryNames); index++ {
+		if collected[index].Type != meta.NodeTypeDir {
+			t.Fatalf("item %d type=%q; directories must remain first", index, collected[index].Type)
+		}
+	}
+	for index := 1; index < len(directoryNames); index++ {
+		if strings.ToLower(collected[index-1].Name) > strings.ToLower(collected[index].Name) {
+			t.Fatalf("directory name order is unstable: %q before %q", collected[index-1].Name, collected[index].Name)
+		}
+	}
+
+	sizeRes := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=8&sort=size&order=desc", paged.ID),
+		tokenA,
+		nil,
+		http.StatusOK,
+	)
+	var sizePage childrenPageDTO
+	if err := json.Unmarshal(sizeRes.Body.Bytes(), &sizePage); err != nil {
+		t.Fatal(err)
+	}
+	if len(sizePage.Items) != 8 {
+		t.Fatalf("size page count=%d", len(sizePage.Items))
+	}
+	for index := 0; index < len(directoryNames); index++ {
+		if sizePage.Items[index].Type != meta.NodeTypeDir {
+			t.Fatalf("size sorting moved a file ahead of directories: %+v", sizePage.Items)
+		}
+	}
+	for index := len(directoryNames) + 1; index < len(sizePage.Items); index++ {
+		if sizePage.Items[index-1].Size < sizePage.Items[index].Size {
+			t.Fatalf("size desc order is unstable: %d before %d", sizePage.Items[index-1].Size, sizePage.Items[index].Size)
+		}
+	}
+
+	firstPage := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=4&sort=name&order=asc", paged.ID),
+		tokenA,
+		nil,
+		http.StatusOK,
+	)
+	var first childrenPageDTO
+	if err := json.Unmarshal(firstPage.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=4&sort=size&order=asc&cursor=%s", paged.ID, url.QueryEscape(first.NextCursor)),
+		tokenA,
+		nil,
+		http.StatusBadRequest,
+	)
+	request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=4", rootB.ID),
+		tokenA,
+		nil,
+		http.StatusNotFound,
 	)
 }

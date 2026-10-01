@@ -374,6 +374,10 @@ export function XDriveFileExplorer({
   commandBarEnd,
   statusText,
   loadThumbnail,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+  sortItems = true,
 }: {
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
@@ -419,6 +423,10 @@ export function XDriveFileExplorer({
   commandBarEnd?: ReactNode
   statusText?: ReactNode
   loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
+  sortItems?: boolean
 }) {
   const [editingPath, setEditingPath] = useState(false)
   const derivedPath = useMemo(
@@ -443,6 +451,7 @@ export function XDriveFileExplorer({
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  const loadMorePendingRef = useRef(false)
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
 
@@ -492,6 +501,7 @@ export function XDriveFileExplorer({
 
   const visibleItems = useMemo(() => {
     const result = [...items]
+    if (!sortItems) return result
     const multiplier = sort.direction === 'asc' ? 1 : -1
     result.sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1
@@ -509,7 +519,7 @@ export function XDriveFileExplorer({
       return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }) * multiplier
     })
     return result
-  }, [items, sort.direction, sort.key])
+  }, [items, sort.direction, sort.key, sortItems])
 
   const selectedItems = useMemo(
     () => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id))),
@@ -875,8 +885,23 @@ export function XDriveFileExplorer({
     ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
     : visibleItems
 
+  useEffect(() => {
+    if (!loadingMore) loadMorePendingRef.current = false
+  }, [loadingMore])
+
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
-    if (virtualizeDetails) setScrollTop(event.currentTarget.scrollTop)
+    const host = event.currentTarget
+    if (virtualizeDetails) setScrollTop(host.scrollTop)
+    if (
+      onLoadMore &&
+      hasMore &&
+      !loadingMore &&
+      !loadMorePendingRef.current &&
+      host.scrollHeight - host.scrollTop - host.clientHeight <= 500
+    ) {
+      loadMorePendingRef.current = true
+      onLoadMore()
+    }
   }
 
   return (
@@ -1635,10 +1660,12 @@ export function XDriveFileExplorer({
         sx={{ minHeight: 28, px: 1.25, color: 'text.secondary', bgcolor: 'background.default' }}
       >
         <Typography variant="caption">
-          {items.length} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
+          {items.length} 个项目{hasMore ? ' · 可继续加载' : ''}{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
         </Typography>
         <Typography variant="caption">
-          {statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}
+          {loadingMore
+            ? '正在加载更多…'
+            : statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}
         </Typography>
       </Stack>
     </Paper>

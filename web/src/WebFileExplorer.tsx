@@ -18,6 +18,7 @@ import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
+  XDriveFileExplorerSort,
   XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
 import type { Node } from '../../ui/shared/src'
@@ -46,7 +47,12 @@ export default function WebFileExplorer({
   crumbs,
   loading,
   uploadProgress,
+  sort,
+  hasMore,
+  loadingMore,
   onLoadDirectory,
+  onLoadMore,
+  onSortChange,
   onUploadFiles,
   onUploadDroppedFiles,
   onCreateFolder,
@@ -65,7 +71,12 @@ export default function WebFileExplorer({
   crumbs: Crumb[]
   loading: boolean
   uploadProgress: number | null
-  onLoadDirectory: (id: number, crumbs: Crumb[]) => Promise<void>
+  sort: XDriveFileExplorerSort
+  hasMore: boolean
+  loadingMore: boolean
+  onLoadDirectory: (id: number, crumbs: Crumb[], sort?: XDriveFileExplorerSort) => Promise<void>
+  onLoadMore: () => Promise<void>
+  onSortChange: (sort: XDriveFileExplorerSort) => void
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onCreateFolder: () => void
@@ -89,6 +100,7 @@ export default function WebFileExplorer({
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [clipboard, setClipboard] = useState<WebExplorerClipboard | null>(null)
   const [clipboardBusy, setClipboardBusy] = useState(false)
+  const [searchSort, setSearchSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
 
   const current = crumbs.at(-1)
 
@@ -160,7 +172,7 @@ export default function WebFileExplorer({
   const navigateTo = async (nextCrumbs: Crumb[], record = true) => {
     const target = nextCrumbs.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, nextCrumbs)
+    await onLoadDirectory(target.id, nextCrumbs, sort)
     if (record) recordHistory(nextCrumbs)
     clearSearch()
   }
@@ -171,7 +183,7 @@ export default function WebFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
   }
@@ -182,7 +194,7 @@ export default function WebFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
   }
@@ -489,6 +501,18 @@ export default function WebFileExplorer({
             回收站
           </XDriveFileExplorerCommandButton>
         )}
+        sort={searchResults ? searchSort : sort}
+        onSortChange={(next) => {
+          if (searchResults) {
+            setSearchSort(next)
+            return
+          }
+          onSortChange(next)
+        }}
+        sortItems={Boolean(searchResults)}
+        hasMore={!searchResults && hasMore}
+        loadingMore={!searchResults && loadingMore}
+        onLoadMore={!searchResults ? () => { void onLoadMore() } : undefined}
         statusText={searchResults
           ? `搜索“${searchValue.trim()}”${searchHasMore ? ' · 仅显示前 200 个结果' : ''}`
           : uploadProgress !== null

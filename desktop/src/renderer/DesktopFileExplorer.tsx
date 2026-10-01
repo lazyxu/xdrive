@@ -23,6 +23,7 @@ import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
+  XDriveFileExplorerSort,
   XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
 
@@ -45,7 +46,12 @@ export default function DesktopFileExplorer({
   items,
   crumbs,
   loading,
+  sort,
+  hasMore,
+  loadingMore,
   onLoadDirectory,
+  onLoadMore,
+  onSortChange,
   onOpenTrash,
   onOpenHistory,
   onOpenShares,
@@ -58,7 +64,12 @@ export default function DesktopFileExplorer({
   items: AgentCloudNode[]
   crumbs: AgentCloudCrumb[]
   loading: boolean
-  onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[]) => Promise<void>
+  sort: XDriveFileExplorerSort
+  hasMore: boolean
+  loadingMore: boolean
+  onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[], sort?: XDriveFileExplorerSort) => Promise<void>
+  onLoadMore: () => Promise<void>
+  onSortChange: (sort: XDriveFileExplorerSort) => void
   onOpenTrash: () => void
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
@@ -82,6 +93,7 @@ export default function DesktopFileExplorer({
   const [renameError, setRenameError] = useState('')
   const [actionBusy, setActionBusy] = useState('')
   const [clipboard, setClipboard] = useState<DesktopExplorerClipboard | null>(null)
+  const [searchSort, setSearchSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
 
   const current = crumbs.at(-1)
 
@@ -147,7 +159,7 @@ export default function DesktopFileExplorer({
   const navigateTo = async (nextCrumbs: AgentCloudCrumb[], record = true) => {
     const target = nextCrumbs.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, nextCrumbs)
+    await onLoadDirectory(target.id, nextCrumbs, sort)
     if (record) recordHistory(nextCrumbs)
     clearSearch()
     setSearchValue('')
@@ -159,7 +171,7 @@ export default function DesktopFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
     setSearchValue('')
@@ -171,7 +183,7 @@ export default function DesktopFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
     setSearchValue('')
@@ -647,6 +659,18 @@ export default function DesktopFileExplorer({
             回收站
           </XDriveFileExplorerCommandButton>
         )}
+        sort={searchResults ? searchSort : sort}
+        onSortChange={(next) => {
+          if (searchResults) {
+            setSearchSort(next)
+            return
+          }
+          onSortChange(next)
+        }}
+        sortItems={Boolean(searchResults)}
+        hasMore={!searchResults && hasMore}
+        loadingMore={!searchResults && loadingMore}
+        onLoadMore={!searchResults ? () => { void onLoadMore() } : undefined}
         statusText={searchResults
           ? `搜索“${searchValue.trim()}”${searchResults.length >= 200 ? ' · 最多显示 200 个结果' : ''}`
           : actionBusy === 'upload'

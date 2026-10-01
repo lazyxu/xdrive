@@ -92,3 +92,15 @@ test('Web FileExplorer supplies preview/properties metadata without a new plaint
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Web inspector should reuse the protected thumbnail loader')
   assert.equal(api.includes('previewPlaintext'), false, 'Web must not add a plaintext preview API')
 })
+
+test('Web FileExplorer uses cursor-paged server sorting for directories', () => {
+  assert.ok(api.includes('export interface ChildrenPage {'), 'Web children-page response type is missing')
+  assert.ok(api.includes('listPage(parentID: number, options: ChildrenPageOptions = {})'), 'Web paged children API is missing')
+  assert.ok(app.includes('const FILE_DIRECTORY_PAGE_SIZE = 200'), 'Web directory page size is missing')
+  assert.ok(app.includes('const [directoryPage, setDirectoryPage]'), 'Web directory cursor state is missing')
+  assert.ok(app.includes('const loadMoreDirectory = async () => {'), 'Web incremental directory loader is missing')
+  assert.ok(app.includes('cursor,\n        sort: directorySort.key,\n        order: directorySort.direction'), 'Web load-more must preserve server sort')
+  assert.ok(explorer.includes('sortItems={Boolean(searchResults)}'), 'Web directory listings should preserve server order while search remains locally sortable')
+  assert.ok(explorer.includes('hasMore={!searchResults && hasMore}'), 'Web has-more state is not wired to shared FileExplorer')
+  assert.ok(explorer.includes('onLoadMore={!searchResults ? () => { void onLoadMore() } : undefined}'), 'Web load-more callback is not wired')
+})
