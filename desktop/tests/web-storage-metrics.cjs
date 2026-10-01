@@ -7,7 +7,11 @@ const repoRoot = path.join(__dirname, '..', '..')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
-const desktopApp = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
+const desktopApp = [
+  fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8'),
+  fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8'),
+  fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8'),
+].join('\n')
 const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Web storage statistics use shared metric primitives', () => {
