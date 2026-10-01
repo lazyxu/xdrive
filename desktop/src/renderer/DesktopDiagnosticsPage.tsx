@@ -3,6 +3,7 @@ import {
   XDriveMetricCard,
   XDriveMetricGrid,
   XDriveSectionHeader,
+  XDriveWorkspaceSurface,
   XDriveStatePanel,
   XDriveStatusBadge,
 } from '@xdrive/ui/mui'
@@ -31,7 +32,7 @@ export function DesktopDiagnosticsPage({
   const disabled = Boolean(busy)
 
   return (
-    <section className="panel diagnostics-panel">
+    <XDriveWorkspaceSurface presentation="page" title="诊断">
       <XDriveSectionHeader
         eyebrow="诊断与自修复"
         title="客户端诊断"
@@ -119,6 +120,6 @@ export function DesktopDiagnosticsPage({
       ) : (
         <XDriveStatePanel message="运行诊断可检查服务器/TLS、登录与凭据存储、Agent/IPC、同步根目录、CfAPI/FUSE、缓存策略、版本兼容性和磁盘空间。" />
       )}
-    </section>
+    </XDriveWorkspaceSurface>
   )
 }
