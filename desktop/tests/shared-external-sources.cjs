@@ -754,12 +754,16 @@ test('Web and Desktop reuse shared source basic fields', () => {
   assert.equal(desktop.includes('<select value={sourceEditRunMode}'), false, 'Desktop settings should not keep native Source run-mode select')
   assert.equal(desktop.includes('<select value={sourceEditStatus}'), false, 'Desktop settings should not keep native Source status select')
 
-  assert.equal(desktopStyles.includes('.source-create input,'), false, 'Desktop source-create CSS must not broadly override MUI inputs')
-  assert.equal(desktopStyles.includes('.source-create select,'), false, 'Desktop source-create CSS must not broadly override MUI selects')
-  assert.equal(desktopStyles.includes('.source-settings input,'), false, 'Desktop source-settings CSS must not broadly override MUI inputs')
-  assert.equal(desktopStyles.includes('.source-settings select,'), false, 'Desktop source-settings CSS must not broadly override MUI selects')
-  assert.ok(desktopStyles.includes('.source-create > label > input,'), 'Desktop native credential fields should keep scoped legacy styling')
-  assert.ok(desktopStyles.includes('.source-settings > label > input,'), 'Desktop native settings credential fields should keep scoped legacy styling')
+  for (const legacy of [
+    '.source-panel',
+    '.source-list',
+    '.source-create',
+    '.source-settings',
+    '.source-target',
+    '.source-run-detail',
+  ]) {
+    assert.equal(desktopStyles.includes(legacy), false, `Desktop must not retain legacy Source CSS: ${legacy}`)
+  }
 })
 
 
