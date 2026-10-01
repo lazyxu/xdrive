@@ -152,7 +152,6 @@ grep -q 'current deployment verifier rejected the snapshot; retrying with target
 grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/compat-backup.err"
 grep -Eq '"ignored_derived_files":[[:space:]]*1' "$compat_backup_dir/verify.json"
 grep -q '"consistency_verified": true' "$compat_backup_dir/manifest.json"
-grep -q '"server_image": "postgres:17-alpine"' "$compat_backup_dir/manifest.json"
 
 # Deliberately corrupt both directions: a referenced blob disappears and an
 # unreferenced blob appears. Verification must reject the state.

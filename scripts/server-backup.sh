@@ -193,7 +193,9 @@ compose run -T --rm --no-deps server storage verify --json </dev/null > "$partia
 # provide the target server image as a read-only fallback verifier. We do not
 # accept the old report blindly: the target verifier must independently report
 # the same live database/storage snapshot as consistent.
-if [[ "$verify_status" != "0" && -n "$COMPAT_VERIFY_IMAGE" ]]; then
+if [[ "$verify_status" != "0" && -n "$COMPAT_VERIFY_IMAGE" ]] &&
+   grep -q '"storage_key":[[:space:]]*".xdrive-media/' "$partial_dir/verify.json" &&
+   ! grep -q '"ignored_derived_files"' "$partial_dir/verify.json"; then
   mv "$partial_dir/verify.json" "$partial_dir/verify.legacy.json"
   echo "[xDrive] current deployment verifier rejected the snapshot; retrying with target verifier image $COMPAT_VERIFY_IMAGE ..." >&2
   compat_verify_status=0
