@@ -632,3 +632,44 @@ func TestMetadataMD5OnlyAcceptsCanonicalDigest(t *testing.T) {
 		}
 	}
 }
+
+func TestScannerRejectsDuplicateRootIdentity(t *testing.T) {
+	remote := &fakeRemote{
+		user: yike.UserInfo{YouaID: "123"},
+		files: map[string]yike.FileList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.File{
+					{FSID: 1, ServerFilename: "a.jpg", Size: 10},
+					{FSID: 1, ServerFilename: "a.jpg", Size: 10},
+				},
+			},
+		},
+		albums:     map[string]yike.AlbumList{"": {Page: yike.Page{HasMore: 0}}},
+		albumFiles: map[string]map[string]yike.AlbumFileList{},
+	}
+	_, err := (Scanner{
+		Remote: remote, API: &fakeSourceAPI{}, SourceID: 1, RunID: "run-duplicate-root",
+	}).Scan(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "root item identity repeated") {
+		t.Fatalf("duplicate root err=%v", err)
+	}
+}
+
+func TestCollectAlbumsRejectsDuplicateAlbumIdentity(t *testing.T) {
+	remote := &fakeRemote{
+		albums: map[string]yike.AlbumList{
+			"": {
+				Page: yike.Page{HasMore: 0},
+				List: []yike.Album{
+					{AlbumID: "same", Title: "First"},
+					{AlbumID: "same", Title: "Second"},
+				},
+			},
+		},
+	}
+	_, err := collectAlbums(context.Background(), remote, func() error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "album id repeated") {
+		t.Fatalf("duplicate album err=%v", err)
+	}
+}
