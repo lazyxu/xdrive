@@ -42,3 +42,7 @@ export * from './SourceSummaryCard'
 export * from './SourceKindIcon'
 export * from './DescriptionGrid'
 export * from './TableSurface'
+
+export * from './SourceManager'
+export * from './SettingsDialog'
+export * from './ShareDialog'

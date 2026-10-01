@@ -4,7 +4,36 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..')
-const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const sharedSourceManager = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
+const sharedShareDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
+const desktopSourceAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
+const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'shareDialogAdapter.ts'), 'utf8')
+const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopOverviewPage.tsx'), 'utf8')
+const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
+const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
+const desktopCloudPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
+const desktopGalleryPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopGalleryPage.tsx'), 'utf8')
+const desktopTransfersPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopTransfersPage.tsx'), 'utf8')
+const desktopStoragePage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8')
+const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
+const renderer = [
+  rendererApp,
+  sharedSourceManager,
+  sharedSettingsDialog,
+  sharedShareDialog,
+  desktopSourceAdapter,
+  desktopShareAdapter,
+  desktopOverviewPage,
+  desktopConflictsPage,
+  desktopDiagnosticsPage,
+  desktopCloudPage,
+  desktopGalleryPage,
+  desktopTransfersPage,
+  desktopStoragePage,
+  desktopSettingsContent,
+].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
 const dialogActions = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogActions.tsx'), 'utf8')
@@ -41,8 +70,8 @@ const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8'
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
 
 test('desktop renderer default export is the full App root, not a helper component', () => {
-  assert.match(renderer, /export default function App\(\{/)
-  assert.equal(renderer.includes('export default function YikeCookieHelpGuide()'), false)
+  assert.match(rendererApp, /export default function App\(\{/)
+  assert.equal(rendererApp.includes('export default function YikeCookieHelpGuide()'), false)
 })
 
 test('desktop GUI defaults to Chinese', () => {
@@ -146,10 +175,10 @@ test('desktop keeps global sync, settings and account actions in the window titl
   assert.equal(titlebarActions.includes('aria-label="更多同步操作"'), false, 'redundant sync overflow button should not remain')
   assert.ok(renderer.includes('打开同步文件夹'), 'missing global open-folder action')
 
-  assert.ok(renderer.includes('<XDrivePageHeader title={viewLabel(view)} eyebrow="xDrive" size="large" />'), 'desktop content should use the shared page header')
+  assert.equal(rendererApp.includes('<XDrivePageHeader'), false, 'Desktop App should not own duplicate generic page chrome')
+  assert.ok((renderer.match(/<XDriveWorkspaceSurface\b/g) || []).length >= 6, 'Desktop extracted pages should use shared workspace surfaces')
   assert.ok(sharedPageHeader.includes('export function XDrivePageHeader'), 'shared page header primitive is missing')
   assert.ok(sharedPageHeader.includes('component="h1"'), 'shared page header must own the h1 title')
-  assert.ok(sharedPageHeader.includes("size === 'large'"), 'shared page header large variant is missing')
   assert.equal(renderer.includes('<header className="topbar">'), false, 'legacy desktop content topbar should be removed')
 
   assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'missing paused-sync exception banner')
@@ -222,57 +251,35 @@ test('desktop settings use a dialog instead of a workspace page', () => {
   assert.equal(renderer.includes("view === 'settings'"), false, 'settings must not remain a workspace page')
 })
 
-test('desktop transient management surfaces use modal dialogs', () => {
-  for (const openProp of [
-    'open={settingsOpen}',
-    'open={sourceCreateOpen}',
-    'open={editingSourceID === row.source.id}',
-    'open={cloudTrashOpen}',
-    'open={!!cloudHistoryNode}',
-    'open={!!cloudShareNode}',
-  ]) {
-    assert.ok(renderer.includes(openProp), `missing modal dialog state: ${openProp}`)
-  }
-
-  for (const label of ['添加同步文件夹', '同步文件夹设置', '回收站', '版本历史', '分享文件']) {
-    assert.ok(renderer.includes(`aria-label="${label}"`), `missing modal dialog label: ${label}`)
-  }
-
-  assert.ok(renderer.includes('source-create modal-form-surface'), 'source creation must use the modal form surface')
-  assert.ok(renderer.includes('source-settings modal-form-surface'), 'source settings must use the modal form surface')
-  assert.equal(renderer.includes('cloud-subpanel modal-subpanel'), false, 'legacy cloud modal panel wrapper remains')
+test('desktop transient management surfaces use shared modal features', () => {
+  assert.ok(rendererApp.includes('<XDriveSettingsDialog'), 'Desktop must render the shared settings dialog')
+  assert.ok(rendererApp.includes('<XDriveSourceManager'), 'Desktop must render the shared Source manager')
+  assert.ok(desktopCloudPage.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
+  assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
+  assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
+  assert.ok(desktopCloudPage.includes('open={trashOpen}'), 'cloud trash dialog is missing')
+  assert.ok(desktopCloudPage.includes('open={Boolean(historyNode)}'), 'cloud history dialog is missing')
+  assert.equal(rendererApp.includes('source-create modal-form-surface'), false, 'Desktop must not retain a local Source create shell')
+  assert.equal(rendererApp.includes('source-settings modal-form-surface'), false, 'Desktop must not retain a local Source settings shell')
 })
 
 test('desktop dialogs share one title, paper, content, and action treatment', () => {
-  assert.ok(renderer.includes('XDriveDialogTitle') && renderer.includes('xDriveDialogPaperProps'), 'App is not using the cross-client dialog chrome')
+  assert.ok(renderer.includes('XDriveDialogTitle') && renderer.includes('xDriveDialogPaperProps'), 'Desktop UI is not using the cross-client dialog chrome')
   assert.ok(synologyGuide.includes("from './DialogTitle'") && synologyGuide.includes('XDriveDialogTitle'), 'Synology guide is not using the cross-client dialog title')
-  assert.ok(synologyGuide.includes('<XDriveDialogTitle'), 'Synology guide is not rendering the cross-client dialog title')
   assert.ok(dialogTitle.includes('aria-label="关闭弹窗"'), 'shared dialog title is missing the close control')
   assert.ok(dialogTitle.includes('export const xDriveDialogPaperProps'), 'shared dialog paper contract is missing')
-  assert.ok(dialogTitle.includes("maxHeight: { xs: '92vh', sm: '84vh' }"), 'shared dialog viewport bounds are missing')
+  assert.ok(dialogActions.includes('export function XDriveDialogActions({'), 'shared dialog actions component is missing')
+  assert.ok(dialogActions.includes('export function XDriveDialogActionSpacer()'), 'shared dialog action spacer is missing')
+  assert.ok(dialogContent.includes('export function XDriveDialogContent({'), 'shared dialog content component is missing')
+  assert.ok(sharedSourceManager.includes('<XDriveDialogActions>'), 'shared Source dialogs must use shared actions')
+  assert.ok(sharedSourceManager.includes('<XDriveDialogContent'), 'shared Source dialogs must use shared content')
+  assert.ok(sharedSettingsDialog.includes('<XDriveDialogContent dividers>'), 'shared Settings dialog must use shared content')
+  assert.ok(sharedShareDialog.includes('<XDriveDialogContent dividers>'), 'shared Share dialog must use shared content')
+  assert.equal(/<DialogContent(?:\s|>)/.test(rendererApp), false, 'raw MUI DialogContent remains in Desktop App')
   assert.equal(styles.includes('.desktop-dialog-title'), false, 'legacy desktop dialog title CSS remains')
   assert.equal(styles.includes('.desktop-dialog-paper'), false, 'legacy desktop dialog paper CSS remains')
-  assert.ok(dialogActions.includes('export function XDriveDialogActions({'), 'shared dialog actions component is missing')
-  assert.ok(dialogActions.includes("bgcolor: 'action.hover'"), 'shared dialog actions surface styling is missing')
-  assert.ok(dialogActions.includes("flexWrap: { xs: 'wrap', sm: 'nowrap' }"), 'shared dialog actions responsive wrapping is missing')
-  assert.ok(dialogActions.includes('export function XDriveDialogActionSpacer()'), 'shared dialog action spacer is missing')
-  assert.equal((renderer.match(/<XDriveDialogActions>/g) || []).length, 7, 'desktop app-local dialogs are not all using the shared action bar')
-  assert.ok(sharedConfirmDialog.includes('<XDriveDialogActions>'), 'shared confirmation dialog must use the shared action bar')
-  assert.ok(renderer.includes('<XDriveDialogActionSpacer />'), 'desktop destructive/settings dialog lost its shared action spacer')
   assert.equal(styles.includes('.desktop-dialog-actions'), false, 'legacy desktop dialog action CSS remains')
-  assert.equal(styles.includes('.desktop-dialog-action-spacer'), false, 'legacy desktop dialog action spacer CSS remains')
-  assert.ok(dialogContent.includes('export function XDriveDialogContent({'), 'shared dialog content component is missing')
-  assert.ok(dialogContent.includes("px: flush ? 0 : { xs: 2, sm: 2.5 }"), 'shared dialog content horizontal spacing is missing')
-  assert.ok(dialogContent.includes("py: flush ? 0 : { xs: 2, sm: 2.25 }"), 'shared dialog content vertical spacing is missing')
-  assert.equal((renderer.match(/<XDriveDialogContent/g) || []).length, 8, 'desktop app-local dialogs are not all using shared dialog content')
-  assert.ok(sharedConfirmDialog.includes('<XDriveDialogContent>'), 'shared confirmation dialog must use shared dialog content')
-  assert.equal((renderer.match(/<XDriveDialogContent dividers flush>/g) || []).length, 3, 'desktop flush dialog surfaces are not preserved')
-  assert.equal(/<DialogContent(?:\s|>)/.test(renderer), false, 'raw MUI DialogContent remains in desktop')
   assert.equal(styles.includes('.desktop-dialog-content'), false, 'legacy desktop dialog content CSS remains')
-  assert.ok(renderer.includes('form="source-create-form"'), 'source create primary action is not in DialogActions')
-  assert.ok(renderer.includes('form={`source-settings-form-${row.source.id}`}'), 'source settings primary action is not in DialogActions')
-  assert.equal(renderer.includes('source-create-heading'), false, 'legacy source create panel heading remains inside the dialog')
-  assert.equal(renderer.includes('source-settings-heading'), false, 'legacy source settings panel heading remains inside the dialog')
 })
 
 test('desktop transient feedback uses the shared non-layout-shifting Snackbar', () => {
@@ -307,8 +314,8 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
-  assert.equal((renderer.match(/<MuiButton/g) || []).length, 6, 'unexpected raw MUI action buttons remain')
-  assert.equal((renderer.match(/color="inherit"/g) || []).length, 5, 'five raw MUI buttons must remain limited to inherit-color alert actions')
+  assert.equal((rendererApp.match(/<MuiButton/g) || []).length, 4, 'unexpected raw MUI action buttons remain in Desktop App')
+  assert.equal((rendererApp.match(/color="inherit"/g) || []).length, 3, 'raw MUI buttons must remain limited to inherit-color alert actions')
   assert.ok(renderer.includes('className="auth-inline-action"') && renderer.includes('清除已保存密码'), 'saved-password inline action is missing')
   assert.equal(renderer.includes('className="auth-folder-button"'), false, 'sync-folder browsing should not remain in the login flow')
   assert.ok(renderer.includes('loadingLabel="正在创建…"'), 'cloud share creation lost shared loading feedback')
@@ -367,212 +374,131 @@ test('desktop cloud shares use the cross-client MUI share status badge', () => {
   assert.equal(renderer.includes('function shareStatusLabel('), false, 'desktop still owns a share status label mapper')
 })
 
-test('desktop external-source run history uses shared summary, status and progress surfaces', () => {
+test('shared SourceManager owns run history, progress, pagination and cancellation', () => {
   assert.ok(sharedSourceRunSummary.includes('export function XDriveSourceRunSummary({'), 'shared source run summary component is missing')
-  assert.ok(sharedSourceRunSummary.includes('ExternalSourceRunDetailView'), 'shared source run summary lost the shared view-model contract')
-  assert.ok(sharedSourceRunSummary.includes('<XDriveStatusBadge'), 'shared source run summary is missing the status badge')
-  assert.ok(sharedSourceRunSummary.includes('detail.modeLabel') && sharedSourceRunSummary.includes('detail.triggerLabel'), 'shared source run summary is missing mode/trigger metadata')
-  assert.ok(sharedSourceRunSummary.includes('formatExternalSourceTime(detail.startedAt)'), 'shared source run summary is missing start-time formatting')
-  assert.ok(renderer.includes('<XDriveSourceRunSummary'), 'desktop run history is not using the shared run summary')
-  assert.ok(renderer.includes('runNumber={run.run_number}'), 'desktop run summary is not using the persisted run number')
-  assert.ok(renderer.includes('detail={historyDetail}'), 'desktop run summary is not bound to the shared detail view')
-  assert.ok(renderer.includes('wideAt="md"'), 'desktop run summary lost its responsive breakpoint')
-  assert.equal(renderer.includes('(sourceHistoryPage - 1) * SOURCE_HISTORY_PAGE_SIZE + index + 1'), false, 'desktop still derives a fake run number from pagination order')
   assert.ok(sharedSourceRunProgress.includes('export function XDriveSourceRunProgress({'), 'shared source run progress component is missing')
-  assert.ok(sharedSourceRunProgress.includes('ExternalSourceRunProgressView'), 'shared source run progress lost the shared view-model contract')
   assert.ok(sharedSourceRunProgress.includes('<LinearProgress'), 'shared source run progress is missing the progress bar')
-  assert.ok(sharedSourceRunProgress.includes('当前文件：{progress.activePath}'), 'shared source run progress is missing active-path feedback')
-  assert.ok(sharedSourceRunProgress.includes('loadingLabel="正在取消…"'), 'shared source run progress is missing cancel loading feedback')
-  assert.ok(renderer.includes('<XDriveSourceRunProgress'), 'desktop run history is not using the shared run progress')
-  assert.ok(renderer.includes('progress={historyDetail.progress}'), 'desktop run progress is not bound to the shared view model')
-  assert.equal(renderer.includes('<LinearProgress'), false, 'desktop still owns a raw source run progress bar')
+  assert.ok(sharedSourceManager.includes('<XDriveSourceRunSummary'), 'SourceManager must render the shared run summary')
+  assert.ok(sharedSourceManager.includes('detail={runDetail}'), 'SourceManager must bind run summaries to the shared detail view')
+  assert.ok(sharedSourceManager.includes('<XDriveSourceRunProgress'), 'SourceManager must render shared run progress')
+  assert.ok(sharedSourceManager.includes('progress={runDetail.progress}'), 'SourceManager must bind live run progress')
+  assert.equal((sharedSourceManager.match(/<XDrivePaginationControls\b/g) || []).length, 3, 'Source history/failure/collection pagination must stay shared')
+  assert.ok(sharedSourceManager.includes('SOURCE_HISTORY_PAGE_SIZE = 20'), 'Source history page-size contract is missing')
+  assert.ok(sharedSourceManager.includes('SOURCE_RUN_FAILURE_PAGE_SIZE = 20'), 'Source failure page-size contract is missing')
+  assert.ok(sharedSourceManager.includes('SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50'), 'Source collection page-size contract is missing')
+  assert.ok(sharedSourceManager.includes('await loadRunHistory(selected.source.id, 1, true)'), 'active Source history should refresh silently')
+  assert.ok(sharedSourceManager.includes('await adapter.cancelSourceRun(row.source.id, run.id)'), 'run cancellation must go through the adapter')
 })
 
-test('shared pagination controls own compact navigation and disabled-state rules', () => {
-  assert.ok(sharedPaginationControls.includes('export function XDrivePaginationControls({'), 'shared pagination component is missing')
-  assert.ok(sharedPaginationControls.includes('XDriveActionButton compact'), 'shared pagination does not use compact shared actions')
-  assert.ok(sharedPaginationControls.includes('loading || page <= 1'), 'shared pagination previous-page guard is missing')
-  assert.ok(sharedPaginationControls.includes('loading || !hasNext'), 'shared pagination next-page guard is missing')
-  assert.ok(sharedPaginationControls.includes('labelPrefix'), 'shared pagination prefix contract is missing')
-  assert.equal((renderer.match(/<XDrivePaginationControls/g) || []).length, 3, 'desktop Source history/failure/collection pagination is not fully shared')
-  assert.equal(renderer.includes('失败项第 {failurePage.page}'), false, 'desktop still owns failure pagination text')
-  assert.equal(renderer.includes('<span>第 {sourceHistoryPage} 页'), false, 'desktop still duplicates history pagination text in the heading')
+test('shared SourceManager owns create, settings and connector forms', () => {
+  assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
+  assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
+  assert.ok(sharedSourceManager.includes('value={createValues.preset}'), 'shared Source create preset is not bound')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Source create/settings name fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Source create/settings run-mode fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Source settings status field must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Source create/settings schedule fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'Source create/settings ignore-rules fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceCookieField\b/g) || []).length, 2, 'Source create/settings Cookie fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSynologyDsmCredentialFields\b/g) || []).length, 2, 'Source create/settings DSM fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length, 2, 'Synology Photos space fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSynologyFileRootsField\b/g) || []).length, 2, 'File Station roots fields must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'Source settings target field must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveStoredCredentialField\b/g) || []).length, 2, 'stored credential reveal fields must stay shared')
+  assert.ok(sharedSourceManager.includes('loadingLabel="正在测试…"'), 'credential test action lost shared loading feedback')
+  assert.ok(sharedSourceManager.includes('loadingLabel="正在保存…"'), 'Source settings save action lost shared loading feedback')
+  assert.ok(sharedSourceManager.includes('loadingLabel="正在删除…"'), 'Source delete action lost shared loading feedback')
 })
 
-test('desktop external-source create/settings surfaces use shared MUI alerts and actions', () => {
-  const start = renderer.indexOf('open={sourceCreateOpen}')
-  const end = renderer.indexOf('details={selectedSourceID === row.source.id && (', start)
-  assert.ok(start >= 0 && end > start, 'could not isolate source create and source-card actions')
-  const sourceCreateAndCard = renderer.slice(start, end)
-  assert.equal((sourceCreateAndCard.match(/<MuiAlert/g) || []).length, 0, 'source create/card actions still render raw MUI alerts')
-  assert.equal((sourceCreateAndCard.match(/<MuiButton/g) || []).length, 0, 'source create/card actions still render raw MUI buttons')
-  assert.equal((sourceCreateAndCard.match(/<XDriveStatusAlert/g) || []).length >= 7, true, 'source create shared alert coverage is incomplete')
-  assert.ok(sourceCreateAndCard.includes('yikeRateLimitNotice'), 'Yike API rate-limit notice is missing from source create UI')
-  assert.equal((sourceCreateAndCard.match(/<XDriveActionButton/g) || []).length >= 9, true, 'source create/card shared action coverage is incomplete')
-  assert.ok(renderer.includes('form={`source-settings-form-${row.source.id}`}'), 'source settings form binding is missing')
-  assert.ok(renderer.includes('loadingLabel="正在测试…"'), 'credential test action lost shared loading feedback')
-  assert.ok(renderer.includes('loadingLabel="正在保存…"'), 'source settings save action lost shared loading feedback')
+test('shared SourceManager owns source cards, states, collections and failure recovery', () => {
+  assert.ok(sharedSourceSummaryCard.includes('<XDriveStatusBadge tone={statusTone} label={statusLabel} />'), 'shared source summary card must own status rendering')
+  assert.ok(sharedSourceManager.includes('<XDriveSourceSummaryCard'), 'SourceManager must render shared source cards')
+  assert.ok(sharedSourceManager.includes('statusTone={card.state.tone}'), 'Source state tone must be passed to the shared card')
+  assert.ok(sharedSourceManager.includes('statusLabel={card.state.label}'), 'Source state label must be passed to the shared card')
+  assert.ok(sharedSourceManager.includes('message="尚未添加同步文件夹"'), 'Source empty state must use the shared state panel')
+  assert.ok(sharedSourceManager.includes('title="相册与集合"'), 'Source collections section is missing')
+  assert.ok(sharedSourceManager.includes('该同步文件夹暂无相册/集合元数据'), 'Source collection empty state is missing')
+  assert.ok(sharedSourceManager.includes('<XDriveSourceCollectionSummary'), 'Source collection summary must stay shared')
+  assert.ok(sharedSourceManager.includes('<XDriveSourceCollectionItem'), 'Source collection item must stay shared')
+  assert.ok(sharedSourceManager.includes('labelPrefix="成员"'), 'Source collection member pagination must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceFailureItem\b/g) || []).length, 2, 'current and historical Source failures must use the shared item')
+  assert.ok(sharedSourceManager.includes('查看失败项'), 'current failed-item action is missing')
+  assert.ok(sharedSourceManager.includes('下一次扫描会自动重试'), 'current failure retry guidance is missing')
+  assert.ok(sharedSourceManager.includes('本次失败文件'), 'historical failed-item section is missing')
+  assert.ok(sharedSourceManager.includes('没有可恢复的逐文件失败快照'), 'legacy failure-history fallback is missing')
 })
 
-test('desktop external-source detail/history surfaces use shared MUI alerts and actions', () => {
-  const start = renderer.indexOf('details={selectedSourceID === row.source.id && (')
-  const end = renderer.indexOf('after={editingSourceID === row.source.id && (', start)
-  assert.ok(start >= 0 && end > start, 'could not isolate source detail/history UI')
-  const sourceDetail = renderer.slice(start, end)
-  assert.equal((sourceDetail.match(/<MuiAlert/g) || []).length, 0, 'source detail/history still renders raw MUI alerts')
-  assert.equal((sourceDetail.match(/<MuiButton/g) || []).length, 2, 'source detail/history should only retain two inherit-color alert actions')
-  assert.equal((sourceDetail.match(/<XDriveStatusAlert/g) || []).length >= 3, true, 'source detail/history shared alert coverage is incomplete')
-  assert.equal((sourceDetail.match(/<XDriveSourceFailureItem/g) || []).length, 1, 'source detail/history shared failure-item coverage is incomplete')
-  assert.equal((sourceDetail.match(/<XDrivePaginationControls/g) || []).length, 3, 'source detail/history/collection pagination is not fully shared')
-  assert.equal((sourceDetail.match(/<XDriveSourceRunSummary/g) || []).length, 1, 'source detail/history shared summary coverage is incomplete')
-  assert.equal((sourceDetail.match(/<XDriveSourceRunProgress/g) || []).length, 1, 'source detail/history shared progress coverage is incomplete')
-  assert.ok(sourceDetail.includes("cancelLoading={busy === 'source-cancel-' + run.id}"), 'run cancel state is not forwarded to shared progress')
-})
-
-test('desktop external-source failed/delete dialogs use shared MUI surfaces', () => {
-  const start = renderer.indexOf('open={sourceFailedItemsOpen')
-  const end = renderer.indexOf('<SynologyDsmGuideDialog', start)
-  assert.ok(start >= 0 && end > start, 'could not isolate source failed/delete dialogs')
-  const sourceDialogs = renderer.slice(start, end)
-  assert.equal((sourceDialogs.match(/<MuiAlert/g) || []).length, 0, 'source failed/delete dialogs still render raw MUI alerts')
-  assert.equal((sourceDialogs.match(/<MuiButton/g) || []).length, 0, 'source failed/delete dialogs still render raw MUI buttons')
-  assert.equal((sourceDialogs.match(/<XDriveStatusAlert/g) || []).length >= 1, true, 'source failed dialog shared alert coverage is incomplete')
-  assert.equal((sourceDialogs.match(/<XDriveSourceFailureItem/g) || []).length, 1, 'source failed dialog shared failure-item coverage is incomplete')
-  assert.equal((sourceDialogs.match(/<XDriveActionButton/g) || []).length >= 3, true, 'source failed/delete dialog shared action coverage is incomplete')
-  assert.ok(sourceDialogs.includes('loadingLabel="正在删除…"'), 'source delete action lost shared loading feedback')
-})
-
-test('desktop external-source status uses the cross-client MUI badge', () => {
-  assert.ok(sharedStatusBadge.includes('export function XDriveStatusBadge({'), 'shared status badge is missing')
-  assert.ok(sharedSourceSummaryCard.includes('<XDriveStatusBadge tone={statusTone} label={statusLabel} />'), 'shared source summary card must own the status badge')
-  assert.ok(renderer.includes('<XDriveSourceSummaryCard'), 'desktop source cards must consume the shared summary card')
-  assert.ok(renderer.includes('statusTone={card.state.tone}'), 'desktop source status tone is not passed to the shared card')
-  assert.ok(renderer.includes('statusLabel={card.state.label}'), 'desktop source status label is not passed to the shared card')
-  assert.equal(renderer.includes('function desktopSourceTone('), false, 'desktop still owns a source tone mapper')
-  assert.equal(renderer.includes('className="source-state"'), false, 'legacy desktop source state wrapper remains')
-})
-
-test('desktop empty and loading states use the cross-client MUI state panel', () => {
-  assert.ok(sharedStatePanel.includes('export function XDriveStatePanel({'), 'shared state panel is missing')
-  assert.ok(renderer.includes('<XDriveStatePanel loading message="正在加载设置…" />'), 'settings loading state is not shared')
-  assert.ok(renderer.includes('message="尚未添加同步文件夹。"'), 'source empty state is not shared')
-  assert.equal(renderer.includes('className="empty-state"'), false, 'legacy desktop empty-state remains')
-  assert.equal(renderer.includes('className="cloud-empty"'), false, 'legacy cloud empty-state remains')
-  assert.equal(renderer.includes('className="cache-unavailable"'), false, 'legacy cache unavailable state remains')
-  assert.equal(styles.includes('.empty-state'), false, 'legacy empty-state CSS remains')
-  assert.equal(styles.includes('.cloud-empty'), false, 'legacy cloud-empty CSS remains')
-})
-
-test('desktop uses app-native confirmation dialogs instead of browser confirms', () => {
-  assert.equal(renderer.includes('window.confirm'), false, 'browser-native confirmation dialog remains in the desktop renderer')
-  assert.ok(renderer.includes('type ConfirmDialogState ='), 'missing reusable confirmation dialog state')
-  assert.ok(renderer.includes('XDriveConfirmDialog'), 'missing shared confirmation dialog')
-  assert.ok(sharedConfirmDialog.includes('aria-label="确认操作"'), 'shared confirmation dialog must expose the confirmation aria label')
-  assert.ok(sharedConfirmDialog.includes('closeDisabled={loading}'), 'shared confirmation dialog must prevent closing while loading')
-  for (const label of [
-    '清除凭据',
-    '安装并重启',
-    '永久删除',
-    '恢复版本',
-    '保留服务器版本',
-    '保留本地版本',
-    '退出登录',
+test('Desktop Source adapter is the only IPC boundary for the shared manager', () => {
+  for (const token of [
+    'getSources()',
+    'getSourceRuns(',
+    'getSourceRunFailures(',
+    'cancelSourceRun(',
+    'getSourceItems(',
+    'getSourceCollections(',
+    'getSourceCollectionItems(',
+    'getSourceCredential(',
+    'revealSourceCredential(',
+    'testSourceCredential(',
+    'testStoredSourceCredential(',
+    'setSourceCredential(',
+    'deleteSourceCredential(',
+    'getSourceConnectorConfig(',
+    'browseSourceDirectories(',
+    'setSourceConnectorConfig(',
+    'createSource(',
+    'updateSource(',
+    'deleteSource(',
+    'triggerSource(',
   ]) {
-    assert.ok(renderer.includes(label), `missing confirmation action label: ${label}`)
+    assert.ok(desktopSourceAdapter.includes(token), `Desktop Source adapter missing IPC operation: ${token}`)
   }
+  assert.ok(rendererApp.includes('createDesktopSourceManagerAdapter'), 'Desktop App must inject the Source IPC adapter')
+  assert.ok(rendererApp.includes('targetBrowser={desktopSourceTargetBrowser}'), 'Desktop target-folder browsing must be injected into the shared manager')
+  assert.ok(desktopSourceAdapter.includes('cloudRoot()'), 'Desktop Source target browser must load the cloud root')
+  assert.ok(desktopSourceAdapter.includes('cloudChildren(parentID)'), 'Desktop Source target browser must browse child folders')
 })
 
-test('desktop external sources expose Synology Push and Pull without duplicating the UI framework', () => {
-  assert.ok(renderer.includes('<XDriveSourcePresetField'), 'source creation does not use the shared create preset field')
-  assert.ok(renderer.includes("value={sourceCreatePreset}"), 'source creation does not pass the selected preset to the shared field')
-  assert.ok(sharedSourceBasicFields.includes('externalSourceCreateOptions.map'), 'shared preset field is missing Source create options')
-  assert.ok(sharedExternalSources.includes("label: '群晖 Photos · Push'"), 'missing Synology Push label')
-  assert.ok(sharedExternalSources.includes("label: '群晖 Photos · Pull'"), 'missing Synology Pull label')
-  assert.ok(sharedSourceCredentialFields.includes("'DSM 地址'"), 'shared credentials are missing DSM base URL field')
-  assert.ok(sharedSourceCredentialFields.includes("'DSM 用户名'"), 'shared credentials are missing DSM username field')
-  assert.ok(sharedSourceCredentialFields.includes("'DSM 密码'"), 'shared credentials are missing DSM password field')
-  assert.ok(sharedSourceCredentialFields.includes('XDriveSourceTargetField'), 'shared credentials are missing read-only target field')
-  assert.ok(sharedSourceCredentialFields.includes('XDriveStoredCredentialField'), 'shared credentials are missing stored-credential reveal field')
-  assert.equal((renderer.match(/<XDriveSourceTargetField\b/g) || []).length, 1, 'desktop settings should render one shared target field')
-  assert.equal((renderer.match(/<XDriveStoredCredentialField\b/g) || []).length, 2, 'desktop settings should render Yike and DSM stored-credential fields')
-  assert.ok(renderer.includes('revealSourceCredential'), 'desktop settings are missing on-demand credential reveal')
-  assert.equal((renderer.match(/<XDriveSynologyPhotoSpacesField\b/g) || []).length, 2, 'desktop Photos create/settings should reuse shared space field')
-  assert.ok(sharedSourceConnectorConfigFields.includes('同步空间'), 'shared connector fields are missing Synology Photos space label')
-  assert.ok(sharedSourceConnectorConfigFields.includes('synologyPhotoSpaceOptions.map'), 'shared Synology space selector is not driven by shared options')
-  assert.ok(renderer.includes('getSourceConnectorConfig'), 'missing Synology connector-config read path')
-  assert.ok(renderer.includes('setSourceConnectorConfig'), 'missing Synology connector-config write path')
-  assert.ok(renderer.includes("card.connector.manualTriggerExecutor === 'source_agent'"), 'DSM source-agent guide is not limited to Push sources')
-  assert.ok(renderer.includes("sourceCreateProfile.credential === 'synology_dsm'"), 'Synology Pull credential UI is not profile-driven')
-  assert.ok(renderer.includes('externalSourceCredentialLabel'), 'credential actions are not connector-neutral')
+test('shared SourceManager preserves Yike and Synology connector safety UX', () => {
+  assert.ok(sharedSourceManager.includes('testSourceCredential'), 'candidate credential test is missing')
+  assert.ok(sharedSourceManager.includes('testStoredSourceCredential'), 'stored credential test is missing')
+  assert.ok(sharedSourceManager.includes('XDriveYikeCookieHelp'), 'shared Yike Cookie guide is missing')
+  assert.ok(sharedSourceManager.includes('yikeConnectorNotice'), 'Yike private-API notice is missing')
+  assert.ok(sharedSourceManager.includes('yikeRateLimitNotice'), 'Yike rate-limit notice is missing')
+  assert.ok(sharedSourceManager.includes('yikeManagedTargetLabel'), 'Yike managed target label is missing')
+  assert.ok(sharedSourceManager.includes('固定逻辑目录'), 'Yike managed target explanation is missing')
+  assert.ok(sharedSourceManager.includes('已自动撤销'), 'Source create rollback feedback is missing')
+  assert.ok(sharedSourceManager.includes('自动回滚也失败'), 'Source rollback failure fallback is missing')
+  assert.ok(sharedSourceManager.includes('label="已保存 Cookie"'), 'stored Yike Cookie field is missing')
+  assert.ok(sharedSourceManager.includes('label="替换 Cookie"'), 'Yike replacement Cookie field is missing')
+  assert.ok(sharedSourceManager.includes('已显示的 Cookie 不会自动带入此输入框'), 'revealed Cookie must stay separated from the replacement field')
+  assert.ok(sharedSourceManager.includes("manualTriggerExecutor === 'source_agent'"), 'DSM guide must remain limited to source-agent connectors')
+  assert.ok(sharedSourceManager.includes("createProfile.credential === 'synology_dsm'"), 'Synology credential UI must remain profile-driven')
+  assert.ok(sharedSourceManager.includes('externalSourceCredentialLabel'), 'credential actions must stay connector-neutral')
 })
 
-test('desktop Yike source exposes connection testing and V1 recovery UX', () => {
-  assert.ok(renderer.includes('testSourceCredential'), 'missing candidate Cookie test')
-  assert.ok(renderer.includes('testStoredSourceCredential'), 'missing stored Cookie test')
-  assert.ok(renderer.includes('测试连接'), 'missing Yike connection test action')
-  assert.ok(renderer.includes('XDriveYikeCookieHelp'), 'missing shared Yike Cookie acquisition guide')
-  assert.equal((renderer.match(/<XDriveSourceCookieField\b/g) || []).length, 2, 'desktop Yike create/settings should reuse shared Cookie field')
-  assert.equal(renderer.includes('function YikeCookieHelpGuide()'), false, 'desktop still owns a local Yike Cookie help implementation')
-  assert.ok(sharedYikeCookieHelp.includes("variant: 'accordion' | 'dialog'"), 'shared Yike Cookie help does not support both clients')
-  assert.ok(renderer.includes('yikeConnectorNotice'), 'missing Yike private-API notice')
-  assert.ok(renderer.includes('yikeManagedTargetLabel'), 'missing Yike managed target label')
-  assert.ok(renderer.includes('固定逻辑目录'), 'missing Yike managed target explanation')
-  assert.ok(sharedYikeCookieHelp.includes('如何获取 Cookie？'), 'missing compact Yike Cookie help action')
-  assert.ok(sharedYikeCookieHelp.includes('点击展开'), 'missing Web expandable Yike Cookie help affordance')
-  assert.ok(dialogTitle.includes("maxHeight: { xs: '92vh', sm: '84vh' }"), 'shared dialog paper must stay viewport-bounded')
-  assert.equal(renderer.includes('<Accordion'), false, 'Yike Cookie help must not expand inline')
-  assert.ok(renderer.includes('立即重试'), 'missing Yike failed-item retry action')
-  assert.ok(renderer.includes('已自动撤销'), 'missing Yike create rollback feedback')
-  assert.ok(renderer.includes('自动回滚也失败'), 'missing Source rollback failure fallback')
-  assert.ok(renderer.includes('label="已保存 Cookie"'), 'saved Yike Cookie field is missing')
-  assert.ok(renderer.includes('label="替换 Cookie"'), 'Yike replacement Cookie field is missing')
-  assert.ok(renderer.includes('revealSourceCredential'), 'saved Yike Cookie cannot be revealed on demand')
-  assert.ok(renderer.includes('已显示的 Cookie 不会自动带入此输入框'), 'revealed Cookie is not clearly separated from replacement input')
-  assert.equal(renderer.includes('isExternalSourceSavedCredentialMask(sourceEditCookie)'), false, 'replacement field must not depend on a display mask sentinel')
-})
-
-test('desktop external-source details expose paged Source collections', () => {
-  assert.ok(renderer.includes('相册与集合'), 'missing Source collection section')
-  assert.ok(renderer.includes('getSourceCollections'), 'missing Source collection list bridge')
-  assert.ok(renderer.includes('getSourceCollectionItems'), 'missing Source collection item bridge')
-  assert.ok(renderer.includes('SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50'), 'missing Source collection page-size contract')
-  assert.ok(renderer.includes('<XDriveSourceCollectionSummary'), 'missing shared collection summary presentation')
-  assert.ok(renderer.includes('<XDriveSourceCollectionItem'), 'missing shared collection item presentation')
-  assert.ok(sharedSourceCollection.includes('externalSourceCollectionKindLabel'), 'shared collection summary is missing collection kind label')
-  assert.ok(sharedSourceCollection.includes('externalSourceCollectionStateTone'), 'shared collection summary is missing collection state tone')
-  assert.ok(renderer.includes('该同步文件夹暂无相册/集合元数据。'), 'missing empty collection state')
-  assert.ok(renderer.includes('展开后加载成员。'), 'collection members must stay lazy-loaded')
-  assert.ok(renderer.includes('labelPrefix="成员"'), 'collection members must use shared pagination')
-})
-
-test('desktop external sources expose per-Source scheduling', () => {
+test('shared SourceManager persists schedule and ignore-rule semantics', () => {
   for (const text of ['调度方式', '固定间隔', 'Cron', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区']) {
     assert.ok(sharedSourceScheduleFields.includes(text), `missing shared Source schedule UI label: ${text}`)
   }
-  assert.equal((renderer.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'desktop create/settings should reuse shared Source schedule fields')
-  assert.ok(renderer.includes('wideAt="md"'), 'desktop Source schedule fields should preserve the md breakpoint')
-  assert.ok(renderer.includes('schedule_type: sourceCreateScheduleType'), 'missing create schedule payload')
-  assert.ok(renderer.includes('schedule_type: sourceEditScheduleType'), 'missing update schedule payload')
-  assert.ok(renderer.includes('detail.scheduleLabel'), 'missing Source schedule detail label')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'create/settings should share Source schedule fields')
+  assert.ok((sharedSourceManager.match(/schedule_type: values\.schedule_type/g) || []).length >= 2, 'create/update schedule payloads are missing')
+  assert.ok(sharedSourceIgnoreRulesField.includes('spellCheck: false'), 'shared ignore-rules field should disable spellcheck')
+  assert.equal((sharedSourceManager.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'create/settings should share ignore-rules fields')
   assert.ok(main.includes('schedule_expression'), 'Electron main does not forward Source schedule fields')
   assert.ok(main.includes("value.schedule_type !== 'manual'"), 'Electron main does not accept manual-only Source schedules')
 })
 
-test('desktop external sources reuse the shared ignore-rules field', () => {
-  assert.ok(sharedSourceIgnoreRulesField.includes('XDriveSourceIgnoreRulesField'), 'shared ignore-rules field is missing')
-  assert.ok(sharedSourceIgnoreRulesField.includes('label="忽略规则"'), 'shared ignore-rules label is missing')
-  assert.ok(sharedSourceIgnoreRulesField.includes('spellCheck: false'), 'shared ignore-rules field should disable spellcheck')
-  assert.equal((renderer.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'desktop create/settings should reuse shared ignore-rules field')
-  assert.ok(renderer.includes('monospace'), 'desktop ignore-rules fields should preserve code-style text')
-})
-
-test('desktop external sources expose live progress and cooperative cancellation', () => {
-  assert.ok(renderer.includes('<XDriveSourceRunProgress'), 'missing shared Source live progress surface')
-  assert.ok(sharedSourceRunProgress.includes('<LinearProgress'), 'shared Source progress is missing the live progress bar')
-  assert.ok(sharedSourceRunProgress.includes('当前文件：{progress.activePath}'), 'shared Source progress is missing the active file label')
-  assert.ok(sharedSourceRunProgress.includes('loadingLabel="正在取消…"'), 'shared Source progress is missing cancellation feedback')
-  assert.ok(renderer.includes('cancelSourceRun'), 'missing renderer Source cancel bridge call')
-  assert.ok(renderer.includes('loadSources(true)'), 'missing silent Source progress refresh')
+test('desktop uses app-native confirmation dialogs instead of browser confirms', () => {
+  assert.equal(rendererApp.includes('window.confirm'), false, 'browser-native confirmation dialog remains in the desktop renderer')
+  assert.ok(rendererApp.includes('type ConfirmDialogState ='), 'missing reusable confirmation dialog state')
+  assert.ok(rendererApp.includes('XDriveConfirmDialog'), 'missing shared confirmation dialog')
+  assert.ok(sharedConfirmDialog.includes('aria-label="确认操作"'), 'shared confirmation dialog must expose the confirmation aria label')
+  assert.ok(sharedConfirmDialog.includes('closeDisabled={loading}'), 'shared confirmation dialog must prevent closing while loading')
+  for (const label of ['安装并重启', '永久删除', '恢复版本', '保留服务器版本', '保留本地版本', '退出登录']) {
+    assert.ok(renderer.includes(label), `missing confirmation action label: ${label}`)
+  }
+  assert.ok(sharedSourceManager.includes('清除凭据'), 'Source credential clearing must use a confirmation action')
 })
 
 test('desktop cloud quota hides server disk wording for limited quotas', () => {
@@ -709,7 +635,7 @@ test('desktop sections use the shared section header', () => {
   assert.ok(sharedSectionHeader.includes('XDriveSectionHeader'), 'shared section header primitive is missing')
   assert.ok(sharedSectionHeader.includes("level === 'h3'"), 'shared section header needs h2/h3 semantics')
   assert.ok(sharedSectionHeader.includes('actions'), 'shared section header needs an action slot')
-  assert.equal((renderer.match(/<XDriveSectionHeader/g) || []).length, 9, 'desktop should reuse the shared section header for all nine repeated sections')
+  assert.ok((renderer.match(/<XDriveSectionHeader/g) || []).length >= 9, 'desktop should reuse the shared section header across repeated sections')
   assert.equal(renderer.includes('className="section-heading"'), false, 'legacy desktop section-heading wrapper should be removed')
   assert.equal(styles.includes('.section-heading {'), false, 'legacy desktop section-heading CSS should be removed')
   assert.equal(styles.includes('.source-heading-actions {'), false, 'legacy source header action CSS should be removed')

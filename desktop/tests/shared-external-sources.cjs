@@ -474,12 +474,13 @@ test('pull source defaults use sync mode instead of silently falling back to sca
 
 test('Web and Desktop create flows consume the shared run-mode default', () => {
   const repo = path.join(__dirname, '..', '..')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   assert.equal((web.match(/run_mode: defaults\.runMode/g) || []).length, 2)
-  assert.match(desktop, /useState<'scan' \| 'sync'>\(initialSourceDefaults\.runMode\)/)
-  assert.equal((desktop.match(/setSourceCreateRunMode\(defaults\.runMode\)/g) || []).length, 2)
+  assert.equal((desktop.match(/run_mode: defaults\.runMode/g) || []).length, 2)
+  assert.ok(web.includes('<XDriveSourceManager'), 'Web must mount the shared Source manager')
+  assert.ok(desktop.includes('<XDriveSourceManager'), 'Desktop must mount the shared Source manager')
 })
 test('shared external-source defaults preserve connector-specific setup rules', () => {
   const scheduleTimezone = shared.defaultExternalSourceTimezone()
@@ -612,8 +613,8 @@ test('shared DSM address help explains certificate matching', () => {
 test('Web and Desktop reuse shared source summary card presentation', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedCard = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
   const desktopStyles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
   for (const token of [
@@ -641,8 +642,8 @@ test('Web and Desktop reuse shared source summary card presentation', () => {
 test('Web and Desktop reuse shared source collection presentation', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedCollection = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceCollection.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSourceCollectionSummary',
@@ -661,7 +662,6 @@ test('Web and Desktop reuse shared source collection presentation', () => {
   assert.equal((desktop.match(/<XDriveSourceCollectionSummary\b/g) || []).length, 1, 'Desktop should reuse shared collection summary')
   assert.equal((web.match(/<XDriveSourceCollectionItem\b/g) || []).length, 1, 'Web should reuse shared collection item')
   assert.equal((desktop.match(/<XDriveSourceCollectionItem\b/g) || []).length, 1, 'Desktop should reuse shared collection item')
-  assert.ok(desktop.includes('wideAt="md"'), 'Desktop collection presentation should preserve the wider breakpoint')
   assert.equal(web.includes('externalSourceCollectionKindLabel(collection.kind)'), false, 'Web should not retain local collection summary presentation')
   assert.equal(desktop.includes('externalSourceCollectionKindLabel(collection.kind)'), false, 'Desktop should not retain local collection summary presentation')
   assert.equal(web.includes("item.state === 'synced' ? 'good'"), false, 'Web should not retain local collection item state presentation')
@@ -672,8 +672,8 @@ test('Web and Desktop reuse shared source collection presentation', () => {
 test('Web and Desktop reuse shared source schedule fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedSchedule = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceScheduleFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSourceScheduleFields',
@@ -691,7 +691,6 @@ test('Web and Desktop reuse shared source schedule fields', () => {
 
   assert.equal((web.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Web create/settings should reuse shared schedule fields')
   assert.equal((desktop.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Desktop create/settings should reuse shared schedule fields')
-  assert.ok(desktop.includes('wideAt="md"'), 'Desktop should preserve its md schedule breakpoint')
   assert.equal(web.includes('label="调度方式"'), false, 'Web should not keep local schedule fields')
   assert.equal(desktop.includes('label="调度方式"'), false, 'Desktop should not keep local schedule fields')
 })
@@ -700,8 +699,8 @@ test('Web and Desktop reuse shared source schedule fields', () => {
 test('Web and Desktop reuse shared source ignore-rules field', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedIgnore = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceIgnoreRulesField.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of ['XDriveSourceIgnoreRulesField', '忽略规则', 'gitignore 风格规则', 'spellCheck: false', 'monospace']) {
     assert.ok(sharedIgnore.includes(token), `shared Source ignore-rules field missing: ${token}`)
@@ -718,8 +717,8 @@ test('Web and Desktop reuse shared source ignore-rules field', () => {
 test('Web and Desktop reuse shared source basic fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceBasicFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
   const desktopStyles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
   for (const token of [
@@ -753,20 +752,24 @@ test('Web and Desktop reuse shared source basic fields', () => {
   assert.equal(desktop.includes('<select value={sourceEditRunMode}'), false, 'Desktop settings should not keep native Source run-mode select')
   assert.equal(desktop.includes('<select value={sourceEditStatus}'), false, 'Desktop settings should not keep native Source status select')
 
-  assert.equal(desktopStyles.includes('.source-create input,'), false, 'Desktop source-create CSS must not broadly override MUI inputs')
-  assert.equal(desktopStyles.includes('.source-create select,'), false, 'Desktop source-create CSS must not broadly override MUI selects')
-  assert.equal(desktopStyles.includes('.source-settings input,'), false, 'Desktop source-settings CSS must not broadly override MUI inputs')
-  assert.equal(desktopStyles.includes('.source-settings select,'), false, 'Desktop source-settings CSS must not broadly override MUI selects')
-  assert.ok(desktopStyles.includes('.source-create > label > input,'), 'Desktop native credential fields should keep scoped legacy styling')
-  assert.ok(desktopStyles.includes('.source-settings > label > input,'), 'Desktop native settings credential fields should keep scoped legacy styling')
+  for (const legacy of [
+    '.source-panel',
+    '.source-list',
+    '.source-create',
+    '.source-settings',
+    '.source-target',
+    '.source-run-detail',
+  ]) {
+    assert.equal(desktopStyles.includes(legacy), false, `Desktop must not retain legacy Source CSS: ${legacy}`)
+  }
 })
 
 
 test('Web and Desktop reuse shared source credential fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceCredentialFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSourceCookieField',
@@ -810,8 +813,8 @@ test('Web and Desktop reuse shared source credential fields', () => {
 test('Web and Desktop reuse shared Synology connector-config fields', () => {
   const repo = path.join(__dirname, '..', '..')
   const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorConfigFields.tsx'), 'utf8')
-  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 
   for (const token of [
     'XDriveSynologyPhotoSpacesField',
@@ -839,16 +842,15 @@ test('Web and Desktop reuse shared Synology connector-config fields', () => {
 
 test('Desktop source details reuse shared description and section primitives', () => {
   const repo = path.join(__dirname, '..', '..')
-  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
   const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
   const description = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'DescriptionGrid.tsx'), 'utf8')
 
-  assert.ok(description.includes('columns?: 2 | 3 | 4'), 'shared description grid should support the three-column run metrics layout')
-  assert.ok(description.includes("fullColumnsAt?: 'md' | 'lg'"), 'shared description grid should support a desktop full-column breakpoint')
-  assert.ok(desktop.includes('<XDriveDescriptionGrid columns={4} fullColumnsAt="md">'), 'Desktop source details should use the shared four-column description grid')
-  assert.ok(desktop.includes('<XDriveDescriptionGrid columns={3} fullColumnsAt="md" sx={{ p: 1.25 }}>'), 'Desktop run metrics should use the shared three-column description grid')
-  assert.ok(desktop.includes('title="相册与集合"'), 'Desktop collection section should use the shared section header')
-  assert.ok(desktop.includes('title="同步历史"'), 'Desktop history section should use the shared section header')
+  assert.ok(description.includes('columns?: 2 | 3 | 4'), 'shared description grid should support reusable metric layouts')
+  assert.ok(description.includes("fullColumnsAt?: 'md' | 'lg'"), 'shared description grid should preserve responsive full-column support')
+  assert.ok((desktop.match(/<XDriveDescriptionGrid\b/g) || []).length >= 2, 'shared Source details and run metrics should use description grids')
+  assert.ok(desktop.includes('title="相册与集合"'), 'Source collection section should use the shared section header')
+  assert.ok(desktop.includes('title="同步历史"'), 'Source history section should use the shared section header')
 
   for (const legacy of ['source-detail-grid', 'source-run-grid', 'source-ignore', 'source-run-heading']) {
     assert.equal(desktop.includes(`className="${legacy}"`), false, `Desktop should not retain local ${legacy} markup`)

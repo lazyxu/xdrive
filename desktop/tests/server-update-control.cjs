@@ -8,9 +8,10 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedCard = read('ui', 'shared', 'src', 'mui', 'ServerUpdateCard.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'server-update.ts')
-const web = read('web', 'src', 'App.tsx')
+const sharedSettings = read('ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx')
+const web = read('web', 'src', 'App.tsx') + sharedSettings
 const webApi = read('web', 'src', 'api.ts')
-const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktop = read('desktop', 'src', 'renderer', 'App.tsx') + sharedSettings
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const desktopMain = read('desktop', 'src', 'main', 'index.cts')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')

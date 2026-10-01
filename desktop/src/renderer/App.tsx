@@ -7,21 +7,15 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogContentText,
   Divider as MuiDivider,
-  FormControl,
   FormControlLabel,
   IconButton,
   InputAdornment,
-  InputLabel,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
-  Select,
   Stack,
-  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -52,25 +46,10 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
   XDriveActionButton,
-  XDriveAppearanceField,
   XDriveBrandLockup,
-  XDriveBuildInfoCard,
   XDriveConfirmDialog,
-  XDriveCreatedShareLink,
-  XDriveDescriptionGrid,
-  XDriveDescriptionItem,
-  XDriveSectionHeader,
-  XDriveServerUpdateCard,
-  XDriveDialogActions,
-  XDriveDialogActionSpacer,
-  XDriveDialogContent,
-  XDriveDialogTitle,
+  XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
-  XDriveMediaGalleryPage,
-  XDriveMetricCard,
-  XDriveMetricGrid,
-  XDrivePageHeader,
-  XDrivePaginationControls,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
   XDriveSidebarSurface,
@@ -78,96 +57,31 @@ import {
   XDriveSidebarStorageSummary,
   XDriveWorkspaceShell,
   XDriveStatePanel,
-  XDriveTransferCenter,
-  XDriveShareCreateFields,
-  XDriveShareList,
   XDriveStatusAlert,
   XDriveStatusBadge,
-  XDriveSourceRunProgress,
-  XDriveSourceRunSummary,
-  XDriveSourceIgnoreRulesField,
-  XDriveSourceNameField,
-  XDriveSourcePresetField,
-  XDriveSourceRunModeField,
-  XDriveSourceStatusField,
-  XDriveSourceCookieField,
-  XDriveSourceTargetField,
-  XDriveStoredCredentialField,
-  XDriveSynologyDsmCredentialFields,
-  XDriveSynologyFileRootsField,
-  XDriveSynologyPhotoSpacesField,
-  XDriveSourceScheduleFields,
-  XDriveSourceFailureItem,
-  XDriveSourceCollectionItem,
-  XDriveSourceCollectionSummary,
-  XDriveSourceKindIcon,
-  XDriveSourceSummaryCard,
-  XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog,
-  XDriveYikeCookieHelp,
-  xDriveDialogPaperProps,
+  XDriveSourceManager,
 } from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
-  externalSourceCardView,
-  externalSourceConnectorProfile,
-  externalSourceCreateOption,
-  externalSourceCredentialLabel,
-  externalSourceCredentialTestErrorLabel,
-  externalSourceCredentialTestSuccessLabel,
-  externalSourceDefaults,
-  externalSourceDetailView,
-  externalSourceRunDetailView,
-  externalSourceTriggerActionLabel,
   formatBinarySize,
-  formatExternalSourceTime,
-  normalizeSynologyFileRoots,
-  normalizeSynologyPhotoSpaces,
-  synologyFileRootsValidationError,
-  yikeConnectorNotice,
-  yikeRateLimitNotice,
-  yikeManagedTargetLabel,
 } from '@xdrive/shared'
-import DesktopFileExplorer from './DesktopFileExplorer'
+import { DesktopCloudPage } from './DesktopCloudPage'
+import { DesktopOverviewPage } from './DesktopOverviewPage'
+import { DesktopConflictsPage } from './DesktopConflictsPage'
+import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
+import { DesktopGalleryPage } from './DesktopGalleryPage'
+import { DesktopTransfersPage } from './DesktopTransfersPage'
+import { DesktopStoragePage } from './DesktopStoragePage'
+import { DesktopSettingsContent } from './DesktopSettingsContent'
+import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
-  ExternalSourceCollection,
-  ExternalSourceCollectionItem,
-  ExternalSourceConnectorConfig,
-  ExternalSourceCreatePreset,
-  ExternalSourceCredentialTestResult,
-  ExternalSourceItem,
-  ExternalSourceRow,
-  ExternalSourceRun,
-  ExternalSourceRunFailure,
-  ExternalSourceScheduleType,
-  SynologyPhotoSpace,
-  SupportedExternalSourceKind,
   XDriveAppearance,
   XDriveServerUpdateChannel,
   XDriveServerUpdateSource,
   XDriveServerUpdateState,
 } from '@xdrive/shared'
 
-const SOURCE_HISTORY_PAGE_SIZE = 20
-const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
-const SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50
-
-type SourceRunFailurePage = {
-  items: ExternalSourceRunFailure[]
-  page: number
-  hasNext: boolean
-  loading: boolean
-  loaded: boolean
-}
-
-type SourceCollectionItemPage = {
-  items: ExternalSourceCollectionItem[]
-  page: number
-  hasNext: boolean
-  loading: boolean
-  loaded: boolean
-}
-
-type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics'
 
 type ConfirmDialogState = {
   title: string
@@ -241,39 +155,6 @@ function cacheGiB(bytes: number) {
   return String(Number((bytes / 1024 ** 3).toFixed(3)))
 }
 
-function formatTransferSpeed(bytesPerSecond: number) {
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '—'
-  return `${formatBinarySize(Math.round(bytesPerSecond))}/s`
-}
-
-function viewLabel(view: View) {
-  const labels: Record<View, string> = {
-    overview: '概览',
-    cloud: '文件',
-    gallery: '图库',
-    sources: '同步文件夹',
-    transfers: '传输',
-    files: '存储',
-    conflicts: '冲突',
-    diagnostics: '诊断',
-    settings: '设置',
-  }
-  return labels[view]
-}
-
-function updateStatusLabel(state: AgentUpdateState | null) {
-  if (!state) return '不可用'
-  if (state.status === 'idle') return '等待检查'
-  if (state.status === 'checking') return '正在检查'
-  if (state.status === 'available') return '发现新版本'
-  if (state.status === 'up_to_date') return '已是最新'
-  if (state.status === 'downloading') return '正在下载'
-  if (state.status === 'downloaded') return '已下载，等待安装'
-  if (state.status === 'installing') return '正在安装'
-  if (state.status === 'error') return '更新错误'
-  return state.status
-}
-
 function updateModeDescription(mode: AgentUpdateMode) {
   if (mode === 'check') return '后台定期检查；发现新版本后只提示，不会自动下载。'
   if (mode === 'download') return '后台定期检查并自动下载、校验；安装前仍由你确认。'
@@ -314,66 +195,6 @@ export default function App({
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
-  const [sources, setSources] = useState<ExternalSourceRow[]>([])
-  const [selectedSourceID, setSelectedSourceID] = useState<number | null>(null)
-  const [editingSourceID, setEditingSourceID] = useState<number | null>(null)
-  const [sourceEditName, setSourceEditName] = useState('')
-  const [sourceEditRunMode, setSourceEditRunMode] = useState<'scan' | 'sync'>('scan')
-  const [sourceEditStatus, setSourceEditStatus] = useState<'active' | 'paused'>('active')
-  const [sourceEditScheduleType, setSourceEditScheduleType] = useState<ExternalSourceScheduleType>('interval')
-  const [sourceEditScheduleExpression, setSourceEditScheduleExpression] = useState('6h')
-  const [sourceEditScheduleTimezone, setSourceEditScheduleTimezone] = useState('UTC')
-  const [sourceEditIgnoreRules, setSourceEditIgnoreRules] = useState('')
-  const [sourceEditCookie, setSourceEditCookie] = useState('')
-  const [sourceEditDsmBaseURL, setSourceEditDsmBaseURL] = useState('')
-  const [sourceEditDsmUsername, setSourceEditDsmUsername] = useState('')
-  const [sourceEditDsmPassword, setSourceEditDsmPassword] = useState('')
-  const [sourceEditCredentialReveal, setSourceEditCredentialReveal] = useState<AgentSourceCredentialReveal | null>(null)
-  const [sourceEditCredentialRevealLoading, setSourceEditCredentialRevealLoading] = useState(false)
-  const [sourceEditSpaces, setSourceEditSpaces] = useState<SynologyPhotoSpace[]>(['personal', 'shared'])
-  const [sourceEditRoots, setSourceEditRoots] = useState<string[]>([])
-  const [sourceEditConnectorConfig, setSourceEditConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
-  const [sourceCreateOpen, setSourceCreateOpen] = useState(false)
-  const initialSourceOption = externalSourceCreateOption('synology_push')
-  const initialSourceDefaults = externalSourceDefaults(initialSourceOption.kind, initialSourceOption.direction)
-  const [sourceCreatePreset, setSourceCreatePreset] = useState<ExternalSourceCreatePreset>(initialSourceOption.value)
-  const sourceCreateOption = externalSourceCreateOption(sourceCreatePreset)
-  const sourceCreateKind = sourceCreateOption.kind
-  const sourceCreateDirection = sourceCreateOption.direction
-  const sourceCreateProfile = externalSourceConnectorProfile(sourceCreateKind, sourceCreateDirection)
-  const [sourceCreateName, setSourceCreateName] = useState(initialSourceDefaults.name)
-  const [sourceCreateRunMode, setSourceCreateRunMode] = useState<'scan' | 'sync'>(initialSourceDefaults.runMode)
-  const [sourceCreateScheduleType, setSourceCreateScheduleType] = useState<ExternalSourceScheduleType>(initialSourceDefaults.scheduleType)
-  const [sourceCreateScheduleExpression, setSourceCreateScheduleExpression] = useState(initialSourceDefaults.scheduleExpression)
-  const [sourceCreateScheduleTimezone, setSourceCreateScheduleTimezone] = useState(initialSourceDefaults.scheduleTimezone)
-  const [sourceCreateIgnoreRules, setSourceCreateIgnoreRules] = useState(initialSourceDefaults.ignoreRules)
-  const [sourceCreateCookie, setSourceCreateCookie] = useState('')
-  const [sourceCreateDsmBaseURL, setSourceCreateDsmBaseURL] = useState('')
-  const [sourceCreateDsmUsername, setSourceCreateDsmUsername] = useState('')
-  const [sourceCreateDsmPassword, setSourceCreateDsmPassword] = useState('')
-  const [sourceCreateSpaces, setSourceCreateSpaces] = useState<SynologyPhotoSpace[]>(['personal', 'shared'])
-  const [sourceCreateRoots, setSourceCreateRoots] = useState<string[]>([])
-  const [sourceCreateCredentialTest, setSourceCreateCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
-  const [sourceEditCredentialTest, setSourceEditCredentialTest] = useState<ExternalSourceCredentialTestResult | null>(null)
-  const [sourceFailedItems, setSourceFailedItems] = useState<ExternalSourceItem[]>([])
-  const [sourceFailedItemsSourceID, setSourceFailedItemsSourceID] = useState<number | null>(null)
-  const [sourceFailedItemsLoadingID, setSourceFailedItemsLoadingID] = useState<number | null>(null)
-  const [sourceFailedItemsOpen, setSourceFailedItemsOpen] = useState(false)
-  const [sourceFailedItemsLimitReached, setSourceFailedItemsLimitReached] = useState(false)
-  const [sourceHistoryRuns, setSourceHistoryRuns] = useState<ExternalSourceRun[]>([])
-  const [sourceHistoryPage, setSourceHistoryPage] = useState(1)
-  const [sourceHistoryHasNext, setSourceHistoryHasNext] = useState(false)
-  const [sourceHistoryLoading, setSourceHistoryLoading] = useState(false)
-  const [sourceRunFailurePages, setSourceRunFailurePages] = useState<Record<string, SourceRunFailurePage>>({})
-  const [sourceCollections, setSourceCollections] = useState<ExternalSourceCollection[]>([])
-  const [sourceCollectionsSourceID, setSourceCollectionsSourceID] = useState<number | null>(null)
-  const [sourceCollectionsLoadingID, setSourceCollectionsLoadingID] = useState<number | null>(null)
-  const [sourceCollectionItemPages, setSourceCollectionItemPages] = useState<Record<number, SourceCollectionItemPage>>({})
-  const [sourceDeleteTarget, setSourceDeleteTarget] = useState<ExternalSourceRow | null>(null)
-  const [synologyGuideSource, setSynologyGuideSource] = useState<AgentSource | null>(null)
-  const [sourceTargetCrumbs, setSourceTargetCrumbs] = useState<AgentCloudCrumb[]>([])
-  const [sourceTargetDirectories, setSourceTargetDirectories] = useState<AgentCloudNode[]>([])
-  const [sourceTargetLoading, setSourceTargetLoading] = useState(false)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudPage, setCloudPage] = useState<{
@@ -391,11 +212,6 @@ export default function App({
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudVersions, setCloudVersions] = useState<AgentCloudVersion[]>([])
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
-  const [cloudShares, setCloudShares] = useState<AgentCloudShare[]>([])
-  const [shareExpiresDays, setShareExpiresDays] = useState('7')
-  const [sharePassword, setSharePassword] = useState('')
-  const [shareMaxDownloads, setShareMaxDownloads] = useState('0')
-  const [createdShareURL, setCreatedShareURL] = useState('')
 
   const mediaGallerySource = useMemo<MediaGalleryDataSource>(() => ({
     listItems: async (limit, offset) => {
@@ -486,6 +302,10 @@ export default function App({
   const savedPasswordAvailable = password.length === 0 && hasStoredPassword
 
   const status = agent.status
+  const sourceManagerAdapter = useMemo(
+    () => createDesktopSourceManagerAdapter(status?.username),
+    [status?.username],
+  )
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = Boolean(server.trim() && username.trim() && (password || savedPasswordAvailable))
@@ -712,17 +532,6 @@ export default function App({
       setSettings(null)
       setConflicts([])
       setDiagnostics(null)
-      setSources([])
-      setSelectedSourceID(null)
-      setSourceEditCredentialReveal(null)
-      closeSourceSettings()
-      setSourceEditCookie('')
-      setSourceCreateOpen(false)
-      setSourceCreateCookie('')
-      setSourceDeleteTarget(null)
-      setSynologyGuideSource(null)
-      setSourceTargetCrumbs([])
-      setSourceTargetDirectories([])
       setStorageTree(null)
       setCacheStats(null)
       setCloudItems([])
@@ -734,8 +543,6 @@ export default function App({
       setCloudHistoryCrumbs([])
       setCloudVersions([])
       setCloudShareNode(null)
-      setCloudShares([])
-      setCreatedShareURL('')
       return
     }
     if (settingsOpen) void loadSettings()
@@ -744,38 +551,6 @@ export default function App({
     // Diagnostics are intentionally excluded because they perform network/system checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, settingsOpen, agent.connected, configured, status?.revision])
-
-  useEffect(() => {
-    if (view !== 'sources' || !agent.connected || !configured) return
-    void loadSources()
-    // External Sources load when entering the page or reconnecting.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, agent.connected, configured])
-
-  useEffect(() => {
-    if (
-      view !== 'sources' || !agent.connected || !configured ||
-      !sources.some((row) => row.latestRun?.status === 'running' || row.source.run_requested_at)
-    ) return
-    const timer = window.setInterval(() => {
-      void loadSources(true)
-    }, 1500)
-    return () => window.clearInterval(timer)
-    // Poll only while a Source is active/pending; loadSources is intentionally not a dependency.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, agent.connected, configured, sources])
-
-  useEffect(() => {
-    if (view !== 'sources' || !agent.connected || !configured || !selectedSourceID || sourceHistoryPage !== 1) return
-    const selectedRow = sources.find((row) => row.source.id === selectedSourceID)
-    if (!selectedRow || (selectedRow.latestRun?.status !== 'running' && !selectedRow.source.run_requested_at)) return
-    const timer = window.setInterval(() => {
-      void loadSourceHistory(selectedSourceID, 1, true)
-    }, 1500)
-    return () => window.clearInterval(timer)
-    // Poll only the first history page while the selected Source is active/pending.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, agent.connected, configured, selectedSourceID, sourceHistoryPage, sources])
 
   useEffect(() => {
     if (view !== 'diagnostics' || !agent.connected || !configured) return
@@ -1020,784 +795,6 @@ export default function App({
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-    }
-  }
-
-  const loadSourceRunFailures = async (sourceID: number, runID: string, page = 1) => {
-    const nextPage = Math.max(1, Math.trunc(page))
-    setSourceRunFailurePages((current) => ({
-      ...current,
-      [runID]: {
-        items: current[runID]?.items ?? [],
-        page: current[runID]?.page ?? nextPage,
-        hasNext: current[runID]?.hasNext ?? false,
-        loading: true,
-        loaded: current[runID]?.loaded ?? false,
-      },
-    }))
-    const offset = (nextPage - 1) * SOURCE_RUN_FAILURE_PAGE_SIZE
-    const result = await window.xdriveDesktop.agent.getSourceRunFailures(
-      sourceID,
-      runID,
-      SOURCE_RUN_FAILURE_PAGE_SIZE + 1,
-      offset,
-    )
-    if (!result.ok) {
-      setError(result.error.message)
-      setSourceRunFailurePages((current) => ({
-        ...current,
-        [runID]: {
-          items: current[runID]?.items ?? [],
-          page: current[runID]?.page ?? nextPage,
-          hasNext: current[runID]?.hasNext ?? false,
-          loading: false,
-          loaded: current[runID]?.loaded ?? false,
-        },
-      }))
-      return
-    }
-    setSourceRunFailurePages((current) => ({
-      ...current,
-      [runID]: {
-        items: result.data.slice(0, SOURCE_RUN_FAILURE_PAGE_SIZE),
-        page: nextPage,
-        hasNext: result.data.length > SOURCE_RUN_FAILURE_PAGE_SIZE,
-        loading: false,
-        loaded: true,
-      },
-    }))
-  }
-
-  const loadSourceHistory = async (sourceID: number, page: number, silent = false) => {
-    const nextPage = Math.max(1, Math.trunc(page))
-    if (!silent) setSourceHistoryLoading(true)
-    try {
-      const offset = (nextPage - 1) * SOURCE_HISTORY_PAGE_SIZE
-      const result = await window.xdriveDesktop.agent.getSourceRuns(sourceID, SOURCE_HISTORY_PAGE_SIZE + 1, offset)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setSourceHistoryRuns(result.data.slice(0, SOURCE_HISTORY_PAGE_SIZE))
-      setSourceHistoryHasNext(result.data.length > SOURCE_HISTORY_PAGE_SIZE)
-      setSourceHistoryPage(nextPage)
-    } finally {
-      if (!silent) setSourceHistoryLoading(false)
-    }
-  }
-
-  const loadSources = async (silent = false) => {
-    if (!silent) {
-      setBusy('sources')
-      setError('')
-    }
-    try {
-      if (!(agent.hello?.capabilities.includes('external-sources') ?? false)) {
-        setSources([])
-        setError('当前 xdrive-agent 不支持同步文件夹，请更新客户端核心组件。')
-        return
-      }
-      const sourceResult = await window.xdriveDesktop.agent.getSources()
-      if (!sourceResult.ok) {
-        setError(sourceResult.error.message)
-        return
-      }
-      const rows = await Promise.all(sourceResult.data.map(async (source) => {
-        const [runsResult, credentialResult] = await Promise.all([
-          window.xdriveDesktop.agent.getSourceRuns(source.id, 1),
-          externalSourceConnectorProfile(source.kind, source.direction).credential
-            ? window.xdriveDesktop.agent.getSourceCredential(source.id)
-            : Promise.resolve(null),
-        ])
-        if (!runsResult.ok) setError(runsResult.error.message)
-        if (credentialResult && !credentialResult.ok) setError(credentialResult.error.message)
-        return {
-          source,
-          latestRun: runsResult.ok ? runsResult.data[0] : undefined,
-          credential: credentialResult && credentialResult.ok ? credentialResult.data : undefined,
-        }
-      }))
-      setSources(rows)
-    } finally {
-      if (!silent) setBusy('')
-    }
-  }
-
-  const loadSourceCollections = async (sourceID: number) => {
-    setSourceCollectionsLoadingID(sourceID)
-    try {
-      const result = await window.xdriveDesktop.agent.getSourceCollections(sourceID)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setSourceCollections(result.data)
-      setSourceCollectionsSourceID(sourceID)
-    } finally {
-      setSourceCollectionsLoadingID(null)
-    }
-  }
-
-  const loadSourceCollectionItems = async (sourceID: number, collectionID: number, page = 1) => {
-    const nextPage = Math.max(1, Math.trunc(page))
-    setSourceCollectionItemPages((current) => ({
-      ...current,
-      [collectionID]: {
-        items: current[collectionID]?.items ?? [],
-        page: current[collectionID]?.page ?? nextPage,
-        hasNext: current[collectionID]?.hasNext ?? false,
-        loading: true,
-        loaded: current[collectionID]?.loaded ?? false,
-      },
-    }))
-    const offset = (nextPage - 1) * SOURCE_COLLECTION_ITEM_PAGE_SIZE
-    const result = await window.xdriveDesktop.agent.getSourceCollectionItems(
-      sourceID,
-      collectionID,
-      SOURCE_COLLECTION_ITEM_PAGE_SIZE + 1,
-      offset,
-    )
-    if (!result.ok) {
-      setError(result.error.message)
-      setSourceCollectionItemPages((current) => ({
-        ...current,
-        [collectionID]: {
-          items: current[collectionID]?.items ?? [],
-          page: current[collectionID]?.page ?? nextPage,
-          hasNext: current[collectionID]?.hasNext ?? false,
-          loading: false,
-          loaded: current[collectionID]?.loaded ?? false,
-        },
-      }))
-      return
-    }
-    setSourceCollectionItemPages((current) => ({
-      ...current,
-      [collectionID]: {
-        items: result.data.slice(0, SOURCE_COLLECTION_ITEM_PAGE_SIZE),
-        page: nextPage,
-        hasNext: result.data.length > SOURCE_COLLECTION_ITEM_PAGE_SIZE,
-        loading: false,
-        loaded: true,
-      },
-    }))
-  }
-
-  const toggleSourceDetails = async (row: ExternalSourceRow) => {
-    const sourceID = row.source.id
-    if (selectedSourceID === sourceID) {
-      setSelectedSourceID(null)
-      setSourceFailedItems([])
-      setSourceFailedItemsSourceID(null)
-      setSourceFailedItemsOpen(false)
-      setSourceFailedItemsLimitReached(false)
-      setSourceHistoryRuns([])
-      setSourceHistoryPage(1)
-      setSourceHistoryHasNext(false)
-      setSourceRunFailurePages({})
-      setSourceCollections([])
-      setSourceCollectionsSourceID(null)
-      setSourceCollectionsLoadingID(null)
-      setSourceCollectionItemPages({})
-      return
-    }
-
-    setSelectedSourceID(sourceID)
-    setSourceFailedItems([])
-    setSourceFailedItemsSourceID(null)
-    setSourceFailedItemsOpen(false)
-    setSourceFailedItemsLimitReached(false)
-    setSourceHistoryRuns([])
-    setSourceHistoryPage(1)
-    setSourceHistoryHasNext(false)
-    setSourceRunFailurePages({})
-    setSourceCollections([])
-    setSourceCollectionsSourceID(null)
-    setSourceCollectionItemPages({})
-    setSourceFailedItemsLoadingID(sourceID)
-    setError('')
-    void loadSourceHistory(sourceID, 1)
-    void loadSourceCollections(sourceID)
-    try {
-      const result = await window.xdriveDesktop.agent.getSourceItems(sourceID, 'error', 1000, 0)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setSourceFailedItems(result.data)
-      setSourceFailedItemsSourceID(sourceID)
-      setSourceFailedItemsLimitReached(result.data.length >= 1000)
-    } finally {
-      setSourceFailedItemsLoadingID(null)
-    }
-  }
-
-  const triggerSourceNow = async (row: ExternalSourceRow) => {
-    const sourceID = row.source.id
-    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-    const success = profile.manualTriggerExecutor === 'source_agent'
-      ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查。'
-      : '已请求立即扫描，Pull worker 将在下一次轮询或唤醒时开始。'
-    const data = await run(
-      `source-trigger-${sourceID}`,
-      () => window.xdriveDesktop.agent.triggerSource(sourceID),
-      success,
-    )
-    if (data) await loadSources()
-  }
-
-  const cancelSourceRunNow = async (row: ExternalSourceRow) => {
-    const sourceRun = row.latestRun
-    if (!sourceRun || sourceRun.status !== 'running' || sourceRun.cancel_requested_at) return
-    const data = await run(
-      `source-cancel-${sourceRun.id}`,
-      () => window.xdriveDesktop.agent.cancelSourceRun(row.source.id, sourceRun.id),
-      '已请求停止当前运行。',
-    )
-    if (data) await loadSources(true)
-  }
-
-  const loadSourceTargetDirectory = async (nodeID: number, crumbs: AgentCloudCrumb[]) => {
-    setSourceTargetLoading(true)
-    setError('')
-    try {
-      const children = await window.xdriveDesktop.agent.cloudChildren(nodeID)
-      if (!children.ok) {
-        setError(children.error.message)
-        return false
-      }
-      setSourceTargetCrumbs(crumbs)
-      setSourceTargetDirectories(children.data.filter((item) => item.type === 'dir'))
-      return true
-    } finally {
-      setSourceTargetLoading(false)
-    }
-  }
-
-  const resetSourceCreateCredential = () => {
-    setSourceCreateCookie('')
-    setSourceCreateDsmBaseURL('')
-    setSourceCreateDsmUsername('')
-    setSourceCreateDsmPassword('')
-    setSourceCreateSpaces(['personal', 'shared'])
-    setSourceCreateRoots([])
-    setSourceCreateCredentialTest(null)
-  }
-
-  const openSourceCreate = async () => {
-    const option = externalSourceCreateOption('synology_push')
-    const defaults = externalSourceDefaults(option.kind, option.direction)
-    setSourceCreatePreset(option.value)
-    setSourceCreateName(defaults.name)
-    setSourceCreateRunMode(defaults.runMode)
-    setSourceCreateScheduleType(defaults.scheduleType)
-    setSourceCreateScheduleExpression(defaults.scheduleExpression)
-    setSourceCreateScheduleTimezone(defaults.scheduleTimezone)
-    setSourceCreateIgnoreRules(defaults.ignoreRules)
-    resetSourceCreateCredential()
-    setSourceCreateOpen(true)
-    setSourceTargetLoading(true)
-    setError('')
-    try {
-      const root = await window.xdriveDesktop.agent.cloudRoot()
-      if (!root.ok) {
-        setError(root.error.message)
-        return
-      }
-      await loadSourceTargetDirectory(root.data.id, [{ id: root.data.id, name: '我的文件' }])
-    } finally {
-      setSourceTargetLoading(false)
-    }
-  }
-
-  const changeSourceCreatePreset = (preset: ExternalSourceCreatePreset) => {
-    const option = externalSourceCreateOption(preset)
-    const defaults = externalSourceDefaults(option.kind, option.direction)
-    setSourceCreatePreset(option.value)
-    setSourceCreateName(defaults.name)
-    setSourceCreateRunMode(defaults.runMode)
-    setSourceCreateScheduleType(defaults.scheduleType)
-    setSourceCreateScheduleExpression(defaults.scheduleExpression)
-    setSourceCreateScheduleTimezone(defaults.scheduleTimezone)
-    setSourceCreateIgnoreRules(defaults.ignoreRules)
-    resetSourceCreateCredential()
-  }
-
-  const sourceCreateCredentialPayload = (): Record<string, string> | null => {
-    if (sourceCreateProfile.credential === 'cookie') {
-      const cookie = sourceCreateCookie.trim()
-      return cookie ? { cookie } : null
-    }
-    if (sourceCreateProfile.credential === 'synology_dsm') {
-      const baseURL = sourceCreateDsmBaseURL.trim()
-      const username = sourceCreateDsmUsername.trim()
-      return baseURL && username && sourceCreateDsmPassword
-        ? { base_url: baseURL, username, password: sourceCreateDsmPassword }
-        : null
-    }
-    return {}
-  }
-
-  const testCreateSourceCredential = async () => {
-    if (!sourceCreateProfile.credential) return null
-    const payload = sourceCreateCredentialPayload()
-    if (!payload) {
-      setError(sourceCreateProfile.credential === 'cookie'
-        ? '请先填写一刻相册 Cookie。'
-        : '请完整填写 DSM 地址、用户名和密码。')
-      return null
-    }
-    setBusy('source-create-test')
-    setError('')
-    setNotice('')
-    try {
-      const result = await window.xdriveDesktop.agent.testSourceCredential(sourceCreateKind, payload)
-      if (!result.ok) {
-        setSourceCreateCredentialTest(null)
-        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message, result.error.detail))
-        return null
-      }
-      setSourceCreateCredentialTest(result.data)
-      setNotice(externalSourceCredentialTestSuccessLabel(result.data))
-      return result.data
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const rollbackCreatedSource = async (created: AgentSource, reason: string) => {
-    const rollback = await window.xdriveDesktop.agent.deleteSource(created.id, created.revision)
-    if (rollback.ok) {
-      setError(`${reason}。刚创建的同步文件夹已自动撤销，请检查后重试。`)
-      await loadSources()
-      return true
-    }
-    setError(`${reason}；自动回滚也失败：${rollback.error.message}。请进入“设置”修复或删除该同步文件夹。`)
-    await loadSources()
-    return false
-  }
-
-  const createExternalSource = async (event: FormEvent) => {
-    event.preventDefault()
-    const name = sourceCreateName.trim()
-    const target = sourceTargetCrumbs.at(-1)
-    if (!name) {
-      setError('同步文件夹名称不能为空。')
-      return
-    }
-    if (sourceCreateKind !== 'yike_photos' && !target) {
-      setError('请选择目标文件夹。')
-      return
-    }
-    const credentialPayload = sourceCreateProfile.credential ? sourceCreateCredentialPayload() : null
-    if (sourceCreateProfile.credential && !credentialPayload) {
-      setError(sourceCreateProfile.credential === 'cookie'
-        ? '请填写一刻相册 Cookie。'
-        : '请完整填写 Synology DSM 地址、用户名和密码。')
-      return
-    }
-    if (sourceCreateKind === 'synology_photos' && sourceCreateSpaces.length === 0) {
-      setError('至少选择一个 Synology Photos 空间。')
-      return
-    }
-    const rootsError = sourceCreateKind === 'synology_files'
-      ? synologyFileRootsValidationError(sourceCreateRoots)
-      : ''
-    if (rootsError) {
-      setError(rootsError)
-      return
-    }
-    const roots = normalizeSynologyFileRoots(sourceCreateRoots)
-
-    setBusy('source-create')
-    setError('')
-    setNotice('')
-    try {
-      if (sourceCreateProfile.credential) {
-        const tested = await window.xdriveDesktop.agent.testSourceCredential(sourceCreateKind, credentialPayload as Record<string, string>)
-        if (!tested.ok) {
-          setSourceCreateCredentialTest(null)
-          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message, tested.error.detail))
-          return
-        }
-        setSourceCreateCredentialTest(tested.data)
-      }
-      const created = await window.xdriveDesktop.agent.createSource({
-        name,
-        kind: sourceCreateKind,
-        direction: sourceCreateDirection,
-        sync_mode: 'backup',
-        run_mode: sourceCreateRunMode,
-        schedule_type: sourceCreateScheduleType,
-        schedule_expression: sourceCreateScheduleType === 'manual' ? '' : sourceCreateScheduleExpression.trim(),
-        schedule_timezone: sourceCreateScheduleType === 'cron' ? sourceCreateScheduleTimezone.trim() : '',
-        target_node_id: sourceCreateKind === 'yike_photos' ? 0 : (target?.id ?? 0),
-        ignore_rules: sourceCreateIgnoreRules,
-      })
-      if (!created.ok) {
-        setError(created.error.message)
-        return
-      }
-
-      if (sourceCreateProfile.credential === 'synology_dsm') {
-        const config = await window.xdriveDesktop.agent.getSourceConnectorConfig(created.data.id)
-        if (!config.ok) {
-          await rollbackCreatedSource(created.data, `读取群晖连接配置失败：${config.error.message}`)
-          return
-        }
-        const connectorPayload = sourceCreateKind === 'synology_files'
-          ? { roots }
-          : { spaces: normalizeSynologyPhotoSpaces(sourceCreateSpaces) }
-        const savedConfig = await window.xdriveDesktop.agent.setSourceConnectorConfig(
-          created.data.id,
-          config.data.revision,
-          connectorPayload,
-        )
-        if (!savedConfig.ok) {
-          await rollbackCreatedSource(created.data, `保存群晖连接配置失败：${savedConfig.error.message}`)
-          return
-        }
-      }
-
-      if (sourceCreateProfile.credential && credentialPayload) {
-        const credential = await window.xdriveDesktop.agent.setSourceCredential(created.data.id, credentialPayload)
-        if (!credential.ok) {
-          const label = externalSourceCredentialLabel(sourceCreateProfile)
-          await rollbackCreatedSource(created.data, `${label}保存失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message, credential.error.detail)}`)
-          return
-        }
-      }
-
-      if (sourceCreateKind === 'synology_files') {
-        const activated = await window.xdriveDesktop.agent.updateSource(created.data.id, created.data.revision, { status: 'active' })
-        if (!activated.ok) {
-          await rollbackCreatedSource(created.data, `启用群晖 File Station 同步文件夹失败：${activated.error.message}`)
-          return
-        }
-      }
-
-      setSourceCreateOpen(false)
-      resetSourceCreateCredential()
-      if (sourceCreateProfile.manualTriggerExecutor === 'source_agent') {
-        setSynologyGuideSource(created.data)
-        setNotice('群晖 Push 同步文件夹已添加。请按 DSM 配置向导绑定 xdrive-source-agent。')
-      } else if (sourceCreateKind === 'yike_photos') {
-        setNotice(`一刻相册同步文件夹已添加，目标目录固定为 ${yikeManagedTargetLabel}。`)
-      } else if (sourceCreateKind === 'synology_files') {
-        setNotice('群晖 File Station Pull 同步文件夹已添加；将同步所选目录中的所有文件和文件夹。')
-      } else {
-        setNotice('群晖 Pull 同步文件夹已添加；xDrive Server 将按调度直接读取 Synology Photos。')
-      }
-      await loadSources()
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const closeSourceSettings = useCallback(() => {
-    setSourceEditCredentialReveal(null)
-    setEditingSourceID(null)
-  }, [])
-
-  const openSourceSettings = (row: ExternalSourceRow) => {
-    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-    setEditingSourceID(row.source.id)
-    setSourceEditName(row.source.name)
-    setSourceEditRunMode(row.source.run_mode)
-    setSourceEditStatus(row.source.status)
-    setSourceEditScheduleType(row.source.schedule_type ?? 'interval')
-    setSourceEditScheduleExpression(row.source.schedule_expression || '6h')
-    setSourceEditScheduleTimezone(row.source.schedule_timezone || externalSourceDefaults(row.source.kind as SupportedExternalSourceKind, row.source.direction).scheduleTimezone)
-    setSourceEditIgnoreRules(row.source.ignore_rules || '')
-    setSourceEditCookie('')
-    setSourceEditCredentialReveal(null)
-    setSourceEditDsmBaseURL('')
-    setSourceEditDsmUsername('')
-    setSourceEditDsmPassword('')
-    setSourceEditSpaces(['personal', 'shared'])
-    setSourceEditRoots([])
-    setSourceEditConnectorConfig(null)
-    setSourceEditCredentialTest(null)
-    if (profile.credential === 'synology_dsm') {
-      void window.xdriveDesktop.agent.getSourceConnectorConfig(row.source.id).then((config) => {
-        if (!config.ok) {
-          setError(config.error.message)
-          return
-        }
-        setSourceEditConnectorConfig(config.data)
-        if (row.source.kind === 'synology_files') {
-          const roots = Array.isArray(config.data.payload.roots)
-            ? config.data.payload.roots.filter((root): root is string => typeof root === 'string')
-            : []
-          setSourceEditRoots(roots)
-        } else {
-          const spaces = Array.isArray(config.data.payload.spaces)
-            ? config.data.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-            : []
-          setSourceEditSpaces(spaces.length ? spaces : ['personal', 'shared'])
-        }
-      })
-    }
-  }
-
-  const sourceEditCredentialPayload = (row: ExternalSourceRow): Record<string, string> | null | undefined => {
-    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-    if (profile.credential === 'cookie') {
-      const cookie = sourceEditCookie.trim()
-      return cookie ? { cookie } : null
-    }
-    if (profile.credential === 'synology_dsm') {
-      const baseURL = sourceEditDsmBaseURL.trim()
-      const username = sourceEditDsmUsername.trim()
-      const anyPending = Boolean(baseURL || username || sourceEditDsmPassword)
-      if (!anyPending) return null
-      return baseURL && username && sourceEditDsmPassword
-        ? { base_url: baseURL, username, password: sourceEditDsmPassword }
-        : undefined
-    }
-    return null
-  }
-
-  const hideSourceEditCredential = useCallback(() => {
-    setSourceEditCredentialReveal(null)
-  }, [])
-
-  const revealSourceEditCredential = async (row: ExternalSourceRow) => {
-    if (!row.credential?.configured) return
-    setSourceEditCredentialRevealLoading(true)
-    setError('')
-    try {
-      const result = await window.xdriveDesktop.agent.revealSourceCredential(row.source.id)
-      if (!result.ok) {
-        setSourceEditCredentialReveal(null)
-        setError(`显示凭据失败：${result.error.message}`)
-        return
-      }
-      setSourceEditCredentialReveal(result.data)
-    } finally {
-      setSourceEditCredentialRevealLoading(false)
-    }
-  }
-
-  const testSettingsSourceCredential = async (row: ExternalSourceRow) => {
-    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-    if (!profile.credential) return null
-    const pending = sourceEditCredentialPayload(row)
-    if (pending === undefined) {
-      setError('更新 DSM 凭据时请完整填写地址、用户名和密码。')
-      return null
-    }
-    setBusy(`source-credential-test-${row.source.id}`)
-    setError('')
-    setNotice('')
-    try {
-      const result = pending
-        ? await window.xdriveDesktop.agent.testSourceCredential(row.source.kind, pending)
-        : await window.xdriveDesktop.agent.testStoredSourceCredential(row.source.id)
-      if (!result.ok) {
-        setSourceEditCredentialTest(null)
-        setError(externalSourceCredentialTestErrorLabel(result.error.code || result.error.message, result.error.detail))
-        return null
-      }
-      setSourceEditCredentialTest(result.data)
-      setNotice(externalSourceCredentialTestSuccessLabel(result.data))
-      return result.data
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const saveSourceSettings = async (event: FormEvent, row: ExternalSourceRow) => {
-    event.preventDefault()
-    const name = sourceEditName.trim()
-    if (!name) {
-      setError('同步文件夹名称不能为空。')
-      return
-    }
-    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-    const isSynologyFiles = row.source.kind === 'synology_files'
-    const desiredRoots = normalizeSynologyFileRoots(sourceEditRoots)
-    const pendingCredential = sourceEditCredentialPayload(row)
-    if (pendingCredential === undefined) {
-      setError('更新 DSM 凭据时请完整填写地址、用户名和密码。')
-      return
-    }
-    if (row.source.kind === 'synology_photos' && profile.credential === 'synology_dsm' && sourceEditSpaces.length === 0) {
-      setError('至少选择一个 Synology Photos 空间。')
-      return
-    }
-    const rootsError = isSynologyFiles ? synologyFileRootsValidationError(sourceEditRoots) : ''
-    if (rootsError) {
-      setError(rootsError)
-      return
-    }
-
-    const busyKey = `source-settings-${row.source.id}`
-    setBusy(busyKey)
-    setError('')
-    setNotice('')
-    try {
-      if (pendingCredential) {
-        const tested = await window.xdriveDesktop.agent.testSourceCredential(row.source.kind, pendingCredential)
-        if (!tested.ok) {
-          setSourceEditCredentialTest(null)
-          setError(externalSourceCredentialTestErrorLabel(tested.error.code || tested.error.message, tested.error.detail))
-          return
-        }
-        setSourceEditCredentialTest(tested.data)
-      }
-
-      let config = sourceEditConnectorConfig
-      let configChanged = false
-      let desiredConnectorPayload: Record<string, unknown> | null = null
-      if (profile.credential === 'synology_dsm') {
-        if (!config) {
-          const loaded = await window.xdriveDesktop.agent.getSourceConnectorConfig(row.source.id)
-          if (!loaded.ok) {
-            setError(loaded.error.message)
-            return
-          }
-          config = loaded.data
-        }
-        if (isSynologyFiles) {
-          const currentRoots = Array.isArray(config.payload.roots)
-            ? normalizeSynologyFileRoots(config.payload.roots.filter((root): root is string => typeof root === 'string'))
-            : []
-          configChanged = currentRoots.join('\n') !== desiredRoots.join('\n')
-          desiredConnectorPayload = { roots: desiredRoots }
-        } else {
-          const desiredSpaces = normalizeSynologyPhotoSpaces(sourceEditSpaces)
-          const currentSpaces = Array.isArray(config.payload.spaces)
-            ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-            : []
-          configChanged = currentSpaces.join(',') !== desiredSpaces.join(',')
-          desiredConnectorPayload = { spaces: desiredSpaces }
-        }
-      }
-
-      const stageFileActivation = isSynologyFiles && sourceEditStatus === 'active' && (
-        row.source.status !== 'active' ||
-        pendingCredential !== null ||
-        !row.credential?.configured ||
-        configChanged ||
-        !config?.configured
-      )
-      let updated = await window.xdriveDesktop.agent.updateSource(row.source.id, row.source.revision, {
-        name,
-        run_mode: sourceEditRunMode,
-        status: stageFileActivation
-          ? 'paused'
-          : (pendingCredential && !row.credential?.configured ? 'paused' : sourceEditStatus),
-        schedule_type: sourceEditScheduleType,
-        schedule_expression: sourceEditScheduleType === 'manual' ? '' : sourceEditScheduleExpression.trim(),
-        schedule_timezone: sourceEditScheduleType === 'cron' ? sourceEditScheduleTimezone.trim() : '',
-        ignore_rules: sourceEditIgnoreRules,
-      })
-      if (!updated.ok) {
-        setError(updated.error.message)
-        return
-      }
-
-      if (config && configChanged && desiredConnectorPayload) {
-        const saved = await window.xdriveDesktop.agent.setSourceConnectorConfig(
-          row.source.id,
-          config.revision,
-          desiredConnectorPayload,
-        )
-        if (!saved.ok) {
-          setError(saved.error.message)
-          return
-        }
-        setSourceEditConnectorConfig(saved.data)
-      }
-
-      if (pendingCredential) {
-        const credential = await window.xdriveDesktop.agent.setSourceCredential(row.source.id, pendingCredential)
-        if (!credential.ok) {
-          setError(`同步文件夹设置已保存，但${externalSourceCredentialLabel(profile)}更新失败：${externalSourceCredentialTestErrorLabel(credential.error.code || credential.error.message, credential.error.detail)}`)
-          await loadSources()
-          return
-        }
-      }
-
-      if (stageFileActivation) {
-        updated = await window.xdriveDesktop.agent.updateSource(row.source.id, updated.data.revision, { status: 'active' })
-        if (!updated.ok) {
-          setError(`连接配置已保存，但启用同步文件夹失败：${updated.error.message}`)
-          await loadSources()
-          return
-        }
-      }
-
-      if (!isSynologyFiles && pendingCredential && sourceEditStatus === 'paused') {
-        const sourcesResult = await window.xdriveDesktop.agent.getSources()
-        if (sourcesResult.ok) {
-          const fresh = sourcesResult.data.find((source) => source.id === row.source.id)
-          if (fresh && fresh.status !== 'paused') {
-            const paused = await window.xdriveDesktop.agent.updateSource(fresh.id, fresh.revision, { status: 'paused' })
-            if (!paused.ok) {
-              setError(`凭据已更新，但重新暂停同步文件夹失败：${paused.error.message}`)
-              await loadSources()
-              return
-            }
-          }
-        }
-      }
-
-      setEditingSourceID(null)
-      setSourceEditCookie('')
-      setSourceEditDsmBaseURL('')
-      setSourceEditDsmUsername('')
-      setSourceEditDsmPassword('')
-      setSourceEditRoots([])
-      setSourceEditConnectorConfig(null)
-      setNotice('同步文件夹设置已保存。')
-      await loadSources()
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const clearSourceCookie = (row: ExternalSourceRow) => {
-    const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
-    const label = externalSourceCredentialLabel(profile)
-    requestConfirmation(
-      `清除已保存的${label}？`,
-      `清除“${row.source.name}”保存的${label}后，Pull 扫描将暂停，直到重新配置有效凭据。`,
-      '清除凭据',
-      async () => {
-        const data = await run(
-          `source-credential-delete-${row.source.id}`,
-          () => window.xdriveDesktop.agent.deleteSourceCredential(row.source.id),
-          `${label}已清除。`,
-        )
-        if (data) {
-          setSourceEditCredentialReveal(null)
-          setSourceEditCookie('')
-          setSourceEditDsmBaseURL('')
-          setSourceEditDsmUsername('')
-          setSourceEditDsmPassword('')
-          setSourceEditStatus('paused')
-          await loadSources()
-        }
-      },
-      'error',
-    )
-  }
-
-  const deleteExternalSource = async () => {
-    if (!sourceDeleteTarget) return
-    const row = sourceDeleteTarget
-    const data = await run(
-      `source-delete-${row.source.id}`,
-      () => window.xdriveDesktop.agent.deleteSource(row.source.id, row.source.revision),
-      '同步文件夹已删除；已同步到 xDrive 的文件已保留。',
-    )
-    if (data) {
-      if (selectedSourceID === row.source.id) setSelectedSourceID(null)
-      if (editingSourceID === row.source.id) closeSourceSettings()
-      setSourceDeleteTarget(null)
-      await loadSources()
     }
   }
 
@@ -2262,73 +1259,8 @@ export default function App({
     )
   }
 
-  const openCloudShares = async (node: AgentCloudNode) => {
-    setBusy('cloud-shares')
-    setError('')
-    try {
-      const result = await window.xdriveDesktop.agent.cloudShares(node.id)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setCloudShareNode(node)
-      setCloudShares(result.data)
-      setCreatedShareURL('')
-      setShareExpiresDays('7')
-      setSharePassword('')
-      setShareMaxDownloads('0')
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const createCloudShare = async () => {
-    if (!cloudShareNode) return
-    const days = Number(shareExpiresDays)
-    const maxDownloads = Number(shareMaxDownloads)
-    if (!Number.isFinite(days) || days < 0 || days > 3650) {
-      setError('分享有效期必须在 0 到 3650 天之间。')
-      return
-    }
-    if (!Number.isSafeInteger(maxDownloads) || maxDownloads < 0) {
-      setError('最大下载次数必须是非负整数。')
-      return
-    }
-    if (sharePassword && sharePassword.length < 8) {
-      setError('分享密码至少需要 8 个字符。')
-      return
-    }
-    const expiresAt = days > 0 ? new Date(Date.now() + days * 86400_000).toISOString() : undefined
-    const created = await run(
-      'cloud-share-create',
-      () => window.xdriveDesktop.agent.cloudCreateShare(cloudShareNode.id, {
-        expires_at: expiresAt,
-        password: sharePassword,
-        max_downloads: maxDownloads,
-      }),
-      '分享链接已创建。请立即复制，令牌只会显示一次。',
-    )
-    if (!created) return
-    setCreatedShareURL(created.url)
-    const shares = await window.xdriveDesktop.agent.cloudShares(cloudShareNode.id)
-    if (shares.ok) setCloudShares(shares.data)
-  }
-
-  const revokeCloudShare = async (share: AgentCloudShare) => {
-    const data = await run('cloud-share-revoke', () => window.xdriveDesktop.agent.cloudRevokeShare(share.id), '分享已撤销。')
-    if (!data || !cloudShareNode) return
-    const shares = await window.xdriveDesktop.agent.cloudShares(cloudShareNode.id)
-    if (shares.ok) setCloudShares(shares.data)
-  }
-
-  const copyShareURL = async () => {
-    if (!createdShareURL) return
-    try {
-      await navigator.clipboard.writeText(createdShareURL)
-      setNotice('分享链接已复制。')
-    } catch {
-      setError('无法自动复制，请手动选择并复制链接。')
-    }
+  const openCloudShares = (node: AgentCloudNode) => {
+    setCloudShareNode(node)
   }
 
   const loadDiagnostics = async () => {
@@ -2941,8 +1873,6 @@ export default function App({
       </XDriveSidebarSurface>
 
       <main className={view === 'cloud' ? 'content content-files-workspace' : 'content'}>
-        {view !== 'cloud' ? <XDrivePageHeader title={viewLabel(view)} eyebrow="xDrive" size="large" /> : null}
-
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack
             spacing={1}
@@ -2989,1654 +1919,235 @@ export default function App({
         ) : null}
 
         {view === 'overview' && (
-          <>
-            <section className="status-grid">
-              <article className="status-card"><span className={`status-dot ${status?.paused ? 'waiting' : 'ready'}`} /><div><strong>同步</strong><p>{status?.sync_status}</p></div></article>
-              <article className="status-card"><span className={`status-dot ${status?.has_conflict ? 'warning' : 'ready'}`} /><div><strong>冲突</strong><p>{status?.conflict_count || 0} 个未解决</p></div></article>
-              <article className="status-card"><span className="status-dot ready" /><div><strong>Agent</strong><p>{status?.auth_status} · v{agent.hello?.agent_version || status?.version} · IPC {agent.hello?.protocol_min ?? '?'}-{agent.hello?.protocol_max ?? '?'}</p></div></article>
-              <article className="status-card"><span className="status-dot ready" /><div><strong>桌面桥接</strong><p>已通过受保护的本地 IPC 连接。</p></div></article>
-            </section>
-
-            <section className="system-card">
-              <XDriveSectionHeader
-                eyebrow="同步位置"
-                title={status?.mount_path || '默认 xDrive 文件夹'}
-                actions={(
-                  <XDriveActionButton
-                    loading={busy === 'folder'}
-                    loadingLabel="正在打开…"
-                    onClick={() => void run('folder', () => window.xdriveDesktop.agent.openFolder())}
-                  >
-                    打开
-                  </XDriveActionButton>
-                )}
-              />
-              <XDriveDescriptionGrid columns={4} sx={{ mt: 2.5 }}>
-                <XDriveDescriptionItem label="服务器">{status?.server}</XDriveDescriptionItem>
-                <XDriveDescriptionItem label="用户">{status?.username}</XDriveDescriptionItem>
-                <XDriveDescriptionItem label="状态">{status?.paused ? '已暂停' : status?.sync_status}</XDriveDescriptionItem>
-                <XDriveDescriptionItem label="修订号">{status?.revision}</XDriveDescriptionItem>
-              </XDriveDescriptionGrid>
-            </section>
-          </>
+          <DesktopOverviewPage
+            status={status}
+            hello={agent.hello}
+            openFolderLoading={busy === 'folder'}
+            onOpenFolder={() => {
+              void run('folder', () => window.xdriveDesktop.agent.openFolder())
+            }}
+          />
         )}
 
-
-
         {view === 'gallery' && (
-          <section className="panel">
-            <XDriveMediaGalleryPage
-              source={mediaGallerySource}
-              onError={(galleryError) => setError(
-                galleryError instanceof Error ? galleryError.message : String(galleryError),
-              )}
-            />
-          </section>
+          <DesktopGalleryPage
+            source={mediaGallerySource}
+            onError={(galleryError) => setError(
+              galleryError instanceof Error ? galleryError.message : String(galleryError),
+            )}
+          />
         )}
 
         {view === 'sources' && (
-          <section className="panel source-panel">
-            <XDriveSectionHeader
-              eyebrow="同步文件夹"
-              title="管理同步文件夹"
-              subtitle="同步文件夹状态通过 xdrive-agent 的受保护本地 IPC 读取；已保存凭据默认遮罩，仅在用户主动显示时短暂进入界面内存。"
-              actions={(
-                <>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    loading={busy === 'sources'}
-                    loadingLabel="正在刷新…"
-                    onClick={() => void loadSources()}
-                  >
-                    刷新
-                  </XDriveActionButton>
-                  <XDriveActionButton intent="primary" disabled={!!busy} onClick={() => void openSourceCreate()}>
-                    + 添加同步文件夹
-                  </XDriveActionButton>
-                </>
+          agent.hello?.capabilities.includes('external-sources') ? (
+            <XDriveSourceManager
+              adapter={sourceManagerAdapter}
+              defaultTargetLabel="我的文件"
+              defaultTargetPath=""
+              targetBrowser={desktopSourceTargetBrowser}
+              cookieHelpVariant="dialog"
+              onError={(sourceError) => setError(
+                sourceError instanceof Error ? sourceError.message : String(sourceError),
               )}
             />
-
-            {sourceCreateOpen && (
-              <Dialog
-                open={sourceCreateOpen}
-                onClose={() => { if (!busy) setSourceCreateOpen(false) }}
-                maxWidth="md"
-                fullWidth
-                scroll="paper"
-                aria-label="添加同步文件夹"
-                slotProps={{ paper: xDriveDialogPaperProps }}
-              >
-                <XDriveDialogTitle
-                  title="添加同步文件夹"
-                  subtitle={sourceCreateKind === 'yike_photos'
-                    ? '一刻相册目标目录由服务器自动管理。'
-                    : sourceCreateDirection === 'pull'
-                      ? '群晖 Pull 由 xDrive Server 直接连接 DSM，并同步到选定目标文件夹。'
-                      : '群晖 Push 由 DSM 上的 xdrive-source-agent 主动推送到选定目标文件夹。'}
-                  onClose={() => setSourceCreateOpen(false)}
-                  closeDisabled={!!busy}
-                />
-                <XDriveDialogContent dividers>
-                  <form id="source-create-form" className="source-create modal-form-surface" onSubmit={(event) => void createExternalSource(event)}>
-                <div className="source-create-grid">
-                  <XDriveSourcePresetField
-                    value={sourceCreatePreset}
-                    onChange={changeSourceCreatePreset}
-                  />
-                  <XDriveSourceNameField
-                    label="名称"
-                    value={sourceCreateName}
-                    onChange={setSourceCreateName}
-                    maxLength={128}
-                    required
-                  />
-                  <XDriveSourceRunModeField
-                    value={sourceCreateRunMode}
-                    onChange={setSourceCreateRunMode}
-                  />
-                </div>
-
-                <XDriveSourceScheduleFields
-                  scheduleType={sourceCreateScheduleType}
-                  expression={sourceCreateScheduleExpression}
-                  timezone={sourceCreateScheduleTimezone}
-                  onScheduleTypeChange={setSourceCreateScheduleType}
-                  onExpressionChange={setSourceCreateScheduleExpression}
-                  onTimezoneChange={setSourceCreateScheduleTimezone}
-                  wideAt="md"
-                  sx={{ mb: 1.5 }}
-                />
-
-                {sourceCreateKind === 'yike_photos' ? (
-                  <XDriveStatusAlert tone="neutral" sx={{ mb: 1.5 }}>
-                    固定逻辑目录：{yikeManagedTargetLabel}。连接成功后自动创建；底层文件仍使用 xDrive CAS 存储。
-                  </XDriveStatusAlert>
-                ) : (
-                <div className="source-target">
-                  <div className="source-target-heading">
-                    <div>
-                      <strong>目标文件夹</strong>
-                      <span>当前选择：{sourceTargetCrumbs.map((crumb) => crumb.name).join(' / ') || '正在加载…'}</span>
-                    </div>
-                    {sourceTargetLoading && <span>正在加载…</span>}
-                  </div>
-                  <div className="source-target-crumbs">
-                    {sourceTargetCrumbs.map((crumb, index) => (
-                      <button
-                        key={crumb.id}
-                        type="button"
-                        disabled={sourceTargetLoading || index === sourceTargetCrumbs.length - 1}
-                        onClick={() => void loadSourceTargetDirectory(crumb.id, sourceTargetCrumbs.slice(0, index + 1))}
-                      >
-                        {crumb.name}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="source-target-list">
-                    {sourceTargetDirectories.length === 0 ? (
-                      <span className="source-target-empty">当前目录下没有子文件夹，可直接使用当前目录。</span>
-                    ) : sourceTargetDirectories.map((directory) => (
-                      <button
-                        className="source-target-folder"
-                        key={directory.id}
-                        type="button"
-                        disabled={sourceTargetLoading}
-                        onClick={() => void loadSourceTargetDirectory(directory.id, [...sourceTargetCrumbs, { id: directory.id, name: directory.name }])}
-                      >
-                        <strong>{directory.name}</strong>
-                        <span>进入文件夹 ›</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                )}
-
-                <XDriveSourceIgnoreRulesField
-                  value={sourceCreateIgnoreRules}
-                  onChange={setSourceCreateIgnoreRules}
-                  monospace
-                />
-                {sourceCreateProfile.credential === 'cookie' && (
-                  <MuiBox className="source-create-wide" sx={{ display: 'grid', gap: 0.75 }}>
-                    <XDriveSourceCookieField
-                      value={sourceCreateCookie}
-                      placeholder="粘贴已登录的一刻相册 Web Cookie"
-                      helperText="Cookie 仅通过受保护 IPC 发送到服务器并加密保存，不会回读明文。"
-                      required
-                      onChange={(value) => {
-                        setSourceCreateCookie(value)
-                        setSourceCreateCredentialTest(null)
-                      }}
-                    />
-                    <XDriveStatusAlert tone="warning" sx={{ mt: 0.5 }}>{yikeConnectorNotice}</XDriveStatusAlert>
-                    <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                    <XDriveYikeCookieHelp variant="dialog" />
-                    <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
-                      <XDriveActionButton
-                        compact
-                        disabled={!!busy}
-                        loading={busy === 'source-create-test'}
-                        loadingLabel="正在测试…"
-                        onClick={() => void testCreateSourceCredential()}
-                      >
-                        测试连接
-                      </XDriveActionButton>
-                    </MuiBox>
-                    {sourceCreateCredentialTest && (
-                      <XDriveStatusAlert tone="good" sx={{ mt: 0.5 }}>
-                        {externalSourceCredentialTestSuccessLabel(sourceCreateCredentialTest)}
-                      </XDriveStatusAlert>
-                    )}
-                  </MuiBox>
-                )}
-                {sourceCreateProfile.credential === 'synology_dsm' && (
-                  <>
-                    <MuiDivider className="source-create-wide" />
-                    <XDriveSynologyDsmCredentialFields
-                      baseURL={sourceCreateDsmBaseURL}
-                      username={sourceCreateDsmUsername}
-                      password={sourceCreateDsmPassword}
-                      required
-                      onBaseURLChange={(value) => {
-                        setSourceCreateDsmBaseURL(value)
-                        setSourceCreateCredentialTest(null)
-                      }}
-                      onUsernameChange={(value) => {
-                        setSourceCreateDsmUsername(value)
-                        setSourceCreateCredentialTest(null)
-                      }}
-                      onPasswordChange={(value) => {
-                        setSourceCreateDsmPassword(value)
-                        setSourceCreateCredentialTest(null)
-                      }}
-                    />
-                    {sourceCreateKind === 'synology_photos' ? (
-                      <XDriveSynologyPhotoSpacesField
-                        value={sourceCreateSpaces}
-                        onChange={setSourceCreateSpaces}
-                      />
-                    ) : (
-                      <XDriveSynologyFileRootsField
-                        value={sourceCreateRoots}
-                        onChange={setSourceCreateRoots}
-                        minRows={4}
-                        monospace
-                        helperText="每行一个 DSM 绝对目录；会同步目录、空目录及其中的任意文件类型。"
-                      />
-                    )}
-                    <XDriveStatusAlert tone="neutral" className="source-create-wide">
-                      {sourceCreateKind === 'synology_files'
-                        ? 'DSM 凭据只会在服务器端加密保存；Pull worker 通过 File Station API 只读同步所选目录中的所有文件和文件夹，不会修改 NAS 内容。'
-                        : 'DSM 凭据只会在服务器端加密保存；Pull worker 通过 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。'}
-                    </XDriveStatusAlert>
-                    <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
-                      <XDriveActionButton
-                        compact
-                        disabled={!!busy}
-                        loading={busy === 'source-create-test'}
-                        loadingLabel="正在测试…"
-                        onClick={() => void testCreateSourceCredential()}
-                      >
-                        测试连接
-                      </XDriveActionButton>
-                    </MuiBox>
-                    {sourceCreateCredentialTest && (
-                      <XDriveStatusAlert tone="good" className="source-create-wide">
-                        {externalSourceCredentialTestSuccessLabel(sourceCreateCredentialTest)}
-                      </XDriveStatusAlert>
-                    )}
-                  </>
-                )}
-                {sourceCreateProfile.manualTriggerExecutor === 'source_agent' && (
-                  <XDriveStatusAlert tone="warning" className="source-create-note">
-                    创建同步文件夹后，还需要在群晖 DSM 上配置 xdrive-source-agent；NAS 始终主动发起 Push 连接。
-                  </XDriveStatusAlert>
-                )}
-                  </form>
-                </XDriveDialogContent>
-                <XDriveDialogActions>
-                  <XDriveActionButton disabled={!!busy} onClick={() => setSourceCreateOpen(false)}>取消</XDriveActionButton>
-                  <XDriveActionButton
-                    intent="primary"
-                    type="submit"
-                    form="source-create-form"
-                    disabled={!!busy || (sourceCreateKind !== 'yike_photos' && sourceTargetLoading)}
-                    loading={busy === 'source-create'}
-                    loadingLabel="正在添加…"
-                  >
-                    添加同步文件夹
-                  </XDriveActionButton>
-                </XDriveDialogActions>
-              </Dialog>
-            )}
-
-            {sources.length === 0 && busy !== 'sources' ? (
-              <XDriveStatePanel message="尚未添加同步文件夹。" />
-            ) : (
-              <div className="source-list">
-                {sources.map((row) => {
-                  const card = externalSourceCardView(row)
-                  const detail = externalSourceDetailView(row)
-                  const failedItems = sourceFailedItemsSourceID === row.source.id ? sourceFailedItems : []
-                  return (
-                    <XDriveSourceSummaryCard
-                      key={row.source.id}
-                      name={row.source.name}
-                      icon={<XDriveSourceKindIcon kind={row.source.kind} />}
-                      modeLabel={`${card.connector.label} · ${card.modeLabel}`}
-                      statusTone={card.state.tone}
-                      statusLabel={card.state.label}
-                      activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
-                      stats={card.scannedItems === undefined || card.scannedBytes === undefined
-                        ? '尚无扫描统计'
-                        : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBinarySize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`}
-                      error={row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running'
-                        ? row.source.last_error
-                        : undefined}
-                      actions={(
-                        <>
-                          <XDriveActionButton
-                          compact
-                          disabled={sourceFailedItemsLoadingID !== null}
-                          loading={sourceFailedItemsLoadingID === row.source.id}
-                          loadingLabel="正在检查…"
-                          onClick={() => void toggleSourceDetails(row)}
-                        >
-                          {selectedSourceID === row.source.id ? '收起' : '查看'}
-                        </XDriveActionButton>
-                        {card.connector.manualTriggerExecutor === 'source_agent' && (
-                          <XDriveActionButton compact disabled={!!busy} onClick={() => setSynologyGuideSource(row.source)}>
-                            DSM 配置
-                          </XDriveActionButton>
-                        )}
-                        <XDriveActionButton
-                          compact
-                          title={card.trigger.label}
-                          disabled={!!busy || !card.trigger.ready}
-                          loading={busy === `source-trigger-${row.source.id}`}
-                          loadingLabel="正在请求…"
-                          onClick={() => void triggerSourceNow(row)}
-                        >
-                          {externalSourceTriggerActionLabel(row)}
-                        </XDriveActionButton>
-                        {row.latestRun?.status === 'running' && (
-                          <XDriveActionButton
-                            compact
-                            intent="warning"
-                            disabled={!!busy || Boolean(row.latestRun.cancel_requested_at)}
-                            loading={Boolean(row.latestRun.cancel_requested_at) || busy === `source-cancel-${row.latestRun.id}`}
-                            loadingLabel="正在取消…"
-                            onClick={() => void cancelSourceRunNow(row)}
-                          >
-                            停止
-                          </XDriveActionButton>
-                        )}
-                        <XDriveActionButton
-                          compact
-                          disabled={!!busy}
-                          onClick={() => editingSourceID === row.source.id
-                            ? closeSourceSettings()
-                            : openSourceSettings(row)}
-                        >
-                          {editingSourceID === row.source.id ? '取消设置' : '设置'}
-                        </XDriveActionButton>
-                        </>
-                      )}
-                      details={selectedSourceID === row.source.id && (
-                        <div className="source-detail">
-                          <XDriveDescriptionGrid columns={4} fullColumnsAt="md">
-                            <XDriveDescriptionItem label="同步文件夹类型">{detail.kindLabel}</XDriveDescriptionItem>
-                            <XDriveDescriptionItem label="工作方式">{detail.modeLabel}</XDriveDescriptionItem>
-                            <XDriveDescriptionItem label="状态">
-                              <XDriveStatusBadge tone={detail.state.tone} label={detail.state.label} />
-                            </XDriveDescriptionItem>
-                            <XDriveDescriptionItem label="目标目录">
-                              {row.source.target_path || (detail.targetNodeID ? `#${detail.targetNodeID}` : '未配置')}
-                            </XDriveDescriptionItem>
-                            <XDriveDescriptionItem label="调度">{detail.scheduleLabel}</XDriveDescriptionItem>
-                            <XDriveDescriptionItem label="上次运行">{formatExternalSourceTime(detail.lastRunAt)}</XDriveDescriptionItem>
-                            <XDriveDescriptionItem label="上次成功">{formatExternalSourceTime(detail.lastSuccessAt)}</XDriveDescriptionItem>
-                            {detail.credential && (
-                              <XDriveDescriptionItem label={detail.credential.label}>
-                                {detail.credential.configured ? '已配置' : '未配置'}
-                              </XDriveDescriptionItem>
-                            )}
-                            <XDriveDescriptionItem label="配置修订号">{detail.revision}</XDriveDescriptionItem>
-                            {detail.ignoreRules && (
-                              <XDriveDescriptionItem label="忽略规则" fullWidth>
-                                <MuiBox
-                                  component="pre"
-                                  sx={{
-                                    maxHeight: 150,
-                                    m: 0,
-                                    overflow: 'auto',
-                                    whiteSpace: 'pre-wrap',
-                                    overflowWrap: 'anywhere',
-                                    fontFamily: 'ui-monospace,SFMono-Regular,Consolas,monospace',
-                                    fontSize: 11,
-                                    fontWeight: 400,
-                                    lineHeight: 1.5,
-                                  }}
-                                >
-                                  {detail.ignoreRules}
-                                </MuiBox>
-                              </XDriveDescriptionItem>
-                            )}
-                          </XDriveDescriptionGrid>
-                          <div className="source-run-detail">
-                            <XDriveSectionHeader
-                              level="h3"
-                              title="相册与集合"
-                              actions={(
-                                <Typography variant="caption" color="text.secondary">
-                                  {sourceCollectionsSourceID === row.source.id
-                                    ? sourceCollections.length.toLocaleString('zh-CN') + ' 个'
-                                    : '正在读取…'}
-                                </Typography>
-                              )}
-                              sx={{ p: 1.25, bgcolor: 'action.hover' }}
-                            />
-                            {sourceCollectionsLoadingID === row.source.id ? (
-                              <XDriveStatePanel loading message="正在加载相册/集合…" />
-                            ) : sourceCollectionsSourceID !== row.source.id || sourceCollections.length === 0 ? (
-                              <XDriveStatePanel message="该同步文件夹暂无相册/集合元数据。" />
-                            ) : (
-                              <Stack spacing={1}>
-                                {sourceCollections.map((collection) => {
-                                  const page = sourceCollectionItemPages[collection.id]
-                                  return (
-                                    <MuiBox
-                                      key={collection.id}
-                                      component="details"
-                                      onToggle={(event) => {
-                                        const details = event.currentTarget as HTMLDetailsElement
-                                        if (details.open && !page?.loaded && !page?.loading) {
-                                          void loadSourceCollectionItems(row.source.id, collection.id, 1)
-                                        }
-                                      }}
-                                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
-                                    >
-                                      <MuiBox component="summary" sx={{ cursor: 'pointer', p: 1.25 }}>
-                                        <XDriveSourceCollectionSummary collection={collection} wideAt="md" />
-                                      </MuiBox>
-                                      <MuiBox sx={{ px: 1.5, pb: 1.5 }}>
-                                        {page?.loading && !page.loaded ? (
-                                          <XDriveStatePanel loading message="正在加载集合成员…" />
-                                        ) : page?.loaded && page.items.length > 0 ? (
-                                          <Stack spacing={0.75}>
-                                            {page.items.map((item) => (
-                                              <XDriveSourceCollectionItem
-                                                key={item.external_id}
-                                                item={item}
-                                                sizeLabel={formatBinarySize(item.size)}
-                                                wideAt="md"
-                                              />
-                                            ))}
-                                            <XDrivePaginationControls
-                                              page={page.page}
-                                              pageSize={SOURCE_COLLECTION_ITEM_PAGE_SIZE}
-                                              hasNext={page.hasNext}
-                                              loading={page.loading}
-                                              labelPrefix="成员"
-                                              onPrevious={() => void loadSourceCollectionItems(row.source.id, collection.id, page.page - 1)}
-                                              onNext={() => void loadSourceCollectionItems(row.source.id, collection.id, page.page + 1)}
-                                            />
-                                          </Stack>
-                                        ) : page?.loaded ? (
-                                          <XDriveStatePanel message="该集合暂无成员。" />
-                                        ) : (
-                                          <Typography variant="caption" color="text.secondary">展开后加载成员。</Typography>
-                                        )}
-                                      </MuiBox>
-                                    </MuiBox>
-                                  )
-                                })}
-                              </Stack>
-                            )}
-                          </div>
-
-                          <div className="source-run-detail">
-                            <XDriveSectionHeader
-                              level="h3"
-                              title="同步历史"
-                              sx={{ p: 1.25, bgcolor: 'action.hover' }}
-                            />
-                            {sourceHistoryLoading && sourceHistoryRuns.length === 0 ? (
-                              <Typography variant="caption" color="text.secondary">正在加载运行历史…</Typography>
-                            ) : sourceHistoryRuns.length === 0 ? (
-                              <Typography variant="caption" color="text.secondary">尚无运行记录</Typography>
-                            ) : (
-                              <Stack spacing={1}>
-                                {sourceHistoryRuns.map((run) => {
-                                  const historyDetail = externalSourceRunDetailView(run)
-                                  const canCancel = run.status === 'running' && row.latestRun?.id === run.id
-                                  const failurePage = sourceRunFailurePages[run.id]
-                                  return (
-                                    <MuiBox
-                                      key={run.id}
-                                      component="details"
-                                      onToggle={(event) => {
-                                        const details = event.currentTarget as HTMLDetailsElement
-                                        if (details.open && run.failed_items > 0 && !failurePage?.loaded && !failurePage?.loading) {
-                                          void loadSourceRunFailures(row.source.id, run.id, 1)
-                                        }
-                                      }}
-                                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
-                                    >
-                                      <MuiBox component="summary" sx={{ cursor: 'pointer', p: 1.25 }}>
-                                        <XDriveSourceRunSummary
-                                          runNumber={run.run_number}
-                                          detail={historyDetail}
-                                          wideAt="md"
-                                        />
-                                      </MuiBox>
-                                      <MuiBox sx={{ px: 1.5, pb: 1.5 }}>
-                                        {historyDetail.progress && (
-                                          <XDriveSourceRunProgress
-                                            progress={historyDetail.progress}
-                                            canCancel={canCancel}
-                                            cancelDisabled={!!busy}
-                                            cancelLoading={busy === 'source-cancel-' + run.id}
-                                            onCancel={() => void cancelSourceRunNow(row)}
-                                          />
-                                        )}
-                                        <XDriveDescriptionGrid columns={3} fullColumnsAt="md" sx={{ p: 1.25 }}>
-                                          <XDriveDescriptionItem label="运行 ID">
-                                            <MuiBox component="code" sx={{ fontSize: 12, overflowWrap: 'anywhere' }}>{run.id}</MuiBox>
-                                          </XDriveDescriptionItem>
-                                          <XDriveDescriptionItem label="运行状态">
-                                            <XDriveStatusBadge tone={historyDetail.statusTone} label={historyDetail.statusLabel} />
-                                          </XDriveDescriptionItem>
-                                          <XDriveDescriptionItem label="触发方式">{historyDetail.triggerLabel}</XDriveDescriptionItem>
-                                          <XDriveDescriptionItem label="耗时">{historyDetail.durationLabel}</XDriveDescriptionItem>
-                                          <XDriveDescriptionItem label="开始时间">{formatExternalSourceTime(historyDetail.startedAt)}</XDriveDescriptionItem>
-                                          <XDriveDescriptionItem label="结束时间">
-                                            {historyDetail.finishedAt ? formatExternalSourceTime(historyDetail.finishedAt) : '进行中'}
-                                          </XDriveDescriptionItem>
-                                          <XDriveDescriptionItem label="成功项">{historyDetail.successItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
-                                          <XDriveDescriptionItem label="失败项">{historyDetail.failedItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
-                                          {historyDetail.metrics.map((metric) => (
-                                            <XDriveDescriptionItem key={metric.key} label={metric.label}>
-                                              {metric.items.toLocaleString('zh-CN')} 项
-                                              {metric.bytes === undefined ? '' : ' · ' + formatBinarySize(metric.bytes)}
-                                            </XDriveDescriptionItem>
-                                          ))}
-                                        </XDriveDescriptionGrid>
-                                        <XDriveStatusAlert tone={historyDetail.error ? 'bad' : 'good'} sx={{ mt: 1.25 }}>
-                                          运行日志：{historyDetail.error || '无错误日志'}
-                                        </XDriveStatusAlert>
-                                        {historyDetail.failedItems > 0 && (
-                                          <MuiBox sx={{ mt: 1.25 }}>
-                                            <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>本次失败文件</Typography>
-                                            {failurePage?.loading && !failurePage.loaded ? (
-                                              <Typography variant="caption" color="text.secondary">正在加载失败文件…</Typography>
-                                            ) : failurePage?.loaded && failurePage.items.length > 0 ? (
-                                              <Stack spacing={0.75}>
-                                                {failurePage.items.map((failure) => (
-                                                  <XDriveSourceFailureItem
-                                                    key={failure.id}
-                                                    compact
-                                                    title={failure.path || failure.external_id}
-                                                    externalID={failure.external_id}
-                                                    sizeLabel={formatBinarySize(failure.size)}
-                                                    failedAt={failure.failed_at}
-                                                    error={failure.error}
-                                                  />
-                                                ))}
-                                                <XDrivePaginationControls
-                                                  page={failurePage.page}
-                                                  pageSize={SOURCE_RUN_FAILURE_PAGE_SIZE}
-                                                  hasNext={failurePage.hasNext}
-                                                  loading={failurePage.loading}
-                                                  labelPrefix="失败项"
-                                                  onPrevious={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page - 1)}
-                                                  onNext={() => void loadSourceRunFailures(row.source.id, run.id, failurePage.page + 1)}
-                                                />
-                                              </Stack>
-                                            ) : failurePage?.loaded ? (
-                                              <XDriveStatusAlert tone="warning">
-                                                该历史 Run 记录了 {historyDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
-                                              </XDriveStatusAlert>
-                                            ) : (
-                                              <Typography variant="caption" color="text.secondary">展开后加载本次失败文件明细。</Typography>
-                                            )}
-                                          </MuiBox>
-                                        )}
-                                      </MuiBox>
-                                    </MuiBox>
-                                  )
-                                })}
-                                <XDrivePaginationControls
-                                  page={sourceHistoryPage}
-                                  pageSize={SOURCE_HISTORY_PAGE_SIZE}
-                                  hasNext={sourceHistoryHasNext}
-                                  loading={sourceHistoryLoading}
-                                  onPrevious={() => void loadSourceHistory(row.source.id, sourceHistoryPage - 1)}
-                                  onNext={() => void loadSourceHistory(row.source.id, sourceHistoryPage + 1)}
-                                />
-                              </Stack>
-                            )}
-                          </div>
-                          {sourceFailedItemsLoadingID === row.source.id && (
-                            <Typography variant="caption" color="text.secondary">正在检查逐文件失败记录…</Typography>
-                          )}
-                          {failedItems.length > 0 && (
-                            <XDriveStatusAlert
-                              tone="bad"
-                              sx={{ mt: 1.5 }}
-                              action={(
-                                <Stack direction="row" spacing={0.5}>
-                                  <MuiButton color="inherit" size="small" onClick={() => setSourceFailedItemsOpen(true)}>
-                                    查看失败项（{failedItems.length}）
-                                  </MuiButton>
-                                  <MuiButton
-                                    color="inherit"
-                                    size="small"
-                                    disabled={!!busy || !card.trigger.ready}
-                                    onClick={() => void triggerSourceNow(row)}
-                                  >
-                                    {busy === `source-trigger-${row.source.id}` ? '正在请求…' : '立即重试'}
-                                  </MuiButton>
-                                </Stack>
-                              )}
-                            >
-                              当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
-                            </XDriveStatusAlert>
-                          )}
-                        </div>
-                      )}
-                      after={editingSourceID === row.source.id && (
-                        <Dialog
-                          open={editingSourceID === row.source.id}
-                          onClose={() => { if (!busy) closeSourceSettings() }}
-                          maxWidth="md"
-                          fullWidth
-                          scroll="paper"
-                          aria-label="同步文件夹设置"
-                          slotProps={{ paper: xDriveDialogPaperProps }}
-                        >
-                          <XDriveDialogTitle
-                            title="同步文件夹设置"
-                            subtitle={`${row.source.name} · 目标目录：${row.source.target_path || (row.source.target_node_id ? `#${row.source.target_node_id}` : '未配置')}`}
-                            onClose={closeSourceSettings}
-                            closeDisabled={!!busy}
-                          />
-                          <XDriveDialogContent dividers>
-                            <form id={`source-settings-form-${row.source.id}`} className="source-settings modal-form-surface" onSubmit={(event) => void saveSourceSettings(event, row)}>
-                          <div className="source-settings-grid">
-                            <XDriveSourceNameField
-                              label="名称"
-                              value={sourceEditName}
-                              onChange={setSourceEditName}
-                              maxLength={128}
-                              required
-                            />
-                            <XDriveSourceRunModeField
-                              value={sourceEditRunMode}
-                              onChange={setSourceEditRunMode}
-                            />
-                            <XDriveSourceStatusField
-                              value={sourceEditStatus}
-                              onChange={setSourceEditStatus}
-                            />
-                          </div>
-                          <XDriveSourceTargetField
-                            value={row.source.target_path}
-                            managed={row.source.kind === 'yike_photos'}
-                            sx={{ mb: 1.5 }}
-                          />
-                          <XDriveSourceScheduleFields
-                            scheduleType={sourceEditScheduleType}
-                            expression={sourceEditScheduleExpression}
-                            timezone={sourceEditScheduleTimezone}
-                            onScheduleTypeChange={setSourceEditScheduleType}
-                            onExpressionChange={setSourceEditScheduleExpression}
-                            onTimezoneChange={setSourceEditScheduleTimezone}
-                            wideAt="md"
-                            sx={{ mb: 1.5 }}
-                          />
-                          <XDriveSourceIgnoreRulesField
-                            value={sourceEditIgnoreRules}
-                            onChange={setSourceEditIgnoreRules}
-                            monospace
-                          />
-                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'cookie' && (
-                            <MuiBox className="source-settings-wide" sx={{ display: 'grid', gap: 0.75 }}>
-                              <XDriveStoredCredentialField
-                                label="已保存 Cookie"
-                                configured={Boolean(row.credential?.configured)}
-                                revealedValue={sourceEditCredentialReveal?.field === 'cookie' ? sourceEditCredentialReveal.value : ''}
-                                loading={sourceEditCredentialRevealLoading}
-                                expiresInSeconds={sourceEditCredentialReveal?.expires_in_seconds ?? 30}
-                                updatedAtLabel={row.credential?.updated_at ? new Date(row.credential.updated_at).toLocaleString('zh-CN') : undefined}
-                                onReveal={() => void revealSourceEditCredential(row)}
-                                onHide={hideSourceEditCredential}
-                              />
-                              <XDriveSourceCookieField
-                                label="替换 Cookie"
-                                value={sourceEditCookie}
-                                placeholder={row.credential?.configured ? '留空则保持当前 Cookie 不变' : '当前未配置，请粘贴 Cookie'}
-                                helperText={row.credential?.configured
-                                  ? '只在需要更换 Cookie 时填写；已显示的 Cookie 不会自动带入此输入框。'
-                                  : '当前未配置 Cookie，请粘贴新的 Cookie。'}
-                                onChange={(value) => {
-                                  setSourceEditCookie(value)
-                                  setSourceEditCredentialTest(null)
-                                }}
-                              />
-                              <XDriveStatusAlert tone="neutral" sx={{ mt: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                              <XDriveYikeCookieHelp variant="dialog" />
-                              <MuiBox component="span" sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
-                                <XDriveActionButton
-                                  compact
-                                  disabled={!!busy}
-                                  loading={busy === `source-credential-test-${row.source.id}`}
-                                  loadingLabel="正在测试…"
-                                  onClick={() => void testSettingsSourceCredential(row)}
-                                >
-                                  测试连接
-                                </XDriveActionButton>
-                              </MuiBox>
-                              {sourceEditCredentialTest && (
-                                <XDriveStatusAlert tone="good" sx={{ mt: 0.5 }}>
-                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
-                                </XDriveStatusAlert>
-                              )}
-                            </MuiBox>
-                          )}
-                          {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential === 'synology_dsm' && (
-                            <>
-                              <MuiDivider className="source-settings-wide" />
-                              <XDriveStatusAlert tone={row.credential?.configured ? 'good' : 'warning'} className="source-settings-wide">
-                                {row.credential?.configured
-                                  ? 'DSM 密码默认仅显示遮罩，可按需临时显示 30 秒；更新连接时请重新完整填写地址、用户名和密码。'
-                                  : 'DSM 凭据未配置；Pull 同步文件夹会保持暂停，直到保存有效凭据。'}
-                              </XDriveStatusAlert>
-                              <XDriveStoredCredentialField
-                                label="已保存 DSM 密码"
-                                configured={Boolean(row.credential?.configured)}
-                                revealedValue={sourceEditCredentialReveal?.field === 'password' ? sourceEditCredentialReveal.value : ''}
-                                loading={sourceEditCredentialRevealLoading}
-                                expiresInSeconds={sourceEditCredentialReveal?.expires_in_seconds ?? 30}
-                                updatedAtLabel={row.credential?.updated_at ? new Date(row.credential.updated_at).toLocaleString('zh-CN') : undefined}
-                                onReveal={() => void revealSourceEditCredential(row)}
-                                onHide={hideSourceEditCredential}
-                                sx={{ mb: 1.5 }}
-                              />
-                              <XDriveSynologyDsmCredentialFields
-                                mode="update"
-                                baseURL={sourceEditDsmBaseURL}
-                                username={sourceEditDsmUsername}
-                                password={sourceEditDsmPassword}
-                                onBaseURLChange={(value) => {
-                                  setSourceEditDsmBaseURL(value)
-                                  setSourceEditCredentialTest(null)
-                                }}
-                                onUsernameChange={(value) => {
-                                  setSourceEditDsmUsername(value)
-                                  setSourceEditCredentialTest(null)
-                                }}
-                                onPasswordChange={(value) => {
-                                  setSourceEditDsmPassword(value)
-                                  setSourceEditCredentialTest(null)
-                                }}
-                              />
-                              {row.source.kind === 'synology_photos' ? (
-                                <Stack spacing={0.5}>
-                                  <XDriveSynologyPhotoSpacesField
-                                    value={sourceEditSpaces}
-                                    onChange={setSourceEditSpaces}
-                                  />
-                                  {!sourceEditConnectorConfig && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      正在读取当前空间配置；默认使用个人空间和共享空间。
-                                    </Typography>
-                                  )}
-                                </Stack>
-                              ) : (
-                                <XDriveSynologyFileRootsField
-                                  value={sourceEditRoots}
-                                  onChange={setSourceEditRoots}
-                                  minRows={4}
-                                  monospace
-                                  helperText="每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。"
-                                  browse={row.credential?.configured
-                                    ? async (path, limit, offset) => {
-                                        const result = await window.xdriveDesktop.agent.browseSourceDirectories(
-                                          row.source.id,
-                                          path,
-                                          limit,
-                                          offset,
-                                        )
-                                        if (!result.ok) {
-                                          throw new Error(result.error.detail || result.error.message)
-                                        }
-                                        return result.data
-                                      }
-                                    : undefined}
-                                />
-                              )}
-                              <MuiBox component="span" sx={{ alignSelf: 'flex-start' }}>
-                                <XDriveActionButton
-                                  compact
-                                  disabled={!!busy}
-                                  loading={busy === `source-credential-test-${row.source.id}`}
-                                  loadingLabel="正在测试…"
-                                  onClick={() => void testSettingsSourceCredential(row)}
-                                >
-                                  测试连接
-                                </XDriveActionButton>
-                              </MuiBox>
-                              {sourceEditCredentialTest && (
-                                <XDriveStatusAlert tone="good" className="source-settings-wide">
-                                  {externalSourceCredentialTestSuccessLabel(sourceEditCredentialTest)}
-                                </XDriveStatusAlert>
-                              )}
-                            </>
-                          )}
-                            </form>
-                          </XDriveDialogContent>
-                          <XDriveDialogActions>
-                            {externalSourceConnectorProfile(row.source.kind, row.source.direction).credential && row.credential?.configured && (
-                              <XDriveActionButton intent="danger" disabled={!!busy} onClick={() => void clearSourceCookie(row)}>
-                                清除{externalSourceCredentialLabel(externalSourceConnectorProfile(row.source.kind, row.source.direction))}
-                              </XDriveActionButton>
-                            )}
-                            <XDriveActionButton
-                              intent="danger"
-                              disabled={!!busy || row.latestRun?.status === 'running'}
-                              onClick={() => setSourceDeleteTarget(row)}
-                            >
-                              删除同步文件夹
-                            </XDriveActionButton>
-                            <XDriveDialogActionSpacer />
-                            <XDriveActionButton disabled={!!busy} onClick={closeSourceSettings}>取消</XDriveActionButton>
-                            <XDriveActionButton
-                              intent="primary"
-                              type="submit"
-                              form={`source-settings-form-${row.source.id}`}
-                              disabled={!!busy}
-                              loading={busy === `source-settings-${row.source.id}`}
-                              loadingLabel="正在保存…"
-                            >
-                              保存设置
-                            </XDriveActionButton>
-                          </XDriveDialogActions>
-                        </Dialog>
-                      )}
-                    />
-                  )
-                })}
-              </div>
-            )}
-          </section>
+          ) : (
+            <XDriveStatePanel message="当前 xdrive-agent 不支持同步文件夹，请更新客户端核心组件。" />
+          )
         )}
 
-
         {view === 'cloud' && (
-          <section className="cloud-explorer-panel">
-            {cloudQuota?.over_quota && (
-              <XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>
-                存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
-              </XDriveStatusAlert>
+          <DesktopCloudPage
+            quota={cloudQuota}
+            explorer={{
+              items: cloudItems,
+              crumbs: cloudCrumbs,
+              loading: busy === 'cloud-load' || busy === 'cloud-directory',
+              loadingMore: cloudLoadingMore,
+              hasMore: cloudPage?.hasMore ?? false,
+              onLoadDirectory: loadCloudDirectory,
+              onLoadMore: loadMoreCloudDirectory,
+              onOpenTrash: () => { void loadCloudTrash() },
+              onOpenHistory: (node, crumbs) => { void openCloud历史版本(node, crumbs) },
+              onOpenShares: openCloudShares,
+              onDelete: removeCloudNode,
+              onDeleteMany: removeCloudNodes,
+              onQuotaChanged: refreshCloudQuota,
+              onError: (message) => setError(message),
+              onFeedback: (_tone, message) => setNotice(message),
+            }}
+            busy={Boolean(busy)}
+            trashOpen={cloudTrashOpen}
+            trash={cloudTrash}
+            onCloseTrash={() => setCloudTrashOpen(false)}
+            onRestoreTrash={(node) => { void restoreCloudTrash(node) }}
+            onDeleteTrash={deleteCloudTrash}
+            historyNode={cloudHistoryNode}
+            historyVersions={cloudVersions}
+            onCloseHistory={() => {
+              setCloudHistoryNode(null)
+              setCloudHistoryCrumbs([])
+              setCloudVersions([])
+            }}
+            onRestoreHistory={restoreCloudVersion}
+            shareNode={cloudShareNode}
+            onCloseShare={() => setCloudShareNode(null)}
+            onShareError={(shareError) => setError(
+              shareError instanceof Error ? shareError.message : String(shareError),
             )}
-            <DesktopFileExplorer
-              items={cloudItems}
-              crumbs={cloudCrumbs}
-              loading={busy === 'cloud-load' || busy === 'cloud-directory'}
-              loadingMore={cloudLoadingMore}
-              hasMore={cloudPage?.hasMore ?? false}
-              onLoadDirectory={loadCloudDirectory}
-              onLoadMore={loadMoreCloudDirectory}
-              onOpenTrash={() => { void loadCloudTrash() }}
-              onOpenHistory={(node, crumbs) => { void openCloud历史版本(node, crumbs) }}
-              onOpenShares={(node) => { void openCloudShares(node) }}
-              onDelete={removeCloudNode}
-              onDeleteMany={removeCloudNodes}
-              onQuotaChanged={refreshCloudQuota}
-              onError={(message) => setError(message)}
-              onFeedback={(_tone, message) => setNotice(message)}
-            />
-
-            {cloudTrashOpen && (
-              <Dialog
-                open={cloudTrashOpen}
-                onClose={() => { if (!busy) setCloudTrashOpen(false) }}
-                maxWidth="md"
-                fullWidth
-                scroll="paper"
-                aria-label="回收站"
-                slotProps={{ paper: xDriveDialogPaperProps }}
-              >
-                <XDriveDialogTitle
-                  title="回收站"
-                  subtitle={`${cloudTrash.length} 个项目`}
-                  onClose={() => setCloudTrashOpen(false)}
-                  closeDisabled={!!busy}
-                />
-                <XDriveDialogContent dividers flush>
-                  {cloudTrash.length === 0 ? <XDriveStatePanel variant="plain" compact message="回收站为空。" /> : (
-                    <div className="cloud-compact-list">
-                      {cloudTrash.map((node) => (
-                        <div className="cloud-compact-row" key={node.id}>
-                          <div><strong>{node.name}</strong><span>{node.type === 'dir' ? '文件夹' : formatBinarySize(node.size)} · 删除于 {node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</span></div>
-                          <div className="cloud-row-actions">
-                            <XDriveActionButton compact disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>恢复</XDriveActionButton>
-                            <XDriveActionButton compact intent="danger" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>永久删除</XDriveActionButton>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </XDriveDialogContent>
-                <XDriveDialogActions>
-                  <XDriveActionButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</XDriveActionButton>
-                </XDriveDialogActions>
-              </Dialog>
-            )}
-
-            {cloudHistoryNode && (
-              <Dialog
-                open={!!cloudHistoryNode}
-                onClose={() => {
-                  if (busy) return
-                  setCloudHistoryNode(null)
-                  setCloudHistoryCrumbs([])
-                  setCloudVersions([])
-                }}
-                maxWidth="md"
-                fullWidth
-                scroll="paper"
-                aria-label="版本历史"
-                slotProps={{ paper: xDriveDialogPaperProps }}
-              >
-                <XDriveDialogTitle
-                  title={`版本历史 — ${cloudHistoryNode.name}`}
-                  subtitle={`当前版本 r${cloudHistoryNode.revision}`}
-                  onClose={() => {
-                    setCloudHistoryNode(null)
-                    setCloudHistoryCrumbs([])
-                    setCloudVersions([])
-                  }}
-                  closeDisabled={!!busy}
-                />
-                <XDriveDialogContent dividers flush>
-                  {cloudVersions.length === 0 ? <XDriveStatePanel variant="plain" compact message="暂无历史版本。" /> : (
-                    <div className="cloud-compact-list">
-                      {cloudVersions.map((version) => (
-                        <div className="cloud-compact-row" key={version.id}>
-                          <div><strong>Revision r{version.revision}</strong><span>{formatBinarySize(version.size)} · {new Date(version.created_at).toLocaleString()}</span></div>
-                          <XDriveActionButton compact intent="primary" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>恢复</XDriveActionButton>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </XDriveDialogContent>
-                <XDriveDialogActions>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    onClick={() => {
-                      setCloudHistoryNode(null)
-                      setCloudHistoryCrumbs([])
-                      setCloudVersions([])
-                    }}
-                  >
-                    关闭
-                  </XDriveActionButton>
-                </XDriveDialogActions>
-              </Dialog>
-            )}
-
-            {cloudShareNode && (
-              <Dialog
-                open={!!cloudShareNode}
-                onClose={() => {
-                  if (busy) return
-                  setCloudShareNode(null)
-                  setCloudShares([])
-                  setCreatedShareURL('')
-                }}
-                maxWidth="md"
-                fullWidth
-                scroll="paper"
-                aria-label="分享文件"
-                slotProps={{ paper: xDriveDialogPaperProps }}
-              >
-                <XDriveDialogTitle
-                  title={`分享 — ${cloudShareNode.name}`}
-                  subtitle="分享令牌只会在创建时显示一次。"
-                  onClose={() => {
-                    setCloudShareNode(null)
-                    setCloudShares([])
-                    setCreatedShareURL('')
-                  }}
-                  closeDisabled={!!busy}
-                />
-                <XDriveDialogContent dividers flush>
-                  {createdShareURL && (
-                    <XDriveCreatedShareLink
-                      value={createdShareURL}
-                      onCopy={() => void copyShareURL()}
-                      copyLabel="复制链接"
-                      copyIntent="primary"
-                      sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}
-                    />
-                  )}
-
-                  <Stack spacing={1.5} sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}>
-                    <XDriveShareCreateFields
-                      expiryMode="days"
-                      expiryValue={shareExpiresDays}
-                      expiryHelperText="0 表示永不过期。"
-                      onExpiryChange={setShareExpiresDays}
-                      maxDownloadsValue={shareMaxDownloads}
-                      maxDownloadsHelperText="0 表示不限次数。"
-                      onMaxDownloadsChange={setShareMaxDownloads}
-                      password={sharePassword}
-                      passwordPlaceholder="至少 8 个字符"
-                      onPasswordChange={setSharePassword}
-                    />
-                    <XDriveActionButton
-                      intent="primary"
-                      disabled={!!busy}
-                      loading={busy === 'cloud-share-create'}
-                      loadingLabel="正在创建…"
-                      onClick={() => void createCloudShare()}
-                    >
-                      创建分享链接
-                    </XDriveActionButton>
-                  </Stack>
-
-                  {cloudShares.length === 0 ? (
-                    <XDriveStatePanel variant="plain" compact message="此文件暂无分享链接。" />
-                  ) : (
-                    <XDriveShareList
-                      shares={cloudShares}
-                      variant="compact"
-                      revokeDisabled={!!busy}
-                      onRevoke={(share) => void revokeCloudShare(share)}
-                    />
-                  )}
-                </XDriveDialogContent>
-                <XDriveDialogActions>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    onClick={() => {
-                      setCloudShareNode(null)
-                      setCloudShares([])
-                      setCreatedShareURL('')
-                    }}
-                  >
-                    关闭
-                  </XDriveActionButton>
-                </XDriveDialogActions>
-              </Dialog>
-            )}
-          </section>
+          />
         )}
 
         {view === 'transfers' && (
-          <section className="panel transfer-panel">
-            <XDriveSectionHeader
-              eyebrow="传输中心"
-              title="上传、下载与本地可用性"
-              subtitle="查看实时进度、速度、开始时间、已耗时、预计剩余时间与历史状态。"
-            />
-            <XDriveTransferCenter
-              transfers={transfers.transfers}
-              retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
-              retryDisabled={!!busy}
-              onRetry={(id) => void retryTransfer(id)}
-            />
-          </section>
+          <DesktopTransfersPage
+            transfers={transfers.transfers}
+            retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
+            retryDisabled={Boolean(busy)}
+            onRetry={(id) => { void retryTransfer(id) }}
+          />
         )}
 
         {view === 'files' && (
-          <section className="panel storage-panel">
-            <XDriveSectionHeader
-              eyebrow="存储策略"
-              title={storagePoliciesSupported ? '选择此设备保留的内容' : 'Linux FUSE 挂载'}
-              subtitle={
-                storagePoliciesSupported
-                  ? '策略应用于云端文件夹。“默认”继承最近的父级策略；“不同步”会从此设备移除该文件夹；“始终保留”会将已同步内容固定保存在本地。'
-                  : 'Linux 当前使用 FUSE 远程挂载；目录在此处只读展示，文件内容在打开时按需获取。'
-              }
-              actions={(
-                <XDriveActionButton
-                  disabled={!!busy}
-                  loading={busy === 'storage'}
-                  loadingLabel="正在刷新…"
-                  onClick={() => void loadStorage()}
-                >
-                  刷新
-                </XDriveActionButton>
-              )}
-            />
-
-            {cloudQuota && (
-              <div className="cloud-subpanel">
-                <div className="cloud-subpanel-heading">
-                  <div>
-                    <strong>云端容量</strong>
-                    <span>当前账号的有效内容、回收站与历史版本占用</span>
-                  </div>
-                </div>
-                <MuiBox sx={{ p: 1.5 }}>
-                  <XDriveMetricGrid>
-                    <XDriveMetricCard
-                      title="物理占用"
-                      value={formatBinarySize(cloudQuota.physical_used_bytes)}
-                      suffix={cloudQuota.quota_bytes > 0 ? `配额 ${formatBinarySize(cloudQuota.quota_bytes)}` : '不限配额'}
-                    />
-                    <XDriveMetricCard
-                      title="可用空间"
-                      value={formatBinarySize(cloudQuota.available_bytes)}
-                      suffix={cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'}
-                    />
-                    <XDriveMetricCard title="当前文件" value={formatBinarySize(cloudQuota.logical_file_bytes)} suffix="有效逻辑内容" />
-                    <XDriveMetricCard title="回收站" value={formatBinarySize(cloudQuota.trash_bytes)} suffix="计入物理配额" />
-                    <XDriveMetricCard title="历史版本" value={formatBinarySize(cloudQuota.history_bytes)} suffix="已保存的历史内容" />
-                  </XDriveMetricGrid>
-                </MuiBox>
-              </div>
-            )}
-
-            {cloudStorageStats && (
-              <div className="cloud-subpanel storage-intelligence">
-                <div className="cloud-subpanel-heading">
-                  <div>
-                    <strong>CAS 存储情报</strong>
-                    <span>用于评估 CDC 与 small-file packing 的真实收益</span>
-                  </div>
-                </div>
-                <MuiBox sx={{ p: 1.5 }}>
-                  <XDriveMetricGrid>
-                    <XDriveMetricCard title="CAS Blob" value={cloudStorageStats.cas_blob_count.toLocaleString()} suffix="唯一物理对象" />
-                    <XDriveMetricCard title="CAS 物理容量" value={formatBinarySize(cloudStorageStats.cas_physical_bytes)} suffix="实际占用" />
-                    <XDriveMetricCard title="逻辑引用容量" value={formatBinarySize(cloudStorageStats.cas_logical_referenced_bytes)} suffix="含重复引用" />
-                    <XDriveMetricCard
-                      title="去重节省"
-                      value={formatBinarySize(cloudStorageStats.cas_dedup_saved_bytes)}
-                      suffix={`${cloudStorageStats.cas_dedup_ratio.toFixed(2)}× · ${(cloudStorageStats.cas_savings_ratio * 100).toFixed(1)}%`}
-                    />
-                    <XDriveMetricCard title="平均 Blob" value={formatBinarySize(cloudStorageStats.average_blob_size_bytes)} suffix="算术平均" />
-                    <XDriveMetricCard title="P50" value={formatBinarySize(cloudStorageStats.p50_blob_size_bytes)} suffix="中位尺寸" />
-                    <XDriveMetricCard title="P90" value={formatBinarySize(cloudStorageStats.p90_blob_size_bytes)} suffix="90% Blob 不超过" />
-                    <XDriveMetricCard title="P99" value={formatBinarySize(cloudStorageStats.p99_blob_size_bytes)} suffix="99% Blob 不超过" />
-                  </XDriveMetricGrid>
-                </MuiBox>
-                <div className="cloud-compact-list">
-                  {cloudStorageStats.buckets.map((bucket) => (
-                    <div className="cloud-compact-row" key={bucket.key}>
-                      <div><strong>{bucket.label}</strong><span>{bucket.count.toLocaleString()} 个 Blob</span></div>
-                      <strong>{formatBinarySize(bucket.bytes)}</strong>
-                    </div>
-                  ))}
-                </div>
-                {cloudStorageStats.legacy_blob_count > 0 && (
-                  <XDriveStatusAlert tone="warning" sx={{ m: 1.5 }}>
-                    仍有 {cloudStorageStats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBinarySize(cloudStorageStats.legacy_physical_bytes)}），未计入 CAS 分布。
-                  </XDriveStatusAlert>
-                )}
-              </div>
-            )}
-
-            {!storagePoliciesSupported ? (
-              <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-                Linux FUSE 模式不提供 Windows CfAPI 的“不同步”“始终保留”或持久化本地缓存语义；这些策略只在 Windows 客户端可配置。
-              </XDriveStatusAlert>
-            ) : null}
-
-            {storagePoliciesSupported ? (cacheStats ? (
-              <div className="cache-card">
-                <MuiBox sx={{ p: 1.5 }}>
-                  <XDriveMetricGrid>
-                    <XDriveMetricCard title="已使用" value={formatBinarySize(cacheStats.used_bytes)} suffix={`${cacheStats.cached_files} 个缓存文件`} />
-                    <XDriveMetricCard title="上限" value={cacheStats.limit_bytes > 0 ? formatBinarySize(cacheStats.limit_bytes) : '不限'} suffix="固定内容受保护" />
-                    <XDriveMetricCard title="可释放" value={formatBinarySize(cacheStats.reclaimable_bytes)} suffix={`${cacheStats.reclaimable_files} 个文件`} />
-                    <XDriveMetricCard title="已固定" value={formatBinarySize(cacheStats.pinned_bytes)} suffix={`${cacheStats.pinned_files} 个文件`} />
-                  </XDriveMetricGrid>
-                </MuiBox>
-                {cacheStats.supported ? (
-                  <div className="cache-actions">
-                    <p>只会释放已完整同步且未固定的云端文件。“始终保留”的内容永远不会被回收。</p>
-                    <XDriveActionButton
-                      disabled={!!busy || cacheStats.reclaimable_bytes <= 0}
-                      loading={busy === 'release-cache'}
-                      loadingLabel="正在释放…"
-                      onClick={() => void releaseReclaimableCache()}
-                    >
-                      释放可回收缓存
-                    </XDriveActionButton>
-                  </div>
-                ) : (
-                  <XDriveStatePanel variant="plain" compact align="left" borderTop message={cacheStats.reason || '当前平台不支持持久化本地缓存管理。'} />
-                )}
-              </div>
-            ) : <XDriveStatePanel loading message="正在加载缓存用量…" />) : null}
-
-            <div className="storage-tree-header">
-              <div>
-                <strong>云端文件夹</strong>
-                <span>{storagePoliciesSupported ? '默认 / 不同步 / 始终保留' : '只读目录视图 · FUSE 按需访问'}</span>
-              </div>
-              {storageTree && <span>{storageTree.file_count} 个文件 · {formatBinarySize(storageTree.total_bytes)}</span>}
-            </div>
-            {!storageTree ? (
-              <XDriveStatePanel loading message="正在加载云端文件夹树…" />
-            ) : (storageTree.children || []).length === 0 ? (
-              <XDriveStatePanel message="暂无云端文件夹。" />
-            ) : (
-              <div className="storage-tree">{(storageTree.children || []).map((node) => renderStorageNode(node))}</div>
-            )}
-          </section>
+          <DesktopStoragePage
+            storagePoliciesSupported={storagePoliciesSupported}
+            busy={busy}
+            cloudQuota={cloudQuota}
+            cloudStorageStats={cloudStorageStats}
+            cacheStats={cacheStats}
+            storageTree={storageTree}
+            renderStorageNode={renderStorageNode}
+            onRefresh={() => { void loadStorage() }}
+            onReleaseCache={() => { void releaseReclaimableCache() }}
+          />
         )}
 
         {view === 'conflicts' && (
-          <section className="panel">
-            <XDriveSectionHeader
-              eyebrow="冲突副本"
-              title="解决同步冲突"
-              actions={<XDriveActionButton disabled={!!busy} onClick={() => void loadConflicts()}>刷新</XDriveActionButton>}
-            />
-            {conflicts.length === 0 ? <XDriveStatePanel message="没有未解决的冲突。" /> : (
-              <div className="conflict-list">
-                {conflicts.map((item) => (
-                  <article className="conflict-row" key={item.id}>
-                    <div className="conflict-copy">
-                      <strong>{item.original_path}</strong>
-                      <span>冲突副本：{item.conflict_path}</span>
-                      <span>{new Date(item.created_at).toLocaleString()}</span>
-                    </div>
-                    <div className="row-actions">
-                      <XDriveActionButton compact onClick={() => void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))}>同时打开</XDriveActionButton>
-                      <XDriveActionButton compact onClick={() => {
-                        requestConfirmation(
-                          '保留服务器版本？',
-                          '这会保留服务器版本并删除本地冲突副本。',
-                          '保留服务器版本',
-                          () => run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts()),
-                          'warning',
-                        )
-                      }}>保留服务器版本</XDriveActionButton>
-                      <XDriveActionButton compact intent="primary" onClick={() => {
-                        requestConfirmation(
-                          '保留本地版本？',
-                          '这会使用本地冲突副本替换服务器版本。',
-                          '保留本地版本',
-                          () => run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts()),
-                          'warning',
-                        )
-                      }}>保留本地版本</XDriveActionButton>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+          <DesktopConflictsPage
+            conflicts={conflicts}
+            busy={Boolean(busy)}
+            onRefresh={() => { void loadConflicts() }}
+            onOpenBoth={(item) => {
+              void run(`open-${item.id}`, () => window.xdriveDesktop.agent.openConflict(item.id, true))
+            }}
+            onKeepServer={(item) => {
+              requestConfirmation(
+                '保留服务器版本？',
+                '这会保留服务器版本并删除本地冲突副本。',
+                '保留服务器版本',
+                () => run(`server-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'server'), '冲突已解决。').then(() => loadConflicts()),
+                'warning',
+              )
+            }}
+            onKeepLocal={(item) => {
+              requestConfirmation(
+                '保留本地版本？',
+                '这会使用本地冲突副本替换服务器版本。',
+                '保留本地版本',
+                () => run(`local-${item.id}`, () => window.xdriveDesktop.agent.resolveConflict(item.id, 'local'), '冲突已解决。').then(() => loadConflicts()),
+                'warning',
+              )
+            }}
+          />
         )}
 
-
         {view === 'diagnostics' && (
-          <section className="panel diagnostics-panel">
-            <XDriveSectionHeader
-              eyebrow="诊断与自修复"
-              title="客户端诊断"
-              subtitle={<>Agent 会运行与 <code>xd doctor</code> 相同的脱敏检查。密钥、会话 ID 和用户目录路径不会暴露给渲染进程。</>}
-              actions={(
-                <XDriveActionButton
-                  intent="primary"
-                  disabled={!!busy}
-                  loading={busy === 'diagnostics'}
-                  loadingLabel="正在检查…"
-                  onClick={() => void loadDiagnostics()}
-                >
-                  运行诊断
-                </XDriveActionButton>
-              )}
-            />
-
-            {diagnostics ? (
-              <>
-                <XDriveMetricGrid>
-                  <XDriveMetricCard title="通过" value={diagnostics.summary.pass} tone="good" />
-                  <XDriveMetricCard title="警告" value={diagnostics.summary.warn} tone="warning" />
-                  <XDriveMetricCard title="失败" value={diagnostics.summary.fail} tone="bad" />
-                  <XDriveMetricCard title="上次检查" value={new Date(diagnostics.generated_at).toLocaleString()} />
-                </XDriveMetricGrid>
-
-                <div className="diagnostic-actions">
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    loading={busy === 'restart-agent'}
-                    loadingLabel="正在重启 Agent…"
-                    onClick={() => void restartAgent().then(() => loadDiagnostics())}
-                  >
-                    重启 Agent
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy || status?.paused}
-                    loading={busy === 'reconnect'}
-                    loadingLabel="正在重新连接…"
-                    onClick={() => void runDiagnosticAction(
-                      'reconnect',
-                      () => window.xdriveDesktop.agent.reconnect(),
-                      '同步引擎已重新连接。',
-                    )}
-                  >
-                    重新连接
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy || status?.paused}
-                    loading={busy === 'repair-sync-root'}
-                    loadingLabel="正在修复…"
-                    onClick={() => void runDiagnosticAction(
-                      'repair-sync-root',
-                      () => window.xdriveDesktop.agent.repairSyncRoot(),
-                      '同步根目录已修复并重新连接。',
-                    )}
-                  >
-                    修复同步根目录
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    loading={busy === 'open-logs'}
-                    loadingLabel="正在打开…"
-                    onClick={() => void run(
-                      'open-logs',
-                      () => window.xdriveDesktop.agent.openLogs(),
-                      '已打开 xDrive 日志。',
-                    )}
-                  >
-                    打开日志
-                  </XDriveActionButton>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    loading={busy === 'export-diagnostics'}
-                    loadingLabel="正在导出…"
-                    onClick={() => void exportDiagnostics()}
-                  >
-                    导出报告
-                  </XDriveActionButton>
-                </div>
-
-                <div className="diagnostic-list">
-                  {diagnostics.checks.map((check, index) => (
-                    <article className="diagnostic-row" key={`${check.name}:${index}`}>
-                      <XDriveStatusBadge
-                        tone={check.status === 'PASS' ? 'good' : check.status === 'WARN' ? 'warning' : 'bad'}
-                        label={check.status}
-                      />
-                      <div>
-                        <strong>{check.name}</strong>
-                        <p>{check.detail}</p>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <XDriveStatePanel message="运行诊断可检查服务器/TLS、登录与凭据存储、Agent/IPC、同步根目录、CfAPI/FUSE、缓存策略、版本兼容性和磁盘空间。" />
-            )}
-          </section>
+          <DesktopDiagnosticsPage
+            diagnostics={diagnostics}
+            busy={busy}
+            paused={Boolean(status?.paused)}
+            onRun={() => { void loadDiagnostics() }}
+            onRestartAgent={() => { void restartAgent().then(() => loadDiagnostics()) }}
+            onReconnect={() => {
+              void runDiagnosticAction(
+                'reconnect',
+                () => window.xdriveDesktop.agent.reconnect(),
+                '同步引擎已重新连接。',
+              )
+            }}
+            onRepairSyncRoot={() => {
+              void runDiagnosticAction(
+                'repair-sync-root',
+                () => window.xdriveDesktop.agent.repairSyncRoot(),
+                '同步根目录已修复并重新连接。',
+              )
+            }}
+            onOpenLogs={() => {
+              void run(
+                'open-logs',
+                () => window.xdriveDesktop.agent.openLogs(),
+                '已打开 xDrive 日志。',
+              )
+            }}
+            onExport={() => { void exportDiagnostics() }}
+          />
         )}
 
       </main>
 
-        <Dialog
+        <XDriveSettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
+          subtitle="外观、客户端更新、同步生命周期与本地缓存"
           maxWidth="lg"
-          fullWidth
-          scroll="paper"
-          slotProps={{ paper: xDriveDialogPaperProps }}
+          appearance={appearance}
+          appearanceDisabled={busy === 'appearance'}
+          onAppearanceChange={(next) => void changeAppearance(next)}
+          buildInfoSectionID="desktop-build-info"
+          buildInfo={[
+            { title: 'Desktop 构建信息', info },
+            { title: 'Server 构建信息', info: status?.server_build },
+          ]}
+          serverUpdate={{
+            state: serverUpdate,
+            source: serverUpdateSource,
+            channel: serverUpdateChannel,
+            loading: busy === 'server-update',
+            disabled: serverUpdate === null || (!!busy && busy !== 'server-update'),
+            error: serverUpdateError,
+            onSourceChange: setServerUpdateSource,
+            onChannelChange: setServerUpdateChannel,
+            onStart: () => setConfirmDialog({
+              title: '确认更新服务端？',
+              message: `来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel}。更新会执行升级前备份、容器更新和健康检查，期间服务可能短暂不可用。`,
+              confirmLabel: '开始更新',
+              tone: 'warning',
+              onConfirm: startServerUpdate,
+            }),
+          }}
         >
-          <XDriveDialogTitle
-            title="设置"
-            subtitle="外观、客户端更新、同步生命周期与本地缓存"
-            onClose={() => setSettingsOpen(false)}
+          <DesktopSettingsContent
+            desktopPreferences={desktopPreferences}
+            busy={busy}
+            onRestartAgent={() => { void restartAgent() }}
+            onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
+            onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
+            updateSupported={updateSupported}
+            clientUpdate={clientUpdate}
+            updateOperationBusy={updateOperationBusy}
+            updateCancelling={updateCancelling}
+            updateCancelSupported={updateCancelSupported}
+            updateProgress={updateProgress}
+            currentVersion={status?.version}
+            onUpdateSourceChange={(source) => { void changeUpdateSource(source) }}
+            onUpdateModeChange={(mode) => { void changeUpdateMode(mode) }}
+            onCheckUpdate={() => { void checkClientUpdate() }}
+            onDownloadUpdate={() => { void downloadClientUpdate() }}
+            onInstallUpdate={() => { void installClientUpdate() }}
+            onCancelUpdate={() => { void cancelClientUpdate() }}
+            settings={settings}
+            mountPath={mountPath}
+            cacheLimit={cacheLimit}
+            platform={info?.platform}
+            storagePoliciesSupported={storagePoliciesSupported}
+            onMountPathChange={setMountPath}
+            onCacheLimitChange={setCacheLimit}
+            onChooseMountPath={() => { void chooseDirectory(mountPath, setMountPath) }}
+            onSaveSettings={saveSettings}
+            onOpenStorage={() => {
+              setSettingsOpen(false)
+              setView('files')
+            }}
           />
-          <XDriveDialogContent dividers>
-          <section className="panel">
-            <XDriveSectionHeader
-              eyebrow="客户端设置"
-              title="同步、更新、生命周期与缓存"
-              actions={(
-                <XDriveActionButton
-                  disabled={!!busy}
-                  loading={busy === 'restart-agent'}
-                  loadingLabel="正在重启 Agent…"
-                  onClick={() => void restartAgent()}
-                >
-                  重启 Agent
-                </XDriveActionButton>
-              )}
-            />
-            <Stack id="desktop-build-info" direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ mb: 2 }}>
-              <XDriveBuildInfoCard title="Desktop 构建信息" info={info} />
-              <XDriveBuildInfoCard title="Server 构建信息" info={status?.server_build} />
-            </Stack>
-            <XDriveServerUpdateCard
-              state={serverUpdate}
-              source={serverUpdateSource}
-              channel={serverUpdateChannel}
-              loading={busy === 'server-update'}
-              disabled={serverUpdate === null || (!!busy && busy !== 'server-update')}
-              onSourceChange={setServerUpdateSource}
-              onChannelChange={setServerUpdateChannel}
-              onStart={() => setConfirmDialog({
-                title: '确认更新服务端？',
-                message: `来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel}。更新会执行升级前备份、容器更新和健康检查，期间服务可能短暂不可用。`,
-                confirmLabel: '开始更新',
-                tone: 'warning',
-                onConfirm: startServerUpdate,
-              })}
-              sx={{ mb: 2 }}
-            />
-            {serverUpdateError ? <XDriveStatusAlert tone="warning" sx={{ mb: 2 }}>{serverUpdateError}</XDriveStatusAlert> : null}
-            <MuiBox sx={{ mb: 2 }}>
-              <XDriveAppearanceField
-                value={appearance}
-                disabled={busy === 'appearance'}
-                onChange={(next) => void changeAppearance(next)}
-              />
-            </MuiBox>
-            <Stack spacing={0.5} sx={{ mb: 2 }}>
-              <FormControlLabel
-                control={(
-                  <Switch
-                    checked={desktopPreferences.start_at_login}
-                    onChange={(event) => void changeStartAtLogin(event.target.checked)}
-                  />
-                )}
-                label="登录系统后启动 xDrive 桌面版"
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ pl: 6 }}>
-                启动后保持后台 Agent 正常运行；主窗口可按你的关闭偏好处理。
-              </Typography>
-              <FormControlLabel
-                control={(
-                  <Switch
-                    checked={desktopPreferences.close_to_tray}
-                    onChange={(event) => void changeCloseToTray(event.target.checked)}
-                  />
-                )}
-                label="关闭窗口时最小化到系统托盘"
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ pl: 6 }}>
-                开启后，点击关闭按钮只隐藏主窗口并继续同步；关闭后将直接退出 xDrive 桌面版。
-              </Typography>
-            </Stack>
-            <div className="update-card" id="client-update-card">
-              <div className="update-card-header">
-                <div>
-                  <strong>客户端更新</strong>
-                  <span>默认不自动更新。你可以选择只检查、自动下载，或自动下载安装。</span>
-                </div>
-                {updateSupported && clientUpdate ? (
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ minWidth: { sm: 360 } }}>
-                    <FormControl size="small" sx={{ minWidth: 140 }}>
-                      <InputLabel id="client-update-source-label">更新来源</InputLabel>
-                      <Select
-                        labelId="client-update-source-label"
-                        value={clientUpdate.source}
-                        label="更新来源"
-                        disabled={!!busy || updateOperationBusy}
-                        onChange={(event) => void changeUpdateSource(event.target.value as AgentUpdateSource)}
-                      >
-                        <MenuItem value="github">GitHub</MenuItem>
-                        <MenuItem value="gitlab">GitLab</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <FormControl size="small" sx={{ minWidth: 190 }}>
-                      <InputLabel id="client-update-mode-label">更新策略</InputLabel>
-                      <Select
-                        labelId="client-update-mode-label"
-                        value={clientUpdate.mode}
-                        label="更新策略"
-                        disabled={!!busy || updateOperationBusy}
-                        onChange={(event) => void changeUpdateMode(event.target.value as AgentUpdateMode)}
-                      >
-                        <MenuItem value="manual">手动检查</MenuItem>
-                        <MenuItem value="check">自动检查</MenuItem>
-                        <MenuItem value="download">有更新自动下载</MenuItem>
-                        <MenuItem value="install" disabled={!clientUpdate.install_supported}>自动更新</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Stack>
-                ) : null}
-              </div>
-
-              {!updateSupported ? (
-                <XDriveStatusAlert tone="warning">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</XDriveStatusAlert>
-              ) : !clientUpdate ? (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary' }}>
-                  <CircularProgress size={16} />
-                  <Typography variant="body2">正在读取客户端更新状态…</Typography>
-                </Stack>
-              ) : (
-                <>
-                  <p className="update-mode-note">
-                    当前来源：{clientUpdate.source === 'gitlab' ? 'GitLab · http://gitlab.t-fluid.com:1080' : 'GitHub'}。
-                    {' '}{updateModeDescription(clientUpdate.mode)}
-                    {!clientUpdate.install_supported ? ' 当前平台不会后台安装更新；下载后请使用系统包管理器完成安装。' : ''}
-                  </p>
-                  <XDriveMetricGrid>
-                    <XDriveMetricCard title="当前版本" value={clientUpdate.current_version || status?.version || '未知'} />
-                    <XDriveMetricCard title="最新版本" value={clientUpdate.latest_version || '尚未检查'} />
-                    <XDriveMetricCard title="状态" value={updateStatusLabel(clientUpdate)} />
-                    <XDriveMetricCard title="发布时间" value={clientUpdate.published_at ? new Date(clientUpdate.published_at).toLocaleString() : '未知'} />
-                    <XDriveMetricCard title="发布名称" value={clientUpdate.release_name || clientUpdate.latest_version || '—'} />
-                    <XDriveMetricCard title="安装包大小" value={clientUpdate.bytes_total ? formatBinarySize(clientUpdate.bytes_total) : '未知'} />
-                    <XDriveMetricCard title="更新通道" value={clientUpdate.channel || '—'} />
-                    <XDriveMetricCard title="上次检查" value={clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'} />
-                  </XDriveMetricGrid>
-                  {clientUpdate.release_notes ? (
-                    <MuiBox sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
-                      <Typography variant="subtitle2" sx={{ mb: 0.75 }}>发布说明</Typography>
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {clientUpdate.release_notes}
-                      </Typography>
-                    </MuiBox>
-                  ) : null}
-                  {clientUpdate.release_url ? (
-                    <MuiBox sx={{ mt: 1 }}>
-                      <XDriveActionButton
-                        compact
-                        onClick={() => void window.xdriveDesktop.openExternal(clientUpdate.release_url || '')}
-                      >
-                        查看发布页面
-                      </XDriveActionButton>
-                    </MuiBox>
-                  ) : null}
-
-                  {(clientUpdate.status === 'downloading' || clientUpdate.bytes_done || clientUpdate.bytes_total) ? (
-                    <div className="update-progress">
-                      <div className="update-progress-copy">
-                        <span>{clientUpdate.message || '正在处理更新…'}</span>
-                        <strong>
-                          {clientUpdate.bytes_total
-                            ? `${formatBinarySize(clientUpdate.bytes_done || 0)} / ${formatBinarySize(clientUpdate.bytes_total)} · ${updateProgress.toFixed(1)}%`
-                            : clientUpdate.bytes_done
-                              ? formatBinarySize(clientUpdate.bytes_done)
-                              : ''}
-                        </strong>
-                      </div>
-                      {clientUpdate.bytes_total ? (
-                        <div className="update-progress-track"><span style={{ width: `${updateProgress}%` }} /></div>
-                      ) : null}
-                      {clientUpdate.bytes_per_second ? <small>{formatTransferSpeed(clientUpdate.bytes_per_second)}</small> : null}
-                    </div>
-                  ) : null}
-
-                  {clientUpdate.last_error ? <XDriveStatusAlert tone="bad">{clientUpdate.last_error}</XDriveStatusAlert> : null}
-                  {!clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="neutral">{clientUpdate.message}</XDriveStatusAlert> : null}
-
-                  <div className="update-actions">
-                    <XDriveActionButton
-                      disabled={!!busy || updateOperationBusy}
-                      loading={busy === 'update-check' || clientUpdate.status === 'checking'}
-                      loadingLabel="正在检查…"
-                      onClick={() => void checkClientUpdate()}
-                    >
-                      检查更新
-                    </XDriveActionButton>
-                    <XDriveActionButton
-                      disabled={!!busy || updateOperationBusy || !clientUpdate.update_available || clientUpdate.downloaded}
-                      loading={busy === 'update-download' || clientUpdate.status === 'downloading'}
-                      loadingLabel="正在下载…"
-                      onClick={() => void downloadClientUpdate()}
-                    >
-                      {clientUpdate.downloaded ? '已下载' : '下载更新'}
-                    </XDriveActionButton>
-                    <XDriveActionButton
-                      intent="primary"
-                      disabled={!!busy || updateOperationBusy || !clientUpdate.update_available || !clientUpdate.install_supported}
-                      loading={busy === 'update-install' || clientUpdate.status === 'installing'}
-                      loadingLabel="正在安装…"
-                      onClick={() => void installClientUpdate()}
-                    >
-                      {clientUpdate.downloaded ? '安装更新' : '下载并安装'}
-                    </XDriveActionButton>
-                    {updateCancelSupported && (clientUpdate.status === 'checking' || clientUpdate.status === 'downloading') ? (
-                      <XDriveActionButton
-                        disabled={updateCancelling}
-                        loading={updateCancelling}
-                        loadingLabel="正在取消…"
-                        onClick={() => void cancelClientUpdate()}
-                      >
-                        取消
-                      </XDriveActionButton>
-                    ) : null}
-                  </div>
-                  <small className="update-footnote">自动策略在 Agent 启动后约 90 秒首次运行，之后约每 6 小时检查一次；切换到自动策略时会立即检查一次。</small>
-                </>
-              )}
-            </div>
-            {!settings ? <XDriveStatePanel loading message="正在加载设置…" /> : (
-              <form className="settings-form" onSubmit={saveSettings}>
-                <label>
-                  同步文件夹
-                  <div className="input-action">
-                    <input value={mountPath} onChange={(e) => setMountPath(e.target.value)} required />
-                    <XDriveActionButton onClick={() => void chooseDirectory(mountPath, setMountPath)}>浏览</XDriveActionButton>
-                  </div>
-                </label>
-                <label>
-                  缓存上限
-                  <div className="input-with-unit">
-                    <input
-                      type="number"
-                      min="0"
-                      max="16384"
-                      step="0.25"
-                      value={cacheLimit}
-                      onChange={(e) => setCacheLimit(e.target.value)}
-                      disabled={info?.platform !== 'win32'}
-                      required
-                    />
-                    <span>GiB</span>
-                  </div>
-                  <small>
-                    {info?.platform === 'win32'
-                      ? `0 表示不限；新设备默认 20 GiB。当前值：${formatBinarySize(settings.cache_limit_bytes)}。已固定 / 始终保留的内容不会被清理。`
-                      : '持久化下载缓存上限适用于 Windows CfAPI；Linux FUSE 对每次打开使用临时文件。'}
-                  </small>
-                </label>
-                <div className="settings-divider" />
-                <div className="setting-link-row">
-                  <div>
-                    <strong>{storagePoliciesSupported ? '文件夹存储策略' : 'Linux FUSE 存储模式'}</strong>
-                    <span>
-                      {storagePoliciesSupported
-                        ? '可在“存储”页面的云端目录树中选择“默认”“不同步”或“始终保留”。'
-                        : 'Linux 使用 FUSE 远程挂载；“存储”页面提供只读目录视图，不提供 Windows CfAPI 的选择性同步和固定保留。'}
-                    </span>
-                  </div>
-                  <XDriveActionButton onClick={() => {
-                    setSettingsOpen(false)
-                    setView('files')
-                  }}>
-                    {storagePoliciesSupported ? '管理存储' : '查看存储'}
-                  </XDriveActionButton>
-                </div>
-                <div className="settings-divider" />
-                <div className="form-actions">
-                  <XDriveActionButton
-                    intent="primary"
-                    type="submit"
-                    loading={busy === 'settings'}
-                    loadingLabel="正在保存…"
-                  >
-                    保存设置
-                  </XDriveActionButton>
-                </div>
-              </form>
-            )}
-          </section>
-          </XDriveDialogContent>
-        </Dialog>
+        </XDriveSettingsDialog>
 
       <XDriveConfirmDialog
         open={!!confirmDialog}
@@ -4649,80 +2160,6 @@ export default function App({
         onConfirm={() => void confirmPendingAction()}
       />
 
-      <Dialog
-        open={sourceFailedItemsOpen && sourceFailedItems.length > 0}
-        onClose={() => setSourceFailedItemsOpen(false)}
-        maxWidth="md"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title="失败文件"
-          subtitle={`${sourceFailedItems.length} 个失败项`}
-          onClose={() => setSourceFailedItemsOpen(false)}
-        />
-        <XDriveDialogContent dividers>
-          {sourceFailedItemsLimitReached && (
-            <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>当前最多显示前 1000 个失败项。</XDriveStatusAlert>
-          )}
-          <Stack spacing={1.5}>
-            {sourceFailedItems.map((item) => (
-              <XDriveSourceFailureItem
-                key={item.source_item_id}
-                title={item.path || item.external_id}
-                externalID={item.external_id}
-                sizeLabel={formatBinarySize(item.size)}
-                error={item.last_error}
-              />
-            ))}
-          </Stack>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton onClick={() => setSourceFailedItemsOpen(false)}>关闭</XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
-
-      <Dialog
-        open={!!sourceDeleteTarget}
-        onClose={() => busy.startsWith('source-delete-') ? undefined : setSourceDeleteTarget(null)}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title="删除同步文件夹？"
-          subtitle={sourceDeleteTarget?.source.name}
-          onClose={() => setSourceDeleteTarget(null)}
-          closeDisabled={busy.startsWith('source-delete-')}
-        />
-        <XDriveDialogContent>
-          <DialogContentText>
-            删除“{sourceDeleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、同步映射和已保存凭据。
-            已经同步到 xDrive 的文件会保留，不会删除。
-          </DialogContentText>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton disabled={busy.startsWith('source-delete-')} onClick={() => setSourceDeleteTarget(null)}>取消</XDriveActionButton>
-          <XDriveActionButton
-            intent="danger"
-            disabled={busy.startsWith('source-delete-')}
-            loading={busy.startsWith('source-delete-')}
-            loadingLabel="正在删除…"
-            onClick={() => void deleteExternalSource()}
-          >
-            删除同步文件夹
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
-
-      <SynologyDsmGuideDialog
-        open={!!synologyGuideSource}
-        source={synologyGuideSource}
-        serverURL={status?.server}
-        username={status?.username}
-        onClose={() => setSynologyGuideSource(null)}
-      />
     </XDriveWorkspaceShell>,
     desktopTitlebarActions,
   )

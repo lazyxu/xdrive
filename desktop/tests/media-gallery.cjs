@@ -10,7 +10,7 @@ const sharedGallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const sharedModels = read('ui', 'shared', 'src', 'models.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const webAPI = read('web', 'src', 'api.ts')
-const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx') + read('desktop', 'src', 'renderer', 'DesktopGalleryPage.tsx')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
 const desktopIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -73,7 +73,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 
 test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.match(desktopApp, /type View = [^\n]*'gallery'/)
-  assert.match(desktopApp, /gallery: '图库'/)
+  assert.ok(desktopApp.includes('title="图库"'), 'Desktop Gallery page must own its shared workspace title')
   assert.match(desktopApp, /selected=\{view === 'gallery'\}/)
   assert.match(desktopApp, /<XDriveSidebarNavItem[^\n]*primary="图库"/)
 })

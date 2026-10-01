@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
-const externalSources = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
+const externalSources = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
 const sharedFeedback = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FeedbackSnackbar.tsx'), 'utf8')
 
 test('Web ExternalSources reuses shared feedback snackbar', () => {
