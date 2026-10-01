@@ -83,7 +83,7 @@ import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone }
 import {
   formatBinarySize,
 } from '@xdrive/shared'
-import DesktopFileExplorer from './DesktopFileExplorer'
+import { DesktopCloudPage } from './DesktopCloudPage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
 import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
@@ -1992,131 +1992,45 @@ export default function App({
         )}
 
         {view === 'cloud' && (
-          <section className="cloud-explorer-panel">
-            {cloudQuota?.over_quota && (
-              <XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>
-                存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
-              </XDriveStatusAlert>
+          <DesktopCloudPage
+            quota={cloudQuota}
+            explorer={{
+              items: cloudItems,
+              crumbs: cloudCrumbs,
+              loading: busy === 'cloud-load' || busy === 'cloud-directory',
+              loadingMore: cloudLoadingMore,
+              hasMore: cloudPage?.hasMore ?? false,
+              onLoadDirectory: loadCloudDirectory,
+              onLoadMore: loadMoreCloudDirectory,
+              onOpenTrash: () => { void loadCloudTrash() },
+              onOpenHistory: (node, crumbs) => { void openCloud历史版本(node, crumbs) },
+              onOpenShares: openCloudShares,
+              onDelete: removeCloudNode,
+              onDeleteMany: removeCloudNodes,
+              onQuotaChanged: refreshCloudQuota,
+              onError: (message) => setError(message),
+              onFeedback: (_tone, message) => setNotice(message),
+            }}
+            busy={Boolean(busy)}
+            trashOpen={cloudTrashOpen}
+            trash={cloudTrash}
+            onCloseTrash={() => setCloudTrashOpen(false)}
+            onRestoreTrash={(node) => { void restoreCloudTrash(node) }}
+            onDeleteTrash={deleteCloudTrash}
+            historyNode={cloudHistoryNode}
+            historyVersions={cloudVersions}
+            onCloseHistory={() => {
+              setCloudHistoryNode(null)
+              setCloudHistoryCrumbs([])
+              setCloudVersions([])
+            }}
+            onRestoreHistory={restoreCloudVersion}
+            shareNode={cloudShareNode}
+            onCloseShare={() => setCloudShareNode(null)}
+            onShareError={(shareError) => setError(
+              shareError instanceof Error ? shareError.message : String(shareError),
             )}
-            <DesktopFileExplorer
-              items={cloudItems}
-              crumbs={cloudCrumbs}
-              loading={busy === 'cloud-load' || busy === 'cloud-directory'}
-              loadingMore={cloudLoadingMore}
-              hasMore={cloudPage?.hasMore ?? false}
-              onLoadDirectory={loadCloudDirectory}
-              onLoadMore={loadMoreCloudDirectory}
-              onOpenTrash={() => { void loadCloudTrash() }}
-              onOpenHistory={(node, crumbs) => { void openCloud历史版本(node, crumbs) }}
-              onOpenShares={openCloudShares}
-              onDelete={removeCloudNode}
-              onDeleteMany={removeCloudNodes}
-              onQuotaChanged={refreshCloudQuota}
-              onError={(message) => setError(message)}
-              onFeedback={(_tone, message) => setNotice(message)}
-            />
-
-            {cloudTrashOpen && (
-              <Dialog
-                open={cloudTrashOpen}
-                onClose={() => { if (!busy) setCloudTrashOpen(false) }}
-                maxWidth="md"
-                fullWidth
-                scroll="paper"
-                aria-label="回收站"
-                slotProps={{ paper: xDriveDialogPaperProps }}
-              >
-                <XDriveDialogTitle
-                  title="回收站"
-                  subtitle={`${cloudTrash.length} 个项目`}
-                  onClose={() => setCloudTrashOpen(false)}
-                  closeDisabled={!!busy}
-                />
-                <XDriveDialogContent dividers flush>
-                  {cloudTrash.length === 0 ? <XDriveStatePanel variant="plain" compact message="回收站为空。" /> : (
-                    <div className="cloud-compact-list">
-                      {cloudTrash.map((node) => (
-                        <div className="cloud-compact-row" key={node.id}>
-                          <div><strong>{node.name}</strong><span>{node.type === 'dir' ? '文件夹' : formatBinarySize(node.size)} · 删除于 {node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</span></div>
-                          <div className="cloud-row-actions">
-                            <XDriveActionButton compact disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>恢复</XDriveActionButton>
-                            <XDriveActionButton compact intent="danger" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>永久删除</XDriveActionButton>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </XDriveDialogContent>
-                <XDriveDialogActions>
-                  <XDriveActionButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</XDriveActionButton>
-                </XDriveDialogActions>
-              </Dialog>
-            )}
-
-            {cloudHistoryNode && (
-              <Dialog
-                open={!!cloudHistoryNode}
-                onClose={() => {
-                  if (busy) return
-                  setCloudHistoryNode(null)
-                  setCloudHistoryCrumbs([])
-                  setCloudVersions([])
-                }}
-                maxWidth="md"
-                fullWidth
-                scroll="paper"
-                aria-label="版本历史"
-                slotProps={{ paper: xDriveDialogPaperProps }}
-              >
-                <XDriveDialogTitle
-                  title={`版本历史 — ${cloudHistoryNode.name}`}
-                  subtitle={`当前版本 r${cloudHistoryNode.revision}`}
-                  onClose={() => {
-                    setCloudHistoryNode(null)
-                    setCloudHistoryCrumbs([])
-                    setCloudVersions([])
-                  }}
-                  closeDisabled={!!busy}
-                />
-                <XDriveDialogContent dividers flush>
-                  {cloudVersions.length === 0 ? <XDriveStatePanel variant="plain" compact message="暂无历史版本。" /> : (
-                    <div className="cloud-compact-list">
-                      {cloudVersions.map((version) => (
-                        <div className="cloud-compact-row" key={version.id}>
-                          <div><strong>Revision r{version.revision}</strong><span>{formatBinarySize(version.size)} · {new Date(version.created_at).toLocaleString()}</span></div>
-                          <XDriveActionButton compact intent="primary" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>恢复</XDriveActionButton>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </XDriveDialogContent>
-                <XDriveDialogActions>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    onClick={() => {
-                      setCloudHistoryNode(null)
-                      setCloudHistoryCrumbs([])
-                      setCloudVersions([])
-                    }}
-                  >
-                    关闭
-                  </XDriveActionButton>
-                </XDriveDialogActions>
-              </Dialog>
-            )}
-
-            <XDriveShareDialog
-              adapter={desktopShareDialogAdapter}
-              node={cloudShareNode}
-              onClose={() => setCloudShareNode(null)}
-              onError={(shareError) => setError(
-                shareError instanceof Error ? shareError.message : String(shareError),
-              )}
-              expiryMode="days"
-              listVariant="compact"
-              showCloseAction
-            />
-          </section>
+          />
         )}
 
         {view === 'transfers' && (
