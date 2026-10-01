@@ -43,6 +43,24 @@ func (r *Runner) RunPullSource(ctx context.Context, source meta.Source) (client.
 	return run, err
 }
 
+func (r *Runner) PullSourceConcurrencyKey(ctx context.Context, source meta.Source) string {
+	if r == nil || r.DB == nil || r.Keyring == nil {
+		return ""
+	}
+	plaintext, err := sourcecredential.Get(ctx, r.DB, r.Keyring, source)
+	if err != nil {
+		return ""
+	}
+	defer clear(plaintext)
+	var credential synology.Credential
+	if err := json.Unmarshal(plaintext, &credential); err != nil {
+		return ""
+	}
+	key := synology.AccountConcurrencyKey(credential)
+	credential.Password = ""
+	return key
+}
+
 func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.SyncRun, synologysync.Result, error) {
 	var result synologysync.Result
 	if err := r.validate(); err != nil {

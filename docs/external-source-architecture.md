@@ -58,7 +58,7 @@ It may additionally import albums, capture metadata, people, tags, favorite stat
 
 A generic DSM/File Station source for arbitrary shared folders and arbitrary file types.
 
-Backend status: File Station API/session, multi-root validation, generic directory execution, recursive scanner, worker registration, credential/config activation gates, cancellation/retry integration, and Backup missing safety are implemented. Web/Desktop creation/configuration UI remains the next delivery step.
+Status: File Station API/session, multi-root validation, generic directory execution, recursive scanner, worker registration, credential/config activation gates, cancellation/retry integration, Backup missing safety, Web/Desktop creation/configuration, protected directory browsing, and root-selection UI are implemented.
 
 Current behavior:
 
@@ -82,7 +82,7 @@ direction=pull
 sync_mode=backup
 ```
 
-Photos Pull and Files Pull may coexist. If their remote scopes overlap, xDrive keeps separate SourceItems because provenance differs, while CAS may still deduplicate identical content bytes.
+Photos Pull and Files Pull may coexist. If their remote scopes overlap, xDrive keeps separate SourceItems because provenance differs, while CAS may still deduplicate identical content bytes. Pull scheduling coordinates Synology Sources by a hashed DSM-origin + username key, so Photos and File Station using the same DSM account do not create competing login/API sessions; unrelated accounts still run concurrently within the global worker limit.
 
 ### Synology NAS Push — source agent
 
@@ -162,8 +162,8 @@ This contract is the default for new synchronization-folder connectors. A new co
 
 ## Implementation order
 
-1. SourceItemAlias + explicit canonical identity promotion.
-2. Synology Files Pull (`synology_files`) backend complete; add Web/Desktop root selection and source-management UI.
+1. Complete: SourceItemAlias + explicit canonical identity promotion.
+2. Complete: Synology Files Pull (`synology_files`) backend + Web/Desktop source management and directory selection.
 3. Synology Push Photos-item semantic identity lane.
 4. Provider semantic metadata and media grouping.
 5. Incremental change scanners only where a reliable provider change contract exists.

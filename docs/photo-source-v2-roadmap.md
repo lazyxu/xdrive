@@ -313,7 +313,8 @@ The Pull runner uses bounded source-level concurrency:
 - default global active Source limit: 2;
 - configurable from 1 through 8;
 - per-Source transfer concurrency remains 1;
-- connector/account-specific API rate limits remain independent of global Source concurrency.
+- connector/account-specific API rate limits remain independent of global Source concurrency;
+- Sources that resolve to the same upstream account are serialized before execution, while unrelated accounts may still fill the remaining global slots. Yike currently coordinates identical stored Cookie credentials; Synology Photos and File Station share one hashed DSM-origin + username key.
 
 The queue priority is:
 
@@ -328,7 +329,7 @@ Retry state is persisted on the Source so worker restarts do not erase or multip
 
 Only connector-classified transient/rate-limit failures enter this source-level retry path. Authentication, permission, OTP, invalid TLS certificates, missing provider capabilities, invalid configuration, and deterministic item errors remain non-retryable at the scheduler level.
 
-If multiple Sources share one provider account, a later connector-account limiter should prevent source-level parallelism from multiplying the provider's effective API request rate beyond the account policy.
+Provider-account coordination prevents source-level parallelism from multiplying the effective request/login rate for credentials xDrive can prove belong to the same account. The key is deliberately non-secret and process-local. Yike can only prove exact stored-Cookie identity today; if two different Cookies belong to the same Yike account, future persisted provider-account identity can strengthen that grouping without changing the scheduler contract.
 
 ## Deletion semantics
 
@@ -440,8 +441,8 @@ The ordering prioritizes reliability and identity before feature breadth.
 | Phase | TODO | Priority |
 | --- | --- | --- |
 | P0 | Complete: bounded multi-source scheduler, manual/retry/overdue priority, persisted classified retry backoff | Highest |
-| P1 | `SourceItemAlias` model + planner alias resolution + migration tests | Highest |
-| P2 | Synology Files Pull backend for arbitrary shares/directories and arbitrary file types; Web/Desktop root-selection UI remains | Highest |
+| P1 | Complete: `SourceItemAlias` model + planner alias resolution + migration tests | Highest |
+| P2 | Complete: Synology Files Pull backend, Web/Desktop configuration, protected directory browsing, and root-selection UI | Highest |
 | P3 | Synology Push hybrid Photos-API semantic lane + filesystem fast path + no-duplicate canonical item-ID migration | Highest |
 | P4 | Source semantic capability declarations + normalized scalar/facet storage | High |
 | P5 | Synology description/favorite/GPS/address/tag/person import with graceful API capability detection | High |
