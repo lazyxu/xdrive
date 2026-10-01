@@ -93,6 +93,7 @@ services: {}
   */scripts/server-backup.sh)
     emit '#!/usr/bin/env bash
 set -euo pipefail
+printf "%s\n" "$*" > "$TEST_STATE/backup-args"
 config=""
 output=""
 leave=0
@@ -297,6 +298,7 @@ test -x "$TMP/config/bin/server-doctor.sh"
 grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
 test ! -e "$TMP/host-bin/xdrive-server"
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/upgrade.err"
+grep -q -- '--compat-verify-image ghcr.io/lazyxu/xdrive-server:sha-0123456789ab' "$TMP/state/backup-args"
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
 if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then

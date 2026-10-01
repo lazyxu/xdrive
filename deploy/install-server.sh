@@ -1587,7 +1587,8 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   if ! backup_output="$("$STAGING_DIR/server-backup.sh" \
       --config-dir "$XDRIVE_HOME" \
       --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
-      --leave-server-stopped </dev/null)"; then
+      --leave-server-stopped \
+      --compat-verify-image "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG" </dev/null)"; then
     echo "$backup_output" >&2
     echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
     exit 1
