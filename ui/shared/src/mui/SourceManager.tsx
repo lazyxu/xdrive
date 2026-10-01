@@ -99,6 +99,7 @@ import type {
 } from '../external-sources'
 
 export interface XDriveSourceManagerAdapter {
+  me?(): Promise<{ username: string }>
   sourceOverview(): Promise<ExternalSourceOverview[]>
   createSource(input: CreateExternalSourceInput): Promise<ExternalSource>
   triggerSource(sourceID: number): Promise<ExternalSource>
@@ -120,11 +121,23 @@ export interface XDriveSourceManagerAdapter {
   setSourceConnectorConfig(sourceID: number, revision: number, payload: Record<string, unknown>): Promise<ExternalSourceConnectorConfig>
 }
 
+export interface XDriveSourceTargetNode {
+  id: number
+  name: string
+  path?: string
+}
+
+export interface XDriveSourceTargetBrowser {
+  root(): Promise<XDriveSourceTargetNode>
+  children(parentID: number): Promise<XDriveSourceTargetNode[]>
+}
+
 export interface XDriveSourceManagerProps {
   adapter: XDriveSourceManagerAdapter
   defaultTargetNodeID?: number
   defaultTargetLabel: string
   defaultTargetPath: string
+  targetBrowser?: XDriveSourceTargetBrowser
   onError: (error: unknown) => void
 }
 
@@ -261,6 +274,7 @@ export function XDriveSourceManager({
   defaultTargetNodeID,
   defaultTargetLabel,
   defaultTargetPath,
+  targetBrowser,
   onError,
 }: XDriveSourceManagerProps) {
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
@@ -288,6 +302,9 @@ export function XDriveSourceManager({
   const settingsScheduleExpression = settingsValues.schedule_expression
   const settingsScheduleTimezone = settingsValues.schedule_timezone
   const [createOpen, setCreateOpen] = useState(false)
+  const [createTargetCrumbs, setCreateTargetCrumbs] = useState<XDriveSourceTargetNode[]>([])
+  const [createTargetDirectories, setCreateTargetDirectories] = useState<XDriveSourceTargetNode[]>([])
+  const [createTargetLoading, setCreateTargetLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [triggeringSourceID, setTriggeringSourceID] = useState<number | null>(null)
   const [cancellingRunID, setCancellingRunID] = useState<string | null>(null)
@@ -318,6 +335,12 @@ export function XDriveSourceManager({
   const createPreset = createValues.preset
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
+  const createTarget = createTargetCrumbs.at(-1)
+  const selectedCreateTargetNodeID = targetBrowser ? createTarget?.id : defaultTargetNodeID
+  const selectedCreateTargetLabel = targetBrowser
+    ? (createTargetCrumbs.map((item) => item.name).join(' / ') || defaultTargetLabel)
+    : defaultTargetLabel
+  const selectedCreateTargetPath = targetBrowser ? (createTarget?.path ?? '') : defaultTargetPath
 
   const showActionError = (title: string, error: unknown, fallback: string, detail?: string) => {
     setErrorDialog({
@@ -476,19 +499,52 @@ export function XDriveSourceManager({
 
   const openSynologyGuide = (source: ExternalSource) => {
     setGuideSource(source)
+    if (!adapter.me) {
+      setGuideUsername(undefined)
+      return
+    }
     void adapter.me()
       .then((me) => setGuideUsername(me.username))
       .catch(() => setGuideUsername(undefined))
   }
 
-  const openCreate = () => {
+  const loadCreateTargetDirectory = async (
+    node: XDriveSourceTargetNode,
+    crumbs: XDriveSourceTargetNode[],
+  ) => {
+    if (!targetBrowser) return
+    setCreateTargetLoading(true)
+    try {
+      const children = await targetBrowser.children(node.id)
+      setCreateTargetCrumbs(crumbs)
+      setCreateTargetDirectories(children)
+    } catch (error) {
+      onError(error)
+    } finally {
+      setCreateTargetLoading(false)
+    }
+  }
+
+  const openCreate = async () => {
     setCreateValues(initialCreateSourceValues())
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
     setCreateCredentialTest(null)
     setCreateCredentialTestError('')
+    setCreateTargetCrumbs([])
+    setCreateTargetDirectories([])
     setCreateOpen(true)
+    if (!targetBrowser) return
+    setCreateTargetLoading(true)
+    try {
+      const root = await targetBrowser.root()
+      await loadCreateTargetDirectory(root, [root])
+    } catch (error) {
+      onError(error)
+    } finally {
+      setCreateTargetLoading(false)
+    }
   }
 
   const changeCreatePreset = (preset: ExternalSourceCreatePreset) => {
@@ -581,7 +637,7 @@ export function XDriveSourceManager({
     setCreateSpacesError(spacesError)
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
-    if (option.kind !== 'yike_photos' && !defaultTargetNodeID) {
+    if (option.kind !== 'yike_photos' && !selectedCreateTargetNodeID) {
       setErrorDialog({ title: '无法添加同步文件夹', message: '当前目标文件夹尚未加载，请稍后重试。' })
       return
     }
@@ -617,7 +673,7 @@ export function XDriveSourceManager({
         schedule_type: values.schedule_type,
         schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
         schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
-        target_node_id: option.kind === 'yike_photos' ? 0 : (defaultTargetNodeID ?? 0),
+        target_node_id: option.kind === 'yike_photos' ? 0 : (selectedCreateTargetNodeID ?? 0),
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
@@ -1108,7 +1164,7 @@ export function XDriveSourceManager({
             >
               刷新
             </XDriveActionButton>
-            <XDriveActionButton intent="primary" startIcon={<AddRoundedIcon />} onClick={openCreate}>
+            <XDriveActionButton intent="primary" startIcon={<AddRoundedIcon />} onClick={() => void openCreate()}>
               添加同步文件夹
             </XDriveActionButton>
           </>
@@ -1503,11 +1559,63 @@ export function XDriveSourceManager({
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
             固定逻辑目录：{yikeManagedTargetLabel}。连接成功后由服务器按百度 UID 和账号名称自动创建；底层文件仍使用 xDrive CAS 存储。
           </XDriveStatusAlert>
+        ) : targetBrowser ? (
+          <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
+              <MuiBox>
+                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标文件夹</MuiTypography>
+                <MuiTypography variant="body2" color="text.secondary">
+                  当前选择：{selectedCreateTargetLabel || '正在加载…'}
+                </MuiTypography>
+              </MuiBox>
+              {createTargetLoading ? <CircularProgress size={18} /> : null}
+            </Stack>
+            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+              {createTargetCrumbs.map((crumb, index) => (
+                <MuiButton
+                  key={crumb.id}
+                  size="small"
+                  variant={index === createTargetCrumbs.length - 1 ? 'contained' : 'text'}
+                  disabled={createTargetLoading || index === createTargetCrumbs.length - 1}
+                  onClick={() => void loadCreateTargetDirectory(crumb, createTargetCrumbs.slice(0, index + 1))}
+                >
+                  {crumb.name}
+                </MuiButton>
+              ))}
+            </Stack>
+            <Stack spacing={0.75} sx={{ mt: 1 }}>
+              {createTargetDirectories.length === 0 && !createTargetLoading ? (
+                <MuiTypography variant="caption" color="text.secondary">
+                  当前目录下没有子文件夹，可直接使用当前目录。
+                </MuiTypography>
+              ) : createTargetDirectories.map((directory) => (
+                <MuiButton
+                  key={directory.id}
+                  variant="outlined"
+                  size="small"
+                  disabled={createTargetLoading}
+                  onClick={() => void loadCreateTargetDirectory(
+                    directory,
+                    [...createTargetCrumbs, directory],
+                  )}
+                  sx={{ justifyContent: 'space-between' }}
+                >
+                  <span>{directory.name}</span>
+                  <span>进入文件夹 ›</span>
+                </MuiButton>
+              ))}
+            </Stack>
+            {createOption.direction === 'pull' && (
+              <MuiTypography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Pull 模式由 xDrive Server 直接连接 DSM；请确保服务器网络可以访问下面填写的 DSM 地址。
+              </MuiTypography>
+            )}
+          </MuiBox>
         ) : (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
             <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
             <MuiTypography variant="body2">
-              当前目标：{defaultTargetLabel}{defaultTargetPath ? `（${defaultTargetPath}）` : '（我的文件根目录）'}
+              当前目标：{selectedCreateTargetLabel}{selectedCreateTargetPath ? `（${selectedCreateTargetPath}）` : '（我的文件根目录）'}
             </MuiTypography>
             {createOption.direction === 'pull' && (
               <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
