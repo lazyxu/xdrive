@@ -12,12 +12,13 @@ const files = {
   users: read('src/AdminUsers.tsx'),
   audit: read('src/AdminAudit.tsx'),
   storageStats: read('src/StorageStatsPanel.tsx'),
-  share: read('src/ShareDialog.tsx'),
+  share: read('src/ShareDialog.tsx') + readRepo('ui/shared/src/mui/ShareDialog.tsx'),
   shareFields: readRepo('ui/shared/src/mui/ShareFields.tsx'),
   shareList: readRepo('ui/shared/src/mui/ShareList.tsx'),
   publicShare: read('src/PublicShare.tsx'),
-  sources: read('src/ExternalSources.tsx'),
+  sources: read('src/ExternalSources.tsx') + readRepo('ui/shared/src/mui/SourceManager.tsx'),
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
+  settingsDialog: readRepo('ui/shared/src/mui/SettingsDialog.tsx'),
   accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),
   brandLockup: readRepo('ui/shared/src/mui/BrandLockup.tsx'),
   confirmDialog: readRepo('ui/shared/src/mui/ConfirmDialog.tsx'),
@@ -180,7 +181,7 @@ requireText(files.synologyGuide, ['群晖 DSM 配置', 'DSM 操作示意图', '�
 if (/<Alert\b/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI Alert')
 if (/<DialogContent(?:\s|>)/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI DialogContent')
 requireText(files.main, ['MuiThemeProvider', 'createXDriveMuiTheme', 'normalizeXDriveAppearance', "useMediaQuery('(prefers-color-scheme: dark)'", "xdrive.appearance", '<App appearance={appearance} onAppearanceChange={changeAppearance} />'], 'MUI Web 入口')
-requireText(files.app, ['<ListItemText>设置</ListItemText>', 'subtitle="外观与服务端信息"', 'XDriveAppearanceField', 'XDriveBuildInfoCard', 'Server 构建信息'], 'Web 设置弹窗')
+requireText(files.app + files.settingsDialog, ['<ListItemText>设置</ListItemText>', 'subtitle="外观与服务端信息"', 'XDriveAppearanceField', 'XDriveBuildInfoCard', 'Server 构建信息'], 'Web 设置弹窗')
 if (/antd|ConfigProvider|AntApp|zhCN/.test(files.main)) throw new Error('Web 入口仍保留 Ant Design provider')
 if (/\.ant-[a-zA-Z0-9_-]+/.test(files.styles)) throw new Error('Web CSS 仍保留 Ant Design 选择器')
 
