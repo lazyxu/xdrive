@@ -94,3 +94,12 @@ test('Desktop uploads dropped files through webUtils without exposing arbitrary 
   assert.ok(types.includes('cloudUploadDroppedFiles: (parentID: number, files: File[])'), 'renderer dropped-file API should expose File[] instead of local paths')
   assert.equal(types.includes('cloudUploadDroppedFiles: (parentID: number, paths:'), false, 'renderer must not receive raw dropped-file paths')
 })
+
+test('Desktop Agent bridge exposes cursor-paged cloud children without changing the legacy list contract', () => {
+  assert.ok(agentClient.includes('cloudChildrenPage(parentID: number, options: {'), 'Desktop AgentClient paged children method is missing')
+  assert.ok(agentClient.includes("return this.request<AgentCloudChildrenPage>('GET'"), 'Desktop AgentClient should return a page contract')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-children-page'"), 'Electron main paged children bridge is missing')
+  assert.ok(preload.includes('cloudChildrenPage: ('), 'preload paged children bridge is missing')
+  assert.ok(types.includes('type AgentCloudChildrenPage = {'), 'renderer paged children type is missing')
+  assert.ok(types.includes('cloudChildren: (parentID: number)'), 'legacy cloudChildren contract should remain available')
+})

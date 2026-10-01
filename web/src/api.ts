@@ -85,6 +85,21 @@ export interface SearchPage {
   next_cursor?: string
 }
 
+export interface ChildrenPage {
+  items: Node[]
+  next_cursor?: string
+  has_more: boolean
+  sort: 'name' | 'updated' | 'size' | 'type'
+  order: 'asc' | 'desc'
+}
+
+export interface ChildrenOptions {
+  limit?: number
+  cursor?: string
+  sort?: 'name' | 'updated' | 'size' | 'type'
+  order?: 'asc' | 'desc'
+}
+
 export interface UploadChunkState {
   index: number
   size: number
@@ -562,6 +577,16 @@ export class XDriveApi {
 
   list(parentID: number) {
     return this.request<Node[]>(`/api/v1/nodes/${parentID}/children`)
+  }
+
+  listPage(parentID: number, options: ChildrenOptions = {}) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, Math.trunc(options.limit ?? 200)))),
+      sort: options.sort ?? 'name',
+      order: options.order ?? 'asc',
+    })
+    if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
+    return this.request<ChildrenPage>(`/api/v1/nodes/${parentID}/children?${query.toString()}`)
   }
 
   search(query: string, limit = 200, cursor = '') {

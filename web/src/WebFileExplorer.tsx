@@ -18,6 +18,7 @@ import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
+  XDriveFileExplorerSort,
   XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
 import type { Node } from '../../ui/shared/src'
@@ -45,8 +46,11 @@ export default function WebFileExplorer({
   items,
   crumbs,
   loading,
+  loadingMore,
+  hasMore,
   uploadProgress,
   onLoadDirectory,
+  onLoadMore,
   onUploadFiles,
   onUploadDroppedFiles,
   onCreateFolder,
@@ -64,8 +68,11 @@ export default function WebFileExplorer({
   items: Node[]
   crumbs: Crumb[]
   loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
   uploadProgress: number | null
-  onLoadDirectory: (id: number, crumbs: Crumb[]) => Promise<void>
+  onLoadDirectory: (id: number, crumbs: Crumb[], sort: XDriveFileExplorerSort) => Promise<void>
+  onLoadMore: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onCreateFolder: () => void
@@ -81,6 +88,7 @@ export default function WebFileExplorer({
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const [viewMode, setViewMode] = useState<XDriveFileExplorerViewMode>(initialViewMode)
+  const [sort, setSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const [searchValue, setSearchValue] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
@@ -149,6 +157,12 @@ export default function WebFileExplorer({
     setSearchHasMore(false)
   }
 
+  const changeSort = (nextSort: XDriveFileExplorerSort) => {
+    setSort(nextSort)
+    if (searchResults) return
+    if (current) void onLoadDirectory(current.id, crumbs, nextSort)
+  }
+
   const recordHistory = (nextCrumbs: Crumb[]) => {
     setHistory((currentHistory) => {
       const next = [...currentHistory.slice(0, historyIndex + 1), nextCrumbs]
@@ -160,7 +174,7 @@ export default function WebFileExplorer({
   const navigateTo = async (nextCrumbs: Crumb[], record = true) => {
     const target = nextCrumbs.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, nextCrumbs)
+    await onLoadDirectory(target.id, nextCrumbs, sort)
     if (record) recordHistory(nextCrumbs)
     clearSearch()
   }
@@ -171,7 +185,7 @@ export default function WebFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
   }
@@ -182,7 +196,7 @@ export default function WebFileExplorer({
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
-    await onLoadDirectory(target.id, next)
+    await onLoadDirectory(target.id, next, sort)
     setHistoryIndex(nextIndex)
     clearSearch()
   }
@@ -349,7 +363,7 @@ export default function WebFileExplorer({
       }
       if (clipboard.mode === 'cut') setClipboard(null)
       clearSearch()
-      await onLoadDirectory(current.id, crumbs)
+      await onLoadDirectory(current.id, crumbs, sort)
       await onQuotaChanged()
     } catch (error) {
       onError(error)
@@ -374,7 +388,7 @@ export default function WebFileExplorer({
         else await api.move(node.id, node.revision, targetNode.id)
       }
       clearSearch()
-      if (current) await onLoadDirectory(current.id, crumbs)
+      if (current) await onLoadDirectory(current.id, crumbs, sort)
       await onQuotaChanged()
       onFeedback('good', operation === 'copy' ? '已复制到目标文件夹。' : '已移动到目标文件夹。')
     } catch (error) {
@@ -389,7 +403,7 @@ export default function WebFileExplorer({
     const targetNode = target ? nodeByID.get(Number(target.id)) : undefined
     const parentID = targetNode?.type === 'dir' ? targetNode.id : current.id
     await onUploadDroppedFiles(parentID, files)
-    if (current) await onLoadDirectory(current.id, crumbs)
+    if (current) await onLoadDirectory(current.id, crumbs, sort)
   }
 
   const backgroundMenuItems = useMemo<XDriveFileExplorerMenuItem[]>(() => [
@@ -411,7 +425,7 @@ export default function WebFileExplorer({
       icon: <RefreshRoundedIcon fontSize="small" />,
       dividerBefore: true,
       onSelect: () => {
-        if (current) void onLoadDirectory(current.id, crumbs)
+        if (current) void onLoadDirectory(current.id, crumbs, sort)
       },
     },
   ], [crumbs, current, onCreateFolder, onLoadDirectory])
@@ -456,7 +470,7 @@ export default function WebFileExplorer({
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}
         onRefresh={() => {
-          if (current) void onLoadDirectory(current.id, crumbs)
+          if (current) void onLoadDirectory(current.id, crumbs, sort)
         }}
         onCrumbClick={(_crumb, index) => { void navigateTo(crumbs.slice(0, index + 1)) }}
         onCreateFolder={onCreateFolder}
@@ -464,6 +478,14 @@ export default function WebFileExplorer({
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        sort={sort}
+        onSortChange={changeSort}
+        externallySorted={!searchResults}
+        hasMore={!searchResults && hasMore}
+        loadingMore={loadingMore}
+        onLoadMore={() => {
+          if (current && !searchResults) void onLoadMore(current.id, sort)
+        }}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
           const nodes = explorerNodesForItems(selected)
