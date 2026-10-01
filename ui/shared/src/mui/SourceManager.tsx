@@ -1321,6 +1321,7 @@ export function XDriveSourceManager({
                                 key={item.external_id}
                                 item={item}
                                 sizeLabel={formatSize(item.size)}
+                                wideAt="md"
                               />
                             ))}
                             <XDrivePaginationControls
@@ -1365,7 +1366,7 @@ export function XDriveSourceManager({
                         sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}
                       >
                         <AccordionSummary>
-                          <XDriveSourceRunSummary runNumber={run.run_number} detail={runDetail} />
+                          <XDriveSourceRunSummary runNumber={run.run_number} detail={runDetail} wideAt="md" />
                         </AccordionSummary>
                         <AccordionDetails>
                           {runDetail.progress && (
@@ -1648,6 +1649,7 @@ export function XDriveSourceManager({
               onChange={(value) => setCreateValues((current) => ({ ...current, run_mode: value }))}
             />
             <XDriveSourceScheduleFields
+              wideAt="md"
               scheduleType={createScheduleType}
               expression={createScheduleExpression}
               timezone={createScheduleTimezone}
@@ -1845,6 +1847,7 @@ export function XDriveSourceManager({
                 managed={setting.source.kind === 'yike_photos'}
               />
               <XDriveSourceScheduleFields
+                wideAt="md"
                 scheduleType={settingsScheduleType}
                 expression={settingsScheduleExpression}
                 timezone={settingsScheduleTimezone}
