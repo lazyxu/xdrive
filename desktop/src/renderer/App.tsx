@@ -2365,6 +2365,7 @@ export default function App({
           appearance={appearance}
           appearanceDisabled={busy === 'appearance'}
           onAppearanceChange={(next) => void changeAppearance(next)}
+          buildInfoSectionID="desktop-build-info"
           buildInfo={[
             { title: 'Desktop 构建信息', info },
             { title: 'Server 构建信息', info: status?.server_build },
