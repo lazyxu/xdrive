@@ -162,6 +162,29 @@ func TestFileStationDownloadRejectsWrongPartialRange(t *testing.T) {
 	}
 }
 
+func TestFileStationDownloadReturnsRateLimitedAfter429Retries(t *testing.T) {
+	server := newFileStationTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMaxAttempts = 1
+	session, err := client.ConnectFileStation(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	_, err = session.OpenPath(context.Background(), "/documents/a.bin", 0)
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err=%v want ErrRateLimited", err)
+	}
+}
+
 func TestFileStationDownloadSkipsOffsetWhenRangeIgnored(t *testing.T) {
 	server := newFileStationTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")

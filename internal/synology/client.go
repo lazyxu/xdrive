@@ -36,6 +36,7 @@ var (
 	ErrHTTPForbidden    = errors.New("Synology HTTP access forbidden")
 	ErrSessionExpired   = errors.New("Synology session expired")
 	ErrMultipleLogin    = errors.New("Synology multiple login detected")
+	ErrRateLimited      = errors.New("Synology request rate limited")
 	ErrPermissionDenied = errors.New("Synology permission denied")
 	ErrOTPRequired      = errors.New("Synology OTP authentication required")
 	ErrUnavailable      = errors.New("Synology is unavailable")
@@ -221,6 +222,12 @@ func DiagnoseConnectionError(err error) ConnectionDiagnostic {
 		return ConnectionDiagnostic{
 			Code:   "synology_http_forbidden",
 			Detail: "Synology DSM 或应用入口返回 HTTP 403；这不等同于用户名或密码错误。请检查 DSM 登录门户/反向代理、来源 IP 限制和对应应用的访问权限。",
+		}
+	}
+	if errors.Is(err, ErrRateLimited) {
+		return ConnectionDiagnostic{
+			Code:   "synology_rate_limited",
+			Detail: "Synology DSM 请求过于频繁，请稍后重试。",
 		}
 	}
 	if errors.Is(err, ErrUnavailable) {
@@ -476,6 +483,9 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, body io.Re
 					}
 					continue
 				}
+			}
+			if resp.StatusCode == http.StatusTooManyRequests {
+				return fmt.Errorf("%w: HTTP %s", ErrRateLimited, resp.Status)
 			}
 			return fmt.Errorf("%w: HTTP %s", ErrUnavailable, resp.Status)
 		}
