@@ -191,6 +191,19 @@ declare global {
   type AgentMediaAlbum = MediaAlbum
   type AgentMediaThumbnail = { content_type: string; data_base64: string }
 
+  type AgentCloudChildrenPage = {
+    items: AgentCloudNode[]
+    next_cursor?: string
+    has_more: boolean
+    sort: 'name' | 'updated' | 'type' | 'size'
+    order: 'asc' | 'desc'
+  }
+  type AgentCloudChildrenOptions = {
+    limit?: number
+    cursor?: string
+    sort?: 'name' | 'updated' | 'type' | 'size'
+    order?: 'asc' | 'desc'
+  }
   type AgentCloudNode = Node
   type AgentCloudQuota = QuotaUsage
   type AgentCloudStorageStats = StorageStats
@@ -307,6 +320,7 @@ declare global {
         triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>
         cloudRoot: () => Promise<DesktopResult<AgentCloudNode>>
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
+        cloudChildrenPage: (parentID: number, options: AgentCloudChildrenOptions) => Promise<DesktopResult<AgentCloudChildrenPage>>
         cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudRename: (id: number, revision: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudCopy: (id: number, parentID: number) => Promise<DesktopResult<AgentCloudNode>>

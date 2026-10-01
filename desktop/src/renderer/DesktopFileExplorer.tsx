@@ -23,6 +23,7 @@ import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
+  XDriveFileExplorerSort,
   XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
 
@@ -45,7 +46,11 @@ export default function DesktopFileExplorer({
   items,
   crumbs,
   loading,
+  loadingMore,
+  hasMore,
+  directorySort,
   onLoadDirectory,
+  onLoadMore,
   onOpenTrash,
   onOpenHistory,
   onOpenShares,
@@ -58,7 +63,11 @@ export default function DesktopFileExplorer({
   items: AgentCloudNode[]
   crumbs: AgentCloudCrumb[]
   loading: boolean
-  onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[]) => Promise<void>
+  loadingMore: boolean
+  hasMore: boolean
+  directorySort: XDriveFileExplorerSort
+  onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[], sort?: XDriveFileExplorerSort) => Promise<void>
+  onLoadMore: () => Promise<void>
   onOpenTrash: () => void
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
@@ -69,6 +78,7 @@ export default function DesktopFileExplorer({
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
   const [viewMode, setViewMode] = useState<XDriveFileExplorerViewMode>(initialViewMode)
+  const [searchSort, setSearchSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const [searchValue, setSearchValue] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<AgentCloudSearchResult[] | null>(null)
@@ -640,6 +650,15 @@ export default function DesktopFileExplorer({
         }}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
+        sort={searchResults ? searchSort : directorySort}
+        onSortChange={(nextSort) => {
+          if (searchResults) setSearchSort(nextSort)
+          else if (current) void onLoadDirectory(current.id, crumbs, nextSort)
+        }}
+        sortItemsLocally={Boolean(searchResults)}
+        hasMore={!searchResults && hasMore}
+        loadingMore={!searchResults && loadingMore}
+        onLoadMore={!searchResults && hasMore ? () => { void onLoadMore() } : undefined}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(

@@ -903,3 +903,155 @@ func TestCopyAndMoveNodes(t *testing.T) {
 		tokenB, strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, root.ID)), http.StatusNotFound,
 	)
 }
+
+func TestChildrenPaginationAndSorting(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := (&Server{
+		DB: db, Store: store, Auth: auth.New("children-pagination-secret", time.Hour),
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+
+	tokenA := createTestUser(t, db, router, "page-user", "password-a")
+	tokenB := createTestUser(t, db, router, "page-other", "password-b")
+	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
+	var rootModel meta.Node
+	if err := db.First(&rootModel, root.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"Folder C", "Folder A", "Folder B"} {
+		requestNode(
+			t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID),
+			tokenA, strings.NewReader(fmt.Sprintf(`{"name":%q}`, name)), http.StatusCreated,
+		)
+	}
+	type fileInput struct {
+		name string
+		size int64
+	}
+	baseTime := time.Now()
+	for index, input := range []fileInput{
+		{name: "zeta.txt", size: 5},
+		{name: "alpha.pdf", size: 10},
+		{name: "middle.csv", size: 7},
+	} {
+		node := meta.Node{
+			ParentID: &root.ID, Name: input.name, Type: meta.NodeTypeFile, OwnerID: rootModel.OwnerID,
+			Revision: 1, CreatedAt: baseTime.Add(time.Duration(index) * time.Second),
+			UpdatedAt: baseTime.Add(time.Duration(index) * time.Second),
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.File{
+			NodeID: node.ID, Size: input.size, StorageKey: fmt.Sprintf("pagination/%d", node.ID),
+			SHA256: fmt.Sprintf("%064d", node.ID),
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type page struct {
+		Items      []nodeDTO `json:"items"`
+		NextCursor string    `json:"next_cursor"`
+		HasMore    bool      `json:"has_more"`
+		Sort       string    `json:"sort"`
+		Order      string    `json:"order"`
+	}
+	fetch := func(path string, token string, want int) page {
+		res := request(t, router, http.MethodGet, path, token, nil, want)
+		if want != http.StatusOK {
+			return page{}
+		}
+		var out page
+		if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	first := fetch(fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=name&order=asc", root.ID), tokenA, http.StatusOK)
+	if len(first.Items) != 2 || !first.HasMore || first.NextCursor == "" {
+		t.Fatalf("unexpected first page: %+v", first)
+	}
+	if first.Items[0].Name != "Folder A" || first.Items[1].Name != "Folder B" {
+		t.Fatalf("first page order=%q,%q", first.Items[0].Name, first.Items[1].Name)
+	}
+
+	second := fetch(fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=name&order=asc&cursor=%s", root.ID, first.NextCursor), tokenA, http.StatusOK)
+	third := fetch(fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=name&order=asc&cursor=%s", root.ID, second.NextCursor), tokenA, http.StatusOK)
+	all := append(append([]nodeDTO{}, first.Items...), second.Items...)
+	all = append(all, third.Items...)
+	if len(all) != 6 {
+		t.Fatalf("paged count=%d want=6: %+v", len(all), all)
+	}
+	seen := map[uint64]bool{}
+	for _, item := range all {
+		if seen[item.ID] {
+			t.Fatalf("duplicate node across pages: %d", item.ID)
+		}
+		seen[item.ID] = true
+	}
+	wantNames := []string{"Folder A", "Folder B", "Folder C", "alpha.pdf", "middle.csv", "zeta.txt"}
+	for index, want := range wantNames {
+		if all[index].Name != want {
+			t.Fatalf("name page order[%d]=%q want=%q", index, all[index].Name, want)
+		}
+	}
+	if third.HasMore || third.NextCursor != "" {
+		t.Fatalf("last page should be terminal: %+v", third)
+	}
+
+	sizePage := fetch(fmt.Sprintf("/api/v1/nodes/%d/children?limit=6&sort=size&order=desc", root.ID), tokenA, http.StatusOK)
+	if len(sizePage.Items) != 6 {
+		t.Fatalf("size page count=%d", len(sizePage.Items))
+	}
+	if sizePage.Items[0].Type != meta.NodeTypeDir || sizePage.Items[1].Type != meta.NodeTypeDir || sizePage.Items[2].Type != meta.NodeTypeDir {
+		t.Fatalf("folders must remain first for descending size: %+v", sizePage.Items[:3])
+	}
+	if sizePage.Items[3].Name != "alpha.pdf" || sizePage.Items[4].Name != "middle.csv" || sizePage.Items[5].Name != "zeta.txt" {
+		t.Fatalf("size-desc file order=%+v", sizePage.Items[3:])
+	}
+
+	fetch(
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=size&order=asc&cursor=%s", root.ID, first.NextCursor),
+		tokenA, http.StatusBadRequest,
+	)
+	fetch(
+		fmt.Sprintf("/api/v1/nodes/%d/children?limit=2&sort=name&order=asc", root.ID),
+		tokenB, http.StatusNotFound,
+	)
+
+	legacy := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", root.ID), tokenA, nil, http.StatusOK)
+	var legacyItems []nodeDTO
+	if err := json.Unmarshal(legacy.Body.Bytes(), &legacyItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyItems) != 6 {
+		t.Fatalf("legacy children response changed: %s", legacy.Body.String())
+	}
+}

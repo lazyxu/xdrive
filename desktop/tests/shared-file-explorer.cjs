@@ -195,3 +195,18 @@ test('shared FileExplorer provides a preview and properties inspector', () => {
   }
   assert.ok(explorer.includes("width: 'clamp(248px, 27vw, 328px)'"), 'inspector should use a bounded system-style side pane')
 })
+
+test('shared FileExplorer supports cursor-backed incremental loading without re-sorting server pages', () => {
+  for (const token of [
+    'hasMore?: boolean',
+    'loadingMore?: boolean',
+    'onLoadMore?: () => void',
+    'sortItemsLocally?: boolean',
+    'host.scrollHeight - host.scrollTop - host.clientHeight <= 500',
+    '正在加载更多…',
+    "hasMore ? ' · 还有更多' : ''",
+  ]) {
+    assert.ok(explorer.includes(token), `missing incremental FileExplorer contract: ${token}`)
+  }
+  assert.ok(explorer.includes('if (!sortItemsLocally) return items'), 'server-sorted pages must not be re-sorted locally')
+})

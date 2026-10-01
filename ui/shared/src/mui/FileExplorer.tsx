@@ -374,6 +374,10 @@ export function XDriveFileExplorer({
   commandBarEnd,
   statusText,
   loadThumbnail,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+  sortItemsLocally = true,
 }: {
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
@@ -419,6 +423,10 @@ export function XDriveFileExplorer({
   commandBarEnd?: ReactNode
   statusText?: ReactNode
   loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
+  sortItemsLocally?: boolean
 }) {
   const [editingPath, setEditingPath] = useState(false)
   const derivedPath = useMemo(
@@ -491,6 +499,7 @@ export function XDriveFileExplorer({
   }, [])
 
   const visibleItems = useMemo(() => {
+    if (!sortItemsLocally) return items
     const result = [...items]
     const multiplier = sort.direction === 'asc' ? 1 : -1
     result.sort((left, right) => {
@@ -509,7 +518,7 @@ export function XDriveFileExplorer({
       return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }) * multiplier
     })
     return result
-  }, [items, sort.direction, sort.key])
+  }, [items, sort.direction, sort.key, sortItemsLocally])
 
   const selectedItems = useMemo(
     () => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id))),
@@ -876,7 +885,11 @@ export function XDriveFileExplorer({
     : visibleItems
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
-    if (virtualizeDetails) setScrollTop(event.currentTarget.scrollTop)
+    const host = event.currentTarget
+    if (virtualizeDetails) setScrollTop(host.scrollTop)
+    if (hasMore && !loadingMore && onLoadMore && host.scrollHeight - host.scrollTop - host.clientHeight <= 500) {
+      onLoadMore()
+    }
   }
 
   return (
@@ -1500,6 +1513,12 @@ export function XDriveFileExplorer({
           </Box>
         )}
 
+        {loadingMore ? (
+          <Box sx={{ py: 1, textAlign: 'center', color: 'text.secondary' }}>
+            <Typography variant="caption">正在加载更多…</Typography>
+          </Box>
+        ) : null}
+
         {loading && visibleItems.length > 0 ? (
           <Box
             aria-label="正在刷新文件"
@@ -1635,7 +1654,7 @@ export function XDriveFileExplorer({
         sx={{ minHeight: 28, px: 1.25, color: 'text.secondary', bgcolor: 'background.default' }}
       >
         <Typography variant="caption">
-          {items.length} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
+          {items.length} 个项目{hasMore ? ' · 还有更多' : ''}{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
         </Typography>
         <Typography variant="caption">
           {statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}

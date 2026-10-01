@@ -62,6 +62,8 @@ import {
   type AgentCacheStats,
   type AgentCacheReleaseResult,
   type AgentCloudNode,
+  type AgentCloudChildrenPage,
+  type AgentCloudChildrenOptions,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
   type AgentCloudVersion,
@@ -1735,6 +1737,15 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
     }
     return requireAgentClient().cloudChildren(parentID)
+  }, false))
+  ipcMain.handle('agent:cloud-children-page', (_event, parentID: unknown, options: unknown) => runAgentAction<AgentCloudChildrenPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
+    }
+    const input = typeof options === 'object' && options !== null ? options as AgentCloudChildrenOptions : {}
+    return requireAgentClient().cloudChildrenPage(parentID, input)
   }, false))
   ipcMain.handle('agent:cloud-create-directory', (_event, parentID: unknown, name: unknown) => runAgentAction<AgentCloudNode>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

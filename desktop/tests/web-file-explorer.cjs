@@ -92,3 +92,16 @@ test('Web FileExplorer supplies preview/properties metadata without a new plaint
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Web inspector should reuse the protected thumbnail loader')
   assert.equal(api.includes('previewPlaintext'), false, 'Web must not add a plaintext preview API')
 })
+
+test('Web FileExplorer uses cursor pagination and server-side sorting for directory browsing', () => {
+  assert.ok(api.includes('export interface ChildrenPage {'), 'Web children page type is missing')
+  assert.ok(api.includes('listPage(parentID: number, options: ChildrenOptions = {})'), 'Web paged children API is missing')
+  assert.ok(app.includes('const [childrenCursor, setChildrenCursor]'), 'Web children cursor state is missing')
+  assert.ok(app.includes('const loadMoreDirectory = async () => {'), 'Web load-more flow is missing')
+  assert.ok(app.includes('cursor: childrenCursor'), 'Web next-page request must reuse the server cursor')
+  assert.ok(app.includes('directorySort={childrenSort}'), 'Web must pass authoritative directory sort state to its adapter')
+  assert.ok(explorer.includes('sort={searchResults ? searchSort : directorySort}'), 'Web must separate search-local and server directory sorting')
+  assert.ok(explorer.includes('onLoadDirectory(current.id, crumbs, nextSort)'), 'Web directory sort changes must reload page 1')
+  assert.ok(explorer.includes('sortItemsLocally={Boolean(searchResults)}'), 'normal directory pages must preserve server ordering')
+  assert.ok(explorer.includes('onLoadMore={!searchResults && hasMore'), 'Web load-more must be disabled while rendering search results')
+})

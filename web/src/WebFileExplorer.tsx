@@ -18,6 +18,7 @@ import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
+  XDriveFileExplorerSort,
   XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
 import type { Node } from '../../ui/shared/src'
@@ -45,8 +46,12 @@ export default function WebFileExplorer({
   items,
   crumbs,
   loading,
+  loadingMore,
+  hasMore,
+  directorySort,
   uploadProgress,
   onLoadDirectory,
+  onLoadMore,
   onUploadFiles,
   onUploadDroppedFiles,
   onCreateFolder,
@@ -64,8 +69,12 @@ export default function WebFileExplorer({
   items: Node[]
   crumbs: Crumb[]
   loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
+  directorySort: XDriveFileExplorerSort
   uploadProgress: number | null
-  onLoadDirectory: (id: number, crumbs: Crumb[]) => Promise<void>
+  onLoadDirectory: (id: number, crumbs: Crumb[], sort?: XDriveFileExplorerSort) => Promise<void>
+  onLoadMore: () => Promise<void>
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onCreateFolder: () => void
@@ -81,6 +90,7 @@ export default function WebFileExplorer({
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const [viewMode, setViewMode] = useState<XDriveFileExplorerViewMode>(initialViewMode)
+  const [searchSort, setSearchSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const [searchValue, setSearchValue] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
@@ -482,6 +492,15 @@ export default function WebFileExplorer({
         }}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
+        sort={searchResults ? searchSort : directorySort}
+        onSortChange={(nextSort) => {
+          if (searchResults) setSearchSort(nextSort)
+          else if (current) void onLoadDirectory(current.id, crumbs, nextSort)
+        }}
+        sortItemsLocally={Boolean(searchResults)}
+        hasMore={!searchResults && hasMore}
+        loadingMore={!searchResults && loadingMore}
+        onLoadMore={!searchResults && hasMore ? () => { void onLoadMore() } : undefined}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={(
