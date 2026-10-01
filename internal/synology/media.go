@@ -396,8 +396,12 @@ func (s *Session) openItemOnce(ctx context.Context, item Item, offset int64, aut
 		retryAfter := resp.Header.Get("Retry-After")
 		_ = resp.Body.Close()
 		cancel()
+		cause := ErrUnavailable
+		if resp.StatusCode == http.StatusTooManyRequests {
+			cause = ErrRateLimited
+		}
 		return nil, &retryableDownloadOpenError{
-			err:        fmt.Errorf("%w: download returned HTTP %s", ErrUnavailable, resp.Status),
+			err:        fmt.Errorf("%w: download returned HTTP %s", cause, resp.Status),
 			retryAfter: retryAfter,
 		}
 	}

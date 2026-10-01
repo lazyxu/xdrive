@@ -163,6 +163,29 @@ func TestSessionOpenItemRejectsWrongPartialRange(t *testing.T) {
 	}
 }
 
+func TestSessionOpenItemReturnsRateLimitedAfter429Retries(t *testing.T) {
+	server := newMediaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.apiMaxAttempts = 1
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	_, err = session.OpenItem(context.Background(), Item{ID: 5, Space: SpacePersonal}, 0)
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err=%v want ErrRateLimited", err)
+	}
+}
+
 func TestSessionOpenItemSkipsOffsetWhenRangeIgnored(t *testing.T) {
 	server := newMediaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")

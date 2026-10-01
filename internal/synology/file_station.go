@@ -417,8 +417,12 @@ func (s *FileStationSession) openPathOnce(
 		retryAfter := resp.Header.Get("Retry-After")
 		_ = resp.Body.Close()
 		cancel()
+		cause := ErrUnavailable
+		if resp.StatusCode == http.StatusTooManyRequests {
+			cause = ErrRateLimited
+		}
 		return nil, &retryableDownloadOpenError{
-			err:        fmt.Errorf("%w: File Station download returned HTTP %s", ErrUnavailable, resp.Status),
+			err:        fmt.Errorf("%w: File Station download returned HTTP %s", cause, resp.Status),
 			retryAfter: retryAfter,
 		}
 	}

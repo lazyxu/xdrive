@@ -198,7 +198,7 @@ func (r *Runner) ClassifyPullRetry(err error) pullworker.RetryClass {
 	switch {
 	case err == nil, errors.Is(err, context.Canceled):
 		return pullworker.RetryNone
-	case errors.Is(err, synology.ErrMultipleLogin):
+	case errors.Is(err, synology.ErrMultipleLogin), errors.Is(err, synology.ErrRateLimited):
 		return pullworker.RetryRateLimited
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, synology.ErrSessionExpired):
 		return pullworker.RetryTransient
@@ -238,6 +238,8 @@ func sourceErrorMessage(err error) string {
 		return "群晖 File Station 连接或同步超时"
 	case errors.Is(err, synology.ErrMultipleLogin):
 		return "Synology DSM 检测到重复登录，请稍后重试并检查是否有多个程序同时使用同一账号"
+	case errors.Is(err, synology.ErrRateLimited):
+		return "Synology DSM 请求过于频繁，已进入退避并稍后自动重试"
 	case errors.Is(err, synology.ErrPermissionDenied):
 		return "Synology DSM 账号没有访问所选 File Station 路径的权限"
 	case errors.Is(err, synology.ErrOTPRequired):

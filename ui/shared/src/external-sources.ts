@@ -781,6 +781,7 @@ export function externalSourceCredentialTestErrorLabel(code: string, detail = ''
     synology_auth_failed: 'Synology DSM 登录失败，请检查地址、用户名和密码',
     synology_http_forbidden: 'Synology DSM 或应用入口拒绝访问（HTTP 403），这不代表密码错误',
     synology_multiple_login: 'Synology DSM 检测到重复登录，请稍后重试',
+    synology_rate_limited: 'Synology DSM 请求过于频繁，请稍后重试',
     synology_permission_denied: 'Synology DSM 账号没有访问所需服务的权限',
     synology_otp_required: 'Synology DSM 要求两步验证/OTP，当前连接器尚未提供 OTP',
     synology_photos_unavailable: 'Synology Photos API 不可用，请确认 NAS 已安装并启用 Synology Photos',

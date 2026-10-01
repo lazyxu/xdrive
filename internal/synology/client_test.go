@@ -294,6 +294,13 @@ func TestDoJSONDoesNotMislabelPlainHTTPForbiddenAsBadPassword(t *testing.T) {
 	}
 }
 
+func TestDiagnoseConnectionErrorRateLimited(t *testing.T) {
+	d := DiagnoseConnectionError(ErrRateLimited)
+	if d.Code != "synology_rate_limited" {
+		t.Fatalf("diagnostic=%+v", d)
+	}
+}
+
 func TestDiagnoseConnectionErrorClassifiesSelfSignedTLS(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"success":true,"data":{}}`))
