@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const childrenDefaultPageLimit = 200
+
 type Client struct {
 	BaseURL string
 	Token   string
@@ -66,6 +68,21 @@ type SearchOptions struct {
 	Type   string
 	Limit  int
 	Cursor string
+}
+
+type ChildrenOptions struct {
+	Limit  int
+	Cursor string
+	Sort   string
+	Order  string
+}
+
+type ChildrenPage struct {
+	Items      []Node `json:"items"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	HasMore    bool   `json:"has_more"`
+	Sort       string `json:"sort"`
+	Order      string `json:"order"`
 }
 
 type QuotaUsage struct {
@@ -209,6 +226,28 @@ func (c *Client) Root(ctx context.Context) (Node, error) {
 func (c *Client) List(ctx context.Context, parentID uint64) ([]Node, error) {
 	var out []Node
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", parentID), nil, &out)
+	return out, err
+}
+
+func (c *Client) ListPage(ctx context.Context, parentID uint64, options ChildrenOptions) (ChildrenPage, error) {
+	values := url.Values{}
+	if options.Limit > 0 {
+		values.Set("limit", strconv.Itoa(options.Limit))
+	}
+	if strings.TrimSpace(options.Cursor) != "" {
+		values.Set("cursor", strings.TrimSpace(options.Cursor))
+	}
+	if strings.TrimSpace(options.Sort) != "" {
+		values.Set("sort", strings.TrimSpace(options.Sort))
+	}
+	if strings.TrimSpace(options.Order) != "" {
+		values.Set("order", strings.TrimSpace(options.Order))
+	}
+	if values.Get("limit") == "" {
+		values.Set("limit", strconv.Itoa(childrenDefaultPageLimit))
+	}
+	var out ChildrenPage
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?%s", parentID, values.Encode()), nil, &out)
 	return out, err
 }
 

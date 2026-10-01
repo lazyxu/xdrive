@@ -172,3 +172,13 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
   assert.ok(styles.includes('.cloud-row-actions {'), 'shared dialog/list row actions are still required')
   assert.ok(styles.includes('.cloud-compact-row {'), 'trash/version compact rows are still required')
 })
+
+test('Desktop FileExplorer uses cursor-paged server sorting for cloud directories', () => {
+  assert.ok(app.includes('const DESKTOP_FILE_PAGE_SIZE = 200'), 'Desktop page-size contract is missing')
+  assert.ok(app.includes('const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {'), 'Desktop incremental directory loader is missing')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudChildrenPage(id, {'), 'Desktop directory browsing should use the paged Agent API')
+  assert.ok(app.includes('cursor: result.data.next_cursor ??'), 'Desktop directory cursor state is missing')
+  assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Desktop directory pages should preserve server ordering')
+  assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted pages')
+  assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Desktop Explorer must request more items near the scroll boundary')
+})

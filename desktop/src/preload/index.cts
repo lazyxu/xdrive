@@ -52,6 +52,10 @@ const agent = Object.freeze({
   triggerSource: (sourceID: number) => ipcRenderer.invoke('agent:trigger-source', sourceID),
   cloudRoot: () => ipcRenderer.invoke('agent:cloud-root'),
   cloudChildren: (parentID: number) => ipcRenderer.invoke('agent:cloud-children', parentID),
+  cloudChildrenPage: (
+    parentID: number,
+    options: { limit?: number; cursor?: string; sort?: 'name' | 'updated' | 'size' | 'type'; order?: 'asc' | 'desc' } = {},
+  ) => ipcRenderer.invoke('agent:cloud-children-page', parentID, options),
   cloudCreateDirectory: (parentID: number, name: string) => ipcRenderer.invoke('agent:cloud-create-directory', parentID, name),
   cloudRename: (id: number, revision: number, name: string) => ipcRenderer.invoke('agent:cloud-rename', id, revision, name),
   cloudCopy: (id: number, parentID: number) => ipcRenderer.invoke('agent:cloud-copy', id, parentID),

@@ -59,7 +59,7 @@ import {
   XDriveStatusAlert,
   xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
-import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
+import type { MediaGalleryDataSource, XDriveFileExplorerSort } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type { FileVersion, MeResult, Node, QuotaUsage, XDriveAppearance, XDriveTransferTask } from '../../ui/shared/src'
@@ -80,6 +80,16 @@ const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 
 type Crumb = { id: number; name: string }
+
+const DEFAULT_FILE_SORT: XDriveFileExplorerSort = { key: 'name', direction: 'asc' }
+const FILE_PAGE_SIZE = 200
+
+type DirectoryPageState = {
+  parentID: number
+  cursor: string
+  hasMore: boolean
+  sort: XDriveFileExplorerSort
+}
 
 type Feedback = {
   tone: 'good' | 'bad' | 'warning' | 'neutral'
@@ -416,7 +426,9 @@ function FileManager({
   const [quota, setQuota] = useState<QuotaUsage | null>(null)
   const [items, setItems] = useState<Node[]>([])
   const [crumbs, setCrumbs] = useState<Crumb[]>([])
+  const [directoryPage, setDirectoryPage] = useState<DirectoryPageState | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
@@ -471,16 +483,68 @@ function FileManager({
     setFeedback({ tone: 'bad', message: err instanceof Error ? err.message : '请求失败' })
   }, [onAuthExpired])
 
-  const loadDirectory = async (id: number, nextCrumbs?: Crumb[]) => {
+  const loadDirectory = async (
+    id: number,
+    nextCrumbs?: Crumb[],
+    sort: XDriveFileExplorerSort = directoryPage?.sort ?? DEFAULT_FILE_SORT,
+  ) => {
     setLoading(true)
     try {
-      const list = await api.list(id)
-      setItems(list)
+      const page = await api.listPage(id, {
+        limit: FILE_PAGE_SIZE,
+        sort: sort.key,
+        order: sort.direction,
+      })
+      setItems(page.items)
+      setDirectoryPage({
+        parentID: id,
+        cursor: page.next_cursor ?? '',
+        hasMore: page.has_more,
+        sort,
+      })
       if (nextCrumbs) setCrumbs(nextCrumbs)
     } catch (err) {
       handleError(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadMoreDirectory = async (id: number, sort: XDriveFileExplorerSort) => {
+    const pageState = directoryPage
+    if (
+      !pageState ||
+      pageState.parentID !== id ||
+      !pageState.hasMore ||
+      !pageState.cursor ||
+      pageState.sort.key !== sort.key ||
+      pageState.sort.direction !== sort.direction ||
+      loadingMore
+    ) return
+
+    setLoadingMore(true)
+    try {
+      const page = await api.listPage(id, {
+        limit: FILE_PAGE_SIZE,
+        cursor: pageState.cursor,
+        sort: sort.key,
+        order: sort.direction,
+      })
+      setItems((currentItems) => {
+        const merged = new Map(currentItems.map((item) => [item.id, item]))
+        for (const item of page.items) merged.set(item.id, item)
+        return [...merged.values()]
+      })
+      setDirectoryPage({
+        parentID: id,
+        cursor: page.next_cursor ?? '',
+        hasMore: page.has_more,
+        sort,
+      })
+    } catch (err) {
+      handleError(err)
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -500,9 +564,19 @@ function FileManager({
       if (me.must_change_password) return
       setQuota(await api.quota())
       const root = await api.root()
-      const list = await api.list(root.id)
+      const page = await api.listPage(root.id, {
+        limit: FILE_PAGE_SIZE,
+        sort: DEFAULT_FILE_SORT.key,
+        order: DEFAULT_FILE_SORT.direction,
+      })
       setCrumbs([{ id: root.id, name: '我的文件' }])
-      setItems(list)
+      setItems(page.items)
+      setDirectoryPage({
+        parentID: root.id,
+        cursor: page.next_cursor ?? '',
+        hasMore: page.has_more,
+        sort: DEFAULT_FILE_SORT,
+      })
     } catch (err) {
       handleError(err)
     } finally {
@@ -897,8 +971,11 @@ function FileManager({
                 items={items}
                 crumbs={crumbs}
                 loading={loading}
+                loadingMore={loadingMore}
+                hasMore={directoryPage?.hasMore ?? false}
                 uploadProgress={uploadProgress}
-                onLoadDirectory={async (id, nextCrumbs) => { await loadDirectory(id, nextCrumbs) }}
+                onLoadDirectory={loadDirectory}
+                onLoadMore={loadMoreDirectory}
                 onUploadFiles={uploadFiles}
                 onUploadDroppedFiles={uploadFilesTo}
                 onCreateFolder={() => {

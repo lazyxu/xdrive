@@ -374,6 +374,10 @@ export function XDriveFileExplorer({
   commandBarEnd,
   statusText,
   loadThumbnail,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+  externallySorted = false,
 }: {
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
@@ -419,6 +423,10 @@ export function XDriveFileExplorer({
   commandBarEnd?: ReactNode
   statusText?: ReactNode
   loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
+  externallySorted?: boolean
 }) {
   const [editingPath, setEditingPath] = useState(false)
   const derivedPath = useMemo(
@@ -492,6 +500,7 @@ export function XDriveFileExplorer({
 
   const visibleItems = useMemo(() => {
     const result = [...items]
+    if (externallySorted) return result
     const multiplier = sort.direction === 'asc' ? 1 : -1
     result.sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1
@@ -509,7 +518,7 @@ export function XDriveFileExplorer({
       return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }) * multiplier
     })
     return result
-  }, [items, sort.direction, sort.key])
+  }, [externallySorted, items, sort.direction, sort.key])
 
   const selectedItems = useMemo(
     () => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id))),
@@ -876,7 +885,16 @@ export function XDriveFileExplorer({
     : visibleItems
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
-    if (virtualizeDetails) setScrollTop(event.currentTarget.scrollTop)
+    const host = event.currentTarget
+    if (virtualizeDetails) setScrollTop(host.scrollTop)
+    if (
+      hasMore &&
+      !loadingMore &&
+      onLoadMore &&
+      host.scrollHeight - host.scrollTop - host.clientHeight <= 500
+    ) {
+      onLoadMore()
+    }
   }
 
   return (
@@ -1638,7 +1656,9 @@ export function XDriveFileExplorer({
           {items.length} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
         </Typography>
         <Typography variant="caption">
-          {statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}
+          {loadingMore
+            ? '正在加载更多…'
+            : statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}
         </Typography>
       </Stack>
     </Paper>

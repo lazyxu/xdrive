@@ -321,6 +321,14 @@ export type AgentCloudNode = {
   updated_at: string
 }
 
+export type AgentCloudChildrenPage = {
+  items: AgentCloudNode[]
+  next_cursor?: string
+  has_more: boolean
+  sort: 'name' | 'updated' | 'size' | 'type'
+  order: 'asc' | 'desc'
+}
+
 export type AgentMediaMetadata = {
   media_kind: 'image' | 'video'
   mime_type?: string
@@ -801,6 +809,22 @@ export class AgentIPCClient {
   cloudChildren(parentID: number) {
     const query = new URLSearchParams({ parent_id: String(parentID) })
     return this.request<AgentCloudNode[]>('GET', `/v1/cloud/children?${query.toString()}`)
+  }
+
+  cloudChildrenPage(parentID: number, options: {
+    limit?: number
+    cursor?: string
+    sort?: 'name' | 'updated' | 'size' | 'type'
+    order?: 'asc' | 'desc'
+  } = {}) {
+    const query = new URLSearchParams({
+      parent_id: String(parentID),
+      limit: String(Math.min(500, Math.max(1, Math.trunc(options.limit ?? 200)))),
+      sort: options.sort ?? 'name',
+      order: options.order ?? 'asc',
+    })
+    if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
+    return this.request<AgentCloudChildrenPage>('GET', `/v1/cloud/children?${query.toString()}`)
   }
 
   cloudCreateDirectory(parentID: number, name: string) {
