@@ -354,6 +354,23 @@ func TestOpenDownloadUsesRangeWithoutForwardingCookie(t *testing.T) {
 	}
 }
 
+func TestOpenDownloadWrongPartialRangeIsRetryable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Range", "bytes 0-9/10")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("0123456789"))
+	}))
+	defer server.Close()
+
+	client, err := NewWithBaseURL(server.URL+"/youai", "cookie=1", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.OpenDownload(context.Background(), DownloadLink{URL: server.URL + "/media"}, 4); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("wrong Content-Range err=%v want ErrUnavailable", err)
+	}
+}
+
 func TestOpenDownloadFallsBackWhenRangeIgnored(t *testing.T) {
 	data := []byte("abcdefghij")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

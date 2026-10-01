@@ -445,6 +445,12 @@ func (s *FileStationSession) openPathOnce(
 		body: resp.Body, cancel: cancel, parent: ctx,
 		timeout: s.client.downloadIdleTimeout,
 	}
+	if offset > 0 && resp.StatusCode == http.StatusPartialContent {
+		if err := validateResumeContentRange(resp.Header.Get("Content-Range"), offset); err != nil {
+			_ = body.Close()
+			return nil, err
+		}
+	}
 	if offset > 0 && resp.StatusCode == http.StatusOK {
 		if _, err := io.CopyN(io.Discard, body, offset); err != nil {
 			_ = body.Close()
