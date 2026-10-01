@@ -313,6 +313,10 @@ fi
 grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/state/backup-images"
 grep -q 'current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier' "$TMP/upgrade.err"
 grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/upgrade.err"
+if grep -q 'storage consistency verification failed' "$TMP/upgrade.err"; then
+  echo "test fixture unexpectedly contains the obsolete installer match phrase" >&2
+  exit 1
+fi
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
 if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then

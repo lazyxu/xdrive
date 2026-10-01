@@ -1599,11 +1599,13 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     # Bootstrap compatibility: the currently deployed image may predate the
     # verifier rule that excludes generated .xdrive-media cache files. Keep the
     # backup script invocation compatible with older releases; only when its
-    # report proves this exact legacy false-positive do we retry verification
-    # with the fully published target server image. Any real inconsistency is
+    # report contains a derived-cache storage key and lacks the new verifier's
+    # ignored_derived_files field do we retry with the fully published target
+    # server image. This deliberately avoids matching human-readable error
+    # wording, which changed between verifier and backup layers. Any real inconsistency is
     # still rejected by the target verifier.
-    if grep -q 'storage consistency verification failed' "$backup_error" &&
-       grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-media/' "$backup_error"; then
+    if grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-media/' "$backup_error" &&
+       ! grep -q '"ignored_derived_files"' "$backup_error"; then
       echo "[xDrive] current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier $target_server_image ..." >&2
       : > "$backup_error"
       if backup_output="$(XD_SERVER_IMAGE="$target_server_image" "$STAGING_DIR/server-backup.sh" \
