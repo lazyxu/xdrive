@@ -1,6 +1,7 @@
 import {
   XDriveActionButton,
   XDriveSectionHeader,
+  XDriveWorkspaceSurface,
   XDriveStatePanel,
 } from '@xdrive/ui/mui'
 
@@ -20,7 +21,7 @@ export function DesktopConflictsPage({
   onKeepLocal: (item: AgentConflict) => void
 }) {
   return (
-    <section className="panel">
+    <XDriveWorkspaceSurface presentation="page" title="冲突">
       <XDriveSectionHeader
         eyebrow="冲突副本"
         title="解决同步冲突"
@@ -44,6 +45,6 @@ export function DesktopConflictsPage({
           ))}
         </div>
       )}
-    </section>
+    </XDriveWorkspaceSurface>
   )
 }
