@@ -89,6 +89,7 @@ func TestFileStationSessionListsArbitraryFilesAndDownloads(t *testing.T) {
 				t.Fatalf("Range=%q", r.Header.Get("Range"))
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Range", "bytes 2-3/4")
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write([]byte("cd"))
 		default:
@@ -134,6 +135,30 @@ func TestFileStationSessionListsArbitraryFilesAndDownloads(t *testing.T) {
 	}
 	if !logoutSeen {
 		t.Fatal("File Station logout was not sent")
+	}
+}
+
+func TestFileStationDownloadRejectsWrongPartialRange(t *testing.T) {
+	server := newFileStationTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Range", "bytes 0-5/6")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("abcdef"))
+	})
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.ConnectFileStation(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	if _, err := session.OpenPath(context.Background(), "/documents/a.bin", 2); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("wrong Content-Range err=%v want ErrUnavailable", err)
 	}
 }
 

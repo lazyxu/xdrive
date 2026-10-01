@@ -2,6 +2,7 @@ package synology
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,6 +81,7 @@ func TestSessionListsSpacesAndOpensRangeDownload(t *testing.T) {
 				t.Fatalf("Range=%q", got)
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Range", "bytes 2-5/6")
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write([]byte("cdef"))
 		default:
@@ -134,6 +136,30 @@ func TestSessionListsSpacesAndOpensRangeDownload(t *testing.T) {
 	}
 	if !logoutSeen {
 		t.Fatal("logout was not sent")
+	}
+}
+
+func TestSessionOpenItemRejectsWrongPartialRange(t *testing.T) {
+	server := newMediaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Range", "bytes 0-5/6")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("abcdef"))
+	})
+	defer server.Close()
+
+	client, err := New(Credential{BaseURL: server.URL, Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+
+	if _, err := session.OpenItem(context.Background(), Item{ID: 5, Space: SpacePersonal}, 2); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("wrong Content-Range err=%v want ErrUnavailable", err)
 	}
 }
 

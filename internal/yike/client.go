@@ -601,7 +601,7 @@ func (c *Client) OpenDownload(ctx context.Context, link DownloadLink, offset int
 		wantPrefix := fmt.Sprintf("bytes %d-", offset)
 		if !strings.HasPrefix(strings.TrimSpace(resp.Header.Get("Content-Range")), wantPrefix) {
 			_ = body.Close()
-			return nil, fmt.Errorf("Yike media range response starts at the wrong offset")
+			return nil, fmt.Errorf("%w: Yike media range response starts at the wrong offset", ErrUnavailable)
 		}
 		return body, nil
 	}
