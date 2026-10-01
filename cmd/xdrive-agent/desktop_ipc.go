@@ -70,6 +70,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"server-update",
 	"media-gallery",
 	"external-sources",
 	"storage-intelligence",
@@ -157,6 +158,8 @@ type desktopIPCController interface {
 	CloudDownload(context.Context, uint64, string) error
 	CloudSearch(context.Context, string) ([]agentCloudSearchResult, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
+	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
+	CloudStartServerUpdate(context.Context, string, string) (client.ServerUpdateState, error)
 	CloudStorageStats(context.Context) (client.StorageStats, error)
 	CloudTrash(context.Context) ([]client.Node, error)
 	CloudRestoreTrash(context.Context, uint64, uint64) (client.Node, error)
@@ -383,6 +386,8 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
+	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
+	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
 	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
 	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)
 	mux.HandleFunc("POST /v1/cloud/trash/restore", h.cloudRestoreTrash)
@@ -957,6 +962,38 @@ func (h *desktopIPCHandler) cloudQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, quota)
+}
+
+func (h *desktopIPCHandler) serverUpdateState(w http.ResponseWriter, r *http.Request) {
+	state, err := h.ctrl.CloudServerUpdateState(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, state)
+}
+
+func (h *desktopIPCHandler) startServerUpdate(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Source  string `json:"source"`
+		Channel string `json:"channel"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Source = strings.ToLower(strings.TrimSpace(input.Source))
+	input.Channel = strings.ToLower(strings.TrimSpace(input.Channel))
+	if (input.Source != "github" && input.Source != "gitlab") ||
+		(input.Channel != "stable" && input.Channel != "master") {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_server_update", "source/channel are invalid")
+		return
+	}
+	state, err := h.ctrl.CloudStartServerUpdate(r.Context(), input.Source, input.Channel)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, state)
 }
 
 func (h *desktopIPCHandler) cloudStorageStats(w http.ResponseWriter, r *http.Request) {

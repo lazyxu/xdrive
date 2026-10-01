@@ -90,6 +90,7 @@ import {
   type AgentUpdateMode,
   type AgentUpdateSource,
   type AgentUpdateState,
+  type AgentServerUpdateState,
   type AgentStatus,
   type AgentTransfers,
 } from './agent_client.cjs'
@@ -2001,6 +2002,20 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudQuota()
+  }, false))
+  ipcMain.handle('agent:get-server-update', () => runAgentAction<AgentServerUpdateState>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'server-update')
+    return requireAgentClient().serverUpdate()
+  }, false))
+  ipcMain.handle('agent:start-server-update', (_event, sourceValue: unknown, channelValue: unknown) => runAgentAction<AgentServerUpdateState>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'server-update')
+    if ((sourceValue !== 'github' && sourceValue !== 'gitlab') ||
+        (channelValue !== 'stable' && channelValue !== 'master')) {
+      throw new AgentIPCError('invalid_input', 0, 'Server update source/channel are invalid.')
+    }
+    return requireAgentClient().startServerUpdate(sourceValue, channelValue)
   }, false))
   ipcMain.handle('agent:cloud-storage-stats', () => runAgentAction<AgentCloudStorageStats>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

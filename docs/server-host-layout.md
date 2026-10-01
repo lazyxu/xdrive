@@ -37,6 +37,7 @@ The default xDrive server home is:
     ├── install.lock
     ├── scheduled-backup.lock
     ├── upgrade-transaction/
+    ├── control/
     ├── layout-version
     └── legacy-volumes-retained
 ```
@@ -118,10 +119,25 @@ Contains short-lived or transactional host-management state.
 - `install.lock`: exclusive install/update lock.
 - `scheduled-backup.lock`: scheduled backup overlap protection.
 - `upgrade-transaction/`: rollback state retained only while an upgrade is armed or when rollback itself fails.
+- `control/`: narrowly scoped host-update bridge containing request/status/heartbeat files. It never contains a Docker socket or deployment secrets.
 - `layout-version`: host-layout schema marker.
 - `legacy-volumes-retained`: exact legacy named-volume IDs retained after a successful migration until explicit cleanup.
 
 No user content is stored under `state/`.
+
+## Host update control bridge
+
+Web and Desktop may request a server update only through the authenticated administrator API. The API container does **not** execute Docker commands and does **not** receive `/var/run/docker.sock`.
+
+The supported flow is:
+
+1. an administrator submits only an update source (`github` or `gitlab`) and channel (`stable` or `master`);
+2. the server writes a restricted request into the bind-mounted `state/control` bridge;
+3. the user-owned host control runner validates the request again and invokes the existing `xdrive-server update` transaction;
+4. the installer writes stage and image-download byte progress back into the bridge;
+5. the API exposes that status to Web/Desktop. During the maintenance window the API/Caddy may briefly be unavailable; clients retain the last known progress and resume polling when service returns.
+
+The runner is installed as `bin/server-control.sh`, is started by the installer, and is registered in the user's crontab with an `@reboot` entry when crontab is available. The bridge uses setgid mode `2770`: the installing host user remains the owner and the configured server GID receives bridge access solely so the API can create the restricted request file. It is not world-writable. Parent xDrive directories remain private to the installing user.
 
 ## Docker modes
 

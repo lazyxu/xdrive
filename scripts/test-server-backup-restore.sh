@@ -9,7 +9,9 @@ DATA_DIR="$XDRIVE_HOME/data"
 FILES_DIR="$DATA_DIR/files"
 POSTGRES_DIR="$DATA_DIR/postgres"
 BACKUP_ROOT="$XDRIVE_HOME/backups/snapshots"
-mkdir -p "$CONFIG_DIR" "$FILES_DIR" "$POSTGRES_DIR" "$BACKUP_ROOT"
+CONTROL_DIR="$XDRIVE_HOME/state/control"
+mkdir -p "$CONFIG_DIR" "$FILES_DIR" "$POSTGRES_DIR" "$BACKUP_ROOT" "$CONTROL_DIR"
+chmod 2770 "$CONTROL_DIR"
 cp "$ROOT/deploy/docker-compose.yml" "$CONFIG_DIR/docker-compose.yml"
 cat > "$CONFIG_DIR/.env" <<'EOF'
 POSTGRES_PASSWORD=xdrive-backup-test

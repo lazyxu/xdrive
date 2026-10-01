@@ -57,9 +57,29 @@ LEGACY_POSTGRES_VOLUME=""
 LEGACY_CADDY_DATA_VOLUME=""
 LEGACY_CADDY_CONFIG_VOLUME=""
 
+write_install_progress() {
+  local stage_current="${1:-$STAGE_NO}" stage_total="${2:-$STAGE_TOTAL}" stage_name="${3:-$CURRENT_STAGE}"
+  local service="${4:-}" bytes_done="${5:-0}" bytes_total="${6:-0}"
+  local target="${XD_INSTALL_PROGRESS_FILE:-}" tmp=""
+  [[ -n "$target" ]] || return 0
+  mkdir -p "$(dirname "$target")" 2>/dev/null || return 0
+  tmp="$(mktemp "$(dirname "$target")/.install-progress.XXXXXX" 2>/dev/null)" || return 0
+  {
+    printf 'stage_current=%s\n' "$stage_current"
+    printf 'stage_total=%s\n' "$stage_total"
+    printf 'stage=%s\n' "$stage_name"
+    printf 'service=%s\n' "$service"
+    printf 'bytes_done=%s\n' "$bytes_done"
+    printf 'bytes_total=%s\n' "$bytes_total"
+  } > "$tmp"
+  chmod 0644 "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
+}
+
 stage() {
   STAGE_NO="$1"
   CURRENT_STAGE="$2"
+  write_install_progress "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "" 0 0
   printf '\n[xDrive] [%s/%s] %s\n' "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE"
 }
 
@@ -125,6 +145,9 @@ prepare_host_layout() {
   chmod 700 "$XDRIVE_HOME" "$CONFIG_DIR" "$BIN_DIR" "$DATA_DIR" "$BACKUP_ROOT" \
     "$SNAPSHOT_BACKUP_DIR" "$PRE_UPGRADE_BACKUP_DIR" "$PRE_RESTORE_BACKUP_DIR" \
     "$LOG_DIR" "$STATE_DIR"
+  mkdir -p "$STATE_DIR/control"
+  chgrp "${XD_SERVER_GID:-65532}" "$STATE_DIR/control" 2>/dev/null || true
+  chmod 2770 "$STATE_DIR/control"
 
   if [[ ! -f "$ENV_PATH" && -f "$LEGACY_ENV_PATH" ]]; then
     cp -p "$LEGACY_ENV_PATH" "$ENV_PATH"
@@ -138,7 +161,7 @@ prepare_host_layout() {
     cp -p "$LEGACY_CADDY_PATH" "$CADDY_PATH"
     chmod 600 "$CADDY_PATH"
   fi
-  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
+  for legacy_tool in xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh; do
     if [[ ! -f "$BIN_DIR/$legacy_tool" && -f "$XDRIVE_HOME/$legacy_tool" ]]; then
       cp -p "$XDRIVE_HOME/$legacy_tool" "$BIN_DIR/$legacy_tool"
       chmod 700 "$BIN_DIR/$legacy_tool"
@@ -426,6 +449,7 @@ render_pull_json() {
       sum_current=$(( sum_current + ${layer_current[$id]:-0} ))
     done
     (( sum_total > 0 )) || continue
+    write_install_progress "$STAGE_NO" "$STAGE_TOTAL" "$CURRENT_STAGE" "$service" "$sum_current" "$sum_total"
 
     now="$(date +%s)"
     if (( sum_current > last_progress_current )); then
@@ -801,15 +825,15 @@ if [[ "$requested_source" == "gitlab" ]]; then
 else
   raw_base="https://raw.githubusercontent.com/$REPOSITORY/$SOURCE_REF"
 fi
-fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/8 docker-compose.yml"
+fetch "$raw_base/deploy/docker-compose.yml" "$STAGING_DIR/docker-compose.yml" "1/9 docker-compose.yml"
 asset_no=1
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh; do
   asset_no=$((asset_no + 1))
-  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/8 $maintenance_script"
+  fetch "$raw_base/scripts/$maintenance_script" "$STAGING_DIR/$maintenance_script" "$asset_no/9 $maintenance_script"
   chmod 700 "$STAGING_DIR/$maintenance_script"
 done
 asset_no=$((asset_no + 1))
-fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/8 xdrive-server"
+fetch "$raw_base/scripts/xdrive-server-host.sh" "$STAGING_DIR/xdrive-server" "$asset_no/9 xdrive-server"
 chmod 700 "$STAGING_DIR/xdrive-server"
 chmod 600 "$STAGING_DIR/docker-compose.yml"
 
@@ -1377,7 +1401,7 @@ finalize_host_layout() {
     rm -f "$XDRIVE_HOME/.install-pull.log"
   fi
 
-  for path in .env docker-compose.yml Caddyfile xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
+  for path in .env docker-compose.yml Caddyfile xdrive-server server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh; do
     rm -f "$XDRIVE_HOME/$path"
   done
   rm -f "$XDRIVE_HOME/.install.lock" "$XDRIVE_HOME/.scheduled-backup.lock"
@@ -1472,6 +1496,7 @@ ensure_env XD_LOG_MAX_SIZE "${XD_LOG_MAX_SIZE:-10m}"
 ensure_env XD_LOG_MAX_FILES "${XD_LOG_MAX_FILES:-5}"
 ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
 ensure_env XD_BACKUP_SCHEDULE "${XD_BACKUP_SCHEDULE:-17 3 * * *}"
+set_env XD_HOST_CONTROL_HOST_DIR "$STATE_DIR/control"
 previous_source="$(existing_env_value XD_UPDATE_SOURCE)"
 ensure_env XD_UPDATE_SOURCE "$requested_source"
 ensure_env XD_RELEASE_CHANNEL "$requested_channel"
@@ -1591,7 +1616,7 @@ unset_env XD_WEB_PIDS_LIMIT
 unset_env XD_CADDY_BUILD_ID
 
 install -m 600 "$STAGING_DIR/docker-compose.yml" "$COMPOSE_PATH"
-for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh; do
+for maintenance_script in server-backup.sh server-backup-scheduled.sh server-restore.sh server-verify.sh server-doctor.sh server-migrate-user.sh server-control.sh; do
   install -m 700 "$STAGING_DIR/$maintenance_script" "$BIN_DIR/$maintenance_script"
 done
 install -m 700 "$STAGING_DIR/xdrive-server" "$HOST_MANAGER_PATH"
@@ -1810,6 +1835,11 @@ if ! compose exec -T server xdrive-server admin exists >/dev/null 2>&1; then
     echo "Create the first administrator with:"
     echo "  read -s -p 'Admin password: ' P; echo; printf '%s\\n' \"\$P\" | docker compose --env-file '$ENV_PATH' -f '$COMPOSE_PATH' exec -T server xdrive-server admin create --username admin --password-stdin; unset P"
   fi
+fi
+
+if [[ -x "$BIN_DIR/server-control.sh" ]]; then
+  XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" install || \
+    echo "[xDrive] warning: host update control could not be started; Web/Desktop server update will remain unavailable." >&2
 fi
 
 echo

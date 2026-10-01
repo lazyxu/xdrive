@@ -96,6 +96,9 @@ type fakeDesktopIPCController struct {
 	cloudDownloadDestination   string
 	cloudSearch                []agentCloudSearchResult
 	cloudQuota                 client.QuotaUsage
+	cloudServerUpdate          client.ServerUpdateState
+	cloudServerUpdateSource    string
+	cloudServerUpdateChannel   string
 	cloudStorage               client.StorageStats
 	cloudTrash                 []client.Node
 	cloudVersions              []client.FileVersion
@@ -313,6 +316,16 @@ func (f *fakeDesktopIPCController) CloudSearch(context.Context, string) ([]agent
 
 func (f *fakeDesktopIPCController) CloudQuota(context.Context) (client.QuotaUsage, error) {
 	return f.cloudQuota, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudServerUpdateState(context.Context) (client.ServerUpdateState, error) {
+	return f.cloudServerUpdate, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudStartServerUpdate(_ context.Context, source, channel string) (client.ServerUpdateState, error) {
+	f.cloudServerUpdateSource = source
+	f.cloudServerUpdateChannel = channel
+	return f.cloudServerUpdate, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudStorageStats(context.Context) (client.StorageStats, error) {

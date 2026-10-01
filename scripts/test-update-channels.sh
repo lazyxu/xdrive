@@ -95,7 +95,7 @@ services: {}
     emit 'example.invalid { respond "ok" }
 '
     ;;
-  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup.sh|*/scripts/server-backup-scheduled.sh|*/scripts/server-restore.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '

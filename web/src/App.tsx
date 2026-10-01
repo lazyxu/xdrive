@@ -42,6 +42,7 @@ import {
   XDriveBrandLockup,
   XDriveBuildInfoCard,
   XDriveConfirmDialog,
+  XDriveServerUpdateCard,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
@@ -62,7 +63,17 @@ import {
 import type { MediaGalleryDataSource, XDriveFileExplorerSort } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
-import type { FileVersion, MeResult, Node, QuotaUsage, XDriveAppearance, XDriveTransferTask } from '../../ui/shared/src'
+import type {
+  FileVersion,
+  MeResult,
+  Node,
+  QuotaUsage,
+  XDriveAppearance,
+  XDriveServerUpdateChannel,
+  XDriveServerUpdateSource,
+  XDriveServerUpdateState,
+  XDriveTransferTask,
+} from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
@@ -125,19 +136,76 @@ function initialSession(): AuthSession {
 
 function WebAccountMenu({
   username,
+  api,
   serverBuild,
   appearance,
+  canUpdateServer,
   onAppearanceChange,
   onLogout,
 }: {
   username: string
+  api: XDriveApi
   serverBuild: BuildInfo | null
   appearance: XDriveAppearance
+  canUpdateServer: boolean
   onAppearanceChange: (appearance: XDriveAppearance) => void
   onLogout: () => void
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [serverUpdate, setServerUpdate] = useState<XDriveServerUpdateState | null>(null)
+  const [serverUpdateSource, setServerUpdateSource] = useState<XDriveServerUpdateSource>('github')
+  const [serverUpdateChannel, setServerUpdateChannel] = useState<XDriveServerUpdateChannel>(
+    serverBuild?.channel === 'master' ? 'master' : 'stable',
+  )
+  const [serverUpdateBusy, setServerUpdateBusy] = useState(false)
+  const [serverUpdateError, setServerUpdateError] = useState('')
+  const [serverUpdateConfirmOpen, setServerUpdateConfirmOpen] = useState(false)
+
+  useEffect(() => {
+    if (!settingsOpen || !canUpdateServer) return
+    let active = true
+    const refresh = async () => {
+      try {
+        const state = await api.adminServerUpdate()
+        if (!active) return
+        if (serverUpdate === null) {
+          setServerUpdateSource(state.source)
+          setServerUpdateChannel(state.channel)
+        }
+        setServerUpdate(state)
+        setServerUpdateError('')
+      } catch (error) {
+        if (!active) return
+        setServerUpdateError(
+          serverUpdate?.state === 'queued' || serverUpdate?.state === 'running'
+            ? '服务端更新期间连接可能暂时中断，正在等待服务恢复…'
+            : error instanceof Error ? error.message : '无法读取服务端更新状态。',
+        )
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 2_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [api, canUpdateServer, settingsOpen, serverUpdate?.state])
+
+  const startServerUpdate = async () => {
+    setServerUpdateConfirmOpen(false)
+    setServerUpdateBusy(true)
+    setServerUpdateError('')
+    try {
+      const state = await api.adminStartServerUpdate(serverUpdateSource, serverUpdateChannel)
+      setServerUpdate(state)
+    } catch (error) {
+      setServerUpdateError(error instanceof Error ? error.message : '提交服务端更新失败。')
+    } finally {
+      setServerUpdateBusy(false)
+    }
+  }
+
   return (
     <>
       <XDriveAccountAvatarButton username={username} onClick={(event) => setAnchorEl(event.currentTarget)} />
@@ -193,11 +261,41 @@ function WebAccountMenu({
             </Box>
             <Box>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>服务端</Typography>
-              <XDriveBuildInfoCard title="Server 构建信息" info={serverBuild} />
+              <Stack spacing={1.5}>
+                <XDriveBuildInfoCard title="Server 构建信息" info={serverBuild} />
+                {canUpdateServer ? (
+                  <>
+                    <XDriveServerUpdateCard
+                      state={serverUpdate}
+                      source={serverUpdateSource}
+                      channel={serverUpdateChannel}
+                      loading={serverUpdateBusy}
+                      disabled={serverUpdate === null}
+                      onSourceChange={setServerUpdateSource}
+                      onChannelChange={setServerUpdateChannel}
+                      onStart={() => setServerUpdateConfirmOpen(true)}
+                    />
+                    {serverUpdateError ? <XDriveStatusAlert tone="warning">{serverUpdateError}</XDriveStatusAlert> : null}
+                  </>
+                ) : (
+                  <XDriveStatusAlert tone="neutral">仅管理员可以更新服务端。</XDriveStatusAlert>
+                )}
+              </Stack>
             </Box>
           </Stack>
         </XDriveDialogContent>
       </Dialog>
+      <XDriveConfirmDialog
+        open={serverUpdateConfirmOpen}
+        title="确认更新服务端？"
+        description={`来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel}。更新会执行升级前备份、容器更新和健康检查，期间 Web/API 可能短暂不可用。`}
+        confirmLabel="开始更新"
+        confirmIntent="warning"
+        loading={serverUpdateBusy}
+        loadingLabel="正在提交…"
+        onCancel={() => setServerUpdateConfirmOpen(false)}
+        onConfirm={() => void startServerUpdate()}
+      />
     </>
   )
 }
@@ -667,7 +765,9 @@ function FileManager({
             <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
             <WebAccountMenu
               username={username}
+              api={api}
               serverBuild={serverBuild}
+              canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
               appearance={appearance}
               onAppearanceChange={onAppearanceChange}
               onLogout={onLogout}
@@ -876,7 +976,9 @@ function FileManager({
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
           <WebAccountMenu
               username={username}
+              api={api}
               serverBuild={serverBuild}
+              canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
               appearance={appearance}
               onAppearanceChange={onAppearanceChange}
               onLogout={onLogout}

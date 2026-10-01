@@ -86,6 +86,25 @@ declare global {
   type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
   type AgentUpdateSource = 'github' | 'gitlab'
 
+  type AgentServerUpdateState = {
+    supported: boolean
+    state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
+    source: 'github' | 'gitlab'
+    channel: 'stable' | 'master'
+    request_id?: string
+    stage?: string
+    stage_current?: number
+    stage_total?: number
+    bytes_done?: number
+    bytes_total?: number
+    message?: string
+    error?: string
+    started_at?: string
+    updated_at?: string
+    finished_at?: string
+    runner_heartbeat_at?: string
+  }
+
   type AgentUpdateState = {
     mode: AgentUpdateMode
     source: AgentUpdateSource
@@ -330,6 +349,8 @@ declare global {
         openPath: (relativePath: string, reveal?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
         cloudSearch: (query: string) => Promise<DesktopResult<AgentCloudSearchResult[]>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
+        getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
+        startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master') => Promise<DesktopResult<AgentServerUpdateState>>
         cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
         cloudRestoreTrash: (id: number, revision: number) => Promise<DesktopResult<AgentCloudNode>>

@@ -4,8 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="$ROOT/scripts/xdrive-server-host.sh"
 TMP="$(mktemp -d)"
+CONTROL_TEST_PID=""
 cleanup() {
   local status=$?
+  if [[ -n "${CONTROL_TEST_PID:-}" ]] && kill -0 "$CONTROL_TEST_PID" 2>/dev/null; then
+    kill -TERM "$CONTROL_TEST_PID" 2>/dev/null || true
+    wait "$CONTROL_TEST_PID" 2>/dev/null || true
+  fi
   if [[ "$status" -ne 0 ]]; then
     echo "host xdrive-server manager test failed (exit $status)" >&2
     for file in \
@@ -13,7 +18,8 @@ cleanup() {
       admin-list.out admin-reset.out admin-reset.err admin-enable.out admin-disable.out password-arg.err \
       state/curl-url state/installer-args state/installer-stdin state/doctor-args state/docker-args \
       state/admin-list-stdin state/admin-reset-stdin state/admin-enable-stdin state/admin-disable-stdin \
-      state/audit-calls state/restore-args state/verify-args; do
+      state/audit-calls state/restore-args state/verify-args \
+      control-run.out control-run.err home/state/control/status.json home/logs/host-control-update.log; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -401,5 +407,93 @@ if [[ "$before" != "$after" ]]; then
   echo "rejected --password invocation reached Docker" >&2
   exit 1
 fi
+
+# Host update control: one long-lived runner transitions idle -> running -> success.
+cp "$HOST" "$TMP/home/bin/xdrive-server"
+cp "$ROOT/scripts/server-control.sh" "$TMP/home/bin/server-control.sh"
+chmod 700 "$TMP/home/bin/xdrive-server" "$TMP/home/bin/server-control.sh"
+printf '\nXD_UPDATE_SOURCE=github\nXD_HOST_CONTROL_HOST_DIR=%s\n' "$TMP/home/state/control" >> "$TMP/home/config/.env"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+XD_INSTALLER_URL="https://example.invalid/install-server.sh" \
+bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-run.out" 2>"$TMP/control-run.err" &
+CONTROL_TEST_PID=$!
+
+for _ in $(seq 1 50); do
+  if grep -q '"state":"idle"' "$TMP/home/state/control/status.json" 2>/dev/null; then
+    break
+  fi
+  kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
+    echo "host control runner exited before idle state" >&2
+    exit 1
+  }
+  sleep 0.1
+done
+grep -q '"state":"idle"' "$TMP/home/state/control/status.json"
+[[ -f "$TMP/home/state/control/heartbeat" ]]
+grep -Eq '^[0-9]+$' "$TMP/home/state/control/runner.pid"
+
+request_tmp="$TMP/home/state/control/.request-test.tmp"
+cat > "$request_tmp" <<EOF
+{"request_id":"test-request-1","source":"github","channel":"master","requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+chmod 660 "$request_tmp"
+ln "$request_tmp" "$TMP/home/state/control/request.json"
+rm -f "$request_tmp"
+[[ "$(stat -c '%a' "$TMP/home/state/control")" == "2770" ]]
+
+for _ in $(seq 1 100); do
+  if grep -q '"state":"success"' "$TMP/home/state/control/status.json" 2>/dev/null &&
+     grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json" 2>/dev/null; then
+    break
+  fi
+  kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
+    echo "host control runner exited before completing update" >&2
+    exit 1
+  }
+  sleep 0.1
+done
+grep -q '"state":"success"' "$TMP/home/state/control/status.json"
+grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json"
+grep -q '^--source github --channel master$' "$TMP/state/installer-args"
+[[ ! -f "$TMP/home/state/control/request.json" ]]
+[[ ! -f "$TMP/home/state/control/active.json" ]]
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$TMP/home/bin/server-control.sh" stop
+wait "$CONTROL_TEST_PID" || true
+CONTROL_TEST_PID=""
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" control status >"$TMP/control-status.out"
+grep -q '"state":"success"' "$TMP/control-status.out"
+
+# Restart recovery: an orphaned active request must become failed, never stay running forever.
+cat > "$TMP/home/state/control/active.json" <<EOF
+{"request_id":"interrupted-1","source":"gitlab","channel":"stable","requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+XD_CONFIG_DIR="$TMP/home" XD_CONTROL_ONCE=1 \
+  bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-recovery.out" 2>"$TMP/control-recovery.err"
+grep -q '"state":"failed"' "$TMP/home/state/control/status.json"
+grep -q '"request_id":"interrupted-1"' "$TMP/home/state/control/status.json"
+grep -q 'host update interrupted before completion' "$TMP/home/state/control/status.json"
+[[ ! -f "$TMP/home/state/control/active.json" ]]
+
+# Stale queued requests are rejected by the host even if someone writes the bridge directly.
+cat > "$TMP/home/state/control/request.json" <<'EOF'
+{"request_id":"stale-1","source":"github","channel":"master","requested_by":"admin","created_at":"2020-01-01T00:00:00Z"}
+EOF
+XD_CONFIG_DIR="$TMP/home" XD_CONTROL_ONCE=1 \
+  bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-stale.out" 2>"$TMP/control-stale.err"
+grep -q '"state":"failed"' "$TMP/home/state/control/status.json"
+grep -q '"request_id":"stale-1"' "$TMP/home/state/control/status.json"
+grep -q 'invalid or stale host-control request' "$TMP/home/state/control/status.json"
+[[ ! -f "$TMP/home/state/control/request.json" ]]
 
 echo "host xdrive-server manager tests passed"
