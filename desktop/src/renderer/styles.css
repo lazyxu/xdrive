@@ -401,8 +401,6 @@ h2 { margin: 0; font-size: 18px; }
 }
 
 
-.field-label { display: grid; gap: 7px; margin-top: 18px; color: var(--text-mid); font-size: 13px; font-weight: 700; }
-.field-label input { width: 100%; min-width: 0; border: 1px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; background: var(--surface); color: var(--text); outline: none; }
 .settings-divider { height: 1px; margin: 22px 0; background: var(--border-soft); }
 .form-actions.compact { margin-top: 10px; }
 
@@ -424,7 +422,6 @@ h2 { margin: 0; font-size: 18px; }
 .update-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 760px) {
   .update-card-header, .update-progress-copy { align-items: flex-start; flex-direction: column; }
-  .update-mode-select { width: 100%; }
 }
 
 
