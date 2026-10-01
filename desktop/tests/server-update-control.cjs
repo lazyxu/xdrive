@@ -43,8 +43,8 @@ test('shared server update UI exposes source, channel, status and progress', () 
 })
 
 test('Web and Desktop use the same server update card', () => {
-  assert.equal(((web + sharedSettings).match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
-  assert.equal(((desktop + sharedSettings).match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
+  assert.equal((web.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
+  assert.equal((desktop.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
   assert.ok(webApi.includes("'/api/v1/admin/update'"), 'Web API server update endpoint missing')
   assert.ok(preload.includes('getServerUpdate'), 'Desktop preload server update getter missing')
   assert.ok(preload.includes('startServerUpdate'), 'Desktop preload server update action missing')
