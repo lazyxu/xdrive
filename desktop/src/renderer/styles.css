@@ -376,7 +376,7 @@ h2 { margin: 0; font-size: 18px; }
 .status-dot.waiting { background: #9ca8ba; box-shadow: 0 0 0 4px var(--surface-subtle); }
 .status-dot.warning { background: #d9903d; box-shadow: 0 0 0 4px var(--warning-bg); }
 
-.system-card, .panel { margin-top: 18px; border: 1px solid var(--border); border-radius: 16px; padding: 22px; background: var(--surface); }
+.system-card { margin-top: 18px; border: 1px solid var(--border); border-radius: 16px; padding: 22px; background: var(--surface); }
 
 .conflict-list { margin-top: 18px; display: grid; gap: 10px; }
 .conflict-row { border: 1px solid var(--border); border-radius: 13px; padding: 15px; display: flex; justify-content: space-between; gap: 18px; align-items: center; }
@@ -424,8 +424,6 @@ h2 { margin: 0; font-size: 18px; }
   .update-card-header, .update-progress-copy { align-items: flex-start; flex-direction: column; }
 }
 
-
-.transfer-panel { display: grid; gap: 22px; }
 
 .diagnostics-panel { display: grid; gap: 20px; }
 .diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
