@@ -7,7 +7,7 @@ const root = path.join(__dirname, '..')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const preload = fs.readFileSync(path.join(root, 'src', 'preload', 'index.cts'), 'utf8')
 const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
-const renderer = rendererApp + fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
+const renderer = rendererApp + fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8') + fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 const setVersion = fs.readFileSync(path.join(root, 'scripts', 'set-version.mjs'), 'utf8')
 
 test('desktop native feedback wires taskbar progress and clickable navigation', () => {
