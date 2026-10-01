@@ -6,11 +6,10 @@ XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 OUTPUT_ROOT=""
 ALLOW_INCONSISTENT=0
 LEAVE_SERVER_STOPPED=0
-COMPAT_VERIFY_IMAGE=""
 
 usage() {
   cat <<'EOF'
-Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped] [--compat-verify-image IMAGE]
+Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped]
 
 Creates an xDrive backup directory containing:
   database.dump   PostgreSQL custom-format dump
@@ -30,7 +29,6 @@ while [[ $# -gt 0 ]]; do
     --output-dir) OUTPUT_ROOT="$2"; shift 2 ;;
     --allow-inconsistent) ALLOW_INCONSISTENT=1; shift ;;
     --leave-server-stopped) LEAVE_SERVER_STOPPED=1; shift ;;
-    --compat-verify-image) COMPAT_VERIFY_IMAGE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -53,12 +51,6 @@ OUTPUT_ROOT="$(cd "$OUTPUT_ROOT" && pwd)"
 
 compose() {
   docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
-}
-
-compose_with_verify_image() {
-  local image="$1"
-  shift
-  XD_SERVER_IMAGE="$image" docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 env_value() {
@@ -162,17 +154,6 @@ if (( available_bytes < required_bytes )); then
   exit 1
 fi
 
-if [[ -n "$COMPAT_VERIFY_IMAGE" ]]; then
-  if [[ "$COMPAT_VERIFY_IMAGE" == *[[:space:]]* ]]; then
-    echo "backup compatibility verifier image must not contain whitespace" >&2
-    exit 2
-  fi
-  if ! docker image inspect "$COMPAT_VERIFY_IMAGE" </dev/null >/dev/null 2>&1; then
-    echo "[xDrive] prefetching target verifier image: $COMPAT_VERIFY_IMAGE" >&2
-    docker pull "$COMPAT_VERIFY_IMAGE" </dev/null >/dev/null
-  fi
-fi
-
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 final_dir="$OUTPUT_ROOT/xdrive-backup-$stamp"
 partial_dir="$final_dir.partial"
@@ -186,29 +167,6 @@ compose stop server >/dev/null 2>&1 || true
 
 verify_status=0
 compose run -T --rm --no-deps server storage verify --json </dev/null > "$partial_dir/verify.json" || verify_status=$?
-
-# Upgrade bootstrap compatibility: the currently deployed server image may use
-# an older verifier that incorrectly treats generated .xdrive-media cache files
-# as canonical orphan blobs. For pre-upgrade backups only, the installer may
-# provide the target server image as a read-only fallback verifier. We do not
-# accept the old report blindly: the target verifier must independently report
-# the same live database/storage snapshot as consistent.
-if [[ "$verify_status" != "0" && -n "$COMPAT_VERIFY_IMAGE" ]] &&
-   grep -q '"storage_key":[[:space:]]*".xdrive-media/' "$partial_dir/verify.json" &&
-   ! grep -q '"ignored_derived_files"' "$partial_dir/verify.json"; then
-  mv "$partial_dir/verify.json" "$partial_dir/verify.legacy.json"
-  echo "[xDrive] current deployment verifier rejected the snapshot; retrying with target verifier image $COMPAT_VERIFY_IMAGE ..." >&2
-  compat_verify_status=0
-  compose_with_verify_image "$COMPAT_VERIFY_IMAGE" run -T --rm --no-deps server storage verify --json </dev/null     > "$partial_dir/verify.json" || compat_verify_status=$?
-  if [[ "$compat_verify_status" == "0" ]]; then
-    verify_status=0
-    rm -f "$partial_dir/verify.legacy.json"
-    echo "[xDrive] target verifier accepted the snapshot; continuing pre-upgrade backup." >&2
-  else
-    verify_status="$compat_verify_status"
-  fi
-fi
-
 if [[ "$verify_status" != "0" && "$ALLOW_INCONSISTENT" != "1" ]]; then
   echo "xDrive consistency verification failed; backup aborted." >&2
   cat "$partial_dir/verify.json" >&2 || true

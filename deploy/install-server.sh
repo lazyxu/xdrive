@@ -1584,14 +1584,44 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   docker stop xdrive-caddy xdrive-caddy-1 xdrive-web-1 </dev/null >/dev/null 2>&1 || true
 
   backup_output=""
-  if ! backup_output="$("$STAGING_DIR/server-backup.sh" \
+  backup_error="$STAGING_DIR/pre-upgrade-backup.err"
+  target_server_image="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
+
+  if backup_output="$("$STAGING_DIR/server-backup.sh" \
       --config-dir "$XDRIVE_HOME" \
       --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
-      --leave-server-stopped \
-      --compat-verify-image "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG" </dev/null)"; then
-    echo "$backup_output" >&2
-    echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
-    exit 1
+      --leave-server-stopped </dev/null 2>"$backup_error")"; then
+    cat "$backup_error" >&2 || true
+  else
+    backup_status=$?
+    cat "$backup_error" >&2 || true
+
+    # Bootstrap compatibility: the currently deployed image may predate the
+    # verifier rule that excludes generated .xdrive-media cache files. Keep the
+    # backup script invocation compatible with older releases; only when its
+    # report proves this exact legacy false-positive do we retry verification
+    # with the fully published target server image. Any real inconsistency is
+    # still rejected by the target verifier.
+    if grep -q 'storage consistency verification failed' "$backup_error" &&
+       grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-media/' "$backup_error"; then
+      echo "[xDrive] current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier $target_server_image ..." >&2
+      : > "$backup_error"
+      if backup_output="$(XD_SERVER_IMAGE="$target_server_image" "$STAGING_DIR/server-backup.sh" \
+          --config-dir "$XDRIVE_HOME" \
+          --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
+          --leave-server-stopped </dev/null 2>"$backup_error")"; then
+        cat "$backup_error" >&2 || true
+        echo "[xDrive] target verifier accepted the snapshot; continuing pre-upgrade backup." >&2
+      else
+        backup_status=$?
+        cat "$backup_error" >&2 || true
+        echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
+        exit "$backup_status"
+      fi
+    else
+      echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
+      exit "$backup_status"
+    fi
   fi
   printf '%s\n' "$backup_output"
   PRE_UPGRADE_BACKUP="$(printf '%s\n' "$backup_output" | tail -n1)"

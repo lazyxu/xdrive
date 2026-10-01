@@ -9,7 +9,7 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "server transactional upgrade test failed (exit $status)" >&2
-    for file in locked.out locked.err upgrade.out upgrade.err stall.out stall.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count; do
+    for file in locked.out locked.err upgrade.out upgrade.err stall.out stall.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -93,7 +93,8 @@ services: {}
   */scripts/server-backup.sh)
     emit '#!/usr/bin/env bash
 set -euo pipefail
-printf "%s\n" "$*" > "$TEST_STATE/backup-args"
+printf "%s\n" "$*" >> "$TEST_STATE/backup-args"
+printf "%s\n" "${XD_SERVER_IMAGE:-}" >> "$TEST_STATE/backup-images"
 config=""
 output=""
 leave=0
@@ -102,10 +103,15 @@ while [[ $# -gt 0 ]]; do
     --config-dir) config="$2"; shift 2 ;;
     --output-dir) output="$2"; shift 2 ;;
     --leave-server-stopped) leave=1; shift ;;
-    *) shift ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 [[ "$leave" == "1" ]]
+if [[ "${TEST_BACKUP_LEGACY_DERIVED_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" != "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]; then
+  echo "xDrive consistency verification failed; backup aborted." >&2
+  echo '"'"'{"orphans":[{"storage_key":".xdrive-media/thumbnails/aa/test-512.jpg","size":123}],"hash_mismatches":null}'"'"' >&2
+  exit 1
+fi
 dir="$output/xdrive-backup-test"
 mkdir -p "$dir"
 touch "$dir/database.dump" "$dir/blobs.tar" "$dir/verify.json" "$dir/manifest.json" "$dir/SHA256SUMS.txt"
@@ -261,6 +267,7 @@ rm -f "$TMP/state"/pull-count-*
 TEST_STATE="$TMP/state" \
 TEST_PULL_MODE=transient \
 TEST_HEALTH_OK=0 \
+TEST_BACKUP_LEGACY_DERIVED_FAIL=1 \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/config" \
 XD_SHELL_RC_PATH="$TMP/config.bashrc" \
@@ -298,7 +305,14 @@ test -x "$TMP/config/bin/server-doctor.sh"
 grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
 test ! -e "$TMP/host-bin/xdrive-server"
 grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/upgrade.err"
-grep -q -- '--compat-verify-image ghcr.io/lazyxu/xdrive-server:sha-0123456789ab' "$TMP/state/backup-args"
+if grep -q -- '--compat-verify-image' "$TMP/state/backup-args"; then
+  echo "installer must keep the pre-upgrade backup CLI compatible with older server-backup.sh versions" >&2
+  exit 1
+fi
+[[ "$(wc -l < "$TMP/state/backup-images")" -ge 2 ]]
+grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/state/backup-images"
+grep -q 'current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier' "$TMP/upgrade.err"
+grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/upgrade.err"
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
 if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then

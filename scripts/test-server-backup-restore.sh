@@ -124,35 +124,6 @@ grep -Eq '"preflight_available_bytes": [0-9]+' "$backup_dir/manifest.json"
   sha256sum -c SHA256SUMS.txt >/dev/null
 )
 
-# Reproduce the upgrade bootstrap bug: the active deployment points at an old
-# verifier image that cannot validate the current storage layout, while the
-# target image contains the compatibility fix for generated .xdrive-media
-# caches. The backup must retry verification with the explicit target image,
-# without changing the active deployment image recorded in the backup.
-docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c \
-  'mkdir -p /data/.xdrive-media/thumbnails/aa && printf derived-cache > /data/.xdrive-media/thumbnails/aa/test-512.jpg'
-
-sed -i 's#^XD_SERVER_IMAGE=.*#XD_SERVER_IMAGE=postgres:17-alpine#' "$CONFIG_DIR/.env"
-set +e
-compat_backup_dir="$("$ROOT/scripts/server-backup.sh" \
-  --config-dir "$XDRIVE_HOME" \
-  --output-dir "$BACKUP_ROOT" \
-  --compat-verify-image xdrive/server:test \
-  2>"$TMP/compat-backup.err")"
-compat_status=$?
-set -e
-sed -i 's#^XD_SERVER_IMAGE=.*#XD_SERVER_IMAGE=xdrive/server:test#' "$CONFIG_DIR/.env"
-
-[[ "$compat_status" -eq 0 ]] || {
-  cat "$TMP/compat-backup.err" >&2 || true
-  exit "$compat_status"
-}
-assert_runtime_services
-grep -q 'current deployment verifier rejected the snapshot; retrying with target verifier image' "$TMP/compat-backup.err"
-grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/compat-backup.err"
-grep -Eq '"ignored_derived_files":[[:space:]]*1' "$compat_backup_dir/verify.json"
-grep -q '"consistency_verified": true' "$compat_backup_dir/manifest.json"
-
 # Deliberately corrupt both directions: a referenced blob disappears and an
 # unreferenced blob appears. Verification must reject the state.
 docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "rm -f /data/$storage_key && printf orphan > /data/orphan.bin"
