@@ -45,3 +45,4 @@ export * from './TableSurface'
 
 export * from './SourceManager'
 export * from './SettingsDialog'
+export * from './ShareDialog'
