@@ -11,6 +11,7 @@ const desktopApp = [
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8'),
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8'),
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8'),
+  fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8'),
 ].join('\n')
 const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
