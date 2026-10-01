@@ -58,6 +58,6 @@ test('Web and Desktop reuse shared existing-share list presentation', () => {
   assert.equal((desktop.match(/<XDriveShareList\b/g) || []).length, 1, 'Desktop should reuse shared existing-share list')
   assert.equal(web.includes('shares.map((share)'), false, 'Web should not retain local share mapping')
   assert.equal(desktop.includes('cloudShares.map((share)'), false, 'Desktop should not retain local share mapping')
-  assert.ok(desktop.includes('variant="compact"'), 'Desktop should preserve compact share-list presentation')
-  assert.ok(web.includes('variant="table"'), 'Web should preserve table share-list presentation')
+  assert.ok(desktop.includes('listVariant="compact"'), 'Desktop should preserve compact share-list presentation')
+  assert.ok(web.includes('listVariant="table"'), 'Web should preserve table share-list presentation')
 })
