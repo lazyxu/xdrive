@@ -196,6 +196,42 @@ func (c *agentController) CloudDelete(ctx context.Context, id, revision uint64) 
 	return nil
 }
 
+func (c *agentController) CloudBatchCopy(ctx context.Context, items []client.BatchNodeRef, parentID uint64) (client.BatchNodesResult, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.BatchNodesResult{}, err
+	}
+	result, err := cli.BatchCopy(ctx, items, parentID)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return result, err
+}
+
+func (c *agentController) CloudBatchMove(ctx context.Context, items []client.BatchNodeRef, parentID uint64) (client.BatchNodesResult, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.BatchNodesResult{}, err
+	}
+	result, err := cli.BatchMove(ctx, items, parentID)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return result, err
+}
+
+func (c *agentController) CloudBatchDelete(ctx context.Context, items []client.BatchNodeRef) (client.BatchNodesResult, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.BatchNodesResult{}, err
+	}
+	result, err := cli.BatchDelete(ctx, items)
+	if err == nil {
+		c.requestCloudSync(cfg)
+	}
+	return result, err
+}
+
 func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, localPath, name string) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

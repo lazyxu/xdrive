@@ -340,6 +340,17 @@ export type AgentCloudNode = {
   updated_at: string
 }
 
+export type AgentCloudBatchNodeRef = {
+  id: number
+  revision: number
+}
+
+export type AgentCloudBatchResult = {
+  operation_id: string
+  items?: AgentCloudNode[]
+  deleted_ids?: number[]
+}
+
 export type AgentCloudChildrenPage = {
   items: AgentCloudNode[]
   next_cursor?: string
@@ -864,6 +875,18 @@ export class AgentIPCClient {
 
   cloudDelete(id: number, revision: number) {
     return this.request<{ ok: boolean }>('DELETE', '/v1/cloud/nodes', { id, revision }, 45_000)
+  }
+
+  cloudBatchCopy(items: AgentCloudBatchNodeRef[], parentID: number) {
+    return this.request<AgentCloudBatchResult>('POST', '/v1/cloud/batch/copy', { items, parent_id: parentID }, 45_000)
+  }
+
+  cloudBatchMove(items: AgentCloudBatchNodeRef[], parentID: number) {
+    return this.request<AgentCloudBatchResult>('POST', '/v1/cloud/batch/move', { items, parent_id: parentID }, 45_000)
+  }
+
+  cloudBatchDelete(items: AgentCloudBatchNodeRef[]) {
+    return this.request<AgentCloudBatchResult>('POST', '/v1/cloud/batch/delete', { items }, 45_000)
   }
 
   cloudUpload(parentID: number, localPath: string, name: string) {

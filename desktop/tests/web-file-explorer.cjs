@@ -55,8 +55,8 @@ test('Web FileExplorer wires copy/cut/paste to server copy and move primitives',
   assert.ok(api.includes('copy(nodeID: number, parentID: number, name?: string)'), 'Web copy API is missing')
   assert.ok(api.includes('move(nodeID: number, revision: number, parentID: number)'), 'Web move API is missing')
   assert.ok(explorer.includes("type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }"), 'Web clipboard state is missing')
-  assert.ok(explorer.includes('await api.copy(node.id, current.id)'), 'copy paste must call the server copy endpoint')
-  assert.ok(explorer.includes('await api.move(node.id, node.revision, current.id)'), 'cut paste must call revision-safe move')
+  assert.ok(explorer.includes('await api.batchCopy(refs, current.id)'), 'copy paste must call the atomic batch copy endpoint')
+  assert.ok(explorer.includes('await api.batchMove(refs, current.id)'), 'cut paste must call atomic revision-safe batch move')
   assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Web shared copy adapter is missing')
   assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Web shared cut adapter is missing')
   assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Web shared paste adapter is missing')
@@ -68,13 +68,13 @@ test('Web FileExplorer supports bulk download and delete', () => {
   assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Web shared bulk download adapter is missing')
   assert.ok(explorer.includes('onRemoveMany(nodes)'), 'Web shared bulk delete adapter is missing')
   assert.ok(app.includes('const removeMany = (nodes: Node[]) => {'), 'Web bulk delete confirmation flow is missing')
-  assert.ok(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), 'Web bulk delete must preserve revision checks')
+  assert.ok(app.includes('await api.batchDelete(nodes.map((node) => ({ id: node.id, revision: node.revision })))'), 'Web bulk delete must use one atomic revision-safe batch request')
 })
 
 test('Web FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Web internal drag/drop helper is missing')
-  assert.ok(explorer.includes("if (operation === 'copy') await api.copy(node.id, targetNode.id)"), 'Ctrl/Cmd drag should copy on Web')
-  assert.ok(explorer.includes('else await api.move(node.id, node.revision, targetNode.id)'), 'normal internal drag should move on Web')
+  assert.ok(explorer.includes("if (operation === 'copy') await api.batchCopy(refs, targetNode.id)"), 'Ctrl/Cmd drag should use batch copy on Web')
+  assert.ok(explorer.includes('else await api.batchMove(refs, targetNode.id)'), 'normal internal drag should use batch move on Web')
   assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
   assert.ok(explorer.includes('onUploadDroppedFiles(parentID, files)'), 'Web external drop should use the target-aware upload adapter')
   assert.ok(app.includes('const uploadFilesTo = async (parentID: number, files: File[]) => {'), 'Web target-aware upload helper is missing')
@@ -102,4 +102,23 @@ test('Web FileExplorer uses cursor-paged server sorting for directory browsing',
   assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Web directory pages should preserve server ordering')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Web sort changes should reload server-sorted pages')
   assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Web Explorer must request the next page near the scroll boundary')
+})
+
+test('Web multi-select mutations use atomic server batch APIs', () => {
+  for (const token of [
+    "batchCopy(items: BatchNodeRef[], parentID: number)",
+    "batchMove(items: BatchNodeRef[], parentID: number)",
+    "batchDelete(items: BatchNodeRef[])",
+    "'/api/v1/nodes/batch/copy'",
+    "'/api/v1/nodes/batch/move'",
+    "'/api/v1/nodes/batch/delete'",
+  ]) {
+    assert.ok(api.includes(token), `missing Web batch API contract: ${token}`)
+  }
+  assert.ok(app.includes('await api.batchDelete(nodes.map((node) => ({ id: node.id, revision: node.revision })))'), 'Web bulk delete must use one atomic batch request')
+  assert.ok(explorer.includes('await api.batchMove(refs, current.id)'), 'Web cut/paste must use batch move')
+  assert.ok(explorer.includes('await api.batchCopy(refs, current.id)'), 'Web copy/paste must use batch copy')
+  assert.ok(explorer.includes("if (operation === 'copy') await api.batchCopy(refs, targetNode.id)"), 'Web multi-item drag-copy must use batch copy')
+  assert.ok(explorer.includes('else await api.batchMove(refs, targetNode.id)'), 'Web multi-item drag-move must use batch move')
+  assert.equal(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), false, 'Web bulk delete must not regress to N requests')
 })

@@ -62,6 +62,8 @@ import {
   type AgentCacheStats,
   type AgentCacheReleaseResult,
   type AgentCloudNode,
+  type AgentCloudBatchNodeRef,
+  type AgentCloudBatchResult,
   type AgentCloudChildrenPage,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
@@ -1091,6 +1093,26 @@ function requireAgentLifecycle() {
   return agentLifecycle
 }
 
+function normalizeCloudBatchItems(value: unknown): AgentCloudBatchNodeRef[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 200) {
+    throw new AgentIPCError('invalid_input', 0, 'Batch items must contain between 1 and 200 entries.')
+  }
+  return value.map((item) => {
+    if (
+      typeof item !== 'object' || item === null ||
+      typeof (item as { id?: unknown }).id !== 'number' ||
+      !Number.isSafeInteger((item as { id: number }).id) ||
+      (item as { id: number }).id <= 0 ||
+      typeof (item as { revision?: unknown }).revision !== 'number' ||
+      !Number.isSafeInteger((item as { revision: number }).revision) ||
+      (item as { revision: number }).revision <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Each batch item requires a positive id and revision.')
+    }
+    return { id: (item as { id: number }).id, revision: (item as { revision: number }).revision }
+  })
+}
+
 function requireAgentCapability(hello: AgentHello, capability: string) {
   if (!hello.capabilities.includes(capability)) {
     throw new AgentIPCError(
@@ -1809,6 +1831,30 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudDelete(id, revision)
   }, false))
+  ipcMain.handle('agent:cloud-batch-copy', (_event, items: unknown, parentID: unknown) => runAgentAction<AgentCloudBatchResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    const refs = normalizeCloudBatchItems(items)
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Target parent id is required.')
+    }
+    return requireAgentClient().cloudBatchCopy(refs, parentID)
+  }, false))
+  ipcMain.handle('agent:cloud-batch-move', (_event, items: unknown, parentID: unknown) => runAgentAction<AgentCloudBatchResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    const refs = normalizeCloudBatchItems(items)
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Target parent id is required.')
+    }
+    return requireAgentClient().cloudBatchMove(refs, parentID)
+  }, false))
+  ipcMain.handle('agent:cloud-batch-delete', (_event, items: unknown) => runAgentAction<AgentCloudBatchResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudBatchDelete(normalizeCloudBatchItems(items))
+  }, false))
+
   ipcMain.handle('agent:cloud-upload-files', async (_event, parentID: unknown) => {
     if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
       return { ok: false, error: { code: 'invalid_input', message: 'Parent node id is required.' } }

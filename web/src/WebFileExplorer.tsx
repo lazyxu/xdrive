@@ -353,13 +353,13 @@ export default function WebFileExplorer({
     if (!current || !clipboard || clipboard.nodes.length === 0 || clipboardBusy) return
     setClipboardBusy(true)
     try {
-      for (const node of clipboard.nodes) {
-        if (clipboard.mode === 'cut') {
-          if (node.parent_id === current.id) continue
-          await api.move(node.id, node.revision, current.id)
-        } else {
-          await api.copy(node.id, current.id)
-        }
+      const nodes = clipboard.mode === 'cut'
+        ? clipboard.nodes.filter((node) => node.parent_id !== current.id)
+        : clipboard.nodes
+      if (nodes.length > 0) {
+        const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
+        if (clipboard.mode === 'cut') await api.batchMove(refs, current.id)
+        else await api.batchCopy(refs, current.id)
       }
       if (clipboard.mode === 'cut') setClipboard(null)
       clearSearch()
@@ -383,10 +383,9 @@ export default function WebFileExplorer({
     if (nodes.length === 0) return
     setClipboardBusy(true)
     try {
-      for (const node of nodes) {
-        if (operation === 'copy') await api.copy(node.id, targetNode.id)
-        else await api.move(node.id, node.revision, targetNode.id)
-      }
+      const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
+      if (operation === 'copy') await api.batchCopy(refs, targetNode.id)
+      else await api.batchMove(refs, targetNode.id)
       clearSearch()
       if (current) await onLoadDirectory(current.id, crumbs, sort)
       await onQuotaChanged()

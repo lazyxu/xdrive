@@ -499,12 +499,14 @@ export default function DesktopFileExplorer({
     if (!current || !clipboard || clipboard.nodes.length === 0 || actionBusy) return
     setActionBusy('paste')
     try {
-      for (const node of clipboard.nodes) {
+      const nodes = clipboard.mode === 'cut'
+        ? clipboard.nodes.filter((node) => node.parent_id !== current.id)
+        : clipboard.nodes
+      if (nodes.length > 0) {
+        const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
         const result = clipboard.mode === 'cut'
-          ? (node.parent_id === current.id
-              ? { ok: true, data: node } as DesktopResult<AgentCloudNode>
-              : await window.xdriveDesktop.agent.cloudMove(node.id, node.revision, current.id))
-          : await window.xdriveDesktop.agent.cloudCopy(node.id, current.id)
+          ? await window.xdriveDesktop.agent.cloudBatchMove(refs, current.id)
+          : await window.xdriveDesktop.agent.cloudBatchCopy(refs, current.id)
         if (!result.ok) {
           onError(result.error.message)
           return
@@ -531,14 +533,13 @@ export default function DesktopFileExplorer({
     if (nodes.length === 0) return
     setActionBusy('drop-items')
     try {
-      for (const node of nodes) {
-        const result = operation === 'copy'
-          ? await window.xdriveDesktop.agent.cloudCopy(node.id, targetNode.id)
-          : await window.xdriveDesktop.agent.cloudMove(node.id, node.revision, targetNode.id)
-        if (!result.ok) {
-          onError(result.error.message)
-          return
-        }
+      const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
+      const result = operation === 'copy'
+        ? await window.xdriveDesktop.agent.cloudBatchCopy(refs, targetNode.id)
+        : await window.xdriveDesktop.agent.cloudBatchMove(refs, targetNode.id)
+      if (!result.ok) {
+        onError(result.error.message)
+        return
       }
       clearSearch()
       if (current) await onLoadDirectory(current.id, crumbs, sort)

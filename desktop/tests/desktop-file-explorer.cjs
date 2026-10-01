@@ -113,8 +113,8 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
 
 test('Desktop FileExplorer wires copy/cut/paste through Agent copy and move primitives', () => {
   assert.ok(explorer.includes("type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }"), 'Desktop clipboard state is missing')
-  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudCopy(node.id, current.id)'), 'Desktop copy paste must use cloudCopy')
-  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudMove(node.id, node.revision, current.id)'), 'Desktop cut paste must use revision-safe cloudMove')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudBatchCopy(refs, current.id)'), 'Desktop copy paste must use atomic cloudBatchCopy')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudBatchMove(refs, current.id)'), 'Desktop cut paste must use atomic revision-safe cloudBatchMove')
   assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Desktop shared copy adapter is missing')
   assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Desktop shared cut adapter is missing')
   assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Desktop shared paste adapter is missing')
@@ -126,14 +126,15 @@ test('Desktop FileExplorer supports bulk download and delete', () => {
   assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
   assert.ok(explorer.includes('onDeleteMany(nodes)'), 'Desktop shared bulk delete adapter is missing')
   assert.ok(app.includes('const removeCloudNodes = (nodes: AgentCloudNode[]) => {'), 'Desktop bulk delete confirmation flow is missing')
-  assert.ok(app.includes('for (const node of nodes) {'), 'Desktop bulk delete should process every selected node')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudBatchDelete('), 'Desktop bulk delete should use one atomic batch request')
+  assert.ok(app.includes('nodes.map((node) => ({ id: node.id, revision: node.revision }))'), 'Desktop bulk delete must preserve revision refs')
 })
 
 test('Desktop FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Desktop internal drag/drop helper is missing')
   assert.ok(explorer.includes("operation === 'copy'"), 'Desktop drag/drop operation selection is missing')
-  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCopy(node.id, targetNode.id)'), 'Desktop Ctrl/Cmd drag should copy')
-  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudMove(node.id, node.revision, targetNode.id)'), 'Desktop normal drag should move')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudBatchCopy(refs, targetNode.id)'), 'Desktop Ctrl/Cmd drag should use batch copy')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudBatchMove(refs, targetNode.id)'), 'Desktop normal drag should use batch move')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
   assert.ok(explorer.includes('onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
 })
@@ -204,4 +205,13 @@ test('Desktop FileExplorer uses cursor-paged server sorting for cloud directorie
   assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Desktop directory pages should preserve server ordering')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted pages')
   assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Desktop Explorer must request more items near the scroll boundary')
+})
+
+test('Desktop multi-select mutations use atomic Agent batch APIs', () => {
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudBatchDelete('), 'Desktop bulk delete must use one Agent batch request')
+  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudBatchMove(refs, current.id)'), 'Desktop cut/paste must use batch move')
+  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudBatchCopy(refs, current.id)'), 'Desktop copy/paste must use batch copy')
+  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudBatchCopy(refs, targetNode.id)'), 'Desktop multi-item drag-copy must use batch copy')
+  assert.ok(explorer.includes('await window.xdriveDesktop.agent.cloudBatchMove(refs, targetNode.id)'), 'Desktop multi-item drag-move must use batch move')
+  assert.equal(app.includes('for (const node of nodes) {\n            const result = await window.xdriveDesktop.agent.cloudDelete'), false, 'Desktop bulk delete must not regress to N requests')
 })

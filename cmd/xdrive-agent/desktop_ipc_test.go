@@ -300,6 +300,22 @@ func (f *fakeDesktopIPCController) CloudDelete(_ context.Context, id, revision u
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) CloudBatchCopy(_ context.Context, items []client.BatchNodeRef, parentID uint64) (client.BatchNodesResult, error) {
+	return client.BatchNodesResult{OperationID: "copy-op", Items: []client.Node{{ID: 21, ParentID: &parentID, Name: "copy.txt", Type: "file", Revision: 1}}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudBatchMove(_ context.Context, items []client.BatchNodeRef, parentID uint64) (client.BatchNodesResult, error) {
+	return client.BatchNodesResult{OperationID: "move-op", Items: []client.Node{{ID: items[0].ID, ParentID: &parentID, Name: "moved.txt", Type: "file", Revision: items[0].Revision + 1}}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudBatchDelete(_ context.Context, items []client.BatchNodeRef) (client.BatchNodesResult, error) {
+	ids := make([]uint64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return client.BatchNodesResult{OperationID: "delete-op", DeletedIDs: ids}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint64, localPath, name string) (client.Node, error) {
 	f.cloudUploadParent, f.cloudUploadPath, f.cloudUploadName = parentID, localPath, name
 	return f.cloudUploaded, f.err
@@ -874,6 +890,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},
 		{http.MethodPatch, "/v1/cloud/move", `{"id":3,"revision":2,"parent_id":8}`, "\"parent_id\":8"},
 		{http.MethodDelete, "/v1/cloud/nodes", `{"id":3,"revision":2}`, "\"ok\":true"},
+		{http.MethodPost, "/v1/cloud/batch/copy", `{"items":[{"id":3,"revision":2}],"parent_id":8}`, "\"operation_id\":\"copy-op\""},
+		{http.MethodPost, "/v1/cloud/batch/move", `{"items":[{"id":3,"revision":2}],"parent_id":8}`, "\"operation_id\":\"move-op\""},
+		{http.MethodPost, "/v1/cloud/batch/delete", `{"items":[{"id":3,"revision":2}]}`, "\"operation_id\":\"delete-op\""},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodGet, "/v1/cloud/search?q=report", "", "\"Projects/report.pdf\""},

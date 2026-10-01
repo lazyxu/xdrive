@@ -61,6 +61,9 @@ const agent = Object.freeze({
   cloudCopy: (id: number, parentID: number) => ipcRenderer.invoke('agent:cloud-copy', id, parentID),
   cloudMove: (id: number, revision: number, parentID: number) => ipcRenderer.invoke('agent:cloud-move', id, revision, parentID),
   cloudDelete: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-delete', id, revision),
+  cloudBatchCopy: (items: Array<{ id: number; revision: number }>, parentID: number) => ipcRenderer.invoke('agent:cloud-batch-copy', items, parentID),
+  cloudBatchMove: (items: Array<{ id: number; revision: number }>, parentID: number) => ipcRenderer.invoke('agent:cloud-batch-move', items, parentID),
+  cloudBatchDelete: (items: Array<{ id: number; revision: number }>) => ipcRenderer.invoke('agent:cloud-batch-delete', items),
   cloudUploadFiles: (parentID: number) => ipcRenderer.invoke('agent:cloud-upload-files', parentID),
   cloudUploadDroppedFiles: (parentID: number, files: unknown[]) => ipcRenderer.invoke(
     'agent:cloud-upload-paths',
