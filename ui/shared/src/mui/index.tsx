@@ -44,3 +44,4 @@ export * from './DescriptionGrid'
 export * from './TableSurface'
 
 export * from './SourceManager'
+export * from './SettingsDialog'
