@@ -3,7 +3,9 @@ package synology
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,6 +46,18 @@ type Credential struct {
 	BaseURL  string `json:"base_url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+// AccountConcurrencyKey returns a non-secret coordination key shared by
+// Synology Photos and File Station when they target the same DSM account.
+func AccountConcurrencyKey(credential Credential) string {
+	baseURL := strings.ToLower(strings.TrimRight(strings.TrimSpace(credential.BaseURL), "/"))
+	username := strings.TrimSpace(credential.Username)
+	if baseURL == "" || username == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(baseURL + "\x00" + username))
+	return "synology:" + hex.EncodeToString(sum[:])
 }
 
 type AccountInfo struct {

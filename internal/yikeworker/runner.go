@@ -2,6 +2,8 @@ package yikeworker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -266,6 +268,30 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 func (r *Runner) RunPullSource(ctx context.Context, source meta.Source) (client.SyncRun, error) {
 	run, _, err := r.RunSource(ctx, source)
 	return run, err
+}
+
+func (r *Runner) PullSourceConcurrencyKey(ctx context.Context, source meta.Source) string {
+	if r == nil || r.DB == nil || r.Keyring == nil {
+		return ""
+	}
+	plaintext, err := sourcecredential.Get(ctx, r.DB, r.Keyring, source)
+	if err != nil {
+		return ""
+	}
+	defer clear(plaintext)
+	var credential struct {
+		Cookie string `json:"cookie"`
+	}
+	if err := json.Unmarshal(plaintext, &credential); err != nil {
+		return ""
+	}
+	cookie := strings.TrimSpace(credential.Cookie)
+	credential.Cookie = ""
+	if cookie == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(cookie))
+	return "yike:" + hex.EncodeToString(sum[:])
 }
 
 func (r *Runner) validate() error {

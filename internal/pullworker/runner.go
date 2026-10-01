@@ -25,6 +25,14 @@ type SourceHandler interface {
 	RunPullSource(context.Context, meta.Source) (client.SyncRun, error)
 }
 
+// SourceConcurrencyKeyer lets a connector serialize Sources that share one
+// upstream account/session budget without disabling concurrency for unrelated
+// accounts. Keys are process-local coordination values and must never contain
+// plaintext credentials.
+type SourceConcurrencyKeyer interface {
+	PullSourceConcurrencyKey(context.Context, meta.Source) string
+}
+
 type SourceHandlerFunc func(context.Context, meta.Source) (client.SyncRun, error)
 
 func (f SourceHandlerFunc) RunPullSource(ctx context.Context, source meta.Source) (client.SyncRun, error) {
@@ -149,14 +157,16 @@ func prioritizeDueSources(sources []meta.Source, now time.Time, interval time.Du
 }
 
 type sourceJob struct {
-	source  meta.Source
-	handler SourceHandler
+	source         meta.Source
+	handler        SourceHandler
+	concurrencyKey string
 }
 
 type sourceResult struct {
-	index int
-	run   client.SyncRun
-	err   error
+	index          int
+	run            client.SyncRun
+	err            error
+	concurrencyKey string
 }
 
 func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time.Time) (RunAllReport, error) {
@@ -166,7 +176,11 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 		if handler == nil {
 			continue
 		}
-		jobs = append(jobs, sourceJob{source: source, handler: handler})
+		key := ""
+		if keyer, ok := handler.(SourceConcurrencyKeyer); ok {
+			key = strings.TrimSpace(keyer.PullSourceConcurrencyKey(ctx, source))
+		}
+		jobs = append(jobs, sourceJob{source: source, handler: handler, concurrencyKey: key})
 	}
 
 	report := RunAllReport{Eligible: len(jobs)}
@@ -178,35 +192,79 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 	}
 
 	concurrency := r.effectiveConcurrency(len(jobs))
-	semaphore := make(chan struct{}, concurrency)
 	results := make(chan sourceResult, len(jobs))
-	scheduled := 0
+	ordered := make([]sourceResult, len(jobs))
+	received := make([]bool, len(jobs))
+	pending := make([]int, len(jobs))
+	for index := range jobs {
+		pending[index] = index
+	}
+	activeKeys := make(map[string]struct{})
+	active := 0
+	stopLaunching := false
+	ctxDone := ctx.Done()
 
-scheduleLoop:
-	for index, job := range jobs {
-		select {
-		case <-ctx.Done():
-			break scheduleLoop
-		case semaphore <- struct{}{}:
+	firstRunnable := func() int {
+		for pendingIndex, jobIndex := range pending {
+			key := jobs[jobIndex].concurrencyKey
+			if key == "" {
+				return pendingIndex
+			}
+			if _, busy := activeKeys[key]; !busy {
+				return pendingIndex
+			}
 		}
-		scheduled++
-		go func(index int, job sourceJob) {
-			defer func() { <-semaphore }()
+		return -1
+	}
+
+	launch := func(index int) {
+		job := jobs[index]
+		if job.concurrencyKey != "" {
+			activeKeys[job.concurrencyKey] = struct{}{}
+		}
+		active++
+		go func() {
 			if err := ctx.Err(); err != nil {
-				results <- sourceResult{index: index, err: err}
+				results <- sourceResult{index: index, err: err, concurrencyKey: job.concurrencyKey}
 				return
 			}
 			run, err := job.handler.RunPullSource(ctx, job.source)
-			results <- sourceResult{index: index, run: run, err: err}
-		}(index, job)
+			results <- sourceResult{index: index, run: run, err: err, concurrencyKey: job.concurrencyKey}
+		}()
 	}
 
-	ordered := make([]sourceResult, len(jobs))
-	received := make([]bool, len(jobs))
-	for i := 0; i < scheduled; i++ {
-		result := <-results
-		ordered[result.index] = result
-		received[result.index] = true
+	for active > 0 || (!stopLaunching && len(pending) > 0) {
+		if !stopLaunching {
+			for active < concurrency {
+				if err := ctx.Err(); err != nil {
+					stopLaunching = true
+					ctxDone = nil
+					break
+				}
+				pendingIndex := firstRunnable()
+				if pendingIndex < 0 {
+					break
+				}
+				jobIndex := pending[pendingIndex]
+				pending = append(pending[:pendingIndex], pending[pendingIndex+1:]...)
+				launch(jobIndex)
+			}
+		}
+		if active == 0 {
+			break
+		}
+		select {
+		case result := <-results:
+			active--
+			if result.concurrencyKey != "" {
+				delete(activeKeys, result.concurrencyKey)
+			}
+			ordered[result.index] = result
+			received[result.index] = true
+		case <-ctxDone:
+			stopLaunching = true
+			ctxDone = nil
+		}
 	}
 
 	var errs []error

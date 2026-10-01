@@ -166,3 +166,74 @@ func TestRunnerConcurrencyDefaultsAndCaps(t *testing.T) {
 		t.Fatalf("capped concurrency=%d want=%d", got, MaxSourceConcurrency)
 	}
 }
+
+type keyedBlockingHandler struct {
+	*blockingHandler
+	keys map[uint64]string
+}
+
+func (h *keyedBlockingHandler) PullSourceConcurrencyKey(_ context.Context, source meta.Source) string {
+	return h.keys[source.ID]
+}
+
+func TestRunnerSerializesSharedAccountWithoutBlockingOtherAccounts(t *testing.T) {
+	handler := &keyedBlockingHandler{
+		blockingHandler: &blockingHandler{
+			started: make(chan uint64, 3),
+			release: make(chan struct{}, 3),
+		},
+		keys: map[uint64]string{
+			1: "account-a",
+			2: "account-a",
+			3: "account-b",
+		},
+	}
+	runner := &Runner{
+		Handlers:       map[string]SourceHandler{"yike_photos": handler},
+		MaxConcurrency: 2,
+	}
+	sources := []meta.Source{
+		{ID: 1, Kind: "yike_photos"},
+		{ID: 2, Kind: "yike_photos"},
+		{ID: 3, Kind: "yike_photos"},
+	}
+	type outcome struct {
+		report RunAllReport
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		report, err := runner.runSources(context.Background(), sources, time.Now().UTC())
+		done <- outcome{report: report, err: err}
+	}()
+
+	first := <-handler.started
+	second := <-handler.started
+	started := map[uint64]bool{first: true, second: true}
+	if !started[1] || !started[3] || started[2] {
+		t.Fatalf("initial starts=%v want source 1 + source 3; same-account source 2 must wait", started)
+	}
+	select {
+	case id := <-handler.started:
+		t.Fatalf("source %d started before an account/global slot was released", id)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	handler.release <- struct{}{}
+	handler.release <- struct{}{}
+	if id := <-handler.started; id != 2 {
+		t.Fatalf("next source=%d want same-account source 2 after account-a released", id)
+	}
+	handler.release <- struct{}{}
+
+	result := <-done
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if result.report.Eligible != 3 || result.report.Completed != 3 || result.report.Failed != 0 {
+		t.Fatalf("report=%+v", result.report)
+	}
+	if got := handler.max.Load(); got != 2 {
+		t.Fatalf("max global concurrency=%d want=2", got)
+	}
+}
