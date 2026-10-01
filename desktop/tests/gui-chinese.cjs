@@ -254,7 +254,7 @@ test('desktop transient management surfaces use shared modal features', () => {
   assert.ok(rendererApp.includes('<XDriveSourceManager'), 'Desktop must render the shared Source manager')
   assert.ok(rendererApp.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
   assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
-  assert.ok(sharedSourceManager.includes('open={Boolean(setting)}'), 'shared Source settings dialog is missing')
+  assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
   assert.ok(rendererApp.includes('open={cloudTrashOpen}'), 'cloud trash dialog is missing')
   assert.ok(rendererApp.includes('open={!!cloudHistoryNode}'), 'cloud history dialog is missing')
   assert.equal(rendererApp.includes('source-create modal-form-surface'), false, 'Desktop must not retain a local Source create shell')
