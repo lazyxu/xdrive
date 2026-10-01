@@ -43,6 +43,7 @@ export function XDriveSettingsDialog({
   appearanceDisabled = false,
   onAppearanceChange,
   buildInfo = [],
+  buildInfoSectionID,
   serverUpdate,
   children,
 }: {
@@ -54,6 +55,7 @@ export function XDriveSettingsDialog({
   appearanceDisabled?: boolean
   onAppearanceChange: (value: XDriveAppearance) => void | Promise<void>
   buildInfo?: XDriveSettingsBuildInfo[]
+  buildInfoSectionID?: string
   serverUpdate?: XDriveSettingsServerUpdate
   children?: ReactNode
 }) {
@@ -85,7 +87,7 @@ export function XDriveSettingsDialog({
           </Box>
 
           {buildInfo.length > 0 ? (
-            <Box>
+            <Box id={buildInfoSectionID}>
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>构建信息</Typography>
               <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5}>
                 {buildInfo.map((item) => (
