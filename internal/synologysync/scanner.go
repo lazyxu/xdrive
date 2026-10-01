@@ -125,6 +125,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
 	pathOwners := make(map[string]string)
+	seenExternalIDs := make(map[string]struct{})
 	includedExternalIDs := make(map[string]struct{})
 	if lister, ok := s.API.(sourceItemLister); ok {
 		if err := seedSynologyPathOwners(ctx, lister, s.SourceID, pathOwners); err != nil {
@@ -224,6 +225,10 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				if err != nil {
 					return result, err
 				}
+				if _, duplicate := seenExternalIDs[item.ExternalID]; duplicate {
+					return result, fmt.Errorf("Synology %s item identity repeated during one inventory: %s", space, item.ExternalID)
+				}
+				seenExternalIDs[item.ExternalID] = struct{}{}
 				if matcher.Ignored(item.Path, false) {
 					result.Summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: item})
 					continue
@@ -356,9 +361,13 @@ func collectFolders(ctx context.Context, remote Remote, space synology.Space, he
 			return nil, err
 		}
 		for _, folder := range page.List {
-			if folder.ID > 0 {
-				out[folder.ID] = folder
+			if folder.ID <= 0 {
+				return nil, fmt.Errorf("Synology folder list returned invalid id=%d", folder.ID)
 			}
+			if _, duplicate := out[folder.ID]; duplicate {
+				return nil, fmt.Errorf("Synology folder id repeated during pagination: %d", folder.ID)
+			}
+			out[folder.ID] = folder
 		}
 		if err := heartbeat(); err != nil {
 			return nil, err
@@ -502,6 +511,7 @@ func appendLimitedError(messages []string, message string) []string {
 
 func collectAlbums(ctx context.Context, remote Remote, space synology.Space, heartbeat func() error) ([]synology.Album, error) {
 	var out []synology.Album
+	seen := make(map[int64]struct{})
 	offset := 0
 	for pageNo := 0; pageNo < 100000; pageNo++ {
 		if err := ctx.Err(); err != nil {
@@ -514,7 +524,16 @@ func collectAlbums(ctx context.Context, remote Remote, space synology.Space, hea
 			}
 			return nil, optionalCollectionFailure(err)
 		}
-		out = append(out, page.List...)
+		for _, album := range page.List {
+			if album.ID <= 0 {
+				return nil, optionalCollectionFailure(fmt.Errorf("invalid Synology %s album id=%d", space, album.ID))
+			}
+			if _, duplicate := seen[album.ID]; duplicate {
+				return nil, optionalCollectionFailure(fmt.Errorf("Synology %s album id repeated during pagination: %d", space, album.ID))
+			}
+			seen[album.ID] = struct{}{}
+			out = append(out, album)
+		}
 		if err := heartbeat(); err != nil {
 			return nil, err
 		}
@@ -560,21 +579,26 @@ func albumCollectionRevision(album synology.Album) string {
 }
 
 func nextOffset(requested, returned, total, count int) (int, bool, error) {
+	if requested < 0 || returned < 0 || total < 0 || count < 0 {
+		return 0, false, fmt.Errorf("pagination returned negative values")
+	}
 	if count == 0 {
 		if total <= requested {
 			return requested, true, nil
 		}
 		return 0, false, fmt.Errorf("pagination returned no entries before total=%d", total)
 	}
-	base := returned
-	if base < requested {
-		base = requested
+	if returned != requested {
+		return 0, false, fmt.Errorf("pagination offset mismatch: requested=%d returned=%d", requested, returned)
 	}
-	next := base + count
+	next := requested + count
 	if next <= requested {
 		return 0, false, fmt.Errorf("pagination did not advance")
 	}
-	if total > 0 && next >= total {
+	if total > 0 && next > total {
+		return 0, false, fmt.Errorf("pagination exceeded total: next=%d total=%d", next, total)
+	}
+	if total > 0 && next == total {
 		return next, true, nil
 	}
 	return next, false, nil

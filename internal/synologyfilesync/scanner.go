@@ -102,6 +102,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
 	pathOwners := make(map[string]string)
+	seenRemotePaths := make(map[string]struct{})
 	if lister, ok := s.API.(sourceItemLister); ok {
 		if err := seedPathOwners(ctx, lister, s.SourceID, pathOwners); err != nil {
 			return result, fmt.Errorf("read existing File Station source paths: %w", err)
@@ -197,6 +198,10 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		if err := sourcepkg.ValidateDiscoveredItem(&rootItem); err != nil {
 			return result, fmt.Errorf("normalize File Station root %q: %w", root, err)
 		}
+		if _, duplicate := seenRemotePaths[root]; duplicate {
+			return result, fmt.Errorf("File Station root repeated during one inventory: %q", root)
+		}
+		seenRemotePaths[root] = struct{}{}
 		result.Directories++
 		if matcher.Ignored(rootItem.Path, true) {
 			result.Summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: rootItem})
@@ -228,6 +233,10 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				if path.Dir(remotePath) != task.RemotePath {
 					return result, fmt.Errorf("File Station child %q escaped parent %q", remotePath, task.RemotePath)
 				}
+				if _, duplicate := seenRemotePaths[remotePath]; duplicate {
+					return result, fmt.Errorf("File Station path repeated during one inventory: %q", remotePath)
+				}
+				seenRemotePaths[remotePath] = struct{}{}
 				externalID := fileStationExternalID(remotePath)
 				name := sanitizeSegment(entry.Name, remotePath)
 				relative := reservePath(path.Join(task.RelativePath, name), remotePath, externalID, pathOwners)
@@ -427,21 +436,26 @@ func seedPathOwners(ctx context.Context, lister sourceItemLister, sourceID uint6
 }
 
 func nextOffset(requested, returned, total, count int) (int, bool, error) {
+	if requested < 0 || returned < 0 || total < 0 || count < 0 {
+		return 0, false, fmt.Errorf("pagination returned negative values")
+	}
 	if count == 0 {
 		if total <= requested {
 			return requested, true, nil
 		}
 		return 0, false, fmt.Errorf("pagination returned no entries before total=%d", total)
 	}
-	base := returned
-	if base < requested {
-		base = requested
+	if returned != requested {
+		return 0, false, fmt.Errorf("pagination offset mismatch: requested=%d returned=%d", requested, returned)
 	}
-	next := base + count
+	next := requested + count
 	if next <= requested {
 		return 0, false, fmt.Errorf("pagination did not advance")
 	}
-	if total > 0 && next >= total {
+	if total > 0 && next > total {
+		return 0, false, fmt.Errorf("pagination exceeded total: next=%d total=%d", next, total)
+	}
+	if total > 0 && next == total {
 		return next, true, nil
 	}
 	return next, false, nil
