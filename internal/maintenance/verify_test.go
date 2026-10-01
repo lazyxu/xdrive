@@ -91,6 +91,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		versionKey:   "old",
 		hashKey:      "evil",
 		"orphan.bin": "orphan",
+		".xdrive-media/thumbnails/aa/cache-512.jpg": "derived-thumbnail",
 	} {
 		path := filepath.Join(root, filepath.FromSlash(key))
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -118,7 +119,8 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if report.OK() {
 		t.Fatal("inconsistent storage reported OK")
 	}
-	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 || report.IgnoredTemps != 1 {
+	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
+		report.IgnoredTemps != 1 || report.IgnoredDerived != 1 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
@@ -128,7 +130,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatalf("mismatches=%+v want node=%d", report.SizeMismatches, mismatchID)
 	}
 	if len(report.Orphans) != 1 || report.Orphans[0].StorageKey != "orphan.bin" {
-		t.Fatalf("orphans=%+v", report.Orphans)
+		t.Fatalf("derived media cache must be ignored while real orphans remain visible: %+v", report.Orphans)
 	}
 	if len(report.HashMismatches) != 1 || report.HashMismatches[0].NodeID != hashID {
 		t.Fatalf("hash mismatches=%+v want node=%d", report.HashMismatches, hashID)
