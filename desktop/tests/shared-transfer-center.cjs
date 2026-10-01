@@ -8,7 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'TransferCenter.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'transfers.ts')
-const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktop = read('desktop', 'src', 'renderer', 'App.tsx') + read('desktop', 'src', 'renderer', 'DesktopTransfersPage.tsx')
 const web = read('web', 'src', 'App.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webStore = read('web', 'src', 'transfers.ts')

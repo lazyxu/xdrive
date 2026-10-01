@@ -5,8 +5,9 @@ const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
 const shared = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
-const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8')
-const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+const sourceManager = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + sourceManager
+const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceManager
 const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorConfigFields.tsx'), 'utf8')
 
 test('Synology File Station is a distinct generic Pull preset', () => {
@@ -22,14 +23,14 @@ test('File Station roots are validated separately from Photos spaces', () => {
   assert.match(shared, /function synologyFileRootsValidationError/)
   assert.match(shared, /不能选择整个 NAS 根目录/)
   assert.match(web, /option\.kind === 'synology_files'[\s\S]*synologyFileRootsValidationError/)
-  assert.match(desktop, /sourceCreateKind === 'synology_files'[\s\S]*synologyFileRootsValidationError/)
+  assert.match(sourceManager, /option\.kind === 'synology_files'[\s\S]*synologyFileRootsValidationError/)
 })
 
 test('Web and Desktop persist roots and explicitly activate File Station sources', () => {
   assert.match(web, /option\.kind === 'synology_files'[\s\S]*\{ roots \}/)
   assert.match(web, /option\.kind === 'synology_files'[\s\S]*updateSource\(created\.id, created\.revision, \{ status: 'active' \}\)/)
-  assert.match(desktop, /sourceCreateKind === 'synology_files'[\s\S]*\{ roots \}/)
-  assert.match(desktop, /sourceCreateKind === 'synology_files'[\s\S]*updateSource\(created\.data\.id, created\.data\.revision, \{ status: 'active' \}\)/)
+  assert.match(sourceManager, /option\.kind === 'synology_files'[\s\S]*\{ roots \}/)
+  assert.match(sourceManager, /option\.kind === 'synology_files'[\s\S]*updateSource\(created\.id, created\.revision, \{ status: 'active' \}\)/)
 })
 
 test('File Station forms explain arbitrary-file semantics', () => {

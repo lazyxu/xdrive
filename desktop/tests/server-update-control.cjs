@@ -8,9 +8,10 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedCard = read('ui', 'shared', 'src', 'mui', 'ServerUpdateCard.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'server-update.ts')
-const web = read('web', 'src', 'App.tsx')
+const sharedSettings = read('ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx')
+const web = read('web', 'src', 'App.tsx') + sharedSettings
 const webApi = read('web', 'src', 'api.ts')
-const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktop = read('desktop', 'src', 'renderer', 'App.tsx') + sharedSettings
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const desktopMain = read('desktop', 'src', 'main', 'index.cts')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -42,8 +43,8 @@ test('shared server update UI exposes source, channel, status and progress', () 
 })
 
 test('Web and Desktop use the same server update card', () => {
-  assert.equal((web.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
-  assert.equal((desktop.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
+  assert.equal(((web + sharedSettings).match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
+  assert.equal(((desktop + sharedSettings).match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
   assert.ok(webApi.includes("'/api/v1/admin/update'"), 'Web API server update endpoint missing')
   assert.ok(preload.includes('getServerUpdate'), 'Desktop preload server update getter missing')
   assert.ok(preload.includes('startServerUpdate'), 'Desktop preload server update action missing')
