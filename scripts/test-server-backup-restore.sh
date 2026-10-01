@@ -106,7 +106,7 @@ wait_server
 assert_runtime_services
 
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
-backup_dir="$("$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$BACKUP_ROOT")"
+backup_dir="$(bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$BACKUP_ROOT")"
 assert_runtime_services
 [[ -f "$backup_dir/database.dump" ]]
 [[ -f "$backup_dir/blobs.tar" ]]
@@ -133,7 +133,7 @@ if "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null 2>&1;
   exit 1
 fi
 
-"$ROOT/scripts/server-restore.sh" "$backup_dir"   --config-dir "$XDRIVE_HOME"   --yes   --no-safety-backup >/dev/null
+bash "$ROOT/scripts/server-restore.sh" "$backup_dir"   --config-dir "$XDRIVE_HOME"   --yes   --no-safety-backup >/dev/null
 wait_server
 assert_runtime_services
 
