@@ -38,11 +38,9 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
   XDriveActionButton,
-  XDriveAppearanceField,
   XDriveBrandLockup,
-  XDriveBuildInfoCard,
   XDriveConfirmDialog,
-  XDriveServerUpdateCard,
+  XDriveSettingsDialog,
   XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
@@ -240,51 +238,27 @@ function WebAccountMenu({
           <ListItemText>退出登录</ListItemText>
         </MenuItem>
       </XDriveAccountMenu>
-      <Dialog
+      <XDriveSettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        maxWidth="md"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title="设置"
-          subtitle="外观与服务端信息"
-          onClose={() => setSettingsOpen(false)}
-        />
-        <XDriveDialogContent dividers>
-          <Stack spacing={2.5}>
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>外观</Typography>
-              <XDriveAppearanceField value={appearance} onChange={onAppearanceChange} />
-            </Box>
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>服务端</Typography>
-              <Stack spacing={1.5}>
-                <XDriveBuildInfoCard title="Server 构建信息" info={serverBuild} />
-                {canUpdateServer ? (
-                  <>
-                    <XDriveServerUpdateCard
-                      state={serverUpdate}
-                      source={serverUpdateSource}
-                      channel={serverUpdateChannel}
-                      loading={serverUpdateBusy}
-                      disabled={serverUpdate === null}
-                      onSourceChange={setServerUpdateSource}
-                      onChannelChange={setServerUpdateChannel}
-                      onStart={() => setServerUpdateConfirmOpen(true)}
-                    />
-                    {serverUpdateError ? <XDriveStatusAlert tone="warning">{serverUpdateError}</XDriveStatusAlert> : null}
-                  </>
-                ) : (
-                  <XDriveStatusAlert tone="neutral">仅管理员可以更新服务端。</XDriveStatusAlert>
-                )}
-              </Stack>
-            </Box>
-          </Stack>
-        </XDriveDialogContent>
-      </Dialog>
+        subtitle="外观与服务端信息"
+        appearance={appearance}
+        onAppearanceChange={onAppearanceChange}
+        buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
+        serverUpdate={{
+          state: serverUpdate,
+          source: serverUpdateSource,
+          channel: serverUpdateChannel,
+          loading: serverUpdateBusy,
+          disabled: serverUpdate === null,
+          canUpdate: canUpdateServer,
+          unavailableMessage: '仅管理员可以更新服务端。',
+          error: serverUpdateError,
+          onSourceChange: setServerUpdateSource,
+          onChannelChange: setServerUpdateChannel,
+          onStart: () => setServerUpdateConfirmOpen(true),
+        }}
+      />
       <XDriveConfirmDialog
         open={serverUpdateConfirmOpen}
         title="确认更新服务端？"

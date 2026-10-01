@@ -6,8 +6,9 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const shared = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'ShareFields.tsx'), 'utf8')
 const sharedList = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'ShareList.tsx'), 'utf8')
-const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ShareDialog.tsx'), 'utf8')
-const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
+const sharedDialog = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
+const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ShareDialog.tsx'), 'utf8') + sharedDialog
+const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8') + sharedDialog
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Web and Desktop reuse shared share creation fields', () => {
@@ -57,6 +58,6 @@ test('Web and Desktop reuse shared existing-share list presentation', () => {
   assert.equal((desktop.match(/<XDriveShareList\b/g) || []).length, 1, 'Desktop should reuse shared existing-share list')
   assert.equal(web.includes('shares.map((share)'), false, 'Web should not retain local share mapping')
   assert.equal(desktop.includes('cloudShares.map((share)'), false, 'Desktop should not retain local share mapping')
-  assert.ok(desktop.includes('variant="compact"'), 'Desktop should preserve compact share-list presentation')
-  assert.ok(web.includes('variant="table"'), 'Web should preserve table share-list presentation')
+  assert.ok(desktop.includes('listVariant="compact"'), 'Desktop should preserve compact share-list presentation')
+  assert.ok(web.includes('listVariant="table"'), 'Web should preserve table share-list presentation')
 })

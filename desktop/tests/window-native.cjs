@@ -5,7 +5,7 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
-const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 
 test('desktop remembers window state and exposes configurable close behavior', () => {
   assert.ok(main.includes('getNormalBounds()'), 'missing normal window-bounds persistence')
