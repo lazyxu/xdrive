@@ -138,6 +138,7 @@ export interface XDriveSourceManagerProps {
   defaultTargetLabel: string
   defaultTargetPath: string
   targetBrowser?: XDriveSourceTargetBrowser
+  cookieHelpVariant?: 'accordion' | 'dialog'
   onError: (error: unknown) => void
 }
 
@@ -275,6 +276,7 @@ export function XDriveSourceManager({
   defaultTargetLabel,
   defaultTargetPath,
   targetBrowser,
+  cookieHelpVariant = 'accordion',
   onError,
 }: XDriveSourceManagerProps) {
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
@@ -1656,6 +1658,7 @@ export function XDriveSourceManager({
             <XDriveSourceIgnoreRulesField
               value={createValues.ignore_rules ?? ''}
               onChange={(value) => setCreateValues((current) => ({ ...current, ignore_rules: value }))}
+              monospace
             />
             {createProfile.credential === 'cookie' && (
               <>
@@ -1671,7 +1674,7 @@ export function XDriveSourceManager({
                 <MuiBox>
                   <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</XDriveStatusAlert>
                   <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                  <XDriveYikeCookieHelp variant="accordion" />
+                  <XDriveYikeCookieHelp variant={cookieHelpVariant} />
                   <MuiBox sx={{ mt: 1 }}>
                     <XDriveActionButton
                       compact
@@ -1892,7 +1895,7 @@ export function XDriveSourceManager({
                     }}
                   />
                   <MuiBox>
-                    <XDriveYikeCookieHelp variant="accordion" />
+                    <XDriveYikeCookieHelp variant={cookieHelpVariant} />
                     <MuiBox sx={{ mt: 1 }}>
                       <XDriveActionButton
                         compact
