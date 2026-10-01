@@ -142,14 +142,31 @@ normalize_update_source() {
 }
 
 installer_url_for_source() {
-  local source="$1"
+  local source="$1" channel="${2:-master}"
   if [[ -n "$INSTALLER_URL_OVERRIDE" ]]; then
     printf '%s\n' "$INSTALLER_URL_OVERRIDE"
     return
   fi
-  case "$source" in
-    github) printf 'https://raw.githubusercontent.com/%s/master/deploy/install-server.sh\n' "$REPOSITORY" ;;
-    gitlab) printf '%s/%s/-/raw/master/deploy/install-server.sh\n' "${GITLAB_BASE_URL%/}" "${GITLAB_PROJECT#/}" ;;
+  case "$source:$channel" in
+    github:master)
+      # Use the exact installer asset from the fully published rolling release.
+      # Downloading raw master can race ahead of the snapshot bundle and create
+      # an unsupported "new installer + old maintenance scripts" combination.
+      printf 'https://github.com/%s/releases/download/snapshot/xdrive-server-install.sh\n' "$REPOSITORY"
+      ;;
+    github:stable)
+      printf 'https://github.com/%s/releases/latest/download/xdrive-server-install.sh\n' "$REPOSITORY"
+      ;;
+    gitlab:master|gitlab:stable)
+      # GitLab's rolling snapshot commit is carried in release metadata rather
+      # than a movable repository tag. Keep the existing bootstrap URL here;
+      # the installer resolves and pins the published GitLab release itself.
+      printf '%s/%s/-/raw/master/deploy/install-server.sh\n' "${GITLAB_BASE_URL%/}" "${GITLAB_PROJECT#/}"
+      ;;
+    *)
+      echo "xdrive-server: invalid update channel: $channel" >&2
+      return 2
+      ;;
   esac
 }
 
@@ -195,8 +212,8 @@ download_failure_is_connectivity() {
 }
 
 download_installer() {
-  local source="$1" destination="$2" installer_url status fallback_url
-  installer_url="$(installer_url_for_source "$source")"
+  local source="$1" destination="$2" channel="${3:-master}" installer_url status fallback_url
+  installer_url="$(installer_url_for_source "$source" "$channel")"
   if download_installer_url "$installer_url" "$destination"; then
     return 0
   else
@@ -216,29 +233,38 @@ download_installer() {
   echo "[xDrive] GitLab ${GITLAB_BASE_URL%/} is unreachable; retrying via local fallback $fallback_url..." >&2
   GITLAB_BASE_URL="$fallback_url"
   export XD_GITLAB_BASE_URL="$GITLAB_BASE_URL"
-  installer_url="$(installer_url_for_source "$source")"
+  installer_url="$(installer_url_for_source "$source" "$channel")"
   download_installer_url "$installer_url" "$destination"
 }
 
 update_cmd() (
-  local tmp installer status target_commit audit_target="" previous="" update_source=""
+  local tmp installer status target_commit audit_target="" previous="" update_source="" update_channel=""
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-server-update.XXXXXX")"
   installer="$tmp/install-server.sh"
   trap 'rm -rf "$tmp"' EXIT INT TERM
 
   for arg in "$@"; do
     case "$previous" in
-      --channel) [[ -z "$audit_target" ]] && audit_target="$arg" ;;
+      --channel)
+        update_channel="$arg"
+        [[ -z "$audit_target" ]] && audit_target="$arg"
+        ;;
       --source) update_source="$arg" ;;
     esac
     previous="$arg"
   done
   [[ -n "$audit_target" ]] || audit_target="$(env_value XD_RELEASE_CHANNEL)"
+  [[ -n "$update_channel" ]] || update_channel="$(env_value XD_RELEASE_CHANNEL)"
+  [[ -n "$update_channel" ]] || update_channel="master"
+  case "$update_channel" in
+    master|stable) ;;
+    *) echo "xdrive-server: invalid update channel: $update_channel (expected stable or master)" >&2; return 2 ;;
+  esac
   [[ -n "$update_source" ]] || update_source="$(env_value XD_UPDATE_SOURCE)"
   update_source="$(normalize_update_source "$update_source")"
 
-  echo "[xDrive] downloading host installer from $update_source..."
-  download_installer "$update_source" "$installer"
+  echo "[xDrive] downloading $update_channel host installer from $update_source..."
+  download_installer "$update_source" "$installer" "$update_channel"
   chmod 700 "$installer"
   bash -n "$installer"
   echo "[xDrive] installer downloaded and syntax-checked."

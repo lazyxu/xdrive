@@ -195,6 +195,20 @@ fi
 grep -q 'installer downloaded and syntax-checked' "$TMP/update.out"
 grep -q -- 'audit record --action system.update --result success' "$TMP/state/audit-calls"
 
+rm -f "$TMP/state/curl-url"
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source github --channel master >"$TMP/update-github-master.out" 2>"$TMP/update-github-master.err"
+grep -q '^https://github.com/lazyxu/xdrive/releases/download/snapshot/xdrive-server-install.sh$' "$TMP/state/curl-url"
+
+rm -f "$TMP/state/curl-url"
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" update --source github --channel stable >"$TMP/update-github-stable.out" 2>"$TMP/update-github-stable.err"
+grep -q '^https://github.com/lazyxu/xdrive/releases/latest/download/xdrive-server-install.sh$' "$TMP/state/curl-url"
+
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \
@@ -202,7 +216,7 @@ bash "$HOST" update --source gitlab --channel master >"$TMP/update-gitlab.out" 2
 
 grep -q '^http://gitlab.t-fluid.com:1080/xuliang/xdrive/-/raw/master/deploy/install-server.sh$' "$TMP/state/curl-url"
 grep -q '^--source gitlab --channel master$' "$TMP/state/installer-args"
-grep -q 'downloading host installer from gitlab' "$TMP/update-gitlab.out"
+grep -q 'downloading master host installer from gitlab' "$TMP/update-gitlab.out"
 
 rm -f "$TMP/state/curl-urls" "$TMP/state/installer-gitlab-base"
 TEST_CURL_FAIL_GITLAB_DOMAIN=1 \
