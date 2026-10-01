@@ -127,6 +127,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batchItems := make(map[string]sourcepkg.DiscoveredItem, batchSize)
 	batchRefs := make(map[string]TransferRef, batchSize)
 	seen := make(map[string]bool)
+	rootSeen := make(map[string]struct{})
 	pathOwners := make(map[string]string)
 	if lister, ok := s.API.(sourceItemLister); ok {
 		if err := seedYikePathOwners(ctx, lister, s.SourceID, pathOwners); err != nil {
@@ -271,6 +272,14 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		func(page yike.FileList) error {
 			for _, file := range page.List {
 				result.RootItems++
+				externalID, err := yike.ExternalID(ownUK, file.FSID)
+				if err != nil {
+					return err
+				}
+				if _, duplicate := rootSeen[externalID]; duplicate {
+					return fmt.Errorf("Yike root item identity repeated during one inventory: %s", externalID)
+				}
+				rootSeen[externalID] = struct{}{}
 				if _, _, err := add(ownUK, file, nil); err != nil {
 					return err
 				}
@@ -741,7 +750,8 @@ func walkAlbumFilePages(
 
 func collectAlbums(ctx context.Context, remote Remote, heartbeat func() error) ([]yike.Album, error) {
 	cursor := ""
-	seen := map[string]struct{}{}
+	seenCursors := map[string]struct{}{}
+	seenAlbums := map[string]struct{}{}
 	var out []yike.Album
 	for pageNo := 0; pageNo < 100000; pageNo++ {
 		if err := ctx.Err(); err != nil {
@@ -751,7 +761,17 @@ func collectAlbums(ctx context.Context, remote Remote, heartbeat func() error) (
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, page.List...)
+		for _, album := range page.List {
+			albumID := strings.TrimSpace(album.AlbumID)
+			if albumID == "" {
+				return nil, fmt.Errorf("Yike album id is empty")
+			}
+			if _, duplicate := seenAlbums[albumID]; duplicate {
+				return nil, fmt.Errorf("Yike album id repeated during pagination: %s", albumID)
+			}
+			seenAlbums[albumID] = struct{}{}
+			out = append(out, album)
+		}
 		if err := heartbeat(); err != nil {
 			return nil, err
 		}
@@ -762,10 +782,10 @@ func collectAlbums(ctx context.Context, remote Remote, heartbeat func() error) (
 		if next == "" {
 			return nil, fmt.Errorf("Yike album pagination has_more=1 but cursor is empty")
 		}
-		if _, duplicate := seen[next]; duplicate {
+		if _, duplicate := seenCursors[next]; duplicate {
 			return nil, fmt.Errorf("Yike album pagination cursor repeated")
 		}
-		seen[next] = struct{}{}
+		seenCursors[next] = struct{}{}
 		cursor = next
 	}
 	return nil, fmt.Errorf("Yike album pagination exceeded safety limit")
