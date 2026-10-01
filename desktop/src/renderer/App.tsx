@@ -8,18 +8,14 @@ import {
   Chip,
   CircularProgress,
   Divider as MuiDivider,
-  FormControl,
   FormControlLabel,
   IconButton,
   InputAdornment,
-  InputLabel,
   ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
-  Select,
   Stack,
-  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -52,15 +48,8 @@ import {
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
-  XDriveDescriptionGrid,
-  XDriveDescriptionItem,
-  XDriveSectionHeader,
   XDriveSettingsDialog,
-  XDriveDialogActionSpacer,
   XDriveFeedbackSnackbar,
-  XDriveMetricCard,
-  XDriveMetricGrid,
-  XDrivePaginationControls,
   XDriveSidebarNavItem,
   XDriveSidebarNavList,
   XDriveSidebarSurface,
@@ -85,7 +74,6 @@ import { DesktopTransfersPage } from './DesktopTransfersPage'
 import { DesktopStoragePage } from './DesktopStoragePage'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
-import { desktopShareDialogAdapter } from './shareDialogAdapter'
 import type {
   XDriveAppearance,
   XDriveServerUpdateChannel,
