@@ -46,6 +46,25 @@ export type AgentSettings = {
 export type AgentUpdateMode = 'manual' | 'check' | 'download' | 'install'
 export type AgentUpdateSource = 'github' | 'gitlab'
 
+export type AgentServerUpdateState = {
+  supported: boolean
+  state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
+  source: 'github' | 'gitlab'
+  channel: 'stable' | 'master'
+  request_id?: string
+  stage?: string
+  stage_current?: number
+  stage_total?: number
+  bytes_done?: number
+  bytes_total?: number
+  message?: string
+  error?: string
+  started_at?: string
+  updated_at?: string
+  finished_at?: string
+  runner_heartbeat_at?: string
+}
+
 export type AgentUpdateState = {
   mode: AgentUpdateMode
   source: AgentUpdateSource
@@ -869,6 +888,14 @@ export class AgentIPCClient {
 
   cloudQuota() {
     return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota')
+  }
+
+  serverUpdate() {
+    return this.request<AgentServerUpdateState>('GET', '/v1/server-update')
+  }
+
+  startServerUpdate(source: 'github' | 'gitlab', channel: 'stable' | 'master') {
+    return this.request<AgentServerUpdateState>('POST', '/v1/server-update', { source, channel }, 45_000)
   }
 
   cloudStorageStats() {

@@ -62,10 +62,12 @@ services:
       XD_ACCESS_TOKEN_TTL: ${XD_ACCESS_TOKEN_TTL:-15m}
       XD_REFRESH_TOKEN_TTL: ${XD_REFRESH_TOKEN_TTL:-720h}
       XD_STORAGE_ROOT: /data
+      XD_HOST_CONTROL_DIR: /host-control
       XD_ALLOWED_ORIGIN: ${XD_ALLOWED_ORIGIN:-http://localhost:3000}
       XD_MAX_UPLOAD_BYTES: ${XD_MAX_UPLOAD_BYTES:-21474836480}
     volumes:
       - "${XD_FILES_DATA_DIR:-../data/files}:/data"
+      - "${XD_HOST_CONTROL_HOST_DIR:-../state/control}:/host-control"
     depends_on:
       storage-init:
         condition: service_completed_successfully

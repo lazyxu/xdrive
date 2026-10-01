@@ -231,3 +231,11 @@ test('Files App Shell stays full-bleed and delegates scrolling to FileExplorer',
   assert.ok(webApp.includes("overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }"), 'Files should delegate vertical scrolling to FileExplorer')
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
 })
+
+test('Files App Shell stays full-bleed and delegates scrolling to FileExplorer', () => {
+  assert.ok(webStyles.includes('.file-manager-shell {\n    height: 100vh;\n    overflow: hidden;'), 'wide Web shell should own the viewport without page scrolling')
+  assert.ok(webStyles.includes('.content-wrap.files-workspace {\n    padding: 0;\n    overflow: hidden;'), 'Files workspace should remain full-bleed without dashboard padding')
+  assert.ok(webStyles.includes('.files-workspace-surface {\n    height: 100%;\n    min-height: 0;'), 'Files workspace surface should fill the remaining shell height')
+  assert.ok(webApp.includes("overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }"), 'Files should delegate vertical scrolling to FileExplorer')
+  assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
+})

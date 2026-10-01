@@ -312,6 +312,22 @@ func (c *agentController) CloudQuota(ctx context.Context) (client.QuotaUsage, er
 	return cli.Quota(ctx)
 }
 
+func (c *agentController) CloudServerUpdateState(ctx context.Context) (client.ServerUpdateState, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.ServerUpdateState{}, err
+	}
+	return cli.ServerUpdateState(ctx)
+}
+
+func (c *agentController) CloudStartServerUpdate(ctx context.Context, source, channel string) (client.ServerUpdateState, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.ServerUpdateState{}, err
+	}
+	return cli.StartServerUpdate(ctx, source, channel)
+}
+
 func (c *agentController) CloudStorageStats(ctx context.Context) (client.StorageStats, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

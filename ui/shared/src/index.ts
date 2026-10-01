@@ -1,6 +1,7 @@
 export * from './format'
 export * from './preferences'
 export * from './transfers'
+export * from './server-update'
 export type * from './models'
 export * from './external-sources'
 export * from './synology-dsm-guide'

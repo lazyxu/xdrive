@@ -94,6 +94,7 @@ func main() {
 		MaxUploadBytes:            cfg.MaxUploadBytes,
 		SourceRunFailureRetention: cfg.SourceRunFailureRetention,
 		ConnectorSecrets:          connectorSecrets,
+		HostControlDir:            strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
 	}
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
 	defer janitorCancel()

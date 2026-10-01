@@ -134,6 +134,25 @@ type VersionInfo struct {
 	BuildTime     string `json:"build_time,omitempty"`
 }
 
+type ServerUpdateState struct {
+	Supported         bool   `json:"supported"`
+	State             string `json:"state"`
+	Source            string `json:"source"`
+	Channel           string `json:"channel"`
+	RequestID         string `json:"request_id,omitempty"`
+	Stage             string `json:"stage,omitempty"`
+	StageCurrent      int    `json:"stage_current,omitempty"`
+	StageTotal        int    `json:"stage_total,omitempty"`
+	BytesDone         int64  `json:"bytes_done,omitempty"`
+	BytesTotal        int64  `json:"bytes_total,omitempty"`
+	Message           string `json:"message,omitempty"`
+	Error             string `json:"error,omitempty"`
+	StartedAt         string `json:"started_at,omitempty"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
+	FinishedAt        string `json:"finished_at,omitempty"`
+	RunnerHeartbeatAt string `json:"runner_heartbeat_at,omitempty"`
+}
+
 type AuthResponse struct {
 	Token              string `json:"token"`
 	AccessToken        string `json:"access_token"`
@@ -202,6 +221,21 @@ func (c *Client) ServerVersion(ctx context.Context) (VersionInfo, error) {
 	}
 	defer resp.Body.Close()
 	err = decodeResponse(resp, &out)
+	return out, err
+}
+
+func (c *Client) ServerUpdateState(ctx context.Context) (ServerUpdateState, error) {
+	var out ServerUpdateState
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/update", nil, &out)
+	return out, err
+}
+
+func (c *Client) StartServerUpdate(ctx context.Context, source, channel string) (ServerUpdateState, error) {
+	var out ServerUpdateState
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/update", map[string]string{
+		"source":  source,
+		"channel": channel,
+	}, &out)
 	return out, err
 }
 

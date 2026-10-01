@@ -25,6 +25,7 @@ type Server struct {
 	MaxUploadBytes            int64
 	SourceRunFailureRetention time.Duration
 	ConnectorSecrets          *connectorsecret.Keyring
+	HostControlDir            string
 	credentialTest            sourceCredentialTester
 	fileStationBrowse         sourceFileStationBrowser
 	obs                       *serverObservability
@@ -123,6 +124,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/audit", s.adminAuditEvents)
+	admin.GET("/update", s.adminServerUpdateStatus)
+	admin.POST("/update", s.adminStartServerUpdate)
 	admin.GET("/storage", s.adminStorageStats)
 	admin.GET("/storage/health", s.adminStorageHealth)
 	admin.GET("/storage/history", s.adminStorageHistory)

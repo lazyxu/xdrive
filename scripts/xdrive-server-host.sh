@@ -40,6 +40,7 @@ xDrive server host manager
 
 Usage:
   xdrive-server update [--source github|gitlab] [--channel stable|master]
+  xdrive-server control <install|start|serve|stop|status>
   xdrive-server doctor [--strict]
   xdrive-server status [--summary-only]
   xdrive-server backup [create] [server-backup.sh options...]
@@ -257,6 +258,15 @@ update_cmd() (
   fi
   return "$status"
 )
+
+control_cmd() {
+  local control="$BIN_DIR/server-control.sh"
+  [[ -x "$control" ]] || {
+    echo "xdrive-server: host control is not installed at $control" >&2
+    return 1
+  }
+  XD_CONFIG_DIR="$XDRIVE_HOME" exec "$control" "$@"
+}
 
 doctor_cmd() {
   local doctor="$BIN_DIR/server-doctor.sh"
@@ -835,6 +845,11 @@ uninstall_cmd() {
     validate_purge_path "Caddy config" "$caddy_config_dir"
   fi
 
+  if [[ -x "$BIN_DIR/server-control.sh" ]]; then
+    XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" stop || true
+    XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" remove-schedule || true
+  fi
+
   if [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]]; then
     echo "[xDrive] stopping and removing xDrive containers and network..."
     compose down --remove-orphans
@@ -981,6 +996,7 @@ shift || true
 
 case "$cmd" in
   update) update_cmd "$@" ;;
+  control) control_cmd "$@" ;;
   doctor) doctor_cmd "$@" ;;
   status) status_cmd "$@" ;;
   backup) backup_cmd "$@" ;;

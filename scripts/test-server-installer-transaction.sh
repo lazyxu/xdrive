@@ -118,7 +118,7 @@ touch "$TEST_STATE/data-restored"
 exit 0
 '
     ;;
-  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/xdrive-server-host.sh)
+  */scripts/server-backup-scheduled.sh|*/scripts/server-verify.sh|*/scripts/server-doctor.sh|*/scripts/server-migrate-user.sh|*/scripts/server-control.sh|*/scripts/xdrive-server-host.sh)
     emit '#!/usr/bin/env bash
 exit 0
 '

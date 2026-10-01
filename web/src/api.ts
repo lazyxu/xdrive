@@ -32,6 +32,9 @@ import type {
   UploadStagingCleanup,
   UploadStagingDetail,
   UpdateExternalSourceInput,
+  XDriveServerUpdateChannel,
+  XDriveServerUpdateSource,
+  XDriveServerUpdateState,
   XDriveTransferTask,
 } from '../../ui/shared/src'
 import { webTransferStore } from './transfers'
@@ -284,6 +287,17 @@ export class XDriveApi {
 
   adminStorageStats() {
     return this.request<StorageStats>('/api/v1/admin/storage')
+  }
+
+  adminServerUpdate() {
+    return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
+  }
+
+  adminStartServerUpdate(source: XDriveServerUpdateSource, channel: XDriveServerUpdateChannel) {
+    return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
+      method: 'POST',
+      body: JSON.stringify({ source, channel }),
+    })
   }
 
   adminStorageHealth() {
