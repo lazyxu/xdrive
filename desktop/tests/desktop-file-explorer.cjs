@@ -84,10 +84,12 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
     app.includes("className={view === 'cloud' ? 'content content-files-workspace' : 'content'}"),
     'Desktop Files should switch the main content into full-workspace mode',
   )
-  assert.ok(
-    app.includes("{view !== 'cloud' ? <XDrivePageHeader title={viewLabel(view)} eyebrow=\"xDrive\" size=\"large\" /> : null}"),
-    'Desktop Files should suppress the generic page header while other views retain it',
+  assert.equal(
+    app.includes('<XDrivePageHeader'),
+    false,
+    'Desktop App should not own a generic page header; extracted pages own shared workspace chrome',
   )
+  assert.ok(app.includes('<DesktopCloudPage'), 'Desktop Files should render through the extracted full-bleed cloud page')
 
   const workspaceStart = styles.indexOf('.content-files-workspace {')
   const storageStart = styles.indexOf('.storage-panel > .cloud-subpanel', workspaceStart)
