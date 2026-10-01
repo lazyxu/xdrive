@@ -2,6 +2,7 @@ package synologysync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -273,65 +274,25 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		}
 	}
 	if result.CollectionsComplete {
-		for _, space := range spaces {
-			albums, err := collectAlbums(ctx, s.Remote, space, func() error {
-				return s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID)
-			})
-			if err != nil {
-				return result, fmt.Errorf("scan Synology %s albums: %w", space, err)
+		collections, stats, collectionErr := scanCollections(
+			ctx, s.Remote, s.API, s.SourceID, s.RunID, spaces, includedExternalIDs,
+		)
+		if collectionErr != nil {
+			var optional *optionalCollectionError
+			if !errors.As(collectionErr, &optional) {
+				return result, collectionErr
 			}
-			result.Albums += int64(len(albums))
-			for _, album := range albums {
-				if album.ID <= 0 {
-					return result, fmt.Errorf("invalid Synology %s album id=%d", space, album.ID)
-				}
-				snapshot := sourcecollection.Snapshot{
-					ExternalID:     albumCollectionExternalID(space, album.ID),
-					Kind:           "album",
-					Name:           albumCollectionName(album),
-					RemoteRevision: albumCollectionRevision(album),
-				}
-				memberSeen := make(map[string]struct{})
-				position := int64(0)
-				offset := 0
-				for pageNo := 0; pageNo < 100000; pageNo++ {
-					if err := ctx.Err(); err != nil {
-						return result, err
-					}
-					page, err := s.Remote.ListAlbumItemsPage(ctx, space, album.ID, offset, DefaultBatchSize)
-					if err != nil {
-						return result, fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err)
-					}
-					for _, remoteItem := range page.List {
-						result.AlbumMemberships++
-						externalID := fmt.Sprintf("synology:%s:%d", space, remoteItem.ID)
-						if _, included := includedExternalIDs[externalID]; included {
-							if _, duplicate := memberSeen[externalID]; duplicate {
-								result.DuplicateMemberships++
-							} else {
-								snapshot.Members = append(snapshot.Members, sourcecollection.MemberSnapshot{
-									ItemExternalID: externalID,
-									Position:       position,
-								})
-								memberSeen[externalID] = struct{}{}
-							}
-						}
-						position++
-					}
-					if err := s.API.HeartbeatSourceRun(ctx, s.SourceID, s.RunID); err != nil {
-						return result, err
-					}
-					next, done, err := nextOffset(offset, page.Offset, page.Total, len(page.List))
-					if err != nil {
-						return result, fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err)
-					}
-					if done {
-						break
-					}
-					offset = next
-				}
-				result.Collections = append(result.Collections, snapshot)
-			}
+			result.CollectionsComplete = false
+			result.Collections = nil
+			result.Errors = appendLimitedError(
+				result.Errors,
+				"Synology Photos 相册元数据本轮未更新；文件清单与文件同步已完成："+optional.Error(),
+			)
+		} else {
+			result.Collections = collections
+			result.Albums = stats.Albums
+			result.AlbumMemberships = stats.AlbumMemberships
+			result.DuplicateMemberships = stats.DuplicateMemberships
 		}
 	}
 
@@ -414,6 +375,131 @@ func collectFolders(ctx context.Context, remote Remote, space synology.Space, he
 	return nil, fmt.Errorf("Synology folder pagination exceeded safety limit")
 }
 
+type optionalCollectionError struct {
+	err error
+}
+
+func (e *optionalCollectionError) Error() string {
+	if e == nil || e.err == nil {
+		return "Synology Photos album metadata is unavailable"
+	}
+	return e.err.Error()
+}
+
+func (e *optionalCollectionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func optionalCollectionFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &optionalCollectionError{err: err}
+}
+
+type collectionScanStats struct {
+	Albums               int64
+	AlbumMemberships     int64
+	DuplicateMemberships int64
+}
+
+func scanCollections(
+	ctx context.Context,
+	remote Remote,
+	api SourceAPI,
+	sourceID uint64,
+	runID string,
+	spaces []synology.Space,
+	includedExternalIDs map[string]struct{},
+) ([]sourcecollection.Snapshot, collectionScanStats, error) {
+	var (
+		collections []sourcecollection.Snapshot
+		stats       collectionScanStats
+	)
+	for _, space := range spaces {
+		albums, err := collectAlbums(ctx, remote, space, func() error {
+			return api.HeartbeatSourceRun(ctx, sourceID, runID)
+		})
+		if err != nil {
+			return nil, stats, fmt.Errorf("scan Synology %s albums: %w", space, err)
+		}
+		stats.Albums += int64(len(albums))
+		for _, album := range albums {
+			if album.ID <= 0 {
+				return nil, stats, optionalCollectionFailure(
+					fmt.Errorf("invalid Synology %s album id=%d", space, album.ID))
+			}
+			snapshot := sourcecollection.Snapshot{
+				ExternalID:     albumCollectionExternalID(space, album.ID),
+				Kind:           "album",
+				Name:           albumCollectionName(album),
+				RemoteRevision: albumCollectionRevision(album),
+			}
+			memberSeen := make(map[string]struct{})
+			position := int64(0)
+			offset := 0
+			for pageNo := 0; pageNo < 100000; pageNo++ {
+				if err := ctx.Err(); err != nil {
+					return nil, stats, err
+				}
+				page, err := remote.ListAlbumItemsPage(ctx, space, album.ID, offset, DefaultBatchSize)
+				if err != nil {
+					if ctxErr := ctx.Err(); ctxErr != nil {
+						return nil, stats, ctxErr
+					}
+					return nil, stats, optionalCollectionFailure(
+						fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err))
+				}
+				for _, remoteItem := range page.List {
+					stats.AlbumMemberships++
+					externalID := fmt.Sprintf("synology:%s:%d", space, remoteItem.ID)
+					if _, included := includedExternalIDs[externalID]; included {
+						if _, duplicate := memberSeen[externalID]; duplicate {
+							stats.DuplicateMemberships++
+						} else {
+							snapshot.Members = append(snapshot.Members, sourcecollection.MemberSnapshot{
+								ItemExternalID: externalID,
+								Position:       position,
+							})
+							memberSeen[externalID] = struct{}{}
+						}
+					}
+					position++
+				}
+				if err := api.HeartbeatSourceRun(ctx, sourceID, runID); err != nil {
+					return nil, stats, err
+				}
+				next, done, err := nextOffset(offset, page.Offset, page.Total, len(page.List))
+				if err != nil {
+					return nil, stats, optionalCollectionFailure(
+						fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err))
+				}
+				if done {
+					break
+				}
+				offset = next
+			}
+			collections = append(collections, snapshot)
+		}
+	}
+	return collections, stats, nil
+}
+
+func appendLimitedError(messages []string, message string) []string {
+	message = strings.TrimSpace(message)
+	if message == "" || len(messages) >= 5 {
+		return messages
+	}
+	const maxBytes = 2048
+	if len(message) > maxBytes {
+		message = message[:maxBytes]
+	}
+	return append(messages, message)
+}
+
 func collectAlbums(ctx context.Context, remote Remote, space synology.Space, heartbeat func() error) ([]synology.Album, error) {
 	var out []synology.Album
 	offset := 0
@@ -423,7 +509,10 @@ func collectAlbums(ctx context.Context, remote Remote, space synology.Space, hea
 		}
 		page, err := remote.ListAlbumsPage(ctx, space, offset, DefaultBatchSize)
 		if err != nil {
-			return nil, err
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			return nil, optionalCollectionFailure(err)
 		}
 		out = append(out, page.List...)
 		if err := heartbeat(); err != nil {
@@ -431,14 +520,14 @@ func collectAlbums(ctx context.Context, remote Remote, space synology.Space, hea
 		}
 		next, done, err := nextOffset(offset, page.Offset, page.Total, len(page.List))
 		if err != nil {
-			return nil, err
+			return nil, optionalCollectionFailure(err)
 		}
 		if done {
 			return out, nil
 		}
 		offset = next
 	}
-	return nil, fmt.Errorf("Synology album pagination exceeded safety limit")
+	return nil, optionalCollectionFailure(fmt.Errorf("Synology album pagination exceeded safety limit"))
 }
 
 func albumCollectionExternalID(space synology.Space, albumID int64) string {
