@@ -3,6 +3,7 @@ import {
   XDriveDescriptionGrid,
   XDriveDescriptionItem,
   XDriveSectionHeader,
+  XDriveWorkspaceSurface,
 } from '@xdrive/ui/mui'
 
 export function DesktopOverviewPage({
@@ -17,7 +18,7 @@ export function DesktopOverviewPage({
   onOpenFolder: () => void
 }) {
   return (
-    <>
+    <XDriveWorkspaceSurface presentation="page" title="概览">
       <section className="status-grid">
         <article className="status-card"><span className={`status-dot ${status?.paused ? 'waiting' : 'ready'}`} /><div><strong>同步</strong><p>{status?.sync_status}</p></div></article>
         <article className="status-card"><span className={`status-dot ${status?.has_conflict ? 'warning' : 'ready'}`} /><div><strong>冲突</strong><p>{status?.conflict_count || 0} 个未解决</p></div></article>
@@ -46,6 +47,6 @@ export function DesktopOverviewPage({
           <XDriveDescriptionItem label="修订号">{status?.revision}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
       </section>
-    </>
+    </XDriveWorkspaceSurface>
   )
 }
