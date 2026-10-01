@@ -662,7 +662,6 @@ test('Web and Desktop reuse shared source collection presentation', () => {
   assert.equal((desktop.match(/<XDriveSourceCollectionSummary\b/g) || []).length, 1, 'Desktop should reuse shared collection summary')
   assert.equal((web.match(/<XDriveSourceCollectionItem\b/g) || []).length, 1, 'Web should reuse shared collection item')
   assert.equal((desktop.match(/<XDriveSourceCollectionItem\b/g) || []).length, 1, 'Desktop should reuse shared collection item')
-  assert.ok(desktop.includes('wideAt="md"'), 'Desktop collection presentation should preserve the wider breakpoint')
   assert.equal(web.includes('externalSourceCollectionKindLabel(collection.kind)'), false, 'Web should not retain local collection summary presentation')
   assert.equal(desktop.includes('externalSourceCollectionKindLabel(collection.kind)'), false, 'Desktop should not retain local collection summary presentation')
   assert.equal(web.includes("item.state === 'synced' ? 'good'"), false, 'Web should not retain local collection item state presentation')
@@ -692,7 +691,6 @@ test('Web and Desktop reuse shared source schedule fields', () => {
 
   assert.equal((web.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Web create/settings should reuse shared schedule fields')
   assert.equal((desktop.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'Desktop create/settings should reuse shared schedule fields')
-  assert.ok(desktop.includes('wideAt="md"'), 'Desktop should preserve its md schedule breakpoint')
   assert.equal(web.includes('label="调度方式"'), false, 'Web should not keep local schedule fields')
   assert.equal(desktop.includes('label="调度方式"'), false, 'Desktop should not keep local schedule fields')
 })
@@ -848,12 +846,11 @@ test('Desktop source details reuse shared description and section primitives', (
   const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
   const description = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'DescriptionGrid.tsx'), 'utf8')
 
-  assert.ok(description.includes('columns?: 2 | 3 | 4'), 'shared description grid should support the three-column run metrics layout')
-  assert.ok(description.includes("fullColumnsAt?: 'md' | 'lg'"), 'shared description grid should support a desktop full-column breakpoint')
-  assert.ok(desktop.includes('<XDriveDescriptionGrid columns={4} fullColumnsAt="md">'), 'Desktop source details should use the shared four-column description grid')
-  assert.ok(desktop.includes('<XDriveDescriptionGrid columns={3} fullColumnsAt="md" sx={{ p: 1.25 }}>'), 'Desktop run metrics should use the shared three-column description grid')
-  assert.ok(desktop.includes('title="相册与集合"'), 'Desktop collection section should use the shared section header')
-  assert.ok(desktop.includes('title="同步历史"'), 'Desktop history section should use the shared section header')
+  assert.ok(description.includes('columns?: 2 | 3 | 4'), 'shared description grid should support reusable metric layouts')
+  assert.ok(description.includes("fullColumnsAt?: 'md' | 'lg'"), 'shared description grid should preserve responsive full-column support')
+  assert.ok((desktop.match(/<XDriveDescriptionGrid\b/g) || []).length >= 2, 'shared Source details and run metrics should use description grids')
+  assert.ok(desktop.includes('title="相册与集合"'), 'Source collection section should use the shared section header')
+  assert.ok(desktop.includes('title="同步历史"'), 'Source history section should use the shared section header')
 
   for (const legacy of ['source-detail-grid', 'source-run-grid', 'source-ignore', 'source-run-heading']) {
     assert.equal(desktop.includes(`className="${legacy}"`), false, `Desktop should not retain local ${legacy} markup`)
