@@ -72,6 +72,7 @@ type VerifyReport struct {
 	Orphans            []OrphanBlob               `json:"orphans"`
 	HashMismatches     []HashMismatch             `json:"hash_mismatches"`
 	IgnoredTemps       int                        `json:"ignored_temporary_files"`
+	IgnoredDerived     int                        `json:"ignored_derived_files"`
 }
 
 func (r VerifyReport) OK() bool {
@@ -217,6 +218,14 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 			return err
 		}
 		key := filepath.ToSlash(rel)
+		if isDerivedStorageKey(key) {
+			// .xdrive-media contains generated previews such as thumbnails.
+			// They are disposable caches, not canonical file/version blobs, so
+			// stale or unreferenced cache files must never make storage
+			// verification or a pre-upgrade backup fail.
+			report.IgnoredDerived++
+			return nil
+		}
 		report.BlobFiles++
 		report.BlobBytes += info.Size()
 		if _, ok := references[key]; !ok {
@@ -343,4 +352,9 @@ func cleanStorageKey(key string) (string, error) {
 		return "", fmt.Errorf("invalid storage key")
 	}
 	return clean, nil
+}
+
+func isDerivedStorageKey(key string) bool {
+	key = filepath.ToSlash(strings.TrimSpace(key))
+	return key == ".xdrive-media" || strings.HasPrefix(key, ".xdrive-media/")
 }
