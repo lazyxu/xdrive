@@ -13,6 +13,10 @@ const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', '
 const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopOverviewPage.tsx'), 'utf8')
 const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
 const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
+const desktopCloudPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
+const desktopGalleryPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopGalleryPage.tsx'), 'utf8')
+const desktopTransfersPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopTransfersPage.tsx'), 'utf8')
+const desktopStoragePage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8')
 const renderer = [
   rendererApp,
   sharedSourceManager,
@@ -23,6 +27,10 @@ const renderer = [
   desktopOverviewPage,
   desktopConflictsPage,
   desktopDiagnosticsPage,
+  desktopCloudPage,
+  desktopGalleryPage,
+  desktopTransfersPage,
+  desktopStoragePage,
 ].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
