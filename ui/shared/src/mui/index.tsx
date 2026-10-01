@@ -42,3 +42,5 @@ export * from './SourceSummaryCard'
 export * from './SourceKindIcon'
 export * from './DescriptionGrid'
 export * from './TableSurface'
+
+export * from './SourceManager'
