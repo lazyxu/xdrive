@@ -92,7 +92,7 @@ import type {
   XDriveServerUpdateState,
 } from '@xdrive/shared'
 
-type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings'
+type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics'
 
 type ConfirmDialogState = {
   title: string
