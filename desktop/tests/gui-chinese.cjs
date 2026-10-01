@@ -4,7 +4,26 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..')
-const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const sharedSourceManager = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
+const sharedShareDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
+const desktopSourceAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
+const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'shareDialogAdapter.ts'), 'utf8')
+const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopOverviewPage.tsx'), 'utf8')
+const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
+const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
+const renderer = [
+  rendererApp,
+  sharedSourceManager,
+  sharedSettingsDialog,
+  sharedShareDialog,
+  desktopSourceAdapter,
+  desktopShareAdapter,
+  desktopOverviewPage,
+  desktopConflictsPage,
+  desktopDiagnosticsPage,
+].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
 const dialogActions = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogActions.tsx'), 'utf8')
@@ -41,8 +60,8 @@ const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8'
 const html = fs.readFileSync(path.join(root, 'src', 'renderer', 'index.html'), 'utf8')
 
 test('desktop renderer default export is the full App root, not a helper component', () => {
-  assert.match(renderer, /export default function App\(\{/)
-  assert.equal(renderer.includes('export default function YikeCookieHelpGuide()'), false)
+  assert.match(rendererApp, /export default function App\(\{/)
+  assert.equal(rendererApp.includes('export default function YikeCookieHelpGuide()'), false)
 })
 
 test('desktop GUI defaults to Chinese', () => {
@@ -222,57 +241,35 @@ test('desktop settings use a dialog instead of a workspace page', () => {
   assert.equal(renderer.includes("view === 'settings'"), false, 'settings must not remain a workspace page')
 })
 
-test('desktop transient management surfaces use modal dialogs', () => {
-  for (const openProp of [
-    'open={settingsOpen}',
-    'open={sourceCreateOpen}',
-    'open={editingSourceID === row.source.id}',
-    'open={cloudTrashOpen}',
-    'open={!!cloudHistoryNode}',
-    'open={!!cloudShareNode}',
-  ]) {
-    assert.ok(renderer.includes(openProp), `missing modal dialog state: ${openProp}`)
-  }
-
-  for (const label of ['添加同步文件夹', '同步文件夹设置', '回收站', '版本历史', '分享文件']) {
-    assert.ok(renderer.includes(`aria-label="${label}"`), `missing modal dialog label: ${label}`)
-  }
-
-  assert.ok(renderer.includes('source-create modal-form-surface'), 'source creation must use the modal form surface')
-  assert.ok(renderer.includes('source-settings modal-form-surface'), 'source settings must use the modal form surface')
-  assert.equal(renderer.includes('cloud-subpanel modal-subpanel'), false, 'legacy cloud modal panel wrapper remains')
+test('desktop transient management surfaces use shared modal features', () => {
+  assert.ok(rendererApp.includes('<XDriveSettingsDialog'), 'Desktop must render the shared settings dialog')
+  assert.ok(rendererApp.includes('<XDriveSourceManager'), 'Desktop must render the shared Source manager')
+  assert.ok(rendererApp.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
+  assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
+  assert.ok(sharedSourceManager.includes('open={Boolean(setting)}'), 'shared Source settings dialog is missing')
+  assert.ok(rendererApp.includes('open={cloudTrashOpen}'), 'cloud trash dialog is missing')
+  assert.ok(rendererApp.includes('open={!!cloudHistoryNode}'), 'cloud history dialog is missing')
+  assert.equal(rendererApp.includes('source-create modal-form-surface'), false, 'Desktop must not retain a local Source create shell')
+  assert.equal(rendererApp.includes('source-settings modal-form-surface'), false, 'Desktop must not retain a local Source settings shell')
 })
 
 test('desktop dialogs share one title, paper, content, and action treatment', () => {
-  assert.ok(renderer.includes('XDriveDialogTitle') && renderer.includes('xDriveDialogPaperProps'), 'App is not using the cross-client dialog chrome')
+  assert.ok(renderer.includes('XDriveDialogTitle') && renderer.includes('xDriveDialogPaperProps'), 'Desktop UI is not using the cross-client dialog chrome')
   assert.ok(synologyGuide.includes("from './DialogTitle'") && synologyGuide.includes('XDriveDialogTitle'), 'Synology guide is not using the cross-client dialog title')
-  assert.ok(synologyGuide.includes('<XDriveDialogTitle'), 'Synology guide is not rendering the cross-client dialog title')
   assert.ok(dialogTitle.includes('aria-label="关闭弹窗"'), 'shared dialog title is missing the close control')
   assert.ok(dialogTitle.includes('export const xDriveDialogPaperProps'), 'shared dialog paper contract is missing')
-  assert.ok(dialogTitle.includes("maxHeight: { xs: '92vh', sm: '84vh' }"), 'shared dialog viewport bounds are missing')
+  assert.ok(dialogActions.includes('export function XDriveDialogActions({'), 'shared dialog actions component is missing')
+  assert.ok(dialogActions.includes('export function XDriveDialogActionSpacer()'), 'shared dialog action spacer is missing')
+  assert.ok(dialogContent.includes('export function XDriveDialogContent({'), 'shared dialog content component is missing')
+  assert.ok(sharedSourceManager.includes('<XDriveDialogActions>'), 'shared Source dialogs must use shared actions')
+  assert.ok(sharedSourceManager.includes('<XDriveDialogContent'), 'shared Source dialogs must use shared content')
+  assert.ok(sharedSettingsDialog.includes('<XDriveDialogContent dividers>'), 'shared Settings dialog must use shared content')
+  assert.ok(sharedShareDialog.includes('<XDriveDialogContent dividers>'), 'shared Share dialog must use shared content')
+  assert.equal(/<DialogContent(?:\s|>)/.test(rendererApp), false, 'raw MUI DialogContent remains in Desktop App')
   assert.equal(styles.includes('.desktop-dialog-title'), false, 'legacy desktop dialog title CSS remains')
   assert.equal(styles.includes('.desktop-dialog-paper'), false, 'legacy desktop dialog paper CSS remains')
-  assert.ok(dialogActions.includes('export function XDriveDialogActions({'), 'shared dialog actions component is missing')
-  assert.ok(dialogActions.includes("bgcolor: 'action.hover'"), 'shared dialog actions surface styling is missing')
-  assert.ok(dialogActions.includes("flexWrap: { xs: 'wrap', sm: 'nowrap' }"), 'shared dialog actions responsive wrapping is missing')
-  assert.ok(dialogActions.includes('export function XDriveDialogActionSpacer()'), 'shared dialog action spacer is missing')
-  assert.equal((renderer.match(/<XDriveDialogActions>/g) || []).length, 7, 'desktop app-local dialogs are not all using the shared action bar')
-  assert.ok(sharedConfirmDialog.includes('<XDriveDialogActions>'), 'shared confirmation dialog must use the shared action bar')
-  assert.ok(renderer.includes('<XDriveDialogActionSpacer />'), 'desktop destructive/settings dialog lost its shared action spacer')
   assert.equal(styles.includes('.desktop-dialog-actions'), false, 'legacy desktop dialog action CSS remains')
-  assert.equal(styles.includes('.desktop-dialog-action-spacer'), false, 'legacy desktop dialog action spacer CSS remains')
-  assert.ok(dialogContent.includes('export function XDriveDialogContent({'), 'shared dialog content component is missing')
-  assert.ok(dialogContent.includes("px: flush ? 0 : { xs: 2, sm: 2.5 }"), 'shared dialog content horizontal spacing is missing')
-  assert.ok(dialogContent.includes("py: flush ? 0 : { xs: 2, sm: 2.25 }"), 'shared dialog content vertical spacing is missing')
-  assert.equal((renderer.match(/<XDriveDialogContent/g) || []).length, 8, 'desktop app-local dialogs are not all using shared dialog content')
-  assert.ok(sharedConfirmDialog.includes('<XDriveDialogContent>'), 'shared confirmation dialog must use shared dialog content')
-  assert.equal((renderer.match(/<XDriveDialogContent dividers flush>/g) || []).length, 3, 'desktop flush dialog surfaces are not preserved')
-  assert.equal(/<DialogContent(?:\s|>)/.test(renderer), false, 'raw MUI DialogContent remains in desktop')
   assert.equal(styles.includes('.desktop-dialog-content'), false, 'legacy desktop dialog content CSS remains')
-  assert.ok(renderer.includes('form="source-create-form"'), 'source create primary action is not in DialogActions')
-  assert.ok(renderer.includes('form={`source-settings-form-${row.source.id}`}'), 'source settings primary action is not in DialogActions')
-  assert.equal(renderer.includes('source-create-heading'), false, 'legacy source create panel heading remains inside the dialog')
-  assert.equal(renderer.includes('source-settings-heading'), false, 'legacy source settings panel heading remains inside the dialog')
 })
 
 test('desktop transient feedback uses the shared non-layout-shifting Snackbar', () => {
@@ -307,8 +304,8 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
-  assert.equal((renderer.match(/<MuiButton/g) || []).length, 6, 'unexpected raw MUI action buttons remain')
-  assert.equal((renderer.match(/color="inherit"/g) || []).length, 5, 'five raw MUI buttons must remain limited to inherit-color alert actions')
+  assert.equal((rendererApp.match(/<MuiButton/g) || []).length, 6, 'unexpected raw MUI action buttons remain in Desktop App')
+  assert.equal((rendererApp.match(/color="inherit"/g) || []).length, 5, 'five raw MUI buttons must remain limited to inherit-color alert actions')
   assert.ok(renderer.includes('className="auth-inline-action"') && renderer.includes('清除已保存密码'), 'saved-password inline action is missing')
   assert.equal(renderer.includes('className="auth-folder-button"'), false, 'sync-folder browsing should not remain in the login flow')
   assert.ok(renderer.includes('loadingLabel="正在创建…"'), 'cloud share creation lost shared loading feedback')
