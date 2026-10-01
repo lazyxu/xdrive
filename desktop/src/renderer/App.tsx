@@ -1975,6 +1975,7 @@ export default function App({
               defaultTargetLabel="我的文件"
               defaultTargetPath=""
               targetBrowser={desktopSourceTargetBrowser}
+              cookieHelpVariant="dialog"
               onError={(sourceError) => setError(
                 sourceError instanceof Error ? sourceError.message : String(sourceError),
               )}
