@@ -54,7 +54,6 @@ import {
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
-  XDriveCreatedShareLink,
   XDriveDescriptionGrid,
   XDriveDescriptionItem,
   XDriveSectionHeader,
@@ -77,8 +76,7 @@ import {
   XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveTransferCenter,
-  XDriveShareCreateFields,
-  XDriveShareList,
+  XDriveShareDialog,
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceManager,
@@ -90,6 +88,7 @@ import {
 } from '@xdrive/shared'
 import DesktopFileExplorer from './DesktopFileExplorer'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
+import { desktopShareDialogAdapter } from './shareDialogAdapter'
 import type {
   XDriveAppearance,
   XDriveServerUpdateChannel,
@@ -261,11 +260,6 @@ export default function App({
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudVersions, setCloudVersions] = useState<AgentCloudVersion[]>([])
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
-  const [cloudShares, setCloudShares] = useState<AgentCloudShare[]>([])
-  const [shareExpiresDays, setShareExpiresDays] = useState('7')
-  const [sharePassword, setSharePassword] = useState('')
-  const [shareMaxDownloads, setShareMaxDownloads] = useState('0')
-  const [createdShareURL, setCreatedShareURL] = useState('')
 
   const mediaGallerySource = useMemo<MediaGalleryDataSource>(() => ({
     listItems: async (limit, offset) => {
@@ -597,8 +591,6 @@ export default function App({
       setCloudHistoryCrumbs([])
       setCloudVersions([])
       setCloudShareNode(null)
-      setCloudShares([])
-      setCreatedShareURL('')
       return
     }
     if (settingsOpen) void loadSettings()
@@ -1315,73 +1307,8 @@ export default function App({
     )
   }
 
-  const openCloudShares = async (node: AgentCloudNode) => {
-    setBusy('cloud-shares')
-    setError('')
-    try {
-      const result = await window.xdriveDesktop.agent.cloudShares(node.id)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setCloudShareNode(node)
-      setCloudShares(result.data)
-      setCreatedShareURL('')
-      setShareExpiresDays('7')
-      setSharePassword('')
-      setShareMaxDownloads('0')
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const createCloudShare = async () => {
-    if (!cloudShareNode) return
-    const days = Number(shareExpiresDays)
-    const maxDownloads = Number(shareMaxDownloads)
-    if (!Number.isFinite(days) || days < 0 || days > 3650) {
-      setError('分享有效期必须在 0 到 3650 天之间。')
-      return
-    }
-    if (!Number.isSafeInteger(maxDownloads) || maxDownloads < 0) {
-      setError('最大下载次数必须是非负整数。')
-      return
-    }
-    if (sharePassword && sharePassword.length < 8) {
-      setError('分享密码至少需要 8 个字符。')
-      return
-    }
-    const expiresAt = days > 0 ? new Date(Date.now() + days * 86400_000).toISOString() : undefined
-    const created = await run(
-      'cloud-share-create',
-      () => window.xdriveDesktop.agent.cloudCreateShare(cloudShareNode.id, {
-        expires_at: expiresAt,
-        password: sharePassword,
-        max_downloads: maxDownloads,
-      }),
-      '分享链接已创建。请立即复制，令牌只会显示一次。',
-    )
-    if (!created) return
-    setCreatedShareURL(created.url)
-    const shares = await window.xdriveDesktop.agent.cloudShares(cloudShareNode.id)
-    if (shares.ok) setCloudShares(shares.data)
-  }
-
-  const revokeCloudShare = async (share: AgentCloudShare) => {
-    const data = await run('cloud-share-revoke', () => window.xdriveDesktop.agent.cloudRevokeShare(share.id), '分享已撤销。')
-    if (!data || !cloudShareNode) return
-    const shares = await window.xdriveDesktop.agent.cloudShares(cloudShareNode.id)
-    if (shares.ok) setCloudShares(shares.data)
-  }
-
-  const copyShareURL = async () => {
-    if (!createdShareURL) return
-    try {
-      await navigator.clipboard.writeText(createdShareURL)
-      setNotice('分享链接已复制。')
-    } catch {
-      setError('无法自动复制，请手动选择并复制链接。')
-    }
+  const openCloudShares = (node: AgentCloudNode) => {
+    setCloudShareNode(node)
   }
 
   const loadDiagnostics = async () => {
@@ -2120,7 +2047,7 @@ export default function App({
               onLoadMore={loadMoreCloudDirectory}
               onOpenTrash={() => { void loadCloudTrash() }}
               onOpenHistory={(node, crumbs) => { void openCloud历史版本(node, crumbs) }}
-              onOpenShares={(node) => { void openCloudShares(node) }}
+              onOpenShares={openCloudShares}
               onDelete={removeCloudNode}
               onDeleteMany={removeCloudNodes}
               onQuotaChanged={refreshCloudQuota}
@@ -2217,91 +2144,17 @@ export default function App({
               </Dialog>
             )}
 
-            {cloudShareNode && (
-              <Dialog
-                open={!!cloudShareNode}
-                onClose={() => {
-                  if (busy) return
-                  setCloudShareNode(null)
-                  setCloudShares([])
-                  setCreatedShareURL('')
-                }}
-                maxWidth="md"
-                fullWidth
-                scroll="paper"
-                aria-label="分享文件"
-                slotProps={{ paper: xDriveDialogPaperProps }}
-              >
-                <XDriveDialogTitle
-                  title={`分享 — ${cloudShareNode.name}`}
-                  subtitle="分享令牌只会在创建时显示一次。"
-                  onClose={() => {
-                    setCloudShareNode(null)
-                    setCloudShares([])
-                    setCreatedShareURL('')
-                  }}
-                  closeDisabled={!!busy}
-                />
-                <XDriveDialogContent dividers flush>
-                  {createdShareURL && (
-                    <XDriveCreatedShareLink
-                      value={createdShareURL}
-                      onCopy={() => void copyShareURL()}
-                      copyLabel="复制链接"
-                      copyIntent="primary"
-                      sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}
-                    />
-                  )}
-
-                  <Stack spacing={1.5} sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}>
-                    <XDriveShareCreateFields
-                      expiryMode="days"
-                      expiryValue={shareExpiresDays}
-                      expiryHelperText="0 表示永不过期。"
-                      onExpiryChange={setShareExpiresDays}
-                      maxDownloadsValue={shareMaxDownloads}
-                      maxDownloadsHelperText="0 表示不限次数。"
-                      onMaxDownloadsChange={setShareMaxDownloads}
-                      password={sharePassword}
-                      passwordPlaceholder="至少 8 个字符"
-                      onPasswordChange={setSharePassword}
-                    />
-                    <XDriveActionButton
-                      intent="primary"
-                      disabled={!!busy}
-                      loading={busy === 'cloud-share-create'}
-                      loadingLabel="正在创建…"
-                      onClick={() => void createCloudShare()}
-                    >
-                      创建分享链接
-                    </XDriveActionButton>
-                  </Stack>
-
-                  {cloudShares.length === 0 ? (
-                    <XDriveStatePanel variant="plain" compact message="此文件暂无分享链接。" />
-                  ) : (
-                    <XDriveShareList
-                      shares={cloudShares}
-                      variant="compact"
-                      revokeDisabled={!!busy}
-                      onRevoke={(share) => void revokeCloudShare(share)}
-                    />
-                  )}
-                </XDriveDialogContent>
-                <XDriveDialogActions>
-                  <XDriveActionButton
-                    disabled={!!busy}
-                    onClick={() => {
-                      setCloudShareNode(null)
-                      setCloudShares([])
-                      setCreatedShareURL('')
-                    }}
-                  >
-                    关闭
-                  </XDriveActionButton>
-                </XDriveDialogActions>
-              </Dialog>
-            )}
+            <XDriveShareDialog
+              adapter={desktopShareDialogAdapter}
+              node={cloudShareNode}
+              onClose={() => setCloudShareNode(null)}
+              onError={(shareError) => setError(
+                shareError instanceof Error ? shareError.message : String(shareError),
+              )}
+              expiryMode="days"
+              listVariant="compact"
+              showCloseAction
+            />
           </section>
         )}
 
