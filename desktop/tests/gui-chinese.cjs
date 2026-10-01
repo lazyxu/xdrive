@@ -17,6 +17,7 @@ const desktopCloudPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'Des
 const desktopGalleryPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopGalleryPage.tsx'), 'utf8')
 const desktopTransfersPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopTransfersPage.tsx'), 'utf8')
 const desktopStoragePage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8')
+const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 const renderer = [
   rendererApp,
   sharedSourceManager,
@@ -31,6 +32,7 @@ const renderer = [
   desktopGalleryPage,
   desktopTransfersPage,
   desktopStoragePage,
+  desktopSettingsContent,
 ].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
