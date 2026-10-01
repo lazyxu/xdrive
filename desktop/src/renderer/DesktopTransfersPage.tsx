@@ -14,7 +14,7 @@ export function DesktopTransfersPage({
   return (
     <XDriveWorkspaceSurface
       presentation="page"
-      title="传输"
+      title="传输中心"
       subtitle="查看上传、下载、本地可用性、实时进度、速度、已耗时与历史状态。"
     >
       <XDriveTransferCenter
