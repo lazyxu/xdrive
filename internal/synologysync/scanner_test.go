@@ -96,6 +96,14 @@ func (f *fakeRemote) ListItemsPage(_ context.Context, _ synology.Space, offset, 
 	}, nil
 }
 
+type albumListErrorRemote struct {
+	*fakeRemote
+}
+
+func (r *albumListErrorRemote) ListAlbumsPage(context.Context, synology.Space, int, int) (synology.AlbumPage, error) {
+	return synology.AlbumPage{}, synology.ErrUnavailable
+}
+
 type fakeAPI struct {
 	mu      sync.Mutex
 	commits int
@@ -381,6 +389,44 @@ func TestScannerBuildsAlbumCollectionSnapshotsWithoutDuplicatingMedia(t *testing
 	}
 	if !strings.Contains(collection.RemoteRevision, "count:4") {
 		t.Fatalf("revision=%q", collection.RemoteRevision)
+	}
+}
+
+func TestScannerKeepsFileInventoryWhenAlbumListingFails(t *testing.T) {
+	remote := &albumListErrorRemote{fakeRemote: &fakeRemote{
+		albums: map[synology.Space][]synology.Album{
+			synology.SpacePersonal: {{ID: 101, Name: "Trips"}},
+		},
+	}}
+	result, err := (Scanner{
+		Remote: remote, API: &fakeAPI{}, SourceID: 1, RunID: "run-album-error",
+		Mode: meta.SourceRunModeScan, Spaces: []synology.Space{synology.SpacePersonal},
+	}).Scan(context.Background())
+	if err != nil {
+		t.Fatalf("album metadata failure must not fail an otherwise complete file scan: %v", err)
+	}
+	if result.CollectionsComplete || len(result.Collections) != 0 {
+		t.Fatalf("partial album snapshot must not be applied: %+v", result)
+	}
+	if result.Summary.ScannedItems != 2 || result.PersonalItems != 2 {
+		t.Fatalf("file inventory was not preserved: %+v", result)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "相册元数据本轮未更新") {
+		t.Fatalf("album warning=%v", result.Errors)
+	}
+}
+
+func TestCollectAlbumsKeepsHeartbeatFailureFatal(t *testing.T) {
+	remote := &fakeRemote{
+		albums: map[synology.Space][]synology.Album{
+			synology.SpacePersonal: {{ID: 101, Name: "Trips"}},
+		},
+	}
+	_, err := collectAlbums(context.Background(), remote, synology.SpacePersonal, func() error {
+		return synology.ErrUnavailable
+	})
+	if err != synology.ErrUnavailable {
+		t.Fatalf("heartbeat err=%v want direct fatal control-plane error", err)
 	}
 }
 
