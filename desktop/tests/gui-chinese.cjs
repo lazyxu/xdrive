@@ -173,10 +173,10 @@ test('desktop keeps global sync, settings and account actions in the window titl
   assert.equal(titlebarActions.includes('aria-label="更多同步操作"'), false, 'redundant sync overflow button should not remain')
   assert.ok(renderer.includes('打开同步文件夹'), 'missing global open-folder action')
 
-  assert.ok(renderer.includes('<XDrivePageHeader title={viewLabel(view)} eyebrow="xDrive" size="large" />'), 'desktop content should use the shared page header')
+  assert.equal(rendererApp.includes('<XDrivePageHeader'), false, 'Desktop App should not own duplicate generic page chrome')
+  assert.ok((renderer.match(/<XDriveWorkspaceSurface\b/g) || []).length >= 6, 'Desktop extracted pages should use shared workspace surfaces')
   assert.ok(sharedPageHeader.includes('export function XDrivePageHeader'), 'shared page header primitive is missing')
   assert.ok(sharedPageHeader.includes('component="h1"'), 'shared page header must own the h1 title')
-  assert.ok(sharedPageHeader.includes("size === 'large'"), 'shared page header large variant is missing')
   assert.equal(renderer.includes('<header className="topbar">'), false, 'legacy desktop content topbar should be removed')
 
   assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'missing paused-sync exception banner')
@@ -313,7 +313,7 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
   assert.equal((rendererApp.match(/<MuiButton/g) || []).length, 4, 'unexpected raw MUI action buttons remain in Desktop App')
-  assert.equal((rendererApp.match(/color="inherit"/g) || []).length, 5, 'five raw MUI buttons must remain limited to inherit-color alert actions')
+  assert.equal((rendererApp.match(/color="inherit"/g) || []).length, 3, 'raw MUI buttons must remain limited to inherit-color alert actions')
   assert.ok(renderer.includes('className="auth-inline-action"') && renderer.includes('清除已保存密码'), 'saved-password inline action is missing')
   assert.equal(renderer.includes('className="auth-folder-button"'), false, 'sync-folder browsing should not remain in the login flow')
   assert.ok(renderer.includes('loadingLabel="正在创建…"'), 'cloud share creation lost shared loading feedback')
