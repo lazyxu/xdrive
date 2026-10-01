@@ -2103,6 +2103,208 @@ export default function App({
           )
         )}
 
+        {view === 'cloud' && (
+          <section className="cloud-explorer-panel">
+            {cloudQuota?.over_quota && (
+              <XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>
+                存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
+              </XDriveStatusAlert>
+            )}
+            <DesktopFileExplorer
+              items={cloudItems}
+              crumbs={cloudCrumbs}
+              loading={busy === 'cloud-load' || busy === 'cloud-directory'}
+              loadingMore={cloudLoadingMore}
+              hasMore={cloudPage?.hasMore ?? false}
+              onLoadDirectory={loadCloudDirectory}
+              onLoadMore={loadMoreCloudDirectory}
+              onOpenTrash={() => { void loadCloudTrash() }}
+              onOpenHistory={(node, crumbs) => { void openCloud历史版本(node, crumbs) }}
+              onOpenShares={(node) => { void openCloudShares(node) }}
+              onDelete={removeCloudNode}
+              onDeleteMany={removeCloudNodes}
+              onQuotaChanged={refreshCloudQuota}
+              onError={(message) => setError(message)}
+              onFeedback={(_tone, message) => setNotice(message)}
+            />
+
+            {cloudTrashOpen && (
+              <Dialog
+                open={cloudTrashOpen}
+                onClose={() => { if (!busy) setCloudTrashOpen(false) }}
+                maxWidth="md"
+                fullWidth
+                scroll="paper"
+                aria-label="回收站"
+                slotProps={{ paper: xDriveDialogPaperProps }}
+              >
+                <XDriveDialogTitle
+                  title="回收站"
+                  subtitle={`${cloudTrash.length} 个项目`}
+                  onClose={() => setCloudTrashOpen(false)}
+                  closeDisabled={!!busy}
+                />
+                <XDriveDialogContent dividers flush>
+                  {cloudTrash.length === 0 ? <XDriveStatePanel variant="plain" compact message="回收站为空。" /> : (
+                    <div className="cloud-compact-list">
+                      {cloudTrash.map((node) => (
+                        <div className="cloud-compact-row" key={node.id}>
+                          <div><strong>{node.name}</strong><span>{node.type === 'dir' ? '文件夹' : formatBinarySize(node.size)} · 删除于 {node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</span></div>
+                          <div className="cloud-row-actions">
+                            <XDriveActionButton compact disabled={!!busy} onClick={() => void restoreCloudTrash(node)}>恢复</XDriveActionButton>
+                            <XDriveActionButton compact intent="danger" disabled={!!busy} onClick={() => void deleteCloudTrash(node)}>永久删除</XDriveActionButton>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </XDriveDialogContent>
+                <XDriveDialogActions>
+                  <XDriveActionButton disabled={!!busy} onClick={() => setCloudTrashOpen(false)}>关闭</XDriveActionButton>
+                </XDriveDialogActions>
+              </Dialog>
+            )}
+
+            {cloudHistoryNode && (
+              <Dialog
+                open={!!cloudHistoryNode}
+                onClose={() => {
+                  if (busy) return
+                  setCloudHistoryNode(null)
+                  setCloudHistoryCrumbs([])
+                  setCloudVersions([])
+                }}
+                maxWidth="md"
+                fullWidth
+                scroll="paper"
+                aria-label="版本历史"
+                slotProps={{ paper: xDriveDialogPaperProps }}
+              >
+                <XDriveDialogTitle
+                  title={`版本历史 — ${cloudHistoryNode.name}`}
+                  subtitle={`当前版本 r${cloudHistoryNode.revision}`}
+                  onClose={() => {
+                    setCloudHistoryNode(null)
+                    setCloudHistoryCrumbs([])
+                    setCloudVersions([])
+                  }}
+                  closeDisabled={!!busy}
+                />
+                <XDriveDialogContent dividers flush>
+                  {cloudVersions.length === 0 ? <XDriveStatePanel variant="plain" compact message="暂无历史版本。" /> : (
+                    <div className="cloud-compact-list">
+                      {cloudVersions.map((version) => (
+                        <div className="cloud-compact-row" key={version.id}>
+                          <div><strong>Revision r{version.revision}</strong><span>{formatBinarySize(version.size)} · {new Date(version.created_at).toLocaleString()}</span></div>
+                          <XDriveActionButton compact intent="primary" disabled={!!busy} onClick={() => void restoreCloudVersion(version)}>恢复</XDriveActionButton>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </XDriveDialogContent>
+                <XDriveDialogActions>
+                  <XDriveActionButton
+                    disabled={!!busy}
+                    onClick={() => {
+                      setCloudHistoryNode(null)
+                      setCloudHistoryCrumbs([])
+                      setCloudVersions([])
+                    }}
+                  >
+                    关闭
+                  </XDriveActionButton>
+                </XDriveDialogActions>
+              </Dialog>
+            )}
+
+            {cloudShareNode && (
+              <Dialog
+                open={!!cloudShareNode}
+                onClose={() => {
+                  if (busy) return
+                  setCloudShareNode(null)
+                  setCloudShares([])
+                  setCreatedShareURL('')
+                }}
+                maxWidth="md"
+                fullWidth
+                scroll="paper"
+                aria-label="分享文件"
+                slotProps={{ paper: xDriveDialogPaperProps }}
+              >
+                <XDriveDialogTitle
+                  title={`分享 — ${cloudShareNode.name}`}
+                  subtitle="分享令牌只会在创建时显示一次。"
+                  onClose={() => {
+                    setCloudShareNode(null)
+                    setCloudShares([])
+                    setCreatedShareURL('')
+                  }}
+                  closeDisabled={!!busy}
+                />
+                <XDriveDialogContent dividers flush>
+                  {createdShareURL && (
+                    <XDriveCreatedShareLink
+                      value={createdShareURL}
+                      onCopy={() => void copyShareURL()}
+                      copyLabel="复制链接"
+                      copyIntent="primary"
+                      sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}
+                    />
+                  )}
+
+                  <Stack spacing={1.5} sx={{ p: 1.75, borderBottom: 1, borderColor: 'divider' }}>
+                    <XDriveShareCreateFields
+                      expiryMode="days"
+                      expiryValue={shareExpiresDays}
+                      expiryHelperText="0 表示永不过期。"
+                      onExpiryChange={setShareExpiresDays}
+                      maxDownloadsValue={shareMaxDownloads}
+                      maxDownloadsHelperText="0 表示不限次数。"
+                      onMaxDownloadsChange={setShareMaxDownloads}
+                      password={sharePassword}
+                      passwordPlaceholder="至少 8 个字符"
+                      onPasswordChange={setSharePassword}
+                    />
+                    <XDriveActionButton
+                      intent="primary"
+                      disabled={!!busy}
+                      loading={busy === 'cloud-share-create'}
+                      loadingLabel="正在创建…"
+                      onClick={() => void createCloudShare()}
+                    >
+                      创建分享链接
+                    </XDriveActionButton>
+                  </Stack>
+
+                  {cloudShares.length === 0 ? (
+                    <XDriveStatePanel variant="plain" compact message="此文件暂无分享链接。" />
+                  ) : (
+                    <XDriveShareList
+                      shares={cloudShares}
+                      variant="compact"
+                      revokeDisabled={!!busy}
+                      onRevoke={(share) => void revokeCloudShare(share)}
+                    />
+                  )}
+                </XDriveDialogContent>
+                <XDriveDialogActions>
+                  <XDriveActionButton
+                    disabled={!!busy}
+                    onClick={() => {
+                      setCloudShareNode(null)
+                      setCloudShares([])
+                      setCreatedShareURL('')
+                    }}
+                  >
+                    关闭
+                  </XDriveActionButton>
+                </XDriveDialogActions>
+              </Dialog>
+            )}
+          </section>
+        )}
+
         {view === 'transfers' && (
           <section className="panel transfer-panel">
             <XDriveSectionHeader
