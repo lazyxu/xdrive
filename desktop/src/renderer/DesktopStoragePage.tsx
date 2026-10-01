@@ -22,11 +22,11 @@ export function DesktopStoragePage({
   onReleaseCache,
 }: {
   storagePoliciesSupported: boolean
-  busy: boolean
+  busy: string
   cloudQuota: AgentCloudQuota | null
   cloudStorageStats: AgentCloudStorageStats | null
   cacheStats: AgentCacheStats | null
-  storageTree: AgentStorageTree | null
+  storageTree: AgentStorageTreeNode | null
   renderStorageNode: (node: AgentStorageTreeNode) => ReactNode
   onRefresh: () => void
   onReleaseCache: () => void
@@ -43,8 +43,8 @@ export function DesktopStoragePage({
         }
         actions={(
           <XDriveActionButton
-            disabled={busy}
-            loading={busy}
+            disabled={Boolean(busy)}
+            loading={busy === 'storage'}
             loadingLabel="正在刷新…"
             onClick={onRefresh}
           >
@@ -142,8 +142,8 @@ export function DesktopStoragePage({
               <div className="cache-actions">
                 <p>只会释放已完整同步且未固定的云端文件。“始终保留”的内容永远不会被回收。</p>
                 <XDriveActionButton
-                  disabled={busy || cacheStats.reclaimable_bytes <= 0}
-                  loading={busy}
+                  disabled={Boolean(busy) || cacheStats.reclaimable_bytes <= 0}
+                  loading={busy === 'release-cache'}
                   loadingLabel="正在释放…"
                   onClick={onReleaseCache}
                 >
