@@ -35,8 +35,8 @@ test('Desktop exposes real cloud file mutation primitives through Agent IPC', ()
   assert.ok(cloudFiles.includes('cli.Copy(ctx, id, parentID, nil)'), 'cloud copy does not use the server-side copy primitive')
   assert.ok(cloudFiles.includes('cli.Move(ctx, id, revision, parentID)'), 'cloud move does not use revision-safe move')
   assert.ok(cloudFiles.includes('cli.Delete(ctx, id, revision)'), 'cloud delete does not use the real client')
-  assert.ok(cloudFiles.includes('cli.UploadFile(ctx, parentID, localPath, name)'), 'cloud upload does not use resumable client upload')
-  assert.ok(cloudFiles.includes('cli.DownloadTo(ctx, id, tmp)'), 'cloud download does not use authenticated client download')
+  assert.ok(cloudFiles.includes('cli.UploadFileResumable(ctx, parentID, localPath, name, progress)'), 'cloud upload does not use resumable progress-aware client upload')
+  assert.ok(cloudFiles.includes('cli.DownloadToProgress(ctx, id, tmp, progress)'), 'cloud download does not use authenticated progress-aware client download')
 })
 
 test('Desktop renderer never chooses or receives raw local paths for cloud transfer actions', () => {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/mount"
+	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
@@ -36,6 +37,47 @@ type agentCreatedShare struct {
 type agentMediaThumbnail struct {
 	ContentType string `json:"content_type"`
 	DataBase64  string `json:"data_base64"`
+}
+
+func startAgentCloudTransfer(
+	manager *transfer.Manager,
+	kind, direction, fileName, path string,
+	total int64,
+) (*transfer.Handle, func(done, total int64)) {
+	if manager == nil {
+		return nil, nil
+	}
+	handle := manager.Start(transfer.Spec{
+		FileName:   fileName,
+		Path:       filepath.ToSlash(path),
+		Kind:       kind,
+		Direction:  direction,
+		TotalBytes: total,
+	})
+	first := true
+	progress := func(done, total int64) {
+		if handle == nil {
+			return
+		}
+		if first {
+			first = false
+			handle.Baseline(done, total)
+			return
+		}
+		handle.Progress(done, total)
+	}
+	return handle, progress
+}
+
+func finishAgentCloudTransfer(handle *transfer.Handle, err error) {
+	if handle == nil {
+		return
+	}
+	if err != nil {
+		handle.Fail(err)
+		return
+	}
+	handle.Complete()
 }
 
 func (c *agentController) cloudClient() (*client.Client, userconfig.Config, error) {
@@ -174,7 +216,16 @@ func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, loca
 	if name == "" {
 		name = filepath.Base(localPath)
 	}
-	node, err := cli.UploadFile(ctx, parentID, localPath, name)
+	handle, progress := startAgentCloudTransfer(
+		c.transfers,
+		transfer.KindUpload,
+		"upload",
+		name,
+		localPath,
+		info.Size(),
+	)
+	node, err := cli.UploadFileResumable(ctx, parentID, localPath, name, progress)
+	finishAgentCloudTransfer(handle, err)
 	if err == nil {
 		c.requestCloudSync(cfg)
 	}
@@ -197,8 +248,17 @@ func (c *agentController) CloudDownload(ctx context.Context, id uint64, destinat
 		return fmt.Errorf("download destination parent is not a directory")
 	}
 
+	handle, progress := startAgentCloudTransfer(
+		c.transfers,
+		transfer.KindDownload,
+		"download",
+		filepath.Base(destination),
+		destination,
+		0,
+	)
 	tmp, err := os.CreateTemp(parent, ".xdrive-download-*")
 	if err != nil {
+		finishAgentCloudTransfer(handle, err)
 		return err
 	}
 	tmpPath := tmp.Name()
@@ -207,25 +267,31 @@ func (c *agentController) CloudDownload(ctx context.Context, id uint64, destinat
 		_ = os.Remove(tmpPath)
 	}
 	if err := tmp.Chmod(0o600); err != nil {
+		finishAgentCloudTransfer(handle, err)
 		cleanup()
 		return err
 	}
-	if err := cli.DownloadTo(ctx, id, tmp); err != nil {
+	if err := cli.DownloadToProgress(ctx, id, tmp, progress); err != nil {
+		finishAgentCloudTransfer(handle, err)
 		cleanup()
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
+		finishAgentCloudTransfer(handle, err)
 		cleanup()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
+		finishAgentCloudTransfer(handle, err)
 		_ = os.Remove(tmpPath)
 		return err
 	}
 	if err := replaceDownloadedFile(tmpPath, destination); err != nil {
+		finishAgentCloudTransfer(handle, err)
 		_ = os.Remove(tmpPath)
 		return err
 	}
+	finishAgentCloudTransfer(handle, nil)
 	return nil
 }
 
