@@ -2390,7 +2390,7 @@ export default function App({
         >
           <XDriveSectionHeader
             level="h3"
-            title="Desktop 设置"
+            title="客户端设置"
             subtitle="启动行为、客户端更新、同步生命周期与本地缓存"
             actions={(
               <XDriveActionButton
