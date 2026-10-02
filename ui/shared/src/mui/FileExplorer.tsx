@@ -1110,63 +1110,79 @@ export function XDriveFileExplorer({
           '& .MuiToggleButton-root': { width: 32, height: 30, p: 0.5 },
         }}
       >
-        {onCutItems ? (
-          <XDriveFileExplorerCommandButton
-            startIcon={<ContentCutRoundedIcon />}
-            disabled={selectedItems.length === 0}
-            onClick={() => onCutItems(selectedItems)}
-          >
-            剪切
-          </XDriveFileExplorerCommandButton>
-        ) : null}
-        {onCopyItems ? (
-          <XDriveFileExplorerCommandButton
-            startIcon={<ContentCopyRoundedIcon />}
-            disabled={selectedItems.length === 0}
-            onClick={() => onCopyItems(selectedItems)}
-          >
-            复制
-          </XDriveFileExplorerCommandButton>
-        ) : null}
-        {onPaste ? (
-          <XDriveFileExplorerCommandButton
-            startIcon={<ContentPasteRoundedIcon />}
-            disabled={!canPaste}
-            onClick={onPaste}
-          >
-            粘贴
-          </XDriveFileExplorerCommandButton>
-        ) : null}
-        {onDownloadItems ? (
-          <XDriveFileExplorerCommandButton
-            startIcon={<DownloadRoundedIcon />}
-            disabled={!selectedItems.some((item) => item.kind === 'file')}
-            onClick={() => onDownloadItems(selectedItems)}
-          >
-            下载
-          </XDriveFileExplorerCommandButton>
-        ) : null}
-        {onDeleteItems ? (
-          <XDriveFileExplorerCommandButton
-            startIcon={<DeleteOutlineRoundedIcon />}
-            disabled={selectedItems.length === 0}
-            onClick={() => onDeleteItems(selectedItems)}
-            sx={{ color: selectedItems.length > 0 ? 'error.main' : undefined }}
-          >
-            删除
-          </XDriveFileExplorerCommandButton>
-        ) : null}
-        {onCreateFolder ? (
-          <XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
-            新建文件夹
-          </XDriveFileExplorerCommandButton>
-        ) : null}
-        {onUpload ? (
-          <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>
-            上传
-          </XDriveFileExplorerCommandButton>
-        ) : null}
-        {commandBarStart}
+        {selectedItems.length > 0 ? (
+          <>
+            <Typography
+              variant="body2"
+              fontWeight={700}
+              sx={{ px: 0.5, whiteSpace: 'nowrap' }}
+            >
+              已选择 {selectedItems.length} 项
+            </Typography>
+            {onCutItems ? (
+              <XDriveFileExplorerCommandButton
+                startIcon={<ContentCutRoundedIcon />}
+                onClick={() => onCutItems(selectedItems)}
+              >
+                剪切
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            {onCopyItems ? (
+              <XDriveFileExplorerCommandButton
+                startIcon={<ContentCopyRoundedIcon />}
+                onClick={() => onCopyItems(selectedItems)}
+              >
+                复制
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            {onDownloadItems && selectedItems.some((item) => item.kind === 'file') ? (
+              <XDriveFileExplorerCommandButton
+                startIcon={<DownloadRoundedIcon />}
+                onClick={() => onDownloadItems(selectedItems)}
+              >
+                下载
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            {onDeleteItems ? (
+              <XDriveFileExplorerCommandButton
+                startIcon={<DeleteOutlineRoundedIcon />}
+                onClick={() => onDeleteItems(selectedItems)}
+                sx={{ color: 'error.main' }}
+              >
+                删除
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            <XDriveFileExplorerCommandButton
+              startIcon={<CloseRoundedIcon />}
+              onClick={clearSelection}
+            >
+              取消选择
+            </XDriveFileExplorerCommandButton>
+          </>
+        ) : (
+          <>
+            {onPaste ? (
+              <XDriveFileExplorerCommandButton
+                startIcon={<ContentPasteRoundedIcon />}
+                disabled={!canPaste}
+                onClick={onPaste}
+              >
+                粘贴
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            {onCreateFolder ? (
+              <XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
+                新建文件夹
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            {onUpload ? (
+              <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>
+                上传
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            {commandBarStart}
+          </>
+        )}
 
         <Box sx={{ flex: 1 }} />
 

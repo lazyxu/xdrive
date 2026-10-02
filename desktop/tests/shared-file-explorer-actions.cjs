@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
+const explorerCore = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const sharedIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -58,4 +59,28 @@ test('Web and Desktop consume shared FileExplorer menu/action presentation', () 
   assert.ok(desktop.includes("downloadLabel: '另存为…'"), 'Desktop must preserve native save-as wording')
   assert.ok(desktop.includes('onReveal: () => { void openLocalNode(node, true) }'), 'Desktop must preserve native reveal action')
   assert.ok(desktop.includes('primaryDisabled: Boolean(actionBusy)'), 'Desktop must preserve native-action busy gating')
+})
+
+test('shared FileExplorer switches to a selection-aware command bar', () => {
+  for (const token of [
+    'selectedItems.length > 0 ? (',
+    '已选择 {selectedItems.length} 项',
+    'startIcon={<ContentCutRoundedIcon />}',
+    'startIcon={<ContentCopyRoundedIcon />}',
+    'startIcon={<DownloadRoundedIcon />}',
+    'startIcon={<DeleteOutlineRoundedIcon />}',
+    'startIcon={<CloseRoundedIcon />}',
+    'onClick={clearSelection}',
+    '取消选择',
+  ]) {
+    assert.ok(explorerCore.includes(token), `selection command bar missing: ${token}`)
+  }
+
+  const selectionStart = explorerCore.indexOf('selectedItems.length > 0 ? (')
+  const directoryActionsStart = explorerCore.indexOf(') : (', selectionStart)
+  assert.ok(selectionStart >= 0 && directoryActionsStart > selectionStart, 'selection/directory command-bar branches are missing')
+  const selectionBranch = explorerCore.slice(selectionStart, directoryActionsStart)
+  assert.equal(selectionBranch.includes('新建文件夹'), false, 'selection mode must hide directory-creation actions')
+  assert.equal(selectionBranch.includes('上传'), false, 'selection mode must hide upload actions')
+  assert.equal(selectionBranch.includes('粘贴'), false, 'selection mode must hide paste actions')
 })
