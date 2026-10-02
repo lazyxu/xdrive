@@ -190,6 +190,38 @@ func (m *Manager) Clear() {
 	m.touchLocked()
 }
 
+func (m *Manager) ClearHistory() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.order) == 0 {
+		return
+	}
+
+	kept := m.order[:0]
+	changed := false
+	for _, id := range m.order {
+		e := m.entries[id]
+		if e == nil {
+			changed = true
+			continue
+		}
+		if e.task.State == StateCompleted || e.task.State == StateFailed {
+			delete(m.entries, id)
+			changed = true
+			continue
+		}
+		kept = append(kept, id)
+	}
+	if !changed {
+		return
+	}
+	m.order = kept
+	m.touchLocked()
+}
+
 func (m *Manager) Snapshot() (uint64, []Task) {
 	if m == nil {
 		return 0, nil

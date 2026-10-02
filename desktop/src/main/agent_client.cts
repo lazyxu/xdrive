@@ -925,6 +925,10 @@ export class AgentIPCClient {
     return this.request<AgentCloudFileOperation[]>('GET', `/v1/cloud/file-operations?${query.toString()}`)
   }
 
+  cloudClearFileOperationHistory() {
+    return this.request<void>('DELETE', '/v1/cloud/file-operations')
+  }
+
   cloudFileOperation(id: string) {
     const query = new URLSearchParams({ id })
     return this.request<AgentCloudFileOperation>('GET', `/v1/cloud/file-operation?${query.toString()}`)
@@ -1046,6 +1050,10 @@ export class AgentIPCClient {
 
   retryTransfer(id: string) {
     return this.request<AgentTransfers>('POST', '/v1/transfers/retry', { id }, 130_000)
+  }
+
+  clearTransferHistory() {
+    return this.request<AgentTransfers>('DELETE', '/v1/transfers')
   }
 
   diagnostics() {

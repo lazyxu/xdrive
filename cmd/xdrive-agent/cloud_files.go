@@ -253,6 +253,14 @@ func (c *agentController) CloudFileOperations(ctx context.Context, limit int) ([
 	return cli.ListFileOperations(ctx, limit)
 }
 
+func (c *agentController) CloudClearFileOperationHistory(ctx context.Context) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.ClearFileOperationHistory(ctx)
+}
+
 func (c *agentController) CloudFileOperation(ctx context.Context, id string) (client.FileOperation, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -69,6 +69,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/nodes/batch/delete", s.batchDeleteNodes)
 	authed.POST("/file-operations", s.createFileOperation)
 	authed.GET("/file-operations", s.listFileOperations)
+	authed.DELETE("/file-operations", s.clearFileOperationHistory)
 	authed.GET("/file-operations/:id", s.getFileOperation)
 	authed.POST("/file-operations/:id/cancel", s.cancelFileOperation)
 	authed.POST("/file-operations/:id/retry", s.retryFileOperation)

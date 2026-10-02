@@ -311,6 +311,9 @@ export default function App({
   const loginReady = Boolean(server.trim() && username.trim() && (password || savedPasswordAvailable))
   const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
   const activeFileOperations = cloudFileOperations.filter((item) => xDriveFileOperationActive(item.status))
+  const hasTaskHistory =
+    transfers.transfers.some((item) => item.state === 'completed' || item.state === 'failed') ||
+    cloudFileOperations.some((item) => !xDriveFileOperationActive(item.status))
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
@@ -1075,6 +1078,31 @@ export default function App({
   const retryTransfer = async (id: string) => {
     const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), '传输重试已完成。')
     if (data) setTransfers(data)
+  }
+
+  const clearTaskHistory = async () => {
+    setFileOperationAction('clear-history')
+    setError('')
+    try {
+      const operationResult = await window.xdriveDesktop.agent.cloudClearFileOperationHistory()
+      if (!operationResult.ok) {
+        setError(operationResult.error.message)
+        return
+      }
+
+      const transferResult = await window.xdriveDesktop.agent.clearTransferHistory()
+      if (!transferResult.ok) {
+        setError(transferResult.error.message)
+        await refreshCloudFileOperations()
+        return
+      }
+
+      setTransfers(transferResult.data)
+      await refreshCloudFileOperations()
+      setNotice('已清空已完成、失败和已取消的任务历史。')
+    } finally {
+      setFileOperationAction('')
+    }
   }
 
   const refreshCloudQuota = async () => {
@@ -2011,13 +2039,16 @@ export default function App({
             transfers={transfers.transfers}
             operations={cloudFileOperations}
             retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
-            retryDisabled={Boolean(busy)}
+            retryDisabled={Boolean(busy) || fileOperationAction === 'clear-history'}
             operationCancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
             operationRetryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}
             operationDisabled={Boolean(fileOperationAction)}
+            clearHistoryDisabled={!hasTaskHistory || Boolean(busy) || Boolean(fileOperationAction)}
+            clearHistoryLoading={fileOperationAction === 'clear-history'}
             onRetry={(id) => { void retryTransfer(id) }}
             onCancelOperation={(id) => { void cancelCloudFileOperation(id) }}
             onRetryOperation={(id) => { void retryCloudFileOperation(id) }}
+            onClearHistory={() => { void clearTaskHistory() }}
           />
         )}
 

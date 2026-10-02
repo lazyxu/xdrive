@@ -15,6 +15,10 @@ const web = read('web', 'src', 'App.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webStore = read('web', 'src', 'transfers.ts')
 const agentCloudFiles = read('cmd', 'xdrive-agent', 'cloud_files.go')
+const agentController = read('cmd', 'xdrive-agent', 'controller.go')
+const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+const transferModel = read('internal', 'transfer', 'model.go')
+const desktopPreload = read('desktop', 'src', 'preload', 'index.cts')
 
 test('shared transfer center exposes detailed progress and history fields', () => {
   for (const token of [
@@ -43,7 +47,9 @@ test('shared transfer center exposes detailed progress and history fields', () =
 test('Web and Desktop both render the shared task center workspace', () => {
   assert.ok(taskCenter.includes('XDriveFileOperationCenter'), 'shared task center must render file operations')
   assert.ok(taskCenter.includes('XDriveTransferCenter'), 'shared task center must render transfers')
-  assert.ok(taskCenter.includes('清空传输历史'), 'shared task center must own the optional clear-history action')
+  assert.ok(taskCenter.includes('清空历史'), 'shared task center must own the unified clear-history action')
+  assert.ok(taskCenter.includes('loading={clearHistory.loading}'), 'shared task center clear-history action must expose loading state')
+  assert.ok(taskCenter.includes('loadingLabel="正在清空…"'), 'shared task center clear-history action must expose loading feedback')
   assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render the shared task center')
   assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render the shared task center')
   assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')
@@ -73,4 +79,24 @@ test('Desktop manual upload and download operations feed the Agent transfer mana
   assert.ok(agentCloudFiles.includes('transfer.KindDownload'), 'Desktop manual download must create a download transfer')
   assert.ok(agentCloudFiles.includes('DownloadToProgress(ctx'), 'Desktop manual download must report streamed byte progress')
   assert.ok(agentCloudFiles.includes('finishAgentCloudTransfer'), 'Desktop manual transfers must retain success/failure history')
+})
+
+test('unified Task Center history clearing preserves active work on Web and Desktop', () => {
+  assert.ok(webApi.includes("clearFileOperationHistory()"), 'Web API must expose server file-operation history clearing')
+  assert.ok(webApi.includes("method: 'DELETE'"), 'Web file-operation history clearing must use DELETE')
+  assert.ok(web.includes('const clearTaskHistory = async () => {'), 'Web must orchestrate unified Task Center history clearing')
+  assert.ok(web.includes('await api.clearFileOperationHistory()'), 'Web must clear server file-operation history')
+  assert.ok(web.includes('api.clearTransferHistory()'), 'Web must also clear local transfer history')
+  assert.ok(web.includes("loading: fileOperationAction === 'clear-history'"), 'Web clear-history action must expose loading state')
+
+  assert.ok(transferModel.includes('func (m *Manager) ClearHistory()'), 'Desktop transfer manager must have history-only clearing')
+  assert.ok(transferModel.includes('StateCompleted || e.task.State == StateFailed'), 'Desktop transfer history clearing must target only terminal transfers')
+  assert.ok(agentController.includes('c.transfers.ClearHistory()'), 'Desktop controller must use history-only transfer clearing')
+  assert.ok(agentIPC.includes('DELETE /v1/transfers'), 'Desktop Agent IPC must expose transfer history clearing')
+  assert.ok(agentIPC.includes('DELETE /v1/cloud/file-operations'), 'Desktop Agent IPC must expose file-operation history clearing')
+  assert.ok(desktopPreload.includes("clearTransferHistory: () => ipcRenderer.invoke('agent:clear-transfer-history')"), 'Desktop preload transfer-history bridge is missing')
+  assert.ok(desktopPreload.includes("cloudClearFileOperationHistory: () => ipcRenderer.invoke('agent:cloud-file-operations-clear')"), 'Desktop preload file-operation-history bridge is missing')
+  assert.ok(desktop.includes('const clearTaskHistory = async () => {'), 'Desktop must orchestrate unified Task Center history clearing')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudClearFileOperationHistory()'), 'Desktop must clear server file-operation history')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.clearTransferHistory()'), 'Desktop must clear transfer history')
 })

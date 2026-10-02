@@ -1894,6 +1894,12 @@ function registerIPCHandlers() {
       : 100
     return requireAgentClient().cloudFileOperations(parsedLimit)
   }, false))
+  ipcMain.handle('agent:cloud-file-operations-clear', () => runAgentAction(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    await requireAgentClient().cloudClearFileOperationHistory()
+    return { ok: true }
+  }, false))
   ipcMain.handle('agent:cloud-file-operation', (_event, id: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
@@ -2464,6 +2470,11 @@ function registerIPCHandlers() {
       return next
     }, false)
   })
+  ipcMain.handle('agent:clear-transfer-history', () => runAgentAction<AgentTransfers>(async () => {
+    const next = await requireAgentClient().clearTransferHistory()
+    publishAgentTransfers(next)
+    return next
+  }, false))
   ipcMain.handle('agent:get-conflicts', () => runAgentAction<AgentConflict[]>(() => requireAgentClient().conflicts(), false))
   ipcMain.handle('agent:open-conflict', (_event, id: unknown, both: unknown) => {
     if (typeof id !== 'string' || !id.trim() || typeof both !== 'boolean') {
