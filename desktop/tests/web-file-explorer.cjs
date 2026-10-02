@@ -37,6 +37,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
 
 test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
+  assert.ok(explorer.includes('api.search(decision.query, 200)'), 'Web Explorer must execute the shared normalized search query')
   for (const token of [
     'api.download(node)',
     'onShare(node)',
