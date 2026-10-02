@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
@@ -6,9 +6,9 @@ import {
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerNavigation,
+  useXDriveFileExplorerProjection,
 } from '@xdrive/ui/mui'
 import type {
-  XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
@@ -67,34 +67,16 @@ export default function DesktopFileExplorer({
   const [actionBusy, setActionBusy] = useState('')
   const [clipboard, setClipboard] = useState<DesktopExplorerClipboard | null>(null)
 
-  const activeNodes = searchResults ? searchResults.map((result) => result.node) : items
-  const nodeByID = useMemo(
-    () => new Map(activeNodes.map((node) => [node.id, node])),
-    [activeNodes],
-  )
-  const searchByID = useMemo(
-    () => new Map((searchResults ?? []).map((result) => [result.node.id, result])),
-    [searchResults],
-  )
-
-  const explorerItems = useMemo<XDriveFileExplorerItem[]>(
-    () => activeNodes.map((node) => ({
-      id: node.id,
-      name: node.name,
-      kind: node.type,
-      size: node.size,
-      updatedAt: node.updated_at,
-      secondaryLabel: searchByID.get(node.id)?.path,
-      path: searchByID.get(node.id)?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/'),
-      revision: node.revision,
-    })),
-    [activeNodes, crumbs, searchByID],
-  )
-
-  const explorerCrumbs = useMemo<XDriveFileExplorerCrumb[]>(
-    () => crumbs.map((crumb) => ({ id: crumb.id, name: crumb.name })),
-    [crumbs],
-  )
+  const {
+    nodeByID,
+    searchByID,
+    explorerItems,
+    explorerCrumbs,
+  } = useXDriveFileExplorerProjection({
+    items,
+    crumbs,
+    searchResults,
+  })
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null

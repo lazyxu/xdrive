@@ -8,6 +8,7 @@ const app = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'A
 const cloudPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
 const storagePage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
+const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const styles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
@@ -145,8 +146,8 @@ test('Desktop uses a dedicated persistent FileExplorer details-column layout', (
 })
 
 test('Desktop FileExplorer supplies preview/properties metadata through existing protected thumbnail APIs', () => {
-  assert.ok(explorer.includes("path: searchByID.get(node.id)?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'Desktop inspector path metadata is missing')
-  assert.ok(explorer.includes('revision: node.revision'), 'Desktop inspector revision metadata is missing')
+  assert.ok(projection.includes("path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'shared Explorer projection path metadata is missing')
+  assert.ok(projection.includes('revision: node.revision'), 'shared Explorer projection revision metadata is missing')
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Desktop inspector should reuse the protected media thumbnail bridge')
   assert.equal(explorer.includes('localPath:'), false, 'Desktop preview/properties must not expose managed local paths')
 })
