@@ -28,6 +28,9 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
   assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
+  assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Web Gallery must use the shared workspace surface')
+  assert.ok(desktopApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Desktop Gallery must use the shared workspace surface')
+  assert.equal(webApp.includes('<Paper variant="outlined"'), false, 'Web Gallery must not add a platform-only Paper shell around shared content')
   assert.equal(webApp.includes('function MediaGallery'), false)
   assert.equal(desktopApp.includes('function MediaGallery'), false)
 })

@@ -19,7 +19,6 @@ import {
   ListItemIcon,
   ListItemText,
   MenuItem,
-  Paper,
   Stack,
   TextField,
   Toolbar,
@@ -1056,9 +1055,7 @@ function FileManager({
           </Box>
         ) : appView === 'gallery' ? (
           <XDriveWorkspaceSurface presentation="page" title="图库">
-            <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2.5 }, minHeight: 320, borderRadius: 2 }}>
-              <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
-            </Paper>
+            <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
           </XDriveWorkspaceSurface>
         ) : appView === 'sources' ? (
           <ExternalSourcesPanel
