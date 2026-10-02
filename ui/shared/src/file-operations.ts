@@ -73,3 +73,52 @@ export function xDriveFileOperationPercent(operation: XDriveFileOperation) {
   }
   return 0
 }
+
+function operationTimestamp(value?: string) {
+  if (!value) return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+export function xDriveFileOperationElapsedMs(operation: XDriveFileOperation, now = Date.now()) {
+  const started = operationTimestamp(operation.started_at)
+  if (started === undefined) return 0
+
+  const finished = operationTimestamp(operation.finished_at)
+  const endpoint = finished ?? (xDriveFileOperationActive(operation.status) ? now : operationTimestamp(operation.updated_at) ?? now)
+  return Math.max(0, endpoint - started)
+}
+
+export function xDriveFileOperationAverageBytesPerSecond(operation: XDriveFileOperation, now = Date.now()) {
+  const elapsed = xDriveFileOperationElapsedMs(operation, now)
+  if (elapsed <= 0 || operation.processed_bytes <= 0) return 0
+  return operation.processed_bytes / (elapsed / 1000)
+}
+
+export function xDriveFileOperationAverageItemsPerSecond(operation: XDriveFileOperation, now = Date.now()) {
+  const elapsed = xDriveFileOperationElapsedMs(operation, now)
+  if (elapsed <= 0 || operation.processed_items <= 0) return 0
+  return operation.processed_items / (elapsed / 1000)
+}
+
+export function xDriveFileOperationEtaMs(operation: XDriveFileOperation, now = Date.now()) {
+  if (!xDriveFileOperationActive(operation.status) || operation.status === 'queued') return undefined
+  if (operation.total_bytes > 0 && operation.processed_bytes >= operation.total_bytes) return 0
+  if (operation.total_items > 0 && operation.processed_items >= operation.total_items) return 0
+
+  if (operation.total_bytes > 0 && operation.processed_bytes > 0 && operation.processed_bytes < operation.total_bytes) {
+    const bytesPerSecond = xDriveFileOperationAverageBytesPerSecond(operation, now)
+    if (bytesPerSecond > 0) {
+      return Math.max(0, Math.round(((operation.total_bytes - operation.processed_bytes) / bytesPerSecond) * 1000))
+    }
+  }
+
+  if (operation.total_items > 0 && operation.processed_items > 0 && operation.processed_items < operation.total_items) {
+    const itemsPerSecond = xDriveFileOperationAverageItemsPerSecond(operation, now)
+    if (itemsPerSecond > 0) {
+      return Math.max(0, Math.round(((operation.total_items - operation.processed_items) / itemsPerSecond) * 1000))
+    }
+  }
+
+  return undefined
+}

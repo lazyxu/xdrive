@@ -1,7 +1,12 @@
 import { Box, LinearProgress, Stack, Typography } from '@mui/material'
 import {
   formatBinarySize,
+  formatXDriveTransferDuration,
   xDriveFileOperationActive,
+  xDriveFileOperationAverageBytesPerSecond,
+  xDriveFileOperationAverageItemsPerSecond,
+  xDriveFileOperationElapsedMs,
+  xDriveFileOperationEtaMs,
   xDriveFileOperationPercent,
   xDriveFileOperationStatusLabel,
   xDriveFileOperationTypeLabel,
@@ -26,6 +31,17 @@ function operationTime(value?: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
+function operationRate(operation: XDriveFileOperation, now: number) {
+  const bytesPerSecond = xDriveFileOperationAverageBytesPerSecond(operation, now)
+  if (operation.total_bytes > 0 && bytesPerSecond > 0) {
+    return `${formatBinarySize(bytesPerSecond)}/秒`
+  }
+  const itemsPerSecond = xDriveFileOperationAverageItemsPerSecond(operation, now)
+  if (itemsPerSecond <= 0) return '—'
+  const formatted = itemsPerSecond >= 10 ? itemsPerSecond.toFixed(0) : itemsPerSecond.toFixed(1)
+  return `${formatted} 项/秒`
+}
+
 function OperationItem({
   operation,
   cancelling,
@@ -43,9 +59,17 @@ function OperationItem({
 }) {
   const active = xDriveFileOperationActive(operation.status)
   const percent = xDriveFileOperationPercent(operation)
-  const byteProgress = operation.total_bytes > 0
-    ? `${formatBinarySize(operation.processed_bytes)} / ${formatBinarySize(operation.total_bytes)}`
-    : '—'
+  const now = Date.now()
+  const elapsed = xDriveFileOperationElapsedMs(operation, now)
+  const eta = xDriveFileOperationEtaMs(operation, now)
+  const currentSize = operation.total_bytes > 0 ? formatBinarySize(operation.processed_bytes) : '—'
+  const totalSize = operation.total_bytes > 0 ? formatBinarySize(operation.total_bytes) : '—'
+  const elapsedLabel = operation.started_at ? formatXDriveTransferDuration(elapsed) : '—'
+  const etaLabel = operation.status === 'queued'
+    ? '等待开始'
+    : eta === undefined
+      ? (active ? '计算中' : '—')
+      : formatXDriveTransferDuration(eta)
 
   return (
     <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
@@ -117,10 +141,13 @@ function OperationItem({
           <XDriveDescriptionItem label="项目进度">
             {operation.processed_items.toLocaleString('zh-CN')} / {operation.total_items.toLocaleString('zh-CN')}
           </XDriveDescriptionItem>
-          <XDriveDescriptionItem label="数据量">{byteProgress}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="当前大小">{currentSize}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="总大小">{totalSize}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="百分比">{`${percent.toFixed(1)}%`}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="创建时间">{operationTime(operation.created_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="开始时间">{operationTime(operation.started_at)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="已耗时">{elapsedLabel}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="预计剩余">{etaLabel}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="平均处理速度">{operationRate(operation, now)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="完成时间">{operationTime(operation.finished_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="任务 ID">{operation.id}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
