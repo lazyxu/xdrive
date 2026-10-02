@@ -21,6 +21,7 @@ export type XDriveFileOperation = {
   percent: number
   current_item?: string
   failed_item_id?: number
+  failure_code?: string
   error?: string
   retryable: boolean
   cancel_requested_at?: string

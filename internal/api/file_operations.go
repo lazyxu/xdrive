@@ -21,6 +21,14 @@ var (
 	errFileOperationTerminal  = errors.New("file operation is already terminal")
 )
 
+const fileOperationTerminalHistoryLimit = 200
+
+var fileOperationTerminalStatuses = []string{
+	meta.FileOperationStatusCancelled,
+	meta.FileOperationStatusCompleted,
+	meta.FileOperationStatusFailed,
+}
+
 type fileOperationDTO struct {
 	ID                string     `json:"id"`
 	Type              string     `json:"type"`
@@ -34,6 +42,7 @@ type fileOperationDTO struct {
 	Percent           float64    `json:"percent"`
 	CurrentItem       string     `json:"current_item,omitempty"`
 	FailedItemID      uint64     `json:"failed_item_id,omitempty"`
+	FailureCode       string     `json:"failure_code,omitempty"`
 	Error             string     `json:"error,omitempty"`
 	Retryable         bool       `json:"retryable"`
 	CancelRequestedAt *time.Time `json:"cancel_requested_at,omitempty"`
@@ -78,14 +87,58 @@ func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
 		Percent:           percent,
 		CurrentItem:       operation.CurrentItem,
 		FailedItemID:      operation.FailedItemID,
+		FailureCode:       operation.FailureCode,
 		Error:             operation.Error,
-		Retryable:         operation.Status == meta.FileOperationStatusFailed || operation.Status == meta.FileOperationStatusCancelled,
+		Retryable:         fileOperationRetryable(operation),
 		CancelRequestedAt: operation.CancelRequestedAt,
 		StartedAt:         operation.StartedAt,
 		FinishedAt:        operation.FinishedAt,
 		CreatedAt:         operation.CreatedAt,
 		UpdatedAt:         operation.UpdatedAt,
 	}
+}
+
+func fileOperationRetryable(operation meta.FileOperation) bool {
+	if operation.Status == meta.FileOperationStatusCancelled {
+		return true
+	}
+	if operation.Status != meta.FileOperationStatusFailed {
+		return false
+	}
+	switch operation.FailureCode {
+	case "batch_empty",
+		"batch_too_large",
+		"invalid_batch_item",
+		"duplicate_batch_item",
+		"node_not_found",
+		"root_mutation",
+		"revision_conflict",
+		"invalid_target",
+		"nested_batch_selection",
+		"name_conflict",
+		"managed_source_target":
+		return false
+	default:
+		return true
+	}
+}
+
+func pruneFileOperationHistoryTx(tx *gorm.DB, uid uint64) error {
+	if tx == nil || uid == 0 {
+		return nil
+	}
+	var staleIDs []string
+	if err := tx.Model(&meta.FileOperation{}).
+		Where("owner_id = ? AND status IN ?", uid, fileOperationTerminalStatuses).
+		Order("created_at DESC, id DESC").
+		Offset(fileOperationTerminalHistoryLimit).
+		Pluck("id", &staleIDs).Error; err != nil {
+		return err
+	}
+	if len(staleIDs) == 0 {
+		return nil
+	}
+	return tx.Where("owner_id = ? AND id IN ?", uid, staleIDs).Delete(&meta.FileOperation{}).Error
 }
 
 func (s *Server) createFileOperation(c *gin.Context) {
@@ -154,15 +207,21 @@ func (s *Server) cancelFileOperation(c *gin.Context) {
 		}
 		switch operation.Status {
 		case meta.FileOperationStatusQueued:
-			return tx.Model(&meta.FileOperation{}).Where("id = ?", id).Updates(map[string]any{
+			if err := tx.Model(&meta.FileOperation{}).Where("id = ?", id).Updates(map[string]any{
 				"status":              meta.FileOperationStatusCancelled,
 				"processed_items":     0,
 				"processed_bytes":     0,
 				"current_item":        "",
+				"failed_item_id":      0,
+				"failure_code":        "",
+				"error":               "",
 				"cancel_requested_at": &now,
 				"finished_at":         &now,
 				"updated_at":          now,
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+			return pruneFileOperationHistoryTx(tx, uid)
 		case meta.FileOperationStatusRunning:
 			return tx.Model(&meta.FileOperation{}).Where("id = ?", id).Updates(map[string]any{
 				"status":              meta.FileOperationStatusCancelRequested,
@@ -206,6 +265,10 @@ func (s *Server) retryFileOperation(c *gin.Context) {
 	}
 	if old.Status != meta.FileOperationStatusFailed && old.Status != meta.FileOperationStatusCancelled {
 		fail(c, http.StatusConflict, "only failed or cancelled file operations can be retried")
+		return
+	}
+	if !fileOperationRetryable(old) {
+		fail(c, http.StatusConflict, "file operation conflict must be resolved before retry")
 		return
 	}
 	refs, err := decodeFileOperationRefs(old.ItemsJSON)
@@ -407,6 +470,7 @@ func (s *Server) recoverFileOperations(ctx context.Context) error {
 				"processed_bytes":     0,
 				"current_item":        "",
 				"failed_item_id":      0,
+				"failure_code":        "",
 				"error":               "",
 				"cancel_requested_at": nil,
 				"started_at":          nil,
@@ -415,16 +479,35 @@ func (s *Server) recoverFileOperations(ctx context.Context) error {
 			}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&meta.FileOperation{}).
+
+		var cancellingOwners []uint64
+		if err := tx.Model(&meta.FileOperation{}).
+			Where("status = ?", meta.FileOperationStatusCancelRequested).
+			Distinct("owner_id").
+			Pluck("owner_id", &cancellingOwners).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&meta.FileOperation{}).
 			Where("status = ?", meta.FileOperationStatusCancelRequested).
 			Updates(map[string]any{
 				"status":          meta.FileOperationStatusCancelled,
 				"processed_items": 0,
 				"processed_bytes": 0,
 				"current_item":    "",
+				"failed_item_id":  0,
+				"failure_code":    "",
+				"error":           "",
 				"finished_at":     &now,
 				"updated_at":      now,
-			}).Error
+			}).Error; err != nil {
+			return err
+		}
+		for _, ownerID := range cancellingOwners {
+			if err := pruneFileOperationHistoryTx(tx, ownerID); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -435,7 +518,7 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 	}
 	refs, err := decodeFileOperationRefs(operation.ItemsJSON)
 	if err != nil {
-		return true, s.failFileOperation(ctx, operation.ID, err)
+		return true, s.failFileOperation(ctx, operation.OwnerID, operation.ID, err)
 	}
 
 	switch operation.Type {
@@ -452,7 +535,7 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	if errors.Is(err, errFileOperationCancelled) {
-		return true, s.cancelRunningFileOperation(context.Background(), operation.ID)
+		return true, s.cancelRunningFileOperation(context.Background(), operation.OwnerID, operation.ID)
 	}
 	if errors.Is(err, context.Canceled) {
 		// Server shutdown must not turn an interrupted operation into a user
@@ -460,7 +543,7 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 		// recovery safely re-queues the running operation.
 		return true, err
 	}
-	return true, s.failFileOperation(ctx, operation.ID, err)
+	return true, s.failFileOperation(ctx, operation.OwnerID, operation.ID, err)
 }
 
 func (s *Server) claimNextFileOperation(ctx context.Context) (meta.FileOperation, bool, error) {
@@ -479,6 +562,7 @@ func (s *Server) claimNextFileOperation(ctx context.Context) (meta.FileOperation
 			"processed_bytes":     0,
 			"current_item":        "",
 			"failed_item_id":      0,
+			"failure_code":        "",
 			"error":               "",
 			"cancel_requested_at": nil,
 			"started_at":          &now,
@@ -492,6 +576,7 @@ func (s *Server) claimNextFileOperation(ctx context.Context) (meta.FileOperation
 		operation.ProcessedBytes = 0
 		operation.CurrentItem = ""
 		operation.FailedItemID = 0
+		operation.FailureCode = ""
 		operation.Error = ""
 		operation.CancelRequestedAt = nil
 		operation.StartedAt = &now
@@ -552,6 +637,8 @@ func (s *Server) completeFileOperationTx(tx *gorm.DB, operation meta.FileOperati
 			"processed_items": operation.TotalItems,
 			"processed_bytes": operation.TotalBytes,
 			"current_item":    "",
+			"failed_item_id":  0,
+			"failure_code":    "",
 			"error":           "",
 			"finished_at":     &now,
 			"updated_at":      now,
@@ -560,7 +647,7 @@ func (s *Server) completeFileOperationTx(tx *gorm.DB, operation meta.FileOperati
 		return result.Error
 	}
 	if result.RowsAffected == 1 {
-		return nil
+		return pruneFileOperationHistoryTx(tx, operation.OwnerID)
 	}
 	var current meta.FileOperation
 	if err := tx.Select("status").Where("id = ?", operation.ID).First(&current).Error; err != nil {
@@ -764,44 +851,84 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 	})
 }
 
-func (s *Server) cancelRunningFileOperation(ctx context.Context, operationID string) error {
+func (s *Server) cancelRunningFileOperation(ctx context.Context, ownerID uint64, operationID string) error {
 	now := time.Now()
-	return s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
-		Where("id = ? AND status IN ?", operationID, []string{
-			meta.FileOperationStatusRunning,
-			meta.FileOperationStatusCancelRequested,
-		}).
-		Updates(map[string]any{
-			"status":          meta.FileOperationStatusCancelled,
-			"processed_items": 0,
-			"processed_bytes": 0,
-			"current_item":    "",
-			"error":           "",
-			"finished_at":     &now,
-			"updated_at":      now,
-		}).Error
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&meta.FileOperation{}).
+			Where("id = ? AND owner_id = ? AND status IN ?", operationID, ownerID, []string{
+				meta.FileOperationStatusRunning,
+				meta.FileOperationStatusCancelRequested,
+			}).
+			Updates(map[string]any{
+				"status":          meta.FileOperationStatusCancelled,
+				"processed_items": 0,
+				"processed_bytes": 0,
+				"current_item":    "",
+				"failed_item_id":  0,
+				"failure_code":    "",
+				"error":           "",
+				"finished_at":     &now,
+				"updated_at":      now,
+			}).Error; err != nil {
+			return err
+		}
+		return pruneFileOperationHistoryTx(tx, ownerID)
+	})
 }
 
-func (s *Server) failFileOperation(ctx context.Context, operationID string, executionErr error) error {
+func (s *Server) failFileOperation(ctx context.Context, ownerID uint64, operationID string, executionErr error) error {
 	now := time.Now()
 	message := executionErr.Error()
 	failedItemID := uint64(0)
+	failureCode := "internal_error"
 	var failure *batchMutationFailure
 	if errors.As(executionErr, &failure) {
 		failedItemID = failure.ID
 		if failure.Code != "" {
+			failureCode = failure.Code
 			message = failure.Code + ": " + failure.Message
 		}
 	}
-	return s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
-		Where("id = ?", operationID).
-		Updates(map[string]any{
-			"status":          meta.FileOperationStatusFailed,
-			"processed_items": 0,
-			"processed_bytes": 0,
-			"failed_item_id":  failedItemID,
-			"error":           message,
-			"finished_at":     &now,
-			"updated_at":      now,
-		}).Error
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current meta.FileOperation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("status").
+			Where("id = ? AND owner_id = ?", operationID, ownerID).
+			First(&current).Error; err != nil {
+			return err
+		}
+		if current.Status == meta.FileOperationStatusCancelRequested {
+			if err := tx.Model(&meta.FileOperation{}).
+				Where("id = ? AND owner_id = ?", operationID, ownerID).
+				Updates(map[string]any{
+					"status":          meta.FileOperationStatusCancelled,
+					"processed_items": 0,
+					"processed_bytes": 0,
+					"current_item":    "",
+					"failed_item_id":  0,
+					"failure_code":    "",
+					"error":           "",
+					"finished_at":     &now,
+					"updated_at":      now,
+				}).Error; err != nil {
+				return err
+			}
+			return pruneFileOperationHistoryTx(tx, ownerID)
+		}
+		if err := tx.Model(&meta.FileOperation{}).
+			Where("id = ? AND owner_id = ?", operationID, ownerID).
+			Updates(map[string]any{
+				"status":          meta.FileOperationStatusFailed,
+				"processed_items": 0,
+				"processed_bytes": 0,
+				"failed_item_id":  failedItemID,
+				"failure_code":    failureCode,
+				"error":           message,
+				"finished_at":     &now,
+				"updated_at":      now,
+			}).Error; err != nil {
+			return err
+		}
+		return pruneFileOperationHistoryTx(tx, ownerID)
+	})
 }

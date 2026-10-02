@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
@@ -156,6 +158,18 @@ func TestFileOperationWorkerLifecycle(t *testing.T) {
 	if failed.Status != meta.FileOperationStatusFailed || failed.ProcessedItems != 0 || failed.ProcessedBytes != 0 || failed.FailedItemID != staleB.ID {
 		t.Fatalf("failed operation did not expose atomic rollback: %+v", failed)
 	}
+	if failed.FailureCode != "revision_conflict" {
+		t.Fatalf("failure code=%q want revision_conflict", failed.FailureCode)
+	}
+	if toFileOperationDTO(failed).Retryable {
+		t.Fatalf("revision conflict must not be advertised as retryable: %+v", failed)
+	}
+	if !toFileOperationDTO(meta.FileOperation{Status: meta.FileOperationStatusCancelled}).Retryable {
+		t.Fatal("cancelled operation should remain retryable")
+	}
+	if !toFileOperationDTO(meta.FileOperation{Status: meta.FileOperationStatusFailed}).Retryable {
+		t.Fatal("legacy failed operation without a failure code should remain retryable")
+	}
 	assertBatchNodeParent(t, db, staleA.ID, failureSource.ID)
 	assertBatchNodeParent(t, db, staleB.ID, failureSource.ID)
 
@@ -181,12 +195,101 @@ func TestFileOperationWorkerLifecycle(t *testing.T) {
 		t.Fatalf("running operation was not safely re-queued: %+v", recovery)
 	}
 
+	cancelRace, err := srv.enqueueFileOperation(context.Background(), user.ID, meta.FileOperationTypeCopy, []batchNodeRef{
+		{ID: staleA.ID, Revision: 1},
+	}, failureTarget.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.FileOperation{}).Where("id = ?", cancelRace.ID).
+		Update("status", meta.FileOperationStatusCancelRequested).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.failFileOperation(context.Background(), user.ID, cancelRace.ID, errors.New("late worker failure")); err != nil {
+		t.Fatal(err)
+	}
+	cancelRace, err = srv.loadOwnedFileOperation(context.Background(), user.ID, cancelRace.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelRace.Status != meta.FileOperationStatusCancelled || cancelRace.Error != "" || cancelRace.FailureCode != "" {
+		t.Fatalf("cancel request should win over a late worker failure: %+v", cancelRace)
+	}
+
 	other := meta.User{Username: "file-operation-other", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
 	if err := db.Create(&other).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := srv.loadOwnedFileOperation(context.Background(), other.ID, move.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("cross-user operation lookup err=%v want record not found", err)
+	}
+
+	base := time.Now().UTC().Add(-time.Hour)
+	history := make([]meta.FileOperation, 0, fileOperationTerminalHistoryLimit+5)
+	for index := 0; index < fileOperationTerminalHistoryLimit+5; index++ {
+		createdAt := base.Add(time.Duration(index) * time.Second)
+		history = append(history, meta.FileOperation{
+			ID:         fmt.Sprintf("history-%03d", index),
+			OwnerID:    user.ID,
+			Type:       meta.FileOperationTypeCopy,
+			Status:     meta.FileOperationStatusCompleted,
+			ItemsJSON:  "[]",
+			TotalItems: 1,
+			CreatedAt:  createdAt,
+			UpdatedAt:  createdAt,
+		})
+	}
+	if err := db.Create(&history).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherHistory := meta.FileOperation{
+		ID: "other-history", OwnerID: other.ID, Type: meta.FileOperationTypeCopy,
+		Status: meta.FileOperationStatusCompleted, ItemsJSON: "[]", TotalItems: 1,
+		CreatedAt: base, UpdatedAt: base,
+	}
+	if err := db.Create(&otherHistory).Error; err != nil {
+		t.Fatal(err)
+	}
+	trigger := meta.FileOperation{
+		ID: "history-trigger", OwnerID: user.ID, Type: meta.FileOperationTypeCopy,
+		Status: meta.FileOperationStatusRunning, ItemsJSON: "[]", TotalItems: 1,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	if err := db.Create(&trigger).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return srv.completeFileOperationTx(tx, trigger)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var terminalCount int64
+	if err := db.Model(&meta.FileOperation{}).
+		Where("owner_id = ? AND status IN ?", user.ID, fileOperationTerminalStatuses).
+		Count(&terminalCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if terminalCount != fileOperationTerminalHistoryLimit {
+		t.Fatalf("terminal history count=%d want=%d", terminalCount, fileOperationTerminalHistoryLimit)
+	}
+	var activeRecoveryCount int64
+	if err := db.Model(&meta.FileOperation{}).
+		Where("id = ? AND owner_id = ? AND status = ?", recovery.ID, user.ID, meta.FileOperationStatusQueued).
+		Count(&activeRecoveryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if activeRecoveryCount != 1 {
+		t.Fatal("history pruning removed an active operation")
+	}
+	var otherHistoryCount int64
+	if err := db.Model(&meta.FileOperation{}).
+		Where("id = ? AND owner_id = ?", otherHistory.ID, other.ID).
+		Count(&otherHistoryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if otherHistoryCount != 1 {
+		t.Fatal("history pruning crossed user ownership boundaries")
 	}
 }
 
