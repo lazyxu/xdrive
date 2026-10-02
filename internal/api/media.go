@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,32 +31,34 @@ const (
 )
 
 type mediaMetadataDTO struct {
-	MediaKind       string         `json:"media_kind"`
-	MIMEType        string         `json:"mime_type,omitempty"`
-	Width           int            `json:"width,omitempty"`
-	Height          int            `json:"height,omitempty"`
-	Orientation     int            `json:"orientation,omitempty"`
-	RotationDegrees int            `json:"rotation_degrees,omitempty"`
-	DurationMS      int64          `json:"duration_ms,omitempty"`
-	FrameRate       float64        `json:"frame_rate,omitempty"`
-	BitRate         int64          `json:"bit_rate,omitempty"`
-	VideoCodec      string         `json:"video_codec,omitempty"`
-	AudioCodec      string         `json:"audio_codec,omitempty"`
-	CapturedAt      *time.Time     `json:"captured_at,omitempty"`
-	Latitude        *float64       `json:"latitude,omitempty"`
-	Longitude       *float64       `json:"longitude,omitempty"`
-	AltitudeM       *float64       `json:"altitude_m,omitempty"`
-	CameraMake      string         `json:"camera_make,omitempty"`
-	CameraModel     string         `json:"camera_model,omitempty"`
-	LensModel       string         `json:"lens_model,omitempty"`
-	EXIF            map[string]any `json:"exif,omitempty"`
-	Video           map[string]any `json:"video,omitempty"`
-	IndexState      string         `json:"index_state"`
-	IndexError      string         `json:"index_error,omitempty"`
-	HasThumbnail    bool           `json:"has_thumbnail"`
-	ThumbnailMIME   string         `json:"thumbnail_mime_type,omitempty"`
-	ThumbnailWidth  int            `json:"thumbnail_width,omitempty"`
-	ThumbnailHeight int            `json:"thumbnail_height,omitempty"`
+	MediaKind                string         `json:"media_kind"`
+	MIMEType                 string         `json:"mime_type,omitempty"`
+	ContainerKind            string         `json:"container_kind,omitempty"`
+	LivePhotoAssetIdentifier string         `json:"live_photo_asset_identifier,omitempty"`
+	Width                    int            `json:"width,omitempty"`
+	Height                   int            `json:"height,omitempty"`
+	Orientation              int            `json:"orientation,omitempty"`
+	RotationDegrees          int            `json:"rotation_degrees,omitempty"`
+	DurationMS               int64          `json:"duration_ms,omitempty"`
+	FrameRate                float64        `json:"frame_rate,omitempty"`
+	BitRate                  int64          `json:"bit_rate,omitempty"`
+	VideoCodec               string         `json:"video_codec,omitempty"`
+	AudioCodec               string         `json:"audio_codec,omitempty"`
+	CapturedAt               *time.Time     `json:"captured_at,omitempty"`
+	Latitude                 *float64       `json:"latitude,omitempty"`
+	Longitude                *float64       `json:"longitude,omitempty"`
+	AltitudeM                *float64       `json:"altitude_m,omitempty"`
+	CameraMake               string         `json:"camera_make,omitempty"`
+	CameraModel              string         `json:"camera_model,omitempty"`
+	LensModel                string         `json:"lens_model,omitempty"`
+	EXIF                     map[string]any `json:"exif,omitempty"`
+	Video                    map[string]any `json:"video,omitempty"`
+	IndexState               string         `json:"index_state"`
+	IndexError               string         `json:"index_error,omitempty"`
+	HasThumbnail             bool           `json:"has_thumbnail"`
+	ThumbnailMIME            string         `json:"thumbnail_mime_type,omitempty"`
+	ThumbnailWidth           int            `json:"thumbnail_width,omitempty"`
+	ThumbnailHeight          int            `json:"thumbnail_height,omitempty"`
 }
 
 type mediaItemDTO struct {
@@ -74,30 +77,32 @@ type mediaAlbumDTO struct {
 
 func toMediaMetadataDTO(row meta.MediaMetadata) mediaMetadataDTO {
 	out := mediaMetadataDTO{
-		MediaKind:       row.MediaKind,
-		MIMEType:        row.MIMEType,
-		Width:           row.Width,
-		Height:          row.Height,
-		Orientation:     row.Orientation,
-		RotationDegrees: row.RotationDegrees,
-		DurationMS:      row.DurationMS,
-		FrameRate:       row.FrameRate,
-		BitRate:         row.BitRate,
-		VideoCodec:      row.VideoCodec,
-		AudioCodec:      row.AudioCodec,
-		CapturedAt:      row.CapturedAt,
-		Latitude:        row.Latitude,
-		Longitude:       row.Longitude,
-		AltitudeM:       row.AltitudeM,
-		CameraMake:      row.CameraMake,
-		CameraModel:     row.CameraModel,
-		LensModel:       row.LensModel,
-		IndexState:      row.IndexState,
-		IndexError:      row.IndexError,
-		HasThumbnail:    mediaThumbnailSupported(row),
-		ThumbnailMIME:   row.ThumbnailMIMEType,
-		ThumbnailWidth:  row.ThumbnailWidth,
-		ThumbnailHeight: row.ThumbnailHeight,
+		MediaKind:                row.MediaKind,
+		MIMEType:                 row.MIMEType,
+		ContainerKind:            row.ContainerKind,
+		LivePhotoAssetIdentifier: row.LivePhotoAssetIdentifier,
+		Width:                    row.Width,
+		Height:                   row.Height,
+		Orientation:              row.Orientation,
+		RotationDegrees:          row.RotationDegrees,
+		DurationMS:               row.DurationMS,
+		FrameRate:                row.FrameRate,
+		BitRate:                  row.BitRate,
+		VideoCodec:               row.VideoCodec,
+		AudioCodec:               row.AudioCodec,
+		CapturedAt:               row.CapturedAt,
+		Latitude:                 row.Latitude,
+		Longitude:                row.Longitude,
+		AltitudeM:                row.AltitudeM,
+		CameraMake:               row.CameraMake,
+		CameraModel:              row.CameraModel,
+		LensModel:                row.LensModel,
+		IndexState:               row.IndexState,
+		IndexError:               row.IndexError,
+		HasThumbnail:             mediaThumbnailSupported(row),
+		ThumbnailMIME:            row.ThumbnailMIMEType,
+		ThumbnailWidth:           row.ThumbnailWidth,
+		ThumbnailHeight:          row.ThumbnailHeight,
 	}
 	if strings.TrimSpace(row.EXIFJSON) != "" {
 		_ = json.Unmarshal([]byte(row.EXIFJSON), &out.EXIF)
@@ -585,13 +590,19 @@ func (s *Server) ensureMediaMetadata(
 	if err == nil &&
 		node.File != nil &&
 		current.NodeRevision == node.Revision &&
-		current.SHA256 == node.File.SHA256 {
+		current.SHA256 == node.File.SHA256 &&
+		!legacyLIVPMetadata(node, current) {
 		return current, nil
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return current, err
 	}
 	return s.indexMediaNode(ctx, node)
+}
+
+func legacyLIVPMetadata(node meta.Node, row meta.MediaMetadata) bool {
+	return strings.EqualFold(filepath.Ext(node.Name), ".livp") &&
+		strings.TrimSpace(row.ContainerKind) == ""
 }
 
 func (s *Server) indexMediaNode(
@@ -639,6 +650,8 @@ func (s *Server) indexMediaNode(
 		SHA256:                   node.File.SHA256,
 		MediaKind:                kind,
 		MIMEType:                 extracted.MIMEType,
+		ContainerKind:            extracted.ContainerKind,
+		ContainerJSON:            extracted.ContainerJSON,
 		LivePhotoAssetIdentifier: extracted.LivePhotoAssetIdentifier,
 		Width:                    extracted.Width,
 		Height:                   extracted.Height,
@@ -685,6 +698,8 @@ func (s *Server) indexMediaNode(
 				"sha256",
 				"media_kind",
 				"mime_type",
+				"container_kind",
+				"container_json",
 				"live_photo_asset_identifier",
 				"width",
 				"height",
@@ -795,7 +810,8 @@ func (s *Server) staleMediaNodes(
 		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = n.id").
 		Where(
 			"n.type = ? AND n.deleted_at IS NULL AND "+
-				"(mm.node_id IS NULL OR mm.node_revision <> n.revision OR mm.sha256 <> f.sha256)",
+				"(mm.node_id IS NULL OR mm.node_revision <> n.revision OR mm.sha256 <> f.sha256 OR "+
+				"(lower(n.name) LIKE '%.livp' AND COALESCE(mm.container_kind, '') = ''))",
 			meta.NodeTypeFile,
 		)
 	if uid != nil {

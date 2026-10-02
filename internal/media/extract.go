@@ -22,6 +22,8 @@ const maxEmbeddedMetadataBytes = 32 << 20
 type Result struct {
 	Kind                     string
 	MIMEType                 string
+	ContainerKind            string
+	ContainerJSON            string
 	LivePhotoAssetIdentifier string
 	Width                    int
 	Height                   int
@@ -82,6 +84,13 @@ func Extract(name string, r io.ReadSeeker, size int64) (Result, error) {
 	result := Result{Orientation: 1}
 	if r == nil {
 		return result, errors.New("media reader is nil")
+	}
+	if strings.EqualFold(filepath.Ext(name), ".livp") {
+		readerAt, ok := r.(io.ReaderAt)
+		if !ok {
+			return result, errors.New("livp reader does not support random access")
+		}
+		return extractLIVP(readerAt, size)
 	}
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return result, err

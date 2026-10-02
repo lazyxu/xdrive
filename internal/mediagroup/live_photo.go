@@ -48,7 +48,7 @@ func ReconcileAppleLivePhoto(
 			Select("mm.node_id, mm.media_kind").
 			Joins("JOIN xd_nodes AS n ON n.id = mm.node_id AND n.deleted_at IS NULL").
 			Where(
-				"mm.owner_id = ? AND n.owner_id = ? AND n.type = ? AND mm.live_photo_asset_identifier = ? AND mm.index_state = ? AND mm.media_kind IN ?",
+				"mm.owner_id = ? AND n.owner_id = ? AND n.type = ? AND mm.container_kind = '' AND mm.live_photo_asset_identifier = ? AND mm.index_state = ? AND mm.media_kind IN ?",
 				ownerID,
 				ownerID,
 				meta.NodeTypeFile,
