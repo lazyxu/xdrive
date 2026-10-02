@@ -1,8 +1,60 @@
 # External Source architecture
 
-External Source is xDrive's connector-neutral **file ingestion and synchronization** subsystem.
+External Source is xDrive's connector-neutral **file ingestion and synchronization** subsystem. The user-facing product name is **同步文件夹**.
 
-It is not a photo-only subsystem. Photos and videos are ordinary files first. Media indexing is an optional derived capability that runs after a file has been materialized in xDrive.
+## Normative boundary: Source syncs files, Media understands files
+
+A synchronization-folder connector is responsible only for getting the correct original files into xDrive safely and repeatably.
+
+```text
+provider / filesystem
+  -> enumerate file identity/path/size/revision
+  -> transfer original bytes
+  -> SourceItem
+  -> Node + File + CAS
+```
+
+Everything that interprets the contents of a media file belongs after that boundary:
+
+```text
+Node + File + CAS
+  -> xDrive-native media parser/indexer
+  -> MediaMetadata
+  -> EXIF / GPS / image parameters / video parameters
+  -> derived thumbnails
+  -> validated Live Photo / RAW / sidecar / burst projection
+  -> Gallery / search
+```
+
+This boundary is mandatory for Yike Photos Pull, Synology Photos Pull, Synology FileStation Pull, Synology Push, and future connectors.
+
+### Allowed provider dependencies
+
+A connector may depend on provider APIs for:
+
+- authentication and read-only session management;
+- file/directory enumeration;
+- stable file identity;
+- remote path/name, size, sync-relevant timestamps and revision hints;
+- digest/checksum hints used to verify or deduplicate bytes;
+- original-file download and Range/resume;
+- collections only when needed to discover files or preserve optional source provenance;
+- reliable incremental change/tombstone APIs when their contract is proven.
+
+### Media data that must be local
+
+A connector must not depend on provider APIs for canonical:
+
+- EXIF/camera/lens/exposure data;
+- image dimensions/orientation or other media parameters that can be parsed from the original;
+- GPS/geolocation/address;
+- video duration/rotation/frame rate/bitrate/codecs;
+- Live Photo pairing/projection;
+- RAW/JPEG, XMP/AAE, sidecar, burst or auxiliary-media grouping;
+- people/tags/favorites/descriptions/face recognition;
+- Gallery thumbnails/previews.
+
+Existing provider hints may remain stored for backward compatibility, but they are non-authoritative and must not be required to rebuild xDrive media state.
 
 ## Core invariant: every file stays a file
 
@@ -10,166 +62,142 @@ A connector may discover any regular file or directory:
 
 ```text
 DOCX / PDF / XLSX / ZIP / TAR
-source code / binaries
-database files
+source code / binaries / databases
 images / video / audio
-RAW / sidecars
-arbitrary unknown extensions
+RAW / XMP / AAE / sidecars
+unknown future formats
 ```
 
-All of them use the same base pipeline:
-
-```text
-Remote provider / local source
-        |
-        v
-Source + SourceItem identity
-        |
-        v
-planner + SyncRun
-        |
-        v
-Node + File + CAS
-```
-
-Nothing in the Source core may require an item to be an image or video.
-
-After import, the universal media index may independently recognize supported media:
-
-```text
-Node + File + CAS
-        |
-        +--> ordinary file: no MediaMetadata required
-        |
-        +--> recognized image/video: MediaMetadata + thumbnail + Gallery
-```
-
-Failure to parse media metadata must never fail, hide, delete, rename, or prevent backup of the original file.
+All use the same base pipeline. Media indexing is an optional derived layer; failure to parse media metadata must never fail, hide, delete, rename, or prevent backup of the original file.
 
 ## Connector families
 
+### Yike Photos Pull — `yike_photos`
+
+Yike is a private-Web-API file adapter. It uses `yike:<owner_uk>:<fsid>` as stable file identity, preserves visible filenames and original bytes, and uses remote MD5/download metadata as synchronization hints. Album/shared traversal may be used to discover files that are not reachable through the root listing.
+
+Yike does not own EXIF/GPS/Live Photo/media parsing. `.livp` and other originals are preserved and processed later by the common xDrive media pipeline.
+
 ### Synology Photos Pull — `synology_photos`
 
-Uses Synology Photos semantics and stable Photos item identity when available.
+Synology Photos Pull uses Personal/Shared Photos item IDs as file-sync identity and Photos endpoints for file enumeration/download. Existing album provenance may be preserved, but media interpretation must not depend on Synology semantic APIs.
 
-It may additionally import albums, capture metadata, people, tags, favorite state, descriptions, GPS, thumbnails, and Live Photo relationships.
+`live_type`, provider GPS/address, people/tags/favorite/description, and provider media parameters are not canonical xDrive inputs. Live Photo and all media metadata are reconstructed locally from synchronized originals.
 
 ### Synology Files Pull — `synology_files`
 
-A generic DSM/File Station source for arbitrary shared folders and arbitrary file types.
+FileStation is the generic DSM source for arbitrary selected shares/subdirectories and arbitrary file types.
 
-Status: File Station API/session, multi-root validation, generic directory execution, recursive scanner, worker registration, credential/config activation gates, cancellation/retry integration, Backup missing safety, Web/Desktop creation/configuration, protected directory browsing, and root-selection UI are implemented.
+Current behavior includes recursive multi-root enumeration, directory preservation, original visible filenames, scan/sync modes, cancellation/retry, CAS/digest reuse, Range downloads, missing-inventory safety, protected directory browsing, and Web/Desktop configuration.
 
-Current behavior:
+FileStation currently uses explicit path identity when a stable provider item identity is not proven. File revisions use `mtime + ctime + crtime + size` when DSM exposes the change/create times, with compatibility fallback to legacy `mtime + size`.
 
-- select one or more DSM shares/subdirectories;
-- recursively preserve directory structure;
-- preserve original visible file names;
-- sync every regular file type, not just media;
-- support scan and sync modes;
-- reuse the shared Source planner, cancellation, schedules, retry/backoff, CAS, digest reuse, progress, and missing-inventory safety;
-- use File Station/provider identity only when it is proven stable;
-- fall back to a clearly scoped path identity when DSM does not expose a stable file identity;
-- use `SourceItemAlias` when a stronger provider identity later becomes available;
-- never guess rename/move identity from filename or timestamps alone;
-- treat media indexing as an optional post-import projection.
+`SYNO.FileStation.MD5` is capability-detected but must not be used to hash an entire NAS on every scan. It is reserved for future explicit/narrow integrity checks if useful.
 
-Recommended source kind:
+### Synology NAS Push
+
+Push remains a filesystem synchronization path. It follows the same rule: upload original files and preserve robust filesystem identity; do not turn the NAS agent into a Synology Photos semantic client.
+
+Any future local media processing should happen in the common xDrive media pipeline after original bytes are stored, not by depending on provider-specific media APIs.
+
+## File identity and aliases
+
+`SourceItemAlias` belongs to the generic file-identity layer. A stronger provider file identity may replace an older identity only when the connector has deterministic proof that both identify the same remote file.
 
 ```text
-kind=synology_files
-direction=pull
-sync_mode=backup
+old file identity
+  -> verified alias promotion
+  -> stronger canonical file identity
+  -> same SourceItem
+  -> same Node
+  -> same CAS content
+  -> zero identity-driven re-upload
 ```
 
-Photos Pull and Files Pull may coexist. If their remote scopes overlap, xDrive keeps separate SourceItems because provenance differs, while CAS may still deduplicate identical content bytes. Pull scheduling coordinates Synology Sources by a hashed DSM-origin + username key, so Photos and File Station using the same DSM account do not create competing login/API sessions; unrelated accounts still run concurrently within the global worker limit.
+The server must never infer identity merges from filename, path similarity, size, mtime, EXIF, GPS, or visual similarity.
 
-### Synology NAS Push — source agent
+## Source collections
 
-The NAS reads its local filesystem and pushes observations/transfers to xDrive. This is also generic at the Source protocol level even when a particular setup targets Photos roots.
+`SourceCollection` may preserve provider album/collection provenance where it is already available. It is optional source metadata, not a media database.
 
-A future Photos semantic lane may enrich indexed files with Photos item IDs and metadata without changing the fact that non-media files, sidecars, and unsupported objects remain normal SourceItems.
+A collection API may also be necessary to discover provider files that the root listing omits. In that case it is part of file enumeration. Collection failure must never be translated into a completed empty file inventory.
 
-## Identity aliases are file-generic
+Media parsing, Live Photo grouping, EXIF/GPS, thumbnails and Gallery behavior must work without any SourceCollection data.
 
-`SourceItemAlias` belongs to the Source identity layer, not the media layer.
+## SourceItemMetadata contract
 
-Example for an ordinary text file:
+`SourceItemMetadata` stores synchronization/provenance hints such as original remote path, remote owner ID, remote create/capture hints, MD5 and provider thumbnail URL.
 
-```text
-fs:documents:11:22
-        |
-        | verified identity promotion
-        v
-synology-file:documents:9001   canonical
+These fields are not canonical media state. In particular:
 
-old fs:* identity remains an alias
-same SourceItem
-same Node
-same CAS content
-zero identity-driven re-upload
-```
+- provider capture time must not override valid embedded capture metadata;
+- provider thumbnail URL is never the durable xDrive preview;
+- new connector code must not use `PairGroupID/PairRole` to import provider Live Photo semantics;
+- pair/group relations are derived by the local media layer from original files.
 
-An observation may only promote a canonical external ID when the connector explicitly supplies verified alias evidence. xDrive Server must never infer an identity merge from path, filename, size, mtime, EXIF, or visual similarity.
+The existing pair fields may remain for schema/backward compatibility until a migration removes or repurposes them.
 
-Older or rolled-back connectors may continue to address a SourceItem through a stored alias. Alias lookup must not downgrade the stronger canonical identity.
+## Native media layer
 
-## Media-specific extensions are projections
+`MediaMetadata` is canonical for technical media state and is derived from xDrive originals. The parser/indexer should cover:
 
-The following concepts are optional enrichments layered above generic files:
+- image format/MIME/dimensions/orientation and supported technical fields;
+- EXIF/TIFF capture time, camera/lens and exposure metadata;
+- GPS latitude/longitude/altitude;
+- video/container duration, dimensions, rotation, frame rate, bitrate and codecs;
+- xDrive-derived thumbnails/previews.
 
-- EXIF / GPS / camera / lens;
-- video duration / codec / rotation;
-- thumbnails and Gallery;
-- albums and photo collections;
-- people and tags;
-- Live Photo grouping;
-- RAW+JPEG or sidecar grouping.
+A future connector-neutral `MediaGroup` layer should represent locally validated Live Photo, RAW/JPEG, sidecar and burst relationships.
 
-They do not replace `Node + File + CAS`, and unsupported/non-media files never need them.
+Live Photo evidence must come from local originals such as a validated `.livp` container or matching embedded Apple content identifiers. Do not use provider `live_type`, provider pair IDs, filename matching, or timestamp proximity as the canonical relation.
 
 ## Integrity verification
 
-`xdrive-server source verify [--json]` performs a read-only consistency check of Source targets and persisted SourceItem -> Node/File bindings. It reports deterministic binding damage such as synced items without Nodes, deleted/wrong-owner/wrong-type bound Nodes, missing File metadata, and SourceItem size/SHA drift against the currently bound File.
+`xdrive-server source verify [--json]` provides the first read-only Source binding verifier. It checks core Source/SourceItem -> Node/File invariants.
 
-This verifier intentionally does not repair or mutate Source state. A later repair command may requeue only issue types with a proven idempotent recovery path. Storage/CAS byte verification remains the separate `xdrive-server storage verify` responsibility.
+Future verification should extend to alias collisions, collection membership, SourceItemMetadata ownership, MediaMetadata freshness, future MediaGroup consistency, thumbnail cache consistency, stale runs and migration state. Repair must be explicit, local, idempotent, and must never mutate the remote provider.
+
+Storage/CAS byte verification remains the separate `xdrive-server storage verify` responsibility.
 
 ## Deletion and recovery
 
-The generic rules remain:
-
 - Backup: remote disappearance marks SourceItem missing while xDrive content remains.
-- Mirror (TODO): confirmed remote deletion may move the xDrive Node to trash after safety/grace checks.
+- Mirror: TODO; only confirmed deletion may move a Node to xDrive trash after safety/grace checks.
 - Partial, failed, or cancelled inventories never infer deletion.
 - Remote providers remain read-only by default.
 
 ## Synchronization-folder management contract
 
-The backend subsystem remains named **External Source / Source** in code and APIs, but the Web/Desktop product surface calls each configured connector a **同步文件夹**. This distinction is intentional: user terminology can stay stable without forcing a database or API rename.
+The backend subsystem remains named `External Source` / `Source` in code and APIs, while Web/Desktop call it **同步文件夹**.
 
-Every synchronization folder has two management planes that must remain separate:
+Every synchronization folder has two management planes that remain separate:
 
 1. **Target identity**
    - `target_node_id` is the persisted xDrive binding.
-   - API responses expose `target_path`, resolved from the current Node tree, so clients show the database-backed path instead of reconstructing it from a template.
+   - API responses expose resolved `target_path`.
    - Settings render the target directory read-only.
-   - Saving ordinary settings does not move, rename, recreate, or rewrite the target.
-   - A target may change only through an explicit target-selection workflow or a connector-owned verified identity/binding transition. A managed connector may repair its deterministic hierarchy in that binding transition while preserving the existing target node/data where required.
+   - Ordinary settings saves do not move, rename, recreate, or rewrite the target.
+   - Target changes require an explicit target-selection or verified identity/binding workflow.
 
 2. **Credential identity**
-   - Encrypted credential payloads remain server-side and normal list/status/test APIs expose metadata only.
-   - The owner may explicitly request a short-lived reveal for connector fields that are safe and useful to inspect. The reveal endpoint is owner-scoped, audited, marked `Cache-Control: no-store`, and returns only an allowlisted field rather than the complete credential object.
-   - Current allowlist: Yike Pull -> `cookie`; Synology Photos/File Station Pull -> `password`.
-   - Synology Push is not included because its connector credential lives on the NAS agent rather than xDrive Server.
-   - Web/Desktop show a mask by default, request plaintext only after the user clicks **显示**, hold it only in memory, automatically hide it after roughly 30 seconds, and clear it when settings close.
-   - Revealed plaintext is never copied into the replacement form automatically. “Inspect current secret” and “replace secret” are separate operations.
+   - Credentials remain encrypted server-side.
+   - Normal list/status/test APIs expose metadata only.
+   - Explicit reveal is owner-scoped, audited, `Cache-Control: no-store`, and allowlisted by connector.
+   - Current reveal allowlist: Yike Pull `cookie`; Synology Photos/FileStation Pull `password`.
+   - Web/Desktop mask by default, reveal only on click, keep plaintext in memory briefly, and clear it on timeout/close.
+   - Reveal and replacement are separate operations.
 
-This contract is the default for new synchronization-folder connectors. A new connector should deviate only when its transport/security model makes one of these operations inapplicable, and that exception should be documented explicitly.
+New synchronization-folder connectors must follow both this management contract and the Source-vs-Media boundary above.
 
 ## Implementation order
 
-1. Complete: SourceItemAlias + explicit canonical identity promotion.
-2. Complete: Synology Files Pull (`synology_files`) backend + Web/Desktop source management and directory selection.
-3. Synology Push Photos-item semantic identity lane.
-4. Provider semantic metadata and media grouping.
-5. Incremental change scanners only where a reliable provider change contract exists.
+1. Complete: Source scheduler/retry/cancellation/account coordination.
+2. Complete: `SourceItemAlias` and explicit canonical identity promotion.
+3. Complete: Synology FileStation Pull backend and Web/Desktop management.
+4. Complete: basic read-only Source binding verifier.
+5. Expand xDrive-native media extraction from original files; do not add provider semantic dependencies.
+6. Add local connector-neutral MediaGroup and Live Photo projection.
+7. Add local RAW/sidecar/burst parsing/grouping.
+8. Extend integrity verification and explicit local repair.
+9. Add incremental scanners only where a reliable provider change contract exists.
+10. Add Mirror-to-trash only after deletion evidence/grace semantics are proven.
