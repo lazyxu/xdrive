@@ -40,8 +40,9 @@ import {
   XDriveSidebarSection,
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
-  XDriveTransferCenter,
-  XDriveFileOperationCenter,
+  XDriveTaskCenterPage,
+  XDrivePasswordChangeForm,
+  xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
   XDriveTrashDialog,
   XDriveVersionHistoryDialog,
@@ -741,16 +742,9 @@ function FileManager({
   if (profile?.must_change_password) {
     const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      if (!passwordValues.current) {
-        setPasswordError('请填写当前密码')
-        return
-      }
-      if (passwordValues.next.length < 8) {
-        setPasswordError('新密码至少需要 8 个字符')
-        return
-      }
-      if (passwordValues.next !== passwordValues.confirm) {
-        setPasswordError('两次输入的新密码不一致')
+      const validationError = xDrivePasswordChangeValidationError(passwordValues)
+      if (validationError) {
+        setPasswordError(validationError)
         return
       }
       try {
@@ -794,46 +788,15 @@ function FileManager({
             <XDriveStatusAlert tone="warning" sx={{ mb: 2 }}>
               管理员要求先修改密码，之后才能访问文件。
             </XDriveStatusAlert>
-            {passwordError && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{passwordError}</XDriveStatusAlert>}
-            <Stack component="form" spacing={2} onSubmit={(event) => void submitPassword(event)}>
-              <TextField
-                fullWidth
-                size="small"
-                type="password"
-                label="当前密码"
-                autoComplete="current-password"
-                value={passwordValues.current}
-                onChange={(event) => {
-                  setPasswordValues((currentValues) => ({ ...currentValues, current: event.target.value }))
-                  if (passwordError) setPasswordError('')
-                }}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                type="password"
-                label="新密码"
-                autoComplete="new-password"
-                value={passwordValues.next}
-                onChange={(event) => {
-                  setPasswordValues((currentValues) => ({ ...currentValues, next: event.target.value }))
-                  if (passwordError) setPasswordError('')
-                }}
-              />
-              <TextField
-                fullWidth
-                size="small"
-                type="password"
-                label="确认新密码"
-                autoComplete="new-password"
-                value={passwordValues.confirm}
-                onChange={(event) => {
-                  setPasswordValues((currentValues) => ({ ...currentValues, confirm: event.target.value }))
-                  if (passwordError) setPasswordError('')
-                }}
-              />
-              <XDriveActionButton intent="primary" type="submit">修改密码</XDriveActionButton>
-            </Stack>
+            <XDrivePasswordChangeForm
+              values={passwordValues}
+              error={passwordError}
+              onChange={(field, value) => {
+                setPasswordValues((currentValues) => ({ ...currentValues, [field]: value }))
+                if (passwordError) setPasswordError('')
+              }}
+              onSubmit={(event) => { void submitPassword(event) }}
+            />
           </Card>
         </Box>
         <XDriveFeedbackSnackbar
@@ -1106,38 +1069,19 @@ function FileManager({
             onError={handleError}
           />
         ) : appView === 'transfers' ? (
-          <XDriveWorkspaceSurface
-            presentation="page"
-            title="任务中心"
-            subtitle="统一查看文件操作、上传和下载的实时进度与历史状态。"
-            pageActions={(
-              <XDriveActionButton
-                disabled={!transfers.some((item) => item.state === 'completed' || item.state === 'failed')}
-                onClick={() => api.clearTransferHistory()}
-              >
-                清空传输历史
-              </XDriveActionButton>
-            )}
-          >
-            <Stack spacing={3}>
-              <Box>
-                <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>文件操作</Typography>
-                <XDriveFileOperationCenter
-                  operations={fileOperations}
-                  cancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
-                  retryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}
-                  disabled={Boolean(fileOperationAction)}
-                  onCancel={(id) => { void cancelFileOperation(id) }}
-                  onRetry={(id) => { void retryFileOperation(id) }}
-                />
-              </Box>
-              <Divider />
-              <Box>
-                <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>上传与下载</Typography>
-                <XDriveTransferCenter transfers={transfers} />
-              </Box>
-            </Stack>
-          </XDriveWorkspaceSurface>
+          <XDriveTaskCenterPage
+            transfers={transfers}
+            operations={fileOperations}
+            clearHistory={{
+              disabled: !transfers.some((item) => item.state === 'completed' || item.state === 'failed'),
+              onClear: () => api.clearTransferHistory(),
+            }}
+            operationCancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
+            operationRetryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}
+            operationDisabled={Boolean(fileOperationAction)}
+            onCancelOperation={(id) => { void cancelFileOperation(id) }}
+            onRetryOperation={(id) => { void retryFileOperation(id) }}
+          />
         ) : appView === 'storage' ? (
           <StorageStatsPanel
             api={api}

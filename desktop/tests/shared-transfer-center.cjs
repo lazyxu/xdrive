@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'TransferCenter.tsx')
+const taskCenter = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'transfers.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx') + read('desktop', 'src', 'renderer', 'DesktopTransfersPage.tsx')
 const web = read('web', 'src', 'App.tsx')
@@ -38,9 +39,14 @@ test('shared transfer center exposes detailed progress and history fields', () =
   assert.ok(sharedModel.includes("direction: 'upload' | 'download' | 'local' | string"), 'shared transfer direction contract is missing')
 })
 
-test('Web and Desktop both render the shared transfer center', () => {
-  assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'Desktop must render the shared transfer center')
-  assert.equal((web.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'Web must render the shared transfer center')
+test('Web and Desktop both render the shared task center workspace', () => {
+  assert.ok(taskCenter.includes('XDriveFileOperationCenter'), 'shared task center must render file operations')
+  assert.ok(taskCenter.includes('XDriveTransferCenter'), 'shared task center must render transfers')
+  assert.ok(taskCenter.includes('清空传输历史'), 'shared task center must own the optional clear-history action')
+  assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render the shared task center')
+  assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render the shared task center')
+  assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')
+  assert.equal((web.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Web must not duplicate the transfer-center workspace')
   assert.ok(web.includes('primary="传输"'), 'Web sidebar must expose Transfers')
   assert.ok(desktop.includes('primary="传输"'), 'Desktop sidebar must keep Transfers')
 })

@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'FileOperationCenter.tsx')
+const taskCenter = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'file-operations.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
@@ -64,13 +65,14 @@ test('shared FileOperationCenter renders progress, history, cancel and retry act
   assert.ok(sharedMuiIndex.includes("export * from './FileOperationCenter'"), 'shared FileOperationCenter is not exported')
 })
 
-test('Web and Desktop both render the shared file-operation center inside Task Center', () => {
-  assert.equal((web.match(/<XDriveFileOperationCenter\b/g) || []).length, 1, 'Web must render one shared FileOperationCenter')
-  assert.equal((desktopPage.match(/<XDriveFileOperationCenter\b/g) || []).length, 1, 'Desktop must render one shared FileOperationCenter')
-  assert.ok(web.includes('title="任务中心"'), 'Web transfer workspace should become Task Center')
-  assert.ok(desktopPage.includes('title="任务中心"'), 'Desktop transfer workspace should become Task Center')
-  assert.ok(web.includes('<XDriveTransferCenter transfers={transfers} />'), 'Web Task Center must retain upload/download history')
-  assert.ok(desktopPage.includes('<XDriveTransferCenter'), 'Desktop Task Center must retain upload/download history')
+test('Web and Desktop both render the shared file-operation center through Task Center', () => {
+  assert.equal((taskCenter.match(/<XDriveFileOperationCenter\b/g) || []).length, 1, 'shared Task Center must render one FileOperationCenter')
+  assert.equal((taskCenter.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'shared Task Center must retain upload/download history')
+  assert.ok(taskCenter.includes('title="任务中心"'), 'shared workspace should own the Task Center title')
+  assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render one shared Task Center')
+  assert.equal((desktopPage.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render one shared Task Center')
+  assert.equal((web.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Web must not duplicate FileOperationCenter composition')
+  assert.equal((desktopPage.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Desktop must not duplicate FileOperationCenter composition')
 })
 
 test('Web polls persistent operations and refreshes Explorer only on terminal transitions', () => {

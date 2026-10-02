@@ -47,6 +47,8 @@ import {
   XDriveAccountMenu,
   XDriveActionButton,
   XDriveBrandLockup,
+  XDrivePasswordChangeForm,
+  xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -803,8 +805,13 @@ export default function App({
 
   const changePassword = async (event: FormEvent) => {
     event.preventDefault()
-    if (newPassword !== confirmPassword) {
-      setError('两次输入的新密码不一致。')
+    const validationError = xDrivePasswordChangeValidationError({
+      current: currentPassword,
+      next: newPassword,
+      confirm: confirmPassword,
+    })
+    if (validationError) {
+      setError(validationError)
       return
     }
     const result = await run('password', () => window.xdriveDesktop.agent.changePassword({
@@ -1700,55 +1707,30 @@ export default function App({
   if (status?.must_change_password) {
     return renderDesktopFrame(
       <div className="center-shell">
-        <form className="auth-panel auth-panel-form" onSubmit={changePassword}>
+        <div className="auth-panel auth-panel-form">
           <p className="eyebrow">需要修改密码</p>
           <h1>{headline}</h1>
           <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
-          <Stack className="auth-form" spacing={2}>
-            <TextField
-              fullWidth
-              size="small"
-              label="当前密码"
-              type="password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-            <TextField
-              fullWidth
-              size="small"
-              label="新密码"
-              type="password"
-              inputProps={{ minLength: 8 }}
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              autoComplete="new-password"
-              required
-            />
-            <TextField
-              fullWidth
-              size="small"
-              label="确认新密码"
-              type="password"
-              inputProps={{ minLength: 8 }}
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              autoComplete="new-password"
-              required
-            />
-            <XDriveActionButton
-              className="auth-submit"
-              fullWidth
-              intent="primary"
-              type="submit"
-              loading={busy === 'password'}
-              loadingLabel="正在更新…"
-            >
-              修改密码
-            </XDriveActionButton>
-          </Stack>
-        </form>
+          <XDrivePasswordChangeForm
+            className="auth-form"
+            buttonClassName="auth-submit"
+            submitFullWidth
+            values={{
+              current: currentPassword,
+              next: newPassword,
+              confirm: confirmPassword,
+            }}
+            error={error}
+            loading={busy === 'password'}
+            onChange={(field, value) => {
+              setError('')
+              if (field === 'current') setCurrentPassword(value)
+              else if (field === 'next') setNewPassword(value)
+              else setConfirmPassword(value)
+            }}
+            onSubmit={changePassword}
+          />
+        </div>
       </div>
     )
   }
