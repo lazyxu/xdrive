@@ -29,6 +29,7 @@ type FileOperation struct {
 	ProcessedBytes    int64      `gorm:"not null;default:0"`
 	CurrentItem       string     `gorm:"size:255"`
 	FailedItemID      uint64     `gorm:"not null;default:0"`
+	FailureCode       string     `gorm:"size:64;index"`
 	Error             string     `gorm:"type:text"`
 	CancelRequestedAt *time.Time `gorm:"index"`
 	StartedAt         *time.Time `gorm:"index"`

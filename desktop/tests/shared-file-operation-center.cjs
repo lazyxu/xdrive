@@ -28,6 +28,8 @@ test('shared file-operation model covers the persistent server lifecycle', () =>
     "'failed'",
     'xDriveFileOperationActive',
     'xDriveFileOperationPercent',
+    'failure_code?: string',
+    'retryable: boolean',
   ]) {
     assert.ok(sharedModel.includes(token), `shared operation model missing: ${token}`)
   }

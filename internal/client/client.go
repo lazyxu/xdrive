@@ -109,6 +109,7 @@ type FileOperation struct {
 	Percent           float64    `json:"percent"`
 	CurrentItem       string     `json:"current_item,omitempty"`
 	FailedItemID      uint64     `json:"failed_item_id,omitempty"`
+	FailureCode       string     `json:"failure_code,omitempty"`
 	Error             string     `json:"error,omitempty"`
 	Retryable         bool       `json:"retryable"`
 	CancelRequestedAt *time.Time `json:"cancel_requested_at,omitempty"`
