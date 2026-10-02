@@ -11,6 +11,7 @@ const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const styles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
+const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 
 test('Desktop files workspace consumes the shared FileExplorer', () => {
   assert.ok(cloudPage.includes("import DesktopFileExplorer from './DesktopFileExplorer'"), 'Desktop Cloud page must import the Explorer adapter')
@@ -48,7 +49,8 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
-  assert.ok(explorer.includes("replace(/\\\\/g, '/')"), 'typed paths should accept Windows separators')
+  assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
+  assert.ok(explorer.includes('xDriveResolveFileExplorerPath({'), 'Desktop Explorer should delegate typed-path traversal to the shared controller')
   assert.ok(explorer.includes('viewModeStorageKey: DESKTOP_FILE_VIEW_KEY'), 'Desktop Explorer should pass its view-mode storage key to the shared controller')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
