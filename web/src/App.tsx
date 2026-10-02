@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
@@ -44,6 +44,7 @@ import {
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
   XDriveTransferCenter,
+  XDriveFileOperationCenter,
   XDriveTrashDialog,
   XDriveVersionHistoryDialog,
   XDriveWorkspaceSurface,
@@ -63,7 +64,9 @@ import type {
   XDriveServerUpdateSource,
   XDriveServerUpdateState,
   XDriveTransferTask,
+  XDriveFileOperation,
 } from '../../ui/shared/src'
+import { xDriveFileOperationActive } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -502,6 +505,9 @@ function FileManager({
   const [renameNameError, setRenameNameError] = useState('')
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
+  const [fileOperations, setFileOperations] = useState<XDriveFileOperation[]>([])
+  const [fileOperationAction, setFileOperationAction] = useState('')
+  const fileOperationStatusRef = useRef(new Map<string, string>())
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
@@ -659,6 +665,54 @@ function FileManager({
   }, [api])
 
   useEffect(() => api.onTransfers(setTransfers), [api])
+
+  const refreshFileOperations = useCallback(async () => {
+    const operations = await api.fileOperations(100)
+    setFileOperations(operations)
+    return operations
+  }, [api])
+
+  useEffect(() => {
+    if (!profile || profile.must_change_password) return
+    let active = true
+    const refresh = async () => {
+      try {
+        const operations = await api.fileOperations(100)
+        if (active) setFileOperations(operations)
+      } catch {
+        // Background task polling must not turn a transient network failure into repeated UI alerts.
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 1500)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [api, profile?.id, profile?.must_change_password])
+
+  useEffect(() => {
+    const previous = fileOperationStatusRef.current
+    let shouldRefreshFiles = false
+    const next = new Map<string, string>()
+    for (const operation of fileOperations) {
+      const previousStatus = previous.get(operation.id)
+      if (
+        previousStatus &&
+        xDriveFileOperationActive(previousStatus) &&
+        !xDriveFileOperationActive(operation.status)
+      ) {
+        shouldRefreshFiles = true
+      }
+      next.set(operation.id, operation.status)
+    }
+    fileOperationStatusRef.current = next
+    if (!shouldRefreshFiles || !current) return
+    void loadDirectory(current.id, crumbs, directoryPage?.sort ?? DEFAULT_FILE_SORT)
+    void refreshQuota()
+    // Directory/task transitions are intentionally keyed only by operation snapshots.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileOperations])
 
   useEffect(() => {
     if (!profile || profile.must_change_password) return
@@ -875,6 +929,40 @@ function FileManager({
     })
   }
 
+  const rememberFileOperation = (operation: XDriveFileOperation) => {
+    fileOperationStatusRef.current.set(operation.id, operation.status)
+    setFileOperations((currentOperations) => [
+      operation,
+      ...currentOperations.filter((item) => item.id !== operation.id),
+    ])
+  }
+
+  const cancelFileOperation = async (id: string) => {
+    setFileOperationAction(`cancel:${id}`)
+    try {
+      rememberFileOperation(await api.cancelFileOperation(id))
+      await refreshFileOperations()
+    } catch (error) {
+      handleError(error)
+    } finally {
+      setFileOperationAction('')
+    }
+  }
+
+  const retryFileOperation = async (id: string) => {
+    setFileOperationAction(`retry:${id}`)
+    try {
+      const operation = await api.retryFileOperation(id)
+      rememberFileOperation(operation)
+      setFeedback({ tone: 'good', message: '文件操作已重新加入队列。' })
+      await refreshFileOperations()
+    } catch (error) {
+      handleError(error)
+    } finally {
+      setFileOperationAction('')
+    }
+  }
+
   const removeMany = (nodes: Node[]) => {
     if (nodes.length === 0) return
     setConfirmAction({
@@ -883,10 +971,12 @@ function FileManager({
       confirmLabel: '移到回收站',
       intent: 'danger',
       run: async () => {
-        await api.batchDelete(nodes.map((node) => ({ id: node.id, revision: node.revision })))
-        setFeedback({ tone: 'good', message: `已将 ${nodes.length} 个项目移到回收站` })
-        if (current) await loadDirectory(current.id)
-        await refreshQuota()
+        const operation = await api.createFileOperation(
+          'delete',
+          nodes.map((node) => ({ id: node.id, revision: node.revision })),
+        )
+        rememberFileOperation(operation)
+        setFeedback({ tone: 'good', message: `已将 ${nodes.length} 个项目加入删除任务。` })
       },
     })
   }
@@ -940,7 +1030,7 @@ function FileManager({
               selected={appView === 'transfers'}
               icon={<SwapVertRoundedIcon fontSize="small" />}
               primary="传输"
-              badge={transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length || undefined}
+              badge={(transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length + fileOperations.filter((item) => xDriveFileOperationActive(item.status)).length) || undefined}
               onClick={() => setAppView('transfers')}
             />
             <XDriveSidebarNavItem
@@ -1033,7 +1123,7 @@ function FileManager({
                 }}
                 onRemove={remove}
                 onRemoveMany={removeMany}
-                onQuotaChanged={refreshQuota}
+                onOperationQueued={rememberFileOperation}
                 onFeedback={(tone, message) => setFeedback({ tone, message })}
                 onShare={setShareNode}
                 onHistory={openHistory}
@@ -1057,18 +1147,35 @@ function FileManager({
         ) : appView === 'transfers' ? (
           <XDriveWorkspaceSurface
             presentation="page"
-            title="传输"
-            subtitle="查看上传和下载的实时进度与历史记录。"
+            title="任务中心"
+            subtitle="统一查看文件操作、上传和下载的实时进度与历史状态。"
             pageActions={(
               <XDriveActionButton
                 disabled={!transfers.some((item) => item.state === 'completed' || item.state === 'failed')}
                 onClick={() => api.clearTransferHistory()}
               >
-                清空历史
+                清空传输历史
               </XDriveActionButton>
             )}
           >
-            <XDriveTransferCenter transfers={transfers} />
+            <Stack spacing={3}>
+              <Box>
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>文件操作</Typography>
+                <XDriveFileOperationCenter
+                  operations={fileOperations}
+                  cancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
+                  retryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}
+                  disabled={Boolean(fileOperationAction)}
+                  onCancel={(id) => { void cancelFileOperation(id) }}
+                  onRetry={(id) => { void retryFileOperation(id) }}
+                />
+              </Box>
+              <Divider />
+              <Box>
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>上传与下载</Typography>
+                <XDriveTransferCenter transfers={transfers} />
+              </Box>
+            </Stack>
           </XDriveWorkspaceSurface>
         ) : appView === 'storage' ? (
           <StorageStatsPanel

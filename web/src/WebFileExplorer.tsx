@@ -21,7 +21,7 @@ import type {
   XDriveFileExplorerSort,
   XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
-import type { Node } from '../../ui/shared/src'
+import type { Node, XDriveFileOperation } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
 
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
@@ -58,7 +58,7 @@ export default function WebFileExplorer({
   onRename,
   onRemove,
   onRemoveMany,
-  onQuotaChanged,
+  onOperationQueued,
   onFeedback,
   onShare,
   onHistory,
@@ -80,7 +80,7 @@ export default function WebFileExplorer({
   onRename: (node: Node) => void
   onRemove: (node: Node) => void
   onRemoveMany: (nodes: Node[]) => void
-  onQuotaChanged: () => Promise<unknown>
+  onOperationQueued: (operation: XDriveFileOperation) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
   onShare: (node: Node) => void
   onHistory: (node: Node) => void
@@ -358,13 +358,17 @@ export default function WebFileExplorer({
         : clipboard.nodes
       if (nodes.length > 0) {
         const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
-        if (clipboard.mode === 'cut') await api.batchMove(refs, current.id)
-        else await api.batchCopy(refs, current.id)
+        const queued = await api.createFileOperation(clipboard.mode === 'cut' ? 'move' : 'copy', refs, current.id)
+        onOperationQueued(queued)
+        onFeedback(
+          'good',
+          clipboard.mode === 'cut'
+            ? `已将 ${nodes.length} 个项目加入移动任务。`
+            : `已将 ${nodes.length} 个项目加入复制任务。`,
+        )
       }
       if (clipboard.mode === 'cut') setClipboard(null)
       clearSearch()
-      await onLoadDirectory(current.id, crumbs, sort)
-      await onQuotaChanged()
     } catch (error) {
       onError(error)
     } finally {
@@ -384,12 +388,15 @@ export default function WebFileExplorer({
     setClipboardBusy(true)
     try {
       const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
-      if (operation === 'copy') await api.batchCopy(refs, targetNode.id)
-      else await api.batchMove(refs, targetNode.id)
+      const queued = await api.createFileOperation(operation, refs, targetNode.id)
+      onOperationQueued(queued)
       clearSearch()
-      if (current) await onLoadDirectory(current.id, crumbs, sort)
-      await onQuotaChanged()
-      onFeedback('good', operation === 'copy' ? '已复制到目标文件夹。' : '已移动到目标文件夹。')
+      onFeedback(
+        'good',
+        operation === 'copy'
+          ? `已将 ${nodes.length} 个项目加入复制任务。`
+          : `已将 ${nodes.length} 个项目加入移动任务。`,
+      )
     } catch (error) {
       onError(error)
     } finally {

@@ -130,3 +130,74 @@ test('Desktop exposes atomic cloud batch mutations through every IPC layer', () 
   assert.ok(types.includes('type AgentCloudBatchResult = {'), 'renderer batch result type is missing')
   assert.ok(types.includes('cloudBatchDelete: (items: AgentCloudBatchNodeRef[])'), 'renderer batch-delete method type is missing')
 })
+
+
+test('Desktop exposes persistent file-operation lifecycle through every bridge layer', () => {
+  for (const token of [
+    'CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64)',
+    'CloudFileOperations(context.Context, int)',
+    'CloudFileOperation(context.Context, string)',
+    'CloudCancelFileOperation(context.Context, string)',
+    'CloudRetryFileOperation(context.Context, string)',
+    'POST /v1/cloud/file-operations',
+    'GET /v1/cloud/file-operations',
+    'GET /v1/cloud/file-operation',
+    'POST /v1/cloud/file-operation/cancel',
+    'POST /v1/cloud/file-operation/retry',
+  ]) {
+    assert.ok(agentIPC.includes(token), `missing Agent file-operation IPC contract: ${token}`)
+  }
+
+  for (const token of [
+    'cli.CreateFileOperation(ctx, operationType, items, parentID)',
+    'cli.ListFileOperations(ctx, limit)',
+    'cli.GetFileOperation(ctx, strings.TrimSpace(id))',
+    'cli.CancelFileOperation(ctx, strings.TrimSpace(id))',
+    'cli.RetryFileOperation(ctx, strings.TrimSpace(id))',
+  ]) {
+    assert.ok(cloudFiles.includes(token), `Agent controller is not using the Go file-operation client: ${token}`)
+  }
+
+  for (const token of [
+    "cloudCreateFileOperation(type: AgentCloudFileOperation['type'], items: AgentCloudBatchNodeRef[], parentID?: number)",
+    'cloudFileOperations(limit = 100)',
+    'cloudFileOperation(id: string)',
+    'cloudCancelFileOperation(id: string)',
+    'cloudRetryFileOperation(id: string)',
+  ]) {
+    assert.ok(agentClient.includes(token), `missing Electron Agent file-operation client: ${token}`)
+  }
+
+  for (const token of [
+    "ipcMain.handle('agent:cloud-file-operation-create'",
+    "ipcMain.handle('agent:cloud-file-operations'",
+    "ipcMain.handle('agent:cloud-file-operation'",
+    "ipcMain.handle('agent:cloud-file-operation-cancel'",
+    "ipcMain.handle('agent:cloud-file-operation-retry'",
+    'normalizeCloudBatchItems(items)',
+    'normalizeCloudFileOperationType(type)',
+  ]) {
+    assert.ok(main.includes(token), `missing validated Electron file-operation bridge: ${token}`)
+  }
+
+  assert.ok(preload.includes('cloudCreateFileOperation:'), 'preload create-operation bridge is missing')
+  assert.ok(preload.includes('cloudFileOperations:'), 'preload operation-list bridge is missing')
+  assert.ok(preload.includes('cloudCancelFileOperation:'), 'preload cancel-operation bridge is missing')
+  assert.ok(preload.includes('cloudRetryFileOperation:'), 'preload retry-operation bridge is missing')
+  assert.ok(types.includes('type AgentCloudFileOperation = XDriveFileOperation'), 'renderer shared operation type alias is missing')
+  assert.ok(types.includes('cloudCreateFileOperation:'), 'renderer create-operation method type is missing')
+  assert.ok(types.includes('cloudFileOperations:'), 'renderer operation-list method type is missing')
+})
+
+test('legacy synchronous batch mutation bridges remain available for compatibility', () => {
+  for (const token of [
+    'cloudBatchCopy(items: AgentCloudBatchNodeRef[], parentID: number)',
+    'cloudBatchMove(items: AgentCloudBatchNodeRef[], parentID: number)',
+    'cloudBatchDelete(items: AgentCloudBatchNodeRef[])',
+  ]) {
+    assert.ok(agentClient.includes(token), `legacy Electron batch client was removed: ${token}`)
+  }
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-copy'"), 'legacy batch-copy handler was removed')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-move'"), 'legacy batch-move handler was removed')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-delete'"), 'legacy batch-delete handler was removed')
+})

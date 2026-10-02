@@ -21,6 +21,7 @@ import type {
   StorageStats,
   BuildInfo,
   UpdateExternalSourceInput,
+  XDriveFileOperation,
 } from '@xdrive/shared'
 
 export {}
@@ -216,6 +217,7 @@ declare global {
     items?: AgentCloudNode[]
     deleted_ids?: number[]
   }
+  type AgentCloudFileOperation = XDriveFileOperation
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = {
     items: AgentCloudNode[]
@@ -351,6 +353,11 @@ declare global {
         cloudBatchCopy: (items: AgentCloudBatchNodeRef[], parentID: number) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudBatchMove: (items: AgentCloudBatchNodeRef[], parentID: number) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudBatchDelete: (items: AgentCloudBatchNodeRef[]) => Promise<DesktopResult<AgentCloudBatchResult>>
+        cloudCreateFileOperation: (type: AgentCloudFileOperation['type'], items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudFileOperations: (limit?: number) => Promise<DesktopResult<AgentCloudFileOperation[]>>
+        cloudFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudCancelFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudRetryFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>

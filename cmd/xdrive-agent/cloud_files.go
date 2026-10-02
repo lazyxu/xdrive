@@ -232,6 +232,51 @@ func (c *agentController) CloudBatchDelete(ctx context.Context, items []client.B
 	return result, err
 }
 
+func (c *agentController) CloudCreateFileOperation(
+	ctx context.Context,
+	operationType string,
+	items []client.BatchNodeRef,
+	parentID uint64,
+) (client.FileOperation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileOperation{}, err
+	}
+	return cli.CreateFileOperation(ctx, operationType, items, parentID)
+}
+
+func (c *agentController) CloudFileOperations(ctx context.Context, limit int) ([]client.FileOperation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.ListFileOperations(ctx, limit)
+}
+
+func (c *agentController) CloudFileOperation(ctx context.Context, id string) (client.FileOperation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileOperation{}, err
+	}
+	return cli.GetFileOperation(ctx, strings.TrimSpace(id))
+}
+
+func (c *agentController) CloudCancelFileOperation(ctx context.Context, id string) (client.FileOperation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileOperation{}, err
+	}
+	return cli.CancelFileOperation(ctx, strings.TrimSpace(id))
+}
+
+func (c *agentController) CloudRetryFileOperation(ctx context.Context, id string) (client.FileOperation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileOperation{}, err
+	}
+	return cli.RetryFileOperation(ctx, strings.TrimSpace(id))
+}
+
 func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, localPath, name string) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {
