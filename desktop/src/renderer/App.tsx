@@ -207,10 +207,8 @@ export default function App({
   const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
   const [cloudStorageStats, setCloudStorageStats] = useState<AgentCloudStorageStats | null>(null)
   const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
-  const [cloudTrash, setCloudTrash] = useState<AgentCloudNode[]>([])
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
-  const [cloudVersions, setCloudVersions] = useState<AgentCloudVersion[]>([])
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
 
   const mediaGallerySource = useMemo<MediaGalleryDataSource>(() => ({
@@ -538,10 +536,8 @@ export default function App({
       setCloudCrumbs([])
       setCloudQuota(null)
       setCloudStorageStats(null)
-      setCloudTrash([])
       setCloudHistoryNode(null)
       setCloudHistoryCrumbs([])
-      setCloudVersions([])
       setCloudShareNode(null)
       return
     }
@@ -1124,21 +1120,7 @@ export default function App({
     }
   }
 
-  const loadCloudTrash = async () => {
-    setBusy('cloud-trash')
-    setError('')
-    try {
-      const result = await window.xdriveDesktop.agent.cloudTrash()
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setCloudTrash(result.data)
-      setCloudTrashOpen(true)
-    } finally {
-      setBusy('')
-    }
-  }
+  const openCloudTrash = () => setCloudTrashOpen(true)
 
   const removeCloudNode = (node: AgentCloudNode) => {
     requestConfirmation(
@@ -1193,70 +1175,9 @@ export default function App({
     )
   }
 
-  const restoreCloudTrash = async (node: AgentCloudNode) => {
-    const data = await run('cloud-trash-restore', () => window.xdriveDesktop.agent.cloudRestoreTrash(node.id, node.revision), '项目已恢复。')
-    if (!data) return
-    await loadCloudTrash()
-    await refreshCloudQuota()
-    if (cloudCrumbs.length > 0) await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
-  }
-
-  const deleteCloudTrash = (node: AgentCloudNode) => {
-    requestConfirmation(
-      '永久删除项目？',
-      `永久删除“${node.name}”也会删除已保存的历史版本，且无法撤销。`,
-      '永久删除',
-      async () => {
-        const data = await run('cloud-trash-delete', () => window.xdriveDesktop.agent.cloudDeleteTrash(node.id, node.revision), '已永久删除。')
-        if (!data) return
-        await loadCloudTrash()
-        await refreshCloudQuota()
-      },
-      'error',
-    )
-  }
-
-  const openCloud历史版本 = async (node: AgentCloudNode, crumbs = cloudCrumbs) => {
-    setBusy('cloud-history')
-    setError('')
-    try {
-      const result = await window.xdriveDesktop.agent.cloudVersions(node.id)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      setCloudHistoryNode(node)
-      setCloudHistoryCrumbs(crumbs)
-      setCloudVersions(result.data)
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const restoreCloudVersion = (version: AgentCloudVersion) => {
-    if (!cloudHistoryNode) return
-    const historyNode = cloudHistoryNode
-    requestConfirmation(
-      '恢复历史版本？',
-      `将“${historyNode.name}”恢复到版本 r${version.revision}。当前内容会先保留到历史版本中。`,
-      '恢复版本',
-      async () => {
-        const restored = await run(
-          'cloud-version-restore',
-          () => window.xdriveDesktop.agent.cloudRestoreVersion(historyNode.id, historyNode.revision, version.id),
-          '版本已恢复。',
-        )
-        if (!restored) return
-        setCloudHistoryNode(restored)
-        const versions = await window.xdriveDesktop.agent.cloudVersions(restored.id)
-        if (versions.ok) setCloudVersions(versions.data)
-        await refreshCloudQuota()
-        if (cloudHistoryCrumbs.length > 0) {
-          await loadCloudDirectory(cloudHistoryCrumbs.at(-1)!.id, cloudHistoryCrumbs)
-        }
-      },
-      'warning',
-    )
+  const openCloud历史版本 = (node: AgentCloudNode, crumbs = cloudCrumbs) => {
+    setCloudHistoryNode(node)
+    setCloudHistoryCrumbs(crumbs)
   }
 
   const openCloudShares = (node: AgentCloudNode) => {
@@ -1966,8 +1887,8 @@ export default function App({
               hasMore: cloudPage?.hasMore ?? false,
               onLoadDirectory: loadCloudDirectory,
               onLoadMore: loadMoreCloudDirectory,
-              onOpenTrash: () => { void loadCloudTrash() },
-              onOpenHistory: (node, crumbs) => { void openCloud历史版本(node, crumbs) },
+              onOpenTrash: openCloudTrash,
+              onOpenHistory: openCloud历史版本,
               onOpenShares: openCloudShares,
               onDelete: removeCloudNode,
               onDeleteMany: removeCloudNodes,
@@ -1975,25 +1896,32 @@ export default function App({
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}
-            busy={Boolean(busy)}
             trashOpen={cloudTrashOpen}
-            trash={cloudTrash}
             onCloseTrash={() => setCloudTrashOpen(false)}
-            onRestoreTrash={(node) => { void restoreCloudTrash(node) }}
-            onDeleteTrash={deleteCloudTrash}
+            onTrashChanged={async () => {
+              await refreshCloudQuota()
+              if (cloudCrumbs.length > 0) {
+                await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
+              }
+            }}
             historyNode={cloudHistoryNode}
-            historyVersions={cloudVersions}
             onCloseHistory={() => {
               setCloudHistoryNode(null)
               setCloudHistoryCrumbs([])
-              setCloudVersions([])
             }}
-            onRestoreHistory={restoreCloudVersion}
+            onHistoryRestored={async (restored) => {
+              setCloudHistoryNode(restored)
+              await refreshCloudQuota()
+              if (cloudHistoryCrumbs.length > 0) {
+                await loadCloudDirectory(cloudHistoryCrumbs.at(-1)!.id, cloudHistoryCrumbs)
+              }
+            }}
             shareNode={cloudShareNode}
             onCloseShare={() => setCloudShareNode(null)}
-            onShareError={(shareError) => setError(
-              shareError instanceof Error ? shareError.message : String(shareError),
+            onFileDialogError={(dialogError) => setError(
+              dialogError instanceof Error ? dialogError.message : String(dialogError),
             )}
+            onFileDialogFeedback={(message) => setNotice(message)}
           />
         )}
 

@@ -8,6 +8,8 @@ const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'
 const sharedSourceManager = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
 const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
 const sharedShareDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
+const sharedTrashDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'TrashDialog.tsx'), 'utf8')
+const sharedVersionHistoryDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'VersionHistoryDialog.tsx'), 'utf8')
 const desktopSourceAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'shareDialogAdapter.ts'), 'utf8')
 const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopOverviewPage.tsx'), 'utf8')
@@ -23,6 +25,8 @@ const renderer = [
   sharedSourceManager,
   sharedSettingsDialog,
   sharedShareDialog,
+  sharedTrashDialog,
+  sharedVersionHistoryDialog,
   desktopSourceAdapter,
   desktopShareAdapter,
   desktopOverviewPage,
@@ -257,8 +261,8 @@ test('desktop transient management surfaces use shared modal features', () => {
   assert.ok(desktopCloudPage.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
   assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
   assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
-  assert.ok(desktopCloudPage.includes('open={trashOpen}'), 'cloud trash dialog is missing')
-  assert.ok(desktopCloudPage.includes('open={Boolean(historyNode)}'), 'cloud history dialog is missing')
+  assert.ok(desktopCloudPage.includes('<XDriveTrashDialog'), 'Desktop cloud page must render the shared trash dialog')
+  assert.ok(desktopCloudPage.includes('<XDriveVersionHistoryDialog'), 'Desktop cloud page must render the shared version history dialog')
   assert.equal(rendererApp.includes('source-create modal-form-surface'), false, 'Desktop must not retain a local Source create shell')
   assert.equal(rendererApp.includes('source-settings modal-form-surface'), false, 'Desktop must not retain a local Source settings shell')
 })
@@ -273,6 +277,8 @@ test('desktop dialogs share one title, paper, content, and action treatment', ()
   assert.ok(dialogContent.includes('export function XDriveDialogContent({'), 'shared dialog content component is missing')
   assert.ok(sharedSourceManager.includes('<XDriveDialogActions>'), 'shared Source dialogs must use shared actions')
   assert.ok(sharedSourceManager.includes('<XDriveDialogContent'), 'shared Source dialogs must use shared content')
+  assert.ok(sharedTrashDialog.includes('<XDriveDialogContent dividers>'), 'shared Trash dialog must use shared content')
+  assert.ok(sharedVersionHistoryDialog.includes('<XDriveDialogContent dividers>'), 'shared Version History dialog must use shared content')
   assert.ok(sharedSettingsDialog.includes('<XDriveDialogContent dividers>'), 'shared Settings dialog must use shared content')
   assert.ok(sharedShareDialog.includes('<XDriveDialogContent dividers>'), 'shared Share dialog must use shared content')
   assert.equal(/<DialogContent(?:\s|>)/.test(rendererApp), false, 'raw MUI DialogContent remains in Desktop App')
