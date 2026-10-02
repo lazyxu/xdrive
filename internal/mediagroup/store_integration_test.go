@@ -223,6 +223,7 @@ func TestReconcileAppleLivePhotoProjectsAndRemovesAmbiguity(t *testing.T) {
 		{ParentID: &root.ID, Name: "IMG_0001.HEIC", Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1},
 		{ParentID: &root.ID, Name: "IMG_0001.MOV", Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1},
 		{ParentID: &root.ID, Name: "duplicate.JPG", Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1},
+		{ParentID: &root.ID, Name: "archive.livp", Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1},
 	}
 	if err := db.Create(&nodes).Error; err != nil {
 		t.Fatal(err)
@@ -238,6 +239,12 @@ func TestReconcileAppleLivePhotoProjectsAndRemovesAmbiguity(t *testing.T) {
 			NodeID: nodes[1].ID, OwnerID: owner.ID, NodeRevision: 1,
 			MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime",
 			LivePhotoAssetIdentifier: identifier, IndexState: meta.MediaIndexStateReady,
+		},
+		{
+			NodeID: nodes[3].ID, OwnerID: owner.ID, NodeRevision: 1,
+			MediaKind: meta.MediaKindImage, MIMEType: "application/x-livp",
+			ContainerKind: "livp", LivePhotoAssetIdentifier: identifier,
+			IndexState: meta.MediaIndexStateReady,
 		},
 	}
 	if err := db.Create(&rows).Error; err != nil {

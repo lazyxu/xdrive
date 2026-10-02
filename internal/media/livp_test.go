@@ -145,3 +145,40 @@ func TestInspectLIVPRejectsOversizedArchive(t *testing.T) {
 		t.Fatalf("oversized livp error=%v", err)
 	}
 }
+
+func TestExtractLIVPProjectsContainerMetadata(t *testing.T) {
+	const identifier = "7F30CDE2-530E-4372-B51C-83A9F1D613CF"
+	archive := buildStoredLIVP(t, []livpTestEntry{
+		{Name: "photo.jpeg", Data: buildJPEGWithAppleIdentifier(identifier)},
+		{Name: "photo.mov", Data: buildMovieWithQuickTimeIdentifier(identifier)},
+	}, "ignored-provider-comment")
+
+	result, err := Extract("photo.livp", bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != KindImage {
+		t.Fatalf("kind=%q want=%q", result.Kind, KindImage)
+	}
+	if result.MIMEType != LIVPMIMEType || result.ContainerKind != ContainerKindLIVP {
+		t.Fatalf("container metadata: mime=%q kind=%q", result.MIMEType, result.ContainerKind)
+	}
+	if result.LivePhotoAssetIdentifier != identifier {
+		t.Fatalf("identifier=%q want=%q", result.LivePhotoAssetIdentifier, identifier)
+	}
+	if !strings.Contains(result.ContainerJSON, "\"still\"") ||
+		!strings.Contains(result.ContainerJSON, "\"motion\"") ||
+		!strings.Contains(result.ContainerJSON, identifier) {
+		t.Fatalf("container json=%q", result.ContainerJSON)
+	}
+}
+
+func TestExtractLIVPRejectsInvalidContainer(t *testing.T) {
+	result, err := Extract("broken.livp", bytes.NewReader([]byte("not a zip")), int64(len("not a zip")))
+	if err == nil {
+		t.Fatal("invalid livp was accepted")
+	}
+	if result.Kind != KindOther || result.MIMEType != LIVPMIMEType || result.ContainerKind != ContainerKindLIVP {
+		t.Fatalf("invalid livp result=%+v", result)
+	}
+}

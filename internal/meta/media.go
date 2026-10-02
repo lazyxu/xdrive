@@ -22,6 +22,8 @@ type MediaMetadata struct {
 	SHA256                   string `gorm:"size:64;index"`
 	MediaKind                string `gorm:"size:16;not null;default:other;index;index:idx_xd_media_owner_kind_time,priority:2"`
 	MIMEType                 string `gorm:"size:128;index"`
+	ContainerKind            string `gorm:"size:32;not null;default:'';index"`
+	ContainerJSON            string `gorm:"type:text"`
 	LivePhotoAssetIdentifier string `gorm:"size:128;index;index:idx_xd_media_owner_live_asset,priority:2"`
 
 	Width       int `gorm:"not null;default:0"`

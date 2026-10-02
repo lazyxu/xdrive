@@ -2,6 +2,7 @@ package media
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 )
 
 const (
+	ContainerKindLIVP   = "livp"
+	LIVPMIMEType        = "application/x-livp"
 	maxLIVPArchiveBytes = int64(6 << 30) // 6 GiB including ZIP overhead
 	maxLIVPImageBytes   = int64(1 << 30) // 1 GiB
 	maxLIVPVideoBytes   = int64(4 << 30) // 4 GiB
@@ -198,4 +201,73 @@ func inspectStoredLIVPEntry(
 		return out, 0, err
 	}
 	return out, offset, nil
+}
+
+type livpContainerMetadata struct {
+	AssetIdentifier string                `json:"asset_identifier"`
+	Still           livpContainerResource `json:"still"`
+	Motion          livpContainerResource `json:"motion"`
+}
+
+type livpContainerResource struct {
+	Name     string `json:"name"`
+	Offset   int64  `json:"offset"`
+	Size     int64  `json:"size"`
+	MIMEType string `json:"mime_type,omitempty"`
+}
+
+// extractLIVP projects a validated .livp container as one logical image media
+// item while preserving the original container as the only filesystem Node.
+// Embedded still/motion resources remain derived local resources, not Nodes or
+// SourceItems.
+func extractLIVP(r io.ReaderAt, size int64) (Result, error) {
+	out := Result{
+		Kind:          KindOther,
+		MIMEType:      LIVPMIMEType,
+		ContainerKind: ContainerKindLIVP,
+		Orientation:   1,
+	}
+	info, err := InspectLIVP(r, size)
+	if err != nil {
+		return out, err
+	}
+
+	out.Kind = KindImage
+	out.LivePhotoAssetIdentifier = info.AssetIdentifier
+
+	out.Width = info.Still.Width
+	out.Height = info.Still.Height
+	out.Orientation = info.Still.Orientation
+	out.CapturedAt = info.Still.CapturedAt
+	out.Latitude = info.Still.Latitude
+	out.Longitude = info.Still.Longitude
+	out.AltitudeM = info.Still.AltitudeM
+	out.CameraMake = info.Still.CameraMake
+	out.CameraModel = info.Still.CameraModel
+	out.LensModel = info.Still.LensModel
+	out.EXIFJSON = info.Still.EXIFJSON
+
+	out.RotationDegrees = info.Motion.RotationDegrees
+	out.DurationMS = info.Motion.DurationMS
+	out.FrameRate = info.Motion.FrameRate
+	out.BitRate = info.Motion.BitRate
+	out.VideoCodec = info.Motion.VideoCodec
+	out.AudioCodec = info.Motion.AudioCodec
+	out.VideoJSON = info.Motion.VideoJSON
+
+	container := livpContainerMetadata{
+		AssetIdentifier: info.AssetIdentifier,
+		Still: livpContainerResource{
+			Name: info.StillName, Offset: info.StillOffset, Size: info.StillSize,
+			MIMEType: info.Still.MIMEType,
+		},
+		Motion: livpContainerResource{
+			Name: info.MotionName, Offset: info.MotionOffset, Size: info.MotionSize,
+			MIMEType: info.Motion.MIMEType,
+		},
+	}
+	if encoded, encodeErr := json.Marshal(container); encodeErr == nil {
+		out.ContainerJSON = string(encoded)
+	}
+	return out, nil
 }
