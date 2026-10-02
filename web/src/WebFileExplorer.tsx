@@ -12,6 +12,7 @@ import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
+import { xDriveResolveFileExplorerPath } from '../../ui/shared/src'
 import type { Node, XDriveFileOperation } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
 
@@ -132,22 +133,12 @@ export default function WebFileExplorer({
     try {
       const root = await api.root()
       const rootName = crumbs[0]?.name || '我的文件'
-      const parts = rawPath
-        .replace(/\\/g, '/')
-        .split('/')
-        .map((part) => part.trim())
-        .filter(Boolean)
-      if (parts[0] === rootName || parts[0] === '我的文件') parts.shift()
-
-      let parentID = root.id
-      const nextCrumbs: Crumb[] = [{ id: root.id, name: rootName }]
-      for (const part of parts) {
-        const children = await api.list(parentID)
-        const next = children.find((node) => node.type === 'dir' && node.name === part)
-        if (!next) throw new Error(`找不到文件夹：${part}`)
-        parentID = next.id
-        nextCrumbs.push({ id: next.id, name: next.name })
-      }
+      const nextCrumbs = await xDriveResolveFileExplorerPath({
+        rawPath,
+        rootID: root.id,
+        rootName,
+        listChildren: (parentID) => api.list(parentID),
+      })
       await navigateTo(nextCrumbs)
     } catch (error) {
       onError(error)

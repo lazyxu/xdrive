@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { xDriveResolveFileExplorerPath } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
@@ -122,29 +123,16 @@ export default function DesktopFileExplorer({
         return
       }
       const rootName = crumbs[0]?.name || '我的文件'
-      const parts = rawPath
-        .replace(/\\/g, '/')
-        .split('/')
-        .map((part) => part.trim())
-        .filter(Boolean)
-      if (parts[0] === rootName || parts[0] === '我的文件') parts.shift()
-
-      let parentID = rootResult.data.id
-      const nextCrumbs: AgentCloudCrumb[] = [{ id: parentID, name: rootName }]
-      for (const part of parts) {
-        const result = await window.xdriveDesktop.agent.cloudChildren(parentID)
-        if (!result.ok) {
-          onError(result.error.message)
-          return
-        }
-        const next = result.data.find((node) => node.type === 'dir' && node.name === part)
-        if (!next) {
-          onError(`找不到文件夹：${part}`)
-          return
-        }
-        parentID = next.id
-        nextCrumbs.push({ id: next.id, name: next.name })
-      }
+      const nextCrumbs = await xDriveResolveFileExplorerPath({
+        rawPath,
+        rootID: rootResult.data.id,
+        rootName,
+        listChildren: async (parentID) => {
+          const result = await window.xdriveDesktop.agent.cloudChildren(parentID)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        },
+      })
       await navigateTo(nextCrumbs)
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))

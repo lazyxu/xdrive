@@ -9,6 +9,7 @@ const explorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplo
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const api = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'api.ts'), 'utf8')
+const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 
 test('Web files workspace consumes the shared FileExplorer instead of a bespoke table', () => {
   assert.ok(app.includes('<WebFileExplorer'), 'Web files workspace did not migrate to its Explorer adapter')
@@ -28,7 +29,8 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
   ]) {
     assert.ok(explorer.includes(token), `missing Web Explorer navigation contract: ${token}`)
   }
-  assert.ok(explorer.includes("replace(/\\\\/g, '/')"), 'typed paths should accept Windows-style separators')
+  assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows-style separators')
+  assert.ok(explorer.includes('xDriveResolveFileExplorerPath({'), 'Web Explorer should delegate typed-path traversal to the shared controller')
   assert.ok(explorer.includes('viewModeStorageKey: FILE_VIEW_KEY'), 'Web Explorer should pass its view-mode storage key to the shared controller')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
