@@ -409,6 +409,22 @@ func optionalCollectionFailure(err error) error {
 	return &optionalCollectionError{err: err}
 }
 
+func classifyCollectionProviderFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, synology.ErrAuthentication),
+		errors.Is(err, synology.ErrHTTPForbidden),
+		errors.Is(err, synology.ErrPermissionDenied),
+		errors.Is(err, synology.ErrOTPRequired),
+		errors.Is(err, synology.ErrSessionExpired):
+		return err
+	default:
+		return optionalCollectionFailure(err)
+	}
+}
+
 type collectionScanStats struct {
 	Albums               int64
 	AlbumMemberships     int64
@@ -459,8 +475,12 @@ func scanCollections(
 					if ctxErr := ctx.Err(); ctxErr != nil {
 						return nil, stats, ctxErr
 					}
-					return nil, stats, optionalCollectionFailure(
-						fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err))
+					classified := classifyCollectionProviderFailure(err)
+					if _, optional := classified.(*optionalCollectionError); optional {
+						return nil, stats, optionalCollectionFailure(
+							fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, err))
+					}
+					return nil, stats, fmt.Errorf("scan Synology %s album %q items: %w", space, album.Name, classified)
 				}
 				for _, remoteItem := range page.List {
 					stats.AlbumMemberships++
@@ -520,7 +540,7 @@ func collectAlbums(ctx context.Context, remote Remote, space synology.Space, hea
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			return nil, optionalCollectionFailure(err)
+			return nil, classifyCollectionProviderFailure(err)
 		}
 		for _, album := range page.List {
 			if album.ID <= 0 {

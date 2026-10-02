@@ -2,6 +2,7 @@ package synologysync
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -98,9 +99,13 @@ func (f *fakeRemote) ListItemsPage(_ context.Context, _ synology.Space, offset, 
 
 type albumListErrorRemote struct {
 	*fakeRemote
+	err error
 }
 
 func (r *albumListErrorRemote) ListAlbumsPage(context.Context, synology.Space, int, int) (synology.AlbumPage, error) {
+	if r.err != nil {
+		return synology.AlbumPage{}, r.err
+	}
 	return synology.AlbumPage{}, synology.ErrUnavailable
 }
 
@@ -413,6 +418,24 @@ func TestScannerKeepsFileInventoryWhenAlbumListingFails(t *testing.T) {
 	}
 	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "相册元数据本轮未更新") {
 		t.Fatalf("album warning=%v", result.Errors)
+	}
+}
+
+func TestScannerKeepsAlbumAuthenticationFailureFatal(t *testing.T) {
+	remote := &albumListErrorRemote{
+		fakeRemote: &fakeRemote{
+			albums: map[synology.Space][]synology.Album{
+				synology.SpacePersonal: {{ID: 101, Name: "Trips"}},
+			},
+		},
+		err: synology.ErrAuthentication,
+	}
+	_, err := (Scanner{
+		Remote: remote, API: &fakeAPI{}, SourceID: 1, RunID: "run-album-auth",
+		Mode: meta.SourceRunModeScan, Spaces: []synology.Space{synology.SpacePersonal},
+	}).Scan(context.Background())
+	if !errors.Is(err, synology.ErrAuthentication) {
+		t.Fatalf("album authentication err=%v want ErrAuthentication", err)
 	}
 }
 
