@@ -128,6 +128,12 @@ The following concepts are optional enrichments layered above generic files:
 
 They do not replace `Node + File + CAS`, and unsupported/non-media files never need them.
 
+## Integrity verification
+
+`xdrive-server source verify [--json]` performs a read-only consistency check of Source targets and persisted SourceItem -> Node/File bindings. It reports deterministic binding damage such as synced items without Nodes, deleted/wrong-owner/wrong-type bound Nodes, missing File metadata, and SourceItem size/SHA drift against the currently bound File.
+
+This verifier intentionally does not repair or mutate Source state. A later repair command may requeue only issue types with a proven idempotent recovery path. Storage/CAS byte verification remains the separate `xdrive-server storage verify` responsibility.
+
 ## Deletion and recovery
 
 The generic rules remain:
