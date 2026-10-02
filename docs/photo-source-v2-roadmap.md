@@ -287,7 +287,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P1 | Complete: basic read-only Source binding verifier | Complete |
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
 | P3 | Expand native media parser coverage from original files: EXIF/TIFF/GPS/video/container edge cases | Highest |
-| P4 | Add connector-neutral `MediaGroup` / member model for locally derived relations | High |
+| P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
 | P5 | Implement local Live Photo parser/projection: `.livp` + embedded Apple asset identifiers | High |
 | P6 | Add RAW metadata/preview and validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping | High |
 | P7 | Extend read-only Source/media integrity verification and add explicit idempotent local repair actions | High |
