@@ -16,12 +16,13 @@ const (
 // file node. Source metadata may be used as a hint by future indexers, but is
 // never required for a file to participate in Gallery.
 type MediaMetadata struct {
-	NodeID       uint64 `gorm:"primaryKey"`
-	OwnerID      uint64 `gorm:"not null;index;index:idx_xd_media_owner_kind_time,priority:1"`
-	NodeRevision uint64 `gorm:"not null;default:0"`
-	SHA256       string `gorm:"size:64;index"`
-	MediaKind    string `gorm:"size:16;not null;default:other;index;index:idx_xd_media_owner_kind_time,priority:2"`
-	MIMEType     string `gorm:"size:128;index"`
+	NodeID                   uint64 `gorm:"primaryKey"`
+	OwnerID                  uint64 `gorm:"not null;index;index:idx_xd_media_owner_kind_time,priority:1"`
+	NodeRevision             uint64 `gorm:"not null;default:0"`
+	SHA256                   string `gorm:"size:64;index"`
+	MediaKind                string `gorm:"size:16;not null;default:other;index;index:idx_xd_media_owner_kind_time,priority:2"`
+	MIMEType                 string `gorm:"size:128;index"`
+	LivePhotoAssetIdentifier string `gorm:"size:128;index"`
 
 	Width       int `gorm:"not null;default:0"`
 	Height      int `gorm:"not null;default:0"`
