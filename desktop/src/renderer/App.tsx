@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   Autocomplete,
@@ -64,6 +64,7 @@ import {
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
+  xDriveFileOperationActive,
 } from '@xdrive/shared'
 import { DesktopCloudPage } from './DesktopCloudPage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -194,6 +195,9 @@ export default function App({
   const [serverUpdateError, setServerUpdateError] = useState('')
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
+  const [cloudFileOperations, setCloudFileOperations] = useState<AgentCloudFileOperation[]>([])
+  const [fileOperationAction, setFileOperationAction] = useState('')
+  const cloudFileOperationStatusRef = useRef(new Map<string, string>())
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -308,6 +312,7 @@ export default function App({
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = Boolean(server.trim() && username.trim() && (password || savedPasswordAvailable))
   const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
+  const activeFileOperations = cloudFileOperations.filter((item) => xDriveFileOperationActive(item.status))
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
@@ -396,6 +401,25 @@ export default function App({
       unsubscribeNavigate()
     }
   }, [])
+
+  useEffect(() => {
+    if (!agent.connected || !configured) {
+      setCloudFileOperations([])
+      cloudFileOperationStatusRef.current = new Map()
+      return
+    }
+    let active = true
+    const refresh = async () => {
+      const result = await window.xdriveDesktop.agent.cloudFileOperations(100)
+      if (active && result.ok) setCloudFileOperations(result.data)
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 1500)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [agent.connected, configured, agent.hello?.agent_version])
 
   useEffect(() => {
     if (configured || !status) return
@@ -996,6 +1020,55 @@ export default function App({
     )
   }
 
+  const rememberCloudFileOperation = (operation: AgentCloudFileOperation) => {
+    cloudFileOperationStatusRef.current.set(operation.id, operation.status)
+    setCloudFileOperations((currentOperations) => [
+      operation,
+      ...currentOperations.filter((item) => item.id !== operation.id),
+    ])
+  }
+
+  const refreshCloudFileOperations = async () => {
+    const result = await window.xdriveDesktop.agent.cloudFileOperations(100)
+    if (!result.ok) {
+      setError(result.error.message)
+      return null
+    }
+    setCloudFileOperations(result.data)
+    return result.data
+  }
+
+  const cancelCloudFileOperation = async (id: string) => {
+    setFileOperationAction(`cancel:${id}`)
+    try {
+      const result = await window.xdriveDesktop.agent.cloudCancelFileOperation(id)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      rememberCloudFileOperation(result.data)
+      await refreshCloudFileOperations()
+    } finally {
+      setFileOperationAction('')
+    }
+  }
+
+  const retryCloudFileOperation = async (id: string) => {
+    setFileOperationAction(`retry:${id}`)
+    try {
+      const result = await window.xdriveDesktop.agent.cloudRetryFileOperation(id)
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      rememberCloudFileOperation(result.data)
+      setNotice('文件操作已重新加入队列。')
+      await refreshCloudFileOperations()
+    } finally {
+      setFileOperationAction('')
+    }
+  }
+
   const retryTransfer = async (id: string) => {
     const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), '传输重试已完成。')
     if (data) setTransfers(data)
@@ -1040,6 +1113,33 @@ export default function App({
       setBusy('')
     }
   }
+
+  useEffect(() => {
+    const previous = cloudFileOperationStatusRef.current
+    let shouldRefreshFiles = false
+    const next = new Map<string, string>()
+    for (const operation of cloudFileOperations) {
+      const previousStatus = previous.get(operation.id)
+      if (
+        previousStatus &&
+        xDriveFileOperationActive(previousStatus) &&
+        !xDriveFileOperationActive(operation.status)
+      ) {
+        shouldRefreshFiles = true
+      }
+      next.set(operation.id, operation.status)
+    }
+    cloudFileOperationStatusRef.current = next
+    if (!shouldRefreshFiles || cloudCrumbs.length === 0) return
+    void refreshCloudQuota()
+    void loadCloudDirectory(
+      cloudCrumbs.at(-1)!.id,
+      cloudCrumbs,
+      cloudPage?.sort ?? DEFAULT_DESKTOP_FILE_SORT,
+    )
+    // File refreshes are intentionally keyed only by operation snapshot transitions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudFileOperations])
 
   const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {
     const pageState = cloudPage
@@ -1155,18 +1255,16 @@ export default function App({
         setBusy('cloud-delete-many')
         setError('')
         try {
-          const result = await window.xdriveDesktop.agent.cloudBatchDelete(
+          const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
+            'delete',
             nodes.map((node) => ({ id: node.id, revision: node.revision })),
           )
           if (!result.ok) {
             setError(result.error.message)
             return
           }
-          setNotice(`已将 ${nodes.length} 个项目移到回收站。`)
-          await refreshCloudQuota()
-          if (cloudCrumbs.length > 0) {
-            await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
-          }
+          rememberCloudFileOperation(result.data)
+          setNotice(`已将 ${nodes.length} 个项目加入删除任务。`)
         } finally {
           setBusy('')
         }
@@ -1773,7 +1871,7 @@ export default function App({
           <XDriveSidebarNavItem selected={view === 'cloud'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setView('cloud')} />
           <XDriveSidebarNavItem selected={view === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setView('gallery')} />
           <XDriveSidebarNavItem selected={view === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="同步文件夹" onClick={() => setView('sources')} />
-          <XDriveSidebarNavItem selected={view === 'transfers'} icon={<SwapVertRoundedIcon fontSize="small" />} primary="传输" badge={activeTransfers.length || undefined} onClick={() => setView('transfers')} />
+          <XDriveSidebarNavItem selected={view === 'transfers'} icon={<SwapVertRoundedIcon fontSize="small" />} primary="传输" badge={(activeTransfers.length + activeFileOperations.length) || undefined} onClick={() => setView('transfers')} />
           <XDriveSidebarNavItem selected={view === 'files'} icon={<StorageRoundedIcon fontSize="small" />} primary="存储" onClick={() => setView('files')} />
           <XDriveSidebarNavItem selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
         </XDriveSidebarNavList>
@@ -1892,6 +1990,7 @@ export default function App({
               onOpenShares: openCloudShares,
               onDelete: removeCloudNode,
               onDeleteMany: removeCloudNodes,
+              onOperationQueued: rememberCloudFileOperation,
               onQuotaChanged: refreshCloudQuota,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
@@ -1928,9 +2027,15 @@ export default function App({
         {view === 'transfers' && (
           <DesktopTransfersPage
             transfers={transfers.transfers}
+            operations={cloudFileOperations}
             retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
             retryDisabled={Boolean(busy)}
+            operationCancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
+            operationRetryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}
+            operationDisabled={Boolean(fileOperationAction)}
             onRetry={(id) => { void retryTransfer(id) }}
+            onCancelOperation={(id) => { void cancelCloudFileOperation(id) }}
+            onRetryOperation={(id) => { void retryCloudFileOperation(id) }}
           />
         )}
 

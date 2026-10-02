@@ -55,6 +55,7 @@ export default function DesktopFileExplorer({
   onOpenShares,
   onDelete,
   onDeleteMany,
+  onOperationQueued,
   onQuotaChanged,
   onError,
   onFeedback,
@@ -71,6 +72,7 @@ export default function DesktopFileExplorer({
   onOpenShares: (node: AgentCloudNode) => void
   onDelete: (node: AgentCloudNode) => void
   onDeleteMany: (nodes: AgentCloudNode[]) => void
+  onOperationQueued: (operation: AgentCloudFileOperation) => void
   onQuotaChanged: () => Promise<unknown>
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
@@ -504,19 +506,25 @@ export default function DesktopFileExplorer({
         : clipboard.nodes
       if (nodes.length > 0) {
         const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
-        const result = clipboard.mode === 'cut'
-          ? await window.xdriveDesktop.agent.cloudBatchMove(refs, current.id)
-          : await window.xdriveDesktop.agent.cloudBatchCopy(refs, current.id)
+        const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
+          clipboard.mode === 'cut' ? 'move' : 'copy',
+          refs,
+          current.id,
+        )
         if (!result.ok) {
           onError(result.error.message)
           return
         }
+        onOperationQueued(result.data)
+        onFeedback(
+          'good',
+          clipboard.mode === 'cut'
+            ? `已将 ${nodes.length} 个项目加入移动任务。`
+            : `已将 ${nodes.length} 个项目加入复制任务。`,
+        )
       }
       if (clipboard.mode === 'cut') setClipboard(null)
       clearSearch()
-      await onLoadDirectory(current.id, crumbs, sort)
-      await onQuotaChanged()
-      onFeedback('good', clipboard.mode === 'cut' ? '已移动到当前文件夹。' : '已复制到当前文件夹。')
     } finally {
       setActionBusy('')
     }
@@ -534,17 +542,19 @@ export default function DesktopFileExplorer({
     setActionBusy('drop-items')
     try {
       const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
-      const result = operation === 'copy'
-        ? await window.xdriveDesktop.agent.cloudBatchCopy(refs, targetNode.id)
-        : await window.xdriveDesktop.agent.cloudBatchMove(refs, targetNode.id)
+      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(operation, refs, targetNode.id)
       if (!result.ok) {
         onError(result.error.message)
         return
       }
+      onOperationQueued(result.data)
       clearSearch()
-      if (current) await onLoadDirectory(current.id, crumbs, sort)
-      await onQuotaChanged()
-      onFeedback('good', operation === 'copy' ? '已复制到目标文件夹。' : '已移动到目标文件夹。')
+      onFeedback(
+        'good',
+        operation === 'copy'
+          ? `已将 ${nodes.length} 个项目加入复制任务。`
+          : `已将 ${nodes.length} 个项目加入移动任务。`,
+      )
     } finally {
       setActionBusy('')
     }

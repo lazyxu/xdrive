@@ -64,6 +64,7 @@ import {
   type AgentCloudNode,
   type AgentCloudBatchNodeRef,
   type AgentCloudBatchResult,
+  type AgentCloudFileOperation,
   type AgentCloudChildrenPage,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
@@ -1113,6 +1114,18 @@ function normalizeCloudBatchItems(value: unknown): AgentCloudBatchNodeRef[] {
   })
 }
 
+function normalizeCloudFileOperationType(value: unknown): AgentCloudFileOperation['type'] {
+  if (value === 'copy' || value === 'move' || value === 'delete') return value
+  throw new AgentIPCError('invalid_input', 0, 'File operation type must be copy, move, or delete.')
+}
+
+function normalizeCloudFileOperationID(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new AgentIPCError('invalid_input', 0, 'File operation id is required.')
+  }
+  return value.trim()
+}
+
 function requireAgentCapability(hello: AgentHello, capability: string) {
   if (!hello.capabilities.includes(capability)) {
     throw new AgentIPCError(
@@ -1853,6 +1866,48 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudBatchDelete(normalizeCloudBatchItems(items))
+  }, false))
+
+  ipcMain.handle('agent:cloud-file-operation-create', (_event, type: unknown, items: unknown, parentID: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    const operationType = normalizeCloudFileOperationType(type)
+    const refs = normalizeCloudBatchItems(items)
+    const targetParent = parentID === undefined || parentID === null ? 0 : parentID
+    if (
+      (operationType === 'copy' || operationType === 'move') &&
+      (typeof targetParent !== 'number' || !Number.isSafeInteger(targetParent) || targetParent <= 0)
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Target parent id is required for copy and move operations.')
+    }
+    return requireAgentClient().cloudCreateFileOperation(
+      operationType,
+      refs,
+      typeof targetParent === 'number' ? targetParent : 0,
+    )
+  }, false))
+  ipcMain.handle('agent:cloud-file-operations', (_event, limit: unknown) => runAgentAction<AgentCloudFileOperation[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    const parsedLimit = typeof limit === 'number' && Number.isSafeInteger(limit)
+      ? Math.min(200, Math.max(1, limit))
+      : 100
+    return requireAgentClient().cloudFileOperations(parsedLimit)
+  }, false))
+  ipcMain.handle('agent:cloud-file-operation', (_event, id: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudFileOperation(normalizeCloudFileOperationID(id))
+  }, false))
+  ipcMain.handle('agent:cloud-file-operation-cancel', (_event, id: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudCancelFileOperation(normalizeCloudFileOperationID(id))
+  }, false))
+  ipcMain.handle('agent:cloud-file-operation-retry', (_event, id: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudRetryFileOperation(normalizeCloudFileOperationID(id))
   }, false))
 
   ipcMain.handle('agent:cloud-upload-files', async (_event, parentID: unknown) => {

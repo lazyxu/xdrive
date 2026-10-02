@@ -351,6 +351,28 @@ export type AgentCloudBatchResult = {
   deleted_ids?: number[]
 }
 
+export type AgentCloudFileOperation = {
+  id: string
+  type: 'copy' | 'move' | 'delete'
+  status: 'queued' | 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed'
+  parent_id?: number
+  retry_of_id?: string
+  total_items: number
+  processed_items: number
+  total_bytes: number
+  processed_bytes: number
+  percent: number
+  current_item?: string
+  failed_item_id?: number
+  error?: string
+  retryable: boolean
+  cancel_requested_at?: string
+  started_at?: string
+  finished_at?: string
+  created_at: string
+  updated_at: string
+}
+
 export type AgentCloudChildrenPage = {
   items: AgentCloudNode[]
   next_cursor?: string
@@ -887,6 +909,32 @@ export class AgentIPCClient {
 
   cloudBatchDelete(items: AgentCloudBatchNodeRef[]) {
     return this.request<AgentCloudBatchResult>('POST', '/v1/cloud/batch/delete', { items }, 45_000)
+  }
+
+  cloudCreateFileOperation(type: AgentCloudFileOperation['type'], items: AgentCloudBatchNodeRef[], parentID?: number) {
+    return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operations', {
+      type,
+      items,
+      ...(parentID ? { parent_id: parentID } : {}),
+    }, 45_000)
+  }
+
+  cloudFileOperations(limit = 100) {
+    const query = new URLSearchParams({ limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))) })
+    return this.request<AgentCloudFileOperation[]>('GET', `/v1/cloud/file-operations?${query.toString()}`)
+  }
+
+  cloudFileOperation(id: string) {
+    const query = new URLSearchParams({ id })
+    return this.request<AgentCloudFileOperation>('GET', `/v1/cloud/file-operation?${query.toString()}`)
+  }
+
+  cloudCancelFileOperation(id: string) {
+    return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/cancel', { id }, 45_000)
+  }
+
+  cloudRetryFileOperation(id: string) {
+    return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/retry', { id }, 45_000)
   }
 
   cloudUpload(parentID: number, localPath: string, name: string) {

@@ -316,6 +316,30 @@ func (f *fakeDesktopIPCController) CloudBatchDelete(_ context.Context, items []c
 	return client.BatchNodesResult{OperationID: "delete-op", DeletedIDs: ids}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudCreateFileOperation(_ context.Context, operationType string, items []client.BatchNodeRef, parentID uint64) (client.FileOperation, error) {
+	return client.FileOperation{
+		ID: "file-op", Type: operationType, Status: "queued", ParentID: &parentID,
+		TotalItems: int64(len(items)), TotalBytes: 7, Retryable: false,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFileOperations(context.Context, int) ([]client.FileOperation, error) {
+	return []client.FileOperation{{ID: "file-op", Type: "copy", Status: "running", TotalItems: 2, ProcessedItems: 1, TotalBytes: 7, ProcessedBytes: 3}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFileOperation(context.Context, string) (client.FileOperation, error) {
+	return client.FileOperation{ID: "file-op", Type: "copy", Status: "running", TotalItems: 2, ProcessedItems: 1}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCancelFileOperation(context.Context, string) (client.FileOperation, error) {
+	return client.FileOperation{ID: "file-op", Type: "copy", Status: "cancel_requested", TotalItems: 2, ProcessedItems: 1}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRetryFileOperation(context.Context, string) (client.FileOperation, error) {
+	retryOf := "file-op"
+	return client.FileOperation{ID: "file-op-retry", Type: "copy", Status: "queued", RetryOfID: &retryOf, TotalItems: 2}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint64, localPath, name string) (client.Node, error) {
 	f.cloudUploadParent, f.cloudUploadPath, f.cloudUploadName = parentID, localPath, name
 	return f.cloudUploaded, f.err
@@ -893,6 +917,11 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/batch/copy", `{"items":[{"id":3,"revision":2}],"parent_id":8}`, "\"operation_id\":\"copy-op\""},
 		{http.MethodPost, "/v1/cloud/batch/move", `{"items":[{"id":3,"revision":2}],"parent_id":8}`, "\"operation_id\":\"move-op\""},
 		{http.MethodPost, "/v1/cloud/batch/delete", `{"items":[{"id":3,"revision":2}]}`, "\"operation_id\":\"delete-op\""},
+		{http.MethodPost, "/v1/cloud/file-operations", `{"type":"copy","items":[{"id":3,"revision":2}],"parent_id":8}`, "\"id\":\"file-op\""},
+		{http.MethodGet, "/v1/cloud/file-operations?limit=20", "", "\"status\":\"running\""},
+		{http.MethodGet, "/v1/cloud/file-operation?id=file-op", "", "\"processed_items\":1"},
+		{http.MethodPost, "/v1/cloud/file-operation/cancel", `{"id":"file-op"}`, "\"status\":\"cancel_requested\""},
+		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodGet, "/v1/cloud/search?q=report", "", "\"Projects/report.pdf\""},

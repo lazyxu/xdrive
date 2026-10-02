@@ -157,6 +157,11 @@ type desktopIPCController interface {
 	CloudBatchCopy(context.Context, []client.BatchNodeRef, uint64) (client.BatchNodesResult, error)
 	CloudBatchMove(context.Context, []client.BatchNodeRef, uint64) (client.BatchNodesResult, error)
 	CloudBatchDelete(context.Context, []client.BatchNodeRef) (client.BatchNodesResult, error)
+	CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64) (client.FileOperation, error)
+	CloudFileOperations(context.Context, int) ([]client.FileOperation, error)
+	CloudFileOperation(context.Context, string) (client.FileOperation, error)
+	CloudCancelFileOperation(context.Context, string) (client.FileOperation, error)
+	CloudRetryFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
 	CloudSearch(context.Context, string) ([]agentCloudSearchResult, error)
@@ -388,6 +393,11 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/cloud/batch/copy", h.cloudBatchCopy)
 	mux.HandleFunc("POST /v1/cloud/batch/move", h.cloudBatchMove)
 	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
+	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
+	mux.HandleFunc("GET /v1/cloud/file-operations", h.cloudFileOperations)
+	mux.HandleFunc("GET /v1/cloud/file-operation", h.cloudFileOperation)
+	mux.HandleFunc("POST /v1/cloud/file-operation/cancel", h.cloudCancelFileOperation)
+	mux.HandleFunc("POST /v1/cloud/file-operation/retry", h.cloudRetryFileOperation)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
@@ -949,6 +959,100 @@ func (h *desktopIPCHandler) cloudBatchDelete(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudCreateFileOperation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Type     string                `json:"type"`
+		Items    []client.BatchNodeRef `json:"items"`
+		ParentID uint64                `json:"parent_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Type = strings.ToLower(strings.TrimSpace(input.Type))
+	if input.Type == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation", "type is required")
+		return
+	}
+	operation, err := h.ctrl.CloudCreateFileOperation(r.Context(), input.Type, input.Items, input.ParentID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, operation)
+}
+
+func (h *desktopIPCHandler) cloudFileOperations(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation_limit", "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	operations, err := h.ctrl.CloudFileOperations(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, operations)
+}
+
+func (h *desktopIPCHandler) cloudFileOperation(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation", "id is required")
+		return
+	}
+	operation, err := h.ctrl.CloudFileOperation(r.Context(), id)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, operation)
+}
+
+func (h *desktopIPCHandler) cloudCancelFileOperation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation", "id is required")
+		return
+	}
+	operation, err := h.ctrl.CloudCancelFileOperation(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, operation)
+}
+
+func (h *desktopIPCHandler) cloudRetryFileOperation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation", "id is required")
+		return
+	}
+	operation, err := h.ctrl.CloudRetryFileOperation(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, operation)
 }
 
 func (h *desktopIPCHandler) cloudUpload(w http.ResponseWriter, r *http.Request) {

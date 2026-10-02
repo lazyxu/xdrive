@@ -36,6 +36,8 @@ import type {
   XDriveServerUpdateSource,
   XDriveServerUpdateState,
   XDriveTransferTask,
+  XDriveFileOperation,
+  XDriveFileOperationType,
 } from '../../ui/shared/src'
 import { webTransferStore } from './transfers'
 
@@ -770,6 +772,40 @@ export class XDriveApi {
     return this.request<BatchNodesResult>('/api/v1/nodes/batch/delete', {
       method: 'POST',
       body: JSON.stringify({ items }),
+    })
+  }
+
+  createFileOperation(type: XDriveFileOperationType, items: BatchNodeRef[], parentID?: number) {
+    return this.request<XDriveFileOperation>('/api/v1/file-operations', {
+      method: 'POST',
+      body: JSON.stringify({
+        type,
+        items,
+        ...(parentID ? { parent_id: parentID } : {}),
+      }),
+    })
+  }
+
+  fileOperations(limit = 100) {
+    const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
+    return this.request<XDriveFileOperation[]>(`/api/v1/file-operations?limit=${bounded}`)
+  }
+
+  fileOperation(id: string) {
+    return this.request<XDriveFileOperation>(`/api/v1/file-operations/${encodeURIComponent(id)}`)
+  }
+
+  cancelFileOperation(id: string) {
+    return this.request<XDriveFileOperation>(`/api/v1/file-operations/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  retryFileOperation(id: string) {
+    return this.request<XDriveFileOperation>(`/api/v1/file-operations/${encodeURIComponent(id)}/retry`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     })
   }
 
