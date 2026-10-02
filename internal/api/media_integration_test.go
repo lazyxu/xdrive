@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -37,6 +38,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
+		&meta.MediaGroupItem{},
+		&meta.MediaGroup{},
 		&meta.MediaDerivedResource{},
 		&meta.MediaMetadata{},
 		&meta.SourceCollectionItem{},
@@ -75,6 +78,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.SourceCollectionItem{},
 		&meta.MediaMetadata{},
 		&meta.MediaDerivedResource{},
+		&meta.MediaGroup{},
+		&meta.MediaGroupItem{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +343,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if liveDetail.Metadata.MediaKind != meta.MediaKindImage ||
 		liveDetail.Metadata.ContainerKind != "livp" ||
 		liveDetail.Metadata.LivePhotoAssetIdentifier != liveIdentifier ||
-		len(liveDetail.DerivedResources) != 2 {
+		len(liveDetail.DerivedResources) != 2 ||
+		!liveDetail.LivePhoto {
 		t.Fatalf("livp detail=%+v", liveDetail)
 	}
 
@@ -400,6 +406,179 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if resourceCount != 2 {
 		t.Fatalf("livp derived resource count=%d want=2", resourceCount)
 	}
+
+	unifiedMotionResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/live-photo-motion", liveNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if !bytes.Equal(unifiedMotionResponse.Body.Bytes(), motionBytes) {
+		t.Fatal("unified LIVP motion bytes changed")
+	}
+
+	pairFolder := requestNode(
+		t,
+		router,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID),
+		token,
+		strings.NewReader(`{"name":"Standalone Live Photo"}`),
+		http.StatusCreated,
+	)
+	const pairIdentifier = "C48E67A7-589A-4AC3-8D59-E20AA7959225"
+	pairStillBytes := testLIVPJPEG(t, pairIdentifier)
+	pairMotionBytes := testLIVPMOV(pairIdentifier)
+	pairStill := uploadTestFile(
+		t, router, token, pairFolder.ID, "IMG_1000.jpg", string(pairStillBytes),
+	)
+	pairMotion := uploadTestFile(
+		t, router, token, pairFolder.ID, "IMG_1000.mov", string(pairMotionBytes),
+	)
+
+	pairItemsResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/albums/"+
+			url.PathEscape(fmt.Sprintf("folder:%d", pairFolder.ID))+
+			"/items?limit=100",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var pairItems []mediaItemDTO
+	if err := json.Unmarshal(pairItemsResponse.Body.Bytes(), &pairItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(pairItems) != 1 ||
+		pairItems[0].Node.ID != pairStill.ID ||
+		!pairItems[0].LivePhoto {
+		t.Fatalf("standalone live photo Gallery items=%+v", pairItems)
+	}
+	if pairItems[0].Node.ID == pairMotion.ID {
+		t.Fatal("paired motion appeared as a Gallery item")
+	}
+
+	pairAlbumsResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/albums",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var pairAlbums []mediaAlbumDTO
+	if err := json.Unmarshal(pairAlbumsResponse.Body.Bytes(), &pairAlbums); err != nil {
+		t.Fatal(err)
+	}
+	pairAlbumID := fmt.Sprintf("folder:%d", pairFolder.ID)
+	foundPairAlbum := false
+	for _, album := range pairAlbums {
+		if album.ID == pairAlbumID {
+			foundPairAlbum = true
+			if album.ItemCount != 1 {
+				t.Fatalf("standalone live photo album item_count=%d want=1", album.ItemCount)
+			}
+		}
+	}
+	if !foundPairAlbum {
+		t.Fatal("standalone live photo folder album missing")
+	}
+
+	pairMotionResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/live-photo-motion", pairStill.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if !bytes.Equal(pairMotionResponse.Body.Bytes(), pairMotionBytes) {
+		t.Fatal("standalone live photo motion bytes changed")
+	}
+
+	var pairGroup meta.MediaGroup
+	if err := db.
+		Table("xd_media_groups AS mg").
+		Joins("JOIN xd_media_group_items AS mgi ON mgi.group_id = mg.id").
+		Where("mgi.node_id = ? AND mg.kind = ?", pairStill.ID, meta.MediaGroupKindLivePhoto).
+		First(&pairGroup).Error; err != nil {
+		t.Fatal(err)
+	}
+	var pairStillNode meta.Node
+	if err := db.First(&pairStillNode, pairStill.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	corruptMember := meta.Node{
+		ParentID: pairStillNode.ParentID,
+		Name:     "corrupt-extra-member.bin",
+		Type:     meta.NodeTypeFile,
+		OwnerID:  pairStillNode.OwnerID,
+		Revision: 1,
+	}
+	if err := db.Create(&corruptMember).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.MediaGroupItem{
+		GroupID: pairGroup.ID,
+		NodeID:  corruptMember.ID,
+		Role:    meta.MediaGroupRoleAuxiliary,
+		Ordinal: 2,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	validStillIDs, err := server.validLivePhotoStillNodeIDs(
+		context.Background(),
+		pairStillNode.OwnerID,
+		[]uint64{pairStill.ID},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := validStillIDs[pairStill.ID]; ok {
+		t.Fatal("corrupt three-member Live Photo group was accepted")
+	}
+
+	corruptPairItemsResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/albums/"+
+			url.PathEscape(fmt.Sprintf("folder:%d", pairFolder.ID))+
+			"/items?limit=100",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var corruptPairItems []mediaItemDTO
+	if err := json.Unmarshal(corruptPairItemsResponse.Body.Bytes(), &corruptPairItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(corruptPairItems) != 2 {
+		t.Fatalf("corrupt Live Photo group hid a Gallery item: %+v", corruptPairItems)
+	}
+	for _, item := range corruptPairItems {
+		if item.LivePhoto {
+			t.Fatalf("corrupt Live Photo group marked item live: %+v", item)
+		}
+	}
+
+	request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/live-photo-motion", pairStill.ID),
+		token,
+		nil,
+		http.StatusNotFound,
+	)
 }
 
 func testPNG(t *testing.T, width, height int) []byte {
