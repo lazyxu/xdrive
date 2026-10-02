@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourceaccount"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"github.com/lazyxu/xdrive/internal/synology"
 	"github.com/lazyxu/xdrive/internal/yike"
@@ -55,12 +56,43 @@ type sourceCredentialRevealDTO struct {
 
 func (s *Server) testSourceCredentialPayload(ctx context.Context, kind string, payload json.RawMessage) (sourceCredentialTestDTO, error) {
 	tester := s.credentialTest
-	if tester == nil {
-		tester = defaultSourceCredentialTester
-	}
 	testCtx, cancel := context.WithTimeout(ctx, sourceCredentialTestTimeout)
 	defer cancel()
+	if tester == nil {
+		tester = defaultSourceCredentialTester
+		if key := sourceCredentialConcurrencyKey(kind, payload); key != "" {
+			lease, acquired, err := sourceaccount.TryAcquire(testCtx, s.DB, key)
+			if err != nil {
+				return sourceCredentialTestDTO{}, fmt.Errorf("coordinate source account: %w", err)
+			}
+			if !acquired {
+				return sourceCredentialTestDTO{}, sourceaccount.ErrBusy
+			}
+			defer lease.Close()
+		}
+	}
 	return tester(testCtx, kind, append(json.RawMessage(nil), payload...))
+}
+
+func sourceCredentialConcurrencyKey(kind string, payload json.RawMessage) string {
+	switch strings.TrimSpace(kind) {
+	case yikeSourceKind:
+		var credential struct {
+			Cookie string `json:"cookie"`
+		}
+		if json.Unmarshal(payload, &credential) != nil {
+			return ""
+		}
+		return yike.AccountConcurrencyKey(credential.Cookie)
+	case synologySourceKind, synologyFilesSourceKind:
+		var credential synology.Credential
+		if json.Unmarshal(payload, &credential) != nil {
+			return ""
+		}
+		return synology.AccountConcurrencyKey(credential)
+	default:
+		return ""
+	}
 }
 
 func (s *Server) testSourceCredential(c *gin.Context) {
@@ -109,6 +141,8 @@ func (s *Server) testSourceCredential(c *gin.Context) {
 
 func writeSourceCredentialTestError(c *gin.Context, kind string, err error) {
 	switch {
+	case errors.Is(err, sourceaccount.ErrBusy):
+		fail(c, http.StatusConflict, "source_account_busy")
 	case errors.Is(err, errUnsupportedSourceCredentialTest):
 		fail(c, http.StatusBadRequest, "unsupported_source_credential_kind")
 	case errors.Is(err, errInvalidSourceCredentialTest):

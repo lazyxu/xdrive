@@ -11,6 +11,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourceaccount"
 	"github.com/lazyxu/xdrive/internal/sourceschedule"
 	"gorm.io/gorm"
 )
@@ -227,6 +228,16 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			if err := ctx.Err(); err != nil {
 				results <- sourceResult{index: index, err: err, concurrencyKey: job.concurrencyKey}
 				return
+			}
+			var lease *sourceaccount.Lease
+			if job.concurrencyKey != "" && r.DB != nil {
+				var err error
+				lease, err = sourceaccount.Acquire(ctx, r.DB, job.concurrencyKey)
+				if err != nil {
+					results <- sourceResult{index: index, err: fmt.Errorf("coordinate provider account: %w", err), concurrencyKey: job.concurrencyKey}
+					return
+				}
+				defer lease.Close()
 			}
 			run, err := job.handler.RunPullSource(ctx, job.source)
 			results <- sourceResult{index: index, run: run, err: err, concurrencyKey: job.concurrencyKey}

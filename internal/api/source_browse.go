@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourceaccount"
 	"github.com/lazyxu/xdrive/internal/sourcecredential"
 	"github.com/lazyxu/xdrive/internal/synology"
 	"gorm.io/gorm"
@@ -102,6 +103,20 @@ func (s *Server) browseSourceDirectories(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "decode source credential failed")
 		return
 	}
+
+	accountKey := synology.AccountConcurrencyKey(credential)
+	lease, acquired, err := sourceaccount.TryAcquire(c.Request.Context(), s.DB, accountKey)
+	if err != nil {
+		credential.Password = ""
+		fail(c, http.StatusInternalServerError, "coordinate source account failed")
+		return
+	}
+	if !acquired {
+		credential.Password = ""
+		writeSourceCredentialTestError(c, source.Kind, sourceaccount.ErrBusy)
+		return
+	}
+	defer lease.Close()
 
 	page, err := s.fileStationBrowser()(c.Request.Context(), credential, remotePath, offset, limit)
 	credential.Password = ""
