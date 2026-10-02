@@ -139,8 +139,10 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     'CloudFileOperation(context.Context, string)',
     'CloudCancelFileOperation(context.Context, string)',
     'CloudRetryFileOperation(context.Context, string)',
+    'CloudClearFileOperationHistory(context.Context)',
     'POST /v1/cloud/file-operations',
     'GET /v1/cloud/file-operations',
+    'DELETE /v1/cloud/file-operations',
     'GET /v1/cloud/file-operation',
     'POST /v1/cloud/file-operation/cancel',
     'POST /v1/cloud/file-operation/retry',
@@ -154,6 +156,7 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     'cli.GetFileOperation(ctx, strings.TrimSpace(id))',
     'cli.CancelFileOperation(ctx, strings.TrimSpace(id))',
     'cli.RetryFileOperation(ctx, strings.TrimSpace(id))',
+    'cli.ClearFileOperationHistory(ctx)',
   ]) {
     assert.ok(cloudFiles.includes(token), `Agent controller is not using the Go file-operation client: ${token}`)
   }
@@ -164,6 +167,7 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     'cloudFileOperation(id: string)',
     'cloudCancelFileOperation(id: string)',
     'cloudRetryFileOperation(id: string)',
+    'cloudClearFileOperationHistory()',
   ]) {
     assert.ok(agentClient.includes(token), `missing Electron Agent file-operation client: ${token}`)
   }
@@ -174,6 +178,7 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     "ipcMain.handle('agent:cloud-file-operation'",
     "ipcMain.handle('agent:cloud-file-operation-cancel'",
     "ipcMain.handle('agent:cloud-file-operation-retry'",
+    "ipcMain.handle('agent:cloud-file-operations-clear'",
     'normalizeCloudBatchItems(items)',
     'normalizeCloudFileOperationType(type)',
   ]) {
@@ -184,6 +189,7 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
   assert.ok(preload.includes('cloudFileOperations:'), 'preload operation-list bridge is missing')
   assert.ok(preload.includes('cloudCancelFileOperation:'), 'preload cancel-operation bridge is missing')
   assert.ok(preload.includes('cloudRetryFileOperation:'), 'preload retry-operation bridge is missing')
+  assert.ok(preload.includes('cloudClearFileOperationHistory:'), 'preload clear-operation-history bridge is missing')
   assert.ok(types.includes('type AgentCloudFileOperation = XDriveFileOperation'), 'renderer shared operation type alias is missing')
   assert.ok(types.includes('cloudCreateFileOperation:'), 'renderer create-operation method type is missing')
   assert.ok(types.includes('cloudFileOperations:'), 'renderer operation-list method type is missing')
@@ -200,4 +206,14 @@ test('legacy synchronous batch mutation bridges remain available for compatibili
   assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-copy'"), 'legacy batch-copy handler was removed')
   assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-move'"), 'legacy batch-move handler was removed')
   assert.ok(main.includes("ipcMain.handle('agent:cloud-batch-delete'"), 'legacy batch-delete handler was removed')
+})
+
+
+test('Desktop Task Center clears only terminal transfer history through every bridge layer', () => {
+  assert.ok(agentIPC.includes('ClearTransferHistory() (uint64, []transfer.Task)'), 'Agent IPC controller clear-history contract is missing')
+  assert.ok(agentIPC.includes('DELETE /v1/transfers'), 'Agent IPC transfer-history route is missing')
+  assert.ok(agentClient.includes('clearTransferHistory()'), 'Electron AgentClient transfer-history method is missing')
+  assert.ok(main.includes("ipcMain.handle('agent:clear-transfer-history'"), 'Electron main transfer-history bridge is missing')
+  assert.ok(preload.includes('clearTransferHistory:'), 'preload transfer-history bridge is missing')
+  assert.ok(types.includes('clearTransferHistory: () => Promise<DesktopResult<AgentTransfers>>'), 'renderer transfer-history type is missing')
 })

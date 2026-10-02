@@ -291,6 +291,34 @@ func TestFileOperationWorkerLifecycle(t *testing.T) {
 	if otherHistoryCount != 1 {
 		t.Fatal("history pruning crossed user ownership boundaries")
 	}
+
+	if err := clearFileOperationHistoryTx(db, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.FileOperation{}).
+		Where("owner_id = ? AND status IN ?", user.ID, fileOperationTerminalStatuses).
+		Count(&terminalCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if terminalCount != 0 {
+		t.Fatalf("cleared terminal history count=%d want=0", terminalCount)
+	}
+	if err := db.Model(&meta.FileOperation{}).
+		Where("id = ? AND owner_id = ? AND status = ?", recovery.ID, user.ID, meta.FileOperationStatusQueued).
+		Count(&activeRecoveryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if activeRecoveryCount != 1 {
+		t.Fatal("clear history removed an active operation")
+	}
+	if err := db.Model(&meta.FileOperation{}).
+		Where("id = ? AND owner_id = ?", otherHistory.ID, other.ID).
+		Count(&otherHistoryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if otherHistoryCount != 1 {
+		t.Fatal("clear history crossed user ownership boundaries")
+	}
 }
 
 func assertBatchNodeDeleted(t *testing.T, db *gorm.DB, id uint64) {

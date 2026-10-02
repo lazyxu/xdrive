@@ -355,6 +355,7 @@ declare global {
         cloudBatchDelete: (items: AgentCloudBatchNodeRef[]) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudCreateFileOperation: (type: AgentCloudFileOperation['type'], items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudFileOperations: (limit?: number) => Promise<DesktopResult<AgentCloudFileOperation[]>>
+        cloudClearFileOperationHistory: () => Promise<DesktopResult<{ ok: boolean }>>
         cloudFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudCancelFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudRetryFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
@@ -412,6 +413,7 @@ declare global {
         openConflict: (id: string, both?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
         resolveConflict: (id: string, choice: 'server' | 'local') => Promise<DesktopResult<{ ok: boolean }>>
         retryTransfer: (id: string) => Promise<DesktopResult<AgentTransfers>>
+        clearTransferHistory: () => Promise<DesktopResult<AgentTransfers>>
         openFolder: () => Promise<DesktopResult<{ ok: boolean }>>
         onState: (callback: (state: AgentConnectionState) => void) => () => void
         onTransfers: (callback: (state: AgentTransfers) => void) => () => void

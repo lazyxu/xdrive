@@ -117,3 +117,24 @@ func TestManagerTrimsCompletedHistory(t *testing.T) {
 		t.Fatalf("unexpected retained history: %+v", tasks)
 	}
 }
+
+func TestManagerClearHistoryPreservesActiveTransfers(t *testing.T) {
+	m := NewManager(10)
+	running := m.Start(Spec{FileName: "running.bin", Kind: KindDownload, Direction: "download", TotalBytes: 100})
+	running.Progress(25, 100)
+	completed := m.Start(Spec{FileName: "completed.bin", Kind: KindUpload, Direction: "upload", TotalBytes: 1})
+	completed.Complete()
+	failed := m.Start(Spec{FileName: "failed.bin", Kind: KindUpload, Direction: "upload", TotalBytes: 1})
+	failed.Fail(errors.New("failed"))
+
+	before, _ := m.Snapshot()
+	m.ClearHistory()
+	after, tasks := m.Snapshot()
+
+	if after <= before {
+		t.Fatalf("clear history did not advance revision: before=%d after=%d", before, after)
+	}
+	if len(tasks) != 1 || tasks[0].ID != running.ID() || tasks[0].State != StateRunning {
+		t.Fatalf("clear history should keep only active transfer: %+v", tasks)
+	}
+}

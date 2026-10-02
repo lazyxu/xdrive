@@ -327,6 +327,10 @@ func (f *fakeDesktopIPCController) CloudFileOperations(context.Context, int) ([]
 	return []client.FileOperation{{ID: "file-op", Type: "copy", Status: "running", TotalItems: 2, ProcessedItems: 1, TotalBytes: 7, ProcessedBytes: 3}}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudClearFileOperationHistory(context.Context) error {
+	return f.err
+}
+
 func (f *fakeDesktopIPCController) CloudFileOperation(context.Context, string) (client.FileOperation, error) {
 	return client.FileOperation{ID: "file-op", Type: "copy", Status: "running", TotalItems: 2, ProcessedItems: 1}, f.err
 }
@@ -566,6 +570,14 @@ func (f *fakeDesktopIPCController) RetryTransfer(ctx context.Context, id string)
 		return errors.New("transfer manager unavailable")
 	}
 	return f.transfers.Retry(ctx, id)
+}
+
+func (f *fakeDesktopIPCController) ClearTransferHistory() (uint64, []transfer.Task) {
+	if f.transfers == nil {
+		return 1, nil
+	}
+	f.transfers.ClearHistory()
+	return f.transfers.Snapshot()
 }
 
 func (f *fakeDesktopIPCController) Diagnostics(context.Context) diagnostics.Report {
@@ -919,6 +931,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/batch/delete", `{"items":[{"id":3,"revision":2}]}`, "\"operation_id\":\"delete-op\""},
 		{http.MethodPost, "/v1/cloud/file-operations", `{"type":"copy","items":[{"id":3,"revision":2}],"parent_id":8}`, "\"id\":\"file-op\""},
 		{http.MethodGet, "/v1/cloud/file-operations?limit=20", "", "\"status\":\"running\""},
+		{http.MethodDelete, "/v1/cloud/file-operations", "", ""},
 		{http.MethodGet, "/v1/cloud/file-operation?id=file-op", "", "\"processed_items\":1"},
 		{http.MethodPost, "/v1/cloud/file-operation/cancel", `{"id":"file-op"}`, "\"status\":\"cancel_requested\""},
 		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
@@ -1323,6 +1336,17 @@ func TestDesktopIPCTransfers(t *testing.T) {
 	_, items := manager.Snapshot()
 	if len(items) != 1 || items[0].State != transfer.StateCompleted || items[0].RetryCount != 1 {
 		t.Fatalf("unexpected retried transfer: %+v", items)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodDelete, "/v1/transfers", "")
+	if res.Code != http.StatusOK {
+		t.Fatalf("clear history status=%d body=%s", res.Code, res.Body.String())
+	}
+	if err := json.NewDecoder(res.Body).Decode(&snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Transfers) != 0 {
+		t.Fatalf("clear history retained terminal transfers: %+v", snapshot.Transfers)
 	}
 }
 

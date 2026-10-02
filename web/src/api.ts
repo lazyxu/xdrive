@@ -187,6 +187,12 @@ export class XDriveApi {
     webTransferStore.clearHistory()
   }
 
+  clearFileOperationHistory() {
+    return this.request<void>('/api/v1/file-operations', {
+      method: 'DELETE',
+    })
+  }
+
   private setSession(session: AuthSession) {
     this.session = session
     this.onSession?.(session)

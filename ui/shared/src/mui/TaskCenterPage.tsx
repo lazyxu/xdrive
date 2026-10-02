@@ -8,6 +8,7 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
 export interface XDriveTaskCenterClearHistory {
   disabled?: boolean
+  loading?: boolean
   onClear: () => void
 }
 
@@ -41,8 +42,13 @@ export function XDriveTaskCenterPage({
   onRetryOperation?: (id: string) => void
 }) {
   const actions = pageActions ?? (clearHistory ? (
-    <XDriveActionButton disabled={clearHistory.disabled} onClick={clearHistory.onClear}>
-      清空传输历史
+    <XDriveActionButton
+      disabled={clearHistory.disabled || clearHistory.loading}
+      loading={clearHistory.loading}
+      loadingLabel="正在清空…"
+      onClick={clearHistory.onClear}
+    >
+      清空历史
     </XDriveActionButton>
   ) : undefined)
 

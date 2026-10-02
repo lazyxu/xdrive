@@ -159,6 +159,7 @@ type desktopIPCController interface {
 	CloudBatchDelete(context.Context, []client.BatchNodeRef) (client.BatchNodesResult, error)
 	CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64) (client.FileOperation, error)
 	CloudFileOperations(context.Context, int) ([]client.FileOperation, error)
+	CloudClearFileOperationHistory(context.Context) error
 	CloudFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudCancelFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudRetryFileOperation(context.Context, string) (client.FileOperation, error)
@@ -206,6 +207,7 @@ type desktopIPCController interface {
 	Transfers() (uint64, []transfer.Task)
 	WaitTransfers(context.Context, uint64) (uint64, []transfer.Task, bool)
 	RetryTransfer(context.Context, string) error
+	ClearTransferHistory() (uint64, []transfer.Task)
 	Diagnostics(context.Context) diagnostics.Report
 	Reconnect(context.Context) error
 	RepairSyncRoot(context.Context) error
@@ -395,6 +397,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/file-operations", h.cloudFileOperations)
+	mux.HandleFunc("DELETE /v1/cloud/file-operations", h.cloudClearFileOperationHistory)
 	mux.HandleFunc("GET /v1/cloud/file-operation", h.cloudFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/cancel", h.cloudCancelFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/retry", h.cloudRetryFileOperation)
@@ -442,6 +445,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
+	mux.HandleFunc("DELETE /v1/transfers", h.clearTransferHistory)
 	mux.HandleFunc("GET /v1/diagnostics", h.diagnostics)
 	mux.HandleFunc("GET /v1/diagnostics/report", h.diagnosticReport)
 	mux.HandleFunc("POST /v1/diagnostics/reconnect", h.reconnect)
@@ -999,6 +1003,14 @@ func (h *desktopIPCHandler) cloudFileOperations(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, operations)
+}
+
+func (h *desktopIPCHandler) cloudClearFileOperationHistory(w http.ResponseWriter, r *http.Request) {
+	if err := h.ctrl.CloudClearFileOperationHistory(r.Context()); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *desktopIPCHandler) cloudFileOperation(w http.ResponseWriter, r *http.Request) {
@@ -1949,6 +1961,11 @@ func (h *desktopIPCHandler) retryTransfer(w http.ResponseWriter, r *http.Request
 		return
 	}
 	revision, items := h.ctrl.Transfers()
+	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
+}
+
+func (h *desktopIPCHandler) clearTransferHistory(w http.ResponseWriter, _ *http.Request) {
+	revision, items := h.ctrl.ClearTransferHistory()
 	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
 }
 

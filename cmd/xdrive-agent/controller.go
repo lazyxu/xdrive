@@ -716,6 +716,11 @@ func (c *agentController) RetryTransfer(ctx context.Context, id string) error {
 	return c.transfers.Retry(ctx, id)
 }
 
+func (c *agentController) ClearTransferHistory() (uint64, []transfer.Task) {
+	c.transfers.ClearHistory()
+	return c.transfers.Snapshot()
+}
+
 func (c *agentController) Diagnostics(ctx context.Context) diagnostics.Report {
 	report := diagnostics.Run(ctx)
 	return diagnostics.Redacted(diagnostics.WithChecks(report,

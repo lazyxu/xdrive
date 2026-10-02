@@ -894,6 +894,20 @@ function FileManager({
     }
   }
 
+  const clearTaskHistory = async () => {
+    setFileOperationAction('clear-history')
+    try {
+      await api.clearFileOperationHistory()
+      api.clearTransferHistory()
+      await refreshFileOperations()
+      setFeedback({ tone: 'good', message: '已清空已完成、失败和已取消的任务历史。' })
+    } catch (error) {
+      handleError(error)
+    } finally {
+      setFileOperationAction('')
+    }
+  }
+
   const removeMany = (nodes: Node[]) => {
     if (nodes.length === 0) return
     setConfirmAction({
@@ -1070,8 +1084,12 @@ function FileManager({
             transfers={transfers}
             operations={fileOperations}
             clearHistory={{
-              disabled: !transfers.some((item) => item.state === 'completed' || item.state === 'failed'),
-              onClear: () => api.clearTransferHistory(),
+              disabled: (
+                !transfers.some((item) => item.state === 'completed' || item.state === 'failed') &&
+                !fileOperations.some((item) => !xDriveFileOperationActive(item.status))
+              ) || Boolean(fileOperationAction),
+              loading: fileOperationAction === 'clear-history',
+              onClear: () => { void clearTaskHistory() },
             }}
             operationCancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
             operationRetryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}

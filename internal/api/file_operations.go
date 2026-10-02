@@ -181,6 +181,23 @@ func (s *Server) listFileOperations(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+func clearFileOperationHistoryTx(tx *gorm.DB, uid uint64) error {
+	if tx == nil || uid == 0 {
+		return nil
+	}
+	return tx.
+		Where("owner_id = ? AND status IN ?", uid, fileOperationTerminalStatuses).
+		Delete(&meta.FileOperation{}).Error
+}
+
+func (s *Server) clearFileOperationHistory(c *gin.Context) {
+	if err := clearFileOperationHistoryTx(s.DB.WithContext(c.Request.Context()), userID(c)); err != nil {
+		fail(c, http.StatusInternalServerError, "clear file operation history failed")
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (s *Server) getFileOperation(c *gin.Context) {
 	operation, err := s.loadOwnedFileOperation(c.Request.Context(), userID(c), c.Param("id"))
 	if err != nil {

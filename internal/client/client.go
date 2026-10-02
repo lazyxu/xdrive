@@ -393,6 +393,22 @@ func (c *Client) ListFileOperations(ctx context.Context, limit int) ([]FileOpera
 	return out, err
 }
 
+func (c *Client) ClearFileOperationHistory(ctx context.Context) error {
+	req, err := c.request(ctx, http.MethodDelete, "/api/v1/file-operations", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return responseError(resp)
+	}
+	return nil
+}
+
 func (c *Client) GetFileOperation(ctx context.Context, id string) (FileOperation, error) {
 	var out FileOperation
 	err := c.json(ctx, http.MethodGet, "/api/v1/file-operations/"+url.PathEscape(id), nil, &out)

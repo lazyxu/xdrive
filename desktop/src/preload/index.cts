@@ -66,6 +66,7 @@ const agent = Object.freeze({
   cloudBatchDelete: (items: Array<{ id: number; revision: number }>) => ipcRenderer.invoke('agent:cloud-batch-delete', items),
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudFileOperations: (limit = 100) => ipcRenderer.invoke('agent:cloud-file-operations', limit),
+  cloudClearFileOperationHistory: () => ipcRenderer.invoke('agent:cloud-file-operations-clear'),
   cloudFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation', id),
   cloudCancelFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation-cancel', id),
   cloudRetryFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation-retry', id),
@@ -131,6 +132,7 @@ const agent = Object.freeze({
   openConflict: (id: string, both = false) => ipcRenderer.invoke('agent:open-conflict', id, both),
   resolveConflict: (id: string, choice: 'server' | 'local') => ipcRenderer.invoke('agent:resolve-conflict', id, choice),
   retryTransfer: (id: string) => ipcRenderer.invoke('agent:retry-transfer', id),
+  clearTransferHistory: () => ipcRenderer.invoke('agent:clear-transfer-history'),
   openFolder: () => ipcRenderer.invoke('agent:open-folder'),
   onState: (callback: (state: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
