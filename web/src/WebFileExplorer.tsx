@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
@@ -6,9 +6,9 @@ import {
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerNavigation,
+  useXDriveFileExplorerProjection,
 } from '@xdrive/ui/mui'
 import type {
-  XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
@@ -81,37 +81,16 @@ export default function WebFileExplorer({
   const [clipboard, setClipboard] = useState<WebExplorerClipboard | null>(null)
   const [clipboardBusy, setClipboardBusy] = useState(false)
 
-  const activeNodes = searchResults ? searchResults.map((result) => result.node) : items
-  const nodeByID = useMemo(
-    () => new Map(activeNodes.map((node) => [node.id, node])),
-    [activeNodes],
-  )
-  const searchByID = useMemo(
-    () => new Map((searchResults ?? []).map((result) => [result.node.id, result])),
-    [searchResults],
-  )
-
-  const explorerItems = useMemo<XDriveFileExplorerItem[]>(
-    () => activeNodes.map((node) => {
-      const result = searchByID.get(node.id)
-      return {
-        id: node.id,
-        name: node.name,
-        kind: node.type,
-        size: node.size,
-        updatedAt: node.updated_at,
-        secondaryLabel: result?.path || undefined,
-        path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/'),
-        revision: node.revision,
-      }
-    }),
-    [activeNodes, crumbs, searchByID],
-  )
-
-  const explorerCrumbs = useMemo<XDriveFileExplorerCrumb[]>(
-    () => crumbs.map((crumb) => ({ id: crumb.id, name: crumb.name })),
-    [crumbs],
-  )
+  const {
+    nodeByID,
+    searchByID,
+    explorerItems,
+    explorerCrumbs,
+  } = useXDriveFileExplorerProjection({
+    items,
+    crumbs,
+    searchResults,
+  })
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null

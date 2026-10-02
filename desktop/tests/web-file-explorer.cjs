@@ -6,6 +6,7 @@ const path = require('node:path')
 const repoRoot = path.join(__dirname, '..', '..')
 const app = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.tsx'), 'utf8')
+const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const api = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'api.ts'), 'utf8')
 
@@ -49,7 +50,7 @@ test('Web FileExplorer uses real file operations and server search', () => {
 })
 
 test('Web FileExplorer search results preserve paths and directory breadcrumbs', () => {
-  assert.ok(explorer.includes('secondaryLabel: result?.path || undefined'), 'search results should show their path')
+  assert.ok(projection.includes('secondaryLabel: result?.path || undefined'), 'shared Explorer projection should show search-result paths')
   assert.ok(explorer.includes('normalizedSearchCrumbs(result)'), 'opening a search directory should restore its breadcrumb path')
   assert.ok(explorer.includes("仅显示前 200 个结果"), 'search pagination truncation must be disclosed')
 })
@@ -91,8 +92,8 @@ test('Web uses a dedicated persistent FileExplorer details-column layout', () =>
 })
 
 test('Web FileExplorer supplies preview/properties metadata without a new plaintext preview channel', () => {
-  assert.ok(explorer.includes("path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'Web inspector path metadata is missing')
-  assert.ok(explorer.includes('revision: node.revision'), 'Web inspector revision metadata is missing')
+  assert.ok(projection.includes("path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'shared Explorer projection path metadata is missing')
+  assert.ok(projection.includes('revision: node.revision'), 'shared Explorer projection revision metadata is missing')
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Web inspector should reuse the protected thumbnail loader')
   assert.equal(api.includes('previewPlaintext'), false, 'Web must not add a plaintext preview API')
 })
