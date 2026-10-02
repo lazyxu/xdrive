@@ -20,26 +20,27 @@ import (
 const maxEmbeddedMetadataBytes = 32 << 20
 
 type Result struct {
-	Kind            string
-	MIMEType        string
-	Width           int
-	Height          int
-	Orientation     int
-	RotationDegrees int
-	DurationMS      int64
-	FrameRate       float64
-	BitRate         int64
-	VideoCodec      string
-	AudioCodec      string
-	CapturedAt      *time.Time
-	Latitude        *float64
-	Longitude       *float64
-	AltitudeM       *float64
-	CameraMake      string
-	CameraModel     string
-	LensModel       string
-	EXIFJSON        string
-	VideoJSON       string
+	Kind                     string
+	MIMEType                 string
+	LivePhotoAssetIdentifier string
+	Width                    int
+	Height                   int
+	Orientation              int
+	RotationDegrees          int
+	DurationMS               int64
+	FrameRate                float64
+	BitRate                  int64
+	VideoCodec               string
+	AudioCodec               string
+	CapturedAt               *time.Time
+	Latitude                 *float64
+	Longitude                *float64
+	AltitudeM                *float64
+	CameraMake               string
+	CameraModel              string
+	LensModel                string
+	EXIFJSON                 string
+	VideoJSON                string
 }
 
 const (
@@ -240,17 +241,18 @@ func isTIFF(header []byte) bool {
 }
 
 type exifData struct {
-	Orientation int
-	PixelWidth  int
-	PixelHeight int
-	CapturedAt  *time.Time
-	Latitude    *float64
-	Longitude   *float64
-	AltitudeM   *float64
-	CameraMake  string
-	CameraModel string
-	LensModel   string
-	Fields      map[string]any
+	Orientation              int
+	PixelWidth               int
+	PixelHeight              int
+	LivePhotoAssetIdentifier string
+	CapturedAt               *time.Time
+	Latitude                 *float64
+	Longitude                *float64
+	AltitudeM                *float64
+	CameraMake               string
+	CameraModel              string
+	LensModel                string
+	Fields                   map[string]any
 }
 
 func applyEXIF(out *Result, exif *exifData) {
@@ -270,6 +272,7 @@ func applyEXIF(out *Result, exif *exifData) {
 	out.CameraMake = exif.CameraMake
 	out.CameraModel = exif.CameraModel
 	out.LensModel = exif.LensModel
+	out.LivePhotoAssetIdentifier = exif.LivePhotoAssetIdentifier
 	if len(exif.Fields) != 0 {
 		if encoded, err := json.Marshal(exif.Fields); err == nil {
 			out.EXIFJSON = string(encoded)
@@ -459,6 +462,8 @@ func parseTIFF(data []byte) (*exifData, error) {
 					out.Fields["flash"] = reader.firstUint(typ, count, value)
 				case 0x920a:
 					addRationalField(reader, out.Fields, "focal_length_mm", typ, count, value)
+				case 0x927c:
+					out.LivePhotoAssetIdentifier = appleMakerNoteContentIdentifier(value)
 				case 0xa002:
 					if width := int(reader.firstUint(typ, count, value)); width > 0 {
 						out.PixelWidth = width
@@ -836,9 +841,10 @@ type mp4Track struct {
 }
 
 type mp4Info struct {
-	Duration   float64
-	CapturedAt *time.Time
-	Tracks     []mp4Track
+	Duration                 float64
+	CapturedAt               *time.Time
+	LivePhotoAssetIdentifier string
+	Tracks                   []mp4Track
 }
 
 type mp4Box struct {
@@ -862,6 +868,7 @@ func extractVideo(r io.ReadSeeker, size int64, out *Result) error {
 	if info.CapturedAt != nil {
 		out.CapturedAt = info.CapturedAt
 	}
+	out.LivePhotoAssetIdentifier = info.LivePhotoAssetIdentifier
 	for _, track := range info.Tracks {
 		switch track.Handler {
 		case "vide":
@@ -951,7 +958,7 @@ func parseMP4(r io.ReadSeeker) (mp4Info, error) {
 			if err := parseMoov(r, box, &out); err != nil {
 				return out, err
 			}
-			if out.Duration > 0 || len(out.Tracks) > 0 {
+			if out.Duration > 0 || len(out.Tracks) > 0 || out.LivePhotoAssetIdentifier != "" {
 				return out, nil
 			}
 		}
@@ -982,6 +989,14 @@ func parseMoov(r io.ReadSeeker, moov mp4Box, out *mp4Info) error {
 			track, _ := parseTrak(r, box)
 			if track.Handler != "" {
 				out.Tracks = append(out.Tracks, track)
+			}
+		case "meta":
+			if out.LivePhotoAssetIdentifier == "" {
+				out.LivePhotoAssetIdentifier = quickTimeContentIdentifier(r, box)
+			}
+		case "udta":
+			if out.LivePhotoAssetIdentifier == "" {
+				out.LivePhotoAssetIdentifier = quickTimeContentIdentifierInContainer(r, box)
 			}
 		}
 		position += box.Size
