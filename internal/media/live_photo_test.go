@@ -140,3 +140,12 @@ func qtBox(boxType []byte, payload []byte) []byte {
 	copy(out[8:], payload)
 	return out
 }
+
+func TestNormalizeLivePhotoIdentifierTrimsOuterNULAndWhitespace(t *testing.T) {
+	if got := normalizeLivePhotoIdentifier("  ABC-123\x00 "); got != "ABC-123" {
+		t.Fatalf("identifier=%q", got)
+	}
+	if got := normalizeLivePhotoIdentifier("ABC\x00DEF"); got != "" {
+		t.Fatalf("internal NUL was accepted: %q", got)
+	}
+}

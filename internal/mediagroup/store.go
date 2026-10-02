@@ -65,50 +65,11 @@ func ApplyLocalSnapshot(
 			return fmt.Errorf("media group members must be active file nodes owned by owner %d", ownerID)
 		}
 
-		group = meta.MediaGroup{
-			OwnerID: ownerID, Kind: snapshot.Kind, EvidenceKey: snapshot.EvidenceKey,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{
-				{Name: "owner_id"},
-				{Name: "kind"},
-				{Name: "evidence_key"},
-			},
-			DoUpdates: clause.Assignments(map[string]any{"updated_at": now}),
-		}).Create(&group).Error; err != nil {
+		applied, err := applyLocalSnapshotDB(tx, ownerID, snapshot, now)
+		if err != nil {
 			return err
 		}
-		if err := tx.
-			Where("owner_id = ? AND kind = ? AND evidence_key = ?", ownerID, snapshot.Kind, snapshot.EvidenceKey).
-			First(&group).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Where("group_id = ?", group.ID).Delete(&meta.MediaGroupItem{}).Error; err != nil {
-			return err
-		}
-
-		members := append([]MemberSnapshot(nil), snapshot.Members...)
-		sort.Slice(members, func(i, j int) bool {
-			if members[i].Ordinal != members[j].Ordinal {
-				return members[i].Ordinal < members[j].Ordinal
-			}
-			return members[i].NodeID < members[j].NodeID
-		})
-		rows := make([]meta.MediaGroupItem, 0, len(members))
-		for _, member := range members {
-			rows = append(rows, meta.MediaGroupItem{
-				GroupID: group.ID, NodeID: member.NodeID,
-				Role: member.Role, Ordinal: member.Ordinal,
-				CreatedAt: now, UpdatedAt: now,
-			})
-		}
-		if len(rows) != 0 {
-			if err := tx.Create(&rows).Error; err != nil {
-				return err
-			}
-		}
+		group = applied
 		return nil
 	})
 	return group, err
@@ -204,4 +165,57 @@ func containsControl(value string) bool {
 		}
 	}
 	return false
+}
+
+func applyLocalSnapshotDB(
+	db *gorm.DB,
+	ownerID uint64,
+	snapshot Snapshot,
+	now time.Time,
+) (meta.MediaGroup, error) {
+	group := meta.MediaGroup{
+		OwnerID: ownerID, Kind: snapshot.Kind, EvidenceKey: snapshot.EvidenceKey,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "owner_id"},
+			{Name: "kind"},
+			{Name: "evidence_key"},
+		},
+		DoUpdates: clause.Assignments(map[string]any{"updated_at": now}),
+	}).Create(&group).Error; err != nil {
+		return meta.MediaGroup{}, err
+	}
+	if err := db.
+		Where("owner_id = ? AND kind = ? AND evidence_key = ?", ownerID, snapshot.Kind, snapshot.EvidenceKey).
+		First(&group).Error; err != nil {
+		return meta.MediaGroup{}, err
+	}
+
+	if err := db.Where("group_id = ?", group.ID).Delete(&meta.MediaGroupItem{}).Error; err != nil {
+		return meta.MediaGroup{}, err
+	}
+
+	members := append([]MemberSnapshot(nil), snapshot.Members...)
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].Ordinal != members[j].Ordinal {
+			return members[i].Ordinal < members[j].Ordinal
+		}
+		return members[i].NodeID < members[j].NodeID
+	})
+	rows := make([]meta.MediaGroupItem, 0, len(members))
+	for _, member := range members {
+		rows = append(rows, meta.MediaGroupItem{
+			GroupID: group.ID, NodeID: member.NodeID,
+			Role: member.Role, Ordinal: member.Ordinal,
+			CreatedAt: now, UpdatedAt: now,
+		})
+	}
+	if len(rows) != 0 {
+		if err := db.Create(&rows).Error; err != nil {
+			return meta.MediaGroup{}, err
+		}
+	}
+	return group, nil
 }
