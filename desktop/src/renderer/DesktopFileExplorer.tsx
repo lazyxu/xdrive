@@ -1,25 +1,15 @@
 import { useCallback, useMemo, useState } from 'react'
-import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
-import EditRoundedIcon from '@mui/icons-material/EditRounded'
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
-import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
-import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
-import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
-import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
-  XDriveFileExplorerCommandButton,
+  XDriveFileExplorerTrashCommandButton,
+  xDriveFileExplorerBackgroundMenuItems,
+  xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerNavigation,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
-  XDriveFileExplorerMenuItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
 
@@ -309,76 +299,26 @@ export default function DesktopFileExplorer({
     await navigateTo([...crumbs, { id: node.id, name: node.name }])
   }
 
-  const getItemMenuItems = (item: XDriveFileExplorerItem): XDriveFileExplorerMenuItem[] => {
+  const getItemMenuItems = (item: XDriveFileExplorerItem) => {
     const node = nodeByID.get(Number(item.id))
     if (!node) return []
-    const menu: XDriveFileExplorerMenuItem[] = []
 
-    if (node.type === 'dir') {
-      menu.push({
-        id: 'open',
-        label: '打开',
-        icon: <FolderOpenRoundedIcon fontSize="small" />,
-        onSelect: () => { void openItem(item) },
-      })
-      menu.push({
-        id: 'reveal',
-        label: '在文件资源管理器中显示',
-        icon: <OpenInNewRoundedIcon fontSize="small" />,
-        disabled: Boolean(actionBusy),
-        onSelect: () => { void openLocalNode(node, true) },
-      })
-    } else {
-      menu.push({
-        id: 'open',
-        label: '打开',
-        icon: <OpenInNewRoundedIcon fontSize="small" />,
-        disabled: Boolean(actionBusy),
-        onSelect: () => { void openLocalNode(node) },
-      })
-      menu.push({
-        id: 'download',
-        label: '另存为…',
-        icon: <DownloadRoundedIcon fontSize="small" />,
-        disabled: Boolean(actionBusy),
-        onSelect: () => { void downloadNode(node) },
-      })
-      menu.push({
-        id: 'reveal',
-        label: '在文件资源管理器中显示',
-        icon: <FolderOpenRoundedIcon fontSize="small" />,
-        disabled: Boolean(actionBusy),
-        onSelect: () => { void openLocalNode(node, true) },
-      })
-      menu.push({
-        id: 'share',
-        label: '分享',
-        icon: <ShareRoundedIcon fontSize="small" />,
-        onSelect: () => onOpenShares(node),
-      })
-      menu.push({
-        id: 'history',
-        label: '历史版本',
-        icon: <HistoryRoundedIcon fontSize="small" />,
-        onSelect: () => onOpenHistory(node, searchByID.get(node.id)?.crumbs ?? crumbs),
-      })
-    }
-
-    menu.push({
-      id: 'rename',
-      label: '重命名',
-      icon: <EditRoundedIcon fontSize="small" />,
-      dividerBefore: true,
-      onSelect: () => setRenameNode(node),
+    return xDriveFileExplorerStandardItemMenuItems({
+      kind: node.type,
+      primaryDisabled: Boolean(actionBusy),
+      onOpen: node.type === 'dir'
+        ? () => { void openItem(item) }
+        : () => { void openLocalNode(node) },
+      onDownload: node.type === 'file' ? () => { void downloadNode(node) } : undefined,
+      downloadLabel: '另存为…',
+      onReveal: () => { void openLocalNode(node, true) },
+      onShare: node.type === 'file' ? () => onOpenShares(node) : undefined,
+      onHistory: node.type === 'file'
+        ? () => onOpenHistory(node, searchByID.get(node.id)?.crumbs ?? crumbs)
+        : undefined,
+      onRename: () => setRenameNode(node),
+      onDelete: () => onDelete(node),
     })
-    menu.push({
-      id: 'delete',
-      label: '删除',
-      icon: <DeleteOutlineRoundedIcon fontSize="small" />,
-      danger: true,
-      onSelect: () => onDelete(node),
-    })
-    return menu
   }
 
   const explorerNodesForItems = (selected: XDriveFileExplorerItem[]) => (
@@ -501,30 +441,14 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const backgroundMenuItems = useMemo<XDriveFileExplorerMenuItem[]>(() => [
-    {
-      id: 'new-folder',
-      label: '新建文件夹',
-      icon: <CreateNewFolderRoundedIcon fontSize="small" />,
-      onSelect: () => setCreateOpen(true),
+  const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
+    onCreateFolder: () => setCreateOpen(true),
+    onUpload: () => { void uploadFiles() },
+    uploadDisabled: Boolean(actionBusy),
+    onRefresh: () => {
+      if (current) void onLoadDirectory(current.id, crumbs, sort)
     },
-    {
-      id: 'upload',
-      label: '上传文件',
-      icon: <UploadRoundedIcon fontSize="small" />,
-      disabled: Boolean(actionBusy),
-      onSelect: () => { void uploadFiles() },
-    },
-    {
-      id: 'refresh',
-      label: '刷新',
-      icon: <RefreshRoundedIcon fontSize="small" />,
-      dividerBefore: true,
-      onSelect: () => {
-        if (current) void onLoadDirectory(current.id, crumbs, sort)
-      },
-    },
-  ], [actionBusy, crumbs, current, onLoadDirectory])
+  })
 
   return (
     <>
@@ -585,11 +509,7 @@ export default function DesktopFileExplorer({
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
-        commandBarStart={(
-          <XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>
-            回收站
-          </XDriveFileExplorerCommandButton>
-        )}
+        commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         statusText={searchResults
           ? `搜索“${searchValue.trim()}”${searchResults.length >= 200 ? ' · 最多显示 200 个结果' : ''}`
           : actionBusy === 'upload'
