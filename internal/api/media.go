@@ -74,6 +74,7 @@ type mediaItemDTO struct {
 	Node             nodeDTO                   `json:"node"`
 	Metadata         mediaMetadataDTO          `json:"metadata"`
 	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
+	LivePhoto        bool                      `json:"live_photo,omitempty"`
 }
 
 type mediaAlbumDTO struct {
@@ -180,11 +181,17 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "list media resources failed")
 		return
 	}
+	livePhoto, err := s.mediaNodeIsLivePhoto(c.Request.Context(), node.ID, node.OwnerID, metadata)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "resolve live photo failed")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, mediaItemDTO{
 		Node:             toNodeDTO(node),
 		Metadata:         toMediaMetadataDTO(metadata),
 		DerivedResources: resources,
+		LivePhoto:        livePhoto,
 	})
 }
 
@@ -209,7 +216,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 	if err := s.DB.WithContext(c.Request.Context()).
 		Table("xd_media_metadata AS mm").
 		Select(
-			"p.id, p.name, COUNT(*) AS item_count, "+
+			"p.id, p.name, COUNT(DISTINCT n.id) AS item_count, "+
 				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN n.id ELSE NULL END) AS cover_node_id, "+
 				"MAX(COALESCE(mm.captured_at, n.updated_at)) AS updated_at",
 			thumbnailMIMEs,
@@ -217,9 +224,10 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		Joins("JOIN xd_nodes AS n ON n.id = mm.node_id AND n.deleted_at IS NULL").
 		Joins("JOIN xd_nodes AS p ON p.id = n.parent_id AND p.deleted_at IS NULL").
 		Where(
-			"mm.owner_id = ? AND mm.media_kind IN ?",
+			"mm.owner_id = ? AND mm.media_kind IN ? AND "+mediaGalleryVisibleNodeSQL("n.id"),
 			uid,
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
+			uid,
 		).
 		Group("p.id, p.name").
 		Order("updated_at DESC, lower(p.name) ASC").
@@ -244,7 +252,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 	if err := s.DB.WithContext(c.Request.Context()).
 		Table("xd_source_collections AS sc").
 		Select(
-			"sc.id, sc.name, COUNT(DISTINCT si.node_id) AS item_count, "+
+			"sc.id, sc.name, COUNT(DISTINCT n.id) AS item_count, "+
 				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN n.id ELSE NULL END) AS cover_node_id, "+
 				"MAX(COALESCE(mm.captured_at, n.updated_at)) AS updated_at",
 			thumbnailMIMEs,
@@ -260,10 +268,11 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 		).
 		Where(
-			"src.owner_id = ? AND sc.state = ? AND sc.kind = ?",
+			"src.owner_id = ? AND sc.state = ? AND sc.kind = ? AND "+mediaGalleryVisibleNodeSQL("n.id"),
 			uid,
 			meta.SourceCollectionStateActive,
 			"album",
+			uid,
 		).
 		Group("sc.id, sc.name").
 		Order("updated_at DESC, lower(sc.name) ASC").
@@ -286,6 +295,11 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 }
 
 func (s *Server) listMediaAlbumItems(c *gin.Context) {
+	_ = s.refreshMediaIndexForOwner(
+		c.Request.Context(),
+		userID(c),
+		mediaRequestIndexBatch,
+	)
 	raw := strings.TrimSpace(c.Param("albumID"))
 	parts := strings.SplitN(raw, ":", 2)
 	if len(parts) != 2 {
@@ -357,9 +371,10 @@ func (s *Server) queryMediaItems(
 			"JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.deleted_at IS NULL",
 		).
 		Where(
-			"xd_media_metadata.owner_id = ? AND xd_media_metadata.media_kind IN ?",
+			"xd_media_metadata.owner_id = ? AND xd_media_metadata.media_kind IN ? AND "+mediaGalleryVisibleNodeSQL("n.id"),
 			uid,
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
+			uid,
 		)
 	if kind != "" {
 		query = query.Where("xd_media_metadata.media_kind = ?", kind)
@@ -440,17 +455,133 @@ func (s *Server) queryMediaItems(
 	for _, node := range nodes {
 		byID[node.ID] = node
 	}
+	livePhotoIDs, err := s.validLivePhotoStillNodeIDs(ctx, uid, ids)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]mediaItemDTO, 0, len(metadata))
 	for _, row := range metadata {
 		if node, ok := byID[row.NodeID]; ok {
+			_, standaloneLivePhoto := livePhotoIDs[row.NodeID]
 			out = append(out, mediaItemDTO{
-				Node:     toNodeDTO(node),
-				Metadata: toMediaMetadataDTO(row),
+				Node:      toNodeDTO(node),
+				Metadata:  toMediaMetadataDTO(row),
+				LivePhoto: standaloneLivePhoto || row.ContainerKind == mediapkg.ContainerKindLIVP,
 			})
 		}
 	}
 	return out, nil
+}
+
+func mediaGalleryVisibleNodeSQL(nodeExpr string) string {
+	return "NOT EXISTS (" +
+		"SELECT 1 FROM xd_media_group_items AS gallery_motion " +
+		"JOIN xd_media_groups AS gallery_mg ON gallery_mg.id = gallery_motion.group_id " +
+		"JOIN xd_nodes AS gallery_motion_n ON gallery_motion_n.id = gallery_motion.node_id AND gallery_motion_n.deleted_at IS NULL " +
+		"JOIN xd_media_metadata AS gallery_motion_mm ON gallery_motion_mm.node_id = gallery_motion_n.id " +
+		"WHERE gallery_motion.node_id = " + nodeExpr + " " +
+		"AND gallery_motion.role = 'motion' " +
+		"AND gallery_mg.kind = 'live_photo' " +
+		"AND gallery_mg.owner_id = ? " +
+		"AND gallery_motion_n.owner_id = gallery_mg.owner_id " +
+		"AND gallery_motion_mm.owner_id = gallery_mg.owner_id " +
+		"AND gallery_motion_mm.media_kind = 'video' " +
+		"AND gallery_motion_mm.index_state = 'ready' " +
+		"AND (SELECT COUNT(*) FROM xd_media_group_items AS gallery_all " +
+		"WHERE gallery_all.group_id = gallery_mg.id) = 2 " +
+		"AND EXISTS (" +
+		"SELECT 1 FROM xd_media_group_items AS gallery_still " +
+		"JOIN xd_nodes AS gallery_still_n ON gallery_still_n.id = gallery_still.node_id AND gallery_still_n.deleted_at IS NULL " +
+		"JOIN xd_media_metadata AS gallery_still_mm ON gallery_still_mm.node_id = gallery_still_n.id " +
+		"WHERE gallery_still.group_id = gallery_mg.id " +
+		"AND gallery_still.role = 'still' " +
+		"AND gallery_still_n.owner_id = gallery_mg.owner_id " +
+		"AND gallery_still_mm.owner_id = gallery_mg.owner_id " +
+		"AND gallery_still_mm.media_kind = 'image' " +
+		"AND gallery_still_mm.index_state = 'ready'" +
+		") " +
+		"AND (SELECT COUNT(*) FROM xd_media_group_items AS gallery_valid " +
+		"JOIN xd_nodes AS gallery_valid_n ON gallery_valid_n.id = gallery_valid.node_id AND gallery_valid_n.deleted_at IS NULL " +
+		"JOIN xd_media_metadata AS gallery_valid_mm ON gallery_valid_mm.node_id = gallery_valid_n.id " +
+		"WHERE gallery_valid.group_id = gallery_mg.id " +
+		"AND gallery_valid_n.owner_id = gallery_mg.owner_id " +
+		"AND gallery_valid_mm.owner_id = gallery_mg.owner_id " +
+		"AND gallery_valid_mm.index_state = 'ready' " +
+		"AND ((gallery_valid.role = 'still' AND gallery_valid_mm.media_kind = 'image') " +
+		"OR (gallery_valid.role = 'motion' AND gallery_valid_mm.media_kind = 'video'))) = 2" +
+		")"
+}
+
+func (s *Server) validLivePhotoStillNodeIDs(
+	ctx context.Context,
+	uid uint64,
+	nodeIDs []uint64,
+) (map[uint64]struct{}, error) {
+	out := make(map[uint64]struct{})
+	if len(nodeIDs) == 0 {
+		return out, nil
+	}
+	type row struct {
+		NodeID uint64
+	}
+	var rows []row
+	if err := s.DB.WithContext(ctx).
+		Table("xd_media_group_items AS still_mgi").
+		Select("still_mgi.node_id").
+		Joins("JOIN xd_media_groups AS mg ON mg.id = still_mgi.group_id").
+		Where(
+			"mg.owner_id = ? AND mg.kind = ? AND still_mgi.role = ? AND still_mgi.node_id IN ? "+
+				"AND (SELECT COUNT(*) FROM xd_media_group_items AS all_mgi WHERE all_mgi.group_id = mg.id) = 2 "+
+				"AND (SELECT COUNT(*) FROM xd_media_group_items AS valid_mgi "+
+				"JOIN xd_nodes AS valid_n ON valid_n.id = valid_mgi.node_id AND valid_n.deleted_at IS NULL "+
+				"JOIN xd_media_metadata AS valid_mm ON valid_mm.node_id = valid_n.id "+
+				"WHERE valid_mgi.group_id = mg.id AND valid_n.owner_id = mg.owner_id "+
+				"AND valid_mm.owner_id = mg.owner_id AND valid_mm.index_state = ? "+
+				"AND ((valid_mgi.role = ? AND valid_mm.media_kind = ?) "+
+				"OR (valid_mgi.role = ? AND valid_mm.media_kind = ?))) = 2 "+
+				"AND EXISTS (SELECT 1 FROM xd_media_group_items AS motion_mgi "+
+				"JOIN xd_nodes AS motion_n ON motion_n.id = motion_mgi.node_id AND motion_n.deleted_at IS NULL "+
+				"JOIN xd_media_metadata AS motion_mm ON motion_mm.node_id = motion_n.id "+
+				"WHERE motion_mgi.group_id = mg.id AND motion_mgi.role = ? "+
+				"AND motion_n.owner_id = mg.owner_id AND motion_mm.owner_id = mg.owner_id "+
+				"AND motion_mm.media_kind = ? AND motion_mm.index_state = ?)",
+			uid,
+			meta.MediaGroupKindLivePhoto,
+			meta.MediaGroupRoleStill,
+			nodeIDs,
+			meta.MediaIndexStateReady,
+			meta.MediaGroupRoleStill,
+			meta.MediaKindImage,
+			meta.MediaGroupRoleMotion,
+			meta.MediaKindVideo,
+			meta.MediaGroupRoleMotion,
+			meta.MediaKindVideo,
+			meta.MediaIndexStateReady,
+		).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.NodeID] = struct{}{}
+	}
+	return out, nil
+}
+
+func (s *Server) mediaNodeIsLivePhoto(
+	ctx context.Context,
+	nodeID, uid uint64,
+	metadata meta.MediaMetadata,
+) (bool, error) {
+	if metadata.ContainerKind == mediapkg.ContainerKindLIVP {
+		return true, nil
+	}
+	ids, err := s.validLivePhotoStillNodeIDs(ctx, uid, []uint64{nodeID})
+	if err != nil {
+		return false, err
+	}
+	_, ok := ids[nodeID]
+	return ok, nil
 }
 
 func (s *Server) mediaThumbnail(c *gin.Context) {
@@ -1031,6 +1162,188 @@ func (s *Server) currentMediaDerivedResource(
 		return meta.MediaDerivedResource{}, errors.New("invalid media resource range")
 	}
 	return row, nil
+}
+
+func (s *Server) mediaLivePhotoMotion(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	node, err := s.ownedNode(userID(c), id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "media indexing failed")
+		return
+	}
+
+	if metadata.ContainerKind == mediapkg.ContainerKindLIVP {
+		resource, err := s.currentMediaDerivedResource(
+			c.Request.Context(),
+			node,
+			meta.MediaDerivedResourceRoleMotion,
+		)
+		if err != nil {
+			fail(c, http.StatusNotFound, "live photo motion not found")
+			return
+		}
+		file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
+		if err != nil {
+			fail(c, http.StatusNotFound, "stored content not found")
+			return
+		}
+		defer file.Close()
+		c.Header("ETag", fmt.Sprintf(
+			"\"live-photo-motion-%s-%d-%d\"",
+			strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+			resource.ByteOffset,
+			resource.ByteSize,
+		))
+		c.Header("Cache-Control", "private, max-age=3600")
+		c.Header("Content-Type", resource.MIMEType)
+		http.ServeContent(
+			c.Writer,
+			c.Request,
+			resource.Name,
+			metadata.UpdatedAt,
+			io.NewSectionReader(file, resource.ByteOffset, resource.ByteSize),
+		)
+		return
+	}
+
+	motionNode, motionMetadata, err := s.standaloneLivePhotoMotion(
+		c.Request.Context(),
+		node.ID,
+		node.OwnerID,
+	)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "live photo motion not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "resolve live photo motion failed")
+		}
+		return
+	}
+	file, err := s.Store.Open(c.Request.Context(), motionNode.File.StorageKey)
+	if err != nil {
+		fail(c, http.StatusNotFound, "stored content not found")
+		return
+	}
+	defer file.Close()
+	contentType := strings.TrimSpace(motionMetadata.MIMEType)
+	if contentType == "" {
+		contentType = "video/quicktime"
+	}
+	c.Header("ETag", fmt.Sprintf(
+		"\"live-photo-motion-%s\"",
+		strings.ToLower(strings.TrimSpace(motionNode.File.SHA256)),
+	))
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header("Content-Type", contentType)
+	http.ServeContent(
+		c.Writer,
+		c.Request,
+		motionNode.Name,
+		motionMetadata.UpdatedAt,
+		file,
+	)
+}
+
+func (s *Server) standaloneLivePhotoMotion(
+	ctx context.Context,
+	stillNodeID, uid uint64,
+) (meta.Node, meta.MediaMetadata, error) {
+	var motion meta.Node
+	var motionMetadata meta.MediaMetadata
+
+	type memberRow struct {
+		GroupID   uint64
+		NodeID    uint64
+		Role      string
+		MediaKind string
+	}
+	var members []memberRow
+	if err := s.DB.WithContext(ctx).
+		Table("xd_media_group_items AS mgi").
+		Select("mgi.group_id, mgi.node_id, mgi.role, mm.media_kind").
+		Joins("JOIN xd_media_groups AS mg ON mg.id = mgi.group_id").
+		Joins("JOIN xd_nodes AS n ON n.id = mgi.node_id AND n.deleted_at IS NULL").
+		Joins("JOIN xd_media_metadata AS mm ON mm.node_id = n.id AND mm.index_state = ?", meta.MediaIndexStateReady).
+		Where(
+			"mg.owner_id = ? AND mg.kind = ? AND n.owner_id = ? AND mm.owner_id = ? "+
+				"AND mgi.group_id IN ("+
+				"SELECT still_mgi.group_id FROM xd_media_group_items AS still_mgi "+
+				"JOIN xd_media_groups AS still_mg ON still_mg.id = still_mgi.group_id "+
+				"WHERE still_mgi.node_id = ? AND still_mgi.role = ? "+
+				"AND still_mg.owner_id = ? AND still_mg.kind = ? "+
+				"AND (SELECT COUNT(*) FROM xd_media_group_items AS all_mgi WHERE all_mgi.group_id = still_mg.id) = 2) ",
+			uid,
+			meta.MediaGroupKindLivePhoto,
+			uid,
+			uid,
+			stillNodeID,
+			meta.MediaGroupRoleStill,
+			uid,
+			meta.MediaGroupKindLivePhoto,
+		).
+		Order("mgi.group_id ASC, mgi.ordinal ASC").
+		Scan(&members).Error; err != nil {
+		return motion, motionMetadata, err
+	}
+	if len(members) != 2 ||
+		members[0].GroupID != members[1].GroupID {
+		return motion, motionMetadata, gorm.ErrRecordNotFound
+	}
+
+	var stillCount, motionCount int
+	var motionID uint64
+	for _, member := range members {
+		switch {
+		case member.Role == meta.MediaGroupRoleStill &&
+			member.MediaKind == meta.MediaKindImage &&
+			member.NodeID == stillNodeID:
+			stillCount++
+		case member.Role == meta.MediaGroupRoleMotion &&
+			member.MediaKind == meta.MediaKindVideo:
+			motionCount++
+			motionID = member.NodeID
+		default:
+			return motion, motionMetadata, gorm.ErrRecordNotFound
+		}
+	}
+	if stillCount != 1 || motionCount != 1 || motionID == 0 {
+		return motion, motionMetadata, gorm.ErrRecordNotFound
+	}
+	if err := s.DB.WithContext(ctx).
+		Preload("File").
+		Where(
+			"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			motionID,
+			uid,
+			meta.NodeTypeFile,
+		).
+		First(&motion).Error; err != nil {
+		return motion, motionMetadata, err
+	}
+	if motion.File == nil {
+		return motion, motionMetadata, gorm.ErrRecordNotFound
+	}
+	if err := s.DB.WithContext(ctx).
+		Where(
+			"node_id = ? AND owner_id = ? AND media_kind = ? AND index_state = ?",
+			motion.ID,
+			uid,
+			meta.MediaKindVideo,
+			meta.MediaIndexStateReady,
+		).
+		First(&motionMetadata).Error; err != nil {
+		return motion, motionMetadata, err
+	}
+	return motion, motionMetadata, nil
 }
 
 func (s *Server) mediaDerivedResourceContent(c *gin.Context) {
