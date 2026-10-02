@@ -63,7 +63,7 @@ test('Desktop Storage refresh owns cloud quota and storage intelligence refresh'
 
 test('Desktop Files home load does not fetch CAS storage intelligence', () => {
   const start = app.indexOf('const loadCloudHome = async () => {')
-  const end = app.indexOf('const loadCloudTrash = async () => {', start)
+  const end = app.indexOf('const openCloudTrash = () =>', start)
   assert.ok(start >= 0 && end > start, 'loadCloudHome boundaries are missing')
   const body = app.slice(start, end)
   assert.ok(body.includes('cloudRoot()'), 'Files home should still load the cloud root')

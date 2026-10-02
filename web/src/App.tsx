@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
@@ -24,12 +22,6 @@ import {
   MenuItem,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Toolbar,
   Typography,
@@ -41,7 +33,6 @@ import {
   XDriveBrandLockup,
   XDriveConfirmDialog,
   XDriveSettingsDialog,
-  XDriveDialogActions,
   XDriveDialogContent,
   XDriveDialogTitle,
   XDriveFeedbackSnackbar,
@@ -53,6 +44,8 @@ import {
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
   XDriveTransferCenter,
+  XDriveTrashDialog,
+  XDriveVersionHistoryDialog,
   XDriveWorkspaceSurface,
   XDriveWorkspaceShell,
   XDriveStatusAlert,
@@ -62,7 +55,6 @@ import type { MediaGalleryDataSource, XDriveFileExplorerSort } from '@xdrive/ui/
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
-  FileVersion,
   MeResult,
   Node,
   QuotaUsage,
@@ -72,7 +64,6 @@ import type {
   XDriveServerUpdateState,
   XDriveTransferTask,
 } from '../../ui/shared/src'
-import { formatSize } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -80,6 +71,7 @@ import ShareDialog from './ShareDialog'
 import StorageStatsPanel from './StorageStatsPanel'
 import ExternalSourcesPanel from './ExternalSources'
 import WebFileExplorer from './WebFileExplorer'
+import { createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const ACCESS_KEY = 'xdrive.access_token'
@@ -511,12 +503,8 @@ function FileManager({
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [trashOpen, setTrashOpen] = useState(false)
-  const [trashItems, setTrashItems] = useState<Node[]>([])
-  const [trashLoading, setTrashLoading] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
-  const [versions, setVersions] = useState<FileVersion[]>([])
-  const [versionsLoading, setVersionsLoading] = useState(false)
   const [passwordValues, setPasswordValues] = useState({ current: '', next: '', confirm: '' })
   const [passwordError, setPasswordError] = useState('')
   const [feedback, setFeedback] = useState<Feedback | null>(null)
@@ -524,6 +512,9 @@ function FileManager({
   const [confirmBusy, setConfirmBusy] = useState(false)
 
   const current = crumbs.at(-1)
+
+  const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
+  const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
 
   const gallerySource = useMemo<MediaGalleryDataSource>(() => ({
     listItems: (limit, offset) => api.mediaItems('', limit, offset),
@@ -900,34 +891,9 @@ function FileManager({
     })
   }
 
-  const loadTrash = async () => {
-    setTrashLoading(true)
-    try {
-      setTrashItems(await api.trash())
-    } catch (err) {
-      handleError(err)
-    } finally {
-      setTrashLoading(false)
-    }
-  }
+  const openTrash = () => setTrashOpen(true)
 
-  const openTrash = () => {
-    setTrashOpen(true)
-    void loadTrash()
-  }
-
-  const openHistory = async (node: Node) => {
-    setHistoryNode(node)
-    setVersionsLoading(true)
-    try {
-      setVersions(await api.versions(node.id))
-    } catch (err) {
-      handleError(err)
-      setVersions([])
-    } finally {
-      setVersionsLoading(false)
-    }
-  }
+  const openHistory = (node: Node) => setHistoryNode(node)
 
   return (
     <Box
@@ -1070,7 +1036,7 @@ function FileManager({
                 onQuotaChanged={refreshQuota}
                 onFeedback={(tone, message) => setFeedback({ tone, message })}
                 onShare={setShareNode}
-                onHistory={(node) => { void openHistory(node) }}
+                onHistory={openHistory}
                 onError={handleError}
               />
           </Box>
@@ -1174,157 +1140,30 @@ function FileManager({
         </XDriveDialogContent>
       </Dialog>
 
-      <Dialog open={trashOpen} onClose={() => setTrashOpen(false)} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title="回收站" onClose={() => setTrashOpen(false)} />
-        <XDriveDialogContent dividers>
-          {trashLoading && trashItems.length === 0 ? (
-            <XDriveStatePanel variant="plain" loading message="正在加载回收站…" />
-          ) : trashItems.length === 0 ? (
-            <XDriveStatePanel variant="plain" message="回收站为空" />
-          ) : (
-            <TableContainer>
-              <Table size="small" aria-label="回收站">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>名称</TableCell>
-                    <TableCell sx={{ width: 190 }}>删除时间</TableCell>
-                    <TableCell align="right" sx={{ width: 230 }}>操作</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {trashItems.map((node) => (
-                    <TableRow key={node.id} hover>
-                      <TableCell>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          {node.type === 'dir' ? <FolderOpenRoundedIcon fontSize="small" /> : <InsertDriveFileRoundedIcon fontSize="small" />}
-                          <Typography variant="body2">{node.name}</Typography>
-                        </Stack>
-                      </TableCell>
-                      <TableCell>{node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</TableCell>
-                      <TableCell align="right">
-                        <Stack direction="row" spacing={1} justifyContent="flex-end">
-                          <XDriveActionButton
-                            compact
-                            onClick={() => void (async () => {
-                              try {
-                                await api.restoreTrash(node.id, node.revision)
-                                setFeedback({ tone: 'good', message: '已恢复' })
-                                await loadTrash()
-                                if (current) await loadDirectory(current.id)
-                                await refreshQuota()
-                              } catch (err) {
-                                handleError(err)
-                              }
-                            })()}
-                          >
-                            恢复
-                          </XDriveActionButton>
-                          <XDriveActionButton
-                            compact
-                            intent="danger"
-                            onClick={() => setConfirmAction({
-                              title: `永久删除 ${node.name}？`,
-                              description: '该项目、当前内容以及所有已保存的历史版本都将被永久删除。',
-                              confirmLabel: '永久删除',
-                              intent: 'danger',
-                              run: async () => {
-                                await api.permanentlyDeleteTrash(node.id, node.revision)
-                                setFeedback({ tone: 'good', message: '已永久删除' })
-                                await loadTrash()
-                                await refreshQuota()
-                              },
-                            })}
-                          >
-                            永久删除
-                          </XDriveActionButton>
-                        </Stack>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </XDriveDialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!historyNode}
-        onClose={() => {
-          setHistoryNode(null)
-          setVersions([])
+      <XDriveTrashDialog
+        open={trashOpen}
+        adapter={trashDialogAdapter}
+        onClose={() => setTrashOpen(false)}
+        onError={handleError}
+        onFeedback={(message) => setFeedback({ tone: 'good', message })}
+        onChanged={async () => {
+          if (current) await loadDirectory(current.id)
+          await refreshQuota()
         }}
-        maxWidth="md"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title={historyNode ? `版本历史 — ${historyNode.name}` : '版本历史'}
-          onClose={() => {
-            setHistoryNode(null)
-            setVersions([])
-          }}
-        />
-        <XDriveDialogContent dividers>
-          {versionsLoading && versions.length === 0 ? (
-            <XDriveStatePanel variant="plain" loading message="正在加载历史版本…" />
-          ) : versions.length === 0 ? (
-            <XDriveStatePanel variant="plain" message="暂无历史版本" />
-          ) : (
-            <TableContainer>
-              <Table size="small" aria-label="版本历史">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ width: 110 }}>版本</TableCell>
-                    <TableCell sx={{ width: 120 }}>大小</TableCell>
-                    <TableCell sx={{ width: 190 }}>保存时间</TableCell>
-                    <TableCell align="right">操作</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {versions.map((version) => (
-                    <TableRow key={version.id} hover>
-                      <TableCell>{`r${version.revision}`}</TableCell>
-                      <TableCell>{formatSize(version.size)}</TableCell>
-                      <TableCell>{new Date(version.created_at).toLocaleString()}</TableCell>
-                      <TableCell align="right">
-                        {historyNode && (
-                          <Stack direction="row" spacing={1} justifyContent="flex-end">
-                            <XDriveActionButton compact onClick={() => void api.downloadVersion(historyNode, version).catch(handleError)}>
-                              下载
-                            </XDriveActionButton>
-                            <XDriveActionButton
-                              compact
-                              intent="primary"
-                              onClick={() => setConfirmAction({
-                                title: `恢复到版本 ${version.revision}？`,
-                                description: '当前内容会先保留为一个新的历史版本。',
-                                confirmLabel: '恢复版本',
-                                intent: 'primary',
-                                run: async () => {
-                                  const restored = await api.restoreVersion(historyNode.id, historyNode.revision, version.id)
-                                  setFeedback({ tone: 'good', message: '版本已恢复' })
-                                  setHistoryNode(restored)
-                                  setVersions(await api.versions(restored.id))
-                                  if (current) await loadDirectory(current.id)
-                                  await refreshQuota()
-                                },
-                              })}
-                            >
-                              恢复
-                            </XDriveActionButton>
-                          </Stack>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </XDriveDialogContent>
-      </Dialog>
+      />
+
+      <XDriveVersionHistoryDialog
+        node={historyNode}
+        adapter={versionHistoryDialogAdapter}
+        onClose={() => setHistoryNode(null)}
+        onError={handleError}
+        onFeedback={(message) => setFeedback({ tone: 'good', message })}
+        onRestored={async (restored) => {
+          setHistoryNode(restored)
+          if (current) await loadDirectory(current.id)
+          await refreshQuota()
+        }}
+      />
 
       <XDriveConfirmDialog
         open={!!confirmAction}
