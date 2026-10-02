@@ -1,4 +1,9 @@
 import type { ReactNode } from 'react'
+import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import { Box, Chip, List, ListItemButton, ListItemIcon, ListItemText, Typography } from '@mui/material'
 
 export const XDRIVE_SIDEBAR_WIDTH = 184
@@ -120,6 +125,61 @@ export function XDriveSidebarNavList({
     >
       {children}
     </List>
+  )
+}
+
+export type XDriveCoreWorkspaceKey = 'files' | 'gallery' | 'sources' | 'transfers' | 'storage'
+
+export function XDriveCoreWorkspaceNavItems({
+  selected,
+  transferBadge,
+  appearance = 'light',
+  onSelect,
+}: {
+  selected?: string
+  transferBadge?: ReactNode
+  appearance?: XDriveSidebarAppearance
+  onSelect: (key: XDriveCoreWorkspaceKey) => void
+}) {
+  return (
+    <>
+      <XDriveSidebarNavItem
+        selected={selected === 'files'}
+        icon={<FolderRoundedIcon fontSize="small" />}
+        primary="文件"
+        appearance={appearance}
+        onClick={() => onSelect('files')}
+      />
+      <XDriveSidebarNavItem
+        selected={selected === 'gallery'}
+        icon={<PhotoLibraryRoundedIcon fontSize="small" />}
+        primary="图库"
+        appearance={appearance}
+        onClick={() => onSelect('gallery')}
+      />
+      <XDriveSidebarNavItem
+        selected={selected === 'sources'}
+        icon={<CloudSyncRoundedIcon fontSize="small" />}
+        primary="同步文件夹"
+        appearance={appearance}
+        onClick={() => onSelect('sources')}
+      />
+      <XDriveSidebarNavItem
+        selected={selected === 'transfers'}
+        icon={<SwapVertRoundedIcon fontSize="small" />}
+        primary="传输"
+        badge={transferBadge}
+        appearance={appearance}
+        onClick={() => onSelect('transfers')}
+      />
+      <XDriveSidebarNavItem
+        selected={selected === 'storage'}
+        icon={<StorageRoundedIcon fontSize="small" />}
+        primary="存储"
+        appearance={appearance}
+        onClick={() => onSelect('storage')}
+      />
+    </>
   )
 }
 

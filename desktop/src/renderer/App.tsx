@@ -21,22 +21,17 @@ import {
   Typography,
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
-import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
 import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
-import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
-import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
@@ -50,6 +45,7 @@ import {
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
+  XDriveCoreWorkspaceNavItems,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveSidebarNavItem,
@@ -1850,11 +1846,15 @@ export default function App({
       <XDriveSidebarSurface ariaLabel="桌面版侧边栏" className="sidebar">
         <XDriveSidebarNavList ariaLabel="桌面版功能区">
           <XDriveSidebarNavItem selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
-          <XDriveSidebarNavItem selected={view === 'cloud'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setView('cloud')} />
-          <XDriveSidebarNavItem selected={view === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setView('gallery')} />
-          <XDriveSidebarNavItem selected={view === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="同步文件夹" onClick={() => setView('sources')} />
-          <XDriveSidebarNavItem selected={view === 'transfers'} icon={<SwapVertRoundedIcon fontSize="small" />} primary="传输" badge={(activeTransfers.length + activeFileOperations.length) || undefined} onClick={() => setView('transfers')} />
-          <XDriveSidebarNavItem selected={view === 'files'} icon={<StorageRoundedIcon fontSize="small" />} primary="存储" onClick={() => setView('files')} />
+          <XDriveCoreWorkspaceNavItems
+            selected={view === 'cloud' ? 'files' : view === 'files' ? 'storage' : view}
+            transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}
+            onSelect={(destination) => {
+              if (destination === 'files') setView('cloud')
+              else if (destination === 'storage') setView('files')
+              else setView(destination)
+            }}
+          />
           <XDriveSidebarNavItem selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
         </XDriveSidebarNavList>
         <XDriveSidebarSection pinnedBottom>

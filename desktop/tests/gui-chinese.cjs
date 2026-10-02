@@ -207,20 +207,27 @@ test('desktop sidebar consumes shared MUI navigation with icons, state and badge
 
   assert.equal(sidebar.includes("view === 'settings'"), false, 'settings should live in the titlebar, not the feature sidebar')
   assert.equal(sidebar.includes('className="account"'), false, 'legacy sidebar account summary should be removed')
-  assert.equal((sidebar.match(/<XDriveSidebarNavItem/g) || []).length, 8, 'all primary and diagnostic destinations must use shared sidebar items')
+  assert.equal((sidebar.match(/<XDriveSidebarNavItem/g) || []).length, 3, 'Desktop-only overview/conflict/diagnostic destinations should remain local sidebar items')
+  assert.equal((sidebar.match(/<XDriveCoreWorkspaceNavItems/g) || []).length, 1, 'Desktop must reuse the shared core workspace destinations')
   for (const icon of [
     'DashboardRoundedIcon',
+    'WarningAmberRoundedIcon',
+    'BuildRoundedIcon',
+  ]) {
+    assert.ok(sidebar.includes(icon), `missing Desktop-only sidebar icon: ${icon}`)
+  }
+  for (const icon of [
     'FolderRoundedIcon',
     'PhotoLibraryRoundedIcon',
     'CloudSyncRoundedIcon',
     'SwapVertRoundedIcon',
     'StorageRoundedIcon',
-    'WarningAmberRoundedIcon',
-    'BuildRoundedIcon',
   ]) {
-    assert.ok(sidebar.includes(icon), `missing sidebar icon: ${icon}`)
+    assert.ok(sharedSidebarNav.includes(icon), `missing shared core sidebar icon: ${icon}`)
   }
-  assert.equal((sidebar.match(/badge=/g) || []).length, 2, 'transfer/conflict counts must use the shared badge treatment')
+  assert.equal((sharedSidebarNav.match(/<XDriveSidebarNavItem/g) || []).length, 5, 'shared sidebar module should own the five core destinations')
+  assert.ok(sidebar.includes('transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}'), 'Desktop transfer count must feed the shared core navigation')
+  assert.ok(sidebar.includes('badge={status?.conflict_count || undefined}'), 'Desktop conflict count must stay on the Desktop-only conflict item')
   assert.ok(sidebar.includes('<XDriveSidebarSection pinnedBottom>'), 'diagnostics should stay in the shared pinned sidebar section')
   assert.equal(sidebar.includes('appearance="dark"'), false, 'Desktop sidebar should inherit the application theme instead of forcing dark mode')
   assert.ok(renderer.includes('<XDriveWorkspaceShell>'), 'Desktop should consume the shared sidebar/workspace shell')
@@ -236,7 +243,7 @@ test('desktop sidebar consumes shared MUI navigation with icons, state and badge
   assert.ok(sharedSidebarNav.includes("appearance === 'dark'"), 'shared dark sidebar appearance is missing')
   assert.ok(sharedSidebarNav.includes('export function XDriveSidebarSection'), 'shared sidebar section primitive is missing')
   assert.ok(sharedSidebarNav.includes("pinnedBottom ? 'auto'"), 'shared pinned-bottom sidebar section behavior is missing')
-  assert.ok(sidebar.includes('primary="文件"'), 'desktop file navigation should match the Web label')
+  assert.ok(sharedSidebarNav.includes('primary="文件"'), 'shared core navigation should own the common file label')
   assert.equal(sidebar.includes('primary="云端文件"'), false, 'desktop sidebar should not use the legacy cloud-files label')
   assert.equal(styles.includes('.sidebar {'), false, 'Desktop should not keep a duplicate local sidebar surface implementation')
 })
