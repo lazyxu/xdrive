@@ -12,13 +12,15 @@ const ipc = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'desktop_
 const controller = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'controller.go'), 'utf8')
 const windowsPlatform = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'platform_windows.go'), 'utf8')
 const otherPlatform = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'platform_other.go'), 'utf8')
+const sharedActions = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx'), 'utf8')
 
 test('Desktop Explorer opens files from the managed sync tree instead of defaulting to Save As', () => {
   assert.ok(app.includes('const relativePathForNode = (node: AgentCloudNode) => {'), 'Desktop Explorer relative-path resolver is missing')
   assert.ok(app.includes('await window.xdriveDesktop.agent.openPath(relativePath, reveal)'), 'Desktop Explorer is not wired to managed-path shell actions')
   assert.ok(app.includes("if (node.type === 'file') {\n      await openLocalNode(node)"), 'double-clicking a file should open the synced local item')
-  assert.ok(app.includes("label: '另存为…'"), 'Save As should remain available as an explicit context-menu action')
-  assert.ok(app.includes("label: '在文件资源管理器中显示'"), 'reveal-in-file-manager action is missing')
+  assert.ok(app.includes("downloadLabel: '另存为…'"), 'Desktop must preserve explicit Save As wording through the shared action adapter')
+  assert.ok(app.includes('onReveal: () => { void openLocalNode(node, true) }'), 'Desktop reveal adapter is missing')
+  assert.ok(sharedActions.includes("revealLabel = '在文件资源管理器中显示'"), 'shared reveal-in-file-manager label is missing')
 })
 
 test('managed path shell actions are enforced inside the Agent boundary', () => {

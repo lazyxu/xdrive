@@ -1,24 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
-import EditRoundedIcon from '@mui/icons-material/EditRounded'
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
-import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
-import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
-import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
-  XDriveFileExplorerCommandButton,
+  XDriveFileExplorerTrashCommandButton,
+  xDriveFileExplorerBackgroundMenuItems,
+  xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerNavigation,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
-  XDriveFileExplorerMenuItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
 import type { Node, XDriveFileOperation } from '../../ui/shared/src'
@@ -226,55 +217,19 @@ export default function WebFileExplorer({
     await navigateTo([...crumbs, { id: node.id, name: node.name }])
   }
 
-  const startRename = (node: Node) => onRename(node)
-
-  const getItemMenuItems = (item: XDriveFileExplorerItem): XDriveFileExplorerMenuItem[] => {
+  const getItemMenuItems = (item: XDriveFileExplorerItem) => {
     const node = nodeByID.get(Number(item.id))
     if (!node) return []
 
-    const result: XDriveFileExplorerMenuItem[] = []
-    if (node.type === 'dir') {
-      result.push({
-        id: 'open',
-        label: '打开',
-        icon: <FolderOpenRoundedIcon fontSize="small" />,
-        onSelect: () => { void openItem(item) },
-      })
-    } else {
-      result.push({
-        id: 'download',
-        label: '下载',
-        icon: <DownloadRoundedIcon fontSize="small" />,
-        onSelect: () => { void api.download(node).catch(onError) },
-      })
-      result.push({
-        id: 'share',
-        label: '分享',
-        icon: <ShareRoundedIcon fontSize="small" />,
-        onSelect: () => onShare(node),
-      })
-      result.push({
-        id: 'history',
-        label: '历史版本',
-        icon: <HistoryRoundedIcon fontSize="small" />,
-        onSelect: () => onHistory(node),
-      })
-    }
-    result.push({
-      id: 'rename',
-      label: '重命名',
-      icon: <EditRoundedIcon fontSize="small" />,
-      dividerBefore: true,
-      onSelect: () => startRename(node),
+    return xDriveFileExplorerStandardItemMenuItems({
+      kind: node.type,
+      onOpen: node.type === 'dir' ? () => { void openItem(item) } : undefined,
+      onDownload: node.type === 'file' ? () => { void api.download(node).catch(onError) } : undefined,
+      onShare: node.type === 'file' ? () => onShare(node) : undefined,
+      onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
+      onRename: () => onRename(node),
+      onDelete: () => onRemove(node),
     })
-    result.push({
-      id: 'delete',
-      label: '删除',
-      icon: <DeleteOutlineRoundedIcon fontSize="small" />,
-      danger: true,
-      onSelect: () => onRemove(node),
-    })
-    return result
   }
 
   const explorerNodesForItems = (selected: XDriveFileExplorerItem[]) => (
@@ -364,29 +319,13 @@ export default function WebFileExplorer({
     if (current) await onLoadDirectory(current.id, crumbs, sort)
   }
 
-  const backgroundMenuItems = useMemo<XDriveFileExplorerMenuItem[]>(() => [
-    {
-      id: 'new-folder',
-      label: '新建文件夹',
-      icon: <CreateNewFolderRoundedIcon fontSize="small" />,
-      onSelect: onCreateFolder,
+  const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
+    onCreateFolder,
+    onUpload: () => uploadInputRef.current?.click(),
+    onRefresh: () => {
+      if (current) void onLoadDirectory(current.id, crumbs, sort)
     },
-    {
-      id: 'upload',
-      label: '上传文件',
-      icon: <UploadRoundedIcon fontSize="small" />,
-      onSelect: () => uploadInputRef.current?.click(),
-    },
-    {
-      id: 'refresh',
-      label: '刷新',
-      icon: <RefreshRoundedIcon fontSize="small" />,
-      dividerBefore: true,
-      onSelect: () => {
-        if (current) void onLoadDirectory(current.id, crumbs, sort)
-      },
-    },
-  ], [crumbs, current, onCreateFolder, onLoadDirectory])
+  })
 
   return (
     <Box sx={{ height: '100%', minHeight: 420, display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -464,11 +403,7 @@ export default function WebFileExplorer({
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
-        commandBarStart={(
-          <XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>
-            回收站
-          </XDriveFileExplorerCommandButton>
-        )}
+        commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         statusText={searchResults
           ? `搜索“${searchValue.trim()}”${searchHasMore ? ' · 仅显示前 200 个结果' : ''}`
           : uploadProgress !== null

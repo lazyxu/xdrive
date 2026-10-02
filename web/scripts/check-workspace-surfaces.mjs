@@ -10,6 +10,7 @@ const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 const workspace = readRepo('ui/shared/src/mui/WorkspaceSurface.tsx')
 const workspaceShell = readRepo('ui/shared/src/mui/WorkspaceShell.tsx')
 const fileExplorer = readRepo('ui/shared/src/mui/FileExplorer.tsx')
+const fileExplorerActions = readRepo('ui/shared/src/mui/FileExplorerActions.tsx')
 const desktopFileExplorer = readRepo('desktop/src/renderer/DesktopFileExplorer.tsx')
 const desktopStyles = readRepo('desktop/src/renderer/styles.css')
 const app = read('src/App.tsx')
@@ -78,16 +79,25 @@ if (/fileKind === 'folder'.*warning\.main/.test(fileExplorer)) {
   throw new Error('Shared FileExplorer folder icon must not fall back to the MUI warning palette')
 }
 
+requireText(fileExplorerActions, [
+  'XDriveFileExplorerTrashCommandButton',
+  'xDriveFileExplorerBackgroundMenuItems',
+  'xDriveFileExplorerStandardItemMenuItems',
+  '<XDriveFileExplorerCommandButton',
+], 'Shared FileExplorer action presentation')
+
 requireText(webFileExplorer, [
   'presentation="workspace"',
-  'XDriveFileExplorerCommandButton',
-  '<XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>',
+  'XDriveFileExplorerTrashCommandButton',
+  'xDriveFileExplorerBackgroundMenuItems({',
+  'xDriveFileExplorerStandardItemMenuItems({',
 ], 'Web FileExplorer workspace presentation')
 
 requireText(desktopFileExplorer, [
   'presentation="workspace"',
-  'XDriveFileExplorerCommandButton',
-  '<XDriveFileExplorerCommandButton startIcon={<RestoreFromTrashRoundedIcon />} onClick={onOpenTrash}>',
+  'XDriveFileExplorerTrashCommandButton',
+  'xDriveFileExplorerBackgroundMenuItems({',
+  'xDriveFileExplorerStandardItemMenuItems({',
 ], 'Desktop FileExplorer workspace presentation')
 
 if (webFileExplorer.includes('<XDriveActionButton compact startIcon={<RestoreFromTrashRoundedIcon />}') || desktopFileExplorer.includes('<XDriveActionButton compact onClick={onOpenTrash}>')) {
