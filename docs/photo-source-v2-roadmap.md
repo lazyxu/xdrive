@@ -266,8 +266,8 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | GPS/geolocation | By design: local | By design: local | By design: local |
 | Video technical metadata | By design: local | By design: local | By design: local |
 | Canonical thumbnail | By design: local | By design: local | By design: local |
-| Live Photo pairing/projection | TODO local | TODO local | TODO local |
-| `.livp` parsing | TODO local | Same common parser if encountered | Same common parser if encountered |
+| Live Photo pairing/projection | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending |
+| `.livp` parsing | Current local parser + zero-copy resources | Same common local parser | Same common local parser |
 | RAW metadata/preview | TODO/partial local | TODO/partial local | TODO/partial local |
 | RAW/JPEG/XMP/AAE/burst grouping | TODO local | TODO local | TODO local |
 | People/tags/favorite/description from provider | Not used by design | Not used by design | Not used by design |
@@ -288,7 +288,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
 | P3 | Expand native media parser coverage from original files: EXIF/TIFF/GPS/video/container edge cases | Highest |
 | P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
-| P5 | In progress: local Apple still/MOV identifiers drive fail-closed MediaGroup projection; validated `.livp` containers now enter native MediaMetadata as one image item with local container metadata while internal resources remain derived-only; HEIC thumbnail and motion playback remain | High |
+| P5 | In progress: local Apple still/MOV identifiers drive fail-closed MediaGroup projection; validated `.livp` containers now expose zero-copy still/motion derived resources through the media API; HEIC thumbnail decoding and Gallery playback/presentation remain | High |
 | P6 | Add RAW metadata/preview and validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping | High |
 | P7 | Extend read-only Source/media integrity verification and add explicit idempotent local repair actions | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |

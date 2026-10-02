@@ -82,6 +82,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items", s.listMediaItems)
 	authed.GET("/media/items/:id", s.getMediaItem)
 	authed.GET("/media/items/:id/thumbnail", s.mediaThumbnail)
+	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/albums/:albumID/items", s.listMediaAlbumItems)
 	authed.PUT("/files/:id/content", s.overwriteFile)

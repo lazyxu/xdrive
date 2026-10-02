@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -61,9 +62,18 @@ type mediaMetadataDTO struct {
 	ThumbnailHeight          int            `json:"thumbnail_height,omitempty"`
 }
 
+type mediaDerivedResourceDTO struct {
+	Role      string `json:"role"`
+	Name      string `json:"name"`
+	MediaKind string `json:"media_kind"`
+	MIMEType  string `json:"mime_type"`
+	Size      int64  `json:"size"`
+}
+
 type mediaItemDTO struct {
-	Node     nodeDTO          `json:"node"`
-	Metadata mediaMetadataDTO `json:"metadata"`
+	Node             nodeDTO                   `json:"node"`
+	Metadata         mediaMetadataDTO          `json:"metadata"`
+	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
 }
 
 type mediaAlbumDTO struct {
@@ -165,10 +175,16 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		fail(c, http.StatusNotFound, "file is not indexed media")
 		return
 	}
+	resources, err := s.listMediaDerivedResources(c.Request.Context(), node)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "list media resources failed")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, mediaItemDTO{
-		Node:     toNodeDTO(node),
-		Metadata: toMediaMetadataDTO(metadata),
+		Node:             toNodeDTO(node),
+		Metadata:         toMediaMetadataDTO(metadata),
+		DerivedResources: resources,
 	})
 }
 
@@ -492,8 +508,25 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	}
 	defer file.Close()
 
+	var thumbnailSource io.ReadSeeker = file
+	if metadata.ContainerKind == mediapkg.ContainerKindLIVP {
+		resource, resourceErr := s.currentMediaDerivedResource(
+			c.Request.Context(),
+			node,
+			meta.MediaDerivedResourceRoleStill,
+		)
+		if resourceErr != nil {
+			fail(c, http.StatusUnsupportedMediaType, "live photo still resource is unavailable")
+			return
+		}
+		thumbnailSource = io.NewSectionReader(
+			file,
+			resource.ByteOffset,
+			resource.ByteSize,
+		)
+	}
 	thumbnail, err := mediapkg.ThumbnailJPEG(
-		file,
+		thumbnailSource,
 		metadata.Orientation,
 		mediaThumbnailEdge,
 	)
@@ -534,7 +567,13 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 	if row.ThumbnailKey != "" {
 		return true
 	}
-	switch strings.ToLower(strings.TrimSpace(row.MIMEType)) {
+	mimeType := strings.ToLower(strings.TrimSpace(row.MIMEType))
+	if row.ContainerKind == mediapkg.ContainerKindLIVP {
+		if descriptor, err := parseLIVPContainerDescriptor(row.ContainerJSON); err == nil {
+			mimeType = strings.ToLower(strings.TrimSpace(descriptor.Still.MIMEType))
+		}
+	}
+	switch mimeType {
 	case "image/jpeg", "image/png", "image/gif":
 		return true
 	default:
@@ -602,7 +641,7 @@ func (s *Server) ensureMediaMetadata(
 
 func legacyLIVPMetadata(node meta.Node, row meta.MediaMetadata) bool {
 	return strings.EqualFold(filepath.Ext(node.Name), ".livp") &&
-		strings.TrimSpace(row.ContainerKind) == ""
+		(strings.TrimSpace(row.ContainerKind) == "" || row.DerivedResourceVersion < 1)
 }
 
 func (s *Server) indexMediaNode(
@@ -625,6 +664,15 @@ func (s *Server) indexMediaNode(
 		file,
 		node.File.Size,
 	)
+	var derivedResources []meta.MediaDerivedResource
+	if extractErr == nil && extracted.ContainerKind == mediapkg.ContainerKindLIVP {
+		derivedResources, extractErr = mediaDerivedResourcesFromLIVPContainer(
+			extracted.ContainerJSON,
+		)
+		if extractErr != nil {
+			extracted.Kind = mediapkg.KindOther
+		}
+	}
 	kind := extracted.Kind
 	if !meta.ValidMediaKind(kind) {
 		kind = meta.MediaKindOther
@@ -653,28 +701,43 @@ func (s *Server) indexMediaNode(
 		ContainerKind:            extracted.ContainerKind,
 		ContainerJSON:            extracted.ContainerJSON,
 		LivePhotoAssetIdentifier: extracted.LivePhotoAssetIdentifier,
-		Width:                    extracted.Width,
-		Height:                   extracted.Height,
-		Orientation:              extracted.Orientation,
-		RotationDegrees:          extracted.RotationDegrees,
-		DurationMS:               extracted.DurationMS,
-		FrameRate:                extracted.FrameRate,
-		BitRate:                  extracted.BitRate,
-		VideoCodec:               extracted.VideoCodec,
-		AudioCodec:               extracted.AudioCodec,
-		CapturedAt:               extracted.CapturedAt,
-		Latitude:                 extracted.Latitude,
-		Longitude:                extracted.Longitude,
-		AltitudeM:                extracted.AltitudeM,
-		CameraMake:               extracted.CameraMake,
-		CameraModel:              extracted.CameraModel,
-		LensModel:                extracted.LensModel,
-		EXIFJSON:                 extracted.EXIFJSON,
-		VideoJSON:                extracted.VideoJSON,
-		IndexState:               state,
-		IndexError:               indexError,
-		CreatedAt:                now,
-		UpdatedAt:                now,
+		DerivedResourceVersion: func() int {
+			if strings.EqualFold(filepath.Ext(node.Name), ".livp") {
+				return 1
+			}
+			return 0
+		}(),
+		Width:           extracted.Width,
+		Height:          extracted.Height,
+		Orientation:     extracted.Orientation,
+		RotationDegrees: extracted.RotationDegrees,
+		DurationMS:      extracted.DurationMS,
+		FrameRate:       extracted.FrameRate,
+		BitRate:         extracted.BitRate,
+		VideoCodec:      extracted.VideoCodec,
+		AudioCodec:      extracted.AudioCodec,
+		CapturedAt:      extracted.CapturedAt,
+		Latitude:        extracted.Latitude,
+		Longitude:       extracted.Longitude,
+		AltitudeM:       extracted.AltitudeM,
+		CameraMake:      extracted.CameraMake,
+		CameraModel:     extracted.CameraModel,
+		LensModel:       extracted.LensModel,
+		EXIFJSON:        extracted.EXIFJSON,
+		VideoJSON:       extracted.VideoJSON,
+		IndexState:      state,
+		IndexError:      indexError,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	for index := range derivedResources {
+		derivedResources[index].NodeID = node.ID
+		derivedResources[index].OwnerID = node.OwnerID
+		derivedResources[index].NodeRevision = node.Revision
+		derivedResources[index].SHA256 = node.File.SHA256
+		derivedResources[index].CreatedAt = now
+		derivedResources[index].UpdatedAt = now
 	}
 
 	var previous meta.MediaMetadata
@@ -689,8 +752,8 @@ func (s *Server) indexMediaNode(
 		out.ThumbnailHeight = previous.ThumbnailHeight
 	}
 
-	err = s.DB.WithContext(ctx).
-		Clauses(clause.OnConflict{
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "node_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"owner_id",
@@ -701,6 +764,7 @@ func (s *Server) indexMediaNode(
 				"container_kind",
 				"container_json",
 				"live_photo_asset_identifier",
+				"derived_resource_version",
 				"width",
 				"height",
 				"orientation",
@@ -728,7 +792,20 @@ func (s *Server) indexMediaNode(
 				"updated_at",
 			}),
 		}).
-		Create(&out).Error
+			Create(&out).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("node_id = ?", node.ID).
+			Delete(&meta.MediaDerivedResource{}).Error; err != nil {
+			return err
+		}
+		if len(derivedResources) != 0 {
+			if err := tx.Create(&derivedResources).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return out, err
 	}
@@ -811,7 +888,7 @@ func (s *Server) staleMediaNodes(
 		Where(
 			"n.type = ? AND n.deleted_at IS NULL AND "+
 				"(mm.node_id IS NULL OR mm.node_revision <> n.revision OR mm.sha256 <> f.sha256 OR "+
-				"(lower(n.name) LIKE '%.livp' AND COALESCE(mm.container_kind, '') = ''))",
+				"(lower(n.name) LIKE '%.livp' AND (COALESCE(mm.container_kind, '') = '' OR mm.derived_resource_version < 1)))",
 			meta.NodeTypeFile,
 		)
 	if uid != nil {
@@ -823,6 +900,193 @@ func (s *Server) staleMediaNodes(
 		Limit(limit).
 		Find(&nodes).Error
 	return nodes, err
+}
+
+type livpContainerDescriptor struct {
+	AssetIdentifier string                          `json:"asset_identifier"`
+	Still           livpContainerResourceDescriptor `json:"still"`
+	Motion          livpContainerResourceDescriptor `json:"motion"`
+}
+
+type livpContainerResourceDescriptor struct {
+	Name     string `json:"name"`
+	Offset   int64  `json:"offset"`
+	Size     int64  `json:"size"`
+	MIMEType string `json:"mime_type"`
+}
+
+func parseLIVPContainerDescriptor(raw string) (livpContainerDescriptor, error) {
+	var out livpContainerDescriptor
+	if strings.TrimSpace(raw) == "" {
+		return out, errors.New("livp container metadata is empty")
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return out, err
+	}
+	out.AssetIdentifier = strings.TrimSpace(out.AssetIdentifier)
+	if out.AssetIdentifier == "" {
+		return livpContainerDescriptor{}, errors.New("livp asset identifier is missing")
+	}
+	for _, resource := range []livpContainerResourceDescriptor{out.Still, out.Motion} {
+		if strings.TrimSpace(resource.Name) == "" ||
+			strings.TrimSpace(resource.MIMEType) == "" ||
+			resource.Offset < 0 ||
+			resource.Size <= 0 {
+			return livpContainerDescriptor{}, errors.New("livp resource descriptor is invalid")
+		}
+	}
+	return out, nil
+}
+
+func mediaDerivedResourcesFromLIVPContainer(
+	raw string,
+) ([]meta.MediaDerivedResource, error) {
+	descriptor, err := parseLIVPContainerDescriptor(raw)
+	if err != nil {
+		return nil, err
+	}
+	return []meta.MediaDerivedResource{
+		{
+			Role:            meta.MediaDerivedResourceRoleStill,
+			Name:            descriptor.Still.Name,
+			MediaKind:       meta.MediaKindImage,
+			MIMEType:        descriptor.Still.MIMEType,
+			ByteOffset:      descriptor.Still.Offset,
+			ByteSize:        descriptor.Still.Size,
+			AssetIdentifier: descriptor.AssetIdentifier,
+		},
+		{
+			Role:            meta.MediaDerivedResourceRoleMotion,
+			Name:            descriptor.Motion.Name,
+			MediaKind:       meta.MediaKindVideo,
+			MIMEType:        descriptor.Motion.MIMEType,
+			ByteOffset:      descriptor.Motion.Offset,
+			ByteSize:        descriptor.Motion.Size,
+			AssetIdentifier: descriptor.AssetIdentifier,
+		},
+	}, nil
+}
+
+func toMediaDerivedResourceDTO(row meta.MediaDerivedResource) mediaDerivedResourceDTO {
+	return mediaDerivedResourceDTO{
+		Role:      row.Role,
+		Name:      row.Name,
+		MediaKind: row.MediaKind,
+		MIMEType:  row.MIMEType,
+		Size:      row.ByteSize,
+	}
+}
+
+func (s *Server) listMediaDerivedResources(
+	ctx context.Context,
+	node meta.Node,
+) ([]mediaDerivedResourceDTO, error) {
+	if node.File == nil {
+		return nil, nil
+	}
+	var rows []meta.MediaDerivedResource
+	if err := s.DB.WithContext(ctx).
+		Where(
+			"node_id = ? AND owner_id = ? AND node_revision = ? AND sha256 = ?",
+			node.ID,
+			node.OwnerID,
+			node.Revision,
+			node.File.SHA256,
+		).
+		Order("role ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]mediaDerivedResourceDTO, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toMediaDerivedResourceDTO(row))
+	}
+	return out, nil
+}
+
+func (s *Server) currentMediaDerivedResource(
+	ctx context.Context,
+	node meta.Node,
+	role string,
+) (meta.MediaDerivedResource, error) {
+	var row meta.MediaDerivedResource
+	if node.File == nil || !meta.ValidMediaDerivedResourceRole(role) {
+		return row, gorm.ErrRecordNotFound
+	}
+	if err := s.DB.WithContext(ctx).
+		Where(
+			"node_id = ? AND role = ? AND owner_id = ? AND node_revision = ? AND sha256 = ?",
+			node.ID,
+			role,
+			node.OwnerID,
+			node.Revision,
+			node.File.SHA256,
+		).
+		First(&row).Error; err != nil {
+		return row, err
+	}
+	if row.ByteOffset < 0 || row.ByteSize <= 0 ||
+		row.ByteOffset > node.File.Size ||
+		row.ByteSize > node.File.Size-row.ByteOffset {
+		return meta.MediaDerivedResource{}, errors.New("invalid media resource range")
+	}
+	return row, nil
+}
+
+func (s *Server) mediaDerivedResourceContent(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	role := strings.TrimSpace(c.Param("role"))
+	if !meta.ValidMediaDerivedResourceRole(role) {
+		fail(c, http.StatusBadRequest, "invalid media resource role")
+		return
+	}
+	node, err := s.ownedNode(userID(c), id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "media indexing failed")
+		return
+	}
+	if metadata.ContainerKind != mediapkg.ContainerKindLIVP {
+		fail(c, http.StatusNotFound, "media resource not found")
+		return
+	}
+	resource, err := s.currentMediaDerivedResource(c.Request.Context(), node, role)
+	if err != nil {
+		fail(c, http.StatusNotFound, "media resource not found")
+		return
+	}
+	file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
+	if err != nil {
+		fail(c, http.StatusNotFound, "stored content not found")
+		return
+	}
+	defer file.Close()
+
+	etag := fmt.Sprintf(
+		"\"media-resource-%s-%s-%d-%d\"",
+		strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+		role,
+		resource.ByteOffset,
+		resource.ByteSize,
+	)
+	c.Header("ETag", etag)
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header("Content-Type", resource.MIMEType)
+	http.ServeContent(
+		c.Writer,
+		c.Request,
+		resource.Name,
+		metadata.UpdatedAt,
+		io.NewSectionReader(file, resource.ByteOffset, resource.ByteSize),
+	)
 }
 
 func (s *Server) StartMediaIndexer(ctx context.Context) {
