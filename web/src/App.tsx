@@ -15,7 +15,6 @@ import {
   Button,
   Card,
   Chip,
-  Dialog,
   Divider,
   ListItemIcon,
   ListItemText,
@@ -33,8 +32,6 @@ import {
   XDriveBrandLockup,
   XDriveConfirmDialog,
   XDriveSettingsDialog,
-  XDriveDialogContent,
-  XDriveDialogTitle,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
   XDriveSidebarNavItem,
@@ -45,12 +42,12 @@ import {
   XDriveStatePanel,
   XDriveTransferCenter,
   XDriveFileOperationCenter,
+  XDriveFileNameDialog,
   XDriveTrashDialog,
   XDriveVersionHistoryDialog,
   XDriveWorkspaceSurface,
   XDriveWorkspaceShell,
   XDriveStatusAlert,
-  xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource, XDriveFileExplorerSort } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
@@ -498,11 +495,7 @@ function FileManager({
   const [loadingMore, setLoadingMore] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
-  const [folderName, setFolderName] = useState('')
-  const [folderNameError, setFolderNameError] = useState('')
   const [renameNode, setRenameNode] = useState<Node | null>(null)
-  const [renameName, setRenameName] = useState('')
-  const [renameNameError, setRenameNameError] = useState('')
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [fileOperations, setFileOperations] = useState<XDriveFileOperation[]>([])
@@ -876,40 +869,16 @@ function FileManager({
     await uploadFilesTo(current.id, Array.from(files))
   }
 
-  const createFolder = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const createFolder = async (name: string) => {
     if (!current) return
-    const name = folderName.trim()
-    const error = !name ? '请填写文件夹名称' : name.length > 255 ? '文件夹名称不能超过 255 个字符' : ''
-    setFolderNameError(error)
-    if (error) return
-    try {
-      await api.createDirectory(current.id, name)
-      setFolderOpen(false)
-      setFolderName('')
-      setFolderNameError('')
-      await loadDirectory(current.id)
-    } catch (err) {
-      handleError(err)
-    }
+    await api.createDirectory(current.id, name)
+    await loadDirectory(current.id)
   }
 
-  const rename = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const rename = async (name: string) => {
     if (!renameNode || !current) return
-    const name = renameName.trim()
-    const error = !name ? '请填写名称' : name.length > 255 ? '名称不能超过 255 个字符' : ''
-    setRenameNameError(error)
-    if (error) return
-    try {
-      await api.rename(renameNode.id, renameNode.revision, name)
-      setRenameNode(null)
-      setRenameName('')
-      setRenameNameError('')
-      await loadDirectory(current.id)
-    } catch (err) {
-      handleError(err)
-    }
+    await api.rename(renameNode.id, renameNode.revision, name)
+    await loadDirectory(current.id)
   }
 
   const remove = (node: Node) => {
@@ -1110,17 +1079,9 @@ function FileManager({
                 onLoadMore={loadMoreDirectory}
                 onUploadFiles={uploadFiles}
                 onUploadDroppedFiles={uploadFilesTo}
-                onCreateFolder={() => {
-                  setFolderName('')
-                  setFolderNameError('')
-                  setFolderOpen(true)
-                }}
+                onCreateFolder={() => setFolderOpen(true)}
                 onOpenTrash={openTrash}
-                onRename={(node) => {
-                  setRenameNode(node)
-                  setRenameName(node.name)
-                  setRenameNameError('')
-                }}
+                onRename={setRenameNode}
                 onRemove={remove}
                 onRemoveMany={removeMany}
                 onOperationQueued={rememberFileOperation}
@@ -1203,49 +1164,22 @@ function FileManager({
         </Box>
       </XDriveWorkspaceShell>
 
-      <Dialog open={folderOpen} onClose={() => setFolderOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title="新建文件夹" onClose={() => setFolderOpen(false)} />
-        <XDriveDialogContent>
-          <Stack component="form" spacing={2} onSubmit={(event) => void createFolder(event)}>
-            <TextField
-              autoFocus
-              fullWidth
-              size="small"
-              label="文件夹名称"
-              value={folderName}
-              error={Boolean(folderNameError)}
-              helperText={folderNameError || ' '}
-              onChange={(event) => {
-                setFolderName(event.target.value)
-                if (folderNameError) setFolderNameError('')
-              }}
-            />
-            <XDriveActionButton intent="primary" type="submit">创建</XDriveActionButton>
-          </Stack>
-        </XDriveDialogContent>
-      </Dialog>
+      <XDriveFileNameDialog
+        open={folderOpen}
+        mode="create-folder"
+        onClose={() => setFolderOpen(false)}
+        onSubmit={createFolder}
+        onError={handleError}
+      />
 
-      <Dialog open={!!renameNode} onClose={() => setRenameNode(null)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title="重命名" onClose={() => setRenameNode(null)} />
-        <XDriveDialogContent>
-          <Stack component="form" spacing={2} onSubmit={(event) => void rename(event)}>
-            <TextField
-              autoFocus
-              fullWidth
-              size="small"
-              label="名称"
-              value={renameName}
-              error={Boolean(renameNameError)}
-              helperText={renameNameError || ' '}
-              onChange={(event) => {
-                setRenameName(event.target.value)
-                if (renameNameError) setRenameNameError('')
-              }}
-            />
-            <XDriveActionButton intent="primary" type="submit">保存</XDriveActionButton>
-          </Stack>
-        </XDriveDialogContent>
-      </Dialog>
+      <XDriveFileNameDialog
+        open={Boolean(renameNode)}
+        mode="rename"
+        initialValue={renameNode?.name ?? ''}
+        onClose={() => setRenameNode(null)}
+        onSubmit={rename}
+        onError={handleError}
+      />
 
       <XDriveTrashDialog
         open={trashOpen}
