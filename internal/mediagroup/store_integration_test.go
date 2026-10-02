@@ -178,3 +178,118 @@ func TestMediaGroupConstraintsRejectDuplicateOrdinal(t *testing.T) {
 		t.Fatal("duplicate group ordinal was accepted")
 	}
 }
+
+func TestReconcileAppleLivePhotoProjectsAndRemovesAmbiguity(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "live_photo_projection_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error }()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	owner := meta.User{Username: "live-photo-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: owner.ID, Revision: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	nodes := []meta.Node{
+		{ParentID: &root.ID, Name: "IMG_0001.HEIC", Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1},
+		{ParentID: &root.ID, Name: "IMG_0001.MOV", Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1},
+		{ParentID: &root.ID, Name: "duplicate.JPG", Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1},
+	}
+	if err := db.Create(&nodes).Error; err != nil {
+		t.Fatal(err)
+	}
+	const identifier = "A7D2C6A0-94BE-4A65-8502-D11259D7DB83"
+	rows := []meta.MediaMetadata{
+		{
+			NodeID: nodes[0].ID, OwnerID: owner.ID, NodeRevision: 1,
+			MediaKind: meta.MediaKindImage, MIMEType: "image/heic",
+			LivePhotoAssetIdentifier: identifier, IndexState: meta.MediaIndexStateReady,
+		},
+		{
+			NodeID: nodes[1].ID, OwnerID: owner.ID, NodeRevision: 1,
+			MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime",
+			LivePhotoAssetIdentifier: identifier, IndexState: meta.MediaIndexStateReady,
+		},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	projected, err := ReconcileAppleLivePhoto(context.Background(), db, owner.ID, identifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !projected {
+		t.Fatal("valid still+motion pair was not projected")
+	}
+	var group meta.MediaGroup
+	if err := db.Where(
+		"owner_id = ? AND kind = ? AND evidence_key = ?",
+		owner.ID, meta.MediaGroupKindLivePhoto, appleAssetEvidencePrefix+identifier,
+	).First(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	var members []meta.MediaGroupItem
+	if err := db.Where("group_id = ?", group.ID).Order("ordinal ASC").Find(&members).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 2 ||
+		members[0].NodeID != nodes[0].ID || members[0].Role != meta.MediaGroupRoleStill ||
+		members[1].NodeID != nodes[1].ID || members[1].Role != meta.MediaGroupRoleMotion {
+		t.Fatalf("members=%+v", members)
+	}
+
+	duplicate := meta.MediaMetadata{
+		NodeID: nodes[2].ID, OwnerID: owner.ID, NodeRevision: 1,
+		MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
+		LivePhotoAssetIdentifier: identifier, IndexState: meta.MediaIndexStateReady,
+	}
+	if err := db.Create(&duplicate).Error; err != nil {
+		t.Fatal(err)
+	}
+	projected, err = ReconcileAppleLivePhoto(context.Background(), db, owner.ID, identifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected {
+		t.Fatal("ambiguous identifier was projected")
+	}
+	var groupCount int64
+	if err := db.Model(&meta.MediaGroup{}).
+		Where("owner_id = ? AND kind = ? AND evidence_key = ?", owner.ID, meta.MediaGroupKindLivePhoto, appleAssetEvidencePrefix+identifier).
+		Count(&groupCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if groupCount != 0 {
+		t.Fatalf("ambiguous identifier retained %d group(s)", groupCount)
+	}
+}

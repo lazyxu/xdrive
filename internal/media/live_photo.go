@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -215,7 +216,9 @@ func quickTimeMetadataValue(
 }
 
 func normalizeMetadataKey(value string) string {
-	value = strings.TrimSpace(strings.TrimRight(value, "\x00"))
+	value = strings.TrimFunc(value, func(r rune) bool {
+		return r == 0 || unicode.IsSpace(r)
+	})
 	if value == "" || len([]byte(value)) > 512 || !utf8.ValidString(value) {
 		return ""
 	}
@@ -228,7 +231,9 @@ func normalizeMetadataKey(value string) string {
 }
 
 func normalizeLivePhotoIdentifier(value string) string {
-	value = strings.TrimSpace(strings.TrimRight(value, "\x00"))
+	value = strings.TrimFunc(value, func(r rune) bool {
+		return r == 0 || unicode.IsSpace(r)
+	})
 	if value == "" || len([]byte(value)) > maxLivePhotoIdentifierBytes || !utf8.ValidString(value) {
 		return ""
 	}

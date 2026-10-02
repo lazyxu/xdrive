@@ -288,7 +288,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
 | P3 | Expand native media parser coverage from original files: EXIF/TIFF/GPS/video/container edge cases | Highest |
 | P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
-| P5 | In progress: locally extract Apple still/MOV content identifiers; next add identifier-driven MediaGroup projection and safe `.livp` container handling | High |
+| P5 | In progress: local Apple still/MOV identifiers now drive fail-closed MediaGroup projection; safe `.livp` container handling remains | High |
 | P6 | Add RAW metadata/preview and validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping | High |
 | P7 | Extend read-only Source/media integrity verification and add explicit idempotent local repair actions | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |

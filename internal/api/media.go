@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
+	"github.com/lazyxu/xdrive/internal/mediagroup"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -713,7 +714,28 @@ func (s *Server) indexMediaNode(
 			}),
 		}).
 		Create(&out).Error
-	return out, err
+	if err != nil {
+		return out, err
+	}
+
+	identifiers := make(map[string]struct{}, 2)
+	if value := strings.TrimSpace(previous.LivePhotoAssetIdentifier); value != "" {
+		identifiers[value] = struct{}{}
+	}
+	if value := strings.TrimSpace(out.LivePhotoAssetIdentifier); value != "" {
+		identifiers[value] = struct{}{}
+	}
+	for identifier := range identifiers {
+		if _, reconcileErr := mediagroup.ReconcileAppleLivePhoto(ctx, s.DB, node.OwnerID, identifier); reconcileErr != nil {
+			slog.Warn(
+				"live_photo_reconcile_failed",
+				"owner_id", node.OwnerID,
+				"node_id", node.ID,
+				"error", reconcileErr,
+			)
+		}
+	}
+	return out, nil
 }
 
 func (s *Server) refreshMediaIndexForOwner(
