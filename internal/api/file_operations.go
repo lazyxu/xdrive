@@ -1,0 +1,807 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+var (
+	errFileOperationCancelled = errors.New("file operation cancelled")
+	errFileOperationTerminal  = errors.New("file operation is already terminal")
+)
+
+type fileOperationDTO struct {
+	ID                string     `json:"id"`
+	Type              string     `json:"type"`
+	Status            string     `json:"status"`
+	ParentID          *uint64    `json:"parent_id,omitempty"`
+	RetryOfID         *string    `json:"retry_of_id,omitempty"`
+	TotalItems        int64      `json:"total_items"`
+	ProcessedItems    int64      `json:"processed_items"`
+	TotalBytes        int64      `json:"total_bytes"`
+	ProcessedBytes    int64      `json:"processed_bytes"`
+	Percent           float64    `json:"percent"`
+	CurrentItem       string     `json:"current_item,omitempty"`
+	FailedItemID      uint64     `json:"failed_item_id,omitempty"`
+	Error             string     `json:"error,omitempty"`
+	Retryable         bool       `json:"retryable"`
+	CancelRequestedAt *time.Time `json:"cancel_requested_at,omitempty"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+type createFileOperationRequest struct {
+	Type     string         `json:"type"`
+	Items    []batchNodeRef `json:"items"`
+	ParentID uint64         `json:"parent_id"`
+}
+
+func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
+	percent := 0.0
+	if operation.TotalBytes > 0 {
+		percent = float64(operation.ProcessedBytes) * 100 / float64(operation.TotalBytes)
+	} else if operation.TotalItems > 0 {
+		percent = float64(operation.ProcessedItems) * 100 / float64(operation.TotalItems)
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	if operation.Status == meta.FileOperationStatusCompleted {
+		percent = 100
+	}
+	return fileOperationDTO{
+		ID:                operation.ID,
+		Type:              operation.Type,
+		Status:            operation.Status,
+		ParentID:          operation.ParentID,
+		RetryOfID:         operation.RetryOfID,
+		TotalItems:        operation.TotalItems,
+		ProcessedItems:    operation.ProcessedItems,
+		TotalBytes:        operation.TotalBytes,
+		ProcessedBytes:    operation.ProcessedBytes,
+		Percent:           percent,
+		CurrentItem:       operation.CurrentItem,
+		FailedItemID:      operation.FailedItemID,
+		Error:             operation.Error,
+		Retryable:         operation.Status == meta.FileOperationStatusFailed || operation.Status == meta.FileOperationStatusCancelled,
+		CancelRequestedAt: operation.CancelRequestedAt,
+		StartedAt:         operation.StartedAt,
+		FinishedAt:        operation.FinishedAt,
+		CreatedAt:         operation.CreatedAt,
+		UpdatedAt:         operation.UpdatedAt,
+	}
+}
+
+func (s *Server) createFileOperation(c *gin.Context) {
+	var req createFileOperationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	operation, err := s.enqueueFileOperation(c.Request.Context(), userID(c), req.Type, req.Items, req.ParentID, nil)
+	if err != nil {
+		writeFileOperationError(c, req.Type, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, toFileOperationDTO(operation))
+}
+
+func (s *Server) listFileOperations(c *gin.Context) {
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			fail(c, http.StatusBadRequest, "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	var operations []meta.FileOperation
+	if err := s.DB.WithContext(c.Request.Context()).
+		Where("owner_id = ?", userID(c)).
+		Order("created_at DESC, id DESC").
+		Limit(limit).
+		Find(&operations).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "list file operations failed")
+		return
+	}
+	out := make([]fileOperationDTO, 0, len(operations))
+	for _, operation := range operations {
+		out = append(out, toFileOperationDTO(operation))
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (s *Server) getFileOperation(c *gin.Context) {
+	operation, err := s.loadOwnedFileOperation(c.Request.Context(), userID(c), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "file operation not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "load file operation failed")
+		}
+		return
+	}
+	c.JSON(http.StatusOK, toFileOperationDTO(operation))
+}
+
+func (s *Server) cancelFileOperation(c *gin.Context) {
+	id := c.Param("id")
+	uid := userID(c)
+	now := time.Now()
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var operation meta.FileOperation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", id, uid).
+			First(&operation).Error; err != nil {
+			return err
+		}
+		switch operation.Status {
+		case meta.FileOperationStatusQueued:
+			return tx.Model(&meta.FileOperation{}).Where("id = ?", id).Updates(map[string]any{
+				"status":              meta.FileOperationStatusCancelled,
+				"processed_items":     0,
+				"processed_bytes":     0,
+				"current_item":        "",
+				"cancel_requested_at": &now,
+				"finished_at":         &now,
+				"updated_at":          now,
+			}).Error
+		case meta.FileOperationStatusRunning:
+			return tx.Model(&meta.FileOperation{}).Where("id = ?", id).Updates(map[string]any{
+				"status":              meta.FileOperationStatusCancelRequested,
+				"cancel_requested_at": &now,
+				"updated_at":          now,
+			}).Error
+		case meta.FileOperationStatusCancelRequested:
+			return nil
+		default:
+			return errFileOperationTerminal
+		}
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "file operation not found")
+		case errors.Is(err, errFileOperationTerminal):
+			fail(c, http.StatusConflict, "file operation is already finished")
+		default:
+			fail(c, http.StatusInternalServerError, "cancel file operation failed")
+		}
+		return
+	}
+	operation, err := s.loadOwnedFileOperation(c.Request.Context(), uid, id)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "reload file operation failed")
+		return
+	}
+	c.JSON(http.StatusOK, toFileOperationDTO(operation))
+}
+
+func (s *Server) retryFileOperation(c *gin.Context) {
+	old, err := s.loadOwnedFileOperation(c.Request.Context(), userID(c), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "file operation not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "load file operation failed")
+		}
+		return
+	}
+	if old.Status != meta.FileOperationStatusFailed && old.Status != meta.FileOperationStatusCancelled {
+		fail(c, http.StatusConflict, "only failed or cancelled file operations can be retried")
+		return
+	}
+	refs, err := decodeFileOperationRefs(old.ItemsJSON)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "stored file operation is invalid")
+		return
+	}
+	parentID := uint64(0)
+	if old.ParentID != nil {
+		parentID = *old.ParentID
+	}
+	retryOf := old.ID
+	operation, err := s.enqueueFileOperation(c.Request.Context(), userID(c), old.Type, refs, parentID, &retryOf)
+	if err != nil {
+		writeFileOperationError(c, old.Type, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, toFileOperationDTO(operation))
+}
+
+func writeFileOperationError(c *gin.Context, operationType string, err error) {
+	var failure *batchMutationFailure
+	if errors.As(err, &failure) {
+		writeBatchMutationFailure(c, operationType, err)
+		return
+	}
+	if errors.Is(err, errFileOperationTerminal) {
+		fail(c, http.StatusConflict, err.Error())
+		return
+	}
+	if err != nil && err.Error() == "invalid file operation type" {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	fail(c, http.StatusInternalServerError, "file operation failed")
+}
+
+func decodeFileOperationRefs(raw string) ([]batchNodeRef, error) {
+	var refs []batchNodeRef
+	if err := json.Unmarshal([]byte(raw), &refs); err != nil {
+		return nil, err
+	}
+	if err := validateBatchNodeRefs(refs); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
+func (s *Server) enqueueFileOperation(
+	ctx context.Context,
+	uid uint64,
+	operationType string,
+	requested []batchNodeRef,
+	parentID uint64,
+	retryOfID *string,
+) (meta.FileOperation, error) {
+	if !meta.ValidFileOperationType(operationType) {
+		return meta.FileOperation{}, errors.New("invalid file operation type")
+	}
+	if err := validateBatchNodeRefs(requested); err != nil {
+		return meta.FileOperation{}, err
+	}
+
+	var operation meta.FileOperation
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		refs := append([]batchNodeRef(nil), requested...)
+		switch operationType {
+		case meta.FileOperationTypeCopy, meta.FileOperationTypeMove:
+			if _, err := batchTargetDirectoryTx(tx, uid, parentID); err != nil {
+				return err
+			}
+			nested, err := batchSelectionHasAncestor(tx, uid, refs)
+			if err != nil {
+				return err
+			}
+			if nested {
+				return &batchMutationFailure{
+					Status:  http.StatusBadRequest,
+					Code:    "nested_batch_selection",
+					Message: operationType + " selection cannot contain both a directory and its descendant",
+				}
+			}
+		case meta.FileOperationTypeDelete:
+			topLevel, err := topLevelBatchDeleteRefs(tx, uid, refs)
+			if err != nil {
+				return err
+			}
+			refs = topLevel
+		}
+
+		var totalBytes int64
+		for index, ref := range refs {
+			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
+			if err != nil {
+				return err
+			}
+			size, err := fileOperationNodeBytesTx(tx, uid, node)
+			if err != nil {
+				return err
+			}
+			if size > 0 && totalBytes > int64(^uint64(0)>>1)-size {
+				return errors.New("file operation size overflow")
+			}
+			totalBytes += size
+		}
+
+		rawRefs, err := json.Marshal(refs)
+		if err != nil {
+			return err
+		}
+		operation = meta.FileOperation{
+			ID:         uuid.NewString(),
+			OwnerID:    uid,
+			Type:       operationType,
+			Status:     meta.FileOperationStatusQueued,
+			RetryOfID:  retryOfID,
+			ItemsJSON:  string(rawRefs),
+			TotalItems: int64(len(refs)),
+			TotalBytes: totalBytes,
+		}
+		if operationType == meta.FileOperationTypeCopy || operationType == meta.FileOperationTypeMove {
+			target := parentID
+			operation.ParentID = &target
+		}
+		return tx.Create(&operation).Error
+	})
+	return operation, err
+}
+
+func fileOperationNodeBytesTx(tx *gorm.DB, uid uint64, node meta.Node) (int64, error) {
+	if node.Type == meta.NodeTypeFile {
+		if node.File != nil {
+			return node.File.Size, nil
+		}
+		var file meta.File
+		if err := tx.Where("node_id = ?", node.ID).First(&file).Error; err != nil {
+			return 0, err
+		}
+		return file.Size, nil
+	}
+	var row struct {
+		Bytes int64 `gorm:"column:bytes"`
+	}
+	err := tx.Raw(`WITH RECURSIVE tree AS (
+SELECT id FROM xd_nodes WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+UNION ALL
+SELECT n.id FROM xd_nodes n JOIN tree t ON n.parent_id = t.id
+WHERE n.owner_id = ? AND n.deleted_at IS NULL
+)
+SELECT COALESCE(SUM(f.size), 0) AS bytes
+FROM tree
+LEFT JOIN xd_files f ON f.node_id = tree.id`, node.ID, uid, uid).Scan(&row).Error
+	return row.Bytes, err
+}
+
+func (s *Server) loadOwnedFileOperation(ctx context.Context, uid uint64, id string) (meta.FileOperation, error) {
+	var operation meta.FileOperation
+	err := s.DB.WithContext(ctx).
+		Where("id = ? AND owner_id = ?", id, uid).
+		First(&operation).Error
+	return operation, err
+}
+
+func (s *Server) StartFileOperationWorker(ctx context.Context) {
+	if s == nil || s.DB == nil {
+		return
+	}
+	if err := s.recoverFileOperations(ctx); err != nil {
+		slog.Error("file_operation_recovery_failed", "error", err)
+	}
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			processed, err := s.processNextFileOperation(ctx)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("file_operation_worker_failed", "error", err)
+			}
+			if processed {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+func (s *Server) recoverFileOperations(ctx context.Context) error {
+	now := time.Now()
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&meta.FileOperation{}).
+			Where("status = ?", meta.FileOperationStatusRunning).
+			Updates(map[string]any{
+				"status":              meta.FileOperationStatusQueued,
+				"processed_items":     0,
+				"processed_bytes":     0,
+				"current_item":        "",
+				"failed_item_id":      0,
+				"error":               "",
+				"cancel_requested_at": nil,
+				"started_at":          nil,
+				"finished_at":         nil,
+				"updated_at":          now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&meta.FileOperation{}).
+			Where("status = ?", meta.FileOperationStatusCancelRequested).
+			Updates(map[string]any{
+				"status":          meta.FileOperationStatusCancelled,
+				"processed_items": 0,
+				"processed_bytes": 0,
+				"current_item":    "",
+				"finished_at":     &now,
+				"updated_at":      now,
+			}).Error
+	})
+}
+
+func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
+	operation, ok, err := s.claimNextFileOperation(ctx)
+	if err != nil || !ok {
+		return ok, err
+	}
+	refs, err := decodeFileOperationRefs(operation.ItemsJSON)
+	if err != nil {
+		return true, s.failFileOperation(ctx, operation.ID, err)
+	}
+
+	switch operation.Type {
+	case meta.FileOperationTypeCopy:
+		err = s.executeQueuedBatchCopy(ctx, operation, refs)
+	case meta.FileOperationTypeMove:
+		err = s.executeQueuedBatchMove(ctx, operation, refs)
+	case meta.FileOperationTypeDelete:
+		err = s.executeQueuedBatchDelete(ctx, operation, refs)
+	default:
+		err = errors.New("unsupported file operation type")
+	}
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, errFileOperationCancelled) {
+		return true, s.cancelRunningFileOperation(context.Background(), operation.ID)
+	}
+	if errors.Is(err, context.Canceled) {
+		// Server shutdown must not turn an interrupted operation into a user
+		// cancellation. Its node transaction is rolled back and startup
+		// recovery safely re-queues the running operation.
+		return true, err
+	}
+	return true, s.failFileOperation(ctx, operation.ID, err)
+}
+
+func (s *Server) claimNextFileOperation(ctx context.Context) (meta.FileOperation, bool, error) {
+	var operation meta.FileOperation
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("status = ?", meta.FileOperationStatusQueued).
+			Order("created_at ASC, id ASC").
+			First(&operation).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := tx.Model(&meta.FileOperation{}).Where("id = ?", operation.ID).Updates(map[string]any{
+			"status":              meta.FileOperationStatusRunning,
+			"processed_items":     0,
+			"processed_bytes":     0,
+			"current_item":        "",
+			"failed_item_id":      0,
+			"error":               "",
+			"cancel_requested_at": nil,
+			"started_at":          &now,
+			"finished_at":         nil,
+			"updated_at":          now,
+		}).Error; err != nil {
+			return err
+		}
+		operation.Status = meta.FileOperationStatusRunning
+		operation.ProcessedItems = 0
+		operation.ProcessedBytes = 0
+		operation.CurrentItem = ""
+		operation.FailedItemID = 0
+		operation.Error = ""
+		operation.CancelRequestedAt = nil
+		operation.StartedAt = &now
+		operation.FinishedAt = nil
+		return nil
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return meta.FileOperation{}, false, nil
+	}
+	return operation, err == nil, err
+}
+
+func (s *Server) beginFileOperationItem(ctx context.Context, operationID, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result := s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
+		Where("id = ? AND status = ?", operationID, meta.FileOperationStatusRunning).
+		Updates(map[string]any{"current_item": name, "updated_at": time.Now()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 1 {
+		return nil
+	}
+	var operation meta.FileOperation
+	if err := s.DB.WithContext(ctx).Select("status").Where("id = ?", operationID).First(&operation).Error; err != nil {
+		return err
+	}
+	if operation.Status == meta.FileOperationStatusCancelRequested || operation.Status == meta.FileOperationStatusCancelled {
+		return errFileOperationCancelled
+	}
+	return errors.New("file operation is no longer running")
+}
+
+func (s *Server) recordFileOperationProgress(ctx context.Context, operationID string, bytes int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
+		Where("id = ? AND status IN ?", operationID, []string{
+			meta.FileOperationStatusRunning,
+			meta.FileOperationStatusCancelRequested,
+		}).
+		Updates(map[string]any{
+			"processed_items": gorm.Expr("processed_items + 1"),
+			"processed_bytes": gorm.Expr("processed_bytes + ?", bytes),
+			"updated_at":      time.Now(),
+		}).Error
+}
+
+func (s *Server) completeFileOperationTx(tx *gorm.DB, operation meta.FileOperation) error {
+	now := time.Now()
+	result := tx.Model(&meta.FileOperation{}).
+		Where("id = ? AND status = ?", operation.ID, meta.FileOperationStatusRunning).
+		Updates(map[string]any{
+			"status":          meta.FileOperationStatusCompleted,
+			"processed_items": operation.TotalItems,
+			"processed_bytes": operation.TotalBytes,
+			"current_item":    "",
+			"error":           "",
+			"finished_at":     &now,
+			"updated_at":      now,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 1 {
+		return nil
+	}
+	var current meta.FileOperation
+	if err := tx.Select("status").Where("id = ?", operation.ID).First(&current).Error; err != nil {
+		return err
+	}
+	if current.Status == meta.FileOperationStatusCancelRequested || current.Status == meta.FileOperationStatusCancelled {
+		return errFileOperationCancelled
+	}
+	return errors.New("file operation is no longer running")
+}
+
+func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.FileOperation, refs []batchNodeRef) error {
+	if operation.ParentID == nil {
+		return errors.New("copy operation has no target directory")
+	}
+	uid := operation.OwnerID
+	parentID := *operation.ParentID
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := batchTargetDirectoryTx(tx, uid, parentID); err != nil {
+			return err
+		}
+		nested, err := batchSelectionHasAncestor(tx, uid, refs)
+		if err != nil {
+			return err
+		}
+		if nested {
+			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "copy selection cannot contain both a directory and its descendant"}
+		}
+		for index, ref := range refs {
+			source, err := batchLoadNodeTx(tx, uid, ref, index, true)
+			if err != nil {
+				return err
+			}
+			if err := s.beginFileOperationItem(ctx, operation.ID, source.Name); err != nil {
+				return err
+			}
+			if source.Type == meta.NodeTypeDir {
+				inside, err := batchTargetInsideNode(tx, uid, parentID, source.ID)
+				if err != nil {
+					return err
+				}
+				if inside {
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot copy a directory into itself or its descendant"}
+				}
+			}
+			name, err := copyDestinationNameTx(tx, uid, parentID, source.Name, source.Type, nil)
+			if err != nil {
+				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "cannot allocate destination name"}
+			}
+			if _, err := s.copyNodeTx(tx, uid, source, parentID, name); err != nil {
+				return err
+			}
+			size, err := fileOperationNodeBytesTx(tx, uid, source)
+			if err != nil {
+				return err
+			}
+			if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
+				return err
+			}
+		}
+		return s.completeFileOperationTx(tx, operation)
+	})
+}
+
+func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.FileOperation, refs []batchNodeRef) error {
+	if operation.ParentID == nil {
+		return errors.New("move operation has no target directory")
+	}
+	uid := operation.OwnerID
+	parentID := *operation.ParentID
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := batchTargetDirectoryTx(tx, uid, parentID); err != nil {
+			return err
+		}
+		nested, err := batchSelectionHasAncestor(tx, uid, refs)
+		if err != nil {
+			return err
+		}
+		if nested {
+			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "move selection cannot contain both a directory and its descendant"}
+		}
+		for index, ref := range refs {
+			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
+			if err != nil {
+				return err
+			}
+			if err := s.beginFileOperationItem(ctx, operation.ID, node.Name); err != nil {
+				return err
+			}
+			if node.ID == parentID {
+				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot move a node into itself"}
+			}
+			if node.Type == meta.NodeTypeDir {
+				inside, err := batchTargetInsideNode(tx, uid, parentID, node.ID)
+				if err != nil {
+					return err
+				}
+				if inside {
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot move a directory into its descendant"}
+				}
+			}
+			protected, err := yikeManagedTargetInSubtreeDB(ctx, tx, uid, node.ID)
+			if err != nil {
+				return err
+			}
+			if protected {
+				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Yike target path cannot be moved"}
+			}
+			if node.ParentID == nil || *node.ParentID != parentID {
+				exists, err := batchNameExistsTx(tx, uid, parentID, node.Name, node.ID)
+				if err != nil {
+					return err
+				}
+				if exists {
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "name already exists in target directory"}
+				}
+				now := time.Now()
+				result := tx.Model(&meta.Node{}).
+					Where("id = ? AND owner_id = ? AND revision = ? AND deleted_at IS NULL", node.ID, uid, ref.Revision).
+					Updates(map[string]any{"parent_id": parentID, "revision": gorm.Expr("revision + 1"), "updated_at": now})
+				if result.Error != nil {
+					if isDuplicate(result.Error) {
+						return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "name already exists in target directory"}
+					}
+					return result.Error
+				}
+				if result.RowsAffected == 0 {
+					var current meta.Node
+					if err := tx.Where("id = ? AND owner_id = ?", node.ID, uid).First(&current).Error; err == nil {
+						return &batchMutationFailure{
+							Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "revision_conflict",
+							Message: "node revision changed", CurrentRevision: current.Revision,
+						}
+					}
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusNotFound, Code: "node_not_found", Message: "node not found"}
+				}
+			}
+			size, err := fileOperationNodeBytesTx(tx, uid, node)
+			if err != nil {
+				return err
+			}
+			if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
+				return err
+			}
+		}
+		return s.completeFileOperationTx(tx, operation)
+	})
+}
+
+func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.FileOperation, refs []batchNodeRef) error {
+	uid := operation.OwnerID
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for index, ref := range refs {
+			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
+			if err != nil {
+				return err
+			}
+			if err := s.beginFileOperationItem(ctx, operation.ID, node.Name); err != nil {
+				return err
+			}
+			size, err := fileOperationNodeBytesTx(tx, uid, node)
+			if err != nil {
+				return err
+			}
+			ids, err := activeSubtreeIDsDB(tx, uid, node.ID)
+			if err != nil {
+				return err
+			}
+			protected, err := yikeManagedTargetInIDsDB(ctx, tx, uid, ids)
+			if err != nil {
+				return err
+			}
+			if protected {
+				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Yike target path cannot be deleted"}
+			}
+			now := time.Now()
+			if err := tx.Model(&meta.Share{}).
+				Where("node_id IN ? AND owner_id = ? AND revoked_at IS NULL", ids, uid).
+				Update("revoked_at", &now).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&meta.Node{}).
+				Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", ids, uid).
+				Updates(map[string]any{"deleted_at": &now, "trash_root_id": node.ID}).Error; err != nil {
+				return err
+			}
+			result := tx.Model(&meta.Node{}).
+				Where("id = ? AND owner_id = ? AND revision = ?", node.ID, uid, ref.Revision).
+				Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": now})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "revision_conflict", Message: "node revision changed"}
+			}
+			if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
+				return err
+			}
+		}
+		return s.completeFileOperationTx(tx, operation)
+	})
+}
+
+func (s *Server) cancelRunningFileOperation(ctx context.Context, operationID string) error {
+	now := time.Now()
+	return s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
+		Where("id = ? AND status IN ?", operationID, []string{
+			meta.FileOperationStatusRunning,
+			meta.FileOperationStatusCancelRequested,
+		}).
+		Updates(map[string]any{
+			"status":          meta.FileOperationStatusCancelled,
+			"processed_items": 0,
+			"processed_bytes": 0,
+			"current_item":    "",
+			"error":           "",
+			"finished_at":     &now,
+			"updated_at":      now,
+		}).Error
+}
+
+func (s *Server) failFileOperation(ctx context.Context, operationID string, executionErr error) error {
+	now := time.Now()
+	message := executionErr.Error()
+	failedItemID := uint64(0)
+	var failure *batchMutationFailure
+	if errors.As(executionErr, &failure) {
+		failedItemID = failure.ID
+		if failure.Code != "" {
+			message = failure.Code + ": " + failure.Message
+		}
+	}
+	return s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
+		Where("id = ?", operationID).
+		Updates(map[string]any{
+			"status":          meta.FileOperationStatusFailed,
+			"processed_items": 0,
+			"processed_bytes": 0,
+			"failed_item_id":  failedItemID,
+			"error":           message,
+			"finished_at":     &now,
+			"updated_at":      now,
+		}).Error
+}
