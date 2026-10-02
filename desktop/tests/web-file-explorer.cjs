@@ -61,8 +61,9 @@ test('Web FileExplorer search results preserve paths and directory breadcrumbs',
 test('Web FileExplorer queues copy/cut/paste as persistent file operations', () => {
   assert.ok(api.includes('copy(nodeID: number, parentID: number, name?: string)'), 'legacy Web copy API is missing')
   assert.ok(api.includes('move(nodeID: number, revision: number, parentID: number)'), 'legacy Web move API is missing')
-  assert.ok(explorer.includes("type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }"), 'Web clipboard state is missing')
-  assert.ok(explorer.includes("api.createFileOperation(clipboard.mode === 'cut' ? 'move' : 'copy', refs, current.id)"), 'copy/cut paste must enqueue one persistent file operation')
+  assert.ok(explorer.includes('useState<XDriveFileExplorerClipboard<Node> | null>'), 'Web shared clipboard state is missing')
+  assert.ok(explorer.includes('xDriveFileExplorerClipboardPlan(clipboard, current.id)'), 'Web clipboard planning must be shared')
+  assert.ok(explorer.includes('api.createFileOperation(plan.operation, plan.refs, current.id)'), 'copy/cut paste must enqueue one persistent file operation')
   assert.ok(explorer.includes('onOperationQueued(queued)'), 'Web Explorer must surface the newly queued operation immediately')
   assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Web shared copy adapter is missing')
   assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Web shared cut adapter is missing')
@@ -82,7 +83,8 @@ test('Web FileExplorer supports bulk download and delete', () => {
 
 test('Web FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Web internal drag/drop helper is missing')
-  assert.ok(explorer.includes('api.createFileOperation(operation, refs, targetNode.id)'), 'internal drag should enqueue copy/move as one persistent file operation')
+  assert.ok(explorer.includes('xDriveFileExplorerDropPlan('), 'internal drag should share copy/move planning')
+  assert.ok(explorer.includes('api.createFileOperation(plan.operation, plan.refs, targetNode.id)'), 'internal drag should enqueue copy/move as one persistent file operation')
   assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
   assert.ok(explorer.includes('onUploadDroppedFiles(parentID, files)'), 'Web external drop should use the target-aware upload adapter')
   assert.ok(app.includes('const uploadFilesTo = async (parentID: number, files: File[]) => {'), 'Web target-aware upload helper is missing')
@@ -133,7 +135,7 @@ test('Web multi-select mutations use persistent operations while retaining legac
     assert.ok(api.includes(token), `missing Web persistent-operation contract: ${token}`)
   }
   assert.ok(app.includes("const operation = await api.createFileOperation("), 'Web bulk delete must queue one operation')
-  assert.ok(explorer.includes("api.createFileOperation(clipboard.mode === 'cut' ? 'move' : 'copy', refs, current.id)"), 'Web paste must queue one operation')
-  assert.ok(explorer.includes('api.createFileOperation(operation, refs, targetNode.id)'), 'Web drag/drop must queue one operation')
+  assert.ok(explorer.includes('api.createFileOperation(plan.operation, plan.refs, current.id)'), 'Web paste must queue one operation')
+  assert.ok(explorer.includes('api.createFileOperation(plan.operation, plan.refs, targetNode.id)'), 'Web drag/drop must queue one operation')
   assert.equal(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), false, 'Web bulk delete must not regress to N requests')
 })

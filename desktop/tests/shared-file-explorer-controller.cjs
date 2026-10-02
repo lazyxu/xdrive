@@ -60,3 +60,29 @@ test('Web and Desktop delegate typed-path resolution while keeping transport ada
   assert.ok(web.includes('listChildren: (parentID) => api.list(parentID)'), 'Web must keep REST directory loading local')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildren(parentID)'), 'Desktop must keep Agent directory loading local')
 })
+
+test('shared FileExplorer controller owns mutation planning rules', () => {
+  for (const token of [
+    "XDriveFileExplorerClipboardMode = 'copy' | 'cut'",
+    "XDriveFileExplorerMutationOperation = 'copy' | 'move'",
+    'XDriveFileExplorerClipboard<TNode',
+    'xDriveFileExplorerNodesForItems',
+    'xDriveFileExplorerMutationRefs',
+    'xDriveFileExplorerClipboardPlan',
+    "clipboard.mode === 'cut'",
+    'node.parent_id !== targetParentID',
+    "operation: clipboard.mode === 'cut' ? 'move' : 'copy'",
+    'xDriveFileExplorerDropPlan',
+    'node.id !== targetNodeID',
+  ]) {
+    assert.ok(shared.includes(token), `shared FileExplorer mutation controller missing: ${token}`)
+  }
+
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('xDriveFileExplorerNodesForItems(selected, nodeByID)'), `${label} must share selection-to-node projection`)
+    assert.ok(source.includes('xDriveFileExplorerClipboardPlan(clipboard, current.id)'), `${label} must share clipboard operation planning`)
+    assert.ok(source.includes('xDriveFileExplorerDropPlan('), `${label} must share drag/drop operation planning`)
+    assert.equal(source.includes(".filter((node) => node.parent_id !== current.id)"), false, `${label} must not duplicate same-directory cut filtering`)
+    assert.equal(source.includes("const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))"), false, `${label} must not duplicate mutation-ref projection`)
+  }
+})

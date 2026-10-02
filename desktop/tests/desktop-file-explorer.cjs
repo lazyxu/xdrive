@@ -113,9 +113,10 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
 })
 
 test('Desktop FileExplorer queues copy/cut/paste through persistent Agent file operations', () => {
-  assert.ok(explorer.includes("type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }"), 'Desktop clipboard state is missing')
+  assert.ok(explorer.includes('useState<XDriveFileExplorerClipboard<AgentCloudNode> | null>'), 'Desktop shared clipboard state is missing')
+  assert.ok(explorer.includes('xDriveFileExplorerClipboardPlan(clipboard, current.id)'), 'Desktop clipboard planning must be shared')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste must use the persistent file-operation bridge')
-  assert.ok(explorer.includes("clipboard.mode === 'cut' ? 'move' : 'copy'"), 'Desktop paste must preserve copy/cut semantics')
+  assert.ok(explorer.includes('plan.operation'), 'Desktop paste must preserve copy/cut semantics through the shared plan')
   assert.ok(explorer.includes('onOperationQueued(result.data)'), 'Desktop Explorer must surface the newly queued operation immediately')
   assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Desktop shared copy adapter is missing')
   assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Desktop shared cut adapter is missing')
@@ -136,8 +137,8 @@ test('Desktop FileExplorer supports bulk download and delete', () => {
 
 test('Desktop FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Desktop internal drag/drop helper is missing')
-  assert.ok(explorer.includes("operation === 'copy'"), 'Desktop drag/drop operation selection is missing')
-  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, refs, targetNode.id)'), 'Desktop internal drag must enqueue copy/move as one persistent operation')
+  assert.ok(explorer.includes('xDriveFileExplorerDropPlan('), 'Desktop drag/drop operation planning must be shared')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(plan.operation, plan.refs, targetNode.id)'), 'Desktop internal drag must enqueue copy/move as one persistent operation')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
   assert.ok(explorer.includes('onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
 })
@@ -213,7 +214,7 @@ test('Desktop FileExplorer uses cursor-paged server sorting for cloud directorie
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
   assert.ok(app.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop bulk delete must queue one operation')
   assert.ok(explorer.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop paste/drop must queue one operation')
-  assert.ok(explorer.includes("clipboard.mode === 'cut' ? 'move' : 'copy'"), 'Desktop paste must preserve copy/move operation type')
-  assert.ok(explorer.includes('cloudCreateFileOperation(operation, refs, targetNode.id)'), 'Desktop drag/drop must preserve copy/move operation type')
+  assert.ok(explorer.includes('xDriveFileExplorerClipboardPlan(clipboard, current.id)'), 'Desktop paste must preserve copy/move operation type through shared planning')
+  assert.ok(explorer.includes('cloudCreateFileOperation(plan.operation, plan.refs, targetNode.id)'), 'Desktop drag/drop must preserve copy/move operation type through shared planning')
   assert.equal(app.includes('for (const node of nodes) {\n            const result = await window.xdriveDesktop.agent.cloudDelete'), false, 'Desktop bulk delete must not regress to N requests')
 })

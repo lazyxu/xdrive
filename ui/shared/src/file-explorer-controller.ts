@@ -64,3 +64,67 @@ export function xDriveFileExplorerSearchDecision(
   }
   return { kind: 'search', query }
 }
+
+
+export type XDriveFileExplorerClipboardMode = 'copy' | 'cut'
+export type XDriveFileExplorerMutationOperation = 'copy' | 'move'
+export type XDriveFileExplorerMutationNode = Pick<Node, 'id' | 'revision' | 'parent_id'>
+export type XDriveFileExplorerMutationRef = Pick<Node, 'id' | 'revision'>
+
+export type XDriveFileExplorerClipboard<TNode extends XDriveFileExplorerMutationNode> = {
+  mode: XDriveFileExplorerClipboardMode
+  nodes: TNode[]
+}
+
+export type XDriveFileExplorerMutationPlan<TNode extends XDriveFileExplorerMutationNode> = {
+  operation: XDriveFileExplorerMutationOperation
+  nodes: TNode[]
+  refs: XDriveFileExplorerMutationRef[]
+}
+
+export function xDriveFileExplorerNodesForItems<TNode extends Pick<Node, 'id'>>(
+  selected: readonly { id: string | number }[],
+  nodeByID: ReadonlyMap<number, TNode>,
+): TNode[] {
+  return selected
+    .map((item) => nodeByID.get(Number(item.id)))
+    .filter((node): node is TNode => Boolean(node))
+}
+
+export function xDriveFileExplorerMutationRefs(
+  nodes: readonly XDriveFileExplorerMutationNode[],
+): XDriveFileExplorerMutationRef[] {
+  return nodes.map((node) => ({ id: node.id, revision: node.revision }))
+}
+
+export function xDriveFileExplorerClipboardPlan<
+  TNode extends XDriveFileExplorerMutationNode,
+>(
+  clipboard: XDriveFileExplorerClipboard<TNode>,
+  targetParentID: number,
+): XDriveFileExplorerMutationPlan<TNode> {
+  const nodes = clipboard.mode === 'cut'
+    ? clipboard.nodes.filter((node) => node.parent_id !== targetParentID)
+    : [...clipboard.nodes]
+
+  return {
+    operation: clipboard.mode === 'cut' ? 'move' : 'copy',
+    nodes,
+    refs: xDriveFileExplorerMutationRefs(nodes),
+  }
+}
+
+export function xDriveFileExplorerDropPlan<
+  TNode extends XDriveFileExplorerMutationNode,
+>(
+  nodes: readonly TNode[],
+  targetNodeID: number,
+  operation: XDriveFileExplorerMutationOperation,
+): XDriveFileExplorerMutationPlan<TNode> {
+  const eligible = nodes.filter((node) => node.id !== targetNodeID)
+  return {
+    operation,
+    nodes: eligible,
+    refs: xDriveFileExplorerMutationRefs(eligible),
+  }
+}
