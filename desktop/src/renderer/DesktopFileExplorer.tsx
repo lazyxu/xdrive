@@ -10,14 +10,10 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
-import { Dialog, Stack, TextField } from '@mui/material'
 import {
-  XDriveActionButton,
-  XDriveDialogContent,
-  XDriveDialogTitle,
   XDriveFileExplorer,
+  XDriveFileNameDialog,
   XDriveFileExplorerCommandButton,
-  xDriveDialogPaperProps,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
@@ -85,11 +81,7 @@ export default function DesktopFileExplorer({
   const [history, setHistory] = useState<AgentCloudCrumb[][]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [createOpen, setCreateOpen] = useState(false)
-  const [createName, setCreateName] = useState('')
-  const [createError, setCreateError] = useState('')
   const [renameNode, setRenameNode] = useState<AgentCloudNode | null>(null)
-  const [renameName, setRenameName] = useState('')
-  const [renameError, setRenameError] = useState('')
   const [actionBusy, setActionBusy] = useState('')
   const [clipboard, setClipboard] = useState<DesktopExplorerClipboard | null>(null)
 
@@ -324,23 +316,12 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const createFolder = async () => {
+  const createFolder = async (name: string) => {
     if (!current) return
-    const name = createName.trim()
-    const error = !name ? '请填写文件夹名称' : name.length > 255 ? '文件夹名称不能超过 255 个字符' : ''
-    setCreateError(error)
-    if (error) return
-
     setActionBusy('create-folder')
     try {
       const result = await window.xdriveDesktop.agent.cloudCreateDirectory(current.id, name)
-      if (!result.ok) {
-        onError(result.error.message)
-        return
-      }
-      setCreateOpen(false)
-      setCreateName('')
-      setCreateError('')
+      if (!result.ok) throw new Error(result.error.message)
       await onLoadDirectory(current.id, crumbs, sort)
       onFeedback('good', '文件夹已创建。')
     } finally {
@@ -348,23 +329,12 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const rename = async () => {
+  const rename = async (name: string) => {
     if (!renameNode || !current) return
-    const name = renameName.trim()
-    const error = !name ? '请填写名称' : name.length > 255 ? '名称不能超过 255 个字符' : ''
-    setRenameError(error)
-    if (error) return
-
     setActionBusy('rename')
     try {
       const result = await window.xdriveDesktop.agent.cloudRename(renameNode.id, renameNode.revision, name)
-      if (!result.ok) {
-        onError(result.error.message)
-        return
-      }
-      setRenameNode(null)
-      setRenameName('')
-      setRenameError('')
+      if (!result.ok) throw new Error(result.error.message)
       await onLoadDirectory(current.id, crumbs, sort)
       onFeedback('good', '已重命名。')
     } finally {
@@ -447,11 +417,7 @@ export default function DesktopFileExplorer({
       label: '重命名',
       icon: <EditRoundedIcon fontSize="small" />,
       dividerBefore: true,
-      onSelect: () => {
-        setRenameNode(node)
-        setRenameName(node.name)
-        setRenameError('')
-      },
+      onSelect: () => setRenameNode(node),
     })
     menu.push({
       id: 'delete',
@@ -588,11 +554,7 @@ export default function DesktopFileExplorer({
       id: 'new-folder',
       label: '新建文件夹',
       icon: <CreateNewFolderRoundedIcon fontSize="small" />,
-      onSelect: () => {
-        setCreateName('')
-        setCreateError('')
-        setCreateOpen(true)
-      },
+      onSelect: () => setCreateOpen(true),
     },
     {
       id: 'upload',
@@ -638,11 +600,7 @@ export default function DesktopFileExplorer({
           if (current) void onLoadDirectory(current.id, crumbs, sort)
         }}
         onCrumbClick={(_crumb, index) => { void navigateTo(crumbs.slice(0, index + 1)) }}
-        onCreateFolder={() => {
-          setCreateName('')
-          setCreateError('')
-          setCreateOpen(true)
-        }}
+        onCreateFolder={() => setCreateOpen(true)}
         onUpload={() => { void uploadFiles() }}
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
@@ -701,89 +659,23 @@ export default function DesktopFileExplorer({
                   : undefined}
       />
 
-      <Dialog
+      <XDriveFileNameDialog
         open={createOpen}
-        onClose={() => { if (!actionBusy) setCreateOpen(false) }}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title="新建文件夹"
-          onClose={() => setCreateOpen(false)}
-          closeDisabled={Boolean(actionBusy)}
-        />
-        <XDriveDialogContent>
-          <Stack component="form" spacing={2} onSubmit={(event) => {
-            event.preventDefault()
-            void createFolder()
-          }}>
-            <TextField
-              autoFocus
-              fullWidth
-              size="small"
-              label="文件夹名称"
-              value={createName}
-              error={Boolean(createError)}
-              helperText={createError || ' '}
-              onChange={(event) => {
-                setCreateName(event.target.value)
-                if (createError) setCreateError('')
-              }}
-            />
-            <XDriveActionButton
-              intent="primary"
-              type="submit"
-              loading={actionBusy === 'create-folder'}
-              loadingLabel="正在创建…"
-            >
-              创建
-            </XDriveActionButton>
-          </Stack>
-        </XDriveDialogContent>
-      </Dialog>
+        mode="create-folder"
+        onClose={() => setCreateOpen(false)}
+        onSubmit={createFolder}
+        onError={(error) => onError(error instanceof Error ? error.message : String(error))}
+      />
 
-      <Dialog
+      <XDriveFileNameDialog
         open={Boolean(renameNode)}
-        onClose={() => { if (!actionBusy) setRenameNode(null) }}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title="重命名"
-          onClose={() => setRenameNode(null)}
-          closeDisabled={Boolean(actionBusy)}
-        />
-        <XDriveDialogContent>
-          <Stack component="form" spacing={2} onSubmit={(event) => {
-            event.preventDefault()
-            void rename()
-          }}>
-            <TextField
-              autoFocus
-              fullWidth
-              size="small"
-              label="名称"
-              value={renameName}
-              error={Boolean(renameError)}
-              helperText={renameError || ' '}
-              onChange={(event) => {
-                setRenameName(event.target.value)
-                if (renameError) setRenameError('')
-              }}
-            />
-            <XDriveActionButton
-              intent="primary"
-              type="submit"
-              loading={actionBusy === 'rename'}
-              loadingLabel="正在保存…"
-            >
-              保存
-            </XDriveActionButton>
-          </Stack>
-        </XDriveDialogContent>
-      </Dialog>
+        mode="rename"
+        initialValue={renameNode?.name ?? ''}
+        onClose={() => setRenameNode(null)}
+        onSubmit={rename}
+        onError={(error) => onError(error instanceof Error ? error.message : String(error))}
+      />
+
     </>
   )
 }
