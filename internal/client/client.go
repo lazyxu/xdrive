@@ -96,6 +96,28 @@ type BatchNodesResult struct {
 	DeletedIDs  []uint64 `json:"deleted_ids,omitempty"`
 }
 
+type FileOperation struct {
+	ID                string     `json:"id"`
+	Type              string     `json:"type"`
+	Status            string     `json:"status"`
+	ParentID          *uint64    `json:"parent_id,omitempty"`
+	RetryOfID         *string    `json:"retry_of_id,omitempty"`
+	TotalItems        int64      `json:"total_items"`
+	ProcessedItems    int64      `json:"processed_items"`
+	TotalBytes        int64      `json:"total_bytes"`
+	ProcessedBytes    int64      `json:"processed_bytes"`
+	Percent           float64    `json:"percent"`
+	CurrentItem       string     `json:"current_item,omitempty"`
+	FailedItemID      uint64     `json:"failed_item_id,omitempty"`
+	Error             string     `json:"error,omitempty"`
+	Retryable         bool       `json:"retryable"`
+	CancelRequestedAt *time.Time `json:"cancel_requested_at,omitempty"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
 type QuotaUsage struct {
 	QuotaBytes         int64  `json:"quota_bytes"`
 	PhysicalUsedBytes  int64  `json:"physical_used_bytes"`
@@ -348,6 +370,43 @@ func (c *Client) BatchMove(ctx context.Context, items []BatchNodeRef, parentID u
 func (c *Client) BatchDelete(ctx context.Context, items []BatchNodeRef) (BatchNodesResult, error) {
 	var out BatchNodesResult
 	err := c.json(ctx, http.MethodPost, "/api/v1/nodes/batch/delete", map[string]any{"items": items}, &out)
+	return out, err
+}
+
+func (c *Client) CreateFileOperation(ctx context.Context, operationType string, items []BatchNodeRef, parentID uint64) (FileOperation, error) {
+	var out FileOperation
+	body := map[string]any{"type": operationType, "items": items}
+	if parentID != 0 {
+		body["parent_id"] = parentID
+	}
+	err := c.json(ctx, http.MethodPost, "/api/v1/file-operations", body, &out)
+	return out, err
+}
+
+func (c *Client) ListFileOperations(ctx context.Context, limit int) ([]FileOperation, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var out []FileOperation
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/file-operations?limit=%d", limit), nil, &out)
+	return out, err
+}
+
+func (c *Client) GetFileOperation(ctx context.Context, id string) (FileOperation, error) {
+	var out FileOperation
+	err := c.json(ctx, http.MethodGet, "/api/v1/file-operations/"+url.PathEscape(id), nil, &out)
+	return out, err
+}
+
+func (c *Client) CancelFileOperation(ctx context.Context, id string) (FileOperation, error) {
+	var out FileOperation
+	err := c.json(ctx, http.MethodPost, "/api/v1/file-operations/"+url.PathEscape(id)+"/cancel", map[string]any{}, &out)
+	return out, err
+}
+
+func (c *Client) RetryFileOperation(ctx context.Context, id string) (FileOperation, error) {
+	var out FileOperation
+	err := c.json(ctx, http.MethodPost, "/api/v1/file-operations/"+url.PathEscape(id)+"/retry", map[string]any{}, &out)
 	return out, err
 }
 
