@@ -266,6 +266,8 @@ export type MediaKind = 'image' | 'video'
 export interface MediaMetadata {
   media_kind: MediaKind
   mime_type?: string
+  container_kind?: string
+  live_photo_asset_identifier?: string
   width?: number
   height?: number
   orientation?: number
@@ -292,9 +294,19 @@ export interface MediaMetadata {
   thumbnail_height?: number
 }
 
+export interface MediaDerivedResource {
+  role: string
+  name: string
+  media_kind: MediaKind
+  mime_type: string
+  size: number
+}
+
 export interface MediaItem {
   node: Node
   metadata: MediaMetadata
+  derived_resources?: MediaDerivedResource[]
+  live_photo?: boolean
 }
 
 export interface MediaAlbum {

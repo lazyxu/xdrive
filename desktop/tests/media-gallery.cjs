@@ -26,6 +26,9 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /GPS/)
   assert.match(sharedGallery, /视频编码/)
   assert.match(sharedGallery, /缩略图/)
+  assert.match(sharedGallery, /实况/)
+  assert.match(sharedGallery, /loadLivePhotoMotion/)
+  assert.match(sharedGallery, /<video/)
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
   assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
@@ -43,11 +46,14 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /longitude\?: number/)
   assert.match(sharedModels, /thumbnail_width\?: number/)
   assert.match(sharedModels, /thumbnail_height\?: number/)
+  assert.match(sharedModels, /container_kind\?: string/)
+  assert.match(sharedModels, /live_photo\?: boolean/)
+  assert.match(sharedModels, /derived_resources\?: MediaDerivedResource\[\]/)
   assert.equal(sharedModels.includes('source_item_id: number\n  metadata: MediaMetadata'), false)
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -56,6 +62,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'getMediaAlbums:',
     'getMediaAlbumItems:',
     'getMediaThumbnail:',
+    'getMediaLivePhotoMotion:',
   ]) {
     assert.ok(preload.includes(token), `Desktop preload missing ${token}`)
   }
@@ -65,6 +72,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'mediaAlbums()',
     'mediaAlbumItems(albumID:',
     'mediaThumbnail(nodeID:',
+    'mediaLivePhotoMotion(nodeID:',
   ]) {
     assert.ok(agentClient.includes(token), `Desktop Agent client missing ${token}`)
   }
@@ -73,6 +81,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
+  assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
 })
 
 test('Desktop navigation exposes Gallery as a first-class view', () => {

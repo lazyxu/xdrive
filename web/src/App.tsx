@@ -517,6 +517,7 @@ function FileManager({
     listAlbums: () => api.mediaAlbums(),
     listAlbumItems: (albumID, limit, offset) => api.mediaAlbumItems(albumID, limit, offset),
     loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
+    loadLivePhotoMotion: async (nodeID) => URL.createObjectURL(await api.mediaLivePhotoMotion(nodeID)),
   }), [api])
 
   const handleError = useCallback((err: unknown) => {

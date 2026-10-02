@@ -10,6 +10,7 @@ const agent = Object.freeze({
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
   getMediaAlbumItems: (albumID: string, limit = 100, offset = 0) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
+  getMediaLivePhotoMotion: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID),
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
   getSourceRuns: (sourceID: number, limit = 1, offset = 0) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit, offset),
   getSourceRunFailures: (sourceID: number, runID: string, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-source-run-failures', sourceID, runID, limit, offset),

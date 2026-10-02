@@ -182,6 +182,7 @@ type desktopIPCController interface {
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaAlbumItems(context.Context, string, int, int) ([]client.MediaItem, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
+	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error)
 	CloudSourceRunFailures(context.Context, uint64, string, int, int) ([]client.SourceRunFailure, error)
@@ -420,6 +421,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
+	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
@@ -1376,6 +1378,19 @@ func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, thumbnail)
+}
+
+func (h *desktopIPCHandler) mediaLivePhotoMotion(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	motion, err := h.ctrl.CloudMediaLivePhotoMotion(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, motion)
 }
 
 func desktopIPCMediaWindow(w http.ResponseWriter, r *http.Request) (int, int, bool) {
