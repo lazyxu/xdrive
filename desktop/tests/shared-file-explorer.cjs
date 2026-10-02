@@ -5,10 +5,12 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const explorer = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorer.tsx'), 'utf8')
+const propertiesDialog = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx'), 'utf8')
 const index = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'index.tsx'), 'utf8')
 
 test('shared FileExplorer exports one reusable Web/Desktop shell', () => {
   assert.ok(index.includes("export * from './FileExplorer'"), 'shared MUI index does not export FileExplorer')
+  assert.ok(index.includes("export * from './FilePropertiesDialog'"), 'shared MUI index does not export FilePropertiesDialog')
   assert.ok(explorer.includes('export function XDriveFileExplorer({'), 'shared explorer component is missing')
   assert.ok(explorer.includes("export type XDriveFileExplorerViewMode = 'details' | 'grid'"), 'view-mode contract is missing')
   assert.ok(explorer.includes('export type XDriveFileExplorerItem = {'), 'generic explorer item model is missing')
@@ -173,20 +175,23 @@ test('shared FileExplorer details columns are sortable, resizable, configurable 
   assert.equal(explorer.includes("gridTemplateColumns: 'minmax(260px, 1fr) 190px 150px 120px'"), false, 'details columns must not remain hard-coded')
 })
 
-test('shared FileExplorer provides a preview and properties inspector', () => {
+test('shared FileExplorer keeps the details inspector and opens Properties as a dialog', () => {
   for (const token of [
-    'export type XDriveFileExplorerProperty = {',
+    'export type XDriveFileExplorerProperty = XDriveFilePropertiesDialogProperty',
     'path?: string',
     'revision?: string | number',
     'properties?: XDriveFileExplorerProperty[]',
     'const [inspectorOpen, setInspectorOpen] = useState(false)',
+    'const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])',
     'aria-pressed={inspectorOpen}',
     'data-xdrive-file-explorer-inspector',
     'data-xdrive-file-explorer-preview',
     "label: '属性'",
+    'onSelect: () => setPropertiesItems(selection)',
+    "event.altKey && event.key === 'Enter'",
+    '<XDriveFilePropertiesDialog',
     '选择一个项目以查看预览和属性。',
     '已选择 {selectedItems.length} 个项目',
-    '技术信息',
     'loadThumbnail={loadThumbnail}',
     "label: 'Revision'",
     "label: 'ID'",
@@ -194,6 +199,16 @@ test('shared FileExplorer provides a preview and properties inspector', () => {
     assert.ok(explorer.includes(token), `missing preview/properties feature: ${token}`)
   }
   assert.ok(explorer.includes("width: 'clamp(248px, 27vw, 328px)'"), 'inspector should use a bounded system-style side pane')
+  for (const token of [
+    'export function XDriveFilePropertiesDialog({',
+    'aria-label="文件属性"',
+    'data-xdrive-file-properties-preview',
+    '<XDriveDescriptionGrid columns={2}>',
+    '技术信息',
+    '<XDriveDialogActions>',
+  ]) {
+    assert.ok(propertiesDialog.includes(token), `missing shared Properties dialog feature: ${token}`)
+  }
 })
 
 test('shared FileExplorer supports server-paged incremental loading without re-sorting partial pages', () => {
