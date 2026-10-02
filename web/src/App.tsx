@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
-import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
-import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import {
   AppBar,
@@ -30,6 +26,7 @@ import {
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
+  XDriveCoreWorkspaceNavItems,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
@@ -954,21 +951,10 @@ function FileManager({
       >
         <XDriveSidebarSurface ariaLabel="网页端功能区" responsive>
           <XDriveSidebarNavList ariaLabel="网页端功能区导航" responsive>
-            <XDriveSidebarNavItem selected={appView === 'files'} icon={<FolderRoundedIcon fontSize="small" />} primary="文件" onClick={() => setAppView('files')} />
-            <XDriveSidebarNavItem selected={appView === 'gallery'} icon={<PhotoLibraryRoundedIcon fontSize="small" />} primary="图库" onClick={() => setAppView('gallery')} />
-            <XDriveSidebarNavItem selected={appView === 'sources'} icon={<CloudSyncRoundedIcon fontSize="small" />} primary="同步文件夹" onClick={() => setAppView('sources')} />
-            <XDriveSidebarNavItem
-              selected={appView === 'transfers'}
-              icon={<SwapVertRoundedIcon fontSize="small" />}
-              primary="传输"
-              badge={(transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length + fileOperations.filter((item) => xDriveFileOperationActive(item.status)).length) || undefined}
-              onClick={() => setAppView('transfers')}
-            />
-            <XDriveSidebarNavItem
-              selected={appView === 'storage'}
-              icon={<StorageRoundedIcon fontSize="small" />}
-              primary="存储"
-              onClick={() => setAppView('storage')}
+            <XDriveCoreWorkspaceNavItems
+              selected={appView}
+              transferBadge={(transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length + fileOperations.filter((item) => xDriveFileOperationActive(item.status)).length) || undefined}
+              onSelect={(destination) => setAppView(destination)}
             />
           </XDriveSidebarNavList>
 

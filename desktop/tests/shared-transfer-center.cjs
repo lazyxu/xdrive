@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'TransferCenter.tsx')
 const taskCenter = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
+const sidebarNav = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'transfers.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx') + read('desktop', 'src', 'renderer', 'DesktopTransfersPage.tsx')
 const web = read('web', 'src', 'App.tsx')
@@ -47,8 +48,9 @@ test('Web and Desktop both render the shared task center workspace', () => {
   assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render the shared task center')
   assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')
   assert.equal((web.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Web must not duplicate the transfer-center workspace')
-  assert.ok(web.includes('primary="传输"'), 'Web sidebar must expose Transfers')
-  assert.ok(desktop.includes('primary="传输"'), 'Desktop sidebar must keep Transfers')
+  assert.ok(sidebarNav.includes('primary="传输"'), 'shared core navigation must expose Transfers')
+  assert.ok(web.includes('<XDriveCoreWorkspaceNavItems'), 'Web must consume shared core navigation')
+  assert.ok(desktop.includes('<XDriveCoreWorkspaceNavItems'), 'Desktop must consume shared core navigation')
 })
 
 test('Web upload and download operations feed persistent transfer history', () => {
