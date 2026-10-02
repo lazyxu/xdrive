@@ -174,7 +174,7 @@ func TestDiscoveredItemUsesMTimeWithoutMediaSemantics(t *testing.T) {
 			Size: 42, Time: synology.FileStationTime{MTime: 1_700_000_000}, Type: "db",
 		},
 	}
-	item := discoveredItem(entry.Path, "documents/data.db", entry)
+	item := discoveredItem(entry.Path, "documents/data.db", entry, nil)
 	if item.Kind != meta.SourceItemKindFile || item.Size != 42 || item.ModifiedAt == nil {
 		t.Fatalf("item=%+v", item)
 	}
@@ -231,5 +231,69 @@ func TestScannerRejectsDuplicateRemotePathAcrossPages(t *testing.T) {
 	}).Scan(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "path repeated") {
 		t.Fatalf("duplicate path err=%v", err)
+	}
+}
+
+func TestFileStationRemoteRevisionUsesChangeTimesForNewFiles(t *testing.T) {
+	entry := synology.FileStationEntry{
+		Path: "/documents/a.bin",
+		Additional: synology.FileStationAdditional{
+			Size: 10,
+			Time: synology.FileStationTime{MTime: 100, CTime: 110, CRTime: 90},
+		},
+	}
+	got := fileStationRemoteRevision(entry, nil)
+	want := "v2:mtime:100:ctime:110:crtime:90:size:10"
+	if got != want {
+		t.Fatalf("revision=%q want=%q", got, want)
+	}
+}
+
+func TestFileStationRemoteRevisionKeepsUnchangedLegacyItem(t *testing.T) {
+	entry := synology.FileStationEntry{
+		Path: "/documents/a.bin",
+		Additional: synology.FileStationAdditional{
+			Size: 10,
+			Time: synology.FileStationTime{MTime: 100, CTime: 110, CRTime: 90},
+		},
+	}
+	current := &client.SourceItem{
+		ExternalID:     fileStationExternalID(entry.Path),
+		RemoteRevision: "mtime:100:size:10:dir:false",
+	}
+	if got := fileStationRemoteRevision(entry, current); got != current.RemoteRevision {
+		t.Fatalf("unchanged legacy revision=%q want=%q", got, current.RemoteRevision)
+	}
+}
+
+func TestFileStationRemoteRevisionMigratesLegacyItemWhenItChanges(t *testing.T) {
+	entry := synology.FileStationEntry{
+		Path: "/documents/a.bin",
+		Additional: synology.FileStationAdditional{
+			Size: 10,
+			Time: synology.FileStationTime{MTime: 101, CTime: 111, CRTime: 90},
+		},
+	}
+	current := &client.SourceItem{
+		ExternalID:     fileStationExternalID(entry.Path),
+		RemoteRevision: "mtime:100:size:10:dir:false",
+	}
+	got := fileStationRemoteRevision(entry, current)
+	want := "v2:mtime:101:ctime:111:crtime:90:size:10"
+	if got != want {
+		t.Fatalf("changed legacy revision=%q want=%q", got, want)
+	}
+}
+
+func TestFileStationRemoteRevisionFallsBackWhenChangeTimesUnavailable(t *testing.T) {
+	entry := synology.FileStationEntry{
+		Path: "/documents/a.bin",
+		Additional: synology.FileStationAdditional{
+			Size: 10,
+			Time: synology.FileStationTime{MTime: 100},
+		},
+	}
+	if got := fileStationRemoteRevision(entry, nil); got != "mtime:100:size:10:dir:false" {
+		t.Fatalf("fallback revision=%q", got)
 	}
 }
