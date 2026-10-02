@@ -50,6 +50,8 @@ import {
 import type { ButtonProps } from '@mui/material'
 import { formatSize } from '../format'
 import { XDriveStatePanel } from './StatePanel'
+import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
+import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
 
 export type XDriveFileExplorerID = string | number
 export type XDriveFileExplorerViewMode = 'details' | 'grid'
@@ -126,11 +128,7 @@ export type XDriveFileExplorerFileKind =
   | 'text'
   | 'file'
 
-export type XDriveFileExplorerProperty = {
-  label: string
-  value: ReactNode
-  technical?: boolean
-}
+export type XDriveFileExplorerProperty = XDriveFilePropertiesDialogProperty
 
 export type XDriveFileExplorerItem = {
   id: XDriveFileExplorerID
@@ -451,6 +449,7 @@ export function XDriveFileExplorer({
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
 
@@ -643,7 +642,7 @@ export function XDriveFileExplorer({
       label: '属性',
       icon: <InfoOutlinedIcon fontSize="small" />,
       dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length > 0,
-      onSelect: () => setInspectorOpen(true),
+      onSelect: () => setPropertiesItems(selection),
     }]
     const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...inspectorItems]
     if (menuItems.length === 0) return
@@ -830,6 +829,11 @@ export function XDriveFileExplorer({
   }
 
   const itemKeyDown = (event: KeyboardEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
+    if (event.altKey && event.key === 'Enter') {
+      event.preventDefault()
+      setPropertiesItems([item])
+      return
+    }
     if (event.key === 'Enter') {
       event.preventDefault()
       onOpenItem?.(item)
@@ -841,18 +845,45 @@ export function XDriveFileExplorer({
     }
   }
 
+  const propertiesForItem = (item: XDriveFileExplorerItem) => [
+    { label: '类型', value: defaultTypeLabel(item) },
+    { label: '大小', value: item.kind === 'dir' ? '—' : formatSize(item.size ?? 0) },
+    { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—' },
+    { label: '位置', value: item.path || item.secondaryLabel || derivedPath },
+    ...(item.properties ?? []),
+    { label: 'Revision', value: item.revision ?? '—', technical: true },
+    { label: 'ID', value: String(item.id), technical: true },
+  ] satisfies XDriveFileExplorerProperty[]
+
   const inspectorItem = selectedItems.length === 1 ? selectedItems[0] : null
   const inspectorFileCount = selectedItems.filter((item) => item.kind === 'file').length
   const inspectorFolderCount = selectedItems.length - inspectorFileCount
-  const inspectorProperties = inspectorItem ? [
-    { label: '类型', value: defaultTypeLabel(inspectorItem) },
-    { label: '大小', value: inspectorItem.kind === 'dir' ? '—' : formatSize(inspectorItem.size ?? 0) },
-    { label: '修改时间', value: inspectorItem.updatedAt ? new Date(inspectorItem.updatedAt).toLocaleString() : '—' },
-    { label: '位置', value: inspectorItem.path || inspectorItem.secondaryLabel || derivedPath },
-    ...(inspectorItem.properties ?? []),
-    { label: 'Revision', value: inspectorItem.revision ?? '—', technical: true },
-    { label: 'ID', value: String(inspectorItem.id), technical: true },
-  ] satisfies XDriveFileExplorerProperty[] : []
+  const inspectorProperties = inspectorItem ? propertiesForItem(inspectorItem) : []
+
+  const propertiesDialogItem = propertiesItems.length === 1 ? propertiesItems[0] : null
+  const propertiesDialogFileCount = propertiesItems.filter((item) => item.kind === 'file').length
+  const propertiesDialogFolderCount = propertiesItems.length - propertiesDialogFileCount
+  const propertiesDialogSize = propertiesItems.reduce((total, item) => (
+    item.kind === 'file' ? total + (item.size ?? 0) : total
+  ), 0)
+  const propertiesDialogProperties = propertiesDialogItem
+    ? propertiesForItem(propertiesDialogItem)
+    : propertiesItems.length > 1
+      ? [
+          { label: '项目数', value: `${propertiesItems.length} 个` },
+          { label: '内容', value: `${propertiesDialogFileCount} 个文件 · ${propertiesDialogFolderCount} 个文件夹` },
+          { label: '文件大小合计', value: formatSize(propertiesDialogSize) },
+          { label: '位置', value: derivedPath },
+        ] satisfies XDriveFileExplorerProperty[]
+      : []
+  const propertiesDialogTitle = propertiesDialogItem
+    ? `属性 — ${propertiesDialogItem.name}`
+    : '所选项目属性'
+  const propertiesDialogPreview = propertiesDialogItem
+    ? thumbnailForItem(propertiesDialogItem)
+    : propertiesItems.length > 1
+      ? <InsertDriveFileRoundedIcon color="action" sx={{ fontSize: 64 }} />
+      : undefined
 
   const selectedSize = useMemo(
     () => items.reduce((total, item) => (
@@ -1618,6 +1649,14 @@ export function XDriveFileExplorer({
         </>
       ) : null}
       </Box>
+
+      <XDriveFilePropertiesDialog
+        open={propertiesItems.length > 0}
+        title={propertiesDialogTitle}
+        preview={propertiesDialogPreview}
+        properties={propertiesDialogProperties}
+        onClose={() => setPropertiesItems([])}
+      />
 
       <Menu
         open={Boolean(contextMenu)}
