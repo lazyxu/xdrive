@@ -88,6 +88,10 @@ COPY public.xd_sources (id, owner_id, name, kind, direction, sync_mode, run_mode
 \.
 EOF
     ;;
+  *"source verify"*)
+    readlink /proc/$$/fd/0 > "$TEST_STATE/source-verify-stdin" 2>/dev/null || true
+    printf '{"sources":3,"items":42,"bound_items":40,"issues":[]}\n'
+    ;;
   *"admin list"*)
     readlink /proc/$$/fd/0 > "$TEST_STATE/admin-list-stdin" 2>/dev/null || true
     if [[ "$(cat "$TEST_STATE/admin-list-stdin" 2>/dev/null || true)" == pipe:* ]]; then
@@ -357,6 +361,17 @@ XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" verify --repair >"$TMP/verify-repair.out"
 grep -q '^--repair$' "$TMP/state/verify-args"
 grep -q -- 'audit record --action system.storage_repair --result success' "$TMP/state/audit-calls"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" source verify --json >"$TMP/source-verify.out"
+grep -q '"issues":\[\]' "$TMP/source-verify.out"
+grep -q -- 'exec -T server xdrive-server source verify --json' "$TMP/state/docker-args"
+if grep -q '^pipe:' "$TMP/state/source-verify-stdin"; then
+  echo "source verify inherited caller stdin" >&2
+  exit 1
+fi
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

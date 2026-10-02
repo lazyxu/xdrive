@@ -49,6 +49,7 @@ Usage:
   xdrive-server backup sources BACKUP_DIR
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
+  xdrive-server source verify [--json]
   xdrive-server migrate-user USER
   xdrive-server cleanup legacy-volumes [--yes]
   xdrive-server uninstall [--purge-data] [--purge-backups] --yes
@@ -699,6 +700,20 @@ verify_cmd() {
   return "$status"
 }
 
+source_cmd() {
+  local subcommand="${1:-}"
+  case "$subcommand" in
+    verify)
+      shift
+      compose exec -T server xdrive-server source verify "$@"
+      ;;
+    *)
+      echo "usage: xdrive-server source verify [--json]" >&2
+      return 2
+      ;;
+  esac
+}
+
 remove_backup_schedule() {
   command -v crontab >/dev/null 2>&1 || return 0
   local current tmp
@@ -1028,6 +1043,7 @@ case "$cmd" in
   backup) backup_cmd "$@" ;;
   restore) restore_cmd "$@" ;;
   verify) verify_cmd "$@" ;;
+  source) source_cmd "$@" ;;
   migrate-user) migrate_user_cmd "$@" ;;
   cleanup) cleanup_cmd "$@" ;;
   uninstall) uninstall_cmd "$@" ;;
