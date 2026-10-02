@@ -2,8 +2,6 @@ package yikeworker
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -290,8 +288,7 @@ func (r *Runner) PullSourceConcurrencyKey(ctx context.Context, source meta.Sourc
 	if cookie == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(cookie))
-	return "yike:" + hex.EncodeToString(sum[:])
+	return yike.AccountConcurrencyKey(cookie)
 }
 
 func (r *Runner) validate() error {
