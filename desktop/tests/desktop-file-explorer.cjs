@@ -8,6 +8,7 @@ const app = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'A
 const cloudPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
 const storagePage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
+const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const styles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Desktop files workspace consumes the shared FileExplorer', () => {
@@ -36,9 +37,10 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
 
 test('Desktop FileExplorer provides system-style navigation, search, and persistent view mode', () => {
   for (const token of [
-    'canGoBack={historyIndex > 0}',
-    'canGoForward={historyIndex >= 0 && historyIndex < history.length - 1}',
-    'canGoUp={crumbs.length > 1}',
+    'useXDriveFileExplorerNavigation({',
+    'canGoBack={canGoBack}',
+    'canGoForward={canGoForward}',
+    'canGoUp={canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
     'cloudSearch(normalized)',
@@ -46,7 +48,8 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
   assert.ok(explorer.includes("replace(/\\\\/g, '/')"), 'typed paths should accept Windows separators')
-  assert.ok(explorer.includes('localStorage.setItem(DESKTOP_FILE_VIEW_KEY, viewMode)'), 'Desktop Explorer should remember Details/Grid mode')
+  assert.ok(explorer.includes('viewModeStorageKey: DESKTOP_FILE_VIEW_KEY'), 'Desktop Explorer should pass its view-mode storage key to the shared controller')
+  assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
 
 test('Desktop cloud capacity and CAS intelligence live on Storage, not Files', () => {
