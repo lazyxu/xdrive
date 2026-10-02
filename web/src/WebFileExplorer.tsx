@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -13,13 +13,13 @@ import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
   XDriveFileExplorerCommandButton,
+  useXDriveFileExplorerNavigation,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
   XDriveFileExplorerSort,
-  XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
 import type { Node, XDriveFileOperation } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
@@ -35,10 +35,6 @@ function normalizedSearchCrumbs(result: SearchResult): Crumb[] {
     id: crumb.id,
     name: index === 0 && !crumb.name ? '我的文件' : crumb.name,
   }))
-}
-
-function initialViewMode(): XDriveFileExplorerViewMode {
-  return localStorage.getItem(FILE_VIEW_KEY) === 'grid' ? 'grid' : 'details'
 }
 
 export default function WebFileExplorer({
@@ -87,28 +83,12 @@ export default function WebFileExplorer({
   onError: (error: unknown) => void
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
-  const [viewMode, setViewMode] = useState<XDriveFileExplorerViewMode>(initialViewMode)
-  const [sort, setSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const [searchValue, setSearchValue] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [searchHasMore, setSearchHasMore] = useState(false)
-  const [history, setHistory] = useState<Crumb[][]>([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
   const [clipboard, setClipboard] = useState<WebExplorerClipboard | null>(null)
   const [clipboardBusy, setClipboardBusy] = useState(false)
-
-  const current = crumbs.at(-1)
-
-  useEffect(() => {
-    if (crumbs.length === 0 || history.length > 0) return
-    setHistory([crumbs])
-    setHistoryIndex(0)
-  }, [crumbs, history.length])
-
-  useEffect(() => {
-    localStorage.setItem(FILE_VIEW_KEY, viewMode)
-  }, [viewMode])
 
   const activeNodes = searchResults ? searchResults.map((result) => result.node) : items
   const nodeByID = useMemo(
@@ -157,54 +137,26 @@ export default function WebFileExplorer({
     setSearchHasMore(false)
   }
 
-  const changeSort = (nextSort: XDriveFileExplorerSort) => {
-    setSort(nextSort)
-    if (searchResults) return
-    if (current) void onLoadDirectory(current.id, crumbs, nextSort)
-  }
-
-  const recordHistory = (nextCrumbs: Crumb[]) => {
-    setHistory((currentHistory) => {
-      const next = [...currentHistory.slice(0, historyIndex + 1), nextCrumbs]
-      setHistoryIndex(next.length - 1)
-      return next
-    })
-  }
-
-  const navigateTo = async (nextCrumbs: Crumb[], record = true) => {
-    const target = nextCrumbs.at(-1)
-    if (!target) return
-    await onLoadDirectory(target.id, nextCrumbs, sort)
-    if (record) recordHistory(nextCrumbs)
-    clearSearch()
-  }
-
-  const goBack = async () => {
-    if (historyIndex <= 0) return
-    const nextIndex = historyIndex - 1
-    const next = history[nextIndex]
-    const target = next?.at(-1)
-    if (!target) return
-    await onLoadDirectory(target.id, next, sort)
-    setHistoryIndex(nextIndex)
-    clearSearch()
-  }
-
-  const goForward = async () => {
-    if (historyIndex < 0 || historyIndex >= history.length - 1) return
-    const nextIndex = historyIndex + 1
-    const next = history[nextIndex]
-    const target = next?.at(-1)
-    if (!target) return
-    await onLoadDirectory(target.id, next, sort)
-    setHistoryIndex(nextIndex)
-    clearSearch()
-  }
-
-  const goUp = async () => {
-    if (crumbs.length <= 1) return
-    await navigateTo(crumbs.slice(0, -1))
-  }
+  const {
+    current,
+    viewMode,
+    setViewMode,
+    sort,
+    changeSort,
+    navigateTo,
+    goBack,
+    goForward,
+    goUp,
+    canGoBack,
+    canGoForward,
+    canGoUp,
+  } = useXDriveFileExplorerNavigation({
+    crumbs,
+    viewModeStorageKey: FILE_VIEW_KEY,
+    searchActive: Boolean(searchResults),
+    onLoadDirectory,
+    onAfterNavigate: clearSearch,
+  })
 
   const submitPath = async (rawPath: string) => {
     try {
@@ -469,9 +421,9 @@ export default function WebFileExplorer({
           if (!value.trim()) clearSearch()
         }}
         onSearch={(query) => { void submitSearch(query) }}
-        canGoBack={historyIndex > 0}
-        canGoForward={historyIndex >= 0 && historyIndex < history.length - 1}
-        canGoUp={crumbs.length > 1}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        canGoUp={canGoUp}
         onBack={() => { void goBack() }}
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -14,22 +14,18 @@ import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
   XDriveFileExplorerCommandButton,
+  useXDriveFileExplorerNavigation,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
   XDriveFileExplorerSort,
-  XDriveFileExplorerViewMode,
 } from '@xdrive/ui/mui'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
 type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }
-
-function initialViewMode(): XDriveFileExplorerViewMode {
-  return localStorage.getItem(DESKTOP_FILE_VIEW_KEY) === 'grid' ? 'grid' : 'details'
-}
 
 function normalizeSearchCrumbs(result: AgentCloudSearchResult): AgentCloudCrumb[] {
   return result.crumbs.map((crumb, index) => ({
@@ -73,29 +69,13 @@ export default function DesktopFileExplorer({
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
-  const [viewMode, setViewMode] = useState<XDriveFileExplorerViewMode>(initialViewMode)
-  const [sort, setSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const [searchValue, setSearchValue] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<AgentCloudSearchResult[] | null>(null)
-  const [history, setHistory] = useState<AgentCloudCrumb[][]>([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
   const [createOpen, setCreateOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<AgentCloudNode | null>(null)
   const [actionBusy, setActionBusy] = useState('')
   const [clipboard, setClipboard] = useState<DesktopExplorerClipboard | null>(null)
-
-  const current = crumbs.at(-1)
-
-  useEffect(() => {
-    if (crumbs.length === 0 || history.length > 0) return
-    setHistory([crumbs])
-    setHistoryIndex(0)
-  }, [crumbs, history.length])
-
-  useEffect(() => {
-    localStorage.setItem(DESKTOP_FILE_VIEW_KEY, viewMode)
-  }, [viewMode])
 
   const activeNodes = searchResults ? searchResults.map((result) => result.node) : items
   const nodeByID = useMemo(
@@ -138,57 +118,29 @@ export default function DesktopFileExplorer({
     setSearchResults(null)
   }
 
-  const changeSort = (nextSort: XDriveFileExplorerSort) => {
-    setSort(nextSort)
-    if (searchResults) return
-    if (current) void onLoadDirectory(current.id, crumbs, nextSort)
-  }
-
-  const recordHistory = (nextCrumbs: AgentCloudCrumb[]) => {
-    setHistory((currentHistory) => {
-      const next = [...currentHistory.slice(0, historyIndex + 1), nextCrumbs]
-      setHistoryIndex(next.length - 1)
-      return next
-    })
-  }
-
-  const navigateTo = async (nextCrumbs: AgentCloudCrumb[], record = true) => {
-    const target = nextCrumbs.at(-1)
-    if (!target) return
-    await onLoadDirectory(target.id, nextCrumbs, sort)
-    if (record) recordHistory(nextCrumbs)
-    clearSearch()
-    setSearchValue('')
-  }
-
-  const goBack = async () => {
-    if (historyIndex <= 0) return
-    const nextIndex = historyIndex - 1
-    const next = history[nextIndex]
-    const target = next?.at(-1)
-    if (!target) return
-    await onLoadDirectory(target.id, next, sort)
-    setHistoryIndex(nextIndex)
-    clearSearch()
-    setSearchValue('')
-  }
-
-  const goForward = async () => {
-    if (historyIndex < 0 || historyIndex >= history.length - 1) return
-    const nextIndex = historyIndex + 1
-    const next = history[nextIndex]
-    const target = next?.at(-1)
-    if (!target) return
-    await onLoadDirectory(target.id, next, sort)
-    setHistoryIndex(nextIndex)
-    clearSearch()
-    setSearchValue('')
-  }
-
-  const goUp = async () => {
-    if (crumbs.length <= 1) return
-    await navigateTo(crumbs.slice(0, -1))
-  }
+  const {
+    current,
+    viewMode,
+    setViewMode,
+    sort,
+    changeSort,
+    navigateTo,
+    goBack,
+    goForward,
+    goUp,
+    canGoBack,
+    canGoForward,
+    canGoUp,
+  } = useXDriveFileExplorerNavigation({
+    crumbs,
+    viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
+    searchActive: Boolean(searchResults),
+    onLoadDirectory,
+    onAfterNavigate: () => {
+      clearSearch()
+      setSearchValue('')
+    },
+  })
 
   const submitPath = async (rawPath: string) => {
     try {
@@ -590,9 +542,9 @@ export default function DesktopFileExplorer({
           if (!value.trim()) clearSearch()
         }}
         onSearch={(query) => { void submitSearch(query) }}
-        canGoBack={historyIndex > 0}
-        canGoForward={historyIndex >= 0 && historyIndex < history.length - 1}
-        canGoUp={crumbs.length > 1}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        canGoUp={canGoUp}
         onBack={() => { void goBack() }}
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}
