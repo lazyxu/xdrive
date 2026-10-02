@@ -103,9 +103,10 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	batchRefs := make(map[string]TransferRef, batchSize)
 	pathOwners := make(map[string]string)
 	seenRemotePaths := make(map[string]struct{})
+	existingItems := make(map[string]client.SourceItem)
 	if lister, ok := s.API.(sourceItemLister); ok {
-		if err := seedPathOwners(ctx, lister, s.SourceID, pathOwners); err != nil {
-			return result, fmt.Errorf("read existing File Station source paths: %w", err)
+		if err := seedPathState(ctx, lister, s.SourceID, pathOwners, existingItems); err != nil {
+			return result, fmt.Errorf("read existing File Station source state: %w", err)
 		}
 	}
 
@@ -240,7 +241,12 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				externalID := fileStationExternalID(remotePath)
 				name := sanitizeSegment(entry.Name, remotePath)
 				relative := reservePath(path.Join(task.RelativePath, name), remotePath, externalID, pathOwners)
-				item := discoveredItem(remotePath, relative, entry)
+				var current *client.SourceItem
+				if existing, ok := existingItems[externalID]; ok {
+					copy := existing
+					current = &copy
+				}
+				item := discoveredItem(remotePath, relative, entry, current)
 				if err := sourcepkg.ValidateDiscoveredItem(&item); err != nil {
 					return result, fmt.Errorf("normalize File Station item %q: %w", remotePath, err)
 				}
@@ -298,7 +304,12 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	return result, nil
 }
 
-func discoveredItem(remotePath, relativePath string, entry synology.FileStationEntry) sourcepkg.DiscoveredItem {
+func discoveredItem(
+	remotePath string,
+	relativePath string,
+	entry synology.FileStationEntry,
+	current *client.SourceItem,
+) sourcepkg.DiscoveredItem {
 	kind := meta.SourceItemKindFile
 	size := entry.FileSize()
 	if entry.IsDir {
@@ -306,18 +317,41 @@ func discoveredItem(remotePath, relativePath string, entry synology.FileStationE
 		size = 0
 	}
 	modified := entry.ModifiedAt()
-	mtime := int64(0)
-	if modified != nil {
-		mtime = modified.Unix()
-	}
 	return sourcepkg.DiscoveredItem{
 		ExternalID:     fileStationExternalID(remotePath),
 		Kind:           kind,
 		Path:           relativePath,
 		Size:           size,
 		ModifiedAt:     modified,
-		RemoteRevision: fmt.Sprintf("mtime:%d:size:%d:dir:%t", mtime, size, entry.IsDir),
+		RemoteRevision: fileStationRemoteRevision(entry, current),
 	}
+}
+
+func fileStationRemoteRevision(entry synology.FileStationEntry, current *client.SourceItem) string {
+	modified := entry.ModifiedAt()
+	mtime := int64(0)
+	if modified != nil {
+		mtime = modified.Unix()
+	}
+	size := entry.FileSize()
+	legacy := fmt.Sprintf("mtime:%d:size:%d:dir:%t", mtime, size, entry.IsDir)
+	if entry.IsDir {
+		return legacy
+	}
+	changeTime := entry.Additional.Time.CTime
+	createTime := entry.Additional.Time.CRTime
+	if changeTime <= 0 && createTime <= 0 {
+		return legacy
+	}
+	if current != nil &&
+		strings.HasPrefix(current.RemoteRevision, "mtime:") &&
+		current.RemoteRevision == legacy {
+		return legacy
+	}
+	return fmt.Sprintf(
+		"v2:mtime:%d:ctime:%d:crtime:%d:size:%d",
+		mtime, changeTime, createTime, size,
+	)
 }
 
 func fileStationExternalID(remotePath string) string {
@@ -409,7 +443,13 @@ func shortPathHash(value string) string {
 	return hex.EncodeToString(sum[:4])
 }
 
-func seedPathOwners(ctx context.Context, lister sourceItemLister, sourceID uint64, owners map[string]string) error {
+func seedPathState(
+	ctx context.Context,
+	lister sourceItemLister,
+	sourceID uint64,
+	owners map[string]string,
+	existing map[string]client.SourceItem,
+) error {
 	const pageSize = 1000
 	for offset := 0; ; offset += pageSize {
 		items, err := lister.SourceItems(ctx, sourceID, "", pageSize, offset)
@@ -417,7 +457,14 @@ func seedPathOwners(ctx context.Context, lister sourceItemLister, sourceID uint6
 			return err
 		}
 		for _, item := range items {
-			if item.NodeID == nil || strings.TrimSpace(item.ExternalID) == "" {
+			externalID := strings.TrimSpace(item.ExternalID)
+			if externalID == "" {
+				continue
+			}
+			if existing != nil {
+				existing[externalID] = item
+			}
+			if item.NodeID == nil {
 				continue
 			}
 			clean, err := sourcepkg.NormalizeRelativePath(item.Path)
@@ -426,7 +473,7 @@ func seedPathOwners(ctx context.Context, lister sourceItemLister, sourceID uint6
 			}
 			key := strings.ToLower(clean)
 			if _, exists := owners[key]; !exists {
-				owners[key] = item.ExternalID
+				owners[key] = externalID
 			}
 		}
 		if len(items) < pageSize {
