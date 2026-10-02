@@ -15,6 +15,7 @@ func TestLegacyLIVPMetadataRequiresRefresh(t *testing.T) {
 
 	current := legacy
 	current.ContainerKind = "livp"
+	current.DerivedResourceVersion = 1
 	if legacyLIVPMetadata(node, current) {
 		t.Fatal("current livp metadata was marked stale")
 	}

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -35,6 +37,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
+		&meta.MediaDerivedResource{},
 		&meta.MediaMetadata{},
 		&meta.SourceCollectionItem{},
 		&meta.SourceCollection{},
@@ -71,6 +74,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.SourceCollection{},
 		&meta.SourceCollectionItem{},
 		&meta.MediaMetadata{},
+		&meta.MediaDerivedResource{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -306,6 +310,96 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		persisted.Height != 4 {
 		t.Fatalf("persisted metadata=%+v", persisted)
 	}
+
+	const liveIdentifier = "F187F3A1-0625-4908-AE8C-A83B037E06B0"
+	livpBytes, stillBytes, motionBytes := testLIVPResourceArchive(t, liveIdentifier)
+	liveNode := uploadTestFile(
+		t,
+		router,
+		token,
+		folder.ID,
+		"IMG_0002.livp",
+		string(livpBytes),
+	)
+
+	liveDetailResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d", liveNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var liveDetail mediaItemDTO
+	if err := json.Unmarshal(liveDetailResponse.Body.Bytes(), &liveDetail); err != nil {
+		t.Fatal(err)
+	}
+	if liveDetail.Metadata.MediaKind != meta.MediaKindImage ||
+		liveDetail.Metadata.ContainerKind != "livp" ||
+		liveDetail.Metadata.LivePhotoAssetIdentifier != liveIdentifier ||
+		len(liveDetail.DerivedResources) != 2 {
+		t.Fatalf("livp detail=%+v", liveDetail)
+	}
+
+	stillResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/resources/%s", liveNode.ID, meta.MediaDerivedResourceRoleStill),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if !bytes.Equal(stillResponse.Body.Bytes(), stillBytes) {
+		t.Fatal("livp still resource bytes changed")
+	}
+	if got := stillResponse.Header().Get("Content-Type"); got != "image/jpeg" {
+		t.Fatalf("livp still content-type=%q", got)
+	}
+
+	motionResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/resources/%s", liveNode.ID, meta.MediaDerivedResourceRoleMotion),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if !bytes.Equal(motionResponse.Body.Bytes(), motionBytes) {
+		t.Fatal("livp motion resource bytes changed")
+	}
+	if got := motionResponse.Header().Get("Content-Type"); got != "video/quicktime" {
+		t.Fatalf("livp motion content-type=%q", got)
+	}
+
+	liveThumbnail := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/thumbnail", liveNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(liveThumbnail.Body.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Width != 2 || cfg.Height != 2 {
+		t.Fatalf("livp thumbnail dimensions=%dx%d", cfg.Width, cfg.Height)
+	}
+
+	var resourceCount int64
+	if err := db.Model(&meta.MediaDerivedResource{}).
+		Where("node_id = ?", liveNode.ID).
+		Count(&resourceCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resourceCount != 2 {
+		t.Fatalf("livp derived resource count=%d want=2", resourceCount)
+	}
 }
 
 func testPNG(t *testing.T, width, height int) []byte {
@@ -330,4 +424,128 @@ func testPNG(t *testing.T, width, height int) []byte {
 		t.Fatal(err)
 	}
 	return out.Bytes()
+}
+
+func testLIVPResourceArchive(t *testing.T, identifier string) (archive, still, motion []byte) {
+	t.Helper()
+	still = testLIVPJPEG(t, identifier)
+	motion = testLIVPMOV(identifier)
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, entry := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "IMG_0002.HEIC.jpeg", data: still},
+		{name: "IMG_0002.HEIC.mov", data: motion},
+	} {
+		writer, err := zw.CreateHeader(&zip.FileHeader{Name: entry.name, Method: zip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write(entry.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes(), still, motion
+}
+
+func testLIVPJPEG(t *testing.T, identifier string) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 2; x++ {
+			img.Set(x, y, color.NRGBA{R: 80, G: 120, B: 160, A: 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	base := encoded.Bytes()
+	tiff := testLIVPTIFF(testLIVPMakerNote(identifier))
+	payload := append([]byte("Exif\x00\x00"), tiff...)
+	app1 := []byte{0xff, 0xe1, 0, 0}
+	binary.BigEndian.PutUint16(app1[2:4], uint16(len(payload)+2))
+	app1 = append(app1, payload...)
+
+	out := make([]byte, 0, len(base)+len(app1))
+	out = append(out, base[:2]...)
+	out = append(out, app1...)
+	out = append(out, base[2:]...)
+	return out
+}
+
+func testLIVPMakerNote(identifier string) []byte {
+	note := append([]byte{}, []byte("Apple iOS\x00")...)
+	note = append(note, 0x00, 0x01, 'M', 'M')
+	dirOffset := len(note)
+	note = append(note, 0x00, 0x01)
+	entry := make([]byte, 12)
+	binary.BigEndian.PutUint16(entry[0:2], 0x0011)
+	binary.BigEndian.PutUint16(entry[2:4], 2)
+	binary.BigEndian.PutUint32(entry[4:8], uint32(len(identifier)+1))
+	binary.BigEndian.PutUint32(entry[8:12], uint32(dirOffset+2+12+4))
+	note = append(note, entry...)
+	note = append(note, 0, 0, 0, 0)
+	note = append(note, []byte(identifier)...)
+	note = append(note, 0)
+	return note
+}
+
+func testLIVPTIFF(note []byte) []byte {
+	data := []byte{'M', 'M', 0, 42, 0, 0, 0, 8}
+	root := make([]byte, 2+12+4)
+	binary.BigEndian.PutUint16(root[0:2], 1)
+	binary.BigEndian.PutUint16(root[2:4], 0x8769)
+	binary.BigEndian.PutUint16(root[4:6], 4)
+	binary.BigEndian.PutUint32(root[6:10], 1)
+	binary.BigEndian.PutUint32(root[10:14], uint32(len(data)+len(root)))
+	data = append(data, root...)
+
+	exif := make([]byte, 2+12+4)
+	binary.BigEndian.PutUint16(exif[0:2], 1)
+	binary.BigEndian.PutUint16(exif[2:4], 0x927c)
+	binary.BigEndian.PutUint16(exif[4:6], 7)
+	binary.BigEndian.PutUint32(exif[6:10], uint32(len(note)))
+	binary.BigEndian.PutUint32(exif[10:14], uint32(len(data)+len(exif)))
+	data = append(data, exif...)
+	data = append(data, note...)
+	return data
+}
+
+func testLIVPMOV(identifier string) []byte {
+	ftyp := testLIVPBox([]byte("ftyp"), append([]byte("qt  "), make([]byte, 8)...))
+	key := []byte("com.apple.quicktime.content.identifier")
+	entry := make([]byte, 8+len(key))
+	binary.BigEndian.PutUint32(entry[0:4], uint32(len(entry)))
+	copy(entry[4:8], []byte("mdta"))
+	copy(entry[8:], key)
+
+	keysPayload := make([]byte, 8)
+	binary.BigEndian.PutUint32(keysPayload[4:8], 1)
+	keys := testLIVPBox([]byte("keys"), append(keysPayload, entry...))
+
+	dataPayload := make([]byte, 8)
+	binary.BigEndian.PutUint32(dataPayload[0:4], 1)
+	data := testLIVPBox([]byte("data"), append(dataPayload, []byte(identifier)...))
+	item := testLIVPBox([]byte{0, 0, 0, 1}, data)
+	ilst := testLIVPBox([]byte("ilst"), item)
+
+	metaPayload := make([]byte, 4)
+	metaPayload = append(metaPayload, keys...)
+	metaPayload = append(metaPayload, ilst...)
+	return append(ftyp, testLIVPBox([]byte("moov"), testLIVPBox([]byte("meta"), metaPayload))...)
+}
+
+func testLIVPBox(boxType []byte, payload []byte) []byte {
+	out := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint32(out[0:4], uint32(len(out)))
+	copy(out[4:8], boxType)
+	copy(out[8:], payload)
+	return out
 }
