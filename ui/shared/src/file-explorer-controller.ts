@@ -41,3 +41,26 @@ export async function xDriveResolveFileExplorerPath<
 
   return crumbs
 }
+
+export const XDRIVE_FILE_EXPLORER_SEARCH_MIN_CHARS = 2
+
+export type XDriveFileExplorerSearchDecision =
+  | { kind: 'clear'; query: '' }
+  | { kind: 'invalid'; query: string; message: string }
+  | { kind: 'search'; query: string }
+
+export function xDriveFileExplorerSearchDecision(
+  rawQuery: string,
+  minChars = XDRIVE_FILE_EXPLORER_SEARCH_MIN_CHARS,
+): XDriveFileExplorerSearchDecision {
+  const query = rawQuery.trim()
+  if (!query) return { kind: 'clear', query: '' }
+  if ([...query].length < minChars) {
+    return {
+      kind: 'invalid',
+      query,
+      message: `搜索关键字至少需要 ${minChars} 个字符。`,
+    }
+  }
+  return { kind: 'search', query }
+}

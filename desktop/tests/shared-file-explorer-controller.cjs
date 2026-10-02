@@ -28,6 +28,28 @@ test('shared FileExplorer controller owns typed-path parsing and traversal rules
   assert.ok(sharedIndex.includes("export * from './file-explorer-controller'"), 'shared FileExplorer controller must be exported')
 })
 
+test('shared FileExplorer controller owns search normalization and validation decisions', () => {
+  for (const token of [
+    'XDRIVE_FILE_EXPLORER_SEARCH_MIN_CHARS = 2',
+    'xDriveFileExplorerSearchDecision',
+    'const query = rawQuery.trim()',
+    "kind: 'clear'",
+    '[...query].length < minChars',
+    "kind: 'invalid'",
+    '搜索关键字至少需要',
+    "kind: 'search'",
+  ]) {
+    assert.ok(shared.includes(token), `shared FileExplorer search decision missing: ${token}`)
+  }
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.equal((source.match(/xDriveFileExplorerSearchDecision\(query\)/g) || []).length, 1, `${label} must use shared search decisions`)
+    assert.equal(source.includes('const normalized = query.trim()'), false, `${label} must not normalize search locally`)
+    assert.equal(source.includes('搜索关键字至少需要 2 个字符。'), false, `${label} must not duplicate the minimum-search message`)
+  }
+  assert.ok(web.includes('api.search(decision.query, 200)'), 'Web must keep REST search execution local')
+  assert.ok(desktop.includes('cloudSearch(decision.query)'), 'Desktop must keep Agent search execution local')
+})
+
 test('Web and Desktop delegate typed-path resolution while keeping transport adapters local', () => {
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.equal((source.match(/xDriveResolveFileExplorerPath\(/g) || []).length, 1, `${label} must use shared typed-path resolution`)

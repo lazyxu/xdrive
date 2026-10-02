@@ -12,7 +12,7 @@ import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
-import { xDriveResolveFileExplorerPath } from '../../ui/shared/src'
+import { xDriveFileExplorerSearchDecision, xDriveResolveFileExplorerPath } from '../../ui/shared/src'
 import type { Node, XDriveFileOperation } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
 
@@ -146,18 +146,18 @@ export default function WebFileExplorer({
   }
 
   const submitSearch = async (query: string) => {
-    const normalized = query.trim()
-    if (!normalized) {
+    const decision = xDriveFileExplorerSearchDecision(query)
+    if (decision.kind === 'clear') {
       clearSearch()
       return
     }
-    if ([...normalized].length < 2) {
-      onError(new Error('搜索关键字至少需要 2 个字符。'))
+    if (decision.kind === 'invalid') {
+      onError(new Error(decision.message))
       return
     }
     setSearchLoading(true)
     try {
-      const page = await api.search(normalized, 200)
+      const page = await api.search(decision.query, 200)
       setSearchResults(page.items)
       setSearchHasMore(Boolean(page.next_cursor))
     } catch (error) {

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { xDriveResolveFileExplorerPath } from '@xdrive/shared'
+import { xDriveFileExplorerSearchDecision, xDriveResolveFileExplorerPath } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
@@ -140,18 +140,18 @@ export default function DesktopFileExplorer({
   }
 
   const submitSearch = async (query: string) => {
-    const normalized = query.trim()
-    if (!normalized) {
+    const decision = xDriveFileExplorerSearchDecision(query)
+    if (decision.kind === 'clear') {
       clearSearch()
       return
     }
-    if ([...normalized].length < 2) {
-      onError('搜索关键字至少需要 2 个字符。')
+    if (decision.kind === 'invalid') {
+      onError(decision.message)
       return
     }
     setSearchLoading(true)
     try {
-      const result = await window.xdriveDesktop.agent.cloudSearch(normalized)
+      const result = await window.xdriveDesktop.agent.cloudSearch(decision.query)
       if (!result.ok) {
         onError(result.error.message)
         return
