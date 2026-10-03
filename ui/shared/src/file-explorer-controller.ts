@@ -106,6 +106,75 @@ export function xDriveFileExplorerSearchPageState<
   }
 }
 
+export type XDriveFileExplorerSearchState<
+  TResult extends XDriveFileExplorerSearchResultLike,
+> = {
+  results: TResult[] | null
+  cursor: string
+  loading: boolean
+  loadingMore: boolean
+}
+
+export function xDriveFileExplorerIdleSearchState<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(): XDriveFileExplorerSearchState<TResult> {
+  return {
+    results: null,
+    cursor: '',
+    loading: false,
+    loadingMore: false,
+  }
+}
+
+export function xDriveFileExplorerStartSearchState<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(): XDriveFileExplorerSearchState<TResult> {
+  return {
+    results: [],
+    cursor: '',
+    loading: true,
+    loadingMore: false,
+  }
+}
+
+export function xDriveFileExplorerStartSearchLoadMoreState<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(
+  current: XDriveFileExplorerSearchState<TResult>,
+): XDriveFileExplorerSearchState<TResult> {
+  return {
+    ...current,
+    loadingMore: true,
+  }
+}
+
+export function xDriveFileExplorerApplySearchPageState<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(
+  current: XDriveFileExplorerSearchState<TResult>,
+  page: XDriveFileExplorerSearchPage<TResult>,
+  append: boolean,
+): XDriveFileExplorerSearchState<TResult> {
+  const nextPage = xDriveFileExplorerSearchPageState(current.results, page, append)
+  return {
+    results: nextPage.items,
+    cursor: nextPage.cursor,
+    loading: false,
+    loadingMore: false,
+  }
+}
+
+export function xDriveFileExplorerSettleSearchState<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(
+  current: XDriveFileExplorerSearchState<TResult>,
+  append: boolean,
+): XDriveFileExplorerSearchState<TResult> {
+  return append
+    ? { ...current, loadingMore: false }
+    : { ...current, loading: false }
+}
+
 export function xDriveFileExplorerCanLoadMoreSearch<
   TResult extends XDriveFileExplorerSearchResultLike,
 >(

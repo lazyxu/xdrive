@@ -14,6 +14,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  xDriveFileExplorerApplySearchPageState,
   xDriveFileExplorerCanPaste,
   xDriveFileExplorerClipboardFromItems,
   xDriveFileExplorerClipboardOperationPlan,
@@ -22,15 +23,23 @@ import {
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerCanLoadMoreSearch,
   xDriveFileExplorerExternalDropParentID,
+  xDriveFileExplorerIdleSearchState,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationPresentation,
-  xDriveFileExplorerSearchPageState,
   xDriveFileExplorerOperationQueuedMessage,
+  xDriveFileExplorerSettleSearchState,
+  xDriveFileExplorerStartSearchLoadMoreState,
+  xDriveFileExplorerStartSearchState,
   xDriveFileExplorerWebDownloadFeedback,
   xDriveFileExplorerSearchDecision,
   xDriveResolveFileExplorerPath,
 } from '../../ui/shared/src'
-import type { Node, XDriveFileExplorerClipboard, XDriveFileOperation } from '../../ui/shared/src'
+import type {
+  Node,
+  XDriveFileExplorerClipboard,
+  XDriveFileExplorerSearchState,
+  XDriveFileOperation,
+} from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
 
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
@@ -86,10 +95,15 @@ export default function WebFileExplorer({
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const searchRequestRef = useRef(0)
   const [searchValue, setSearchValue] = useState('')
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
-  const [searchCursor, setSearchCursor] = useState('')
-  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
+  const [searchState, setSearchState] = useState<XDriveFileExplorerSearchState<SearchResult>>(
+    () => xDriveFileExplorerIdleSearchState<SearchResult>(),
+  )
+  const {
+    results: searchResults,
+    cursor: searchCursor,
+    loading: searchLoading,
+    loadingMore: searchLoadingMore,
+  } = searchState
   const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<Node> | null>(null)
   const [clipboardBusy, setClipboardBusy] = useState(false)
 
@@ -116,10 +130,7 @@ export default function WebFileExplorer({
 
   const clearSearch = () => {
     searchRequestRef.current += 1
-    setSearchResults(null)
-    setSearchCursor('')
-    setSearchLoading(false)
-    setSearchLoadingMore(false)
+    setSearchState(xDriveFileExplorerIdleSearchState<SearchResult>())
   }
 
   const {
@@ -170,20 +181,21 @@ export default function WebFileExplorer({
       return
     }
     const requestID = ++searchRequestRef.current
-    setSearchResults([])
-    setSearchCursor('')
-    setSearchLoadingMore(false)
-    setSearchLoading(true)
+    setSearchState(xDriveFileExplorerStartSearchState<SearchResult>())
     try {
       const page = await api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)
       if (requestID !== searchRequestRef.current) return
-      const searchPage = xDriveFileExplorerSearchPageState(null, page, false)
-      setSearchResults(searchPage.items)
-      setSearchCursor(searchPage.cursor)
+      setSearchState((currentSearchState) => (
+        xDriveFileExplorerApplySearchPageState(currentSearchState, page, false)
+      ))
     } catch (error) {
       if (requestID === searchRequestRef.current) onError(error)
     } finally {
-      if (requestID === searchRequestRef.current) setSearchLoading(false)
+      if (requestID === searchRequestRef.current) {
+        setSearchState((currentSearchState) => (
+          xDriveFileExplorerSettleSearchState(currentSearchState, false)
+        ))
+      }
     }
   }
 
@@ -192,7 +204,9 @@ export default function WebFileExplorer({
     const decision = xDriveFileExplorerSearchDecision(searchValue)
     if (decision.kind !== 'search') return
     const requestID = searchRequestRef.current
-    setSearchLoadingMore(true)
+    setSearchState((currentSearchState) => (
+      xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)
+    ))
     try {
       const page = await api.search(
         decision.query,
@@ -200,13 +214,17 @@ export default function WebFileExplorer({
         searchCursor,
       )
       if (requestID !== searchRequestRef.current) return
-      const searchPage = xDriveFileExplorerSearchPageState(searchResults, page, true)
-      setSearchResults(searchPage.items)
-      setSearchCursor(searchPage.cursor)
+      setSearchState((currentSearchState) => (
+        xDriveFileExplorerApplySearchPageState(currentSearchState, page, true)
+      ))
     } catch (error) {
       if (requestID === searchRequestRef.current) onError(error)
     } finally {
-      if (requestID === searchRequestRef.current) setSearchLoadingMore(false)
+      if (requestID === searchRequestRef.current) {
+        setSearchState((currentSearchState) => (
+          xDriveFileExplorerSettleSearchState(currentSearchState, true)
+        ))
+      }
     }
   }
 
