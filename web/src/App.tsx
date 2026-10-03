@@ -61,7 +61,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPageState,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerMergePageItems, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_PAGE_SIZE, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerMergePageItems, xDriveFileExplorerPageStateFromResult, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -81,8 +81,6 @@ const USER_KEY = 'xdrive.username'
 type Crumb = { id: number; name: string }
 
 const DEFAULT_FILE_SORT: XDriveFileExplorerSort = { key: 'name', direction: 'asc' }
-const FILE_PAGE_SIZE = 200
-
 type Feedback = {
   tone: 'good' | 'bad' | 'warning' | 'neutral'
   message: string
@@ -545,17 +543,12 @@ function FileManager({
     setLoading(true)
     try {
       const page = await api.listPage(id, {
-        limit: FILE_PAGE_SIZE,
+        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         sort: sort.key,
         order: sort.direction,
       })
       setItems(page.items)
-      setDirectoryPage({
-        parentID: id,
-        cursor: page.next_cursor ?? '',
-        hasMore: page.has_more,
-        sort,
-      })
+      setDirectoryPage(xDriveFileExplorerPageStateFromResult(id, page, sort))
       if (nextCrumbs) setCrumbs(nextCrumbs)
     } catch (err) {
       handleError(err)
@@ -571,18 +564,13 @@ function FileManager({
     setLoadingMore(true)
     try {
       const page = await api.listPage(id, {
-        limit: FILE_PAGE_SIZE,
+        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         cursor: pageState.cursor,
         sort: sort.key,
         order: sort.direction,
       })
       setItems((currentItems) => xDriveFileExplorerMergePageItems(currentItems, page.items))
-      setDirectoryPage({
-        parentID: id,
-        cursor: page.next_cursor ?? '',
-        hasMore: page.has_more,
-        sort,
-      })
+      setDirectoryPage(xDriveFileExplorerPageStateFromResult(id, page, sort))
     } catch (err) {
       handleError(err)
     } finally {
@@ -607,18 +595,13 @@ function FileManager({
       setQuota(await api.quota())
       const root = await api.root()
       const page = await api.listPage(root.id, {
-        limit: FILE_PAGE_SIZE,
+        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         sort: DEFAULT_FILE_SORT.key,
         order: DEFAULT_FILE_SORT.direction,
       })
       setCrumbs([{ id: root.id, name: '我的文件' }])
       setItems(page.items)
-      setDirectoryPage({
-        parentID: root.id,
-        cursor: page.next_cursor ?? '',
-        hasMore: page.has_more,
-        sort: DEFAULT_FILE_SORT,
-      })
+      setDirectoryPage(xDriveFileExplorerPageStateFromResult(root.id, page, DEFAULT_FILE_SORT))
     } catch (err) {
       handleError(err)
     } finally {

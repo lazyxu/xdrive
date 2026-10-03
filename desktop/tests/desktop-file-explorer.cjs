@@ -203,12 +203,12 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
 })
 
 test('Desktop FileExplorer uses cursor-paged server sorting for cloud directories', () => {
-  assert.ok(app.includes('const DESKTOP_FILE_PAGE_SIZE = 200'), 'Desktop page-size contract is missing')
+  assert.ok(app.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), 'Desktop page-size contract must come from the shared controller')
   assert.ok(app.includes('const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {'), 'Desktop incremental directory loader is missing')
   assert.ok(app.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)'), 'Desktop pagination eligibility must use the shared controller')
   assert.ok(app.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), 'Desktop page merge must use the shared controller')
   assert.ok(app.includes('window.xdriveDesktop.agent.cloudChildrenPage(id, {'), 'Desktop directory browsing should use the paged Agent API')
-  assert.ok(app.includes('cursor: result.data.next_cursor ??'), 'Desktop directory cursor state is missing')
+  assert.ok(app.includes('xDriveFileExplorerPageStateFromResult('), 'Desktop directory page metadata must use the shared controller')
   assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Desktop directory pages should preserve server ordering')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted pages')
   assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Desktop Explorer must request more items near the scroll boundary')

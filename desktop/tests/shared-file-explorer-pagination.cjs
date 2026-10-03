@@ -13,6 +13,11 @@ const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 test('shared FileExplorer controller owns pagination eligibility and page merging', () => {
   for (const token of [
     'XDriveFileExplorerPageState',
+    'XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200',
+    'XDriveFileExplorerPageResult',
+    'xDriveFileExplorerPageStateFromResult',
+    "cursor: page.next_cursor ?? ''",
+    'hasMore: page.has_more',
     'xDriveFileExplorerCanLoadMore',
     'pageState.parentID === parentID',
     'pageState.hasMore',
@@ -32,6 +37,12 @@ test('shared FileExplorer controller owns pagination eligibility and page mergin
 test('Web and Desktop delegate pagination rules while keeping transport/loading local', () => {
   assert.ok(web.includes('useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>'), 'Web must use the shared page-state contract')
   assert.ok(desktop.includes('useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>'), 'Desktop must use the shared page-state contract')
+  assert.ok(web.includes('limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,'), 'Web must use the shared page size')
+  assert.ok(desktop.includes('limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,'), 'Desktop must use the shared page size')
+  assert.equal(web.includes('const FILE_PAGE_SIZE = 200'), false, 'Web must not own a local page-size constant')
+  assert.equal(desktop.includes('const DESKTOP_FILE_PAGE_SIZE = 200'), false, 'Desktop must not own a local page-size constant')
+  assert.equal((web.match(/xDriveFileExplorerPageStateFromResult\(/g) || []).length, 3, 'Web must use shared page-state construction for directory, load-more and initial pages')
+  assert.equal((desktop.match(/xDriveFileExplorerPageStateFromResult\(/g) || []).length, 3, 'Desktop must use shared page-state construction for directory, load-more and initial pages')
 
   assert.ok(web.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, loadingMore)'), 'Web must use shared pagination eligibility')
   assert.ok(desktop.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)'), 'Desktop must use shared pagination eligibility')

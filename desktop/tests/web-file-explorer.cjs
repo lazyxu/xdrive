@@ -106,11 +106,11 @@ test('Web FileExplorer supplies preview/properties metadata without a new plaint
 test('Web FileExplorer uses cursor-paged server sorting for directory browsing', () => {
   assert.ok(api.includes('export interface ChildrenPage {'), 'Web children page contract is missing')
   assert.ok(api.includes('listPage(parentID: number, options: ChildrenOptions = {})'), 'Web paged children API is missing')
-  assert.ok(app.includes('const FILE_PAGE_SIZE = 200'), 'Web directory page size is missing')
+  assert.ok(app.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), 'Web directory page size must come from the shared controller')
   assert.ok(app.includes('const loadMoreDirectory = async (id: number, sort: XDriveFileExplorerSort) => {'), 'Web incremental directory loader is missing')
   assert.ok(app.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, loadingMore)'), 'Web pagination eligibility must use the shared controller')
   assert.ok(app.includes('xDriveFileExplorerMergePageItems(currentItems, page.items)'), 'Web page merge must use the shared controller')
-  assert.ok(app.includes('cursor: page.next_cursor ??'), 'Web directory cursor state is missing')
+  assert.ok(app.includes('xDriveFileExplorerPageStateFromResult('), 'Web directory page metadata must use the shared controller')
   assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Web directory pages should preserve server ordering')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Web sort changes should reload server-sorted pages')
   assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Web Explorer must request the next page near the scroll boundary')
