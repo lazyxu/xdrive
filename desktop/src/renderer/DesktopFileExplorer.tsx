@@ -71,13 +71,14 @@ export default function DesktopFileExplorer({
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
-  const [searchValue, setSearchValue] = useState('')
   const {
+    searchValue,
     searchState,
     searchResults,
     searchCursor,
     searchLoading,
     searchLoadingMore,
+    changeSearchValue,
     clearSearch,
     submitSearch,
     loadMoreSearch,
@@ -131,10 +132,7 @@ export default function DesktopFileExplorer({
     viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
     searchActive: Boolean(searchResults),
     onLoadDirectory,
-    onAfterNavigate: () => {
-      clearSearch()
-      setSearchValue('')
-    },
+    onAfterNavigate: clearSearch,
   })
 
   const submitPath = async (rawPath: string) => {
@@ -418,10 +416,7 @@ export default function DesktopFileExplorer({
         pathValue={crumbs.map((crumb) => crumb.name).join('/')}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}
-        onSearchValueChange={(value) => {
-          setSearchValue(value)
-          if (!value.trim()) clearSearch()
-        }}
+        onSearchValueChange={changeSearchValue}
         onSearch={(query) => { void submitSearch(query) }}
         canGoBack={canGoBack}
         canGoForward={canGoForward}

@@ -60,6 +60,8 @@ test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pa
   assert.ok(explorer.includes('searchByID.get(node.id)?.breadcrumbs'), 'Web open-item planning should preserve search breadcrumbs')
   assert.ok(explorer.includes('await navigateTo(plan.crumbs)'), 'opening a search directory should navigate with shared planned crumbs')
   assert.ok(explorer.includes('useXDriveFileExplorerSearch<SearchResult>'), 'Web search lifecycle must come from the shared React controller')
+  assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Web search draft must come from the shared React controller')
+  assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Web must not own search draft state')
   assert.ok(explorer.includes('loadPage: (query, cursor) => api.search('), 'Web search controller must keep REST execution local')
   assert.ok(explorer.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search controller must preserve the shared page size')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Web Explorer hasMore must use shared pagination presentation')
