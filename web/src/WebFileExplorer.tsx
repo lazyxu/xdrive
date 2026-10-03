@@ -22,7 +22,7 @@ import {
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
-  xDriveFileExplorerPaginationPresentation,
+  xDriveFileExplorerPaginationController,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerWebDownloadFeedback,
   xDriveFileExplorerSubmitPath,
@@ -271,12 +271,16 @@ export default function WebFileExplorer({
     if (current) await onLoadDirectory(current.id, crumbs, sort)
   }
 
-  const explorerPagination = xDriveFileExplorerPaginationPresentation({
+  const explorerPagination = xDriveFileExplorerPaginationController({
     searchActive: searchResults !== null,
     searchCursor,
     searchLoadingMore,
     directoryHasMore: hasMore,
     directoryLoadingMore: loadingMore,
+    currentID: current?.id,
+    sort,
+    loadMoreSearch,
+    loadMoreDirectory: onLoadMore,
   })
 
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
@@ -333,13 +337,7 @@ export default function WebFileExplorer({
         externallySorted={!searchResults}
         hasMore={explorerPagination.hasMore}
         loadingMore={explorerPagination.loadingMore}
-        onLoadMore={() => {
-          if (explorerPagination.mode === 'search') {
-            void loadMoreSearch()
-          } else if (current) {
-            void onLoadMore(current.id, sort)
-          }
-        }}
+        onLoadMore={explorerPagination.onLoadMore}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={copyItems}
         onCutItems={cutItems}

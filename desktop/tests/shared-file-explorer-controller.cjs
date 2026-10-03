@@ -89,6 +89,11 @@ test('shared FileExplorer controller owns search pagination state', () => {
     'xDriveFileExplorerCanLoadMoreSearch',
     'results !== null && Boolean(cursor) && !loadingMore',
     'xDriveFileExplorerPaginationPresentation',
+    'xDriveFileExplorerPaginationController',
+    'const presentation = xDriveFileExplorerPaginationPresentation({',
+    "if (presentation.mode === 'search')",
+    'void loadMoreSearch()',
+    'void loadMoreDirectory(currentID, sort)',
     "mode: 'search' as const",
     "mode: 'directory' as const",
   ]) {
@@ -120,8 +125,9 @@ test('shared FileExplorer controller owns search pagination state', () => {
     assert.ok(source.includes('onSearchValueChange={changeSearchValue}'), `${label} must use the shared search draft controller`)
     assert.equal(source.includes('const [searchValue, setSearchValue] = useState'), false, `${label} must not own search draft state`)
     assert.equal(source.includes("setSearchValue('')"), false, `${label} must not clear the search draft separately`)
-    assert.ok(source.includes('xDriveFileExplorerPaginationPresentation({'), `${label} must derive Explorer pagination presentation through shared logic`)
-    assert.ok(source.includes("explorerPagination.mode === 'search'"), `${label} search pagination must be wired to Explorer loadMore`)
+    assert.ok(source.includes('xDriveFileExplorerPaginationController({'), `${label} must use the shared pagination dispatcher`)
+    assert.ok(source.includes('onLoadMore={explorerPagination.onLoadMore}'), `${label} must wire shared pagination dispatch to Explorer loadMore`)
+    assert.equal(source.includes("explorerPagination.mode === 'search'"), false, `${label} must not branch search/directory pagination locally`)
     assert.equal(source.includes('searchRequestRef'), false, `${label} must not own search request sequencing`)
     assert.equal(source.includes('setSearchState('), false, `${label} must not own search lifecycle state transitions`)
     assert.equal(source.includes('xDriveFileExplorerStartSearchState<'), false, `${label} must not duplicate initial-search transitions`)

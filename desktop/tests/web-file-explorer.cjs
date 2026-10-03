@@ -69,7 +69,9 @@ test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pa
   assert.ok(explorer.includes('loadPage: (query, cursor) => api.search('), 'Web search controller must keep REST execution local')
   assert.ok(explorer.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search controller must preserve the shared page size')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Web Explorer hasMore must use shared pagination presentation')
-  assert.ok(explorer.includes("explorerPagination.mode === 'search'"), 'Web search load-more must remain wired through shared pagination presentation')
+  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Web search/directory load-more dispatch must use the shared pagination controller')
+  assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Web Explorer load-more must use shared pagination dispatch')
+  assert.equal(explorer.includes("explorerPagination.mode === 'search'"), false, 'Web must not branch search/directory pagination locally')
   assert.equal(explorer.includes('searchRequestRef'), false, 'Web must not own search request sequencing')
   assert.equal(explorer.includes('setSearchState('), false, 'Web must not own search lifecycle transitions')
   assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web search must not truncate the UI to the first page')
@@ -140,7 +142,9 @@ test('Web FileExplorer uses cursor-paged server sorting for directory browsing',
   assert.equal(app.includes('xDriveFileExplorerPageStateFromResult('), false, 'Web must not duplicate directory page-state derivation')
   assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Web directory pages should preserve server ordering')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Web sort changes should reload server-sorted pages')
-  assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Web Explorer must request the next page near the scroll boundary')
+  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Web Explorer pagination dispatch must use the shared controller')
+  assert.ok(explorer.includes('loadMoreDirectory: onLoadMore'), 'Web Explorer must inject directory load-more into the shared controller')
+  assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Web Explorer must wire shared pagination dispatch near the scroll boundary')
 })
 
 test('Web multi-select mutations use persistent operations while retaining legacy atomic batch APIs', () => {

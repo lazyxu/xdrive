@@ -244,6 +244,50 @@ export function xDriveFileExplorerPaginationPresentation({
       }
 }
 
+export function xDriveFileExplorerPaginationController<TID, TSort>({
+  searchActive,
+  searchCursor,
+  searchLoadingMore,
+  directoryHasMore,
+  directoryLoadingMore,
+  currentID,
+  sort,
+  loadMoreSearch,
+  loadMoreDirectory,
+}: {
+  searchActive: boolean
+  searchCursor: string
+  searchLoadingMore: boolean
+  directoryHasMore: boolean
+  directoryLoadingMore: boolean
+  currentID: TID | null | undefined
+  sort: TSort
+  loadMoreSearch: () => void | Promise<void>
+  loadMoreDirectory: (id: TID, sort: TSort) => void | Promise<void>
+}) {
+  const presentation = xDriveFileExplorerPaginationPresentation({
+    searchActive,
+    searchCursor,
+    searchLoadingMore,
+    directoryHasMore,
+    directoryLoadingMore,
+  })
+
+  const onLoadMore = () => {
+    if (presentation.mode === 'search') {
+      void loadMoreSearch()
+      return
+    }
+    if (currentID === null || currentID === undefined) return
+    void loadMoreDirectory(currentID, sort)
+  }
+
+  return {
+    ...presentation,
+    onLoadMore,
+  }
+}
+
 export type XDriveFileExplorerSelectionItem = { id: string | number }
 export type XDriveFileExplorerOperationNode = Pick<Node, 'id' | 'revision' | 'parent_id'>
 export type XDriveFileExplorerOperationRef = { id: number; revision: number }
