@@ -65,6 +65,7 @@ import {
   XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileExplorerDeleteOperationPlan,
   xDriveFileOperationActive,
+  xDriveFileOperationPollIntervalMs,
   xDriveFileOperationTransitionSnapshot,
 } from '@xdrive/shared'
 import { DesktopCloudPage } from './DesktopCloudPage'
@@ -412,6 +413,11 @@ export default function App({
     }
   }, [])
 
+  const fileOperationPollIntervalMs = xDriveFileOperationPollIntervalMs(
+    cloudFileOperations,
+    view === 'transfers',
+  )
+
   useEffect(() => {
     if (!agent.connected || !configured) {
       setCloudFileOperations([])
@@ -424,12 +430,12 @@ export default function App({
       if (active && result.ok) setCloudFileOperations(result.data)
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 1500)
+    const timer = window.setInterval(() => void refresh(), fileOperationPollIntervalMs)
     return () => {
       active = false
       window.clearInterval(timer)
     }
-  }, [agent.connected, configured, agent.hello?.agent_version])
+  }, [agent.connected, agent.hello?.agent_version, configured, fileOperationPollIntervalMs])
 
   useEffect(() => {
     if (configured || !status) return

@@ -1,5 +1,9 @@
 export const XDRIVE_FILE_OPERATION_HISTORY_LIMIT = 200
 
+export const XDRIVE_FILE_OPERATION_ACTIVE_POLL_MS = 1_500
+export const XDRIVE_FILE_OPERATION_VISIBLE_IDLE_POLL_MS = 3_000
+export const XDRIVE_FILE_OPERATION_IDLE_POLL_MS = 15_000
+
 export type XDriveFileOperationType = 'copy' | 'move' | 'delete'
 
 export type XDriveFileOperationStatus =
@@ -92,6 +96,18 @@ export function xDriveFileOperationFailureItemLabel(
 
 export function xDriveFileOperationActive(status: XDriveFileOperationStatus | string) {
   return status === 'queued' || status === 'running' || status === 'cancel_requested'
+}
+
+export function xDriveFileOperationPollIntervalMs(
+  operations: readonly Pick<XDriveFileOperation, 'status'>[],
+  taskCenterVisible = false,
+) {
+  if (operations.some((operation) => xDriveFileOperationActive(operation.status))) {
+    return XDRIVE_FILE_OPERATION_ACTIVE_POLL_MS
+  }
+  return taskCenterVisible
+    ? XDRIVE_FILE_OPERATION_VISIBLE_IDLE_POLL_MS
+    : XDRIVE_FILE_OPERATION_IDLE_POLL_MS
 }
 
 export function xDriveFileOperationTerminal(status: XDriveFileOperationStatus | string) {
