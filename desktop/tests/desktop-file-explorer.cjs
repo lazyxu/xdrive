@@ -219,13 +219,14 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
 })
 
 test('Desktop FileExplorer uses cursor-paged server sorting for cloud directories', () => {
-  assert.ok(app.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), 'Desktop page-size contract must come from the shared controller')
+  assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'Desktop page-size contract must remain in the shared controller')
+  assert.equal((app.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Desktop must use shared request-option construction for all directory page requests')
   assert.ok(app.includes('const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {'), 'Desktop incremental directory loader is missing')
   assert.ok(app.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)'), 'Desktop pagination eligibility must use the shared controller')
   assert.ok(controller.includes('xDriveFileExplorerDirectoryPageTransition'), 'shared controller must own directory page transitions')
   assert.ok(app.includes('xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, false)'), 'Desktop first directory page must use the shared transition')
   assert.ok(app.includes('xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, true)'), 'Desktop incremental directory page must use the shared transition')
-  assert.ok(app.includes('window.xdriveDesktop.agent.cloudChildrenPage(id, {'), 'Desktop directory browsing should use the paged Agent API')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudChildrenPage(\n        id,\n        xDriveFileExplorerPageRequestOptions(sort),'), 'Desktop directory browsing should use the paged Agent API with shared request options')
   assert.equal(app.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), false, 'Desktop must not duplicate page merge semantics')
   assert.equal(app.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate directory page-state derivation')
   assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Desktop directory pages should preserve server ordering')

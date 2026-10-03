@@ -61,7 +61,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPageState,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_PAGE_SIZE, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -542,11 +542,7 @@ function FileManager({
   ) => {
     setLoading(true)
     try {
-      const page = await api.listPage(id, {
-        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        sort: sort.key,
-        order: sort.direction,
-      })
+      const page = await api.listPage(id, xDriveFileExplorerPageRequestOptions(sort))
       const transition = xDriveFileExplorerDirectoryPageTransition(id, page, sort, false)
       setItems(transition.applyItems)
       setDirectoryPage(transition.pageState)
@@ -564,12 +560,10 @@ function FileManager({
 
     setLoadingMore(true)
     try {
-      const page = await api.listPage(id, {
-        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        cursor: pageState.cursor,
-        sort: sort.key,
-        order: sort.direction,
-      })
+      const page = await api.listPage(
+        id,
+        xDriveFileExplorerPageRequestOptions(sort, pageState.cursor),
+      )
       const transition = xDriveFileExplorerDirectoryPageTransition(id, page, sort, true)
       setItems(transition.applyItems)
       setDirectoryPage(transition.pageState)
@@ -596,11 +590,10 @@ function FileManager({
       if (me.must_change_password) return
       setQuota(await api.quota())
       const root = await api.root()
-      const page = await api.listPage(root.id, {
-        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        sort: DEFAULT_FILE_SORT.key,
-        order: DEFAULT_FILE_SORT.direction,
-      })
+      const page = await api.listPage(
+        root.id,
+        xDriveFileExplorerPageRequestOptions(DEFAULT_FILE_SORT),
+      )
       const transition = xDriveFileExplorerDirectoryPageTransition(root.id, page, DEFAULT_FILE_SORT, false)
       setCrumbs([{ id: root.id, name: '我的文件' }])
       setItems(transition.applyItems)

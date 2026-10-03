@@ -457,6 +457,29 @@ export function xDriveFileExplorerMergePageItems<
 
 export const XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200
 
+export type XDriveFileExplorerPageRequestOptions<
+  TSort extends XDriveFileExplorerPageSort,
+> = {
+  limit: number
+  cursor?: string
+  sort: TSort['key']
+  order: TSort['direction']
+}
+
+export function xDriveFileExplorerPageRequestOptions<
+  TSort extends XDriveFileExplorerPageSort,
+>(
+  sort: TSort,
+  cursor = '',
+): XDriveFileExplorerPageRequestOptions<TSort> {
+  return {
+    limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
+    ...(cursor ? { cursor } : {}),
+    sort: sort.key,
+    order: sort.direction,
+  }
+}
+
 export type XDriveFileExplorerPageResult = {
   next_cursor?: string
   has_more: boolean

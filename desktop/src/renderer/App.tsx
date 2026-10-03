@@ -62,11 +62,11 @@ import {
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
-  XDRIVE_FILE_EXPLORER_PAGE_SIZE,
   XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileExplorerCanLoadMore,
   xDriveFileExplorerDeleteOperationPlan,
   xDriveFileExplorerDirectoryPageTransition,
+  xDriveFileExplorerPageRequestOptions,
   xDriveFileOperationActive,
   xDriveFileOperationPollIntervalMs,
   xDriveFileOperationTransitionSnapshot,
@@ -1136,11 +1136,10 @@ export default function App({
     setBusy('cloud-directory')
     setError('')
     try {
-      const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, {
-        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        sort: sort.key,
-        order: sort.direction,
-      })
+      const result = await window.xdriveDesktop.agent.cloudChildrenPage(
+        id,
+        xDriveFileExplorerPageRequestOptions(sort),
+      )
       if (!result.ok) {
         setError(result.error.message)
         return
@@ -1177,12 +1176,10 @@ export default function App({
 
     setCloudLoadingMore(true)
     try {
-      const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, {
-        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        cursor: pageState.cursor,
-        sort: sort.key,
-        order: sort.direction,
-      })
+      const result = await window.xdriveDesktop.agent.cloudChildrenPage(
+        id,
+        xDriveFileExplorerPageRequestOptions(sort, pageState.cursor),
+      )
       if (!result.ok) {
         setError(result.error.message)
         return
@@ -1211,11 +1208,10 @@ export default function App({
         setError(quotaResult.error.message)
         return
       }
-      const childrenResult = await window.xdriveDesktop.agent.cloudChildrenPage(rootResult.data.id, {
-        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        sort: DEFAULT_DESKTOP_FILE_SORT.key,
-        order: DEFAULT_DESKTOP_FILE_SORT.direction,
-      })
+      const childrenResult = await window.xdriveDesktop.agent.cloudChildrenPage(
+        rootResult.data.id,
+        xDriveFileExplorerPageRequestOptions(DEFAULT_DESKTOP_FILE_SORT),
+      )
       if (!childrenResult.ok) {
         setError(childrenResult.error.message)
         return
