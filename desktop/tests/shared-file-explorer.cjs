@@ -62,6 +62,10 @@ test('shared FileExplorer details view avoids admin-table chrome', () => {
     'details header should use the quiet workspace surface',
   )
   assert.ok(explorer.includes("borderRadius: '4px'"), 'details rows should retain Explorer-style rounded surfaces')
+  assert.ok(
+    explorer.includes("gridTemplateColumns: detailsGridTemplate,\n                  minHeight: detailsRowHeight,\n                  alignItems: 'center',\n                  justifyContent: 'start',"),
+    'details row grid tracks must stay left-aligned with the header instead of inheriting ButtonBase centering',
+  )
   assert.ok(explorer.includes("selected ? 'action.selected' : 'transparent'"), 'details rows should retain selected state styling')
   assert.ok(explorer.includes("dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)"), 'details rows should expose drag-target styling')
   assert.equal(

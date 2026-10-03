@@ -1423,6 +1423,7 @@ export function XDriveFileExplorer({
                   gridTemplateColumns: detailsGridTemplate,
                   minHeight: detailsRowHeight,
                   alignItems: 'center',
+                  justifyContent: 'start',
                   px: 1.5,
                   textAlign: 'left',
                   borderRadius: '4px',
