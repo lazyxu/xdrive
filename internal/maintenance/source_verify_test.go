@@ -163,14 +163,7 @@ func TestVerifySourceRelationsReportsDeterministicBreakage(t *testing.T) {
 		{ID: 1003, CollectionID: 999, SourceItemID: 10, Position: 0},
 	}
 	itemMetadata := []meta.SourceItemMetadata{
-		{
-			SourceItemID: 20, SourceID: 1, ContentMD5: "not-md5",
-			PairGroupID: "legacy-pair",
-		},
-		{
-			SourceItemID: 10, SourceID: 1,
-			PairGroupID: "legacy-pair-2", PairRole: "invalid",
-		},
+		{SourceItemID: 20, SourceID: 1, ContentMD5: "not-md5"},
 	}
 
 	report := verifySourceState(
@@ -201,8 +194,6 @@ func TestVerifySourceRelationsReportsDeterministicBreakage(t *testing.T) {
 		"collection_item_collection_missing",
 		"metadata_source_mismatch",
 		"metadata_md5_invalid",
-		"metadata_pair_incomplete",
-		"metadata_pair_role_invalid",
 	} {
 		if !reasons[want] {
 			t.Fatalf("missing issue reason %q: %+v", want, report.Issues)

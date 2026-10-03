@@ -58,7 +58,7 @@ The following foundations already exist and should be extended rather than repla
 - connector-neutral `Source`, `SourceItem`, `SyncRun`, planning, resumable execution, cancellation, scheduling, retry/backoff, missing inference, and backup semantics;
 - `SourceItemAlias` and explicit canonical identity promotion;
 - `SourceCollection` / `SourceCollectionItem` for optional provider collection provenance;
-- `SourceItemMetadata` for source-side file hints such as original path, owner identity, remote times, MD5, and provider thumbnail URL;
+- provenance-only `SourceItemMetadata` for original path, owner identity, remote create time, and provider MD5; media-semantic legacy columns are removed during migration;
 - canonical `MediaMetadata` for node-scoped media indexing;
 - xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, derived thumbnail caching, and Gallery indexing;
 - Yike Pull stable `yike:<owner_uk>:<fsid>` identity, file/albums discovery, MD5 hint, Range download, resumable upload, bounded API rate, cancellation, and incomplete-inventory safety;
@@ -68,7 +68,7 @@ The following foundations already exist and should be extended rather than repla
 - account-aware scheduling and PostgreSQL advisory coordination so Sources using the same upstream account do not multiply login/API pressure;
 - `xdrive-server source verify [--json]` for basic read-only SourceItem -> Node/File binding verification.
 
-`SourceItemMetadata.CapturedAt`, `ThumbnailURL`, and the reserved `PairGroupID/PairRole` fields may remain for backward compatibility. Going forward they are **not canonical media inputs**. New connector code must not populate pair relations from provider semantic APIs.
+Legacy Source-side media-semantic columns (`CapturedAt`, `ThumbnailURL`, `PairGroupID`, `PairRole`) are removed during migration. `SourceItemMetadata` is provenance-only, so new connector code cannot persist provider media semantics there.
 
 ## Design invariants
 
@@ -135,13 +135,14 @@ FileStation remains the generic DSM connector for arbitrary files:
 
 `SourceItemMetadata` is limited to synchronization/provenance hints. It must not become a second media database.
 
-Allowed examples:
+Allowed fields are intentionally narrow:
 
 - original remote path;
 - upstream owner/account identifier;
-- remote create/modify timestamps useful for reconciliation;
-- provider content digest hints such as MD5;
-- provider download/thumbnail locator kept only as a non-canonical hint.
+- remote create timestamp useful for reconciliation/provenance;
+- provider content digest hints such as MD5.
+
+Provider thumbnail locators, capture-time hints and pair/group semantics are not stored in `SourceItemMetadata`.
 
 Canonical media fields belong to `MediaMetadata` or a future connector-neutral media relation model and are derived from local originals.
 
@@ -236,7 +237,7 @@ Remote delete/rename/album mutation and general two-way synchronization are not 
 
 ### Implemented
 
-`xdrive-server source verify [--json]` checks core Source/SourceItem -> Node/File bindings plus SourceItem canonical/alias identity collisions, SourceCollection membership ownership/state, and SourceItemMetadata Source/MD5/pair-field invariants. `xdrive-server media verify [--json]` checks MediaMetadata freshness, MediaGroup/Live Photo evidence and membership invariants, MediaDerivedResource ownership/revision/SHA/range, validated LIVP resource consistency, and metadata-referenced thumbnail cache state. Both are read-only.
+`xdrive-server source verify [--json]` checks core Source/SourceItem -> Node/File bindings plus SourceItem canonical/alias identity collisions, SourceCollection membership ownership/state, and SourceItemMetadata Source/provenance/MD5 invariants. `xdrive-server media verify [--json]` checks MediaMetadata freshness, MediaGroup/Live Photo evidence and membership invariants, MediaDerivedResource ownership/revision/SHA/range, validated LIVP resource consistency, and metadata-referenced thumbnail cache state. Both are read-only.
 
 ### Still TODO
 

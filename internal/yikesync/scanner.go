@@ -383,31 +383,17 @@ func queueDownloadLinks(remote Remote, transfers []pullsync.Task[TransferRef]) {
 }
 
 func metadataSnapshot(ownerUK int64, file yike.File, externalID string) sourcemetadata.Snapshot {
-	var capturedAt *time.Time
-	if file.ShootTime > 0 {
-		value := time.Unix(file.ShootTime, 0).UTC()
-		capturedAt = &value
-	}
 	var createdAt *time.Time
 	if file.CTime > 0 {
 		value := time.Unix(file.CTime, 0).UTC()
 		createdAt = &value
 	}
-	thumbnailURL := ""
-	for _, candidate := range file.ThumbURL {
-		if candidate = strings.TrimSpace(candidate); candidate != "" {
-			thumbnailURL = candidate
-			break
-		}
-	}
 	return sourcemetadata.Snapshot{
 		ItemExternalID:  externalID,
 		OriginalPath:    strings.TrimSpace(file.Path),
 		OwnerExternalID: strconv.FormatInt(ownerUK, 10),
-		CapturedAt:      capturedAt,
 		RemoteCreatedAt: createdAt,
 		ContentMD5:      metadataMD5(file.MD5),
-		ThumbnailURL:    thumbnailURL,
 	}
 }
 

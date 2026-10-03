@@ -275,11 +275,8 @@ func TestScannerDeduplicatesRootAndAlbumMemberships(t *testing.T) {
 	}
 	if albumOnly.OriginalPath != "/camera/1717120123000.jpg" ||
 		albumOnly.OwnerExternalID != "123" ||
-		albumOnly.CapturedAt == nil || albumOnly.CapturedAt.Unix() != 1500 ||
 		albumOnly.RemoteCreatedAt == nil || albumOnly.RemoteCreatedAt.Unix() != 2500 ||
-		albumOnly.ContentMD5 != strings.Repeat("a", 32) ||
-		albumOnly.ThumbnailURL != "https://thumb.example/3" ||
-		albumOnly.PairGroupID != "" || albumOnly.PairRole != "" {
+		albumOnly.ContentMD5 != strings.Repeat("a", 32) {
 		t.Fatalf("album-only metadata=%+v", albumOnly)
 	}
 	if _, exists := metadata["yike:123:2"]; exists {

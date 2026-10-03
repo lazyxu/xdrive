@@ -1119,7 +1119,7 @@ func TestDesktopIPCExternalSources(t *testing.T) {
 		cloudSourceCollectionItems: []client.SourceCollectionItem{{
 			Position: 0, SourceItemID: 2, ExternalID: "yike:123:3", Kind: "file",
 			Path: "family.jpg", Size: 30, State: "synced",
-			Metadata: &client.SourceItemMetadata{CapturedAt: &now, OriginalPath: "/youa/web/family.jpg"},
+			Metadata: &client.SourceItemMetadata{OriginalPath: "/youa/web/family.jpg", RemoteCreatedAt: &now},
 		}},
 		cloudSourceCredential: client.SourceCredentialStatus{Configured: true, KeyVersion: 2, UpdatedAt: &now},
 		cloudCredentialReveal: client.SourceCredentialReveal{Field: "cookie", Value: "BDUSS=revealed", ExpiresInSeconds: 30},

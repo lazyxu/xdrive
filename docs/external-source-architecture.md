@@ -148,16 +148,16 @@ Media parsing, Live Photo grouping, EXIF/GPS, thumbnails and Gallery behavior mu
 
 ## SourceItemMetadata contract
 
-`SourceItemMetadata` stores synchronization/provenance hints such as original remote path, remote owner ID, remote create/capture hints, MD5 and provider thumbnail URL.
+`SourceItemMetadata` is deliberately provenance-only. Its persisted payload is limited to synchronization facts that cannot be reconstructed purely from the local Node:
 
-These fields are not canonical media state. In particular:
+- original provider path;
+- upstream owner/account identifier;
+- provider remote-create timestamp used only for reconciliation/provenance;
+- provider content digest hint such as MD5.
 
-- provider capture time must not override valid embedded capture metadata;
-- provider thumbnail URL is never the durable xDrive preview;
-- new connector code must not use `PairGroupID/PairRole` to import provider Live Photo semantics;
-- pair/group relations are derived by the local media layer from original files.
+It must not contain canonical or provider-sourced media semantics. Capture time, thumbnails, EXIF/GPS, dimensions, video parameters, Live Photo pairing, tags, people, favorites, descriptions and similar fields belong to the connector-neutral Media layer derived from preserved originals.
 
-The existing pair fields may remain for schema/backward compatibility until a migration removes or repurposes them.
+Legacy `captured_at`, `thumbnail_url`, `pair_group_id` and `pair_role` columns are removed during server migration. New connector code therefore has no Source-side storage surface for those semantics.
 
 ## Native media layer
 
@@ -175,7 +175,7 @@ Live Photo evidence must come from local originals such as a validated `.livp` c
 
 ## Integrity verification
 
-`xdrive-server source verify [--json]` is the read-only Source integrity verifier. It checks core Source/SourceItem -> Node/File bindings, canonical/alias identity collisions and cross-Source aliases, SourceCollection membership ownership/state, and SourceItemMetadata Source/MD5/pair-field invariants.
+`xdrive-server source verify [--json]` is the read-only Source integrity verifier. It checks core Source/SourceItem -> Node/File bindings, canonical/alias identity collisions and cross-Source aliases, SourceCollection membership ownership/state, and SourceItemMetadata Source/provenance/MD5 invariants.
 
 Media verification covers MediaMetadata freshness, MediaGroup/Live Photo evidence, LIVP derived resources, and metadata-referenced thumbnail cache presence/format. Deterministic thumbnail-cache issues support explicit local metadata reset through `xdrive-server media repair [--dry-run]`; repair never changes original files, CAS content, Source state, or remote providers. Remaining verifier/repair work includes storage/digest cross-checks, orphan derived-cache cleanup, stale runs, migrations, and other issue types only after their repair semantics are deterministic.
 
