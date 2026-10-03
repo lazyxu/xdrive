@@ -4,6 +4,7 @@ import {
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerSearchDecision,
@@ -383,8 +384,7 @@ export default function DesktopFileExplorer({
 
   const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
     if (!current || files.length === 0 || actionBusy) return
-    const targetNode = target ? nodeByID.get(Number(target.id)) : undefined
-    const parentID = targetNode?.type === 'dir' ? targetNode.id : current.id
+    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
     setActionBusy('drop-upload')
     try {
       const result = await window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)

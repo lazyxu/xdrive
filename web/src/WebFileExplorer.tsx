@@ -16,6 +16,7 @@ import {
   xDriveFileExplorerClipboardOperationPlan,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerWebDownloadFeedback,
@@ -272,8 +273,7 @@ export default function WebFileExplorer({
 
   const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
     if (!current || files.length === 0) return
-    const targetNode = target ? nodeByID.get(Number(target.id)) : undefined
-    const parentID = targetNode?.type === 'dir' ? targetNode.id : current.id
+    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
     await onUploadDroppedFiles(parentID, files)
     if (current) await onLoadDirectory(current.id, crumbs, sort)
   }

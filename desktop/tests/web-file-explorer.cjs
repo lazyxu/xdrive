@@ -85,6 +85,7 @@ test('Web FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Web internal drag/drop helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'internal drag should use the shared copy/move operation plan')
   assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
+  assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Web external drop should resolve the target through shared controller logic')
   assert.ok(explorer.includes('onUploadDroppedFiles(parentID, files)'), 'Web external drop should use the target-aware upload adapter')
   assert.ok(app.includes('const uploadFilesTo = async (parentID: number, files: File[]) => {'), 'Web target-aware upload helper is missing')
   assert.ok(app.includes('onUploadDroppedFiles={uploadFilesTo}'), 'Web dropped-file upload adapter is not wired')

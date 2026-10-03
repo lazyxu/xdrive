@@ -185,3 +185,14 @@ export function xDriveFileExplorerDesktopDownloadFeedback({
     message: `已下载 ${downloaded} 个文件。`,
   }
 }
+
+export function xDriveFileExplorerExternalDropParentID<
+  TNode extends Pick<Node, 'id' | 'type'>,
+>(
+  currentParentID: number,
+  target: XDriveFileExplorerSelectionItem | undefined,
+  nodeByID: ReadonlyMap<number, TNode>,
+) {
+  const targetNode = target ? nodeByID.get(Number(target.id)) : undefined
+  return targetNode?.type === 'dir' ? targetNode.id : currentParentID
+}
