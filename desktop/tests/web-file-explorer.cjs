@@ -71,7 +71,8 @@ test('Web FileExplorer queues copy/cut/paste as persistent file operations', () 
 
 test('Web FileExplorer supports bulk download and delete', () => {
   assert.ok(explorer.includes('const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {'), 'Web bulk download helper is missing')
-  assert.ok(explorer.includes('for (const node of files) await api.download(node)'), 'Web bulk download must use authenticated downloads')
+  assert.ok(explorer.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Web bulk download must use shared download planning')
+  assert.ok(explorer.includes('for (const node of plan.files) await api.download(node)'), 'Web bulk download must use authenticated downloads')
   assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Web shared bulk download adapter is missing')
   assert.ok(explorer.includes('onRemoveMany(nodes)'), 'Web shared bulk delete adapter is missing')
   assert.ok(app.includes('const removeMany = (nodes: Node[]) => {'), 'Web bulk delete confirmation flow is missing')

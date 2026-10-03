@@ -125,3 +125,63 @@ export function xDriveFileExplorerOperationQueuedMessage(
     ? `已将 ${count} 个项目加入复制任务。`
     : `已将 ${count} 个项目加入移动任务。`
 }
+
+export type XDriveFileExplorerDownloadNode = Pick<Node, 'id' | 'name' | 'type'>
+
+export function xDriveFileExplorerDownloadPlan<TNode extends XDriveFileExplorerDownloadNode>(
+  nodes: TNode[],
+) {
+  const files = nodes.filter((node) => node.type === 'file')
+  return {
+    files,
+    items: files.map((node) => ({ id: node.id, name: node.name })),
+    skippedFolders: nodes.length - files.length,
+  }
+}
+
+export type XDriveFileExplorerFeedback = {
+  tone: 'good' | 'warning'
+  message: string
+}
+
+export function xDriveFileExplorerWebDownloadFeedback(
+  fileCount: number,
+  skippedFolders: number,
+): XDriveFileExplorerFeedback {
+  return skippedFolders > 0
+    ? {
+        tone: 'warning',
+        message: `已下载 ${fileCount} 个文件，跳过 ${skippedFolders} 个文件夹。`,
+      }
+    : {
+        tone: 'good',
+        message: `已开始下载 ${fileCount} 个文件。`,
+      }
+}
+
+export function xDriveFileExplorerDesktopDownloadFeedback({
+  downloaded,
+  failed,
+  skippedFolders,
+}: {
+  downloaded: number
+  failed: number
+  skippedFolders: number
+}): XDriveFileExplorerFeedback {
+  if (failed > 0) {
+    return {
+      tone: 'warning',
+      message: `已下载 ${downloaded} 个文件，${failed} 个失败。`,
+    }
+  }
+  if (skippedFolders > 0) {
+    return {
+      tone: 'warning',
+      message: `已下载 ${downloaded} 个文件，跳过 ${skippedFolders} 个文件夹。`,
+    }
+  }
+  return {
+    tone: 'good',
+    message: `已下载 ${downloaded} 个文件。`,
+  }
+}
