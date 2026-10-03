@@ -22,8 +22,10 @@ trap cleanup EXIT
 
 mkdir -p "$TMP/bin" "$TMP/state" "$TMP/config/state" "$TMP/host-bin"
 
-# Hold the installer lock and verify a second invocation refuses to run.
+# Hold the installer lock and verify a second invocation refuses to run
+# without truncating the current lock owner's PID.
 exec 8>"$TMP/config/state/install.lock"
+printf '424242\n' >&8
 flock -n 8
 set +e
 PATH="/usr/bin:/bin" \
@@ -34,6 +36,8 @@ locked_status=$?
 set -e
 [[ "$locked_status" -eq 75 ]]
 grep -q 'another install/update is already running' "$TMP/locked.err"
+grep -q 'pid 424242' "$TMP/locked.err"
+[[ "$(cat "$TMP/config/state/install.lock")" == "424242" ]]
 flock -u 8
 exec 8>&-
 
@@ -95,6 +99,11 @@ services: {}
 set -euo pipefail
 printf "%s\n" "$*" >> "$TEST_STATE/backup-args"
 printf "%s\n" "${XD_SERVER_IMAGE:-}" >> "$TEST_STATE/backup-images"
+printf "%s|%s|%s|%s\n" \
+  "${XD_BACKUP_PROGRESS_FILE:-}" \
+  "${XD_BACKUP_PROGRESS_STAGE_CURRENT:-}" \
+  "${XD_BACKUP_PROGRESS_STAGE_TOTAL:-}" \
+  "${XD_BACKUP_PROGRESS_STAGE_NAME:-}" >> "$TEST_STATE/backup-progress-env"
 config=""
 output=""
 leave=0
@@ -274,6 +283,7 @@ XD_SHELL_RC_PATH="$TMP/config.bashrc" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
+XD_INSTALL_PROGRESS_FILE="$TMP/state/install-progress.env" \
 bash "$INSTALLER" --channel master >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"
 status=$?
 set -e
@@ -310,7 +320,91 @@ if grep -q -- '--compat-verify-image' "$TMP/state/backup-args"; then
   exit 1
 fi
 [[ "$(wc -l < "$TMP/state/backup-images")" -ge 2 ]]
-grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/state/backup-images"
+grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab
+grep -q 'current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier' "$TMP/upgrade.err"
+grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/upgrade.err"
+if grep -q 'storage consistency verification failed' "$TMP/upgrade.err"; then
+  echo "test fixture unexpectedly contains the obsolete installer match phrase" >&2
+  exit 1
+fi
+
+grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
+if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then
+  echo "raw Docker JSON progress leaked into user output" >&2
+  exit 1
+fi
+
+# A pull that stops advancing must be aborted and retried instead of printing
+# 0 B/s forever. Completed Docker layers are reused by the next attempt.
+# Run this on an isolated deployment copy so a successful watchdog recovery
+# cannot mutate the rollback fixture used by the following failure scenario.
+cp -a "$TMP/config" "$TMP/stall-config"
+mkdir -p "$TMP/stall-state" "$TMP/stall-host-bin"
+sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$TMP/stall-config/.env" "$TMP/stall-config/config/.env"
+set +e
+TEST_STATE="$TMP/stall-state" \
+TEST_PULL_MODE=stall-once \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/stall-config" \
+XD_SHELL_RC_PATH="$TMP/stall-config.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_PULL_STALL_TIMEOUT_SECONDS=2 \
+XD_PULL_STALL_LOG_INTERVAL_SECONDS=1 \
+bash "$INSTALLER" --channel master >"$TMP/stall.out" 2>"$TMP/stall.err"
+stall_status=$?
+set -e
+[[ "$stall_status" -eq 0 ]]
+[[ "$(cat "$TMP/stall-state/pull-count-server")" == "2" ]]
+grep -q 'pull server stalled' "$TMP/stall.err"
+grep -q 'attempt 1 stalled; retry will reuse completed Docker layers' "$TMP/stall.err"
+grep -q 'pull server attempt 2/3' "$TMP/stall.out"
+grep -q 'pull server complete.' "$TMP/stall.out"
+
+# Reproduce the production failure point: all image-pull attempts fail before
+# any new application container or migration is started. Rollback must restore
+# the old deployment without a database restore and must keep the host manager
+# available for another xdrive-server update.
+rm -f "$TMP/state"/pull-count-* "$TMP/state/data-restored"
+set +e
+TEST_STATE="$TMP/state" \
+TEST_PULL_MODE=permanent \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config" \
+XD_SHELL_RC_PATH="$TMP/config.bashrc" \
+XD_PULL_ATTEMPTS=3 \
+XD_PULL_RETRY_DELAY_SECONDS=0 \
+XD_NONINTERACTIVE=1 \
+bash "$INSTALLER" --channel master >"$TMP/pull-fail.out" 2>"$TMP/pull-fail.err"
+pull_fail_status=$?
+set -e
+
+[[ "$pull_fail_status" -ne 0 ]]
+[[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
+test ! -f "$TMP/state/pull-count-server"
+test ! -f "$TMP/state/pull-count-web"
+grep -q 'pull postgres failed after 3 attempts' "$TMP/pull-fail.err"
+grep -q 'database restore not required for this failure point' "$TMP/pull-fail.err"
+grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/pull-fail.err"
+test ! -f "$TMP/state/data-restored"
+grep -q '^old-compose$' "$TMP/config/docker-compose.yml"
+grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/.env"
+grep -q '^old-compose$' "$TMP/config/config/docker-compose.yml"
+grep -q '^XD_SERVER_IMAGE=ghcr.io/lazyxu/xdrive-server:sha-oldoldoldold$' "$TMP/config/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=2$' "$TMP/config/.env"
+grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb$' "$TMP/config/.env"
+test -x "$TMP/config/bin/xdrive-server"
+test -x "$TMP/config/bin/server-doctor.sh"
+grep -q '# >>> xDrive server PATH >>>' "$TMP/config.bashrc"
+test ! -e "$TMP/host-bin/xdrive-server"
+grep -q 'rollback: retaining host manager and doctor for retry/recovery' "$TMP/pull-fail.err"
+
+echo "server transactional upgrade tests passed"
+ "$TMP/state/backup-images"
+grep -Fq "$TMP/state/install-progress.env|5|9|创建升级前备份" "$TMP/state/backup-progress-env"
 grep -q 'current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier' "$TMP/upgrade.err"
 grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/upgrade.err"
 if grep -q 'storage consistency verification failed' "$TMP/upgrade.err"; then
