@@ -33,8 +33,8 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer operation: ${token}`)
   }
-  assert.ok(app.includes('window.xdriveDesktop.agent.cloudDelete(node.id, node.revision)'), 'Desktop delete action is not wired to real cloud delete')
-  assert.ok(app.includes("'已移到回收站。'"), 'Desktop delete action should preserve recycle-bin semantics')
+  assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Desktop single delete must use the shared delete plan')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop delete action must enqueue a persistent operation')
 })
 
 test('Desktop FileExplorer provides system-style navigation, search, and persistent view mode', () => {
@@ -159,6 +159,21 @@ test('Desktop FileExplorer supports bulk download and delete', () => {
   assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must use the shared delete plan')
   assert.ok(app.includes('plan.operation,\n            plan.items,'), 'Desktop bulk delete must enqueue one persistent file operation')
   assert.ok(app.includes('rememberCloudFileOperation(result.data)'), 'Desktop bulk delete must seed task state immediately')
+})
+
+
+test('Desktop single-item delete queues the same persistent delete operation as bulk delete', () => {
+  const start = app.indexOf('const removeCloudNode = (node: AgentCloudNode) => {')
+  const end = app.indexOf('\n  const removeCloudNodes =', start)
+  assert.ok(start >= 0 && end > start, 'Desktop single-delete handler boundaries are missing')
+  const body = app.slice(start, end)
+  assert.ok(body.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Desktop single delete must use the shared delete plan')
+  assert.ok(body.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop single delete must enqueue a persistent operation')
+  assert.ok(body.includes('rememberCloudFileOperation(result.data)'), 'Desktop single delete must seed Task Center state immediately')
+  assert.ok(body.includes('setNotice(plan.message)'), 'Desktop single delete must use queued-operation feedback')
+  assert.equal(body.includes('cloudDelete('), false, 'Desktop single delete must not bypass Task Center through the legacy synchronous IPC')
+  assert.equal(body.includes('refreshCloudQuota()'), false, 'Desktop single delete must rely on terminal operation quota refresh')
+  assert.equal(body.includes('loadCloudDirectory('), false, 'Desktop single delete must rely on terminal operation directory refresh')
 })
 
 test('Desktop FileExplorer supports internal and external drag and drop', () => {

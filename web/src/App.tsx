@@ -797,6 +797,8 @@ function FileManager({
   }
 
   const remove = (node: Node) => {
+    const plan = xDriveFileExplorerDeleteOperationPlan([node])
+    if (plan.count === 0) return
     setConfirmAction({
       title: `将 ${node.name} 移到回收站？`,
       description: node.type === 'dir'
@@ -805,10 +807,9 @@ function FileManager({
       confirmLabel: '移到回收站',
       intent: 'danger',
       run: async () => {
-        await api.remove(node.id, node.revision)
-        setFeedback({ tone: 'good', message: '已移到回收站' })
-        if (current) await loadDirectory(current.id)
-        await refreshQuota()
+        const operation = await api.createFileOperation(plan.operation, plan.items)
+        rememberFileOperation(operation)
+        setFeedback({ tone: 'good', message: plan.message })
       },
     })
   }
