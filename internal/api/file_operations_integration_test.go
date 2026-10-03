@@ -331,3 +331,203 @@ func assertBatchNodeDeleted(t *testing.T, db *gorm.DB, id uint64) {
 		t.Fatalf("node %d should be deleted", id)
 	}
 }
+
+func TestRecursiveCopyOperationHooksProgressAndCancel(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(
+		&meta.FileOperation{}, &meta.Share{}, &meta.File{}, &meta.Node{}, &meta.User{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Share{}, &meta.FileOperation{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_root_owner ON xd_nodes(owner_id) WHERE parent_id IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	user := meta.User{Username: "recursive-copy-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := meta.Node{ParentID: &root.ID, Name: "recursive-source", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	target := meta.Node{ParentID: &root.ID, Name: "recursive-target", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	cancelTarget := meta.Node{ParentID: &root.ID, Name: "recursive-cancel-target", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	for _, node := range []*meta.Node{&source, &target, &cancelTarget} {
+		if err := db.Create(node).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	nested := meta.Node{ParentID: &source.ID, Name: "nested", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	if err := db.Create(&nested).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	createFile := func(parentID uint64, name string, size int64) meta.Node {
+		t.Helper()
+		node := meta.Node{ParentID: &parentID, Name: name, Type: meta.NodeTypeFile, OwnerID: user.ID, Revision: 1}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		file := meta.File{NodeID: node.ID, Size: size, StorageKey: "legacy/recursive/" + name}
+		if err := db.Create(&file).Error; err != nil {
+			t.Fatal(err)
+		}
+		node.File = &file
+		return node
+	}
+	createFile(nested.ID, "a.txt", 3)
+	createFile(nested.ID, "b.txt", 4)
+	createFile(source.ID, "c.txt", 5)
+
+	srv := &Server{DB: db}
+	ctx := context.Background()
+
+	successOperation := meta.FileOperation{
+		ID:         "recursive-copy-success",
+		OwnerID:    user.ID,
+		Type:       meta.FileOperationTypeCopy,
+		Status:     meta.FileOperationStatusRunning,
+		ItemsJSON:  "[]",
+		TotalItems: 1,
+		TotalBytes: 12,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+	if err := db.Create(&successOperation).Error; err != nil {
+		t.Fatal(err)
+	}
+	baseHooks := srv.fileOperationCopyHooks(ctx, successOperation.ID)
+	var visited []string
+	hooks := &copyNodeTxHooks{
+		BeforeNode: func(node meta.Node, relativePath string) error {
+			visited = append(visited, relativePath)
+			return baseHooks.BeforeNode(node, relativePath)
+		},
+		AfterFile: baseHooks.AfterFile,
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if _, err := srv.copyNodeTxWithHooks(
+			tx, user.ID, source, target.ID, source.Name, source.Name, hooks,
+		); err != nil {
+			return err
+		}
+		return srv.recordFileOperationProgressDelta(ctx, successOperation.ID, 1, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	wantVisited := []string{
+		"recursive-source",
+		"recursive-source/nested",
+		"recursive-source/nested/a.txt",
+		"recursive-source/nested/b.txt",
+		"recursive-source/c.txt",
+	}
+	if len(visited) != len(wantVisited) {
+		t.Fatalf("visited=%v want=%v", visited, wantVisited)
+	}
+	for index := range wantVisited {
+		if visited[index] != wantVisited[index] {
+			t.Fatalf("visited[%d]=%q want=%q; all=%v", index, visited[index], wantVisited[index], visited)
+		}
+	}
+
+	var progressed meta.FileOperation
+	if err := db.First(&progressed, "id = ?", successOperation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if progressed.ProcessedItems != 1 || progressed.ProcessedBytes != 12 {
+		t.Fatalf("recursive progress=%d items/%d bytes want=1/12: %+v", progressed.ProcessedItems, progressed.ProcessedBytes, progressed)
+	}
+	if progressed.CurrentItem != "recursive-source/c.txt" {
+		t.Fatalf("current item=%q want recursive-source/c.txt", progressed.CurrentItem)
+	}
+
+	cancelOperation := meta.FileOperation{
+		ID:         "recursive-copy-cancel",
+		OwnerID:    user.ID,
+		Type:       meta.FileOperationTypeCopy,
+		Status:     meta.FileOperationStatusRunning,
+		ItemsJSON:  "[]",
+		TotalItems: 1,
+		TotalBytes: 12,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+	if err := db.Create(&cancelOperation).Error; err != nil {
+		t.Fatal(err)
+	}
+	cancelBaseHooks := srv.fileOperationCopyHooks(ctx, cancelOperation.ID)
+	cancelHooks := &copyNodeTxHooks{
+		BeforeNode: func(node meta.Node, relativePath string) error {
+			if relativePath == "recursive-source/nested/b.txt" {
+				var inFlight meta.FileOperation
+				if err := db.First(&inFlight, "id = ?", cancelOperation.ID).Error; err != nil {
+					return err
+				}
+				if inFlight.ProcessedItems != 0 ||
+					inFlight.ProcessedBytes != 3 ||
+					inFlight.CurrentItem != "recursive-source/nested/a.txt" {
+					return fmt.Errorf("unexpected in-flight recursive progress: %+v", inFlight)
+				}
+				if err := db.Model(&meta.FileOperation{}).
+					Where("id = ?", cancelOperation.ID).
+					Update("status", meta.FileOperationStatusCancelRequested).Error; err != nil {
+					return err
+				}
+			}
+			return cancelBaseHooks.BeforeNode(node, relativePath)
+		},
+		AfterFile: cancelBaseHooks.AfterFile,
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		_, err := srv.copyNodeTxWithHooks(
+			tx, user.ID, source, cancelTarget.ID, source.Name, source.Name, cancelHooks,
+		)
+		return err
+	})
+	if !errors.Is(err, errFileOperationCancelled) {
+		t.Fatalf("recursive cancellation err=%v want=%v", err, errFileOperationCancelled)
+	}
+	if err := srv.cancelRunningFileOperation(ctx, user.ID, cancelOperation.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	var copiedCount int64
+	if err := db.Model(&meta.Node{}).
+		Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", user.ID, cancelTarget.ID).
+		Count(&copiedCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if copiedCount != 0 {
+		t.Fatalf("cancelled recursive copy committed %d target nodes", copiedCount)
+	}
+
+	var cancelled meta.FileOperation
+	if err := db.First(&cancelled, "id = ?", cancelOperation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Status != meta.FileOperationStatusCancelled ||
+		cancelled.ProcessedItems != 0 ||
+		cancelled.ProcessedBytes != 0 ||
+		cancelled.CurrentItem != "" {
+		t.Fatalf("cancelled recursive copy did not reset rolled-back progress: %+v", cancelled)
+	}
+}
