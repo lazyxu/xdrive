@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts')
+const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -38,6 +39,7 @@ test('Web and Desktop consume shared FileExplorer projection without duplicating
     assert.equal(source.includes('const explorerItems = useMemo'), false, `${label} must not project Explorer items locally`)
     assert.equal(source.includes('const explorerCrumbs = useMemo'), false, `${label} must not project breadcrumbs locally`)
   }
-  assert.ok(web.includes('normalizedSearchCrumbs(result)'), 'Web must retain its breadcrumbs adapter')
-  assert.ok(desktop.includes('normalizeSearchCrumbs(searchResult)'), 'Desktop must retain its crumbs adapter')
+  assert.ok(controller.includes('xDriveFileExplorerNormalizeCrumbs'), 'shared controller must own search-crumb normalization')
+  assert.ok(web.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs)'), 'Web must adapt result.breadcrumbs into the shared directory-crumb controller')
+  assert.ok(desktop.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs)'), 'Desktop must adapt result.crumbs into the shared directory-crumb controller')
 })

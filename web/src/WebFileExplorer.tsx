@@ -14,6 +14,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   xDriveFileExplorerClipboardOperationPlan,
+  xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerExternalDropParentID,
@@ -31,13 +32,6 @@ const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
 
 type Crumb = { id: number; name: string }
 type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }
-
-function normalizedSearchCrumbs(result: SearchResult): Crumb[] {
-  return result.breadcrumbs.map((crumb, index) => ({
-    id: crumb.id,
-    name: index === 0 && !crumb.name ? '我的文件' : crumb.name,
-  }))
-}
 
 export default function WebFileExplorer({
   api,
@@ -190,11 +184,7 @@ export default function WebFileExplorer({
     }
 
     const result = searchByID.get(node.id)
-    if (result) {
-      await navigateTo(normalizedSearchCrumbs(result))
-      return
-    }
-    await navigateTo([...crumbs, { id: node.id, name: node.name }])
+    await navigateTo(xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs))
   }
 
   const getItemMenuItems = (item: XDriveFileExplorerItem) => {

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import {
   xDriveFileExplorerClipboardOperationPlan,
   xDriveFileExplorerDesktopDownloadFeedback,
+  xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerExternalDropParentID,
@@ -27,13 +28,6 @@ import type {
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
 type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }
-
-function normalizeSearchCrumbs(result: AgentCloudSearchResult): AgentCloudCrumb[] {
-  return result.crumbs.map((crumb, index) => ({
-    id: crumb.id,
-    name: index === 0 && !crumb.name ? '我的文件' : crumb.name,
-  }))
-}
 
 export default function DesktopFileExplorer({
   items,
@@ -272,11 +266,7 @@ export default function DesktopFileExplorer({
       return
     }
     const searchResult = searchByID.get(node.id)
-    if (searchResult) {
-      await navigateTo(normalizeSearchCrumbs(searchResult))
-      return
-    }
-    await navigateTo([...crumbs, { id: node.id, name: node.name }])
+    await navigateTo(xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs))
   }
 
   const getItemMenuItems = (item: XDriveFileExplorerItem) => {

@@ -51,6 +51,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   }
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
   assert.ok(explorer.includes('xDriveResolveFileExplorerPath({'), 'Desktop Explorer should delegate typed-path traversal to the shared controller')
+  assert.ok(explorer.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs)'), 'Desktop search-directory navigation should use shared crumb planning')
   assert.ok(explorer.includes('viewModeStorageKey: DESKTOP_FILE_VIEW_KEY'), 'Desktop Explorer should pass its view-mode storage key to the shared controller')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })

@@ -127,3 +127,21 @@ test('shared FileExplorer controller owns external-drop target resolution', () =
   assert.ok(web.includes('onUploadDroppedFiles(parentID, files)'), 'Web must keep dropped-file upload execution local')
   assert.ok(desktop.includes('cloudUploadDroppedFiles(parentID, files)'), 'Desktop must keep dropped-file upload execution local')
 })
+
+test('shared FileExplorer controller owns directory crumb normalization and open-path planning', () => {
+  for (const token of [
+    'xDriveFileExplorerNormalizeCrumbs',
+    "index === 0 && !crumb.name ? rootName : crumb.name",
+    'xDriveFileExplorerDirectoryCrumbs',
+    'searchCrumbs && searchCrumbs.length > 0',
+    'xDriveFileExplorerNormalizeCrumbs(searchCrumbs)',
+    'return [...currentCrumbs, { id: node.id, name: node.name }]',
+  ]) {
+    assert.ok(shared.includes(token), `shared FileExplorer directory crumb controller missing: ${token}`)
+  }
+
+  assert.ok(web.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs)'), 'Web must use shared directory crumb planning')
+  assert.ok(desktop.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs)'), 'Desktop must use shared directory crumb planning')
+  assert.equal(web.includes('normalizedSearchCrumbs'), false, 'Web must not normalize search crumbs locally')
+  assert.equal(desktop.includes('normalizeSearchCrumbs'), false, 'Desktop must not normalize search crumbs locally')
+})
