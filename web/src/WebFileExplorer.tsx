@@ -12,7 +12,14 @@ import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
-import { xDriveFileExplorerSearchDecision, xDriveResolveFileExplorerPath } from '../../ui/shared/src'
+import {
+  xDriveFileExplorerClipboardOperationPlan,
+  xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerNodesForItems,
+  xDriveFileExplorerOperationQueuedMessage,
+  xDriveFileExplorerSearchDecision,
+  xDriveResolveFileExplorerPath,
+} from '../../ui/shared/src'
 import type { Node, XDriveFileOperation } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
 
@@ -202,14 +209,8 @@ export default function WebFileExplorer({
     })
   }
 
-  const explorerNodesForItems = (selected: XDriveFileExplorerItem[]) => (
-    selected
-      .map((item) => nodeByID.get(Number(item.id)))
-      .filter((node): node is Node => Boolean(node))
-  )
-
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
-    const nodes = explorerNodesForItems(selected)
+    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
     const files = nodes.filter((node) => node.type === 'file')
     if (files.length === 0) return
     try {
@@ -230,21 +231,17 @@ export default function WebFileExplorer({
     if (!current || !clipboard || clipboard.nodes.length === 0 || clipboardBusy) return
     setClipboardBusy(true)
     try {
-      const nodes = clipboard.mode === 'cut'
-        ? clipboard.nodes.filter((node) => node.parent_id !== current.id)
-        : clipboard.nodes
-      if (nodes.length > 0) {
-        const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
-        const queued = await api.createFileOperation(clipboard.mode === 'cut' ? 'move' : 'copy', refs, current.id)
+      const plan = xDriveFileExplorerClipboardOperationPlan(
+        clipboard.mode,
+        clipboard.nodes,
+        current.id,
+      )
+      if (plan.count > 0) {
+        const queued = await api.createFileOperation(plan.operation, plan.items, plan.parentID)
         onOperationQueued(queued)
-        onFeedback(
-          'good',
-          clipboard.mode === 'cut'
-            ? `已将 ${nodes.length} 个项目加入移动任务。`
-            : `已将 ${nodes.length} 个项目加入复制任务。`,
-        )
+        onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
       }
-      if (clipboard.mode === 'cut') setClipboard(null)
+      if (plan.clearClipboard) setClipboard(null)
       clearSearch()
     } catch (error) {
       onError(error)
@@ -260,20 +257,15 @@ export default function WebFileExplorer({
   ) => {
     const targetNode = nodeByID.get(Number(target.id))
     if (!targetNode || targetNode.type !== 'dir' || clipboardBusy) return
-    const nodes = explorerNodesForItems(selected).filter((node) => node.id !== targetNode.id)
-    if (nodes.length === 0) return
+    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+    const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)
+    if (plan.count === 0) return
     setClipboardBusy(true)
     try {
-      const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
-      const queued = await api.createFileOperation(operation, refs, targetNode.id)
+      const queued = await api.createFileOperation(plan.operation, plan.items, plan.parentID)
       onOperationQueued(queued)
       clearSearch()
-      onFeedback(
-        'good',
-        operation === 'copy'
-          ? `已将 ${nodes.length} 个项目加入复制任务。`
-          : `已将 ${nodes.length} 个项目加入移动任务。`,
-      )
+      onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
     } catch (error) {
       onError(error)
     } finally {
@@ -355,18 +347,18 @@ export default function WebFileExplorer({
         }}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
-          const nodes = explorerNodesForItems(selected)
+          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })
         }}
         onCutItems={(selected) => {
-          const nodes = explorerNodesForItems(selected)
+          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) setClipboard({ mode: 'cut', nodes })
         }}
         onPaste={() => { void pasteClipboard() }}
         canPaste={Boolean(clipboard?.nodes.length) && !clipboardBusy}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         onDeleteItems={(selected) => {
-          const nodes = explorerNodesForItems(selected)
+          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onRemoveMany(nodes)
         }}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}

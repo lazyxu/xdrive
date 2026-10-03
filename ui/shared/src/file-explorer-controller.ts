@@ -64,3 +64,64 @@ export function xDriveFileExplorerSearchDecision(
   }
   return { kind: 'search', query }
 }
+
+export type XDriveFileExplorerSelectionItem = { id: string | number }
+export type XDriveFileExplorerOperationNode = Pick<Node, 'id' | 'revision' | 'parent_id'>
+export type XDriveFileExplorerOperationRef = { id: number; revision: number }
+export type XDriveFileExplorerClipboardMode = 'copy' | 'cut'
+export type XDriveFileExplorerCopyMoveOperation = 'copy' | 'move'
+
+export function xDriveFileExplorerNodesForItems<TNode extends Pick<Node, 'id'>>(
+  selected: XDriveFileExplorerSelectionItem[],
+  nodeByID: ReadonlyMap<number, TNode>,
+): TNode[] {
+  return selected
+    .map((item) => nodeByID.get(Number(item.id)))
+    .filter((node): node is TNode => Boolean(node))
+}
+
+export function xDriveFileExplorerClipboardOperationPlan<
+  TNode extends XDriveFileExplorerOperationNode,
+>(
+  mode: XDriveFileExplorerClipboardMode,
+  nodes: TNode[],
+  targetParentID: number,
+) {
+  const operation: XDriveFileExplorerCopyMoveOperation = mode === 'cut' ? 'move' : 'copy'
+  const effectiveNodes = mode === 'cut'
+    ? nodes.filter((node) => node.parent_id !== targetParentID)
+    : nodes
+
+  return {
+    operation,
+    parentID: targetParentID,
+    items: effectiveNodes.map((node) => ({ id: node.id, revision: node.revision })),
+    count: effectiveNodes.length,
+    clearClipboard: mode === 'cut',
+  }
+}
+
+export function xDriveFileExplorerDropOperationPlan<
+  TNode extends XDriveFileExplorerOperationNode,
+>(
+  operation: XDriveFileExplorerCopyMoveOperation,
+  nodes: TNode[],
+  targetParentID: number,
+) {
+  const effectiveNodes = nodes.filter((node) => node.id !== targetParentID)
+  return {
+    operation,
+    parentID: targetParentID,
+    items: effectiveNodes.map((node) => ({ id: node.id, revision: node.revision })),
+    count: effectiveNodes.length,
+  }
+}
+
+export function xDriveFileExplorerOperationQueuedMessage(
+  operation: XDriveFileExplorerCopyMoveOperation,
+  count: number,
+) {
+  return operation === 'copy'
+    ? `已将 ${count} 个项目加入复制任务。`
+    : `已将 ${count} 个项目加入移动任务。`
+}
