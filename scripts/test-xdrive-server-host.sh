@@ -94,7 +94,15 @@ EOF
     ;;
   *"media verify"*)
     readlink /proc/$$/fd/0 > "$TEST_STATE/media-verify-stdin" 2>/dev/null || true
-    printf '{"metadata":10,"groups":2,"group_items":4,"derived_resources":2,"issues":[]}\n'
+    printf '{"metadata":10,"groups":2,"group_items":4,"derived_resources":2,"thumbnails":1,"issues":[]}\n'
+    ;;
+  *"media repair"*)
+    readlink /proc/$$/fd/0 > "$TEST_STATE/media-repair-stdin" 2>/dev/null || true
+    if [[ " $* " == *" --dry-run "* ]]; then
+      printf '{"dry_run":true,"actions":[],"skipped":[],"before":{"issues":[]},"after":{"issues":[]}}\n'
+    else
+      printf '{"dry_run":false,"actions":[],"skipped":[],"before":{"issues":[]},"after":{"issues":[]}}\n'
+    fi
     ;;
   *"admin list"*)
     readlink /proc/$$/fd/0 > "$TEST_STATE/admin-list-stdin" 2>/dev/null || true
@@ -387,6 +395,28 @@ if grep -q '^pipe:' "$TMP/state/media-verify-stdin"; then
   echo "media verify inherited caller stdin" >&2
   exit 1
 fi
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" media repair --dry-run --json >"$TMP/media-repair-dry.out"
+grep -q '"dry_run":true' "$TMP/media-repair-dry.out"
+grep -q -- 'exec -T server xdrive-server media repair --dry-run --json' "$TMP/state/docker-args"
+if grep -q 'system.media_repair' "$TMP/state/audit-calls"; then
+  echo "media repair dry-run unexpectedly created an audit event" >&2
+  exit 1
+fi
+if grep -q '^pipe:' "$TMP/state/media-repair-stdin"; then
+  echo "media repair inherited caller stdin" >&2
+  exit 1
+fi
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" media repair --json >"$TMP/media-repair.out"
+grep -q -- 'exec -T server xdrive-server media repair --json' "$TMP/state/docker-args"
+grep -q -- 'audit record --action system.media_repair --result success' "$TMP/state/audit-calls"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
