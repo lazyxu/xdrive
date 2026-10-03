@@ -19,6 +19,8 @@ test('shared FileExplorer navigation controller owns cross-client view and histo
     'useState<TCrumb[][]>([])',
     'window.localStorage.setItem(viewModeStorageKey, viewMode)',
     "const pathValue = crumbs.map((crumb) => crumb.name).join('/')",
+    'const refresh = () =>',
+    'onLoadDirectory(current.id, crumbs, sort)',
     'const navigateTo = async',
     'const navigateToCrumb = async (index: number)',
     'index < 0 || index >= crumbs.length',
@@ -51,6 +53,9 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
     assert.equal(source.includes('const goBack = async'), false, `${label} must not duplicate Explorer back navigation`)
     assert.equal(source.includes('const goForward = async'), false, `${label} must not duplicate Explorer forward navigation`)
     assert.equal(source.includes('const goUp = async'), false, `${label} must not duplicate Explorer up navigation`)
+    assert.equal((source.match(/onRefresh=\{refresh\}/g) || []).length, 1, `${label} Explorer toolbar must use shared refresh`)
+    assert.ok(source.includes('onRefresh: refresh'), `${label} background menu must use shared refresh`)
+    assert.equal(source.includes('if (current) void onLoadDirectory(current.id, crumbs, sort)'), false, `${label} must not duplicate current-directory refresh`)
     assert.ok(source.includes('pathValue={pathValue}'), `${label} must use shared navigation path display`)
     assert.ok(source.includes('navigateToCrumb(index)'), `${label} must use shared breadcrumb navigation`)
     assert.equal(source.includes("crumbs.map((crumb) => crumb.name).join('/')"), false, `${label} must not derive the path display locally`)

@@ -36,6 +36,8 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
   assert.ok(explorer.includes('viewModeStorageKey: FILE_VIEW_KEY'), 'Web Explorer should pass its view-mode storage key to the shared controller')
   assert.ok(explorer.includes('pathValue={pathValue}'), 'Web Explorer path display must come from shared navigation')
   assert.ok(explorer.includes('navigateToCrumb(index)'), 'Web breadcrumb clicks must use shared navigation')
+  assert.ok(explorer.includes('onRefresh={refresh}'), 'Web Explorer refresh must use shared navigation')
+  assert.ok(explorer.includes('onRefresh: refresh'), 'Web background refresh must use shared navigation')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
 

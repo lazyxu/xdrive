@@ -125,6 +125,7 @@ export default function DesktopFileExplorer({
     setViewMode,
     sort,
     changeSort,
+    refresh,
     navigateTo,
     navigateToCrumb,
     goBack,
@@ -403,9 +404,7 @@ export default function DesktopFileExplorer({
     onCreateFolder: () => setCreateOpen(true),
     onUpload: () => { void uploadFiles() },
     uploadDisabled: Boolean(actionBusy),
-    onRefresh: () => {
-      if (current) void onLoadDirectory(current.id, crumbs, sort)
-    },
+    onRefresh: refresh,
   })
 
   return (
@@ -427,9 +426,7 @@ export default function DesktopFileExplorer({
         onBack={() => { void goBack() }}
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}
-        onRefresh={() => {
-          if (current) void onLoadDirectory(current.id, crumbs, sort)
-        }}
+        onRefresh={refresh}
         onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
         onCreateFolder={() => setCreateOpen(true)}
         onUpload={() => { void uploadFiles() }}
