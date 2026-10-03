@@ -109,6 +109,7 @@ export function xDriveFileExplorerSearchPageState<
 export type XDriveFileExplorerSearchState<
   TResult extends XDriveFileExplorerSearchResultLike,
 > = {
+  query: string
   results: TResult[] | null
   cursor: string
   loading: boolean
@@ -119,6 +120,7 @@ export function xDriveFileExplorerIdleSearchState<
   TResult extends XDriveFileExplorerSearchResultLike,
 >(): XDriveFileExplorerSearchState<TResult> {
   return {
+    query: '',
     results: null,
     cursor: '',
     loading: false,
@@ -128,8 +130,9 @@ export function xDriveFileExplorerIdleSearchState<
 
 export function xDriveFileExplorerStartSearchState<
   TResult extends XDriveFileExplorerSearchResultLike,
->(): XDriveFileExplorerSearchState<TResult> {
+>(query: string): XDriveFileExplorerSearchState<TResult> {
   return {
+    query,
     results: [],
     cursor: '',
     loading: true,
@@ -157,6 +160,7 @@ export function xDriveFileExplorerApplySearchPageState<
 ): XDriveFileExplorerSearchState<TResult> {
   const nextPage = xDriveFileExplorerSearchPageState(current.results, page, append)
   return {
+    ...current,
     results: nextPage.items,
     cursor: nextPage.cursor,
     loading: false,

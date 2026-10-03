@@ -181,7 +181,7 @@ export default function WebFileExplorer({
       return
     }
     const requestID = ++searchRequestRef.current
-    setSearchState(xDriveFileExplorerStartSearchState<SearchResult>())
+    setSearchState(xDriveFileExplorerStartSearchState<SearchResult>(decision.query))
     try {
       const page = await api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)
       if (requestID !== searchRequestRef.current) return
@@ -201,15 +201,15 @@ export default function WebFileExplorer({
 
   const loadMoreSearch = async () => {
     if (!xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)) return
-    const decision = xDriveFileExplorerSearchDecision(searchValue)
-    if (decision.kind !== 'search') return
+    const query = searchState.query
+    if (!query) return
     const requestID = searchRequestRef.current
     setSearchState((currentSearchState) => (
       xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)
     ))
     try {
       const page = await api.search(
-        decision.query,
+        query,
         XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
         searchCursor,
       )
@@ -425,7 +425,7 @@ export default function WebFileExplorer({
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         statusText={searchResults
-          ? `搜索“${searchValue.trim()}”`
+          ? `搜索“${searchState.query}”`
           : uploadProgress !== null
             ? `上传中 ${Math.round(uploadProgress)}%`
             : undefined}

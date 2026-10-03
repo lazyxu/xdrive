@@ -59,7 +59,8 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
 test('Desktop FileExplorer paginates server search results through Agent cursors', () => {
   assert.ok(explorer.includes('XDriveFileExplorerSearchState<AgentCloudSearchResult>'), 'Desktop search lifecycle state must come from the shared controller')
   assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Desktop incremental search loader is missing')
-  assert.ok(explorer.includes('cloudSearch(decision.query, searchCursor)'), 'Desktop search must forward the cursor through preload')
+  assert.ok(explorer.includes('cloudSearch(query, searchCursor)'), 'Desktop search must forward the active query with the cursor through preload')
+  assert.ok(explorer.includes('const query = searchState.query'), 'Desktop incremental search must stay bound to the submitted query')
   assert.ok(explorer.includes('xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)'), 'Desktop search loading-more transition must use shared lifecycle state')
   assert.ok(explorer.includes('xDriveFileExplorerApplySearchPageState(currentSearchState, result.data, true)'), 'Desktop search pages must use the shared lifecycle transition')
   assert.ok(explorer.includes('xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)'), 'Desktop search load-more eligibility must use shared logic')
