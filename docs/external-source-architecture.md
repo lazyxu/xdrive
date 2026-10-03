@@ -167,9 +167,10 @@ Legacy `captured_at`, `thumbnail_url`, `pair_group_id` and `pair_role` columns a
 - EXIF/TIFF capture time, camera/lens and exposure metadata;
 - GPS latitude/longitude/altitude;
 - video/container duration, dimensions, rotation, frame rate, bitrate and codecs;
-- xDrive-derived thumbnails/previews.
+- xDrive-derived thumbnails/previews;
+- versioned relation evidence parsed locally from EXIF/TIFF, Apple MakerNotes, and XMP.
 
-`MediaGroup` represents locally validated Live Photo, RAW/JPEG, sidecar and burst evidence. Above it, the connector-neutral Photo domain is now explicit: `PhotoAsset` is the logical Gallery object, `PhotoResource` lists its original/derived resources, `PhotoMetadata` carries asset-scoped derived media state, and `PhotoCollection` / `PhotoCollectionAsset` represent folder/imported/future manual or smart collections.
+`MediaGroup` represents locally validated Live Photo, RAW/JPEG, sidecar and burst evidence. Current local grouping accepts exact shared `ImageUniqueID` for DNG/rendered pairs, explicit XMP `DerivedFrom` references to a unique local XMP identity, and exact Apple MakerNote `BurstUUID`. Ambiguity and relation overlap with an already validated Live Photo fail closed; filename or timestamp proximity is never used. Above it, the connector-neutral Photo domain is now explicit: `PhotoAsset` is the logical Gallery object, `PhotoResource` lists its original/derived resources, `PhotoMetadata` carries asset-scoped derived media state, and `PhotoCollection` / `PhotoCollectionAsset` represent folder/imported/future manual or smart collections.
 
 Live Photo evidence must come from local originals such as a validated `.livp` container or matching embedded Apple content identifiers. Do not use provider `live_type`, provider pair IDs, filename matching, or timestamp proximity as the canonical relation.
 
@@ -219,7 +220,7 @@ New synchronization-folder connectors must follow both this management contract 
 4. Complete: basic read-only Source binding verifier.
 5. Expand xDrive-native media extraction from original files; do not add provider semantic dependencies.
 6. Add local connector-neutral MediaGroup and Live Photo projection.
-7. Add local RAW/sidecar/burst parsing/grouping.
+7. In progress: local DNG/rendered exact-ID pairing, explicit XMP sidecars, and Apple BurstUUID grouping are implemented; add other RAW formats and only evidence-bearing AAE/auxiliary formats.
 8. Extend integrity verification and explicit local repair.
 9. Add incremental scanners only where a reliable provider change contract exists.
 10. Add Mirror-to-trash only after deletion evidence/grace semantics are proven.
@@ -239,3 +240,26 @@ SourceItem / SourceItemAlias
 ```
 
 A standalone image/video becomes one `PhotoAsset` with one node resource. A validated Live Photo still+motion group becomes one asset with two node resources. A validated `.livp` container becomes one asset with one container node resource plus derived still/motion byte-range resources. Imported provider albums project to `PhotoCollection` membership without copying Nodes or CAS objects. Folder albums use the same collection model. The projection is idempotent and rebuildable from local canonical state while providers are offline.
+
+
+### Local relation evidence contract
+
+`MediaMetadata.RelationJSON` is a versioned, connector-neutral cache of identifiers parsed from local file bytes. It may contain EXIF/Apple `ImageUniqueID`, Apple `BurstUUID`, and XMP Media Management identities/references. It is derived state and is forced through re-indexing when the relation-evidence version changes.
+
+The reconciler uses only exact identifiers:
+
+```text
+DNG ImageUniqueID == rendered ImageUniqueID
+  -> raw_pair
+
+XMP DerivedFrom ID -> exactly one local XMP DocumentID/OriginalDocumentID
+  -> sidecar (or append sidecar resource to that RAW pair)
+
+same Apple BurstUUID on >=2 otherwise-unclaimed images
+  -> burst
+
+no exact / unique evidence
+  -> no group
+```
+
+AAE adjustment payloads are not paired merely because an `.AAE` filename resembles an image filename. Until an explicit target identifier is parsed and validated, AAE remains an ordinary preserved file.

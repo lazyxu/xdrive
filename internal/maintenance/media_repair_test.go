@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -99,7 +100,8 @@ func TestRepairMediaResetsThumbnailMetadataIdempotently(t *testing.T) {
 		SHA256: sha, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
 		ThumbnailKey: thumbnailKey, ThumbnailMIMEType: "image/jpeg",
 		ThumbnailWidth: 512, ThumbnailHeight: 384,
-		IndexState: meta.MediaIndexStateReady,
+		IndexState:              meta.MediaIndexStateReady,
+		RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
 	}
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatal(err)

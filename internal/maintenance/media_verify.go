@@ -347,6 +347,20 @@ func verifyMediaMetadataRow(
 		issue.Actual = row.IndexState
 		add(issue)
 	}
+	if row.RelationEvidenceVersion < mediapkg.RelationEvidenceVersion {
+		issue := base
+		issue.Reason = "metadata_relation_evidence_stale"
+		issue.Expected = strconv.Itoa(mediapkg.RelationEvidenceVersion)
+		issue.Actual = strconv.Itoa(row.RelationEvidenceVersion)
+		add(issue)
+	}
+	if strings.TrimSpace(row.RelationJSON) != "" {
+		if _, err := mediapkg.DecodeRelationEvidence(row.RelationJSON); err != nil {
+			issue := base
+			issue.Reason = "metadata_relation_evidence_invalid"
+			add(issue)
+		}
+	}
 }
 
 func verifyLivePhotoGroup(

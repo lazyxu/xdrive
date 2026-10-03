@@ -26,6 +26,8 @@ type MediaMetadata struct {
 	ContainerJSON            string `gorm:"type:text"`
 	LivePhotoAssetIdentifier string `gorm:"size:128;index;index:idx_xd_media_owner_live_asset,priority:2"`
 	DerivedResourceVersion   int    `gorm:"not null;default:0"`
+	RelationEvidenceVersion  int    `gorm:"not null;default:0"`
+	RelationJSON             string `gorm:"type:text"`
 
 	Width       int `gorm:"not null;default:0"`
 	Height      int `gorm:"not null;default:0"`
