@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -128,6 +129,14 @@ func detectMIME(name string, header []byte) string {
 	}
 
 	ext := strings.ToLower(filepath.Ext(name))
+	if ext == ".dng" {
+		if isTIFF(header) {
+			return "image/x-adobe-dng"
+		}
+		// Do not trust the .dng suffix by itself. A malformed or renamed file
+		// stays classified from its bytes instead of being promoted to RAW.
+		return detected
+	}
 	if detected == "" || detected == "application/octet-stream" || detected == "text/plain" {
 		if byExt := mime.TypeByExtension(ext); byExt != "" {
 			if semi := strings.IndexByte(byExt, ';'); semi >= 0 {
@@ -429,6 +438,27 @@ func parseTIFF(data []byte) (*exifData, error) {
 				}
 			case 0x0131:
 				addASCIIField(out.Fields, "software", value)
+			case 0xc612:
+				if typ == 1 && count >= 4 {
+					if version := dngVersion(value); version != "" {
+						out.Fields["dng_version"] = version
+					}
+				}
+			case 0xc613:
+				if typ == 1 && count >= 4 {
+					if version := dngVersion(value); version != "" {
+						out.Fields["dng_backward_version"] = version
+					}
+				}
+			case 0xc614:
+				if typ == 2 {
+					if model := cleanASCII(value); model != "" {
+						out.Fields["dng_unique_camera_model"] = model
+						if out.CameraModel == "" {
+							out.CameraModel = model
+						}
+					}
+				}
 			}
 		},
 	)
@@ -553,6 +583,13 @@ func parseTIFF(data []byte) (*exifData, error) {
 		}
 	}
 	return out, nil
+}
+
+func dngVersion(value []byte) string {
+	if len(value) < 4 {
+		return ""
+	}
+	return fmt.Sprintf("%d.%d.%d.%d", value[0], value[1], value[2], value[3])
 }
 
 func addASCIIField(fields map[string]any, name string, value []byte) {
