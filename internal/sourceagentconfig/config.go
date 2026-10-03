@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/secretstore"
+	"github.com/lazyxu/xdrive/internal/synology"
 )
 
 const configDirEnv = "XD_SOURCE_AGENT_CONFIG_DIR"
@@ -31,6 +32,9 @@ type Config struct {
 	SharedRoot              string `json:"shared_root,omitempty"`
 	SharedRootID            string `json:"shared_root_id,omitempty"`
 	SharedRootFingerprint   string `json:"shared_root_fingerprint,omitempty"`
+	SynologyBaseURL         string `json:"synology_base_url,omitempty"`
+	SynologyUsername        string `json:"synology_username,omitempty"`
+	SynologyCredentialID    string `json:"synology_credential_id,omitempty"`
 }
 
 func Dir() (string, error) {
@@ -144,8 +148,13 @@ func Save(cfg Config) error {
 func Remove() error {
 	cfg, loadErr := Load()
 	dir, dirErr := Dir()
-	if loadErr == nil && dirErr == nil && cfg.SessionID != "" {
-		_ = secretstore.Delete(dir, cfg.SessionID)
+	if loadErr == nil && dirErr == nil {
+		if cfg.SessionID != "" {
+			_ = secretstore.Delete(dir, cfg.SessionID)
+		}
+		if cfg.SynologyCredentialID != "" {
+			_ = secretstore.Delete(dir, cfg.SynologyCredentialID)
+		}
 	}
 	path, err := Path()
 	if err != nil {
@@ -214,6 +223,63 @@ func NewClient(cfg Config) (*client.Client, error) {
 	return client.NewManagedSession(cfg.Server, tokens, saveTokens, loadTokens), nil
 }
 
+func SaveSynologyCredential(cfg *Config, credential synology.Credential) error {
+	if cfg == nil {
+		return fmt.Errorf("source-agent config is required")
+	}
+	if _, err := synology.New(credential); err != nil {
+		return err
+	}
+	credential.BaseURL = strings.TrimRight(strings.TrimSpace(credential.BaseURL), "/")
+	credential.Username = strings.TrimSpace(credential.Username)
+	payload, err := json.Marshal(credential)
+	if err != nil {
+		return err
+	}
+	if cfg.SynologyCredentialID == "" {
+		cfg.SynologyCredentialID = uuid.NewString()
+	}
+	cfg.SynologyBaseURL = credential.BaseURL
+	cfg.SynologyUsername = credential.Username
+	dir, err := Dir()
+	if err != nil {
+		return err
+	}
+	return secretstore.Save(dir, cfg.SynologyCredentialID, synologyCredentialLabel(*cfg), secretstore.Credentials{
+		OpaquePayload: string(payload),
+	})
+}
+
+func LoadSynologyCredential(cfg Config) (synology.Credential, error) {
+	if strings.TrimSpace(cfg.SynologyCredentialID) == "" {
+		return synology.Credential{}, secretstore.ErrNotFound
+	}
+	dir, err := Dir()
+	if err != nil {
+		return synology.Credential{}, err
+	}
+	stored, err := secretstore.Load(dir, cfg.SynologyCredentialID)
+	if err != nil {
+		return synology.Credential{}, err
+	}
+	var credential synology.Credential
+	if err := json.Unmarshal([]byte(stored.OpaquePayload), &credential); err != nil {
+		return synology.Credential{}, fmt.Errorf("decode Synology credential: %w", err)
+	}
+	if _, err := synology.New(credential); err != nil {
+		return synology.Credential{}, err
+	}
+	return credential, nil
+}
+
+func SynologyCredentialBackend(cfg Config) string {
+	dir, err := Dir()
+	if err != nil || cfg.SynologyCredentialID == "" {
+		return "unavailable"
+	}
+	return secretstore.Backend(dir, cfg.SynologyCredentialID)
+}
+
 func CredentialBackend(cfg Config) string {
 	dir, err := Dir()
 	if err != nil || cfg.SessionID == "" {
@@ -246,6 +312,9 @@ func normalize(cfg *Config) error {
 	cfg.PersonalRootFingerprint = strings.TrimSpace(cfg.PersonalRootFingerprint)
 	cfg.SharedRootID = strings.TrimSpace(cfg.SharedRootID)
 	cfg.SharedRootFingerprint = strings.TrimSpace(cfg.SharedRootFingerprint)
+	cfg.SynologyBaseURL = strings.TrimRight(strings.TrimSpace(cfg.SynologyBaseURL), "/")
+	cfg.SynologyUsername = strings.TrimSpace(cfg.SynologyUsername)
+	cfg.SynologyCredentialID = strings.TrimSpace(cfg.SynologyCredentialID)
 	var err error
 	if cfg.PersonalRoot != "" {
 		cfg.PersonalRoot, err = normalizeRoot(cfg.PersonalRoot)
@@ -293,4 +362,11 @@ func credentialLabel(cfg Config) string {
 		return "xDrive Source Agent"
 	}
 	return "xDrive Source Agent " + cfg.Username + " @ " + cfg.Server
+}
+
+func synologyCredentialLabel(cfg Config) string {
+	if cfg.SynologyUsername == "" {
+		return "xDrive Source Agent Synology Photos"
+	}
+	return "xDrive Source Agent Synology Photos " + cfg.SynologyUsername + " @ " + cfg.SynologyBaseURL
 }

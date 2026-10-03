@@ -24,6 +24,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/sourceagent"
 	"github.com/lazyxu/xdrive/internal/sourceagentidentity"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"github.com/lazyxu/xdrive/internal/synology"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -61,7 +62,8 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceItemMetadata{},
+		&meta.SyncRun{}, &meta.SourceRunFailure{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +146,52 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	if got := mustDownload(t, cli, fileNode.ID); got != "first" {
 		t.Fatalf("created content=%q", got)
 	}
+	var beforePromotion meta.SourceItem
+	if err := db.Where("source_id = ? AND path = ?", source.ID, "Shared/photo.jpg").First(&beforePromotion).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldExternalID := beforePromotion.ExternalID
+	if !strings.HasPrefix(oldExternalID, "fs:shared:") {
+		t.Fatalf("legacy external id=%q", oldExternalID)
+	}
+
+	scanner.Photos = &pushPhotosRemote{itemID: 80716, filename: "photo.jpg", size: int64(len("first"))}
+	migrationRun, err := scanner.Run(context.Background(), meta.SyncRunTriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migrationRun.Status != meta.SyncRunStatusCompleted || migrationRun.TransferredItems != 0 {
+		t.Fatalf("unexpected migration run: %+v", migrationRun)
+	}
+	var promoted meta.SourceItem
+	if err := db.First(&promoted, beforePromotion.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if promoted.ExternalID != "synology:shared:80716" || promoted.NodeID == nil || *promoted.NodeID != firstNodeID {
+		t.Fatalf("promotion changed item/node: %+v", promoted)
+	}
+	var aliases []meta.SourceItemAlias
+	if err := db.Where("source_id = ? AND source_item_id = ?", source.ID, promoted.ID).Find(&aliases).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(aliases) != 1 || aliases[0].AliasExternalID != oldExternalID {
+		t.Fatalf("aliases=%+v", aliases)
+	}
+
+	scanner.Photos = nil
+	fallbackRun, err := scanner.Run(context.Background(), meta.SyncRunTriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallbackRun.Status != meta.SyncRunStatusCompleted || fallbackRun.TransferredItems != 0 {
+		t.Fatalf("unexpected fallback run: %+v", fallbackRun)
+	}
+	if err := db.First(&promoted, beforePromotion.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if promoted.ExternalID != "synology:shared:80716" || promoted.NodeID == nil || *promoted.NodeID != firstNodeID {
+		t.Fatalf("filesystem fallback downgraded canonical identity: %+v", promoted)
+	}
 
 	if err := os.WriteFile(local, []byte("second-content"), 0o600); err != nil {
 		t.Fatal(err)
@@ -209,8 +257,8 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 	if item.State != meta.SourceItemStateMissing || item.NodeID == nil || *item.NodeID != firstNodeID {
 		t.Fatalf("unexpected missing source item: %+v", item)
 	}
-	if identityStore.Generation() != 4 {
-		t.Fatalf("identity generation=%d want=4", identityStore.Generation())
+	if identityStore.Generation() != 6 {
+		t.Fatalf("identity generation=%d want=6", identityStore.Generation())
 	}
 }
 
@@ -239,4 +287,28 @@ func mustDownload(t *testing.T, cli *client.Client, nodeID uint64) string {
 		t.Fatal(err)
 	}
 	return out.String()
+}
+
+type pushPhotosRemote struct {
+	itemID   int64
+	filename string
+	size     int64
+}
+
+func (r *pushPhotosRemote) Available(space synology.Space) bool {
+	return space == synology.SpaceShared
+}
+
+func (r *pushPhotosRemote) ListFoldersPage(_ context.Context, _ synology.Space, offset, _ int) (synology.FolderPage, error) {
+	return synology.FolderPage{Offset: offset, Total: 0}, nil
+}
+
+func (r *pushPhotosRemote) ListItemsPage(_ context.Context, space synology.Space, offset, _ int) (synology.ItemPage, error) {
+	if space != synology.SpaceShared || offset != 0 {
+		return synology.ItemPage{Offset: offset, Total: 0}, nil
+	}
+	return synology.ItemPage{
+		Offset: 0, Total: 1,
+		List: []synology.Item{{ID: r.itemID, Filename: r.filename, Filesize: r.size, Space: synology.SpaceShared}},
+	}, nil
 }

@@ -17,6 +17,7 @@ type Credentials struct {
 	RefreshExpiresAt time.Time `json:"refresh_expires_at,omitempty"`
 	AccessToken      string    `json:"access_token,omitempty"`
 	AccessExpiresAt  time.Time `json:"access_expires_at,omitempty"`
+	OpaquePayload    string    `json:"opaque_payload,omitempty"`
 }
 
 func validateSessionID(sessionID string) error {
@@ -28,8 +29,9 @@ func validateSessionID(sessionID string) error {
 }
 
 func marshalCredentials(creds Credentials) ([]byte, error) {
-	if strings.TrimSpace(creds.RefreshToken) == "" && strings.TrimSpace(creds.AccessToken) == "" {
-		return nil, fmt.Errorf("credential has no token")
+	if strings.TrimSpace(creds.RefreshToken) == "" && strings.TrimSpace(creds.AccessToken) == "" &&
+		strings.TrimSpace(creds.OpaquePayload) == "" {
+		return nil, fmt.Errorf("credential has no secret payload")
 	}
 	return json.Marshal(creds)
 }
@@ -39,7 +41,8 @@ func unmarshalCredentials(data []byte) (Credentials, error) {
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return creds, fmt.Errorf("decode credential: %w", err)
 	}
-	if strings.TrimSpace(creds.RefreshToken) == "" && strings.TrimSpace(creds.AccessToken) == "" {
+	if strings.TrimSpace(creds.RefreshToken) == "" && strings.TrimSpace(creds.AccessToken) == "" &&
+		strings.TrimSpace(creds.OpaquePayload) == "" {
 		return creds, ErrNotFound
 	}
 	return creds, nil

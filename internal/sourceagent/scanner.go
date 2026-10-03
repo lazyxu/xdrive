@@ -33,6 +33,10 @@ type API interface {
 	FinishSourceRun(context.Context, uint64, string, client.FinishSourceRunInput) (client.SyncRun, error)
 }
 
+type sourceItemLister interface {
+	SourceItems(context.Context, uint64, string, int, int) ([]client.SourceItem, error)
+}
+
 type Root struct {
 	Key                 string
 	Path                string
@@ -49,6 +53,7 @@ type Scanner struct {
 	BatchSize         int
 	HeartbeatInterval time.Duration
 	IdentityStore     IdentityStore
+	Photos            PhotosRemote
 }
 
 func Roots(personal, shared string) []Root {
@@ -225,6 +230,25 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 	localPaths := make(map[string]string, batchSize)
 	seenIdentities := make(map[string]string)
 
+	existingCanonical := make(map[string]struct{})
+	if lister, ok := s.API.(sourceItemLister); ok {
+		if ids, err := loadExistingCanonicalIDs(runCtx, lister, s.SourceID); err == nil {
+			existingCanonical = ids
+		} else if len(itemErrors) < 5 {
+			itemErrors = append(itemErrors, "source identity migration lookup skipped: "+err.Error())
+		}
+	}
+	photosIndex, photoWarnings, photosErr := buildPhotosIdentityIndex(runCtx, s.Photos, s.Roots, heartbeatIfDue)
+	if photosErr != nil {
+		return failRun(fmt.Errorf("build Synology Photos identity index: %w", photosErr))
+	}
+	for _, warning := range photoWarnings {
+		if len(itemErrors) >= 5 {
+			break
+		}
+		itemErrors = append(itemErrors, warning)
+	}
+
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -293,12 +317,27 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 			summary.Add(sourcepkg.PlanResult{Action: sourcepkg.ActionIgnore, Item: item})
 			return nil
 		}
+		filesystemExternalID := item.ExternalID
 		if identity != nil {
 			externalID, err := resolveExternalID(s.IdentityStore, *identity)
 			if err != nil {
 				return fmt.Errorf("resolve source identity for %q: %w", item.Path, err)
 			}
+			filesystemExternalID = externalID
 			item.ExternalID = externalID
+		}
+		aliases := []string(nil)
+		promote := false
+		if item.Kind == meta.SourceItemKindFile && identity != nil {
+			if photo, ok := photosIndex[filepath.Clean(localPath)]; ok && photo.Size == item.Size {
+				item.ExternalID = photo.ExternalID
+				if filesystemExternalID != "" && filesystemExternalID != item.ExternalID {
+					aliases = []string{filesystemExternalID}
+					_, oldIsCanonical := existingCanonical[filesystemExternalID]
+					_, newIsCanonical := existingCanonical[item.ExternalID]
+					promote = oldIsCanonical && !newIsCanonical
+				}
+			}
 		}
 		if strings.TrimSpace(item.ExternalID) == "" {
 			return fmt.Errorf("source identity is empty for %q", item.Path)
@@ -313,7 +352,8 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 		localItems[item.ExternalID] = item
 		localPaths[item.ExternalID] = localPath
 		batch = append(batch, client.SourceObservation{
-			ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
+			ExternalID: item.ExternalID, ExternalIDAliases: aliases, PromoteExternalID: promote,
+			Kind: item.Kind, Path: item.Path, Size: item.Size,
 			ModifiedAt: item.ModifiedAt, SHA256: item.SHA256, RemoteRevision: item.RemoteRevision,
 		})
 		if len(batch) >= batchSize {
@@ -512,5 +552,24 @@ func validPlanAction(action sourcepkg.PlanAction) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func loadExistingCanonicalIDs(ctx context.Context, lister sourceItemLister, sourceID uint64) (map[string]struct{}, error) {
+	const pageSize = 1000
+	out := make(map[string]struct{})
+	for offset := 0; ; offset += pageSize {
+		items, err := lister.SourceItems(ctx, sourceID, "", pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if id := strings.TrimSpace(item.ExternalID); id != "" {
+				out[id] = struct{}{}
+			}
+		}
+		if len(items) < pageSize {
+			return out, nil
+		}
 	}
 }
