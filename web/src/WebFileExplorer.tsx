@@ -23,12 +23,13 @@ import {
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationController,
-  xDriveFileExplorerOperationQueuedMessage,
+  xDriveFileExplorerRunQueuedOperation,
   xDriveFileExplorerWebDownloadFeedback,
   xDriveFileExplorerSubmitPath,
 } from '../../ui/shared/src'
 import type {
   Node,
+  XDriveFileExplorerQueuedOperationPlan,
   XDriveFileOperation,
 } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
@@ -223,21 +224,28 @@ export default function WebFileExplorer({
     }
   }
 
+  const runQueuedOperation = (
+    plan: XDriveFileExplorerQueuedOperationPlan,
+    onComplete: () => void,
+  ) => xDriveFileExplorerRunQueuedOperation({
+    plan,
+    submit: () => api.createFileOperation(plan.operation, plan.items, plan.parentID),
+    onQueued: (queued) => onOperationQueued(queued),
+    onFeedback,
+    onComplete,
+    onError,
+  })
+
   const pasteClipboard = async () => {
     if (!current || clipboardBusy) return
     const plan = planPaste(current.id)
     if (!plan) return
     setClipboardBusy(true)
     try {
-      if (plan.count > 0) {
-        const queued = await api.createFileOperation(plan.operation, plan.items, plan.parentID)
-        onOperationQueued(queued)
-        onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
-      }
-      completePaste(plan)
-      clearSearch()
-    } catch (error) {
-      onError(error)
+      await runQueuedOperation(plan, () => {
+        completePaste(plan)
+        clearSearch()
+      })
     } finally {
       setClipboardBusy(false)
     }
@@ -253,12 +261,7 @@ export default function WebFileExplorer({
     if (!plan) return
     setClipboardBusy(true)
     try {
-      const queued = await api.createFileOperation(plan.operation, plan.items, plan.parentID)
-      onOperationQueued(queued)
-      clearSearch()
-      onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
-    } catch (error) {
-      onError(error)
+      await runQueuedOperation(plan, clearSearch)
     } finally {
       setClipboardBusy(false)
     }

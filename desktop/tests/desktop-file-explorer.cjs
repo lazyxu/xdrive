@@ -147,7 +147,7 @@ test('Desktop FileExplorer queues copy/cut/paste through persistent Agent file o
   assert.ok(explorer.includes('completePaste(plan)'), 'Desktop must clear completed cut state through the shared clipboard controller')
   assert.ok(explorer.includes('canPaste={canPaste(Boolean(actionBusy))}'), 'Desktop paste availability must use the shared clipboard controller')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste must use the persistent file-operation bridge')
-  assert.ok(explorer.includes('onOperationQueued(result.data)'), 'Desktop Explorer must surface the newly queued operation immediately')
+  assert.ok(explorer.includes('onQueued: (queued) => onOperationQueued(queued)'), 'Desktop Explorer must surface the newly queued operation immediately through the shared queue controller')
   assert.ok(explorer.includes('onCopyItems={copyItems}'), 'Desktop shared copy adapter is missing')
   assert.ok(explorer.includes('onCutItems={cutItems}'), 'Desktop shared cut adapter is missing')
   assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Desktop shared paste adapter is missing')

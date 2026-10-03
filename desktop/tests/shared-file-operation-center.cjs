@@ -118,10 +118,11 @@ test('Desktop polls persistent operations and refreshes cloud Explorer only on t
   ]) {
     assert.ok(desktop.includes(token), `Desktop persistent-operation lifecycle missing: ${token}`)
   }
-  assert.ok(desktopExplorer.includes('onOperationQueued(result.data)'), 'Desktop Explorer must seed newly queued operations')
+  assert.ok(desktopExplorer.includes('onQueued: (queued) => onOperationQueued(queued)'), 'Desktop Explorer must seed newly queued operations through the shared queue controller')
 })
 
 test('Explorer multi-select copy move delete queue one operation instead of N renderer requests', () => {
+  assert.ok(webExplorer.includes('xDriveFileExplorerRunQueuedOperation({'), 'Web paste/drop must use shared queued-operation completion')
   assert.ok(webExplorer.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'Web paste/drop is not queued')
   assert.ok(webExplorer.includes('const plan = planPaste(current.id)'), 'Web paste must use the shared clipboard controller')
   assert.ok(webExplorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Web drag/drop must use the shared drop-item plan')
@@ -129,6 +130,7 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(web.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web bulk delete is not queued')
   assert.ok(web.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Web single delete must use the shared delete plan')
   assert.ok(web.includes('rememberFileOperation(operation)'), 'Web single delete must seed Task Center state')
+  assert.ok(desktopExplorer.includes('xDriveFileExplorerRunQueuedOperation({'), 'Desktop paste/drop must use shared queued-operation completion')
   assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste is not queued')
   assert.ok(desktopExplorer.includes('plan.operation,\n        plan.items,\n        plan.parentID,'), 'Desktop paste/drop must execute the shared operation plan')
   assert.ok(desktopExplorer.includes('const plan = planPaste(current.id)'), 'Desktop paste must use the shared clipboard controller')

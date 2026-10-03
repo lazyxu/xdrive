@@ -9,7 +9,7 @@ import {
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationController,
-  xDriveFileExplorerOperationQueuedMessage,
+  xDriveFileExplorerRunQueuedOperation,
   xDriveFileExplorerSubmitPath,
 } from '@xdrive/shared'
 import {
@@ -23,6 +23,7 @@ import {
   useXDriveFileExplorerProjection,
   useXDriveFileExplorerSearch,
 } from '@xdrive/ui/mui'
+import type { XDriveFileExplorerQueuedOperationPlan } from '@xdrive/shared'
 import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
@@ -317,27 +318,36 @@ export default function DesktopFileExplorer({
     }
   }
 
+  const runQueuedOperation = (
+    plan: XDriveFileExplorerQueuedOperationPlan,
+    onComplete: () => void,
+  ) => xDriveFileExplorerRunQueuedOperation({
+    plan,
+    submit: async () => {
+      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
+        plan.operation,
+        plan.items,
+        plan.parentID,
+      )
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    onQueued: (queued) => onOperationQueued(queued),
+    onFeedback,
+    onComplete,
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+  })
+
   const pasteClipboard = async () => {
     if (!current || actionBusy) return
     const plan = planPaste(current.id)
     if (!plan) return
     setActionBusy('paste')
     try {
-      if (plan.count > 0) {
-        const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
-          plan.operation,
-          plan.items,
-          plan.parentID,
-        )
-        if (!result.ok) {
-          onError(result.error.message)
-          return
-        }
-        onOperationQueued(result.data)
-        onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
-      }
-      completePaste(plan)
-      clearSearch()
+      await runQueuedOperation(plan, () => {
+        completePaste(plan)
+        clearSearch()
+      })
     } finally {
       setActionBusy('')
     }
@@ -353,18 +363,7 @@ export default function DesktopFileExplorer({
     if (!plan) return
     setActionBusy('drop-items')
     try {
-      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
-        plan.operation,
-        plan.items,
-        plan.parentID,
-      )
-      if (!result.ok) {
-        onError(result.error.message)
-        return
-      }
-      onOperationQueued(result.data)
-      clearSearch()
-      onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
+      await runQueuedOperation(plan, clearSearch)
     } finally {
       setActionBusy('')
     }
