@@ -37,7 +37,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
 
 test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
-  assert.ok(explorer.includes('api.search(decision.query, 200)'), 'Web Explorer must execute the shared normalized search query')
+  assert.ok(explorer.includes('api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)'), 'Web Explorer must execute the shared normalized search query')
   for (const token of [
     'api.download(node)',
     'onShare(node)',
@@ -52,10 +52,16 @@ test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(explorer.includes('backgroundMenuItems={backgroundMenuItems}'), 'Web Explorer background context menu is not wired')
 })
 
-test('Web FileExplorer search results preserve paths and directory breadcrumbs', () => {
+test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pagination', () => {
   assert.ok(projection.includes('secondaryLabel: result?.path || undefined'), 'shared Explorer projection should show search-result paths')
   assert.ok(explorer.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs)'), 'opening a search directory should restore its breadcrumb path through the shared controller')
-  assert.ok(explorer.includes("仅显示前 200 个结果"), 'search pagination truncation must be disclosed')
+  assert.ok(explorer.includes("const [searchCursor, setSearchCursor] = useState('')"), 'Web search cursor state is missing')
+  assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Web incremental search loader is missing')
+  assert.ok(explorer.includes('api.search('), 'Web incremental search must use the authenticated search API')
+  assert.ok(explorer.includes('searchCursor,'), 'Web incremental search must forward the search cursor')
+  assert.ok(explorer.includes('xDriveFileExplorerMergeSearchResults(current ?? [], page.items)'), 'Web search pages must merge through shared dedupe logic')
+  assert.ok(explorer.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), 'Web search cursor must drive Explorer hasMore')
+  assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web search must not truncate the UI to the first page')
 })
 
 test('Web FileExplorer queues copy/cut/paste as persistent file operations', () => {

@@ -43,6 +43,7 @@ export async function xDriveResolveFileExplorerPath<
 }
 
 export const XDRIVE_FILE_EXPLORER_SEARCH_MIN_CHARS = 2
+export const XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE = 200
 
 export type XDriveFileExplorerSearchDecision =
   | { kind: 'clear'; query: '' }
@@ -63,6 +64,21 @@ export function xDriveFileExplorerSearchDecision(
     }
   }
   return { kind: 'search', query }
+}
+
+export type XDriveFileExplorerSearchResultLike = {
+  node: { id: number }
+}
+
+export function xDriveFileExplorerMergeSearchResults<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(
+  current: readonly TResult[],
+  page: readonly TResult[],
+): TResult[] {
+  const merged = new Map(current.map((item) => [item.node.id, item] as const))
+  for (const item of page) merged.set(item.node.id, item)
+  return [...merged.values()]
 }
 
 export type XDriveFileExplorerSelectionItem = { id: string | number }

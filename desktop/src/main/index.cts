@@ -71,7 +71,7 @@ import {
   type AgentCloudVersion,
   type AgentCloudShare,
   type AgentCreatedCloudShare,
-  type AgentCloudSearchResult,
+  type AgentCloudSearchPage,
   type AgentMediaItem,
   type AgentMediaAlbum,
   type AgentMediaThumbnail,
@@ -2111,13 +2111,16 @@ function registerIPCHandlers() {
     return requireAgentClient().openPath(relativePath, revealValue === true)
   }, false))
 
-  ipcMain.handle('agent:cloud-search', (_event, query: unknown) => runAgentAction<AgentCloudSearchResult[]>(async () => {
+  ipcMain.handle('agent:cloud-search', (_event, query: unknown, cursor: unknown) => runAgentAction<AgentCloudSearchPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     if (typeof query !== 'string' || query.trim().length < 2) {
       throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters.')
     }
-    return requireAgentClient().cloudSearch(query.trim())
+    if (cursor !== undefined && typeof cursor !== 'string') {
+      throw new AgentIPCError('invalid_input', 0, 'Search cursor must be a string.')
+    }
+    return requireAgentClient().cloudSearch(query.trim(), typeof cursor === 'string' ? cursor.trim() : '')
   }, false))
   ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

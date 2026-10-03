@@ -94,7 +94,8 @@ type fakeDesktopIPCController struct {
 	cloudUploadName            string
 	cloudDownloadID            uint64
 	cloudDownloadDestination   string
-	cloudSearch                []agentCloudSearchResult
+	cloudSearchPage            agentCloudSearchPage
+	cloudSearchCursor          string
 	cloudQuota                 client.QuotaUsage
 	cloudServerUpdate          client.ServerUpdateState
 	cloudServerUpdateSource    string
@@ -356,8 +357,9 @@ func (f *fakeDesktopIPCController) CloudDownload(_ context.Context, id uint64, d
 	return f.err
 }
 
-func (f *fakeDesktopIPCController) CloudSearch(context.Context, string) ([]agentCloudSearchResult, error) {
-	return append([]agentCloudSearchResult(nil), f.cloudSearch...), f.err
+func (f *fakeDesktopIPCController) CloudSearch(_ context.Context, _ string, cursor string) (agentCloudSearchPage, error) {
+	f.cloudSearchCursor = cursor
+	return f.cloudSearchPage, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudQuota(context.Context) (client.QuotaUsage, error) {
@@ -896,11 +898,14 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		revision:      1,
 		cloudRoot:     client.Node{ID: 1, Name: "root", Type: "dir", Revision: 1},
 		cloudChildren: []client.Node{{ID: 2, ParentID: ptrUint64(1), Name: "Projects", Type: "dir", Revision: 1}},
-		cloudSearch: []agentCloudSearchResult{{
-			Node:   client.Node{ID: 3, Name: "report.pdf", Type: "file", Revision: 2},
-			Path:   "Projects/report.pdf",
-			Crumbs: []agentCloudCrumb{{ID: 1, Name: "My files"}, {ID: 2, Name: "Projects"}},
-		}},
+		cloudSearchPage: agentCloudSearchPage{
+			Items: []agentCloudSearchResult{{
+				Node:   client.Node{ID: 3, Name: "report.pdf", Type: "file", Revision: 2},
+				Path:   "Projects/report.pdf",
+				Crumbs: []agentCloudCrumb{{ID: 1, Name: "My files"}, {ID: 2, Name: "Projects"}},
+			}},
+			NextCursor: "search-next",
+		},
 		cloudCreatedDir: client.Node{ID: 8, ParentID: ptrUint64(1), Name: "New Folder", Type: "dir", Revision: 1},
 		cloudRenamed:    client.Node{ID: 3, ParentID: ptrUint64(2), Name: "renamed.pdf", Type: "file", Revision: 3},
 		cloudCopied:     client.Node{ID: 10, ParentID: ptrUint64(8), Name: "report.pdf", Type: "file", Revision: 1},
@@ -944,7 +949,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
-		{http.MethodGet, "/v1/cloud/search?q=report", "", "\"Projects/report.pdf\""},
+		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
 		{http.MethodGet, "/v1/cloud/trash", "", "\"old.txt\""},
@@ -985,6 +990,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudDownloadID != 3 || ctrl.cloudDownloadDestination != "/tmp/report.pdf" {
 		t.Fatalf("cloud download not forwarded: id=%d destination=%q", ctrl.cloudDownloadID, ctrl.cloudDownloadDestination)
+	}
+	if ctrl.cloudSearchCursor != "search-cursor" {
+		t.Fatalf("cloud search cursor=%q want search-cursor", ctrl.cloudSearchCursor)
 	}
 }
 

@@ -46,8 +46,27 @@ test('shared FileExplorer controller owns search normalization and validation de
     assert.equal(source.includes('const normalized = query.trim()'), false, `${label} must not normalize search locally`)
     assert.equal(source.includes('搜索关键字至少需要 2 个字符。'), false, `${label} must not duplicate the minimum-search message`)
   }
-  assert.ok(web.includes('api.search(decision.query, 200)'), 'Web must keep REST search execution local')
+  assert.ok(web.includes('api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)'), 'Web must keep REST search execution local')
   assert.ok(desktop.includes('cloudSearch(decision.query)'), 'Desktop must keep Agent search execution local')
+})
+
+test('shared FileExplorer controller owns search pagination state', () => {
+  for (const token of [
+    'XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE = 200',
+    'xDriveFileExplorerMergeSearchResults',
+    'current.map((item) => [item.node.id, item] as const)',
+    'for (const item of page) merged.set(item.node.id, item)',
+  ]) {
+    assert.ok(shared.includes(token), `shared search pagination helper missing: ${token}`)
+  }
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes("const [searchCursor, setSearchCursor] = useState('')"), `${label} search cursor state is missing`)
+    assert.ok(source.includes('const [searchLoadingMore, setSearchLoadingMore] = useState(false)'), `${label} incremental search loading state is missing`)
+    assert.ok(source.includes('xDriveFileExplorerMergeSearchResults('), `${label} must merge paged search results through shared logic`)
+    assert.ok(source.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), `${label} search results must expose hasMore to the shared Explorer`)
+    assert.ok(source.includes('loadingMore={searchResults ? searchLoadingMore : loadingMore}'), `${label} search loadingMore state is not wired`)
+    assert.ok(source.includes('void loadMoreSearch()'), `${label} search pagination must be wired to Explorer loadMore`)
+  }
 })
 
 test('Web and Desktop delegate typed-path resolution while keeping transport adapters local', () => {

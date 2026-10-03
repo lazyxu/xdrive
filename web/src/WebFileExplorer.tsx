@@ -13,6 +13,7 @@ import type {
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
 import {
+  XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerCanPaste,
   xDriveFileExplorerClipboardFromItems,
   xDriveFileExplorerClipboardOperationPlan,
@@ -20,6 +21,7 @@ import {
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerExternalDropParentID,
+  xDriveFileExplorerMergeSearchResults,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerWebDownloadFeedback,
@@ -80,10 +82,12 @@ export default function WebFileExplorer({
   onError: (error: unknown) => void
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
+  const searchRequestRef = useRef(0)
   const [searchValue, setSearchValue] = useState('')
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
-  const [searchHasMore, setSearchHasMore] = useState(false)
+  const [searchCursor, setSearchCursor] = useState('')
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
   const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<Node> | null>(null)
   const [clipboardBusy, setClipboardBusy] = useState(false)
 
@@ -109,8 +113,11 @@ export default function WebFileExplorer({
   }, [api])
 
   const clearSearch = () => {
+    searchRequestRef.current += 1
     setSearchResults(null)
-    setSearchHasMore(false)
+    setSearchCursor('')
+    setSearchLoading(false)
+    setSearchLoadingMore(false)
   }
 
   const {
@@ -160,15 +167,44 @@ export default function WebFileExplorer({
       onError(new Error(decision.message))
       return
     }
+    const requestID = ++searchRequestRef.current
+    setSearchResults([])
+    setSearchCursor('')
+    setSearchLoadingMore(false)
     setSearchLoading(true)
     try {
-      const page = await api.search(decision.query, 200)
+      const page = await api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)
+      if (requestID !== searchRequestRef.current) return
       setSearchResults(page.items)
-      setSearchHasMore(Boolean(page.next_cursor))
+      setSearchCursor(page.next_cursor ?? '')
     } catch (error) {
-      onError(error)
+      if (requestID === searchRequestRef.current) onError(error)
     } finally {
-      setSearchLoading(false)
+      if (requestID === searchRequestRef.current) setSearchLoading(false)
+    }
+  }
+
+  const loadMoreSearch = async () => {
+    if (!searchResults || !searchCursor || searchLoadingMore) return
+    const decision = xDriveFileExplorerSearchDecision(searchValue)
+    if (decision.kind !== 'search') return
+    const requestID = searchRequestRef.current
+    setSearchLoadingMore(true)
+    try {
+      const page = await api.search(
+        decision.query,
+        XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+        searchCursor,
+      )
+      if (requestID !== searchRequestRef.current) return
+      setSearchResults((current) => (
+        xDriveFileExplorerMergeSearchResults(current ?? [], page.items)
+      ))
+      setSearchCursor(page.next_cursor ?? '')
+    } catch (error) {
+      if (requestID === searchRequestRef.current) onError(error)
+    } finally {
+      if (requestID === searchRequestRef.current) setSearchLoadingMore(false)
     }
   }
 
@@ -328,10 +364,14 @@ export default function WebFileExplorer({
         sort={sort}
         onSortChange={changeSort}
         externallySorted={!searchResults}
-        hasMore={!searchResults && hasMore}
-        loadingMore={loadingMore}
+        hasMore={searchResults ? Boolean(searchCursor) : hasMore}
+        loadingMore={searchResults ? searchLoadingMore : loadingMore}
         onLoadMore={() => {
-          if (current && !searchResults) void onLoadMore(current.id, sort)
+          if (searchResults) {
+            void loadMoreSearch()
+          } else if (current) {
+            void onLoadMore(current.id, sort)
+          }
         }}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
@@ -357,7 +397,7 @@ export default function WebFileExplorer({
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         statusText={searchResults
-          ? `搜索“${searchValue.trim()}”${searchHasMore ? ' · 仅显示前 200 个结果' : ''}`
+          ? `搜索“${searchValue.trim()}”`
           : uploadProgress !== null
             ? `上传中 ${Math.round(uploadProgress)}%`
             : undefined}

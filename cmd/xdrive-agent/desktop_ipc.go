@@ -165,7 +165,7 @@ type desktopIPCController interface {
 	CloudRetryFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
-	CloudSearch(context.Context, string) ([]agentCloudSearchResult, error)
+	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
 	CloudStartServerUpdate(context.Context, string, string) (client.ServerUpdateState, error)
@@ -1118,12 +1118,16 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_query", "q must contain at least 2 characters")
 		return
 	}
-	items, err := h.ctrl.CloudSearch(r.Context(), query)
+	page, err := h.ctrl.CloudSearch(
+		r.Context(),
+		query,
+		strings.TrimSpace(r.URL.Query().Get("cursor")),
+	)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
-	writeDesktopIPCJSON(w, http.StatusOK, items)
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) cloudQuota(w http.ResponseWriter, r *http.Request) {

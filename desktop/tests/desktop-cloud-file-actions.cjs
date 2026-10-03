@@ -104,6 +104,18 @@ test('Desktop Agent bridge exposes cursor-paged cloud children without changing 
   assert.ok(types.includes('cloudChildren: (parentID: number)'), 'legacy cloudChildren contract should remain available')
 })
 
+test('Desktop search preserves cursor pages through Agent and Electron bridges', () => {
+  assert.ok(agentIPC.includes('CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)'), 'Agent IPC search page contract is missing')
+  assert.ok(cloudFiles.includes('Cursor: strings.TrimSpace(cursor)'), 'Agent controller must forward the search cursor to the Go client')
+  assert.ok(agentClient.includes('export type AgentCloudSearchPage = {'), 'Electron AgentClient search page type is missing')
+  assert.ok(agentClient.includes("cloudSearch(queryText: string, cursor = '')"), 'Electron AgentClient cursor search method is missing')
+  assert.ok(agentClient.includes("query.set('cursor', cursor.trim())"), 'Electron AgentClient must forward the search cursor')
+  assert.ok(main.includes("runAgentAction<AgentCloudSearchPage>"), 'Electron main must preserve the search page result')
+  assert.ok(preload.includes("cloudSearch: (query: string, cursor = '')"), 'preload search cursor bridge is missing')
+  assert.ok(types.includes('type AgentCloudSearchPage = {'), 'renderer search page type is missing')
+  assert.ok(types.includes('cloudSearch: (query: string, cursor?: string) => Promise<DesktopResult<AgentCloudSearchPage>>'), 'renderer search page method type is missing')
+})
+
 test('Desktop exposes atomic cloud batch mutations through every IPC layer', () => {
   for (const token of [
     'CloudBatchCopy(context.Context, []client.BatchNodeRef, uint64)',
