@@ -391,6 +391,42 @@ export function xDriveFileExplorerOperationQueuedMessage(
     : `已将 ${count} 个项目加入移动任务。`
 }
 
+export type XDriveFileExplorerQueuedOperationPlan = {
+  operation: XDriveFileExplorerCopyMoveOperation
+  parentID: number
+  items: XDriveFileExplorerOperationRef[]
+  count: number
+}
+
+export async function xDriveFileExplorerRunQueuedOperation<TQueued>({
+  plan,
+  submit,
+  onQueued,
+  onFeedback,
+  onComplete,
+  onError,
+}: {
+  plan: XDriveFileExplorerQueuedOperationPlan
+  submit: () => Promise<TQueued>
+  onQueued: (queued: TQueued) => void
+  onFeedback: (tone: 'good', message: string) => void
+  onComplete: () => void
+  onError: (error: unknown) => void
+}) {
+  try {
+    if (plan.count > 0) {
+      const queued = await submit()
+      onQueued(queued)
+      onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
+    }
+    onComplete()
+    return true
+  } catch (error) {
+    onError(error)
+    return false
+  }
+}
+
 export type XDriveFileExplorerDownloadNode = Pick<Node, 'id' | 'name' | 'type'>
 
 export function xDriveFileExplorerDownloadPlan<TNode extends XDriveFileExplorerDownloadNode>(

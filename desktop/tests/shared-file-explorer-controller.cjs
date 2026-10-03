@@ -173,6 +173,14 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
     'return plan.count > 0 ? plan : null',
     'id: node.id, revision: node.revision',
     'xDriveFileExplorerOperationQueuedMessage',
+    'XDriveFileExplorerQueuedOperationPlan',
+    'xDriveFileExplorerRunQueuedOperation',
+    'if (plan.count > 0)',
+    'const queued = await submit()',
+    'onQueued(queued)',
+    "onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))",
+    'onComplete()',
+    'onError(error)',
     '加入复制任务',
     '加入移动任务',
   ]) {
@@ -205,7 +213,8 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
     assert.equal(source.includes('xDriveFileExplorerClipboardOperationPlan('), false, `${label} must not plan clipboard operations locally`)
     assert.ok(source.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), `${label} must use shared drop item planning`)
     assert.equal(source.includes('const targetNode = nodeByID.get(Number(target.id))'), false, `${label} must not duplicate internal-drop target resolution`)
-    assert.ok(source.includes('xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count)'), `${label} must use shared queued feedback`)
+    assert.ok(source.includes('xDriveFileExplorerRunQueuedOperation({'), `${label} must use shared queued-operation completion`)
+    assert.equal(source.includes("onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))"), false, `${label} must not duplicate queued-operation feedback`)
     assert.equal(source.includes("clipboard.mode === 'cut' ? 'move' : 'copy'"), false, `${label} must not duplicate cut-to-move mapping`)
     assert.equal(source.includes('nodes.map((node) => ({ id: node.id, revision: node.revision }))'), false, `${label} must not duplicate operation refs`)
   }
