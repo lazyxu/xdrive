@@ -60,7 +60,7 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerDeleteOperationPlan, xDriveFileOperationActive, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerDeleteOperationPlan, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -663,6 +663,11 @@ function FileManager({
     return operations
   }, [api])
 
+  const fileOperationPollIntervalMs = xDriveFileOperationPollIntervalMs(
+    fileOperations,
+    appView === 'transfers',
+  )
+
   useEffect(() => {
     if (!profile || profile.must_change_password) return
     let active = true
@@ -675,12 +680,12 @@ function FileManager({
       }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 1500)
+    const timer = window.setInterval(() => void refresh(), fileOperationPollIntervalMs)
     return () => {
       active = false
       window.clearInterval(timer)
     }
-  }, [api, profile?.id, profile?.must_change_password])
+  }, [api, fileOperationPollIntervalMs, profile?.id, profile?.must_change_password])
 
   useEffect(() => {
     const transition = xDriveFileOperationTransitionSnapshot(

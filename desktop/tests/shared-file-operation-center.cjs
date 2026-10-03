@@ -36,6 +36,10 @@ test('shared file-operation model covers the persistent server lifecycle', () =>
     'xDriveFileOperationAverageBytesPerSecond',
     'xDriveFileOperationAverageItemsPerSecond',
     'XDRIVE_FILE_OPERATION_HISTORY_LIMIT = 200',
+    'XDRIVE_FILE_OPERATION_ACTIVE_POLL_MS = 1_500',
+    'XDRIVE_FILE_OPERATION_VISIBLE_IDLE_POLL_MS = 3_000',
+    'XDRIVE_FILE_OPERATION_IDLE_POLL_MS = 15_000',
+    'xDriveFileOperationPollIntervalMs',
     'xDriveFileOperationFailureMessage',
     'xDriveFileOperationFailureItemLabel',
     'revision_conflict',
@@ -88,7 +92,7 @@ test('Web and Desktop both render the shared file-operation center through Task 
 test('Web polls persistent operations and refreshes Explorer only on terminal transitions', () => {
   for (const token of [
     'api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)',
-    'window.setInterval(() => void refresh(), 1500)',
+    'window.setInterval(() => void refresh(), fileOperationPollIntervalMs)',
     'xDriveFileOperationTransitionSnapshot(',
     'transition.hasTerminalTransition',
     'void loadDirectory(current.id, crumbs',
@@ -104,7 +108,7 @@ test('Web polls persistent operations and refreshes Explorer only on terminal tr
 test('Desktop polls persistent operations and refreshes cloud Explorer only on terminal transitions', () => {
   for (const token of [
     'cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)',
-    'window.setInterval(() => void refresh(), 1500)',
+    'window.setInterval(() => void refresh(), fileOperationPollIntervalMs)',
     'xDriveFileOperationTransitionSnapshot(',
     'transition.hasTerminalTransition',
     'void refreshCloudQuota()',
@@ -191,4 +195,29 @@ test('Task Center exposes structured file-operation failure diagnostics', () => 
   ]) {
     assert.ok(sharedModel.includes(token), `shared failure explanation missing: ${token}`)
   }
+})
+
+test('Task Center polling adapts to active, visible-idle and background-idle states', () => {
+  for (const token of [
+    'XDRIVE_FILE_OPERATION_ACTIVE_POLL_MS = 1_500',
+    'XDRIVE_FILE_OPERATION_VISIBLE_IDLE_POLL_MS = 3_000',
+    'XDRIVE_FILE_OPERATION_IDLE_POLL_MS = 15_000',
+    'xDriveFileOperationPollIntervalMs',
+    'operations.some((operation) => xDriveFileOperationActive(operation.status))',
+  ]) {
+    assert.ok(sharedModel.includes(token), `shared adaptive polling missing: ${token}`)
+  }
+
+  assert.ok(
+    web.includes("xDriveFileOperationPollIntervalMs(\n    fileOperations,\n    appView === 'transfers',"),
+    'Web must compute polling cadence from active operations and Task Center visibility',
+  )
+  assert.ok(
+    desktop.includes("xDriveFileOperationPollIntervalMs(\n    cloudFileOperations,\n    view === 'transfers',"),
+    'Desktop must compute polling cadence from active operations and Task Center visibility',
+  )
+  assert.ok(web.includes('window.setInterval(() => void refresh(), fileOperationPollIntervalMs)'), 'Web must use shared adaptive polling cadence')
+  assert.ok(desktop.includes('window.setInterval(() => void refresh(), fileOperationPollIntervalMs)'), 'Desktop must use shared adaptive polling cadence')
+  assert.equal(web.includes('window.setInterval(() => void refresh(), 1500)'), false, 'Web must not keep a permanent 1.5s polling loop')
+  assert.equal(desktop.includes('window.setInterval(() => void refresh(), 1500)'), false, 'Desktop must not keep a permanent 1.5s polling loop')
 })
