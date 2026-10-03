@@ -655,6 +655,13 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 			resource.ByteOffset,
 			resource.ByteSize,
 		)
+	} else if strings.EqualFold(strings.TrimSpace(metadata.MIMEType), "image/x-adobe-dng") {
+		preview, previewErr := mediapkg.DNGEmbeddedJPEGPreview(file)
+		if previewErr != nil {
+			fail(c, http.StatusUnsupportedMediaType, "dng embedded preview is unavailable")
+			return
+		}
+		thumbnailSource = bytes.NewReader(preview)
 	}
 	thumbnail, err := mediapkg.ThumbnailJPEG(
 		thumbnailSource,
@@ -705,7 +712,7 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 		}
 	}
 	switch mimeType {
-	case "image/jpeg", "image/png", "image/gif", "image/heic", "image/heif":
+	case "image/jpeg", "image/png", "image/gif", "image/heic", "image/heif", "image/x-adobe-dng":
 		return true
 	default:
 		return false

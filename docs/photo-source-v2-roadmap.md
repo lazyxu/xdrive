@@ -268,7 +268,7 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | Canonical thumbnail | By design: local | By design: local | By design: local |
 | Live Photo pairing/projection | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending |
 | `.livp` parsing | Current local parser + zero-copy resources | Same common local parser | Same common local parser |
-| RAW metadata/preview | DNG metadata current; preview/other RAW TODO local | DNG metadata current; preview/other RAW TODO local | DNG metadata current; preview/other RAW TODO local |
+| RAW metadata/preview | DNG metadata + embedded-JPEG preview current; other RAW TODO local | DNG metadata + embedded-JPEG preview current; other RAW TODO local | DNG metadata + embedded-JPEG preview current; other RAW TODO local |
 | RAW/JPEG/XMP/AAE/burst grouping | TODO local | TODO local | TODO local |
 | People/tags/favorite/description from provider | Not used by design | Not used by design | Not used by design |
 | Reliable incremental cursor | TODO only if proven | TODO only if proven | TODO only if proven |
@@ -289,7 +289,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P3 | Expand native media parser coverage from original files: EXIF/TIFF/GPS/video/container edge cases | Highest |
 | P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
-| P6 | In progress: standard DNG metadata indexing is local; RAW preview/other RAW formats and validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping remain | High |
+| P6 | In progress: DNG metadata and safe embedded-JPEG previews are local; other RAW formats plus validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping remain | High |
 | P7 | Extend read-only Source/media integrity verification and add explicit idempotent local repair actions | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
