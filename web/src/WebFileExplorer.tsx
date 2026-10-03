@@ -13,6 +13,8 @@ import type {
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
 import {
+  xDriveFileExplorerCanPaste,
+  xDriveFileExplorerClipboardFromItems,
   xDriveFileExplorerClipboardOperationPlan,
   xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDownloadPlan,
@@ -24,14 +26,13 @@ import {
   xDriveFileExplorerSearchDecision,
   xDriveResolveFileExplorerPath,
 } from '../../ui/shared/src'
-import type { Node, XDriveFileOperation } from '../../ui/shared/src'
+import type { Node, XDriveFileExplorerClipboard, XDriveFileOperation } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
 
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
 const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
 
 type Crumb = { id: number; name: string }
-type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }
 
 export default function WebFileExplorer({
   api,
@@ -83,7 +84,7 @@ export default function WebFileExplorer({
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [searchHasMore, setSearchHasMore] = useState(false)
-  const [clipboard, setClipboard] = useState<WebExplorerClipboard | null>(null)
+  const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<Node> | null>(null)
   const [clipboardBusy, setClipboardBusy] = useState(false)
 
   const {
@@ -334,15 +335,17 @@ export default function WebFileExplorer({
         }}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
-          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-          if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })
+          setClipboard((currentClipboard) => (
+            xDriveFileExplorerClipboardFromItems('copy', selected, nodeByID) ?? currentClipboard
+          ))
         }}
         onCutItems={(selected) => {
-          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-          if (nodes.length > 0) setClipboard({ mode: 'cut', nodes })
+          setClipboard((currentClipboard) => (
+            xDriveFileExplorerClipboardFromItems('cut', selected, nodeByID) ?? currentClipboard
+          ))
         }}
         onPaste={() => { void pasteClipboard() }}
-        canPaste={Boolean(clipboard?.nodes.length) && !clipboardBusy}
+        canPaste={xDriveFileExplorerCanPaste(clipboard, clipboardBusy)}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)

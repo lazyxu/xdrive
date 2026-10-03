@@ -69,6 +69,33 @@ export type XDriveFileExplorerSelectionItem = { id: string | number }
 export type XDriveFileExplorerOperationNode = Pick<Node, 'id' | 'revision' | 'parent_id'>
 export type XDriveFileExplorerOperationRef = { id: number; revision: number }
 export type XDriveFileExplorerClipboardMode = 'copy' | 'cut'
+
+export type XDriveFileExplorerClipboard<
+  TNode extends Pick<Node, 'id'>,
+> = {
+  mode: XDriveFileExplorerClipboardMode
+  nodes: TNode[]
+}
+
+export function xDriveFileExplorerClipboardFromItems<
+  TNode extends Pick<Node, 'id'>,
+>(
+  mode: XDriveFileExplorerClipboardMode,
+  selected: XDriveFileExplorerSelectionItem[],
+  nodeByID: ReadonlyMap<number, TNode>,
+): XDriveFileExplorerClipboard<TNode> | null {
+  const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+  return nodes.length > 0 ? { mode, nodes } : null
+}
+
+export function xDriveFileExplorerCanPaste<
+  TNode extends Pick<Node, 'id'>,
+>(
+  clipboard: XDriveFileExplorerClipboard<TNode> | null | undefined,
+  busy: boolean,
+) {
+  return Boolean(clipboard?.nodes.length) && !busy
+}
 export type XDriveFileExplorerCopyMoveOperation = 'copy' | 'move'
 
 export function xDriveFileExplorerNodesForItems<TNode extends Pick<Node, 'id'>>(

@@ -114,7 +114,10 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
 })
 
 test('Desktop FileExplorer queues copy/cut/paste through persistent Agent file operations', () => {
-  assert.ok(explorer.includes("type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }"), 'Desktop clipboard state is missing')
+  assert.ok(explorer.includes('useState<XDriveFileExplorerClipboard<AgentCloudNode> | null>'), 'Desktop must use the shared clipboard contract')
+  assert.ok(explorer.includes("xDriveFileExplorerClipboardFromItems('copy', selected, nodeByID)"), 'Desktop copy selection must use the shared clipboard builder')
+  assert.ok(explorer.includes("xDriveFileExplorerClipboardFromItems('cut', selected, nodeByID)"), 'Desktop cut selection must use the shared clipboard builder')
+  assert.ok(explorer.includes('xDriveFileExplorerCanPaste(clipboard, Boolean(actionBusy))'), 'Desktop paste availability must use the shared clipboard rule')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste must use the persistent file-operation bridge')
   assert.ok(explorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must preserve copy/cut semantics through the shared operation plan')
   assert.ok(explorer.includes('onOperationQueued(result.data)'), 'Desktop Explorer must surface the newly queued operation immediately')
