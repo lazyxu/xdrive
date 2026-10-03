@@ -276,17 +276,28 @@ test('shared FileExplorer controller owns item lookup and open-item planning', (
     "if (node.type === 'file') return { kind: 'file', node }",
     "kind: 'directory'",
     'crumbs: xDriveFileExplorerDirectoryCrumbs(node, currentCrumbs, searchCrumbs)',
+    'xDriveFileExplorerDispatchOpenItem',
+    'const node = xDriveFileExplorerNodeForItem(item, nodeByID)',
+    'searchCrumbsForNode?.(node)',
+    "if (plan.kind === 'file')",
+    'await openFile(plan.node)',
+    'await navigate(plan.crumbs)',
   ]) {
     assert.ok(shared.includes(token), `shared FileExplorer open-item controller missing: ${token}`)
   }
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('xDriveFileExplorerNodeForItem(item, nodeByID)'), `${label} must use shared item lookup`)
-    assert.ok(source.includes('xDriveFileExplorerOpenItemPlan('), `${label} must use shared open-item planning`)
-    assert.ok(source.includes("if (plan.kind === 'file')"), `${label} must branch on the shared open-item plan`)
-    assert.ok(source.includes('await navigateTo(plan.crumbs)'), `${label} must use shared directory crumbs`)
+    assert.ok(source.includes('xDriveFileExplorerNodeForItem(item, nodeByID)'), `${label} menu adapter must keep shared item lookup`)
+    assert.ok(source.includes('xDriveFileExplorerDispatchOpenItem({'), `${label} must delegate open-item dispatch to shared controller`)
+    assert.ok(source.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?'), `${label} must inject platform search crumbs into shared dispatch`)
+    assert.equal(source.includes('xDriveFileExplorerOpenItemPlan('), false, `${label} must not branch open-item planning locally`)
+    assert.equal(source.includes("if (plan.kind === 'file')"), false, `${label} must not branch file/directory open locally`)
+    assert.equal(source.includes('await navigateTo(plan.crumbs)'), false, `${label} must not dispatch directory navigation locally`)
     assert.equal(source.includes('const node = nodeByID.get(Number(item.id))'), false, `${label} must not duplicate item lookup in open/menu handlers`)
   }
+  assert.ok(web.includes('openFile: async (node) => {'), 'Web must keep download execution as the shared dispatch callback')
+  assert.ok(web.includes('await api.download(node)'), 'Web shared open callback must keep authenticated download local')
+  assert.ok(desktop.includes('openFile: openLocalNode'), 'Desktop must keep native open execution as the shared dispatch callback')
 
   assert.equal(web.includes('normalizedSearchCrumbs'), false, 'Web must not normalize search crumbs locally')
   assert.equal(desktop.includes('normalizeSearchCrumbs'), false, 'Desktop must not normalize search crumbs locally')

@@ -41,8 +41,9 @@ test('Web and Desktop consume shared FileExplorer projection without duplicating
   }
   assert.ok(controller.includes('xDriveFileExplorerNormalizeCrumbs'), 'shared controller must own search-crumb normalization')
   assert.ok(controller.includes('xDriveFileExplorerOpenItemPlan'), 'shared controller must own open-item planning')
-  assert.ok(web.includes('searchByID.get(node.id)?.breadcrumbs'), 'Web must adapt result.breadcrumbs into the shared open-item plan')
-  assert.ok(desktop.includes('searchByID.get(node.id)?.crumbs'), 'Desktop must adapt result.crumbs into the shared open-item plan')
-  assert.ok(web.includes('await navigateTo(plan.crumbs)'), 'Web must navigate with shared planned directory crumbs')
-  assert.ok(desktop.includes('await navigateTo(plan.crumbs)'), 'Desktop must navigate with shared planned directory crumbs')
+  assert.ok(controller.includes('xDriveFileExplorerDispatchOpenItem'), 'shared controller must own open-item dispatch')
+  assert.ok(web.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?.breadcrumbs'), 'Web must adapt result.breadcrumbs into shared open-item dispatch')
+  assert.ok(desktop.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?.crumbs'), 'Desktop must adapt result.crumbs into shared open-item dispatch')
+  assert.ok(web.includes('navigate: navigateTo'), 'Web must inject shared navigation into open-item dispatch')
+  assert.ok(desktop.includes('navigate: navigateTo'), 'Desktop must inject shared navigation into open-item dispatch')
 })
