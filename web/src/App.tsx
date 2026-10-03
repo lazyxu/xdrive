@@ -59,8 +59,9 @@ import type {
   XDriveServerUpdateState,
   XDriveTransferTask,
   XDriveFileOperation,
+  XDriveFileExplorerPageState,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerDeleteOperationPlan, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerMergePageItems, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -81,13 +82,6 @@ type Crumb = { id: number; name: string }
 
 const DEFAULT_FILE_SORT: XDriveFileExplorerSort = { key: 'name', direction: 'asc' }
 const FILE_PAGE_SIZE = 200
-
-type DirectoryPageState = {
-  parentID: number
-  cursor: string
-  hasMore: boolean
-  sort: XDriveFileExplorerSort
-}
 
 type Feedback = {
   tone: 'good' | 'bad' | 'warning' | 'neutral'
@@ -487,7 +481,7 @@ function FileManager({
   const [quota, setQuota] = useState<QuotaUsage | null>(null)
   const [items, setItems] = useState<Node[]>([])
   const [crumbs, setCrumbs] = useState<Crumb[]>([])
-  const [directoryPage, setDirectoryPage] = useState<DirectoryPageState | null>(null)
+  const [directoryPage, setDirectoryPage] = useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
@@ -572,15 +566,7 @@ function FileManager({
 
   const loadMoreDirectory = async (id: number, sort: XDriveFileExplorerSort) => {
     const pageState = directoryPage
-    if (
-      !pageState ||
-      pageState.parentID !== id ||
-      !pageState.hasMore ||
-      !pageState.cursor ||
-      pageState.sort.key !== sort.key ||
-      pageState.sort.direction !== sort.direction ||
-      loadingMore
-    ) return
+    if (!xDriveFileExplorerCanLoadMore(pageState, id, sort, loadingMore)) return
 
     setLoadingMore(true)
     try {
@@ -590,11 +576,7 @@ function FileManager({
         sort: sort.key,
         order: sort.direction,
       })
-      setItems((currentItems) => {
-        const merged = new Map(currentItems.map((item) => [item.id, item]))
-        for (const item of page.items) merged.set(item.id, item)
-        return [...merged.values()]
-      })
+      setItems((currentItems) => xDriveFileExplorerMergePageItems(currentItems, page.items))
       setDirectoryPage({
         parentID: id,
         cursor: page.next_cursor ?? '',

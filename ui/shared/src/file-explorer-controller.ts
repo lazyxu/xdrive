@@ -233,3 +233,47 @@ export function xDriveFileExplorerDeleteOperationPlan<
     message: `已将 ${count} 个项目加入删除任务。`,
   }
 }
+
+export type XDriveFileExplorerPageSort = {
+  key: string
+  direction: string
+}
+
+export type XDriveFileExplorerPageState<
+  TSort extends XDriveFileExplorerPageSort,
+> = {
+  parentID: number
+  cursor: string
+  hasMore: boolean
+  sort: TSort
+}
+
+export function xDriveFileExplorerCanLoadMore<
+  TSort extends XDriveFileExplorerPageSort,
+>(
+  pageState: XDriveFileExplorerPageState<TSort> | null | undefined,
+  parentID: number,
+  sort: TSort,
+  loadingMore: boolean,
+): pageState is XDriveFileExplorerPageState<TSort> {
+  return Boolean(
+    pageState &&
+    pageState.parentID === parentID &&
+    pageState.hasMore &&
+    pageState.cursor &&
+    pageState.sort.key === sort.key &&
+    pageState.sort.direction === sort.direction &&
+    !loadingMore
+  )
+}
+
+export function xDriveFileExplorerMergePageItems<
+  TItem extends { id: number },
+>(
+  currentItems: readonly TItem[],
+  pageItems: readonly TItem[],
+): TItem[] {
+  const merged = new Map(currentItems.map((item) => [item.id, item] as const))
+  for (const item of pageItems) merged.set(item.id, item)
+  return [...merged.values()]
+}
