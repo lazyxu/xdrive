@@ -629,20 +629,49 @@ func (s *Server) beginFileOperationItem(ctx context.Context, operationID, name s
 	return errors.New("file operation is no longer running")
 }
 
-func (s *Server) recordFileOperationProgress(ctx context.Context, operationID string, bytes int64) error {
+func (s *Server) recordFileOperationProgressDelta(
+	ctx context.Context,
+	operationID string,
+	itemDelta int64,
+	byteDelta int64,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if itemDelta == 0 && byteDelta == 0 {
+		return nil
+	}
+	updates := map[string]any{"updated_at": time.Now()}
+	if itemDelta != 0 {
+		updates["processed_items"] = gorm.Expr("processed_items + ?", itemDelta)
+	}
+	if byteDelta != 0 {
+		updates["processed_bytes"] = gorm.Expr("processed_bytes + ?", byteDelta)
 	}
 	return s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
 		Where("id = ? AND status IN ?", operationID, []string{
 			meta.FileOperationStatusRunning,
 			meta.FileOperationStatusCancelRequested,
 		}).
-		Updates(map[string]any{
-			"processed_items": gorm.Expr("processed_items + 1"),
-			"processed_bytes": gorm.Expr("processed_bytes + ?", bytes),
-			"updated_at":      time.Now(),
-		}).Error
+		Updates(updates).Error
+}
+
+func (s *Server) recordFileOperationProgress(ctx context.Context, operationID string, bytes int64) error {
+	return s.recordFileOperationProgressDelta(ctx, operationID, 1, bytes)
+}
+
+func (s *Server) fileOperationCopyHooks(ctx context.Context, operationID string) *copyNodeTxHooks {
+	return &copyNodeTxHooks{
+		BeforeNode: func(_ meta.Node, relativePath string) error {
+			return s.beginFileOperationItem(ctx, operationID, relativePath)
+		},
+		AfterFile: func(source meta.Node, _ string) error {
+			if source.File == nil {
+				return errors.New("copied source file metadata is unavailable")
+			}
+			return s.recordFileOperationProgressDelta(ctx, operationID, 0, source.File.Size)
+		},
+	}
 }
 
 func (s *Server) completeFileOperationTx(tx *gorm.DB, operation meta.FileOperation) error {
@@ -693,6 +722,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		if nested {
 			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "copy selection cannot contain both a directory and its descendant"}
 		}
+		hooks := s.fileOperationCopyHooks(ctx, operation.ID)
 		for index, ref := range refs {
 			source, err := batchLoadNodeTx(tx, uid, ref, index, true)
 			if err != nil {
@@ -714,14 +744,10 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 			if err != nil {
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "cannot allocate destination name"}
 			}
-			if _, err := s.copyNodeTx(tx, uid, source, parentID, name); err != nil {
+			if _, err := s.copyNodeTxWithHooks(tx, uid, source, parentID, name, source.Name, hooks); err != nil {
 				return err
 			}
-			size, err := fileOperationNodeBytesTx(tx, uid, source)
-			if err != nil {
-				return err
-			}
-			if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
+			if err := s.recordFileOperationProgressDelta(ctx, operation.ID, 1, 0); err != nil {
 				return err
 			}
 		}

@@ -442,6 +442,11 @@ func copyDestinationNameTx(
 	return "", errCopyNameConflict
 }
 
+type copyNodeTxHooks struct {
+	BeforeNode func(source meta.Node, relativePath string) error
+	AfterFile  func(source meta.Node, relativePath string) error
+}
+
 func (s *Server) copyNodeTx(
 	tx *gorm.DB,
 	uid uint64,
@@ -449,6 +454,24 @@ func (s *Server) copyNodeTx(
 	parentID uint64,
 	name string,
 ) (meta.Node, error) {
+	return s.copyNodeTxWithHooks(tx, uid, source, parentID, name, source.Name, nil)
+}
+
+func (s *Server) copyNodeTxWithHooks(
+	tx *gorm.DB,
+	uid uint64,
+	source meta.Node,
+	parentID uint64,
+	name string,
+	relativePath string,
+	hooks *copyNodeTxHooks,
+) (meta.Node, error) {
+	if hooks != nil && hooks.BeforeNode != nil {
+		if err := hooks.BeforeNode(source, relativePath); err != nil {
+			return meta.Node{}, err
+		}
+	}
+
 	now := time.Now()
 	copied := meta.Node{
 		ParentID:  &parentID,
@@ -485,6 +508,11 @@ func (s *Server) copyNodeTx(
 			return meta.Node{}, err
 		}
 		copied.File = &file
+		if hooks != nil && hooks.AfterFile != nil {
+			if err := hooks.AfterFile(source, relativePath); err != nil {
+				return meta.Node{}, err
+			}
+		}
 		return copied, nil
 	}
 
@@ -496,7 +524,11 @@ func (s *Server) copyNodeTx(
 		return meta.Node{}, err
 	}
 	for _, child := range children {
-		if _, err := s.copyNodeTx(tx, uid, child, copied.ID, child.Name); err != nil {
+		childPath := child.Name
+		if relativePath != "" {
+			childPath = relativePath + "/" + child.Name
+		}
+		if _, err := s.copyNodeTxWithHooks(tx, uid, child, copied.ID, child.Name, childPath, hooks); err != nil {
 			return meta.Node{}, err
 		}
 	}
