@@ -18,7 +18,11 @@ test('shared FileExplorer navigation controller owns cross-client view and histo
     'useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)',
     'useState<TCrumb[][]>([])',
     'window.localStorage.setItem(viewModeStorageKey, viewMode)',
+    "const pathValue = crumbs.map((crumb) => crumb.name).join('/')",
     'const navigateTo = async',
+    'const navigateToCrumb = async (index: number)',
+    'index < 0 || index >= crumbs.length',
+    'crumbs.slice(0, index + 1)',
     'const goBack = async',
     'const goForward = async',
     'const goUp = async',
@@ -47,5 +51,9 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
     assert.equal(source.includes('const goBack = async'), false, `${label} must not duplicate Explorer back navigation`)
     assert.equal(source.includes('const goForward = async'), false, `${label} must not duplicate Explorer forward navigation`)
     assert.equal(source.includes('const goUp = async'), false, `${label} must not duplicate Explorer up navigation`)
+    assert.ok(source.includes('pathValue={pathValue}'), `${label} must use shared navigation path display`)
+    assert.ok(source.includes('navigateToCrumb(index)'), `${label} must use shared breadcrumb navigation`)
+    assert.equal(source.includes("crumbs.map((crumb) => crumb.name).join('/')"), false, `${label} must not derive the path display locally`)
+    assert.equal(source.includes('navigateTo(crumbs.slice(0, index + 1))'), false, `${label} must not slice breadcrumb navigation locally`)
   }
 })

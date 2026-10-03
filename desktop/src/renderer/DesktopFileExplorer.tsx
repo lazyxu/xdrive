@@ -116,11 +116,13 @@ export default function DesktopFileExplorer({
 
   const {
     current,
+    pathValue,
     viewMode,
     setViewMode,
     sort,
     changeSort,
     navigateTo,
+    navigateToCrumb,
     goBack,
     goForward,
     goUp,
@@ -413,7 +415,7 @@ export default function DesktopFileExplorer({
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || Boolean(actionBusy)}
         loadThumbnail={loadThumbnail}
-        pathValue={crumbs.map((crumb) => crumb.name).join('/')}
+        pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}
         onSearchValueChange={changeSearchValue}
@@ -427,7 +429,7 @@ export default function DesktopFileExplorer({
         onRefresh={() => {
           if (current) void onLoadDirectory(current.id, crumbs, sort)
         }}
-        onCrumbClick={(_crumb, index) => { void navigateTo(crumbs.slice(0, index + 1)) }}
+        onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
         onCreateFolder={() => setCreateOpen(true)}
         onUpload={() => { void uploadFiles() }}
         onOpenItem={(item) => { void openItem(item) }}
