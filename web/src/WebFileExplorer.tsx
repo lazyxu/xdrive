@@ -5,6 +5,7 @@ import {
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
+  useXDriveFileExplorerClipboard,
   useXDriveFileExplorerNavigation,
   useXDriveFileExplorerProjection,
   useXDriveFileExplorerSearch,
@@ -15,9 +16,6 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
-  xDriveFileExplorerCanPaste,
-  xDriveFileExplorerClipboardFromItems,
-  xDriveFileExplorerClipboardOperationPlan,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerOpenItemPlan,
   xDriveFileExplorerDownloadPlan,
@@ -31,7 +29,6 @@ import {
 } from '../../ui/shared/src'
 import type {
   Node,
-  XDriveFileExplorerClipboard,
   XDriveFileOperation,
 } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
@@ -106,7 +103,6 @@ export default function WebFileExplorer({
     ),
     onError,
   })
-  const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<Node> | null>(null)
   const [clipboardBusy, setClipboardBusy] = useState(false)
 
   const {
@@ -118,6 +114,16 @@ export default function WebFileExplorer({
     items,
     crumbs,
     searchResults,
+  })
+
+  const {
+    copyItems,
+    cutItems,
+    planPaste,
+    completePaste,
+    canPaste,
+  } = useXDriveFileExplorerClipboard<Node>({
+    nodeByID,
   })
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
@@ -217,20 +223,17 @@ export default function WebFileExplorer({
   }
 
   const pasteClipboard = async () => {
-    if (!current || !clipboard || clipboard.nodes.length === 0 || clipboardBusy) return
+    if (!current || clipboardBusy) return
+    const plan = planPaste(current.id)
+    if (!plan) return
     setClipboardBusy(true)
     try {
-      const plan = xDriveFileExplorerClipboardOperationPlan(
-        clipboard.mode,
-        clipboard.nodes,
-        current.id,
-      )
       if (plan.count > 0) {
         const queued = await api.createFileOperation(plan.operation, plan.items, plan.parentID)
         onOperationQueued(queued)
         onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
       }
-      if (plan.clearClipboard) setClipboard(null)
+      completePaste(plan)
       clearSearch()
     } catch (error) {
       onError(error)
@@ -341,18 +344,10 @@ export default function WebFileExplorer({
           }
         }}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
-        onCopyItems={(selected) => {
-          setClipboard((currentClipboard) => (
-            xDriveFileExplorerClipboardFromItems('copy', selected, nodeByID) ?? currentClipboard
-          ))
-        }}
-        onCutItems={(selected) => {
-          setClipboard((currentClipboard) => (
-            xDriveFileExplorerClipboardFromItems('cut', selected, nodeByID) ?? currentClipboard
-          ))
-        }}
+        onCopyItems={copyItems}
+        onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}
-        canPaste={xDriveFileExplorerCanPaste(clipboard, clipboardBusy)}
+        canPaste={canPaste(clipboardBusy)}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)

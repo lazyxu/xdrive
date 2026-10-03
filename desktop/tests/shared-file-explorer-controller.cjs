@@ -10,6 +10,7 @@ const shared = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const searchController = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
+const clipboardController = read('ui', 'shared', 'src', 'mui', 'FileExplorerClipboard.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 
@@ -171,10 +172,31 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
   ]) {
     assert.ok(shared.includes(token), `shared FileExplorer operation planning missing: ${token}`)
   }
+  for (const token of [
+    'useState<XDriveFileExplorerClipboard<TNode> | null>(null)',
+    'xDriveFileExplorerClipboardFromItems(mode, selected, nodeByID)',
+    "setFromItems('copy', selected)",
+    "setFromItems('cut', selected)",
+    'const planPaste = (targetParentID: number) => {',
+    'xDriveFileExplorerClipboardOperationPlan(',
+    'const completePaste = (plan: { clearClipboard: boolean }) => {',
+    'if (plan.clearClipboard) setClipboard(null)',
+    'canPaste: (busy: boolean) => xDriveFileExplorerCanPaste(clipboard, busy)',
+  ]) {
+    assert.ok(clipboardController.includes(token), `shared React clipboard controller missing: ${token}`)
+  }
+  assert.ok(sharedMuiIndex.includes("export * from './FileExplorerClipboard'"), 'shared React clipboard controller must be exported')
+
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('xDriveFileExplorerClipboardFromItems('), `${label} must use shared clipboard construction`)
-    assert.ok(source.includes('xDriveFileExplorerCanPaste('), `${label} must use shared paste availability`)
-    assert.ok(source.includes('xDriveFileExplorerClipboardOperationPlan('), `${label} must use shared clipboard operation planning`)
+    assert.ok(source.includes('useXDriveFileExplorerClipboard<'), `${label} must use the shared clipboard controller`)
+    assert.ok(source.includes('const plan = planPaste(current.id)'), `${label} paste must use the shared clipboard plan`)
+    assert.ok(source.includes('completePaste(plan)'), `${label} must let the shared clipboard controller clear completed cuts`)
+    assert.ok(source.includes('onCopyItems={copyItems}'), `${label} must delegate copy selection to the shared clipboard controller`)
+    assert.ok(source.includes('onCutItems={cutItems}'), `${label} must delegate cut selection to the shared clipboard controller`)
+    assert.ok(source.includes('canPaste={canPaste('), `${label} must delegate paste availability to the shared clipboard controller`)
+    assert.equal(source.includes('xDriveFileExplorerClipboardFromItems('), false, `${label} must not construct clipboard state locally`)
+    assert.equal(source.includes('xDriveFileExplorerCanPaste('), false, `${label} must not derive paste availability locally`)
+    assert.equal(source.includes('xDriveFileExplorerClipboardOperationPlan('), false, `${label} must not plan clipboard operations locally`)
     assert.ok(source.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), `${label} must use shared drop item planning`)
     assert.equal(source.includes('const targetNode = nodeByID.get(Number(target.id))'), false, `${label} must not duplicate internal-drop target resolution`)
     assert.ok(source.includes('xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count)'), `${label} must use shared queued feedback`)
