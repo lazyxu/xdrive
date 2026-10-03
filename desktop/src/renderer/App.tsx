@@ -1233,6 +1233,8 @@ export default function App({
   const openCloudTrash = () => setCloudTrashOpen(true)
 
   const removeCloudNode = (node: AgentCloudNode) => {
+    const plan = xDriveFileExplorerDeleteOperationPlan([node])
+    if (plan.count === 0) return
     requestConfirmation(
       `将“${node.name}”移到回收站？`,
       node.type === 'dir'
@@ -1240,15 +1242,21 @@ export default function App({
         : '该文件会从云端文件列表中移除，之后仍可从回收站恢复。',
       '移到回收站',
       async () => {
-        const data = await run(
-          `cloud-delete-${node.id}`,
-          () => window.xdriveDesktop.agent.cloudDelete(node.id, node.revision),
-          '已移到回收站。',
-        )
-        if (!data) return
-        await refreshCloudQuota()
-        if (cloudCrumbs.length > 0) {
-          await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
+        setBusy(`cloud-delete-${node.id}`)
+        setError('')
+        try {
+          const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
+            plan.operation,
+            plan.items,
+          )
+          if (!result.ok) {
+            setError(result.error.message)
+            return
+          }
+          rememberCloudFileOperation(result.data)
+          setNotice(plan.message)
+        } finally {
+          setBusy('')
         }
       },
       'warning',

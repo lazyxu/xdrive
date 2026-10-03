@@ -101,6 +101,21 @@ test('Web FileExplorer supports bulk download and delete', () => {
   assert.ok(app.includes('rememberFileOperation(operation)'), 'Web bulk delete must seed task state immediately')
 })
 
+
+test('Web single-item delete queues the same persistent delete operation as bulk delete', () => {
+  const start = app.indexOf('const remove = (node: Node) => {')
+  const end = app.indexOf('\n  const rememberFileOperation =', start)
+  assert.ok(start >= 0 && end > start, 'Web single-delete handler boundaries are missing')
+  const body = app.slice(start, end)
+  assert.ok(body.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Web single delete must use the shared delete plan')
+  assert.ok(body.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web single delete must enqueue a persistent operation')
+  assert.ok(body.includes('rememberFileOperation(operation)'), 'Web single delete must seed Task Center state immediately')
+  assert.ok(body.includes("setFeedback({ tone: 'good', message: plan.message })"), 'Web single delete must use queued-operation feedback')
+  assert.equal(body.includes('api.remove('), false, 'Web single delete must not bypass Task Center through the legacy synchronous API')
+  assert.equal(body.includes('loadDirectory('), false, 'Web single delete must rely on terminal operation refresh instead of refreshing early')
+  assert.equal(body.includes('refreshQuota()'), false, 'Web single delete must rely on terminal operation quota refresh')
+})
+
 test('Web FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Web internal drag/drop helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'internal drag should use the shared drop-item plan')
