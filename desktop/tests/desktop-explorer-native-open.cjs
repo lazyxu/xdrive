@@ -17,7 +17,8 @@ const sharedActions = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src',
 test('Desktop Explorer opens files from the managed sync tree instead of defaulting to Save As', () => {
   assert.ok(app.includes('const relativePathForNode = (node: AgentCloudNode) => {'), 'Desktop Explorer relative-path resolver is missing')
   assert.ok(app.includes('await window.xdriveDesktop.agent.openPath(relativePath, reveal)'), 'Desktop Explorer is not wired to managed-path shell actions')
-  assert.ok(app.includes("if (plan.kind === 'file') {\n      await openLocalNode(plan.node)"), 'double-clicking a file should open the synced local item through the shared open-item plan')
+  assert.ok(app.includes('xDriveFileExplorerDispatchOpenItem({'), 'double-clicking should dispatch through the shared open-item controller')
+  assert.ok(app.includes('openFile: openLocalNode'), 'double-clicking a file should open the synced local item through the Desktop adapter')
   assert.ok(app.includes("downloadLabel: '另存为…'"), 'Desktop must preserve explicit Save As wording through the shared action adapter')
   assert.ok(app.includes('onReveal: () => { void openLocalNode(node, true) }'), 'Desktop reveal adapter is missing')
   assert.ok(sharedActions.includes("revealLabel = '在文件资源管理器中显示'"), 'shared reveal-in-file-manager label is missing')

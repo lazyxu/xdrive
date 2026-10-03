@@ -555,6 +555,39 @@ export function xDriveFileExplorerOpenItemPlan<
   }
 }
 
+export async function xDriveFileExplorerDispatchOpenItem<
+  TNode extends XDriveFileExplorerOpenItemNode,
+>({
+  item,
+  nodeByID,
+  currentCrumbs,
+  searchCrumbsForNode,
+  openFile,
+  navigate,
+}: {
+  item: XDriveFileExplorerSelectionItem
+  nodeByID: ReadonlyMap<number, TNode>
+  currentCrumbs: readonly XDriveFileExplorerCrumb[]
+  searchCrumbsForNode?: (node: TNode) => readonly XDriveFileExplorerCrumb[] | undefined
+  openFile: (node: TNode) => void | Promise<void>
+  navigate: (crumbs: XDriveFileExplorerCrumb[]) => void | Promise<void>
+}): Promise<XDriveFileExplorerOpenItemPlan<TNode> | null> {
+  const node = xDriveFileExplorerNodeForItem(item, nodeByID)
+  if (!node) return null
+
+  const plan = xDriveFileExplorerOpenItemPlan(
+    node,
+    currentCrumbs,
+    searchCrumbsForNode?.(node),
+  )
+  if (plan.kind === 'file') {
+    await openFile(plan.node)
+  } else {
+    await navigate(plan.crumbs)
+  }
+  return plan
+}
+
 export function xDriveFileExplorerDeleteOperationPlan<
   TNode extends Pick<Node, 'id' | 'revision'>,
 >(nodes: readonly TNode[]) {

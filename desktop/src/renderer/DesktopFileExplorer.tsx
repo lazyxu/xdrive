@@ -3,7 +3,7 @@ import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerNodeForItem,
-  xDriveFileExplorerOpenItemPlan,
+  xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerExternalDropParentID,
@@ -258,19 +258,14 @@ export default function DesktopFileExplorer({
   }
 
   const openItem = async (item: XDriveFileExplorerItem) => {
-    const node = xDriveFileExplorerNodeForItem(item, nodeByID)
-    if (!node) return
-
-    const plan = xDriveFileExplorerOpenItemPlan(
-      node,
-      crumbs,
-      searchByID.get(node.id)?.crumbs,
-    )
-    if (plan.kind === 'file') {
-      await openLocalNode(plan.node)
-      return
-    }
-    await navigateTo(plan.crumbs)
+    await xDriveFileExplorerDispatchOpenItem({
+      item,
+      nodeByID,
+      currentCrumbs: crumbs,
+      searchCrumbsForNode: (node) => searchByID.get(node.id)?.crumbs,
+      openFile: openLocalNode,
+      navigate: navigateTo,
+    })
   }
 
   const getItemMenuItems = (item: XDriveFileExplorerItem) => {
