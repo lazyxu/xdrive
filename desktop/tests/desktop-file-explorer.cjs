@@ -132,15 +132,14 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
 })
 
 test('Desktop FileExplorer queues copy/cut/paste through persistent Agent file operations', () => {
-  assert.ok(explorer.includes('useState<XDriveFileExplorerClipboard<AgentCloudNode> | null>'), 'Desktop must use the shared clipboard contract')
-  assert.ok(explorer.includes("xDriveFileExplorerClipboardFromItems('copy', selected, nodeByID)"), 'Desktop copy selection must use the shared clipboard builder')
-  assert.ok(explorer.includes("xDriveFileExplorerClipboardFromItems('cut', selected, nodeByID)"), 'Desktop cut selection must use the shared clipboard builder')
-  assert.ok(explorer.includes('xDriveFileExplorerCanPaste(clipboard, Boolean(actionBusy))'), 'Desktop paste availability must use the shared clipboard rule')
+  assert.ok(explorer.includes('useXDriveFileExplorerClipboard<AgentCloudNode>({'), 'Desktop must use the shared React clipboard controller')
+  assert.ok(explorer.includes('const plan = planPaste(current.id)'), 'Desktop paste must use the shared clipboard plan')
+  assert.ok(explorer.includes('completePaste(plan)'), 'Desktop must clear completed cut state through the shared clipboard controller')
+  assert.ok(explorer.includes('canPaste={canPaste(Boolean(actionBusy))}'), 'Desktop paste availability must use the shared clipboard controller')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste must use the persistent file-operation bridge')
-  assert.ok(explorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must preserve copy/cut semantics through the shared operation plan')
   assert.ok(explorer.includes('onOperationQueued(result.data)'), 'Desktop Explorer must surface the newly queued operation immediately')
-  assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Desktop shared copy adapter is missing')
-  assert.ok(explorer.includes('onCutItems={(selected) => {'), 'Desktop shared cut adapter is missing')
+  assert.ok(explorer.includes('onCopyItems={copyItems}'), 'Desktop shared copy adapter is missing')
+  assert.ok(explorer.includes('onCutItems={cutItems}'), 'Desktop shared cut adapter is missing')
   assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Desktop shared paste adapter is missing')
 })
 
@@ -245,7 +244,7 @@ test('Desktop FileExplorer uses cursor-paged server sorting for cloud directorie
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
   assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must queue one shared delete plan')
   assert.ok(explorer.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop paste/drop must queue one operation')
-  assert.ok(explorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must preserve copy/move operation type via shared planning')
+  assert.ok(explorer.includes('const plan = planPaste(current.id)'), 'Desktop paste must preserve copy/move operation type through the shared clipboard controller')
   assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Desktop drag/drop must preserve copy/move operation type via shared drop-item planning')
   assert.equal(app.includes('for (const node of nodes) {\n            const result = await window.xdriveDesktop.agent.cloudDelete'), false, 'Desktop bulk delete must not regress to N requests')
 })

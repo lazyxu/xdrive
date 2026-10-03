@@ -1,9 +1,6 @@
 import { useCallback, useState } from 'react'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
-  xDriveFileExplorerCanPaste,
-  xDriveFileExplorerClipboardFromItems,
-  xDriveFileExplorerClipboardOperationPlan,
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerOpenItemPlan,
@@ -15,12 +12,10 @@ import {
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerSubmitPath,
 } from '@xdrive/shared'
-import type {
-  XDriveFileExplorerClipboard,
-} from '@xdrive/shared'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
+  useXDriveFileExplorerClipboard,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
@@ -93,7 +88,6 @@ export default function DesktopFileExplorer({
   const [createOpen, setCreateOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<AgentCloudNode | null>(null)
   const [actionBusy, setActionBusy] = useState('')
-  const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<AgentCloudNode> | null>(null)
 
   const {
     nodeByID,
@@ -104,6 +98,16 @@ export default function DesktopFileExplorer({
     items,
     crumbs,
     searchResults,
+  })
+
+  const {
+    copyItems,
+    cutItems,
+    planPaste,
+    completePaste,
+    canPaste,
+  } = useXDriveFileExplorerClipboard<AgentCloudNode>({
+    nodeByID,
   })
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
@@ -311,14 +315,11 @@ export default function DesktopFileExplorer({
   }
 
   const pasteClipboard = async () => {
-    if (!current || !clipboard || clipboard.nodes.length === 0 || actionBusy) return
+    if (!current || actionBusy) return
+    const plan = planPaste(current.id)
+    if (!plan) return
     setActionBusy('paste')
     try {
-      const plan = xDriveFileExplorerClipboardOperationPlan(
-        clipboard.mode,
-        clipboard.nodes,
-        current.id,
-      )
       if (plan.count > 0) {
         const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
           plan.operation,
@@ -332,7 +333,7 @@ export default function DesktopFileExplorer({
         onOperationQueued(result.data)
         onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
       }
-      if (plan.clearClipboard) setClipboard(null)
+      completePaste(plan)
       clearSearch()
     } finally {
       setActionBusy('')
@@ -446,18 +447,10 @@ export default function DesktopFileExplorer({
           }
         }}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
-        onCopyItems={(selected) => {
-          setClipboard((currentClipboard) => (
-            xDriveFileExplorerClipboardFromItems('copy', selected, nodeByID) ?? currentClipboard
-          ))
-        }}
-        onCutItems={(selected) => {
-          setClipboard((currentClipboard) => (
-            xDriveFileExplorerClipboardFromItems('cut', selected, nodeByID) ?? currentClipboard
-          ))
-        }}
+        onCopyItems={copyItems}
+        onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}
-        canPaste={xDriveFileExplorerCanPaste(clipboard, Boolean(actionBusy))}
+        canPaste={canPaste(Boolean(actionBusy))}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
