@@ -180,7 +180,7 @@ test('shared FileExplorer controller owns external-drop target resolution', () =
   assert.ok(desktop.includes('cloudUploadDroppedFiles(parentID, files)'), 'Desktop must keep dropped-file upload execution local')
 })
 
-test('shared FileExplorer controller owns directory crumb normalization and open-path planning', () => {
+test('shared FileExplorer controller owns item lookup and open-item planning', () => {
   for (const token of [
     'xDriveFileExplorerNormalizeCrumbs',
     "index === 0 && !crumb.name ? rootName : crumb.name",
@@ -188,12 +188,24 @@ test('shared FileExplorer controller owns directory crumb normalization and open
     'searchCrumbs && searchCrumbs.length > 0',
     'xDriveFileExplorerNormalizeCrumbs(searchCrumbs)',
     'return [...currentCrumbs, { id: node.id, name: node.name }]',
+    'xDriveFileExplorerNodeForItem',
+    'return nodeByID.get(Number(item.id))',
+    'XDriveFileExplorerOpenItemPlan',
+    "if (node.type === 'file') return { kind: 'file', node }",
+    "kind: 'directory'",
+    'crumbs: xDriveFileExplorerDirectoryCrumbs(node, currentCrumbs, searchCrumbs)',
   ]) {
-    assert.ok(shared.includes(token), `shared FileExplorer directory crumb controller missing: ${token}`)
+    assert.ok(shared.includes(token), `shared FileExplorer open-item controller missing: ${token}`)
   }
 
-  assert.ok(web.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs)'), 'Web must use shared directory crumb planning')
-  assert.ok(desktop.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs)'), 'Desktop must use shared directory crumb planning')
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('xDriveFileExplorerNodeForItem(item, nodeByID)'), `${label} must use shared item lookup`)
+    assert.ok(source.includes('xDriveFileExplorerOpenItemPlan('), `${label} must use shared open-item planning`)
+    assert.ok(source.includes("if (plan.kind === 'file')"), `${label} must branch on the shared open-item plan`)
+    assert.ok(source.includes('await navigateTo(plan.crumbs)'), `${label} must use shared directory crumbs`)
+    assert.equal(source.includes('const node = nodeByID.get(Number(item.id))'), false, `${label} must not duplicate item lookup in open/menu handlers`)
+  }
+
   assert.equal(web.includes('normalizedSearchCrumbs'), false, 'Web must not normalize search crumbs locally')
   assert.equal(desktop.includes('normalizeSearchCrumbs'), false, 'Desktop must not normalize search crumbs locally')
 })

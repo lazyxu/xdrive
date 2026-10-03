@@ -6,7 +6,8 @@ import {
   xDriveFileExplorerClipboardFromItems,
   xDriveFileExplorerClipboardOperationPlan,
   xDriveFileExplorerDesktopDownloadFeedback,
-  xDriveFileExplorerDirectoryCrumbs,
+  xDriveFileExplorerNodeForItem,
+  xDriveFileExplorerOpenItemPlan,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerCanLoadMoreSearch,
@@ -316,18 +317,23 @@ export default function DesktopFileExplorer({
   }
 
   const openItem = async (item: XDriveFileExplorerItem) => {
-    const node = nodeByID.get(Number(item.id))
+    const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node) return
-    if (node.type === 'file') {
-      await openLocalNode(node)
+
+    const plan = xDriveFileExplorerOpenItemPlan(
+      node,
+      crumbs,
+      searchByID.get(node.id)?.crumbs,
+    )
+    if (plan.kind === 'file') {
+      await openLocalNode(plan.node)
       return
     }
-    const searchResult = searchByID.get(node.id)
-    await navigateTo(xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs))
+    await navigateTo(plan.crumbs)
   }
 
   const getItemMenuItems = (item: XDriveFileExplorerItem) => {
-    const node = nodeByID.get(Number(item.id))
+    const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node) return []
 
     return xDriveFileExplorerStandardItemMenuItems({
