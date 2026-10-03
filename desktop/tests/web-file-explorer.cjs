@@ -30,7 +30,9 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
     assert.ok(explorer.includes(token), `missing Web Explorer navigation contract: ${token}`)
   }
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows-style separators')
-  assert.ok(explorer.includes('xDriveResolveFileExplorerPath({'), 'Web Explorer should delegate typed-path traversal to the shared controller')
+  assert.ok(explorer.includes('xDriveFileExplorerSubmitPath({'), 'Web Explorer should delegate typed-path submission to the shared controller')
+  assert.ok(explorer.includes('loadRoot: () => api.root()'), 'Web typed-path submission should keep REST root loading local')
+  assert.equal(explorer.includes('xDriveResolveFileExplorerPath({'), false, 'Web must not orchestrate typed-path traversal locally')
   assert.ok(explorer.includes('viewModeStorageKey: FILE_VIEW_KEY'), 'Web Explorer should pass its view-mode storage key to the shared controller')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })

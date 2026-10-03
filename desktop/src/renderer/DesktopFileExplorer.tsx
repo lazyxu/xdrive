@@ -13,7 +13,7 @@ import {
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationPresentation,
   xDriveFileExplorerOperationQueuedMessage,
-  xDriveResolveFileExplorerPath,
+  xDriveFileExplorerSubmitPath,
 } from '@xdrive/shared'
 import type {
   XDriveFileExplorerClipboard,
@@ -139,23 +139,21 @@ export default function DesktopFileExplorer({
 
   const submitPath = async (rawPath: string) => {
     try {
-      const rootResult = await window.xdriveDesktop.agent.cloudRoot()
-      if (!rootResult.ok) {
-        onError(rootResult.error.message)
-        return
-      }
-      const rootName = crumbs[0]?.name || '我的文件'
-      const nextCrumbs = await xDriveResolveFileExplorerPath({
+      await xDriveFileExplorerSubmitPath({
         rawPath,
-        rootID: rootResult.data.id,
-        rootName,
+        currentCrumbs: crumbs,
+        loadRoot: async () => {
+          const result = await window.xdriveDesktop.agent.cloudRoot()
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        },
         listChildren: async (parentID) => {
           const result = await window.xdriveDesktop.agent.cloudChildren(parentID)
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         },
+        navigate: navigateTo,
       })
-      await navigateTo(nextCrumbs)
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))
     }

@@ -27,7 +27,7 @@ import {
   xDriveFileExplorerPaginationPresentation,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerWebDownloadFeedback,
-  xDriveResolveFileExplorerPath,
+  xDriveFileExplorerSubmitPath,
 } from '../../ui/shared/src'
 import type {
   Node,
@@ -152,15 +152,13 @@ export default function WebFileExplorer({
 
   const submitPath = async (rawPath: string) => {
     try {
-      const root = await api.root()
-      const rootName = crumbs[0]?.name || '我的文件'
-      const nextCrumbs = await xDriveResolveFileExplorerPath({
+      await xDriveFileExplorerSubmitPath({
         rawPath,
-        rootID: root.id,
-        rootName,
+        currentCrumbs: crumbs,
+        loadRoot: () => api.root(),
         listChildren: (parentID) => api.list(parentID),
+        navigate: navigateTo,
       })
-      await navigateTo(nextCrumbs)
     } catch (error) {
       onError(error)
     }
