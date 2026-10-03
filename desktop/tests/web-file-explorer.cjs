@@ -59,8 +59,9 @@ test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pa
   assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Web incremental search loader is missing')
   assert.ok(explorer.includes('api.search('), 'Web incremental search must use the authenticated search API')
   assert.ok(explorer.includes('searchCursor,'), 'Web incremental search must forward the search cursor')
-  assert.ok(explorer.includes('xDriveFileExplorerMergeSearchResults(current ?? [], page.items)'), 'Web search pages must merge through shared dedupe logic')
-  assert.ok(explorer.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), 'Web search cursor must drive Explorer hasMore')
+  assert.ok(explorer.includes('xDriveFileExplorerSearchPageState(searchResults, page, true)'), 'Web search pages must use the shared page-state transition')
+  assert.ok(explorer.includes('xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)'), 'Web search load-more eligibility must use shared logic')
+  assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Web Explorer hasMore must use shared pagination presentation')
   assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web search must not truncate the UI to the first page')
 })
 

@@ -56,16 +56,26 @@ test('shared FileExplorer controller owns search pagination state', () => {
     'xDriveFileExplorerMergeSearchResults',
     'current.map((item) => [item.node.id, item] as const)',
     'for (const item of page) merged.set(item.node.id, item)',
+    'xDriveFileExplorerSearchPageState',
+    'append',
+    'cursor = page.next_cursor ??',
+    'xDriveFileExplorerCanLoadMoreSearch',
+    'results !== null && Boolean(cursor) && !loadingMore',
+    'xDriveFileExplorerPaginationPresentation',
+    "mode: 'search' as const",
+    "mode: 'directory' as const",
   ]) {
     assert.ok(shared.includes(token), `shared search pagination helper missing: ${token}`)
   }
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes("const [searchCursor, setSearchCursor] = useState('')"), `${label} search cursor state is missing`)
     assert.ok(source.includes('const [searchLoadingMore, setSearchLoadingMore] = useState(false)'), `${label} incremental search loading state is missing`)
-    assert.ok(source.includes('xDriveFileExplorerMergeSearchResults('), `${label} must merge paged search results through shared logic`)
-    assert.ok(source.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), `${label} search results must expose hasMore to the shared Explorer`)
-    assert.ok(source.includes('loadingMore={searchResults ? searchLoadingMore : loadingMore}'), `${label} search loadingMore state is not wired`)
-    assert.ok(source.includes('void loadMoreSearch()'), `${label} search pagination must be wired to Explorer loadMore`)
+    assert.ok(source.includes('xDriveFileExplorerSearchPageState('), `${label} must apply search pages through shared state transition logic`)
+    assert.ok(source.includes('xDriveFileExplorerCanLoadMoreSearch('), `${label} must use shared search load-more eligibility`)
+    assert.ok(source.includes('xDriveFileExplorerPaginationPresentation({'), `${label} must derive Explorer pagination presentation through shared logic`)
+    assert.ok(source.includes("explorerPagination.mode === 'search'"), `${label} search pagination must be wired to Explorer loadMore`)
+    assert.equal(source.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), false, `${label} must not duplicate search/directory hasMore selection`)
+    assert.equal(source.includes('loadingMore={searchResults ? searchLoadingMore : loadingMore}'), false, `${label} must not duplicate search/directory loadingMore selection`)
   }
 })
 

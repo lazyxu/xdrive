@@ -8,9 +8,11 @@ import {
   xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerCanLoadMoreSearch,
   xDriveFileExplorerExternalDropParentID,
-  xDriveFileExplorerMergeSearchResults,
   xDriveFileExplorerNodesForItems,
+  xDriveFileExplorerPaginationPresentation,
+  xDriveFileExplorerSearchPageState,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerSearchDecision,
   xDriveResolveFileExplorerPath,
@@ -176,15 +178,16 @@ export default function DesktopFileExplorer({
         onError(result.error.message)
         return
       }
-      setSearchResults(result.data.items)
-      setSearchCursor(result.data.next_cursor ?? '')
+      const searchPage = xDriveFileExplorerSearchPageState(null, result.data, false)
+      setSearchResults(searchPage.items)
+      setSearchCursor(searchPage.cursor)
     } finally {
       if (requestID === searchRequestRef.current) setSearchLoading(false)
     }
   }
 
   const loadMoreSearch = async () => {
-    if (!searchResults || !searchCursor || searchLoadingMore) return
+    if (!xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)) return
     const decision = xDriveFileExplorerSearchDecision(searchValue)
     if (decision.kind !== 'search') return
     const requestID = searchRequestRef.current
@@ -196,10 +199,9 @@ export default function DesktopFileExplorer({
         onError(result.error.message)
         return
       }
-      setSearchResults((current) => (
-        xDriveFileExplorerMergeSearchResults(current ?? [], result.data.items)
-      ))
-      setSearchCursor(result.data.next_cursor ?? '')
+      const searchPage = xDriveFileExplorerSearchPageState(searchResults, result.data, true)
+      setSearchResults(searchPage.items)
+      setSearchCursor(searchPage.cursor)
     } finally {
       if (requestID === searchRequestRef.current) setSearchLoadingMore(false)
     }
@@ -433,6 +435,14 @@ export default function DesktopFileExplorer({
     }
   }
 
+  const explorerPagination = xDriveFileExplorerPaginationPresentation({
+    searchActive: searchResults !== null,
+    searchCursor,
+    searchLoadingMore,
+    directoryHasMore: hasMore,
+    directoryLoadingMore: loadingMore,
+  })
+
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder: () => setCreateOpen(true),
     onUpload: () => { void uploadFiles() },
@@ -476,10 +486,10 @@ export default function DesktopFileExplorer({
         sort={sort}
         onSortChange={changeSort}
         externallySorted={!searchResults}
-        hasMore={searchResults ? Boolean(searchCursor) : hasMore}
-        loadingMore={searchResults ? searchLoadingMore : loadingMore}
+        hasMore={explorerPagination.hasMore}
+        loadingMore={explorerPagination.loadingMore}
         onLoadMore={() => {
-          if (searchResults) {
+          if (explorerPagination.mode === 'search') {
             void loadMoreSearch()
           } else if (current) {
             void onLoadMore(current.id, sort)
