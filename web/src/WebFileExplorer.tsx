@@ -132,11 +132,13 @@ export default function WebFileExplorer({
 
   const {
     current,
+    pathValue,
     viewMode,
     setViewMode,
     sort,
     changeSort,
     navigateTo,
+    navigateToCrumb,
     goBack,
     goForward,
     goUp,
@@ -306,7 +308,7 @@ export default function WebFileExplorer({
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || clipboardBusy}
         loadThumbnail={loadThumbnail}
-        pathValue={crumbs.map((crumb) => crumb.name).join('/')}
+        pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}
         onSearchValueChange={changeSearchValue}
@@ -320,7 +322,7 @@ export default function WebFileExplorer({
         onRefresh={() => {
           if (current) void onLoadDirectory(current.id, crumbs, sort)
         }}
-        onCrumbClick={(_crumb, index) => { void navigateTo(crumbs.slice(0, index + 1)) }}
+        onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
         onCreateFolder={onCreateFolder}
         onUpload={() => uploadInputRef.current?.click()}
         onOpenItem={(item) => { void openItem(item) }}

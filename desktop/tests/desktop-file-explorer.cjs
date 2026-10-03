@@ -57,6 +57,8 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   assert.ok(explorer.includes('searchByID.get(node.id)?.crumbs'), 'Desktop open-item planning should preserve search crumbs')
   assert.ok(explorer.includes('await navigateTo(plan.crumbs)'), 'Desktop search-directory navigation should use shared planned crumbs')
   assert.ok(explorer.includes('viewModeStorageKey: DESKTOP_FILE_VIEW_KEY'), 'Desktop Explorer should pass its view-mode storage key to the shared controller')
+  assert.ok(explorer.includes('pathValue={pathValue}'), 'Desktop Explorer path display must come from shared navigation')
+  assert.ok(explorer.includes('navigateToCrumb(index)'), 'Desktop breadcrumb clicks must use shared navigation')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
 

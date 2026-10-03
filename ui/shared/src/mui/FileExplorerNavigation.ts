@@ -31,6 +31,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   const [history, setHistory] = useState<TCrumb[][]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const current = crumbs.at(-1)
+  const pathValue = crumbs.map((crumb) => crumb.name).join('/')
 
   useEffect(() => {
     if (crumbs.length === 0 || history.length > 0) return
@@ -96,13 +97,20 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     await navigateTo(crumbs.slice(0, -1))
   }
 
+  const navigateToCrumb = async (index: number) => {
+    if (index < 0 || index >= crumbs.length) return
+    await navigateTo(crumbs.slice(0, index + 1))
+  }
+
   return {
     current,
+    pathValue,
     viewMode,
     setViewMode,
     sort,
     changeSort,
     navigateTo,
+    navigateToCrumb,
     goBack,
     goForward,
     goUp,
