@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
@@ -128,7 +129,7 @@ export function XDriveSidebarNavList({
   )
 }
 
-export type XDriveCoreWorkspaceKey = 'files' | 'gallery' | 'sources' | 'transfers' | 'storage'
+export type XDriveCoreWorkspaceKey = 'files' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage'
 
 export function XDriveCoreWorkspaceNavItems({
   selected,
@@ -173,11 +174,18 @@ export function XDriveCoreWorkspaceNavItems({
         onClick={() => onSelect('transfers')}
       />
       <XDriveSidebarNavItem
-        selected={selected === 'storage'}
+        selected={selected === 'local-storage'}
         icon={<StorageRoundedIcon fontSize="small" />}
-        primary="存储"
+        primary="本地存储"
         appearance={appearance}
-        onClick={() => onSelect('storage')}
+        onClick={() => onSelect('local-storage')}
+      />
+      <XDriveSidebarNavItem
+        selected={selected === 'cloud-storage'}
+        icon={<CloudRoundedIcon fontSize="small" />}
+        primary="云端存储"
+        appearance={appearance}
+        onClick={() => onSelect('cloud-storage')}
       />
     </>
   )

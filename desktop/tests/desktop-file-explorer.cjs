@@ -6,7 +6,8 @@ const path = require('node:path')
 const repoRoot = path.join(__dirname, '..', '..')
 const app = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const cloudPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
-const storagePage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8')
+const localStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
+const cloudStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
@@ -80,16 +81,19 @@ test('Desktop FileExplorer paginates server search results through Agent cursors
   assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop search must not truncate the UI to one page')
 })
 
-test('Desktop cloud capacity and CAS intelligence live on Storage, not Files', () => {
+test('Desktop cloud capacity and CAS intelligence live in the shared Cloud Storage workspace', () => {
   assert.equal(cloudPage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy the Files workspace')
-  assert.equal(cloudPage.includes('className="cloud-quota-grid"'), false, 'quota metric grid must not occupy the Files workspace')
-  assert.ok(storagePage.includes('云端容量'), 'Storage workspace is missing cloud capacity metrics')
-  assert.ok(storagePage.includes('CAS 存储情报'), 'Storage workspace is missing CAS intelligence')
+  assert.equal(localStoragePage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy local storage')
+  assert.ok(cloudStoragePage.includes('title="云端存储"'), 'shared Cloud Storage workspace is missing its title')
+  assert.ok(cloudStoragePage.includes('云端容量'), 'shared Cloud Storage workspace is missing cloud capacity metrics')
+  assert.ok(cloudStoragePage.includes('CAS 存储情报'), 'shared Cloud Storage workspace is missing CAS intelligence')
+  assert.ok(app.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render the shared Cloud Storage workspace')
 })
 
-test('Desktop Storage refresh owns cloud quota and storage intelligence refresh', () => {
-  assert.ok(app.includes("window.xdriveDesktop.agent.cloudQuota()"), 'Storage refresh should retrieve cloud quota')
-  assert.ok(app.includes("storageStatsSupported ? window.xdriveDesktop.agent.cloudStorageStats()"), 'Storage refresh should retrieve CAS storage intelligence when supported')
+test('Desktop Cloud Storage adapter owns cloud quota and storage intelligence refresh', () => {
+  assert.ok(app.includes('const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>'), 'Desktop is missing the shared Cloud Storage adapter')
+  assert.ok(app.includes("window.xdriveDesktop.agent.cloudQuota()"), 'Cloud Storage adapter should retrieve cloud quota')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudStorageStats()'), 'Cloud Storage adapter should retrieve CAS storage intelligence when supported')
 })
 
 test('Desktop Files home load does not fetch CAS storage intelligence', () => {

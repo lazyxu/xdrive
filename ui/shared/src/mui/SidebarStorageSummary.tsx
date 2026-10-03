@@ -9,7 +9,7 @@ export function XDriveSidebarStorageSummary({
   diskTotalBytes,
   diskAvailableBytes,
   appearance = 'light',
-  label = '存储',
+  label = '云端存储',
   sx,
 }: {
   usedBytes: number
