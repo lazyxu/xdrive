@@ -112,11 +112,13 @@ type fakeDesktopIPCController struct {
 	cloudMediaAlbums           []client.MediaAlbum
 	cloudMediaAlbumItems       []client.MediaItem
 	cloudMediaThumbnail        agentMediaThumbnail
+	cloudMediaMotion           agentMediaMotion
 	cloudMediaKind             string
 	cloudMediaLimit            int
 	cloudMediaOffset           int
 	cloudMediaAlbumID          string
 	cloudMediaThumbnailID      uint64
+	cloudMediaMotionID         uint64
 	cloudSources               []client.Source
 	cloudSourceRuns            []client.SyncRun
 	cloudSourceRunFailures     []client.SourceRunFailure
@@ -431,6 +433,11 @@ func (f *fakeDesktopIPCController) CloudMediaAlbumItems(_ context.Context, album
 func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	f.cloudMediaThumbnailID = nodeID
 	return f.cloudMediaThumbnail, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaLivePhotoMotion(_ context.Context, nodeID uint64) (agentMediaMotion, error) {
+	f.cloudMediaMotionID = nodeID
+	return f.cloudMediaMotion, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Source, error) {
@@ -1007,6 +1014,11 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			ContentType: "image/jpeg",
 			DataBase64:  "ZmFrZS1qcGVn",
 		},
+		cloudMediaMotion: agentMediaMotion{
+			ContentType: "video/quicktime",
+			DataBase64:  "ZmFrZS1tb3Rpb24=",
+			Size:        11,
+		},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
@@ -1043,11 +1055,22 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)
 	}
 
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/live-photo-motion?node_id=31", "")
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"content_type\":\"video/quicktime\"") ||
+		!strings.Contains(res.Body.String(), "\"data_base64\":\"ZmFrZS1tb3Rpb24=\"") {
+		t.Fatalf("media motion status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaMotionID != 31 {
+		t.Fatalf("media motion id=%d want=31", ctrl.cloudMediaMotionID)
+	}
+
 	for _, path := range []string{
 		"/v1/media/items?kind=audio",
 		"/v1/media/items?limit=0",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",
+		"/v1/media/live-photo-motion?node_id=0",
 	} {
 		res = desktopIPCRequest(t, handler, http.MethodGet, path, "")
 		if res.Code != http.StatusBadRequest {

@@ -385,6 +385,8 @@ export type AgentCloudChildrenPage = {
 export type AgentMediaMetadata = {
   media_kind: 'image' | 'video'
   mime_type?: string
+  container_kind?: string
+  live_photo_asset_identifier?: string
   width?: number
   height?: number
   orientation?: number
@@ -411,9 +413,19 @@ export type AgentMediaMetadata = {
   thumbnail_height?: number
 }
 
+export type AgentMediaDerivedResource = {
+  role: string
+  name: string
+  media_kind: 'image' | 'video'
+  mime_type: string
+  size: number
+}
+
 export type AgentMediaItem = {
   node: AgentCloudNode
   metadata: AgentMediaMetadata
+  derived_resources?: AgentMediaDerivedResource[]
+  live_photo?: boolean
 }
 
 export type AgentMediaAlbum = {
@@ -428,6 +440,12 @@ export type AgentMediaAlbum = {
 export type AgentMediaThumbnail = {
   content_type: string
   data_base64: string
+}
+
+export type AgentMediaMotion = {
+  content_type: string
+  data_base64: string
+  size: number
 }
 
 export type AgentCloudQuota = {
@@ -721,6 +739,16 @@ export class AgentIPCClient {
     return this.request<AgentMediaThumbnail>(
       'GET',
       `/v1/media/thumbnail?${query.toString()}`,
+      undefined,
+      45_000,
+    )
+  }
+
+  mediaLivePhotoMotion(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaMotion>(
+      'GET',
+      `/v1/media/live-photo-motion?${query.toString()}`,
       undefined,
       45_000,
     )

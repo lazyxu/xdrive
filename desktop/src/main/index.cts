@@ -75,6 +75,7 @@ import {
   type AgentMediaItem,
   type AgentMediaAlbum,
   type AgentMediaThumbnail,
+  type AgentMediaMotion,
   type AgentSource,
   type AgentCreateSourceInput,
   type AgentUpdateSourceInput,
@@ -1542,6 +1543,19 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
     }
     return requireAgentClient().mediaThumbnail(nodeID)
+  }, false))
+
+  ipcMain.handle('agent:get-media-live-photo-motion', (_event, nodeID: unknown) => runAgentAction<AgentMediaMotion>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
+    }
+    return requireAgentClient().mediaLivePhotoMotion(nodeID)
   }, false))
 
   ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {

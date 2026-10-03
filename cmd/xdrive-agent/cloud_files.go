@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 )
 
 const cloudSearchLimit = 200
+const maxAgentMediaMotionBytes int64 = 64 << 20
 
 type agentCloudCrumb struct {
 	ID   uint64 `json:"id"`
@@ -37,6 +39,12 @@ type agentCreatedShare struct {
 type agentMediaThumbnail struct {
 	ContentType string `json:"content_type"`
 	DataBase64  string `json:"data_base64"`
+}
+
+type agentMediaMotion struct {
+	ContentType string `json:"content_type"`
+	DataBase64  string `json:"data_base64"`
+	Size        int64  `json:"size"`
 }
 
 func startAgentCloudTransfer(
@@ -648,6 +656,33 @@ func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64
 	return agentMediaThumbnail{
 		ContentType: contentType,
 		DataBase64:  base64.StdEncoding.EncodeToString(data),
+	}, nil
+}
+
+func (c *agentController) CloudMediaLivePhotoMotion(ctx context.Context, nodeID uint64) (agentMediaMotion, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentMediaMotion{}, err
+	}
+	body, contentType, contentLength, err := cli.MediaLivePhotoMotion(ctx, nodeID)
+	if err != nil {
+		return agentMediaMotion{}, err
+	}
+	defer body.Close()
+	if contentLength > maxAgentMediaMotionBytes {
+		return agentMediaMotion{}, fmt.Errorf("Live Photo motion exceeds Desktop playback limit")
+	}
+	data, err := io.ReadAll(io.LimitReader(body, maxAgentMediaMotionBytes+1))
+	if err != nil {
+		return agentMediaMotion{}, err
+	}
+	if int64(len(data)) > maxAgentMediaMotionBytes {
+		return agentMediaMotion{}, fmt.Errorf("Live Photo motion exceeds Desktop playback limit")
+	}
+	return agentMediaMotion{
+		ContentType: contentType,
+		DataBase64:  base64.StdEncoding.EncodeToString(data),
+		Size:        int64(len(data)),
 	}, nil
 }
 

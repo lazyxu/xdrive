@@ -464,6 +464,29 @@ export class XDriveApi {
     return response.blob()
   }
 
+  async mediaLivePhotoMotion(nodeID: number): Promise<Blob> {
+    await this.ensureFresh()
+    const path = `/api/v1/media/items/${nodeID}/live-photo-motion`
+    let response = await fetch(`${API_BASE}${path}`, {
+      headers: this.session.accessToken
+        ? { Authorization: `Bearer ${this.session.accessToken}` }
+        : undefined,
+    })
+    if (response.status === 401 && this.session.refreshToken) {
+      await this.refresh(true)
+      response = await fetch(`${API_BASE}${path}`, {
+        headers: { Authorization: `Bearer ${this.session.accessToken}` },
+      })
+    }
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        response.statusText || 'Live Photo motion unavailable',
+      )
+    }
+    return response.blob()
+  }
+
   sources() {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }

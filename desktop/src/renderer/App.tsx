@@ -235,6 +235,12 @@ export default function App({
       const contentType = result.data.content_type || 'image/jpeg'
       return `data:${contentType};base64,${result.data.data_base64}`
     },
+    loadLivePhotoMotion: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      const contentType = result.data.content_type || 'video/quicktime'
+      return `data:${contentType};base64,${result.data.data_base64}`
+    },
   }), [])
 
 

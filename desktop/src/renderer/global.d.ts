@@ -210,6 +210,7 @@ declare global {
   type AgentMediaItem = MediaItem
   type AgentMediaAlbum = MediaAlbum
   type AgentMediaThumbnail = { content_type: string; data_base64: string }
+  type AgentMediaMotion = { content_type: string; data_base64: string; size: number }
 
   type AgentCloudBatchNodeRef = { id: number; revision: number }
   type AgentCloudBatchResult = {
@@ -319,6 +320,7 @@ declare global {
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
         getMediaAlbumItems: (albumID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentMediaItem[]>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
+        getMediaLivePhotoMotion: (nodeID: number) => Promise<DesktopResult<AgentMediaMotion>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>

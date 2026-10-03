@@ -5,6 +5,7 @@ import {
   Collections as CollectionsIcon,
   Image as ImageIcon,
   Movie as MovieIcon,
+  PlayCircleOutline as LivePhotoIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material'
 import {
@@ -25,12 +26,14 @@ import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveStatusAlert } from './StatusAlert'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
+export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
 
 export interface MediaGalleryDataSource {
   listItems: (limit: number, offset: number) => Promise<MediaItem[]>
   listAlbums: () => Promise<MediaAlbum[]>
   listAlbumItems: (albumID: string, limit: number, offset: number) => Promise<MediaItem[]>
   loadThumbnail: MediaThumbnailLoader
+  loadLivePhotoMotion?: MediaMotionLoader
 }
 
 export interface XDriveMediaGalleryPageProps {
@@ -128,6 +131,7 @@ export function XDriveMediaGalleryPage({
       hasMore={hasMore}
       error={error}
       loadThumbnail={source.loadThumbnail}
+      loadLivePhotoMotion={source.loadLivePhotoMotion}
       onOpenAlbum={(album) => void loadFirstPage(album)}
       onBack={() => void loadFirstPage(null)}
       onLoadMore={() => void loadMore()}
@@ -144,6 +148,7 @@ export interface XDriveMediaGalleryProps {
   hasMore?: boolean
   error?: string
   loadThumbnail: MediaThumbnailLoader
+  loadLivePhotoMotion?: MediaMotionLoader
   onOpenAlbum?: (album: MediaAlbum) => void
   onBack?: () => void
   onLoadMore?: () => void
@@ -283,17 +288,55 @@ function keyboardActivate(
 function MediaDetails({
   item,
   loadThumbnail,
+  loadLivePhotoMotion,
   onClose,
 }: {
   item: MediaItem | null
   loadThumbnail: MediaThumbnailLoader
+  loadLivePhotoMotion?: MediaMotionLoader
   onClose: () => void
 }) {
+  const [motionURL, setMotionURL] = useState('')
+  const [motionLoading, setMotionLoading] = useState(false)
+  const [motionError, setMotionError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    let resolved = ''
+    setMotionURL('')
+    setMotionError('')
+    setMotionLoading(false)
+    if (!item?.live_photo || !loadLivePhotoMotion) return () => undefined
+
+    setMotionLoading(true)
+    void loadLivePhotoMotion(item.node.id)
+      .then((value) => {
+        if (!value) {
+          if (active) setMotionError('实况视频暂不可用。')
+          return
+        }
+        resolved = value
+        if (active) setMotionURL(value)
+        else revokeIfBlob(value)
+      })
+      .catch((loadError) => {
+        if (active) setMotionError(errorMessage(loadError))
+      })
+      .finally(() => {
+        if (active) setMotionLoading(false)
+      })
+
+    return () => {
+      active = false
+      if (resolved) revokeIfBlob(resolved)
+    }
+  }, [item?.live_photo, item?.node.id, loadLivePhotoMotion])
+
   const rows = useMemo(() => {
     if (!item) return []
     const metadata = item.metadata
     const result: Array<[string, string]> = [
-      ['类型', metadata.media_kind === 'video' ? '视频' : '图片'],
+      ['类型', item.live_photo ? '实况照片' : metadata.media_kind === 'video' ? '视频' : '图片'],
       ['文件名', item.node.name],
       ['大小', formatBytes(item.node.size)],
       ['格式', metadata.mime_type || '—'],
@@ -378,6 +421,33 @@ function MediaDetails({
                 fallback={mediaFallback(item.metadata.media_kind)}
               />
             </Box>
+            {item.live_photo && loadLivePhotoMotion ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>实况视频</Typography>
+                {motionLoading ? (
+                  <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
+                    <CircularProgress size={28} />
+                  </Box>
+                ) : motionURL ? (
+                  <video
+                    src={motionURL}
+                    controls
+                    loop
+                    playsInline
+                    preload="metadata"
+                    style={{
+                      width: '100%',
+                      maxHeight: 360,
+                      display: 'block',
+                      borderRadius: 8,
+                      background: '#000',
+                    }}
+                  />
+                ) : motionError ? (
+                  <XDriveStatusAlert tone="warning">{motionError}</XDriveStatusAlert>
+                ) : null}
+              </Box>
+            ) : null}
             {item.metadata.index_error ? (
               <XDriveStatusAlert tone="warning">
                 部分媒体元数据未能解析：{item.metadata.index_error}
@@ -413,6 +483,7 @@ export function XDriveMediaGallery({
   hasMore = false,
   error = '',
   loadThumbnail,
+  loadLivePhotoMotion,
   onOpenAlbum,
   onBack,
   onLoadMore,
@@ -563,6 +634,7 @@ export function XDriveMediaGallery({
           >
             {items.map((item) => {
               const video = item.metadata.media_kind === 'video'
+              const livePhoto = Boolean(item.live_photo)
               return (
                 <Paper
                   key={item.node.id}
@@ -592,13 +664,15 @@ export function XDriveMediaGallery({
                     fallback={mediaFallback(item.metadata.media_kind)}
                   />
                   <Chip
-                    icon={video ? <MovieIcon /> : <ImageIcon />}
+                    icon={livePhoto ? <LivePhotoIcon /> : video ? <MovieIcon /> : <ImageIcon />}
                     label={
-                      video && item.metadata.duration_ms
-                        ? formatDuration(item.metadata.duration_ms)
-                        : video
-                          ? '视频'
-                          : '图片'
+                      livePhoto
+                        ? '实况'
+                        : video && item.metadata.duration_ms
+                          ? formatDuration(item.metadata.duration_ms)
+                          : video
+                            ? '视频'
+                            : '图片'
                     }
                     size="small"
                     sx={{
@@ -650,6 +724,7 @@ export function XDriveMediaGallery({
       <MediaDetails
         item={selected}
         loadThumbnail={loadThumbnail}
+        loadLivePhotoMotion={loadLivePhotoMotion}
         onClose={() => setSelected(null)}
       />
     </Stack>
