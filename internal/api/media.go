@@ -715,6 +715,7 @@ func (s *Server) ensureMediaMetadata(
 		node.File != nil &&
 		current.NodeRevision == node.Revision &&
 		current.SHA256 == node.File.SHA256 &&
+		current.RelationEvidenceVersion >= mediapkg.RelationEvidenceVersion &&
 		!legacyLIVPMetadata(node, current) {
 		return current, nil
 	}
@@ -786,6 +787,8 @@ func (s *Server) indexMediaNode(
 		ContainerKind:            extracted.ContainerKind,
 		ContainerJSON:            extracted.ContainerJSON,
 		LivePhotoAssetIdentifier: extracted.LivePhotoAssetIdentifier,
+		RelationEvidenceVersion:  mediapkg.RelationEvidenceVersion,
+		RelationJSON:             extracted.RelationJSON,
 		DerivedResourceVersion: func() int {
 			if strings.EqualFold(filepath.Ext(node.Name), ".livp") {
 				return 1
@@ -849,6 +852,8 @@ func (s *Server) indexMediaNode(
 				"container_kind",
 				"container_json",
 				"live_photo_asset_identifier",
+				"relation_evidence_version",
+				"relation_json",
 				"derived_resource_version",
 				"width",
 				"height",
@@ -935,6 +940,9 @@ func (s *Server) refreshMediaIndexForOwner(
 		}
 		_, _ = s.indexMediaNode(ctx, nodes[index])
 	}
+	if err := mediagroup.ReconcileLocalEvidenceGroups(ctx, s.DB, uid); err != nil {
+		return err
+	}
 	_, err = photoasset.ReconcileOwner(ctx, s.DB, uid)
 	return err
 }
@@ -961,6 +969,9 @@ func (s *Server) refreshMediaIndexBatch(
 		_, _ = s.indexMediaNode(ctx, nodes[index])
 	}
 	for ownerID := range owners {
+		if err := mediagroup.ReconcileLocalEvidenceGroups(ctx, s.DB, ownerID); err != nil {
+			return len(nodes), err
+		}
 		if _, err := photoasset.ReconcileOwner(ctx, s.DB, ownerID); err != nil {
 			return len(nodes), err
 		}
@@ -981,8 +992,10 @@ func (s *Server) staleMediaNodes(
 		Where(
 			"n.type = ? AND n.deleted_at IS NULL AND "+
 				"(mm.node_id IS NULL OR mm.node_revision <> n.revision OR mm.sha256 <> f.sha256 OR "+
+				"COALESCE(mm.relation_evidence_version, 0) < ? OR "+
 				"(lower(n.name) LIKE '%.livp' AND (COALESCE(mm.container_kind, '') = '' OR mm.derived_resource_version < 1)))",
 			meta.NodeTypeFile,
+			mediapkg.RelationEvidenceVersion,
 		)
 	if uid != nil {
 		query = query.Where("n.owner_id = ?", *uid)
