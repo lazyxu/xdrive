@@ -122,3 +122,27 @@ export function xDriveFileOperationEtaMs(operation: XDriveFileOperation, now = D
 
   return undefined
 }
+
+export type XDriveFileOperationStatusSnapshotItem = Pick<XDriveFileOperation, 'id' | 'status'>
+
+export function xDriveFileOperationTransitionSnapshot(
+  previous: ReadonlyMap<string, string>,
+  operations: readonly XDriveFileOperationStatusSnapshotItem[],
+) {
+  const statuses = new Map<string, string>()
+  let hasTerminalTransition = false
+
+  for (const operation of operations) {
+    const previousStatus = previous.get(operation.id)
+    if (
+      previousStatus &&
+      xDriveFileOperationActive(previousStatus) &&
+      !xDriveFileOperationActive(operation.status)
+    ) {
+      hasTerminalTransition = true
+    }
+    statuses.set(operation.id, operation.status)
+  }
+
+  return { statuses, hasTerminalTransition }
+}

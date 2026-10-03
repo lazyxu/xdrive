@@ -60,7 +60,7 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
 } from '../../ui/shared/src'
-import { xDriveFileOperationActive } from '../../ui/shared/src'
+import { xDriveFileOperationActive, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -683,22 +683,12 @@ function FileManager({
   }, [api, profile?.id, profile?.must_change_password])
 
   useEffect(() => {
-    const previous = fileOperationStatusRef.current
-    let shouldRefreshFiles = false
-    const next = new Map<string, string>()
-    for (const operation of fileOperations) {
-      const previousStatus = previous.get(operation.id)
-      if (
-        previousStatus &&
-        xDriveFileOperationActive(previousStatus) &&
-        !xDriveFileOperationActive(operation.status)
-      ) {
-        shouldRefreshFiles = true
-      }
-      next.set(operation.id, operation.status)
-    }
-    fileOperationStatusRef.current = next
-    if (!shouldRefreshFiles || !current) return
+    const transition = xDriveFileOperationTransitionSnapshot(
+      fileOperationStatusRef.current,
+      fileOperations,
+    )
+    fileOperationStatusRef.current = transition.statuses
+    if (!transition.hasTerminalTransition || !current) return
     void loadDirectory(current.id, crumbs, directoryPage?.sort ?? DEFAULT_FILE_SORT)
     void refreshQuota()
     // Directory/task transitions are intentionally keyed only by operation snapshots.

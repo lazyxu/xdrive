@@ -28,6 +28,8 @@ test('shared file-operation model covers the persistent server lifecycle', () =>
     "'completed'",
     "'failed'",
     'xDriveFileOperationActive',
+    'xDriveFileOperationTransitionSnapshot',
+    'hasTerminalTransition',
     'xDriveFileOperationPercent',
     'xDriveFileOperationElapsedMs',
     'xDriveFileOperationEtaMs',
@@ -79,8 +81,8 @@ test('Web polls persistent operations and refreshes Explorer only on terminal tr
   for (const token of [
     'api.fileOperations(100)',
     'window.setInterval(() => void refresh(), 1500)',
-    'xDriveFileOperationActive(previousStatus)',
-    '!xDriveFileOperationActive(operation.status)',
+    'xDriveFileOperationTransitionSnapshot(',
+    'transition.hasTerminalTransition',
     'void loadDirectory(current.id, crumbs',
     'void refreshQuota()',
     'cancelFileOperation(id: string)',
@@ -95,8 +97,8 @@ test('Desktop polls persistent operations and refreshes cloud Explorer only on t
   for (const token of [
     'cloudFileOperations(100)',
     'window.setInterval(() => void refresh(), 1500)',
-    'xDriveFileOperationActive(previousStatus)',
-    '!xDriveFileOperationActive(operation.status)',
+    'xDriveFileOperationTransitionSnapshot(',
+    'transition.hasTerminalTransition',
     'void refreshCloudQuota()',
     'void loadCloudDirectory(',
     'cloudCancelFileOperation(id)',
@@ -117,4 +119,22 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(desktopExplorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must use the shared operation plan')
   assert.ok(desktopExplorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Desktop drag/drop must use the shared operation plan')
   assert.ok(desktop.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop bulk delete is not queued')
+})
+
+test('shared file-operation transition snapshot owns active-to-terminal refresh decisions', () => {
+  for (const token of [
+    'xDriveFileOperationTransitionSnapshot',
+    'const statuses = new Map<string, string>()',
+    'xDriveFileOperationActive(previousStatus)',
+    '!xDriveFileOperationActive(operation.status)',
+    'hasTerminalTransition = true',
+    'statuses.set(operation.id, operation.status)',
+    'return { statuses, hasTerminalTransition }',
+  ]) {
+    assert.ok(sharedModel.includes(token), `shared file-operation transition logic missing: ${token}`)
+  }
+  assert.equal(web.includes('const previous = fileOperationStatusRef.current'), false, 'Web must not duplicate transition scanning')
+  assert.equal(desktop.includes('const previous = cloudFileOperationStatusRef.current'), false, 'Desktop must not duplicate transition scanning')
+  assert.ok(web.includes('fileOperationStatusRef.current = transition.statuses'), 'Web must persist the shared transition snapshot')
+  assert.ok(desktop.includes('cloudFileOperationStatusRef.current = transition.statuses'), 'Desktop must persist the shared transition snapshot')
 })

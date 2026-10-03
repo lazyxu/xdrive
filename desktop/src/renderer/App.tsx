@@ -63,6 +63,7 @@ import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone }
 import {
   formatBinarySize,
   xDriveFileOperationActive,
+  xDriveFileOperationTransitionSnapshot,
 } from '@xdrive/shared'
 import { DesktopCloudPage } from './DesktopCloudPage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -1152,22 +1153,12 @@ export default function App({
   }
 
   useEffect(() => {
-    const previous = cloudFileOperationStatusRef.current
-    let shouldRefreshFiles = false
-    const next = new Map<string, string>()
-    for (const operation of cloudFileOperations) {
-      const previousStatus = previous.get(operation.id)
-      if (
-        previousStatus &&
-        xDriveFileOperationActive(previousStatus) &&
-        !xDriveFileOperationActive(operation.status)
-      ) {
-        shouldRefreshFiles = true
-      }
-      next.set(operation.id, operation.status)
-    }
-    cloudFileOperationStatusRef.current = next
-    if (!shouldRefreshFiles || cloudCrumbs.length === 0) return
+    const transition = xDriveFileOperationTransitionSnapshot(
+      cloudFileOperationStatusRef.current,
+      cloudFileOperations,
+    )
+    cloudFileOperationStatusRef.current = transition.statuses
+    if (!transition.hasTerminalTransition || cloudCrumbs.length === 0) return
     void refreshCloudQuota()
     void loadCloudDirectory(
       cloudCrumbs.at(-1)!.id,
