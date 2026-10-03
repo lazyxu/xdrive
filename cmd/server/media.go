@@ -36,7 +36,7 @@ func runMediaVerify(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	report, err := maintenance.VerifyMedia(db)
+	report, err := maintenance.VerifyMediaWithStorageRoot(db, cfg.StorageRoot)
 	if err != nil {
 		return err
 	}
@@ -51,14 +51,16 @@ func runMediaVerify(args []string) error {
 		fmt.Printf("media groups:      %d\n", report.Groups)
 		fmt.Printf("media group items: %d\n", report.GroupItems)
 		fmt.Printf("derived resources: %d\n", report.DerivedResources)
+		fmt.Printf("thumbnails:        %d\n", report.Thumbnails)
 		fmt.Printf("issues:            %d\n", len(report.Issues))
 		for _, issue := range report.Issues {
 			fmt.Printf(
-				"MEDIA_INTEGRITY owner=%d node=%d group=%d role=%q reason=%s",
+				"MEDIA_INTEGRITY owner=%d node=%d group=%d role=%q storage_key=%q reason=%s",
 				issue.OwnerID,
 				issue.NodeID,
 				issue.GroupID,
 				issue.Role,
+				issue.StorageKey,
 				issue.Reason,
 			)
 			if issue.Expected != "" || issue.Actual != "" {

@@ -2,6 +2,9 @@ package maintenance
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,13 +15,14 @@ import (
 )
 
 type MediaIntegrityIssue struct {
-	OwnerID  uint64 `json:"owner_id,omitempty"`
-	NodeID   uint64 `json:"node_id,omitempty"`
-	GroupID  uint64 `json:"group_id,omitempty"`
-	Role     string `json:"role,omitempty"`
-	Reason   string `json:"reason"`
-	Expected string `json:"expected,omitempty"`
-	Actual   string `json:"actual,omitempty"`
+	OwnerID    uint64 `json:"owner_id,omitempty"`
+	NodeID     uint64 `json:"node_id,omitempty"`
+	GroupID    uint64 `json:"group_id,omitempty"`
+	Role       string `json:"role,omitempty"`
+	StorageKey string `json:"storage_key,omitempty"`
+	Reason     string `json:"reason"`
+	Expected   string `json:"expected,omitempty"`
+	Actual     string `json:"actual,omitempty"`
 }
 
 type MediaVerifyReport struct {
@@ -26,6 +30,7 @@ type MediaVerifyReport struct {
 	Groups           int                   `json:"groups"`
 	GroupItems       int                   `json:"group_items"`
 	DerivedResources int                   `json:"derived_resources"`
+	Thumbnails       int                   `json:"thumbnails"`
 	Issues           []MediaIntegrityIssue `json:"issues"`
 }
 
@@ -34,6 +39,28 @@ func (r MediaVerifyReport) OK() bool { return len(r.Issues) == 0 }
 // VerifyMedia checks connector-neutral media-index relationships only. It never
 // reads provider APIs and never mutates metadata, groups, resources, or files.
 func VerifyMedia(db *gorm.DB) (MediaVerifyReport, error) {
+	return verifyMedia(db, "")
+}
+
+// VerifyMediaWithStorageRoot performs the same read-only relational checks as
+// VerifyMedia and additionally validates referenced xDrive-generated thumbnail
+// cache objects. It never creates, rewrites, or deletes storage entries.
+func VerifyMediaWithStorageRoot(db *gorm.DB, storageRoot string) (MediaVerifyReport, error) {
+	root, err := filepath.Abs(strings.TrimSpace(storageRoot))
+	if err != nil {
+		return MediaVerifyReport{}, err
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return MediaVerifyReport{}, fmt.Errorf("stat media storage root: %w", err)
+	}
+	if !info.IsDir() {
+		return MediaVerifyReport{}, fmt.Errorf("media storage root is not a directory")
+	}
+	return verifyMedia(db, root)
+}
+
+func verifyMedia(db *gorm.DB, storageRoot string) (MediaVerifyReport, error) {
 	var report MediaVerifyReport
 	if db == nil {
 		return report, fmt.Errorf("media verify database is unavailable")
@@ -93,7 +120,14 @@ func VerifyMedia(db *gorm.DB) (MediaVerifyReport, error) {
 		return report, err
 	}
 
-	return verifyMediaState(metadata, groups, items, resources, nodes, files), nil
+	report = verifyMediaState(metadata, groups, items, resources, nodes, files)
+	if storageRoot != "" {
+		verifyThumbnailStorage(storageRoot, metadata, func(issue MediaIntegrityIssue) {
+			report.Issues = append(report.Issues, issue)
+		})
+		sortMediaIntegrityIssues(report.Issues)
+	}
+	return report, nil
 }
 
 func verifyMediaState(
@@ -109,6 +143,11 @@ func verifyMediaState(
 		Groups:           len(groups),
 		GroupItems:       len(items),
 		DerivedResources: len(resources),
+	}
+	for _, row := range metadata {
+		if strings.TrimSpace(row.ThumbnailKey) != "" {
+			report.Thumbnails++
+		}
 	}
 	add := func(issue MediaIntegrityIssue) {
 		report.Issues = append(report.Issues, issue)
@@ -126,6 +165,7 @@ func verifyMediaState(
 	for _, row := range metadata {
 		metadataByNodeID[row.NodeID] = row
 		verifyMediaMetadataRow(row, nodeByID, fileByNodeID, add)
+		verifyThumbnailMetadata(row, add)
 	}
 
 	groupByID := make(map[uint64]meta.MediaGroup, len(groups))
@@ -218,8 +258,13 @@ func verifyMediaState(
 	}
 	verifyLIVPContainers(metadata, resourcesByNodeID, add)
 
-	sort.SliceStable(report.Issues, func(i, j int) bool {
-		a, b := report.Issues[i], report.Issues[j]
+	sortMediaIntegrityIssues(report.Issues)
+	return report
+}
+
+func sortMediaIntegrityIssues(issues []MediaIntegrityIssue) {
+	sort.SliceStable(issues, func(i, j int) bool {
+		a, b := issues[i], issues[j]
 		if a.OwnerID != b.OwnerID {
 			return a.OwnerID < b.OwnerID
 		}
@@ -234,7 +279,6 @@ func verifyMediaState(
 		}
 		return a.Reason < b.Reason
 	})
-	return report
 }
 
 func verifyMediaMetadataRow(
@@ -579,6 +623,128 @@ func verifyLIVPContainers(
 			issue.Reason = "livp_motion_resource_count_invalid"
 			issue.Expected = "1"
 			issue.Actual = strconv.Itoa(roleCounts[meta.MediaDerivedResourceRoleMotion])
+			add(issue)
+		}
+	}
+}
+
+const mediaThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
+
+func verifyThumbnailMetadata(
+	row meta.MediaMetadata,
+	add func(MediaIntegrityIssue),
+) {
+	key := strings.TrimSpace(row.ThumbnailKey)
+	base := MediaIntegrityIssue{OwnerID: row.OwnerID, NodeID: row.NodeID, StorageKey: key}
+	if key == "" {
+		if strings.TrimSpace(row.ThumbnailMIMEType) != "" ||
+			row.ThumbnailWidth != 0 ||
+			row.ThumbnailHeight != 0 {
+			base.Reason = "thumbnail_metadata_without_key"
+			add(base)
+		}
+		return
+	}
+
+	clean, err := cleanStorageKey(key)
+	if err != nil || !strings.HasPrefix(clean, mediaThumbnailStoragePrefix) {
+		issue := base
+		issue.Reason = "thumbnail_key_invalid"
+		issue.Expected = mediaThumbnailStoragePrefix + "..."
+		issue.Actual = key
+		add(issue)
+	}
+	if !strings.EqualFold(strings.TrimSpace(row.ThumbnailMIMEType), "image/jpeg") {
+		issue := base
+		issue.Reason = "thumbnail_mime_invalid"
+		issue.Expected = "image/jpeg"
+		issue.Actual = strings.TrimSpace(row.ThumbnailMIMEType)
+		add(issue)
+	}
+	if row.ThumbnailWidth <= 0 || row.ThumbnailHeight <= 0 {
+		issue := base
+		issue.Reason = "thumbnail_dimensions_invalid"
+		issue.Expected = "positive width and height"
+		issue.Actual = fmt.Sprintf("%dx%d", row.ThumbnailWidth, row.ThumbnailHeight)
+		add(issue)
+	}
+}
+
+func verifyThumbnailStorage(
+	root string,
+	metadata []meta.MediaMetadata,
+	add func(MediaIntegrityIssue),
+) {
+	for _, row := range metadata {
+		rawKey := strings.TrimSpace(row.ThumbnailKey)
+		if rawKey == "" {
+			continue
+		}
+		key, err := cleanStorageKey(rawKey)
+		if err != nil || !strings.HasPrefix(key, mediaThumbnailStoragePrefix) {
+			continue
+		}
+		base := MediaIntegrityIssue{
+			OwnerID: row.OwnerID, NodeID: row.NodeID, StorageKey: key,
+		}
+		full := filepath.Join(root, filepath.FromSlash(key))
+		info, statErr := os.Lstat(full)
+		if statErr != nil {
+			issue := base
+			if os.IsNotExist(statErr) {
+				issue.Reason = "thumbnail_storage_missing"
+			} else {
+				issue.Reason = "thumbnail_storage_unreadable"
+				issue.Actual = statErr.Error()
+			}
+			add(issue)
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			issue := base
+			issue.Reason = "thumbnail_storage_not_regular"
+			issue.Actual = info.Mode().String()
+			add(issue)
+			continue
+		}
+		if info.Size() <= 0 {
+			issue := base
+			issue.Reason = "thumbnail_storage_empty"
+			issue.Actual = strconv.FormatInt(info.Size(), 10)
+			add(issue)
+			continue
+		}
+
+		file, openErr := os.Open(full)
+		if openErr != nil {
+			issue := base
+			issue.Reason = "thumbnail_storage_unreadable"
+			issue.Actual = openErr.Error()
+			add(issue)
+			continue
+		}
+		var header [3]byte
+		_, readErr := io.ReadFull(file, header[:])
+		closeErr := file.Close()
+		if readErr != nil {
+			issue := base
+			issue.Reason = "thumbnail_storage_unreadable"
+			issue.Actual = readErr.Error()
+			add(issue)
+			continue
+		}
+		if closeErr != nil {
+			issue := base
+			issue.Reason = "thumbnail_storage_unreadable"
+			issue.Actual = closeErr.Error()
+			add(issue)
+			continue
+		}
+		if header != [3]byte{0xff, 0xd8, 0xff} {
+			issue := base
+			issue.Reason = "thumbnail_storage_format_invalid"
+			issue.Expected = "jpeg"
+			issue.Actual = fmt.Sprintf("%02x%02x%02x", header[0], header[1], header[2])
 			add(issue)
 		}
 	}

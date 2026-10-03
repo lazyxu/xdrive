@@ -1,6 +1,8 @@
 package maintenance
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +17,7 @@ func TestVerifyMediaStateHealthy(t *testing.T) {
 	if !report.OK() {
 		t.Fatalf("unexpected issues: %+v", report.Issues)
 	}
-	if report.Metadata != 3 || report.Groups != 1 || report.GroupItems != 2 || report.DerivedResources != 2 {
+	if report.Metadata != 3 || report.Groups != 1 || report.GroupItems != 2 || report.DerivedResources != 2 || report.Thumbnails != 0 {
 		t.Fatalf("report=%+v", report)
 	}
 }
@@ -162,5 +164,95 @@ func TestVerifyMediaStateFindsEvidenceAndLIVPResourceMismatch(t *testing.T) {
 		if !reasons[want] {
 			t.Fatalf("missing issue %q in %+v", want, report.Issues)
 		}
+	}
+}
+
+func TestVerifyThumbnailMetadataFindsBrokenFields(t *testing.T) {
+	row := meta.MediaMetadata{
+		NodeID: 1, OwnerID: 2,
+		ThumbnailKey:      "../outside.jpg",
+		ThumbnailMIMEType: "image/png",
+		ThumbnailWidth:    0,
+		ThumbnailHeight:   512,
+	}
+	var issues []MediaIntegrityIssue
+	verifyThumbnailMetadata(row, func(issue MediaIntegrityIssue) {
+		issues = append(issues, issue)
+	})
+	reasons := map[string]bool{}
+	for _, issue := range issues {
+		reasons[issue.Reason] = true
+	}
+	for _, want := range []string{
+		"thumbnail_key_invalid",
+		"thumbnail_mime_invalid",
+		"thumbnail_dimensions_invalid",
+	} {
+		if !reasons[want] {
+			t.Fatalf("missing issue %q in %+v", want, issues)
+		}
+	}
+
+	issues = nil
+	row.ThumbnailKey = ""
+	row.ThumbnailMIMEType = "image/jpeg"
+	row.ThumbnailWidth = 512
+	row.ThumbnailHeight = 384
+	verifyThumbnailMetadata(row, func(issue MediaIntegrityIssue) {
+		issues = append(issues, issue)
+	})
+	if len(issues) != 1 || issues[0].Reason != "thumbnail_metadata_without_key" {
+		t.Fatalf("issues=%+v", issues)
+	}
+}
+
+func TestVerifyThumbnailStorageChecksPresenceAndJPEGMagic(t *testing.T) {
+	root := t.TempDir()
+	key := ".xdrive-media/thumbnails/aa/test-512.jpg"
+	row := meta.MediaMetadata{
+		NodeID: 1, OwnerID: 2,
+		ThumbnailKey:      key,
+		ThumbnailMIMEType: "image/jpeg",
+		ThumbnailWidth:    512,
+		ThumbnailHeight:   384,
+	}
+	check := func() []MediaIntegrityIssue {
+		var issues []MediaIntegrityIssue
+		verifyThumbnailStorage(root, []meta.MediaMetadata{row}, func(issue MediaIntegrityIssue) {
+			issues = append(issues, issue)
+		})
+		return issues
+	}
+
+	issues := check()
+	if len(issues) != 1 || issues[0].Reason != "thumbnail_storage_missing" {
+		t.Fatalf("missing thumbnail issues=%+v", issues)
+	}
+
+	full := filepath.Join(root, filepath.FromSlash(key))
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, nil, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	issues = check()
+	if len(issues) != 1 || issues[0].Reason != "thumbnail_storage_empty" {
+		t.Fatalf("empty thumbnail issues=%+v", issues)
+	}
+
+	if err := os.WriteFile(full, []byte("not-a-jpeg"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	issues = check()
+	if len(issues) != 1 || issues[0].Reason != "thumbnail_storage_format_invalid" {
+		t.Fatalf("invalid thumbnail issues=%+v", issues)
+	}
+
+	if err := os.WriteFile(full, []byte{0xff, 0xd8, 0xff, 0xd9}, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if issues = check(); len(issues) != 0 {
+		t.Fatalf("valid thumbnail issues=%+v", issues)
 	}
 }
