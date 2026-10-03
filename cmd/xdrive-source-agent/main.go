@@ -19,6 +19,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/sourceagentconfig"
 	"github.com/lazyxu/xdrive/internal/sourceagentidentity"
 	"github.com/lazyxu/xdrive/internal/sourceschedule"
+	"github.com/lazyxu/xdrive/internal/synology"
 	"github.com/lazyxu/xdrive/internal/version"
 )
 
@@ -61,7 +62,7 @@ func usage() {
 Usage:
   xdrive-source-agent login --server https://drive.example.com --username USER [--password PASS]
   xdrive-source-agent password --current CURRENT --new NEW
-  xdrive-source-agent setup [--source-id ID] --personal /volume1/homes/USER/Photos --shared /volume1/photo [--name NAME] [--mode scan|sync] [--target Photos/Synology] [--ignore-file FILE]
+  xdrive-source-agent setup [--source-id ID] --personal /volume1/homes/USER/Photos --shared /volume1/photo [--synology-url URL --synology-username USER --synology-password PASS] [--name NAME] [--mode scan|sync] [--target Photos/Synology] [--ignore-file FILE]
   xdrive-source-agent status
   xdrive-source-agent run [--trigger scheduled|manual|reconcile] [--due] [--interval 6h]
   xdrive-source-agent logout
@@ -161,6 +162,9 @@ func setup(args []string) error {
 	shared := fs.String("shared", "", "Synology Photos Shared Space filesystem root")
 	ignoreFile := fs.String("ignore-file", "", "gitignore-style source ignore rules file")
 	runMode := fs.String("mode", "", "source run mode: scan or sync (new sources default to scan)")
+	synologyURL := fs.String("synology-url", "", "DSM origin used only for Photos identity enrichment")
+	synologyUsername := fs.String("synology-username", "", "DSM account used only for Photos identity enrichment")
+	synologyPassword := fs.String("synology-password", "", "DSM password (or XD_SYNOLOGY_PASSWORD)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -193,6 +197,24 @@ func setup(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+
+	var photosCredential *synology.Credential
+	if strings.TrimSpace(*synologyURL) != "" || strings.TrimSpace(*synologyUsername) != "" || strings.TrimSpace(*synologyPassword) != "" {
+		if *synologyPassword == "" {
+			*synologyPassword = os.Getenv("XD_SYNOLOGY_PASSWORD")
+		}
+		credential := synology.Credential{
+			BaseURL: strings.TrimSpace(*synologyURL), Username: strings.TrimSpace(*synologyUsername), Password: *synologyPassword,
+		}
+		synologyClient, clientErr := synology.New(credential)
+		if clientErr != nil {
+			return fmt.Errorf("Synology Photos identity credential: %w", clientErr)
+		}
+		if _, testErr := synologyClient.Test(ctx); testErr != nil {
+			return fmt.Errorf("test Synology Photos identity credential: %w", testErr)
+		}
+		photosCredential = &credential
+	}
 
 	remote, err := resolveSetupSource(ctx, cli, cfg.SourceID, *sourceID, *name)
 	if err != nil {
@@ -256,6 +278,11 @@ func setup(args []string) error {
 	cfg.SharedRoot = strings.TrimSpace(*shared)
 	cfg.SharedRootID = sharedID
 	cfg.SharedRootFingerprint = sharedFingerprint
+	if photosCredential != nil {
+		if err := sourceagentconfig.SaveSynologyCredential(&cfg, *photosCredential); err != nil {
+			return fmt.Errorf("save Synology Photos identity credential: %w", err)
+		}
+	}
 	if err := sourceagentconfig.Save(cfg); err != nil {
 		return err
 	}
@@ -265,6 +292,11 @@ func setup(args []string) error {
 	}
 	if cfg.SharedRoot != "" {
 		fmt.Printf("shared: %s\n", cfg.SharedRoot)
+	}
+	if cfg.SynologyCredentialID != "" {
+		fmt.Printf("Photos identity: %s @ %s (%s)\n", cfg.SynologyUsername, cfg.SynologyBaseURL, sourceagentconfig.SynologyCredentialBackend(cfg))
+	} else {
+		fmt.Println("Photos identity: filesystem compatibility mode")
 	}
 	fmt.Println("setup complete; use xdrive-source-agent run from DSM Task Scheduler")
 	return nil
@@ -359,6 +391,11 @@ func status() error {
 	if cfg.SharedRoot != "" {
 		fmt.Printf("shared: %s\n", cfg.SharedRoot)
 	}
+	if cfg.SynologyCredentialID != "" {
+		fmt.Printf("Photos identity: configured for %s @ %s (%s)\n", cfg.SynologyUsername, cfg.SynologyBaseURL, sourceagentconfig.SynologyCredentialBackend(cfg))
+	} else {
+		fmt.Println("Photos identity: filesystem compatibility mode")
+	}
 	runs, err := cli.SourceRuns(ctx, source.ID, 1, 0)
 	if err == nil && len(runs) != 0 {
 		run := runs[0]
@@ -447,8 +484,27 @@ func run(args []string) error {
 		return nil
 	}
 
+	var photos sourceagent.PhotosRemote
+	if cfg.SynologyCredentialID != "" {
+		credential, credentialErr := sourceagentconfig.LoadSynologyCredential(cfg)
+		if credentialErr != nil {
+			fmt.Fprintln(os.Stderr, "xdrive-source-agent: Synology Photos identity fallback:", credentialErr)
+		} else if synologyClient, clientErr := synology.New(credential); clientErr != nil {
+			fmt.Fprintln(os.Stderr, "xdrive-source-agent: Synology Photos identity fallback:", clientErr)
+		} else if session, connectErr := synologyClient.Connect(ctx); connectErr != nil {
+			fmt.Fprintln(os.Stderr, "xdrive-source-agent: Synology Photos identity fallback:", connectErr)
+		} else {
+			photos = session
+			defer func() {
+				closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer closeCancel()
+				_ = session.Close(closeCtx)
+			}()
+		}
+	}
+
 	scanner := sourceagent.Scanner{
-		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID,
+		API: cli, ExecutionAPI: cli, SourceID: cfg.SourceID, Photos: photos,
 		Roots: sourceagent.RootsWithIdentityState(
 			cfg.PersonalRoot, cfg.PersonalRootID, cfg.PersonalRootFingerprint,
 			cfg.SharedRoot, cfg.SharedRootID, cfg.SharedRootFingerprint,

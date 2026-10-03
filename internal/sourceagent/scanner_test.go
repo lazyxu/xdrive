@@ -26,10 +26,22 @@ type fakeAPI struct {
 	heartbeatErr   error
 	commits        [][]client.SourceCommit
 	commitErr      error
+	sourceItems    []client.SourceItem
 }
 
 func (f *fakeAPI) Source(context.Context, uint64) (client.Source, error) {
 	return f.source, nil
+}
+
+func (f *fakeAPI) SourceItems(_ context.Context, _ uint64, _ string, limit, offset int) ([]client.SourceItem, error) {
+	if offset >= len(f.sourceItems) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(f.sourceItems) {
+		end = len(f.sourceItems)
+	}
+	return append([]client.SourceItem(nil), f.sourceItems[offset:end]...), nil
 }
 
 func (f *fakeAPI) BeginSourceRun(context.Context, uint64, string, string) (client.SyncRun, error) {

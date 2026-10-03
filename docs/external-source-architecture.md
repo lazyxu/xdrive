@@ -96,9 +96,22 @@ FileStation currently uses explicit path identity when a stable provider item id
 
 ### Synology NAS Push
 
-Push remains a filesystem synchronization path. It follows the same rule: upload original files and preserve robust filesystem identity; do not turn the NAS agent into a Synology Photos semantic client.
+Push uses a hybrid identity/data-path model when a local DSM Photos credential is configured:
 
-Any future local media processing should happen in the common xDrive media pipeline after original bytes are stored, not by depending on provider-specific media APIs.
+```text
+Synology Photos item/folder API
+  -> canonical file identity: synology:<space>:<item_id>
+  -> exact path mapping into configured Personal/Shared roots
+DSM filesystem
+  -> authoritative complete inventory
+  -> original bytes / resumable upload fast path
+```
+
+The filesystem remains authoritative for completeness, so Photos API failure or an unindexed ordinary file never becomes an empty/partial provider inventory. Indexed files carry their stable filesystem identity as `SourceItemAlias`; existing filesystem-canonical SourceItems are explicitly promoted in place only when that filesystem ID is the current server canonical identity. New indexed files start directly with the Photos item ID. A later filesystem-only run resolves through the alias and cannot downgrade the stronger canonical ID.
+
+The path bridge is deterministic provider-path resolution (Photos folder graph + filename into the configured root); size is a fail-closed consistency guard, not an identity heuristic. Ambiguous paths, duplicate Photos identities, invalid pagination, size mismatch, unavailable Photos APIs, and unindexed files fall back to filesystem identity instead of guessing.
+
+Push never downloads original bytes through `SYNO.Foto.Download`; it continues to read the local file directly. Photos EXIF/GPS/people/tag/Live Photo fields remain outside the Source contract. Media processing happens in the common xDrive pipeline after original bytes are stored.
 
 ## File identity and aliases
 

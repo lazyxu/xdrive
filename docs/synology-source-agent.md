@@ -7,7 +7,8 @@ The native `xdrive-source-agent` is intended for Synology DSM Task Scheduler. It
 The agent supports both **scan** and **sync** modes:
 
 - Personal Space and Shared Space can both be enabled.
-- Discovery is a fast metadata scan using stable Linux filesystem identity plus size and mtime.
+- The filesystem remains the complete inventory and fast byte path. When a local DSM Photos credential is configured, the agent also reads Photos item/folder metadata and uses `synology:<space>:<item_id>` as the canonical file identity while continuing to read bytes directly from the filesystem.
+- Files not indexed by Synology Photos, unsupported ordinary files, or files whose Photos path/size cannot be verified keep the stable filesystem identity fallback.
 - Gitignore-style Source ignore rules are honored identically in both modes.
 - `scan` reports create/update/move/missing and estimated transfer bytes without changing xDrive content.
 - `sync` materializes directories and executes create/update/move/move-update plans.
@@ -84,10 +85,13 @@ export XD_NEW_PASSWORD='new-password'
 When the Source was created from the xDrive Web/Desktop UI, bind the NAS agent to that exact Source ID:
 
 ```bash
+export XD_SYNOLOGY_PASSWORD='your-dsm-password'
 ./xdrive-source-agent setup \
   --source-id 42 \
   --personal /volume1/homes/alice/Photos \
-  --shared /volume1/photo
+  --shared /volume1/photo \
+  --synology-url http://127.0.0.1:5000 \
+  --synology-username alice
 ```
 
 With `--source-id`, setup preserves the Source name, target node, current run mode, and existing ignore rules unless those values are explicitly overridden. This avoids duplicate Sources and avoids reconstructing the UI-selected target path on DSM.
@@ -103,6 +107,8 @@ For a CLI-created Source, setup can still create or reuse by name/path:
   --mode scan \
   --target Photos/Synology
 ```
+
+The DSM Photos credential is stored locally on the NAS through the same source-agent secret backend used for xDrive credentials (Secret Service when available, otherwise a private `0600` file). The password is not stored in `config.json` or on xDrive Server. Existing installations may omit these flags and continue in filesystem-identity compatibility mode; adding the credential later enables automatic identity promotion without re-uploading files.
 
 Setup records the Linux filesystem identity of each configured root. Every run verifies that identity before scanning; if a root disappears, is replaced, or the final path becomes a symlink, the run fails with `complete_inventory=false` rather than inferring that the entire source was deleted.
 
@@ -167,7 +173,7 @@ A run:
 
 1. reads the Source configuration from xDrive;
 2. starts an idempotent Source run;
-3. scans Personal and Shared roots;
+3. optionally builds a best-effort Photos item→local-path identity index, then scans Personal and Shared filesystem roots as the authoritative inventory;
 4. batches up to 500 non-ignored observations per request;
 5. heartbeats the server run lease during long scans;
 6. receives `create/update/move/move_update/unchanged` planner actions;
@@ -235,4 +241,6 @@ Personal/...
 Shared/...
 ```
 
-Later Synology Photos metadata integration may replace or augment filesystem identity with stable Photos item IDs where available.
+When Photos identity enrichment is configured, a file whose exact Photos folder graph + filename resolves into the configured filesystem root and whose reported size matches is observed with the Photos item ID plus its stable filesystem ID as an alias. Existing filesystem-canonical SourceItems are promoted in place; new indexed files start directly with the Photos ID. If Photos is unavailable, inconsistent, incomplete, or the item is not indexed, the scanner falls back to the filesystem identity. A previously promoted item still resolves through its stored filesystem alias and is never downgraded.
+
+Photos API data is used only for file identity/path mapping. Original bytes are always read locally from the DSM filesystem. EXIF, GPS, Live Photo, people/tags and other media semantics remain xDrive-local after the original bytes are committed.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/synology"
 )
 
 func TestScannerWalksPersonalAndSharedWithIgnore(t *testing.T) {
@@ -198,4 +199,127 @@ func TestScannerSyncExecutesAndCommits(t *testing.T) {
 	if fileCommit == nil || !fileCommit.Transferred || fileCommit.TransferredBytes != 3 {
 		t.Fatalf("file commit=%+v", fileCommit)
 	}
+}
+
+func TestScannerPromotesFilesystemIdentityToPhotosItem(t *testing.T) {
+	shared := t.TempDir()
+	local := filepath.Join(shared, "photo.jpg")
+	if err := os.WriteFile(local, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sharedID, err := RootIdentity("shared", shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filesystemID, err := filesystemIdentity("shared", local, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &fakeAPI{
+		source:      client.Source{ID: 10, Kind: SynologyKind, Direction: meta.SourceDirectionPush},
+		begin:       client.SyncRun{ID: "run-10", SourceID: 10, Mode: meta.SourceRunModeScan},
+		sourceItems: []client.SourceItem{{ExternalID: filesystemID.LegacyExternalID, Path: "Shared/photo.jpg"}},
+	}
+	photos := &fakePhotosRemote{
+		available: map[synology.Space]bool{synology.SpaceShared: true},
+		items: map[synology.Space][]synology.Item{
+			synology.SpaceShared: {{ID: 80716, Filename: "photo.jpg", Filesize: 3}},
+		},
+	}
+	_, err = (Scanner{API: api, SourceID: 10, Photos: photos, Roots: RootsWithIdentities("", "", shared, sharedID)}).
+		Run(context.Background(), meta.SyncRunTriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file client.SourceObservation
+	for _, batch := range api.observed {
+		for _, item := range batch {
+			if item.Path == "Shared/photo.jpg" {
+				file = item
+			}
+		}
+	}
+	if file.ExternalID != "synology:shared:80716" || !file.PromoteExternalID ||
+		len(file.ExternalIDAliases) != 1 || file.ExternalIDAliases[0] != filesystemID.LegacyExternalID {
+		t.Fatalf("observation=%+v", file)
+	}
+}
+
+func TestScannerUsesPhotosIDForNewFileWithoutPromotion(t *testing.T) {
+	shared := t.TempDir()
+	if err := os.WriteFile(filepath.Join(shared, "new.jpg"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sharedID, err := RootIdentity("shared", shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &fakeAPI{
+		source: client.Source{ID: 11, Kind: SynologyKind, Direction: meta.SourceDirectionPush},
+		begin:  client.SyncRun{ID: "run-11", SourceID: 11, Mode: meta.SourceRunModeScan},
+	}
+	photos := &fakePhotosRemote{
+		available: map[synology.Space]bool{synology.SpaceShared: true},
+		items: map[synology.Space][]synology.Item{
+			synology.SpaceShared: {{ID: 9001, Filename: "new.jpg", Filesize: 3}},
+		},
+	}
+	_, err = (Scanner{API: api, SourceID: 11, Photos: photos, Roots: RootsWithIdentities("", "", shared, sharedID)}).
+		Run(context.Background(), meta.SyncRunTriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, batch := range api.observed {
+		for _, item := range batch {
+			if item.Path == "Shared/new.jpg" {
+				if item.ExternalID != "synology:shared:9001" || item.PromoteExternalID ||
+					len(item.ExternalIDAliases) != 1 || !strings.HasPrefix(item.ExternalIDAliases[0], "fs:shared:") {
+					t.Fatalf("observation=%+v", item)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("new file observation not found")
+}
+
+func TestScannerFallsBackToFilesystemIdentityWhenPhotosSizeDoesNotMatch(t *testing.T) {
+	shared := t.TempDir()
+	if err := os.WriteFile(filepath.Join(shared, "photo.jpg"), []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sharedID, err := RootIdentity("shared", shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &fakeAPI{
+		source: client.Source{ID: 12, Kind: SynologyKind, Direction: meta.SourceDirectionPush},
+		begin:  client.SyncRun{ID: "run-12", SourceID: 12, Mode: meta.SourceRunModeScan},
+	}
+	photos := &fakePhotosRemote{
+		available: map[synology.Space]bool{synology.SpaceShared: true},
+		items: map[synology.Space][]synology.Item{
+			synology.SpaceShared: {{ID: 1, Filename: "photo.jpg", Filesize: 999}},
+		},
+	}
+	_, err = (Scanner{API: api, SourceID: 12, Photos: photos, Roots: RootsWithIdentities("", "", shared, sharedID)}).
+		Run(context.Background(), meta.SyncRunTriggerManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, batch := range api.observed {
+		for _, item := range batch {
+			if item.Path == "Shared/photo.jpg" {
+				if !strings.HasPrefix(item.ExternalID, "fs:shared:") || len(item.ExternalIDAliases) != 0 {
+					t.Fatalf("observation=%+v", item)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("fallback file observation not found")
 }

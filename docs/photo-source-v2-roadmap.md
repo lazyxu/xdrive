@@ -63,6 +63,7 @@ The following foundations already exist and should be extended rather than repla
 - xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, derived thumbnail caching, and Gallery indexing;
 - Yike Pull stable `yike:<owner_uk>:<fsid>` identity, file/albums discovery, MD5 hint, Range download, resumable upload, bounded API rate, cancellation, and incomplete-inventory safety;
 - Synology Photos Pull stable `synology:<space>:<item_id>` identity, Personal/Shared spaces, file/albums discovery, Range download, cancellation, retry classification, and optional-album failure isolation;
+- Synology Push hybrid identity foundation: filesystem-complete inventory/fast byte reads plus optional Photos item-ID canonicalization with filesystem aliases and in-place promotion;
 - Synology FileStation Pull arbitrary-file recursion, multi-root selection, Range download, stronger `mtime + ctime + crtime + size` revision when available, and path-scoped identity fallback;
 - account-aware scheduling and PostgreSQL advisory coordination so Sources using the same upstream account do not multiply login/API pressure;
 - `xdrive-server source verify [--json]` for basic read-only SourceItem -> Node/File binding verification.
@@ -88,7 +89,9 @@ The following foundations already exist and should be extended rather than repla
 15. Backup mode never removes xDrive content because the provider removed a file.
 16. Mirror mode, when implemented, moves only confirmed deletions to xDrive trash and never permanently deletes directly.
 17. Incremental synchronization is enabled only for a proven cursor/diff/tombstone contract and always retains a full-reconciliation reset path.
-18. Source-side providers remain read-only by default.
+18. Synology Push keeps the filesystem as inventory authority and byte path; Photos item identity enrichment is optional/best-effort and must fail back to filesystem identity without causing missing inference.
+19. Push may promote a filesystem canonical ID to `synology:<space>:<item_id>` only when the exact provider folder graph + filename maps inside the configured root and the provider-reported size matches as a consistency guard.
+20. Source-side providers remain read-only by default.
 
 ## Connector responsibilities
 

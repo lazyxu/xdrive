@@ -1,10 +1,14 @@
 package sourceagentconfig
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/lazyxu/xdrive/internal/synology"
 )
 
 func TestConfigSaveLoadAndReady(t *testing.T) {
@@ -120,4 +124,62 @@ func TestIdentityDirStableAndIsolated(t *testing.T) {
 	if fourth == first {
 		t.Fatal("different servers share identity state")
 	}
+}
+
+func TestSynologyCredentialStoredOutsideConfig(t *testing.T) {
+	t.Setenv(configDirEnv, t.TempDir())
+	t.Setenv("XD_DISABLE_SECRET_SERVICE", "1")
+	cfg := Config{Server: "https://drive.example.com", SessionID: "session-1"}
+	credential := synology.Credential{
+		BaseURL:  "https://nas.example.com:5001",
+		Username: "photo-reader",
+		Password: "super-secret-password",
+	}
+	if err := SaveSynologyCredential(&cfg, credential); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(mustConfigPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), credential.Password) {
+		t.Fatal("Synology password leaked into config.json")
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["synology_base_url"] != credential.BaseURL || raw["synology_username"] != credential.Username {
+		t.Fatalf("config metadata=%v", raw)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadSynologyCredential(loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != credential {
+		t.Fatalf("credential=%+v want=%+v", got, credential)
+	}
+	wantBackend := "file-0600"
+	if runtime.GOOS == "windows" {
+		wantBackend = "windows-dpapi"
+	}
+	if backend := SynologyCredentialBackend(loaded); backend != wantBackend {
+		t.Fatalf("backend=%q want=%q", backend, wantBackend)
+	}
+}
+
+func mustConfigPath(t *testing.T) string {
+	t.Helper()
+	path, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
