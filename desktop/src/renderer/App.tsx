@@ -66,8 +66,7 @@ import {
   XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileExplorerCanLoadMore,
   xDriveFileExplorerDeleteOperationPlan,
-  xDriveFileExplorerMergePageItems,
-  xDriveFileExplorerPageStateFromResult,
+  xDriveFileExplorerDirectoryPageTransition,
   xDriveFileOperationActive,
   xDriveFileOperationPollIntervalMs,
   xDriveFileOperationTransitionSnapshot,
@@ -1146,9 +1145,10 @@ export default function App({
         setError(result.error.message)
         return
       }
-      setCloudItems(result.data.items)
+      const transition = xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, false)
+      setCloudItems(transition.applyItems)
       setCloudCrumbs(crumbs)
-      setCloudPage(xDriveFileExplorerPageStateFromResult(id, result.data, sort))
+      setCloudPage(transition.pageState)
     } finally {
       setBusy('')
     }
@@ -1187,8 +1187,9 @@ export default function App({
         setError(result.error.message)
         return
       }
-      setCloudItems((currentItems) => xDriveFileExplorerMergePageItems(currentItems, result.data.items))
-      setCloudPage(xDriveFileExplorerPageStateFromResult(id, result.data, sort))
+      const transition = xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, true)
+      setCloudItems(transition.applyItems)
+      setCloudPage(transition.pageState)
     } finally {
       setCloudLoadingMore(false)
     }
@@ -1219,13 +1220,15 @@ export default function App({
         setError(childrenResult.error.message)
         return
       }
-      setCloudItems(childrenResult.data.items)
-      setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
-      setCloudPage(xDriveFileExplorerPageStateFromResult(
+      const transition = xDriveFileExplorerDirectoryPageTransition(
         rootResult.data.id,
         childrenResult.data,
         DEFAULT_DESKTOP_FILE_SORT,
-      ))
+        false,
+      )
+      setCloudItems(transition.applyItems)
+      setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
+      setCloudPage(transition.pageState)
       setCloudQuota(quotaResult.data)
     } finally {
       setBusy('')

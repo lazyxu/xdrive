@@ -476,3 +476,26 @@ export function xDriveFileExplorerPageStateFromResult<
     sort,
   }
 }
+
+export type XDriveFileExplorerDirectoryPage<TItem> = XDriveFileExplorerPageResult & {
+  items: readonly TItem[]
+}
+
+export function xDriveFileExplorerDirectoryPageTransition<
+  TItem extends { id: number },
+  TSort extends XDriveFileExplorerPageSort,
+>(
+  parentID: number,
+  page: XDriveFileExplorerDirectoryPage<TItem>,
+  sort: TSort,
+  append: boolean,
+) {
+  return {
+    pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort),
+    applyItems: (currentItems: readonly TItem[]) => (
+      append
+        ? xDriveFileExplorerMergePageItems(currentItems, page.items)
+        : [...page.items]
+    ),
+  }
+}
