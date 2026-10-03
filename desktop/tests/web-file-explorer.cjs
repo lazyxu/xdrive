@@ -37,7 +37,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
 
 test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
-  assert.ok(explorer.includes('api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)'), 'Web Explorer must execute the shared normalized search query')
+  assert.ok(explorer.includes('loadPage: (query, cursor) => api.search('), 'Web Explorer must execute search through the shared React controller adapter')
   for (const token of [
     'api.download(node)',
     'onShare(node)',
@@ -57,15 +57,13 @@ test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pa
   assert.ok(explorer.includes('xDriveFileExplorerOpenItemPlan('), 'opening a search result should use shared open-item planning')
   assert.ok(explorer.includes('searchByID.get(node.id)?.breadcrumbs'), 'Web open-item planning should preserve search breadcrumbs')
   assert.ok(explorer.includes('await navigateTo(plan.crumbs)'), 'opening a search directory should navigate with shared planned crumbs')
-  assert.ok(explorer.includes('XDriveFileExplorerSearchState<SearchResult>'), 'Web search lifecycle state must come from the shared controller')
-  assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Web incremental search loader is missing')
-  assert.ok(explorer.includes('api.search('), 'Web incremental search must use the authenticated search API')
-  assert.ok(explorer.includes('const query = searchState.query'), 'Web incremental search must stay bound to the submitted query')
-  assert.ok(explorer.includes('query,\n        XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,\n        searchCursor,'), 'Web incremental search must forward the active query with the search cursor')
-  assert.ok(explorer.includes('xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)'), 'Web search loading-more transition must use shared lifecycle state')
-  assert.ok(explorer.includes('xDriveFileExplorerApplySearchPageState(currentSearchState, page, true)'), 'Web search pages must use the shared lifecycle transition')
-  assert.ok(explorer.includes('xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)'), 'Web search load-more eligibility must use shared logic')
+  assert.ok(explorer.includes('useXDriveFileExplorerSearch<SearchResult>'), 'Web search lifecycle must come from the shared React controller')
+  assert.ok(explorer.includes('loadPage: (query, cursor) => api.search('), 'Web search controller must keep REST execution local')
+  assert.ok(explorer.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search controller must preserve the shared page size')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Web Explorer hasMore must use shared pagination presentation')
+  assert.ok(explorer.includes("explorerPagination.mode === 'search'"), 'Web search load-more must remain wired through shared pagination presentation')
+  assert.equal(explorer.includes('searchRequestRef'), false, 'Web must not own search request sequencing')
+  assert.equal(explorer.includes('setSearchState('), false, 'Web must not own search lifecycle transitions')
   assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web search must not truncate the UI to the first page')
 })
 

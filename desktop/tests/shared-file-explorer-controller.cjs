@@ -8,6 +8,8 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
+const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
+const searchController = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 
@@ -41,15 +43,17 @@ test('shared FileExplorer controller owns search normalization and validation de
   ]) {
     assert.ok(shared.includes(token), `shared FileExplorer search decision missing: ${token}`)
   }
+  assert.ok(searchController.includes('xDriveFileExplorerSearchDecision(rawQuery)'), 'shared React search controller must consume the framework-neutral search decision')
+  assert.ok(sharedMuiIndex.includes("export * from './FileExplorerSearch'"), 'shared React search controller must be exported')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.equal((source.match(/xDriveFileExplorerSearchDecision\(query\)/g) || []).length, 1, `${label} must use shared search decisions`)
+    assert.ok(source.includes('useXDriveFileExplorerSearch<'), `${label} must consume the shared search controller`)
+    assert.equal(source.includes('xDriveFileExplorerSearchDecision(query)'), false, `${label} must not duplicate search-decision handling`)
     assert.equal(source.includes('const normalized = query.trim()'), false, `${label} must not normalize search locally`)
     assert.equal(source.includes('搜索关键字至少需要 2 个字符。'), false, `${label} must not duplicate the minimum-search message`)
   }
-  assert.ok(web.includes('api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)'), 'Web must keep REST search execution local')
-  assert.ok(desktop.includes('cloudSearch(decision.query)'), 'Desktop must keep Agent search execution local')
+  assert.ok(web.includes('loadPage: (query, cursor) => api.search('), 'Web must keep REST search execution local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop must keep Agent search execution local')
 })
-
 test('shared FileExplorer controller owns search pagination state', () => {
   for (const token of [
     'XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE = 200',
@@ -76,25 +80,37 @@ test('shared FileExplorer controller owns search pagination state', () => {
   ]) {
     assert.ok(shared.includes(token), `shared search pagination helper missing: ${token}`)
   }
+  for (const token of [
+    'useRef(0)',
+    'useState<XDriveFileExplorerSearchState<TResult>>',
+    'xDriveFileExplorerIdleSearchState<TResult>()',
+    'const requestID = ++requestRef.current',
+    'requestID !== requestRef.current',
+    'xDriveFileExplorerStartSearchState<TResult>(decision.query)',
+    'xDriveFileExplorerStartSearchLoadMoreState(current)',
+    'xDriveFileExplorerApplySearchPageState(current, page, false)',
+    'xDriveFileExplorerApplySearchPageState(current, page, true)',
+    'xDriveFileExplorerSettleSearchState(current, false)',
+    'xDriveFileExplorerSettleSearchState(current, true)',
+    'xDriveFileExplorerCanLoadMoreSearch(',
+    'loadPage(searchState.query, searchState.cursor)',
+  ]) {
+    assert.ok(searchController.includes(token), `shared React search controller missing: ${token}`)
+  }
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('XDriveFileExplorerSearchState<'), `${label} must use shared search lifecycle state`)
-    assert.ok(source.includes('xDriveFileExplorerIdleSearchState<'), `${label} must use shared search reset state`)
-    assert.ok(source.includes('xDriveFileExplorerStartSearchState<'), `${label} must use shared initial-search state`)
-    assert.ok(source.includes('xDriveFileExplorerStartSearchLoadMoreState('), `${label} must use shared incremental-search start state`)
-    assert.ok(source.includes('xDriveFileExplorerApplySearchPageState('), `${label} must apply search pages through shared lifecycle logic`)
-    assert.ok(source.includes('xDriveFileExplorerSettleSearchState('), `${label} must settle search loading through shared lifecycle logic`)
-    assert.ok(source.includes('xDriveFileExplorerCanLoadMoreSearch('), `${label} must use shared search load-more eligibility`)
+    assert.ok(source.includes('useXDriveFileExplorerSearch<'), `${label} must use the shared React search lifecycle controller`)
     assert.ok(source.includes('xDriveFileExplorerPaginationPresentation({'), `${label} must derive Explorer pagination presentation through shared logic`)
     assert.ok(source.includes("explorerPagination.mode === 'search'"), `${label} search pagination must be wired to Explorer loadMore`)
-    assert.equal(source.includes('setSearchResults('), false, `${label} must not maintain search results independently`)
-    assert.equal(source.includes('setSearchCursor('), false, `${label} must not maintain search cursor independently`)
-    assert.equal(source.includes('setSearchLoading('), false, `${label} must not maintain search loading independently`)
-    assert.equal(source.includes('setSearchLoadingMore('), false, `${label} must not maintain incremental search loading independently`)
+    assert.equal(source.includes('searchRequestRef'), false, `${label} must not own search request sequencing`)
+    assert.equal(source.includes('setSearchState('), false, `${label} must not own search lifecycle state transitions`)
+    assert.equal(source.includes('xDriveFileExplorerStartSearchState<'), false, `${label} must not duplicate initial-search transitions`)
+    assert.equal(source.includes('xDriveFileExplorerStartSearchLoadMoreState('), false, `${label} must not duplicate incremental-search transitions`)
+    assert.equal(source.includes('xDriveFileExplorerApplySearchPageState('), false, `${label} must not apply search pages locally`)
+    assert.equal(source.includes('xDriveFileExplorerSettleSearchState('), false, `${label} must not settle search loading locally`)
     assert.equal(source.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), false, `${label} must not duplicate search/directory hasMore selection`)
     assert.equal(source.includes('loadingMore={searchResults ? searchLoadingMore : loadingMore}'), false, `${label} must not duplicate search/directory loadingMore selection`)
   }
 })
-
 test('Web and Desktop delegate typed-path resolution while keeping transport adapters local', () => {
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.equal((source.match(/xDriveResolveFileExplorerPath\(/g) || []).length, 1, `${label} must use shared typed-path resolution`)
@@ -219,18 +235,16 @@ test('shared FileExplorer controller owns item lookup and open-item planning', (
 
 test('Web and Desktop keep search pagination bound to the submitted active query', () => {
   assert.ok(shared.includes('(query: string): XDriveFileExplorerSearchState<TResult>'), 'shared search start state must capture the submitted query')
+  assert.ok(searchController.includes('loadPage(searchState.query, searchState.cursor)'), 'shared React search controller must paginate the submitted active query')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('const query = searchState.query'), `${label} load-more must read the active submitted query`)
     assert.equal(source.includes('xDriveFileExplorerSearchDecision(searchValue)'), false, `${label} load-more must not reinterpret the editable search draft`)
     assert.ok(source.includes('搜索“${searchState.query}”'), `${label} status must describe the active result set rather than the editable draft`)
+    assert.ok(source.includes('useXDriveFileExplorerSearch<'), `${label} must get active-query lifecycle from the shared search controller`)
   }
-  assert.ok(web.includes('xDriveFileExplorerStartSearchState<SearchResult>(decision.query)'), 'Web must store the normalized submitted query')
-  assert.ok(web.includes('query,\n        XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,\n        searchCursor,'), 'Web pagination must request the active query with its cursor')
-  assert.ok(desktop.includes('xDriveFileExplorerStartSearchState<AgentCloudSearchResult>(decision.query)'), 'Desktop must store the normalized submitted query')
-  assert.ok(desktop.includes('cloudSearch(query, searchCursor)'), 'Desktop pagination must request the active query with its cursor')
+  assert.ok(web.includes('loadPage: (query, cursor) => api.search('), 'Web must inject REST search loading into the shared controller')
+  assert.ok(web.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search loader must preserve the shared page size')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop must inject Agent cursor search into the shared controller')
 })
-
-
 test('shared FileExplorer controller owns directory page replace/append transitions', () => {
   for (const token of [
     'XDriveFileExplorerDirectoryPage',
