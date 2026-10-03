@@ -62,6 +62,7 @@ import {
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
+  XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
   XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileExplorerCanLoadMore,
   xDriveFileExplorerDeleteOperationPlan,
@@ -153,8 +154,6 @@ function DesktopFrame({
     </div>
   )
 }
-
-const DEFAULT_DESKTOP_FILE_SORT: XDriveFileExplorerSort = { key: 'name', direction: 'asc' }
 
 function cacheGiB(bytes: number) {
   if (!bytes) return '0'
@@ -1131,7 +1130,7 @@ export default function App({
   const loadCloudDirectory = async (
     id: number,
     crumbs: AgentCloudCrumb[],
-    sort: XDriveFileExplorerSort = cloudPage?.sort ?? DEFAULT_DESKTOP_FILE_SORT,
+    sort: XDriveFileExplorerSort = cloudPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
   ) => {
     setBusy('cloud-directory')
     setError('')
@@ -1164,7 +1163,7 @@ export default function App({
     void loadCloudDirectory(
       cloudCrumbs.at(-1)!.id,
       cloudCrumbs,
-      cloudPage?.sort ?? DEFAULT_DESKTOP_FILE_SORT,
+      cloudPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
     )
     // File refreshes are intentionally keyed only by operation snapshot transitions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1210,7 +1209,7 @@ export default function App({
       }
       const childrenResult = await window.xdriveDesktop.agent.cloudChildrenPage(
         rootResult.data.id,
-        xDriveFileExplorerPageRequestOptions(DEFAULT_DESKTOP_FILE_SORT),
+        xDriveFileExplorerPageRequestOptions(XDRIVE_FILE_EXPLORER_DEFAULT_SORT),
       )
       if (!childrenResult.ok) {
         setError(childrenResult.error.message)
@@ -1219,7 +1218,7 @@ export default function App({
       const transition = xDriveFileExplorerDirectoryPageTransition(
         rootResult.data.id,
         childrenResult.data,
-        DEFAULT_DESKTOP_FILE_SORT,
+        XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
         false,
       )
       setCloudItems(transition.applyItems)

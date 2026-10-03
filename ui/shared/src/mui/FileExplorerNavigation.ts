@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT } from '../file-explorer-controller'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerSort,
@@ -26,7 +27,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   const [viewMode, setViewMode] = useState<XDriveFileExplorerViewMode>(
     () => loadStoredViewMode(viewModeStorageKey),
   )
-  const [sort, setSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
+  const [sort, setSort] = useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
   const [history, setHistory] = useState<TCrumb[][]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const current = crumbs.at(-1)

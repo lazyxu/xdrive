@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts')
+const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -14,7 +15,7 @@ const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 test('shared FileExplorer navigation controller owns cross-client view and history state', () => {
   for (const token of [
     'useXDriveFileExplorerNavigation',
-    "useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })",
+    'useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)',
     'useState<TCrumb[][]>([])',
     'window.localStorage.setItem(viewModeStorageKey, viewMode)',
     'const navigateTo = async',
@@ -29,6 +30,8 @@ test('shared FileExplorer navigation controller owns cross-client view and histo
   ]) {
     assert.ok(shared.includes(token), `shared Explorer navigation missing: ${token}`)
   }
+  assert.ok(controller.includes("XDRIVE_FILE_EXPLORER_DEFAULT_SORT = {\n  key: 'name',\n  direction: 'asc',"), 'framework-neutral controller must own the default Explorer sort')
+  assert.ok(shared.includes("import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT } from '../file-explorer-controller'"), 'navigation must consume the shared default sort')
   assert.ok(sharedMuiIndex.includes("export * from './FileExplorerNavigation'"), 'shared Explorer navigation controller must be exported')
 })
 

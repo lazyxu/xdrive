@@ -49,6 +49,7 @@ import {
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import { formatSize } from '../format'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT } from '../file-explorer-controller'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
@@ -433,7 +434,7 @@ export function XDriveFileExplorer({
   )
   const [pathDraft, setPathDraft] = useState(derivedPath)
   const [internalViewMode, setInternalViewMode] = useState<XDriveFileExplorerViewMode>('details')
-  const [internalSort, setInternalSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
+  const [internalSort, setInternalSort] = useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
   const [internalSelectedIDs, setInternalSelectedIDs] = useState<XDriveFileExplorerID[]>([...defaultSelectedIDs])
   const [selectionAnchorID, setSelectionAnchorID] = useState<XDriveFileExplorerID | null>(null)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)

@@ -116,6 +116,8 @@ test('Web FileExplorer supplies preview/properties metadata without a new plaint
 })
 
 test('Web FileExplorer uses cursor-paged server sorting for directory browsing', () => {
+  assert.equal(app.includes('DEFAULT_FILE_SORT'), false, 'Web must not own a local default file sort')
+  assert.ok(app.includes('XDRIVE_FILE_EXPLORER_DEFAULT_SORT'), 'Web initial directory loads must use the shared default sort')
   assert.ok(api.includes('export interface ChildrenPage {'), 'Web children page contract is missing')
   assert.ok(api.includes('listPage(parentID: number, options: ChildrenOptions = {})'), 'Web paged children API is missing')
   assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'Web directory page size must remain in the shared controller')
