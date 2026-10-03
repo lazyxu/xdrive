@@ -195,6 +195,27 @@ EOF
   sha256sum database.dump blobs.tar verify.json manifest.json > SHA256SUMS.txt
 )
 
+mkdir -p "$TMP/home/state"
+printf '515151\n' > "$TMP/home/state/install.lock"
+exec 8<>"$TMP/home/state/install.lock"
+flock -n 8
+rm -f "$TMP/state/curl-url" "$TMP/state/curl-urls"
+set +e
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+XD_INSTALLER_URL="https://example.invalid/install-server.sh" \
+bash "$HOST" update --channel master >"$TMP/update-locked.out" 2>"$TMP/update-locked.err"
+update_locked_status=$?
+set -e
+[[ "$update_locked_status" -eq 75 ]]
+grep -q 'another install/update is already running' "$TMP/update-locked.err"
+grep -q 'pid 515151' "$TMP/update-locked.err"
+[[ "$(cat "$TMP/home/state/install.lock")" == "515151" ]]
+test ! -e "$TMP/state/curl-url"
+flock -u 8
+exec 8>&-
+
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/home" \

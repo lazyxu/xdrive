@@ -132,10 +132,12 @@ export function XDriveServerUpdateCard({
                 ? `${state?.stage_current} / ${state?.stage_total}`
                 : '—'}
             </XDriveDescriptionItem>
-            <XDriveDescriptionItem label="下载进度">
+            <XDriveDescriptionItem label="当前阶段数据">
               {(state?.bytes_total || 0) > 0
                 ? `${formatBinarySize(state?.bytes_done || 0)} / ${formatBinarySize(state?.bytes_total || 0)}`
-                : '—'}
+                : (state?.bytes_done || 0) > 0
+                  ? `${formatBinarySize(state?.bytes_done || 0)} 已处理`
+                  : '—'}
             </XDriveDescriptionItem>
             <XDriveDescriptionItem label="开始时间">{time(state?.started_at)}</XDriveDescriptionItem>
             <XDriveDescriptionItem label="更新时间">{time(state?.updated_at)}</XDriveDescriptionItem>

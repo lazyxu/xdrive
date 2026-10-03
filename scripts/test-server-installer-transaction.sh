@@ -22,8 +22,10 @@ trap cleanup EXIT
 
 mkdir -p "$TMP/bin" "$TMP/state" "$TMP/config/state" "$TMP/host-bin"
 
-# Hold the installer lock and verify a second invocation refuses to run.
+# Hold the installer lock and verify a second invocation refuses to run
+# without truncating the current lock owner's PID.
 exec 8>"$TMP/config/state/install.lock"
+printf '424242\n' >&8
 flock -n 8
 set +e
 PATH="/usr/bin:/bin" \
@@ -34,6 +36,8 @@ locked_status=$?
 set -e
 [[ "$locked_status" -eq 75 ]]
 grep -q 'another install/update is already running' "$TMP/locked.err"
+grep -q 'pid 424242' "$TMP/locked.err"
+[[ "$(cat "$TMP/config/state/install.lock")" == "424242" ]]
 flock -u 8
 exec 8>&-
 
@@ -95,6 +99,11 @@ services: {}
 set -euo pipefail
 printf "%s\n" "$*" >> "$TEST_STATE/backup-args"
 printf "%s\n" "${XD_SERVER_IMAGE:-}" >> "$TEST_STATE/backup-images"
+printf "%s|%s|%s|%s\n" \
+  "${XD_BACKUP_PROGRESS_FILE:-}" \
+  "${XD_BACKUP_PROGRESS_STAGE_CURRENT:-}" \
+  "${XD_BACKUP_PROGRESS_STAGE_TOTAL:-}" \
+  "${XD_BACKUP_PROGRESS_STAGE_NAME:-}" >> "$TEST_STATE/backup-progress-env"
 config=""
 output=""
 leave=0
@@ -274,6 +283,7 @@ XD_SHELL_RC_PATH="$TMP/config.bashrc" \
 XD_PULL_ATTEMPTS=3 \
 XD_PULL_RETRY_DELAY_SECONDS=0 \
 XD_NONINTERACTIVE=1 \
+XD_INSTALL_PROGRESS_FILE="$TMP/state/install-progress.env" \
 bash "$INSTALLER" --channel master >"$TMP/upgrade.out" 2>"$TMP/upgrade.err"
 status=$?
 set -e
@@ -311,6 +321,7 @@ if grep -q -- '--compat-verify-image' "$TMP/state/backup-args"; then
 fi
 [[ "$(wc -l < "$TMP/state/backup-images")" -ge 2 ]]
 grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/state/backup-images"
+grep -Fq "$TMP/state/install-progress.env|5|9|创建升级前备份" "$TMP/state/backup-progress-env"
 grep -q 'current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier' "$TMP/upgrade.err"
 grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/upgrade.err"
 if grep -q 'storage consistency verification failed' "$TMP/upgrade.err"; then

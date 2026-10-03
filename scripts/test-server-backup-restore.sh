@@ -106,7 +106,15 @@ wait_server
 assert_runtime_services
 
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
-backup_dir="$(bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$BACKUP_ROOT")"
+BACKUP_PROGRESS_FILE="$TMP/backup-progress.env"
+backup_dir="$(
+  XD_BACKUP_PROGRESS_FILE="$BACKUP_PROGRESS_FILE" \
+  XD_BACKUP_PROGRESS_STAGE_CURRENT=5 \
+  XD_BACKUP_PROGRESS_STAGE_TOTAL=9 \
+  XD_BACKUP_PROGRESS_STAGE_NAME="创建升级前备份" \
+  XD_BACKUP_PROGRESS_LOG_INTERVAL_SECONDS=1 \
+  bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$BACKUP_ROOT"
+)"
 assert_runtime_services
 [[ -f "$backup_dir/database.dump" ]]
 [[ -f "$backup_dir/blobs.tar" ]]
@@ -119,6 +127,12 @@ grep -Eq '"estimated_blob_bytes": [0-9]+' "$backup_dir/manifest.json"
 grep -Eq '"estimated_database_bytes": [0-9]+' "$backup_dir/manifest.json"
 grep -Eq '"preflight_required_bytes": [0-9]+' "$backup_dir/manifest.json"
 grep -Eq '"preflight_available_bytes": [0-9]+' "$backup_dir/manifest.json"
+grep -q '^stage_current=5$' "$BACKUP_PROGRESS_FILE"
+grep -q '^stage_total=9$' "$BACKUP_PROGRESS_FILE"
+grep -q '^stage=创建升级前备份$' "$BACKUP_PROGRESS_FILE"
+grep -q '^service=完成升级前备份$' "$BACKUP_PROGRESS_FILE"
+grep -Eq '^bytes_done=[1-9][0-9]*$' "$BACKUP_PROGRESS_FILE"
+grep -Eq '^bytes_total=[1-9][0-9]*$' "$BACKUP_PROGRESS_FILE"
 (
   cd "$backup_dir"
   sha256sum -c SHA256SUMS.txt >/dev/null
