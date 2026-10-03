@@ -399,6 +399,38 @@ export function xDriveFileExplorerDirectoryCrumbs<
   return [...currentCrumbs, { id: node.id, name: node.name }]
 }
 
+export function xDriveFileExplorerNodeForItem<
+  TNode extends Pick<Node, 'id'>,
+>(
+  item: XDriveFileExplorerSelectionItem,
+  nodeByID: ReadonlyMap<number, TNode>,
+): TNode | undefined {
+  return nodeByID.get(Number(item.id))
+}
+
+export type XDriveFileExplorerOpenItemNode = Pick<Node, 'id' | 'name' | 'type'>
+
+export type XDriveFileExplorerOpenItemPlan<
+  TNode extends XDriveFileExplorerOpenItemNode,
+> =
+  | { kind: 'file'; node: TNode }
+  | { kind: 'directory'; node: TNode; crumbs: XDriveFileExplorerCrumb[] }
+
+export function xDriveFileExplorerOpenItemPlan<
+  TNode extends XDriveFileExplorerOpenItemNode,
+>(
+  node: TNode,
+  currentCrumbs: readonly XDriveFileExplorerCrumb[],
+  searchCrumbs?: readonly XDriveFileExplorerCrumb[],
+): XDriveFileExplorerOpenItemPlan<TNode> {
+  if (node.type === 'file') return { kind: 'file', node }
+  return {
+    kind: 'directory',
+    node,
+    crumbs: xDriveFileExplorerDirectoryCrumbs(node, currentCrumbs, searchCrumbs),
+  }
+}
+
 export function xDriveFileExplorerDeleteOperationPlan<
   TNode extends Pick<Node, 'id' | 'revision'>,
 >(nodes: readonly TNode[]) {

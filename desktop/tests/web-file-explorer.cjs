@@ -54,7 +54,9 @@ test('Web FileExplorer uses real file operations and server search', () => {
 
 test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pagination', () => {
   assert.ok(projection.includes('secondaryLabel: result?.path || undefined'), 'shared Explorer projection should show search-result paths')
-  assert.ok(explorer.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs)'), 'opening a search directory should restore its breadcrumb path through the shared controller')
+  assert.ok(explorer.includes('xDriveFileExplorerOpenItemPlan('), 'opening a search result should use shared open-item planning')
+  assert.ok(explorer.includes('searchByID.get(node.id)?.breadcrumbs'), 'Web open-item planning should preserve search breadcrumbs')
+  assert.ok(explorer.includes('await navigateTo(plan.crumbs)'), 'opening a search directory should navigate with shared planned crumbs')
   assert.ok(explorer.includes('XDriveFileExplorerSearchState<SearchResult>'), 'Web search lifecycle state must come from the shared controller')
   assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Web incremental search loader is missing')
   assert.ok(explorer.includes('api.search('), 'Web incremental search must use the authenticated search API')

@@ -40,6 +40,9 @@ test('Web and Desktop consume shared FileExplorer projection without duplicating
     assert.equal(source.includes('const explorerCrumbs = useMemo'), false, `${label} must not project breadcrumbs locally`)
   }
   assert.ok(controller.includes('xDriveFileExplorerNormalizeCrumbs'), 'shared controller must own search-crumb normalization')
-  assert.ok(web.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs)'), 'Web must adapt result.breadcrumbs into the shared directory-crumb controller')
-  assert.ok(desktop.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs)'), 'Desktop must adapt result.crumbs into the shared directory-crumb controller')
+  assert.ok(controller.includes('xDriveFileExplorerOpenItemPlan'), 'shared controller must own open-item planning')
+  assert.ok(web.includes('searchByID.get(node.id)?.breadcrumbs'), 'Web must adapt result.breadcrumbs into the shared open-item plan')
+  assert.ok(desktop.includes('searchByID.get(node.id)?.crumbs'), 'Desktop must adapt result.crumbs into the shared open-item plan')
+  assert.ok(web.includes('await navigateTo(plan.crumbs)'), 'Web must navigate with shared planned directory crumbs')
+  assert.ok(desktop.includes('await navigateTo(plan.crumbs)'), 'Desktop must navigate with shared planned directory crumbs')
 })
