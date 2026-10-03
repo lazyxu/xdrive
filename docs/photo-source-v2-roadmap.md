@@ -56,10 +56,10 @@ The same media pipeline must produce the same result regardless of whether a fil
 The following foundations already exist and should be extended rather than replaced:
 
 - connector-neutral `Source`, `SourceItem`, `SyncRun`, planning, resumable execution, cancellation, scheduling, retry/backoff, missing inference, and backup semantics;
-- `SourceItemAlias` and explicit canonical identity promotion;
+- `SourceItemAlias` and explicit canonical identity promotion; this is the Source-domain `SourceIdentityAlias` and is intentionally not duplicated by the Photo domain;
 - `SourceCollection` / `SourceCollectionItem` for optional provider collection provenance;
 - provenance-only `SourceItemMetadata` for original path, owner identity, remote create time, and provider MD5; media-semantic legacy columns are removed during migration;
-- canonical `MediaMetadata` for node-scoped media indexing;
+- canonical `MediaMetadata` for node-scoped parsing plus the derived `PhotoAsset` / `PhotoResource` / `PhotoMetadata` logical asset layer;
 - xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, derived thumbnail caching, and Gallery indexing;
 - Yike Pull stable `yike:<owner_uk>:<fsid>` identity, file/albums discovery, MD5 hint, Range download, resumable upload, bounded API rate, cancellation, and incomplete-inventory safety;
 - Synology Photos Pull stable `synology:<space>:<item_id>` identity, Personal/Shared spaces, file/albums discovery, Range download, cancellation, retry classification, and optional-album failure isolation;
@@ -173,20 +173,37 @@ Evidence order for local pairing:
 
 Do not pair by filename, path proximity, capture-time proximity, provider `live_type`, or provider pair/group IDs alone.
 
-A future connector-neutral representation may use:
+The connector-neutral logical asset layer is now implemented as:
 
 ```text
-xd_media_groups
-  kind = live_photo | raw_pair | sidecar | burst
+xd_photo_assets
+  primary_node_id
+  kind
+  evidence_key
 
-xd_media_group_items
-  group_id
+xd_photo_resources
+  asset_id
+  resource_kind = node | derived
   node_id
   role
-  ordinal
+  byte_offset / size
+
+xd_photo_metadata
+  asset_id
+  captured_at / dimensions / duration / GPS
+  exif_json / video_json
+  tags_json / people_json / vendor_json
+
+xd_photo_collections
+  external_key = folder:<node_id> | source:<collection_id> | future manual:/smart:
+
+xd_photo_collection_assets
+  collection_id
+  asset_id
+  position
 ```
 
-The group is a derived local projection. Every original remains an ordinary visible xDrive file and normal CAS object.
+`MediaGroup` remains the deterministic local evidence layer for Live Photo/RAW/sidecar/burst relations. `PhotoAsset` is the higher-level Gallery projection. Every original remains an ordinary visible xDrive file and normal CAS object.
 
 ### RAW, sidecars and auxiliary resources
 
@@ -288,7 +305,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P1 | Complete: basic read-only Source binding verifier | Complete |
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
 | P3 | Expand native media parser coverage from original files: EXIF/TIFF/GPS/video/container edge cases | Highest |
-| P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
+| P4 | Complete: connector-neutral `MediaGroup` evidence plus `PhotoAsset` / `PhotoResource` / `PhotoMetadata` / `PhotoCollection` logical projection | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata and safe embedded-JPEG previews are local; other RAW formats plus validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping remain | High |
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |

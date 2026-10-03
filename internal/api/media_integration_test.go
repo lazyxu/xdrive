@@ -38,6 +38,11 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
+		&meta.PhotoCollectionAsset{},
+		&meta.PhotoCollection{},
+		&meta.PhotoMetadata{},
+		&meta.PhotoResource{},
+		&meta.PhotoAsset{},
 		&meta.MediaGroupItem{},
 		&meta.MediaGroup{},
 		&meta.MediaDerivedResource{},
@@ -80,6 +85,11 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		&meta.MediaDerivedResource{},
 		&meta.MediaGroup{},
 		&meta.MediaGroupItem{},
+		&meta.PhotoAsset{},
+		&meta.PhotoResource{},
+		&meta.PhotoMetadata{},
+		&meta.PhotoCollection{},
+		&meta.PhotoCollectionAsset{},
 	); err != nil {
 		t.Fatal(err)
 	}

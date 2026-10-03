@@ -124,7 +124,7 @@ The same canonical helper must be used by file inventory, SourceItem metadata, a
 
 These Pull identities were canonical from their initial implementation, so there is no synthetic migration to perform merely to exercise `SourceItemAlias`. If a future provider contract exposes a demonstrably stronger identity, the connector may promote it only with deterministic evidence and must preserve the previous canonical ID as an alias. Never invent aliases from path/name/size/time similarity.
 
-`SourceItemAlias` belongs to the generic file-identity layer. A stronger provider file identity may replace an older identity only when the connector has deterministic proof that both identify the same remote file.
+`SourceItemAlias` belongs to the generic file-identity layer and is the concrete implementation of `SourceIdentityAlias`. Do not create a parallel Photo-side identity-alias table. A stronger provider file identity may replace an older identity only when the connector has deterministic proof that both identify the same remote file.
 
 ```text
 old file identity
@@ -169,7 +169,7 @@ Legacy `captured_at`, `thumbnail_url`, `pair_group_id` and `pair_role` columns a
 - video/container duration, dimensions, rotation, frame rate, bitrate and codecs;
 - xDrive-derived thumbnails/previews.
 
-A future connector-neutral `MediaGroup` layer should represent locally validated Live Photo, RAW/JPEG, sidecar and burst relationships.
+`MediaGroup` represents locally validated Live Photo, RAW/JPEG, sidecar and burst evidence. Above it, the connector-neutral Photo domain is now explicit: `PhotoAsset` is the logical Gallery object, `PhotoResource` lists its original/derived resources, `PhotoMetadata` carries asset-scoped derived media state, and `PhotoCollection` / `PhotoCollectionAsset` represent folder/imported/future manual or smart collections.
 
 Live Photo evidence must come from local originals such as a validated `.livp` container or matching embedded Apple content identifiers. Do not use provider `live_type`, provider pair IDs, filename matching, or timestamp proximity as the canonical relation.
 
@@ -223,3 +223,19 @@ New synchronization-folder connectors must follow both this management contract 
 8. Extend integrity verification and explicit local repair.
 9. Add incremental scanners only where a reliable provider change contract exists.
 10. Add Mirror-to-trash only after deletion evidence/grace semantics are proven.
+
+## Photo asset domain
+
+The Photo domain is a derived local projection and never replaces Source identity or CAS ownership:
+
+```text
+SourceItem / SourceItemAlias
+        -> Node + File + CAS
+        -> MediaMetadata / MediaGroup / MediaDerivedResource
+        -> PhotoAsset
+             -> PhotoResource[]
+             -> PhotoMetadata
+             -> PhotoCollectionAsset[] -> PhotoCollection
+```
+
+A standalone image/video becomes one `PhotoAsset` with one node resource. A validated Live Photo still+motion group becomes one asset with two node resources. A validated `.livp` container becomes one asset with one container node resource plus derived still/motion byte-range resources. Imported provider albums project to `PhotoCollection` membership without copying Nodes or CAS objects. Folder albums use the same collection model. The projection is idempotent and rebuildable from local canonical state while providers are offline.
