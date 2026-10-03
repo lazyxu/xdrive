@@ -20,3 +20,8 @@ type SourceItemAlias struct {
 }
 
 func (SourceItemAlias) TableName() string { return "xd_source_item_aliases" }
+
+// SourceIdentityAlias is the domain name for SourceItemAlias. It is a type
+// alias, not a second persistence model, so file identity has one canonical
+// alias table across every connector.
+type SourceIdentityAlias = SourceItemAlias

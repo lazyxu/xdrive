@@ -18,6 +18,7 @@ import (
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/mediagroup"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -134,11 +135,14 @@ func (s *Server) listMediaItems(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_ = s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForOwner(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
-	)
+	); err != nil {
+		fail(c, http.StatusInternalServerError, "refresh media projection failed")
+		return
+	}
 	items, err := s.queryMediaItems(
 		c.Request.Context(),
 		userID(c),
@@ -196,94 +200,55 @@ func (s *Server) getMediaItem(c *gin.Context) {
 }
 
 func (s *Server) listMediaAlbums(c *gin.Context) {
-	_ = s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForOwner(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
-	)
+	); err != nil {
+		fail(c, http.StatusInternalServerError, "refresh media projection failed")
+		return
+	}
 	uid := userID(c)
 	thumbnailMIMEs := []string{"image/jpeg", "image/png", "image/gif"}
 
 	type albumRow struct {
-		ID          uint64
+		ExternalKey string
+		Kind        string
 		Name        string
 		ItemCount   int64
 		CoverNodeID *uint64
 		UpdatedAt   *time.Time
 	}
-
-	var folders []albumRow
+	var rows []albumRow
 	if err := s.DB.WithContext(c.Request.Context()).
-		Table("xd_media_metadata AS mm").
+		Table("xd_photo_collections AS pc").
 		Select(
-			"p.id, p.name, COUNT(DISTINCT n.id) AS item_count, "+
-				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN n.id ELSE NULL END) AS cover_node_id, "+
-				"MAX(COALESCE(mm.captured_at, n.updated_at)) AS updated_at",
+			"pc.external_key, pc.kind, pc.name, COUNT(DISTINCT pca.asset_id) AS item_count, "+
+				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
+				"MAX(COALESCE(pm.captured_at, pc.updated_at)) AS updated_at",
 			thumbnailMIMEs,
 		).
-		Joins("JOIN xd_nodes AS n ON n.id = mm.node_id AND n.deleted_at IS NULL").
-		Joins("JOIN xd_nodes AS p ON p.id = n.parent_id AND p.deleted_at IS NULL").
-		Where(
-			"mm.owner_id = ? AND mm.media_kind IN ? AND "+mediaGalleryVisibleNodeSQL("n.id"),
-			uid,
-			[]string{meta.MediaKindImage, meta.MediaKindVideo},
-			uid,
-		).
-		Group("p.id, p.name").
-		Order("updated_at DESC, lower(p.name) ASC").
-		Scan(&folders).Error; err != nil {
+		Joins("JOIN xd_photo_collection_assets AS pca ON pca.collection_id = pc.id").
+		Joins("JOIN xd_photo_assets AS pa ON pa.id = pca.asset_id AND pa.owner_id = pc.owner_id").
+		Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
+		Joins("JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
+		Where("pc.owner_id = ? AND pc.state = ?", uid, meta.PhotoCollectionStateActive).
+		Group("pc.id, pc.external_key, pc.kind, pc.name").
+		Order("updated_at DESC, lower(pc.name) ASC").
+		Scan(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list media albums failed")
 		return
 	}
 
-	result := make([]mediaAlbumDTO, 0, len(folders)+16)
-	for _, row := range folders {
+	result := make([]mediaAlbumDTO, 0, len(rows))
+	for _, row := range rows {
+		kind := row.Kind
+		if kind == meta.PhotoCollectionKindSource {
+			kind = "imported"
+		}
 		result = append(result, mediaAlbumDTO{
-			ID:          fmt.Sprintf("folder:%d", row.ID),
-			Kind:        "folder",
-			Name:        row.Name,
-			ItemCount:   row.ItemCount,
-			CoverNodeID: row.CoverNodeID,
-			UpdatedAt:   row.UpdatedAt,
-		})
-	}
-
-	var imported []albumRow
-	if err := s.DB.WithContext(c.Request.Context()).
-		Table("xd_source_collections AS sc").
-		Select(
-			"sc.id, sc.name, COUNT(DISTINCT n.id) AS item_count, "+
-				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN n.id ELSE NULL END) AS cover_node_id, "+
-				"MAX(COALESCE(mm.captured_at, n.updated_at)) AS updated_at",
-			thumbnailMIMEs,
-		).
-		Joins("JOIN xd_sources AS src ON src.id = sc.source_id").
-		Joins("JOIN xd_source_collection_items AS ci ON ci.collection_id = sc.id").
-		Joins(
-			"JOIN xd_source_items AS si ON si.id = ci.source_item_id AND si.node_id IS NOT NULL",
-		).
-		Joins("JOIN xd_nodes AS n ON n.id = si.node_id AND n.deleted_at IS NULL").
-		Joins(
-			"JOIN xd_media_metadata AS mm ON mm.node_id = n.id AND mm.media_kind IN ?",
-			[]string{meta.MediaKindImage, meta.MediaKindVideo},
-		).
-		Where(
-			"src.owner_id = ? AND sc.state = ? AND sc.kind = ? AND "+mediaGalleryVisibleNodeSQL("n.id"),
-			uid,
-			meta.SourceCollectionStateActive,
-			"album",
-			uid,
-		).
-		Group("sc.id, sc.name").
-		Order("updated_at DESC, lower(sc.name) ASC").
-		Scan(&imported).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "list imported media albums failed")
-		return
-	}
-	for _, row := range imported {
-		result = append(result, mediaAlbumDTO{
-			ID:          fmt.Sprintf("source:%d", row.ID),
-			Kind:        "imported",
+			ID:          row.ExternalKey,
+			Kind:        kind,
 			Name:        row.Name,
 			ItemCount:   row.ItemCount,
 			CoverNodeID: row.CoverNodeID,
@@ -295,11 +260,14 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 }
 
 func (s *Server) listMediaAlbumItems(c *gin.Context) {
-	_ = s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForOwner(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
-	)
+	); err != nil {
+		fail(c, http.StatusInternalServerError, "refresh media projection failed")
+		return
+	}
 	raw := strings.TrimSpace(c.Param("albumID"))
 	parts := strings.SplitN(raw, ":", 2)
 	if len(parts) != 2 {
@@ -368,64 +336,43 @@ func (s *Server) queryMediaItems(
 	query := s.DB.WithContext(ctx).
 		Model(&meta.MediaMetadata{}).
 		Joins(
+			"JOIN xd_photo_assets AS pa ON pa.primary_node_id = xd_media_metadata.node_id AND pa.owner_id = ?",
+			uid,
+		).
+		Joins(
 			"JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.deleted_at IS NULL",
 		).
 		Where(
-			"xd_media_metadata.owner_id = ? AND xd_media_metadata.media_kind IN ? AND "+mediaGalleryVisibleNodeSQL("n.id"),
+			"xd_media_metadata.owner_id = ? AND xd_media_metadata.media_kind IN ?",
 			uid,
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
-			uid,
 		)
 	if kind != "" {
 		query = query.Where("xd_media_metadata.media_kind = ?", kind)
 	}
 
-	switch albumKind {
-	case "":
-	case "folder":
-		var folder meta.Node
-		if err := s.DB.WithContext(ctx).
-			Where(
-				"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				albumID,
-				uid,
-				meta.NodeTypeDir,
-			).
-			First(&folder).Error; err != nil {
-			return nil, err
-		}
-		query = query.Where("n.parent_id = ?", albumID)
-	case "source":
-		var count int64
-		if err := s.DB.WithContext(ctx).
-			Table("xd_source_collections AS sc").
-			Joins("JOIN xd_sources AS src ON src.id = sc.source_id").
-			Where(
-				"sc.id = ? AND src.owner_id = ? AND sc.state = ? AND sc.kind = ?",
-				albumID,
-				uid,
-				meta.SourceCollectionStateActive,
-				"album",
-			).
-			Count(&count).Error; err != nil {
-			return nil, err
-		}
-		if count == 0 {
+	if albumKind != "" {
+		if albumKind != meta.PhotoCollectionKindFolder && albumKind != meta.PhotoCollectionKindSource {
 			return nil, gorm.ErrRecordNotFound
 		}
-		membership := s.DB.WithContext(ctx).
-			Table("xd_source_items AS si_media").
-			Select("si_media.node_id").
-			Joins(
-				"JOIN xd_source_collection_items AS ci_media ON ci_media.source_item_id = si_media.id",
-			).
+		key := fmt.Sprintf("%s:%d", albumKind, albumID)
+		var collection meta.PhotoCollection
+		if err := s.DB.WithContext(ctx).
 			Where(
-				"ci_media.collection_id = ? AND si_media.node_id IS NOT NULL",
-				albumID,
-			)
+				"owner_id = ? AND external_key = ? AND state = ?",
+				uid,
+				key,
+				meta.PhotoCollectionStateActive,
+			).
+			First(&collection).Error; err != nil {
+			return nil, err
+		}
+		membership := s.DB.WithContext(ctx).
+			Table("xd_photo_collection_assets AS pca_media").
+			Select("pa_media.primary_node_id").
+			Joins("JOIN xd_photo_assets AS pa_media ON pa_media.id = pca_media.asset_id").
+			Where("pca_media.collection_id = ? AND pa_media.owner_id = ?", collection.ID, uid)
 		query = query.Where("n.id IN (?)", membership)
-	default:
-		return nil, gorm.ErrRecordNotFound
 	}
 
 	var metadata []meta.MediaMetadata
@@ -988,7 +935,8 @@ func (s *Server) refreshMediaIndexForOwner(
 		}
 		_, _ = s.indexMediaNode(ctx, nodes[index])
 	}
-	return nil
+	_, err = photoasset.ReconcileOwner(ctx, s.DB, uid)
+	return err
 }
 
 func (s *Server) refreshMediaIndexBatch(
@@ -1002,13 +950,20 @@ func (s *Server) refreshMediaIndexBatch(
 	if err != nil {
 		return 0, err
 	}
+	owners := make(map[uint64]struct{})
 	for index := range nodes {
+		owners[nodes[index].OwnerID] = struct{}{}
 		if err := s.DB.WithContext(ctx).
 			Where("node_id = ?", nodes[index].ID).
 			First(&nodes[index].File).Error; err != nil {
 			continue
 		}
 		_, _ = s.indexMediaNode(ctx, nodes[index])
+	}
+	for ownerID := range owners {
+		if _, err := photoasset.ReconcileOwner(ctx, s.DB, ownerID); err != nil {
+			return len(nodes), err
+		}
 	}
 	return len(nodes), nil
 }
