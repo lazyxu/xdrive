@@ -35,6 +35,11 @@ test('shared file-operation model covers the persistent server lifecycle', () =>
     'xDriveFileOperationEtaMs',
     'xDriveFileOperationAverageBytesPerSecond',
     'xDriveFileOperationAverageItemsPerSecond',
+    'XDRIVE_FILE_OPERATION_HISTORY_LIMIT = 200',
+    'xDriveFileOperationFailureMessage',
+    'xDriveFileOperationFailureItemLabel',
+    'revision_conflict',
+    'name_conflict',
     'failure_code?: string',
     'retryable: boolean',
   ]) {
@@ -57,6 +62,9 @@ test('shared FileOperationCenter renders progress, history, cancel and retry act
     '预计剩余',
     '平均处理速度',
     '完成时间',
+    '失败项目',
+    '错误代码',
+    'xDriveFileOperationFailureMessage',
     '任务 ID',
     '取消',
     '重试',
@@ -79,7 +87,7 @@ test('Web and Desktop both render the shared file-operation center through Task 
 
 test('Web polls persistent operations and refreshes Explorer only on terminal transitions', () => {
   for (const token of [
-    'api.fileOperations(100)',
+    'api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)',
     'window.setInterval(() => void refresh(), 1500)',
     'xDriveFileOperationTransitionSnapshot(',
     'transition.hasTerminalTransition',
@@ -95,7 +103,7 @@ test('Web polls persistent operations and refreshes Explorer only on terminal tr
 
 test('Desktop polls persistent operations and refreshes cloud Explorer only on terminal transitions', () => {
   for (const token of [
-    'cloudFileOperations(100)',
+    'cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)',
     'window.setInterval(() => void refresh(), 1500)',
     'xDriveFileOperationTransitionSnapshot(',
     'transition.hasTerminalTransition',
@@ -156,4 +164,31 @@ test('shared FileExplorer delete plan owns refs, count and queued feedback', () 
   assert.equal(desktop.includes("nodes.map((node) => ({ id: node.id, revision: node.revision }))"), false, 'Desktop must not build bulk-delete refs locally')
   assert.ok(web.includes('setFeedback({ tone: \'good\', message: plan.message })'), 'Web must use the shared delete queued message')
   assert.ok(desktop.includes('setNotice(plan.message)'), 'Desktop must use the shared delete queued message')
+})
+
+test('Task Center uses the full retained file-operation history window', () => {
+  assert.ok(sharedModel.includes('XDRIVE_FILE_OPERATION_HISTORY_LIMIT = 200'), 'shared operation history limit must match Server retention')
+  assert.ok(web.includes('api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)'), 'Web must request the full retained operation history')
+  assert.ok(desktop.includes('cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)'), 'Desktop must request the full retained operation history')
+  assert.equal(web.includes('api.fileOperations(100)'), false, 'Web must not truncate retained operation history to 100 entries')
+  assert.equal(desktop.includes('cloudFileOperations(100)'), false, 'Desktop must not truncate retained operation history to 100 entries')
+})
+
+test('Task Center exposes structured file-operation failure diagnostics', () => {
+  for (const token of [
+    '失败项目',
+    '错误代码',
+    'xDriveFileOperationFailureMessage(operation)',
+    'xDriveFileOperationFailureItemLabel(operation)',
+    "operation.failure_code || '—'",
+  ]) {
+    assert.ok(shared.includes(token), `shared failure diagnostics missing: ${token}`)
+  }
+  for (const token of [
+    "revision_conflict: '项目版本已变化，请刷新目录后重新发起操作。'",
+    "name_conflict: '目标位置存在同名项目，请处理冲突后重新操作。'",
+    "managed_source_target: '该路径由同步来源管理，不能执行此操作。'",
+  ]) {
+    assert.ok(sharedModel.includes(token), `shared failure explanation missing: ${token}`)
+  }
 })

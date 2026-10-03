@@ -62,6 +62,7 @@ import {
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
+  XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileExplorerDeleteOperationPlan,
   xDriveFileOperationActive,
   xDriveFileOperationTransitionSnapshot,
@@ -419,7 +420,7 @@ export default function App({
     }
     let active = true
     const refresh = async () => {
-      const result = await window.xdriveDesktop.agent.cloudFileOperations(100)
+      const result = await window.xdriveDesktop.agent.cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
       if (active && result.ok) setCloudFileOperations(result.data)
     }
     void refresh()
@@ -1043,7 +1044,7 @@ export default function App({
   }
 
   const refreshCloudFileOperations = async () => {
-    const result = await window.xdriveDesktop.agent.cloudFileOperations(100)
+    const result = await window.xdriveDesktop.agent.cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
     if (!result.ok) {
       setError(result.error.message)
       return null
