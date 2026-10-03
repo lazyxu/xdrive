@@ -341,9 +341,16 @@ func TestSynologyVisibleNameNormalizationPreservesRepresentableDetails(t *testin
 }
 
 func TestSynologyMetadataKeepsOriginalVisibleFilename(t *testing.T) {
-	snapshot := metadataSnapshot(synology.SpacePersonal, map[int64]string{10: "Trips"}, synology.Item{
+	externalID, err := synology.ExternalID(synology.SpacePersonal, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := metadataSnapshot(map[int64]string{10: "Trips"}, synology.Item{
 		ID: 7, FolderID: 10, Filename: "  original name.jpg  ", OwnerUserID: 42, Time: 1_700_000_000,
-	})
+	}, externalID)
+	if snapshot.ItemExternalID != externalID {
+		t.Fatalf("item external id=%q want=%q", snapshot.ItemExternalID, externalID)
+	}
 	if snapshot.OriginalPath != "Trips/  original name.jpg  " {
 		t.Fatalf("original path=%q", snapshot.OriginalPath)
 	}

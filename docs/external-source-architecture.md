@@ -102,6 +102,15 @@ Any future local media processing should happen in the common xDrive media pipel
 
 ## File identity and aliases
 
+Current Pull connectors have explicit provider-native canonical identities:
+
+- Yike Photos: `yike:<owner_uk>:<fsid>`;
+- Synology Photos: `synology:<personal|shared>:<item_id>`.
+
+The same canonical helper must be used by file inventory, SourceItem metadata, album membership, deduplication, and transfer planning. Connector code must not reconstruct these strings ad hoc in separate paths.
+
+These Pull identities were canonical from their initial implementation, so there is no synthetic migration to perform merely to exercise `SourceItemAlias`. If a future provider contract exposes a demonstrably stronger identity, the connector may promote it only with deterministic evidence and must preserve the previous canonical ID as an alias. Never invent aliases from path/name/size/time similarity.
+
 `SourceItemAlias` belongs to the generic file-identity layer. A stronger provider file identity may replace an older identity only when the connector has deterministic proof that both identify the same remote file.
 
 ```text

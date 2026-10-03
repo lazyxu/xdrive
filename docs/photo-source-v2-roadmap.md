@@ -80,13 +80,15 @@ The following foundations already exist and should be extended rather than repla
 7. Provider thumbnails are non-canonical hints at most; xDrive-derived previews are authoritative and rebuildable.
 8. Provider collection APIs may be used for file discovery when necessary, but collection metadata must never gate file backup or media indexing.
 9. A provider semantic/optional endpoint outage must never turn a valid file inventory into an empty inventory or trigger mass missing inference.
-10. Yike keeps `yike:<owner_uk>:<fsid>` as file identity unless a demonstrably stronger file identity is proven.
+10. Yike keeps `yike:<owner_uk>:<fsid>` as file identity unless a demonstrably stronger file identity is proven; owner scope is mandatory because shared-album FSIDs are not treated as globally unique.
 11. Synology Photos Pull keeps `synology:<space>:<item_id>` because that ID is a file-sync identity, not because xDrive depends on Synology media semantics.
-12. FileStation uses only provider-stable file identity when proven; otherwise path identity remains explicit and scoped.
-13. Backup mode never removes xDrive content because the provider removed a file.
-14. Mirror mode, when implemented, moves only confirmed deletions to xDrive trash and never permanently deletes directly.
-15. Incremental synchronization is enabled only for a proven cursor/diff/tombstone contract and always retains a full-reconciliation reset path.
-16. Source-side providers remain read-only by default.
+12. File inventory, metadata snapshots, collection memberships, deduplication, and transfer planning must obtain provider identities through one connector-owned canonical helper rather than rebuilding identity strings independently.
+13. Current Yike/Synology Pull identities were canonical from their initial implementations; do not fabricate migration aliases. Use `SourceItemAlias` only when a future stronger provider identity is deterministically proven.
+14. FileStation uses only provider-stable file identity when proven; otherwise path identity remains explicit and scoped.
+15. Backup mode never removes xDrive content because the provider removed a file.
+16. Mirror mode, when implemented, moves only confirmed deletions to xDrive trash and never permanently deletes directly.
+17. Incremental synchronization is enabled only for a proven cursor/diff/tombstone contract and always retains a full-reconciliation reset path.
+18. Source-side providers remain read-only by default.
 
 ## Connector responsibilities
 

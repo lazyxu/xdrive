@@ -3,7 +3,6 @@ package yike
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -295,13 +294,6 @@ type AlbumFileList struct {
 type DownloadLink struct {
 	URL     string
 	Headers map[string]string
-}
-
-func ExternalID(ownerUK, fsid int64) (string, error) {
-	if ownerUK <= 0 || fsid <= 0 {
-		return "", fmt.Errorf("owner uk and fsid must be positive")
-	}
-	return fmt.Sprintf("yike:%d:%d", ownerUK, fsid), nil
 }
 
 func (f AlbumFile) OwnerUK(fallback int64) int64 {
