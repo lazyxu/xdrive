@@ -17,6 +17,14 @@ const (
 )
 
 func appleMakerNoteContentIdentifier(note []byte) string {
+	return normalizeLivePhotoIdentifier(appleMakerNoteStringTag(note, 0x0011))
+}
+
+func appleMakerNoteBurstUUID(note []byte) string {
+	return appleMakerNoteStringTag(note, 0x000b)
+}
+
+func appleMakerNoteStringTag(note []byte, wanted uint16) string {
 	if len(note) < 16 || !bytes.Equal(note[:10], []byte(appleMakerNoteHeader)) {
 		return ""
 	}
@@ -37,7 +45,7 @@ func appleMakerNoteContentIdentifier(note []byte) string {
 	}
 	for index := 0; index < count; index++ {
 		base := dirOffset + 2 + index*12
-		if order.Uint16(note[base:base+2]) != 0x0011 {
+		if order.Uint16(note[base:base+2]) != wanted {
 			continue
 		}
 		typ := order.Uint16(note[base+2 : base+4])
@@ -48,7 +56,7 @@ func appleMakerNoteContentIdentifier(note []byte) string {
 		}
 		switch typ {
 		case 1, 2, 7:
-			return normalizeLivePhotoIdentifier(string(value))
+			return normalizeRelationIdentifier(string(value))
 		default:
 			return ""
 		}

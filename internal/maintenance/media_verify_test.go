@@ -59,6 +59,26 @@ func TestVerifyMediaStateFindsStaleAndBrokenRelationships(t *testing.T) {
 	}
 }
 
+func TestVerifyMediaStateFindsStaleRelationEvidence(t *testing.T) {
+	nodes, files, metadata, groups, items, resources := healthyMediaFixture()
+	metadata[0].RelationEvidenceVersion = 0
+	metadata[1].RelationJSON = "{broken"
+
+	report := verifyMediaState(metadata, groups, items, resources, nodes, files)
+	reasons := map[string]bool{}
+	for _, issue := range report.Issues {
+		reasons[issue.Reason] = true
+	}
+	for _, want := range []string{
+		"metadata_relation_evidence_stale",
+		"metadata_relation_evidence_invalid",
+	} {
+		if !reasons[want] {
+			t.Fatalf("missing issue %q in %+v", want, report.Issues)
+		}
+	}
+}
+
 func TestVerifyMediaStateDetectsDeletedAndMissingNodes(t *testing.T) {
 	nodes, files, metadata, groups, items, resources := healthyMediaFixture()
 	now := time.Now().UTC()
@@ -107,11 +127,13 @@ func healthyMediaFixture() (
 		{
 			NodeID: 10, OwnerID: 1, NodeRevision: 2, SHA256: shaStill,
 			MediaKind: meta.MediaKindImage, IndexState: meta.MediaIndexStateReady,
+			RelationEvidenceVersion:  mediapkg.RelationEvidenceVersion,
 			LivePhotoAssetIdentifier: "ABC",
 		},
 		{
 			NodeID: 11, OwnerID: 1, NodeRevision: 3, SHA256: shaMotion,
 			MediaKind: meta.MediaKindVideo, IndexState: meta.MediaIndexStateReady,
+			RelationEvidenceVersion:  mediapkg.RelationEvidenceVersion,
 			LivePhotoAssetIdentifier: "ABC",
 		},
 		{
@@ -119,6 +141,7 @@ func healthyMediaFixture() (
 			MediaKind: meta.MediaKindImage, MIMEType: mediapkg.LIVPMIMEType,
 			ContainerKind:            mediapkg.ContainerKindLIVP,
 			LivePhotoAssetIdentifier: "LIVP-1",
+			RelationEvidenceVersion:  mediapkg.RelationEvidenceVersion,
 			IndexState:               meta.MediaIndexStateReady,
 		},
 	}

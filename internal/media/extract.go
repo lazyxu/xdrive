@@ -44,6 +44,7 @@ type Result struct {
 	LensModel                string
 	EXIFJSON                 string
 	VideoJSON                string
+	RelationJSON             string
 }
 
 const (
@@ -114,6 +115,13 @@ func Extract(name string, r io.ReadSeeker, size int64) (Result, error) {
 	case KindVideo:
 		if err := extractVideo(r, size, &result); err != nil {
 			return result, err
+		}
+	}
+	if strings.EqualFold(filepath.Ext(name), ".xmp") {
+		if _, err := r.Seek(0, io.SeekStart); err == nil {
+			if data, err := io.ReadAll(io.LimitReader(r, maxEmbeddedMetadataBytes)); err == nil {
+				mergeResultRelationEvidence(&result, parseXMPRelationEvidence(data))
+			}
 		}
 	}
 	return result, nil
@@ -232,6 +240,7 @@ func extractImage(r io.ReadSeeker, header []byte, out *Result) error {
 	switch {
 	case isJPEG(header):
 		exif, _ = readJPEGExif(r)
+		mergeResultRelationEvidence(out, readJPEGXMPRelationEvidence(r))
 	case isTIFF(header):
 		if _, err := r.Seek(0, io.SeekStart); err == nil {
 			data, _ := io.ReadAll(io.LimitReader(r, maxEmbeddedMetadataBytes))
@@ -271,6 +280,7 @@ type exifData struct {
 	CameraModel              string
 	LensModel                string
 	Fields                   map[string]any
+	Relation                 RelationEvidence
 }
 
 func applyEXIF(out *Result, exif *exifData) {
@@ -291,6 +301,7 @@ func applyEXIF(out *Result, exif *exifData) {
 	out.CameraModel = exif.CameraModel
 	out.LensModel = exif.LensModel
 	out.LivePhotoAssetIdentifier = exif.LivePhotoAssetIdentifier
+	mergeResultRelationEvidence(out, exif.Relation)
 	if len(exif.Fields) != 0 {
 		if encoded, err := json.Marshal(exif.Fields); err == nil {
 			out.EXIFJSON = string(encoded)
@@ -438,6 +449,8 @@ func parseTIFF(data []byte) (*exifData, error) {
 				}
 			case 0x0131:
 				addASCIIField(out.Fields, "software", value)
+			case 0x02bc:
+				out.Relation.merge(parseXMPRelationEvidence(value))
 			case 0xc612:
 				if typ == 1 && count >= 4 {
 					if version := dngVersion(value); version != "" {
@@ -503,6 +516,16 @@ func parseTIFF(data []byte) (*exifData, error) {
 					addRationalField(reader, out.Fields, "focal_length_mm", typ, count, value)
 				case 0x927c:
 					out.LivePhotoAssetIdentifier = appleMakerNoteContentIdentifier(value)
+					if burstUUID := appleMakerNoteBurstUUID(value); burstUUID != "" {
+						out.Relation.AppleBurstUUID = burstUUID
+						out.Fields["apple_burst_uuid"] = burstUUID
+					}
+					if out.Relation.ImageUniqueID == "" {
+						if imageID := appleMakerNoteStringTag(value, 0x0015); imageID != "" {
+							out.Relation.ImageUniqueID = imageID
+							out.Fields["image_unique_id"] = imageID
+						}
+					}
 				case 0xa002:
 					if width := int(reader.firstUint(typ, count, value)); width > 0 {
 						out.PixelWidth = width
@@ -514,6 +537,11 @@ func parseTIFF(data []byte) (*exifData, error) {
 				case 0xa405:
 					if focal35 := reader.firstUint(typ, count, value); focal35 != 0 {
 						out.Fields["focal_length_35mm"] = focal35
+					}
+				case 0xa420:
+					if imageID := normalizeRelationIdentifier(cleanASCII(value)); imageID != "" {
+						out.Relation.ImageUniqueID = imageID
+						out.Fields["image_unique_id"] = imageID
 					}
 				case 0xa434:
 					out.LensModel = cleanASCII(value)

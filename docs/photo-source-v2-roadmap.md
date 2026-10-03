@@ -60,7 +60,7 @@ The following foundations already exist and should be extended rather than repla
 - `SourceCollection` / `SourceCollectionItem` for optional provider collection provenance;
 - provenance-only `SourceItemMetadata` for original path, owner identity, remote create time, and provider MD5; media-semantic legacy columns are removed during migration;
 - canonical `MediaMetadata` for node-scoped parsing plus the derived `PhotoAsset` / `PhotoResource` / `PhotoMetadata` logical asset layer;
-- xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, derived thumbnail caching, and Gallery indexing;
+- xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, versioned local relation evidence (`ImageUniqueID` / Apple `BurstUUID` / XMP Media Management IDs), derived thumbnail caching, and Gallery indexing;
 - Yike Pull stable `yike:<owner_uk>:<fsid>` identity, file/albums discovery, MD5 hint, Range download, resumable upload, bounded API rate, cancellation, and incomplete-inventory safety;
 - Synology Photos Pull stable `synology:<space>:<item_id>` identity, Personal/Shared spaces, file/albums discovery, Range download, cancellation, retry classification, and optional-album failure isolation;
 - Synology Push hybrid identity foundation: filesystem-complete inventory/fast byte reads plus optional Photos item-ID canonicalization with filesystem aliases and in-place promotion;
@@ -212,6 +212,14 @@ xd_photo_collection_assets
 - create RAW/JPEG, sidecar, or burst relations only from validated embedded/container evidence;
 - never require a provider semantic endpoint to reconstruct these relationships.
 
+Current deterministic relation projection is intentionally narrow:
+
+- DNG + one rendered image may form a `raw_pair` only when both local originals expose the same exact EXIF/Apple `ImageUniqueID`;
+- an `.xmp` sidecar may join one local image (or an existing RAW pair containing that image) only when XMP `DerivedFrom` explicitly references a unique local XMP `DocumentID` / `OriginalDocumentID`;
+- Apple burst images may form a `burst` only from an exact shared Apple MakerNote `BurstUUID`;
+- relations that would overlap an already validated Live Photo, or are otherwise ambiguous, fail closed;
+- `.AAE` files remain ordinary ungrouped files unless a future parser finds a deterministic embedded target identity. Filename stems and capture-time proximity are not evidence.
+
 ## Incremental synchronization contract
 
 The Source core already has opaque checkpoints, but the three connectors currently use full reconciliation as the deletion-safety baseline.
@@ -287,7 +295,7 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | Live Photo pairing/projection | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending |
 | `.livp` parsing | Current local parser + zero-copy resources | Same common local parser | Same common local parser |
 | RAW metadata/preview | DNG metadata + embedded-JPEG preview current; other RAW TODO local | DNG metadata + embedded-JPEG preview current; other RAW TODO local | DNG metadata + embedded-JPEG preview current; other RAW TODO local |
-| RAW/JPEG/XMP/AAE/burst grouping | TODO local | TODO local | TODO local |
+| RAW/JPEG/XMP/AAE/burst grouping | Current local subset: DNG/rendered exact ImageUniqueID, XMP explicit DerivedFrom, Apple BurstUUID; AAE/other RAW TODO | Same shared local pipeline | Same shared local pipeline |
 | People/tags/favorite/description from provider | Not used by design | Not used by design | Not used by design |
 | Reliable incremental cursor | TODO only if proven | TODO only if proven | TODO only if proven |
 | Backup deletion safety | Current | Current | Current |
@@ -307,7 +315,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P3 | Expand native media parser coverage from original files: EXIF/TIFF/GPS/video/container edge cases | Highest |
 | P4 | Complete: connector-neutral `MediaGroup` evidence plus `PhotoAsset` / `PhotoResource` / `PhotoMetadata` / `PhotoCollection` logical projection | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
-| P6 | In progress: DNG metadata and safe embedded-JPEG previews are local; other RAW formats plus validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping remain | High |
+| P6 | In progress: DNG metadata/preview plus exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are local; AAE without embedded target identity and other RAW formats remain ungrouped/TODO | High |
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
@@ -331,6 +339,7 @@ Before calling this subsystem mature:
 - cancellation and failed/partial scans cannot trigger missing inference;
 - Backup never trashes content because it disappeared remotely;
 - Mirror, if enabled, acts only on proven deletion and moves to trash rather than permanent delete;
+- relation-evidence version/JSON corruption is detectable locally and stale evidence is re-indexed without provider access;
 - integrity verification detects local binding/media corruption without mutating anything;
 - repair rebuilds local derived state without writing to the provider.
 
