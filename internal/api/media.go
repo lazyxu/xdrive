@@ -705,7 +705,7 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 		}
 	}
 	switch mimeType {
-	case "image/jpeg", "image/png", "image/gif":
+	case "image/jpeg", "image/png", "image/gif", "image/heic", "image/heif":
 		return true
 	default:
 		return false

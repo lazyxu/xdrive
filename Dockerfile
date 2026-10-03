@@ -13,7 +13,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN GOPROXY="${GOPROXY}" GOSUMDB="${GOSUMDB}" go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=linux go build -tags=nodynamic -trimpath \
     -ldflags="-s -w -X github.com/lazyxu/xdrive/internal/version.Version=$VERSION -X github.com/lazyxu/xdrive/internal/version.Channel=$BUILD_CHANNEL -X github.com/lazyxu/xdrive/internal/version.Commit=$BUILD_COMMIT -X github.com/lazyxu/xdrive/internal/version.CommitMessageBase64=$BUILD_COMMIT_MESSAGE_B64 -X github.com/lazyxu/xdrive/internal/version.CommitTime=$BUILD_COMMIT_TIME -X github.com/lazyxu/xdrive/internal/version.BuildTime=$BUILD_TIME" \
     -o /out/xdrive-server ./cmd/server \
     && mkdir -p /out/data/.xdrive-uploads
