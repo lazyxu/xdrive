@@ -1,3 +1,5 @@
+export const XDRIVE_FILE_OPERATION_HISTORY_LIMIT = 200
+
 export type XDriveFileOperationType = 'copy' | 'move' | 'delete'
 
 export type XDriveFileOperationStatus =
@@ -50,6 +52,42 @@ export function xDriveFileOperationStatusLabel(status: XDriveFileOperationStatus
     case 'failed': return '失败'
     default: return status || '未知'
   }
+}
+
+const XDRIVE_FILE_OPERATION_FAILURE_MESSAGES: Record<string, string> = {
+  batch_empty: '没有可处理的项目。',
+  batch_too_large: '一次操作的项目数量超过限制，请分批操作。',
+  invalid_batch_item: '任务中包含无效项目，请刷新后重新选择。',
+  duplicate_batch_item: '任务中包含重复项目，请重新选择。',
+  node_not_found: '项目已不存在，请刷新目录后重新操作。',
+  root_mutation: '根目录不能执行此操作。',
+  revision_conflict: '项目版本已变化，请刷新目录后重新发起操作。',
+  invalid_target: '目标位置无效，请选择其他文件夹。',
+  nested_batch_selection: '选择中同时包含文件夹及其子项，请调整选择后重新操作。',
+  name_conflict: '目标位置存在同名项目，请处理冲突后重新操作。',
+  managed_source_target: '该路径由同步来源管理，不能执行此操作。',
+  internal_error: '文件操作执行失败，可稍后重试。',
+}
+
+export function xDriveFileOperationFailureMessage(
+  operation: Pick<XDriveFileOperation, 'status' | 'failure_code' | 'error'>,
+) {
+  if (operation.status !== 'failed') return ''
+  if (operation.failure_code && XDRIVE_FILE_OPERATION_FAILURE_MESSAGES[operation.failure_code]) {
+    return XDRIVE_FILE_OPERATION_FAILURE_MESSAGES[operation.failure_code]
+  }
+  return operation.error || '文件操作执行失败。'
+}
+
+export function xDriveFileOperationFailureItemLabel(
+  operation: Pick<XDriveFileOperation, 'current_item' | 'failed_item_id'>,
+) {
+  if (operation.current_item && operation.failed_item_id) {
+    return `${operation.current_item}（#${operation.failed_item_id}）`
+  }
+  if (operation.current_item) return operation.current_item
+  if (operation.failed_item_id) return `#${operation.failed_item_id}`
+  return ''
 }
 
 export function xDriveFileOperationActive(status: XDriveFileOperationStatus | string) {

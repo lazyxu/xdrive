@@ -7,6 +7,8 @@ import {
   xDriveFileOperationAverageItemsPerSecond,
   xDriveFileOperationElapsedMs,
   xDriveFileOperationEtaMs,
+  xDriveFileOperationFailureItemLabel,
+  xDriveFileOperationFailureMessage,
   xDriveFileOperationPercent,
   xDriveFileOperationStatusLabel,
   xDriveFileOperationTypeLabel,
@@ -70,6 +72,8 @@ function OperationItem({
     : eta === undefined
       ? (active ? '计算中' : '—')
       : formatXDriveTransferDuration(eta)
+  const failureMessage = xDriveFileOperationFailureMessage(operation)
+  const failureItem = xDriveFileOperationFailureItemLabel(operation)
 
   return (
     <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
@@ -149,9 +153,26 @@ function OperationItem({
           <XDriveDescriptionItem label="预计剩余">{etaLabel}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="平均处理速度">{operationRate(operation, now)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="完成时间">{operationTime(operation.finished_at)}</XDriveDescriptionItem>
+          {operation.status === 'failed' ? (
+            <>
+              <XDriveDescriptionItem label="失败项目">{failureItem || '—'}</XDriveDescriptionItem>
+              <XDriveDescriptionItem label="错误代码">{operation.failure_code || '—'}</XDriveDescriptionItem>
+            </>
+          ) : null}
           <XDriveDescriptionItem label="任务 ID">{operation.id}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
-        {operation.error ? <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>{operation.error}</XDriveStatusAlert> : null}
+        {failureMessage ? (
+          <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>
+            <Stack spacing={0.25}>
+              <Typography variant="body2">{failureMessage}</Typography>
+              {operation.error && operation.error !== failureMessage ? (
+                <Typography variant="caption" sx={{ opacity: 0.85 }}>{operation.error}</Typography>
+              ) : null}
+            </Stack>
+          </XDriveStatusAlert>
+        ) : operation.error ? (
+          <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>{operation.error}</XDriveStatusAlert>
+        ) : null}
       </Box>
     </Box>
   )

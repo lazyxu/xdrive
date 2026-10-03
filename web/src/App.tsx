@@ -60,7 +60,7 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
 } from '../../ui/shared/src'
-import { xDriveFileExplorerDeleteOperationPlan, xDriveFileOperationActive, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerDeleteOperationPlan, xDriveFileOperationActive, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -658,7 +658,7 @@ function FileManager({
   useEffect(() => api.onTransfers(setTransfers), [api])
 
   const refreshFileOperations = useCallback(async () => {
-    const operations = await api.fileOperations(100)
+    const operations = await api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
     setFileOperations(operations)
     return operations
   }, [api])
@@ -668,7 +668,7 @@ function FileManager({
     let active = true
     const refresh = async () => {
       try {
-        const operations = await api.fileOperations(100)
+        const operations = await api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
         if (active) setFileOperations(operations)
       } catch {
         // Background task polling must not turn a transient network failure into repeated UI alerts.
