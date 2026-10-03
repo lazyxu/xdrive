@@ -216,6 +216,40 @@ func TestFileOperationWorkerLifecycle(t *testing.T) {
 		t.Fatalf("cancel request should win over a late worker failure: %+v", cancelRace)
 	}
 
+	localCancel, err := srv.enqueueFileOperation(context.Background(), user.ID, meta.FileOperationTypeCopy, []batchNodeRef{
+		{ID: staleA.ID, Revision: 1},
+	}, failureTarget.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.FileOperation{}).Where("id = ?", localCancel.ID).Update("status", meta.FileOperationStatusRunning).Error; err != nil {
+		t.Fatal(err)
+	}
+	workerCtx, workerCancel := context.WithCancelCause(context.Background())
+	srv.registerFileOperationCancel(localCancel.ID, workerCancel)
+	if err := srv.requestFileOperationCancel(context.Background(), user.ID, localCancel.ID); err != nil {
+		srv.unregisterFileOperationCancel(localCancel.ID)
+		workerCancel(nil)
+		t.Fatal(err)
+	}
+	if !errors.Is(context.Cause(workerCtx), errFileOperationCancelled) {
+		srv.unregisterFileOperationCancel(localCancel.ID)
+		workerCancel(nil)
+		t.Fatalf("local worker cancellation cause=%v want=%v", context.Cause(workerCtx), errFileOperationCancelled)
+	}
+	srv.unregisterFileOperationCancel(localCancel.ID)
+	workerCancel(nil)
+	localCancel, err = srv.loadOwnedFileOperation(context.Background(), user.ID, localCancel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if localCancel.Status != meta.FileOperationStatusCancelRequested {
+		t.Fatalf("local cancel status=%q want=%q", localCancel.Status, meta.FileOperationStatusCancelRequested)
+	}
+	if err := srv.cancelRunningFileOperation(context.Background(), user.ID, localCancel.ID); err != nil {
+		t.Fatal(err)
+	}
+
 	other := meta.User{Username: "file-operation-other", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
 	if err := db.Create(&other).Error; err != nil {
 		t.Fatal(err)

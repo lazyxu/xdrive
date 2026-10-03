@@ -32,6 +32,8 @@ type Server struct {
 	stagingCacheMu            sync.Mutex
 	stagingCacheAt            time.Time
 	stagingCache              uploadStagingInventory
+	fileOperationCancelMu     sync.Mutex
+	fileOperationCancels      map[string]context.CancelCauseFunc
 }
 
 func (s *Server) Router() *gin.Engine {
