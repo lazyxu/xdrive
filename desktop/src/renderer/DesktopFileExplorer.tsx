@@ -1,5 +1,12 @@
 import { useCallback, useState } from 'react'
-import { xDriveFileExplorerSearchDecision, xDriveResolveFileExplorerPath } from '@xdrive/shared'
+import {
+  xDriveFileExplorerClipboardOperationPlan,
+  xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerNodesForItems,
+  xDriveFileExplorerOperationQueuedMessage,
+  xDriveFileExplorerSearchDecision,
+  xDriveResolveFileExplorerPath,
+} from '@xdrive/shared'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
@@ -291,14 +298,8 @@ export default function DesktopFileExplorer({
     })
   }
 
-  const explorerNodesForItems = (selected: XDriveFileExplorerItem[]) => (
-    selected
-      .map((item) => nodeByID.get(Number(item.id)))
-      .filter((node): node is AgentCloudNode => Boolean(node))
-  )
-
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
-    const nodes = explorerNodesForItems(selected)
+    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
     const files = nodes.filter((node) => node.type === 'file')
     if (files.length === 0 || actionBusy) return
     setActionBusy('download-many')
@@ -329,29 +330,25 @@ export default function DesktopFileExplorer({
     if (!current || !clipboard || clipboard.nodes.length === 0 || actionBusy) return
     setActionBusy('paste')
     try {
-      const nodes = clipboard.mode === 'cut'
-        ? clipboard.nodes.filter((node) => node.parent_id !== current.id)
-        : clipboard.nodes
-      if (nodes.length > 0) {
-        const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
+      const plan = xDriveFileExplorerClipboardOperationPlan(
+        clipboard.mode,
+        clipboard.nodes,
+        current.id,
+      )
+      if (plan.count > 0) {
         const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
-          clipboard.mode === 'cut' ? 'move' : 'copy',
-          refs,
-          current.id,
+          plan.operation,
+          plan.items,
+          plan.parentID,
         )
         if (!result.ok) {
           onError(result.error.message)
           return
         }
         onOperationQueued(result.data)
-        onFeedback(
-          'good',
-          clipboard.mode === 'cut'
-            ? `已将 ${nodes.length} 个项目加入移动任务。`
-            : `已将 ${nodes.length} 个项目加入复制任务。`,
-        )
+        onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
       }
-      if (clipboard.mode === 'cut') setClipboard(null)
+      if (plan.clearClipboard) setClipboard(null)
       clearSearch()
     } finally {
       setActionBusy('')
@@ -365,24 +362,23 @@ export default function DesktopFileExplorer({
   ) => {
     const targetNode = nodeByID.get(Number(target.id))
     if (!targetNode || targetNode.type !== 'dir' || actionBusy) return
-    const nodes = explorerNodesForItems(selected).filter((node) => node.id !== targetNode.id)
-    if (nodes.length === 0) return
+    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+    const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)
+    if (plan.count === 0) return
     setActionBusy('drop-items')
     try {
-      const refs = nodes.map((node) => ({ id: node.id, revision: node.revision }))
-      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(operation, refs, targetNode.id)
+      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
+        plan.operation,
+        plan.items,
+        plan.parentID,
+      )
       if (!result.ok) {
         onError(result.error.message)
         return
       }
       onOperationQueued(result.data)
       clearSearch()
-      onFeedback(
-        'good',
-        operation === 'copy'
-          ? `已将 ${nodes.length} 个项目加入复制任务。`
-          : `已将 ${nodes.length} 个项目加入移动任务。`,
-      )
+      onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))
     } finally {
       setActionBusy('')
     }
@@ -461,18 +457,18 @@ export default function DesktopFileExplorer({
         }}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
-          const nodes = explorerNodesForItems(selected)
+          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })
         }}
         onCutItems={(selected) => {
-          const nodes = explorerNodesForItems(selected)
+          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) setClipboard({ mode: 'cut', nodes })
         }}
         onPaste={() => { void pasteClipboard() }}
         canPaste={Boolean(clipboard?.nodes.length) && !actionBusy}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         onDeleteItems={(selected) => {
-          const nodes = explorerNodesForItems(selected)
+          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onDeleteMany(nodes)
         }}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}

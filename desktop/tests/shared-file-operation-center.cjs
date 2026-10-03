@@ -108,10 +108,13 @@ test('Desktop polls persistent operations and refreshes cloud Explorer only on t
 })
 
 test('Explorer multi-select copy move delete queue one operation instead of N renderer requests', () => {
-  assert.ok(webExplorer.includes("api.createFileOperation(clipboard.mode === 'cut' ? 'move' : 'copy', refs, current.id)"), 'Web paste is not queued')
-  assert.ok(webExplorer.includes('api.createFileOperation(operation, refs, targetNode.id)'), 'Web drag/drop is not queued')
+  assert.ok(webExplorer.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'Web paste/drop is not queued')
+  assert.ok(webExplorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Web paste must use the shared operation plan')
+  assert.ok(webExplorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Web drag/drop must use the shared operation plan')
   assert.ok(web.includes("const operation = await api.createFileOperation("), 'Web bulk delete is not queued')
   assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste is not queued')
-  assert.ok(desktopExplorer.includes('cloudCreateFileOperation(operation, refs, targetNode.id)'), 'Desktop drag/drop is not queued')
+  assert.ok(desktopExplorer.includes('plan.operation,\n        plan.items,\n        plan.parentID,'), 'Desktop paste/drop must execute the shared operation plan')
+  assert.ok(desktopExplorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must use the shared operation plan')
+  assert.ok(desktopExplorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Desktop drag/drop must use the shared operation plan')
   assert.ok(desktop.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop bulk delete is not queued')
 })

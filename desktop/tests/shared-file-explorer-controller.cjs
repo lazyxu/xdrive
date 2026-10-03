@@ -60,3 +60,30 @@ test('Web and Desktop delegate typed-path resolution while keeping transport ada
   assert.ok(web.includes('listChildren: (parentID) => api.list(parentID)'), 'Web must keep REST directory loading local')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildren(parentID)'), 'Desktop must keep Agent directory loading local')
 })
+
+test('shared FileExplorer controller owns copy/move operation planning', () => {
+  for (const token of [
+    'xDriveFileExplorerNodesForItems',
+    'xDriveFileExplorerClipboardOperationPlan',
+    "mode === 'cut' ? 'move' : 'copy'",
+    'node.parent_id !== targetParentID',
+    "clearClipboard: mode === 'cut'",
+    'xDriveFileExplorerDropOperationPlan',
+    'node.id !== targetParentID',
+    'id: node.id, revision: node.revision',
+    'xDriveFileExplorerOperationQueuedMessage',
+    '加入复制任务',
+    '加入移动任务',
+  ]) {
+    assert.ok(shared.includes(token), `shared FileExplorer operation planning missing: ${token}`)
+  }
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('xDriveFileExplorerClipboardOperationPlan('), `${label} must use shared clipboard operation planning`)
+    assert.ok(source.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), `${label} must use shared drop operation planning`)
+    assert.ok(source.includes('xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count)'), `${label} must use shared queued feedback`)
+    assert.equal(source.includes("clipboard.mode === 'cut' ? 'move' : 'copy'"), false, `${label} must not duplicate cut-to-move mapping`)
+    assert.equal(source.includes('nodes.map((node) => ({ id: node.id, revision: node.revision }))'), false, `${label} must not duplicate operation refs`)
+  }
+  assert.ok(web.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'Web must keep REST operation execution local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep Agent operation execution local')
+})
