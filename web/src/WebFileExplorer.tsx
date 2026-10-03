@@ -137,6 +137,7 @@ export default function WebFileExplorer({
     setViewMode,
     sort,
     changeSort,
+    refresh,
     navigateTo,
     navigateToCrumb,
     goBack,
@@ -278,9 +279,7 @@ export default function WebFileExplorer({
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder,
     onUpload: () => uploadInputRef.current?.click(),
-    onRefresh: () => {
-      if (current) void onLoadDirectory(current.id, crumbs, sort)
-    },
+    onRefresh: refresh,
   })
 
   return (
@@ -319,9 +318,7 @@ export default function WebFileExplorer({
         onBack={() => { void goBack() }}
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}
-        onRefresh={() => {
-          if (current) void onLoadDirectory(current.id, crumbs, sort)
-        }}
+        onRefresh={refresh}
         onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
         onCreateFolder={onCreateFolder}
         onUpload={() => uploadInputRef.current?.click()}

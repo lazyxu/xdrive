@@ -50,6 +50,10 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (current) void onLoadDirectory(current.id, crumbs, nextSort)
   }
 
+  const refresh = () => {
+    if (current) void onLoadDirectory(current.id, crumbs, sort)
+  }
+
   const recordHistory = (nextCrumbs: TCrumb[]) => {
     setHistory((currentHistory) => {
       const next = [...currentHistory.slice(0, historyIndex + 1), nextCrumbs]
@@ -109,6 +113,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     setViewMode,
     sort,
     changeSort,
+    refresh,
     navigateTo,
     navigateToCrumb,
     goBack,
