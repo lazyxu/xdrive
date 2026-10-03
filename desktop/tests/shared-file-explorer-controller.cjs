@@ -111,3 +111,19 @@ test('shared FileExplorer controller owns bulk-download selection and feedback r
   assert.ok(desktop.includes('cloudDownloadFiles(plan.items)'), 'Desktop must keep native batch download execution local')
   assert.ok(desktop.includes('xDriveFileExplorerDesktopDownloadFeedback({'), 'Desktop must use shared download result feedback')
 })
+
+test('shared FileExplorer controller owns external-drop target resolution', () => {
+  for (const token of [
+    'xDriveFileExplorerExternalDropParentID',
+    'target ? nodeByID.get(Number(target.id)) : undefined',
+    "targetNode?.type === 'dir' ? targetNode.id : currentParentID",
+  ]) {
+    assert.ok(shared.includes(token), `shared FileExplorer external-drop targeting missing: ${token}`)
+  }
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), `${label} must use shared external-drop targeting`)
+    assert.equal(source.includes("targetNode?.type === 'dir' ? targetNode.id : current.id"), false, `${label} must not duplicate external-drop target rules`)
+  }
+  assert.ok(web.includes('onUploadDroppedFiles(parentID, files)'), 'Web must keep dropped-file upload execution local')
+  assert.ok(desktop.includes('cloudUploadDroppedFiles(parentID, files)'), 'Desktop must keep dropped-file upload execution local')
+})

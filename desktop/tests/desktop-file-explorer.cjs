@@ -139,6 +139,7 @@ test('Desktop FileExplorer supports internal and external drag and drop', () => 
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Desktop internal drag/drop helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Desktop drag/drop operation selection must use the shared operation plan')
   assert.ok(explorer.includes('plan.operation,\n        plan.items,\n        plan.parentID,'), 'Desktop internal drag must execute the shared copy/move plan')
+  assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Desktop external drop should resolve the target through shared controller logic')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
   assert.ok(explorer.includes('onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
 })
