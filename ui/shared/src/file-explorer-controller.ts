@@ -81,6 +81,67 @@ export function xDriveFileExplorerMergeSearchResults<
   return [...merged.values()]
 }
 
+export type XDriveFileExplorerSearchPage<
+  TResult extends XDriveFileExplorerSearchResultLike,
+> = {
+  items: readonly TResult[]
+  next_cursor?: string | null
+}
+
+export function xDriveFileExplorerSearchPageState<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(
+  current: readonly TResult[] | null,
+  page: XDriveFileExplorerSearchPage<TResult>,
+  append: boolean,
+) {
+  const items = append
+    ? xDriveFileExplorerMergeSearchResults(current ?? [], page.items)
+    : [...page.items]
+  const cursor = page.next_cursor ?? ''
+  return {
+    items,
+    cursor,
+    hasMore: Boolean(cursor),
+  }
+}
+
+export function xDriveFileExplorerCanLoadMoreSearch<
+  TResult extends XDriveFileExplorerSearchResultLike,
+>(
+  results: readonly TResult[] | null,
+  cursor: string,
+  loadingMore: boolean,
+) {
+  return results !== null && Boolean(cursor) && !loadingMore
+}
+
+export function xDriveFileExplorerPaginationPresentation({
+  searchActive,
+  searchCursor,
+  searchLoadingMore,
+  directoryHasMore,
+  directoryLoadingMore,
+}: {
+  searchActive: boolean
+  searchCursor: string
+  searchLoadingMore: boolean
+  directoryHasMore: boolean
+  directoryLoadingMore: boolean
+}) {
+  return searchActive
+    ? {
+        mode: 'search' as const,
+        hasMore: Boolean(searchCursor),
+        loadingMore: searchLoadingMore,
+      }
+    : {
+        mode: 'directory' as const,
+        hasMore: directoryHasMore,
+        loadingMore: directoryLoadingMore,
+      }
+}
+
 export type XDriveFileExplorerSelectionItem = { id: string | number }
 export type XDriveFileExplorerOperationNode = Pick<Node, 'id' | 'revision' | 'parent_id'>
 export type XDriveFileExplorerOperationRef = { id: number; revision: number }

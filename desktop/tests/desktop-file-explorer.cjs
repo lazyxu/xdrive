@@ -61,9 +61,10 @@ test('Desktop FileExplorer paginates server search results through Agent cursors
   assert.ok(explorer.includes('const [searchLoadingMore, setSearchLoadingMore] = useState(false)'), 'Desktop search loading-more state is missing')
   assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Desktop incremental search loader is missing')
   assert.ok(explorer.includes('cloudSearch(decision.query, searchCursor)'), 'Desktop search must forward the cursor through preload')
-  assert.ok(explorer.includes('xDriveFileExplorerMergeSearchResults(current ?? [], result.data.items)'), 'Desktop search pages must merge through shared dedupe logic')
-  assert.ok(explorer.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), 'Desktop search cursor must drive Explorer hasMore')
-  assert.ok(explorer.includes('loadingMore={searchResults ? searchLoadingMore : loadingMore}'), 'Desktop search loading-more state is not wired')
+  assert.ok(explorer.includes('xDriveFileExplorerSearchPageState(searchResults, result.data, true)'), 'Desktop search pages must use the shared page-state transition')
+  assert.ok(explorer.includes('xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)'), 'Desktop search load-more eligibility must use shared logic')
+  assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
+  assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
   assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop search must not truncate the UI to one page')
 })
 

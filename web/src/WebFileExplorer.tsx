@@ -20,9 +20,11 @@ import {
   xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerCanLoadMoreSearch,
   xDriveFileExplorerExternalDropParentID,
-  xDriveFileExplorerMergeSearchResults,
   xDriveFileExplorerNodesForItems,
+  xDriveFileExplorerPaginationPresentation,
+  xDriveFileExplorerSearchPageState,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerWebDownloadFeedback,
   xDriveFileExplorerSearchDecision,
@@ -175,8 +177,9 @@ export default function WebFileExplorer({
     try {
       const page = await api.search(decision.query, XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE)
       if (requestID !== searchRequestRef.current) return
-      setSearchResults(page.items)
-      setSearchCursor(page.next_cursor ?? '')
+      const searchPage = xDriveFileExplorerSearchPageState(null, page, false)
+      setSearchResults(searchPage.items)
+      setSearchCursor(searchPage.cursor)
     } catch (error) {
       if (requestID === searchRequestRef.current) onError(error)
     } finally {
@@ -185,7 +188,7 @@ export default function WebFileExplorer({
   }
 
   const loadMoreSearch = async () => {
-    if (!searchResults || !searchCursor || searchLoadingMore) return
+    if (!xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)) return
     const decision = xDriveFileExplorerSearchDecision(searchValue)
     if (decision.kind !== 'search') return
     const requestID = searchRequestRef.current
@@ -197,10 +200,9 @@ export default function WebFileExplorer({
         searchCursor,
       )
       if (requestID !== searchRequestRef.current) return
-      setSearchResults((current) => (
-        xDriveFileExplorerMergeSearchResults(current ?? [], page.items)
-      ))
-      setSearchCursor(page.next_cursor ?? '')
+      const searchPage = xDriveFileExplorerSearchPageState(searchResults, page, true)
+      setSearchResults(searchPage.items)
+      setSearchCursor(searchPage.cursor)
     } catch (error) {
       if (requestID === searchRequestRef.current) onError(error)
     } finally {
@@ -305,6 +307,14 @@ export default function WebFileExplorer({
     if (current) await onLoadDirectory(current.id, crumbs, sort)
   }
 
+  const explorerPagination = xDriveFileExplorerPaginationPresentation({
+    searchActive: searchResults !== null,
+    searchCursor,
+    searchLoadingMore,
+    directoryHasMore: hasMore,
+    directoryLoadingMore: loadingMore,
+  })
+
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder,
     onUpload: () => uploadInputRef.current?.click(),
@@ -364,10 +374,10 @@ export default function WebFileExplorer({
         sort={sort}
         onSortChange={changeSort}
         externallySorted={!searchResults}
-        hasMore={searchResults ? Boolean(searchCursor) : hasMore}
-        loadingMore={searchResults ? searchLoadingMore : loadingMore}
+        hasMore={explorerPagination.hasMore}
+        loadingMore={explorerPagination.loadingMore}
         onLoadMore={() => {
-          if (searchResults) {
+          if (explorerPagination.mode === 'search') {
             void loadMoreSearch()
           } else if (current) {
             void onLoadMore(current.id, sort)
