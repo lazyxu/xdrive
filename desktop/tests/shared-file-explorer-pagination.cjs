@@ -26,6 +26,10 @@ test('shared FileExplorer controller owns pagination eligibility and page mergin
     'pageState.sort.direction === sort.direction',
     '!loadingMore',
     'xDriveFileExplorerMergePageItems',
+    'XDriveFileExplorerDirectoryPage',
+    'xDriveFileExplorerDirectoryPageTransition',
+    'pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort)',
+    'applyItems: (currentItems: readonly TItem[])',
     'new Map(currentItems.map((item) => [item.id, item] as const))',
     'for (const item of pageItems) merged.set(item.id, item)',
     'return [...merged.values()]',
@@ -41,13 +45,15 @@ test('Web and Desktop delegate pagination rules while keeping transport/loading 
   assert.ok(desktop.includes('limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,'), 'Desktop must use the shared page size')
   assert.equal(web.includes('const FILE_PAGE_SIZE = 200'), false, 'Web must not own a local page-size constant')
   assert.equal(desktop.includes('const DESKTOP_FILE_PAGE_SIZE = 200'), false, 'Desktop must not own a local page-size constant')
-  assert.equal((web.match(/xDriveFileExplorerPageStateFromResult\(/g) || []).length, 3, 'Web must use shared page-state construction for directory, load-more and initial pages')
-  assert.equal((desktop.match(/xDriveFileExplorerPageStateFromResult\(/g) || []).length, 3, 'Desktop must use shared page-state construction for directory, load-more and initial pages')
+  assert.equal((web.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'Web must use the shared directory transition for directory, load-more and initial pages')
+  assert.equal((desktop.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'Desktop must use the shared directory transition for directory, load-more and initial pages')
 
   assert.ok(web.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, loadingMore)'), 'Web must use shared pagination eligibility')
   assert.ok(desktop.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)'), 'Desktop must use shared pagination eligibility')
-  assert.ok(web.includes('xDriveFileExplorerMergePageItems(currentItems, page.items)'), 'Web must use shared page merge')
-  assert.ok(desktop.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), 'Desktop must use shared page merge')
+  assert.equal(web.includes('xDriveFileExplorerPageStateFromResult('), false, 'Web must not duplicate page-state derivation outside the shared transition')
+  assert.equal(desktop.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate page-state derivation outside the shared transition')
+  assert.equal(web.includes('xDriveFileExplorerMergePageItems(currentItems, page.items)'), false, 'Web must not duplicate incremental page merging outside the shared transition')
+  assert.equal(desktop.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), false, 'Desktop must not duplicate incremental page merging outside the shared transition')
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.equal(source.includes('const merged = new Map(currentItems.map((item) => [item.id, item]))'), false, `${label} must not duplicate page merging`)

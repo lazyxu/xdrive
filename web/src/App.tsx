@@ -61,7 +61,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPageState,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_PAGE_SIZE, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerMergePageItems, xDriveFileExplorerPageStateFromResult, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_PAGE_SIZE, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -547,8 +547,9 @@ function FileManager({
         sort: sort.key,
         order: sort.direction,
       })
-      setItems(page.items)
-      setDirectoryPage(xDriveFileExplorerPageStateFromResult(id, page, sort))
+      const transition = xDriveFileExplorerDirectoryPageTransition(id, page, sort, false)
+      setItems(transition.applyItems)
+      setDirectoryPage(transition.pageState)
       if (nextCrumbs) setCrumbs(nextCrumbs)
     } catch (err) {
       handleError(err)
@@ -569,8 +570,9 @@ function FileManager({
         sort: sort.key,
         order: sort.direction,
       })
-      setItems((currentItems) => xDriveFileExplorerMergePageItems(currentItems, page.items))
-      setDirectoryPage(xDriveFileExplorerPageStateFromResult(id, page, sort))
+      const transition = xDriveFileExplorerDirectoryPageTransition(id, page, sort, true)
+      setItems(transition.applyItems)
+      setDirectoryPage(transition.pageState)
     } catch (err) {
       handleError(err)
     } finally {
@@ -599,9 +601,10 @@ function FileManager({
         sort: DEFAULT_FILE_SORT.key,
         order: DEFAULT_FILE_SORT.direction,
       })
+      const transition = xDriveFileExplorerDirectoryPageTransition(root.id, page, DEFAULT_FILE_SORT, false)
       setCrumbs([{ id: root.id, name: '我的文件' }])
-      setItems(page.items)
-      setDirectoryPage(xDriveFileExplorerPageStateFromResult(root.id, page, DEFAULT_FILE_SORT))
+      setItems(transition.applyItems)
+      setDirectoryPage(transition.pageState)
     } catch (err) {
       handleError(err)
     } finally {

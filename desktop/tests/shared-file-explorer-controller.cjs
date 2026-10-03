@@ -211,3 +211,17 @@ test('Web and Desktop keep search pagination bound to the submitted active query
   assert.ok(desktop.includes('xDriveFileExplorerStartSearchState<AgentCloudSearchResult>(decision.query)'), 'Desktop must store the normalized submitted query')
   assert.ok(desktop.includes('cloudSearch(query, searchCursor)'), 'Desktop pagination must request the active query with its cursor')
 })
+
+
+test('shared FileExplorer controller owns directory page replace/append transitions', () => {
+  for (const token of [
+    'XDriveFileExplorerDirectoryPage',
+    'xDriveFileExplorerDirectoryPageTransition',
+    'pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort)',
+    'applyItems: (currentItems: readonly TItem[])',
+    'xDriveFileExplorerMergePageItems(currentItems, page.items)',
+    ': [...page.items]',
+  ]) {
+    assert.ok(shared.includes(token), `shared directory page transition missing: ${token}`)
+  }
+})
