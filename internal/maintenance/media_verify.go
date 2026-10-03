@@ -1,0 +1,585 @@
+package maintenance
+
+import (
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
+	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
+)
+
+type MediaIntegrityIssue struct {
+	OwnerID  uint64 `json:"owner_id,omitempty"`
+	NodeID   uint64 `json:"node_id,omitempty"`
+	GroupID  uint64 `json:"group_id,omitempty"`
+	Role     string `json:"role,omitempty"`
+	Reason   string `json:"reason"`
+	Expected string `json:"expected,omitempty"`
+	Actual   string `json:"actual,omitempty"`
+}
+
+type MediaVerifyReport struct {
+	Metadata         int                   `json:"metadata"`
+	Groups           int                   `json:"groups"`
+	GroupItems       int                   `json:"group_items"`
+	DerivedResources int                   `json:"derived_resources"`
+	Issues           []MediaIntegrityIssue `json:"issues"`
+}
+
+func (r MediaVerifyReport) OK() bool { return len(r.Issues) == 0 }
+
+// VerifyMedia checks connector-neutral media-index relationships only. It never
+// reads provider APIs and never mutates metadata, groups, resources, or files.
+func VerifyMedia(db *gorm.DB) (MediaVerifyReport, error) {
+	var report MediaVerifyReport
+	if db == nil {
+		return report, fmt.Errorf("media verify database is unavailable")
+	}
+
+	var metadata []meta.MediaMetadata
+	if err := db.Order("node_id ASC").Find(&metadata).Error; err != nil {
+		return report, fmt.Errorf("query media metadata: %w", err)
+	}
+	var groups []meta.MediaGroup
+	if err := db.Order("id ASC").Find(&groups).Error; err != nil {
+		return report, fmt.Errorf("query media groups: %w", err)
+	}
+	var items []meta.MediaGroupItem
+	if err := db.Order("group_id ASC, ordinal ASC, node_id ASC").Find(&items).Error; err != nil {
+		return report, fmt.Errorf("query media group items: %w", err)
+	}
+	var resources []meta.MediaDerivedResource
+	if err := db.Order("node_id ASC, role ASC").Find(&resources).Error; err != nil {
+		return report, fmt.Errorf("query media derived resources: %w", err)
+	}
+
+	nodeIDs := make(map[uint64]struct{})
+	for _, row := range metadata {
+		nodeIDs[row.NodeID] = struct{}{}
+	}
+	for _, item := range items {
+		nodeIDs[item.NodeID] = struct{}{}
+	}
+	for _, resource := range resources {
+		nodeIDs[resource.NodeID] = struct{}{}
+	}
+	ids := make([]uint64, 0, len(nodeIDs))
+	for id := range nodeIDs {
+		if id != 0 {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	var nodes []meta.Node
+	var files []meta.File
+	if err := forSourceVerifyIDBatches(ids, func(batch []uint64) error {
+		var batchNodes []meta.Node
+		if err := db.Where("id IN ?", batch).Find(&batchNodes).Error; err != nil {
+			return fmt.Errorf("query media nodes: %w", err)
+		}
+		nodes = append(nodes, batchNodes...)
+
+		var batchFiles []meta.File
+		if err := db.Where("node_id IN ?", batch).Find(&batchFiles).Error; err != nil {
+			return fmt.Errorf("query media files: %w", err)
+		}
+		files = append(files, batchFiles...)
+		return nil
+	}); err != nil {
+		return report, err
+	}
+
+	return verifyMediaState(metadata, groups, items, resources, nodes, files), nil
+}
+
+func verifyMediaState(
+	metadata []meta.MediaMetadata,
+	groups []meta.MediaGroup,
+	items []meta.MediaGroupItem,
+	resources []meta.MediaDerivedResource,
+	nodes []meta.Node,
+	files []meta.File,
+) MediaVerifyReport {
+	report := MediaVerifyReport{
+		Metadata:         len(metadata),
+		Groups:           len(groups),
+		GroupItems:       len(items),
+		DerivedResources: len(resources),
+	}
+	add := func(issue MediaIntegrityIssue) {
+		report.Issues = append(report.Issues, issue)
+	}
+
+	nodeByID := make(map[uint64]meta.Node, len(nodes))
+	for _, node := range nodes {
+		nodeByID[node.ID] = node
+	}
+	fileByNodeID := make(map[uint64]meta.File, len(files))
+	for _, file := range files {
+		fileByNodeID[file.NodeID] = file
+	}
+	metadataByNodeID := make(map[uint64]meta.MediaMetadata, len(metadata))
+	for _, row := range metadata {
+		metadataByNodeID[row.NodeID] = row
+		verifyMediaMetadataRow(row, nodeByID, fileByNodeID, add)
+	}
+
+	groupByID := make(map[uint64]meta.MediaGroup, len(groups))
+	itemsByGroup := make(map[uint64][]meta.MediaGroupItem, len(groups))
+	for _, group := range groups {
+		groupByID[group.ID] = group
+		if group.OwnerID == 0 {
+			add(MediaIntegrityIssue{GroupID: group.ID, Reason: "group_owner_missing"})
+		}
+		if !meta.ValidMediaGroupKind(group.Kind) {
+			add(MediaIntegrityIssue{
+				OwnerID: group.OwnerID, GroupID: group.ID, Reason: "group_kind_invalid",
+				Actual: group.Kind,
+			})
+		}
+		if strings.TrimSpace(group.EvidenceKey) == "" {
+			add(MediaIntegrityIssue{
+				OwnerID: group.OwnerID, GroupID: group.ID, Reason: "group_evidence_missing",
+			})
+		}
+	}
+	for _, item := range items {
+		itemsByGroup[item.GroupID] = append(itemsByGroup[item.GroupID], item)
+		group, ok := groupByID[item.GroupID]
+		if !ok {
+			add(MediaIntegrityIssue{
+				NodeID: item.NodeID, GroupID: item.GroupID, Role: item.Role,
+				Reason: "group_item_group_missing",
+			})
+			continue
+		}
+		node, ok := nodeByID[item.NodeID]
+		base := MediaIntegrityIssue{
+			OwnerID: group.OwnerID, NodeID: item.NodeID, GroupID: item.GroupID, Role: item.Role,
+		}
+		if !ok {
+			base.Reason = "group_item_node_missing"
+			add(base)
+			continue
+		}
+		if node.OwnerID != group.OwnerID {
+			issue := base
+			issue.Reason = "group_item_owner_mismatch"
+			issue.Expected = strconv.FormatUint(group.OwnerID, 10)
+			issue.Actual = strconv.FormatUint(node.OwnerID, 10)
+			add(issue)
+		}
+		if node.DeletedAt != nil {
+			issue := base
+			issue.Reason = "group_item_node_deleted"
+			add(issue)
+		}
+		if node.Type != meta.NodeTypeFile {
+			issue := base
+			issue.Reason = "group_item_node_type_mismatch"
+			issue.Expected = meta.NodeTypeFile
+			issue.Actual = node.Type
+			add(issue)
+		}
+		if item.Ordinal < 0 {
+			issue := base
+			issue.Reason = "group_item_ordinal_invalid"
+			issue.Actual = strconv.Itoa(item.Ordinal)
+			add(issue)
+		}
+		if strings.TrimSpace(item.Role) == "" {
+			issue := base
+			issue.Reason = "group_item_role_missing"
+			add(issue)
+		}
+	}
+
+	for _, group := range groups {
+		groupItems := itemsByGroup[group.ID]
+		if len(groupItems) == 0 {
+			add(MediaIntegrityIssue{
+				OwnerID: group.OwnerID, GroupID: group.ID, Reason: "group_empty",
+			})
+			continue
+		}
+		if group.Kind == meta.MediaGroupKindLivePhoto {
+			verifyLivePhotoGroup(group, groupItems, metadataByNodeID, add)
+		}
+	}
+
+	resourcesByNodeID := make(map[uint64][]meta.MediaDerivedResource)
+	for _, resource := range resources {
+		resourcesByNodeID[resource.NodeID] = append(resourcesByNodeID[resource.NodeID], resource)
+		verifyDerivedResource(resource, nodeByID, fileByNodeID, metadataByNodeID, add)
+	}
+	verifyLIVPContainers(metadata, resourcesByNodeID, add)
+
+	sort.SliceStable(report.Issues, func(i, j int) bool {
+		a, b := report.Issues[i], report.Issues[j]
+		if a.OwnerID != b.OwnerID {
+			return a.OwnerID < b.OwnerID
+		}
+		if a.GroupID != b.GroupID {
+			return a.GroupID < b.GroupID
+		}
+		if a.NodeID != b.NodeID {
+			return a.NodeID < b.NodeID
+		}
+		if a.Role != b.Role {
+			return a.Role < b.Role
+		}
+		return a.Reason < b.Reason
+	})
+	return report
+}
+
+func verifyMediaMetadataRow(
+	row meta.MediaMetadata,
+	nodes map[uint64]meta.Node,
+	files map[uint64]meta.File,
+	add func(MediaIntegrityIssue),
+) {
+	base := MediaIntegrityIssue{OwnerID: row.OwnerID, NodeID: row.NodeID}
+	node, ok := nodes[row.NodeID]
+	if !ok {
+		base.Reason = "metadata_node_missing"
+		add(base)
+		return
+	}
+	if node.OwnerID != row.OwnerID {
+		issue := base
+		issue.Reason = "metadata_owner_mismatch"
+		issue.Expected = strconv.FormatUint(node.OwnerID, 10)
+		issue.Actual = strconv.FormatUint(row.OwnerID, 10)
+		add(issue)
+	}
+	if node.DeletedAt != nil {
+		issue := base
+		issue.Reason = "metadata_node_deleted"
+		add(issue)
+	}
+	if node.Type != meta.NodeTypeFile {
+		issue := base
+		issue.Reason = "metadata_node_type_mismatch"
+		issue.Expected = meta.NodeTypeFile
+		issue.Actual = node.Type
+		add(issue)
+		return
+	}
+	file, ok := files[row.NodeID]
+	if !ok {
+		issue := base
+		issue.Reason = "metadata_file_missing"
+		add(issue)
+		return
+	}
+	if row.NodeRevision != node.Revision {
+		issue := base
+		issue.Reason = "metadata_revision_stale"
+		issue.Expected = strconv.FormatUint(node.Revision, 10)
+		issue.Actual = strconv.FormatUint(row.NodeRevision, 10)
+		add(issue)
+	}
+	if !strings.EqualFold(strings.TrimSpace(row.SHA256), strings.TrimSpace(file.SHA256)) {
+		issue := base
+		issue.Reason = "metadata_sha_stale"
+		issue.Expected = strings.ToLower(strings.TrimSpace(file.SHA256))
+		issue.Actual = strings.ToLower(strings.TrimSpace(row.SHA256))
+		add(issue)
+	}
+	if !meta.ValidMediaKind(row.MediaKind) {
+		issue := base
+		issue.Reason = "metadata_kind_invalid"
+		issue.Actual = row.MediaKind
+		add(issue)
+	}
+	if !meta.ValidMediaIndexState(row.IndexState) {
+		issue := base
+		issue.Reason = "metadata_index_state_invalid"
+		issue.Actual = row.IndexState
+		add(issue)
+	}
+}
+
+func verifyLivePhotoGroup(
+	group meta.MediaGroup,
+	items []meta.MediaGroupItem,
+	metadata map[uint64]meta.MediaMetadata,
+	add func(MediaIntegrityIssue),
+) {
+	counts := map[string]int{}
+	ordinals := map[int]struct{}{}
+	expectedAssetIdentifier := ""
+	if strings.HasPrefix(group.EvidenceKey, "apple-asset:") {
+		expectedAssetIdentifier = strings.TrimSpace(strings.TrimPrefix(group.EvidenceKey, "apple-asset:"))
+		if expectedAssetIdentifier == "" {
+			add(MediaIntegrityIssue{
+				OwnerID: group.OwnerID, GroupID: group.ID,
+				Reason: "live_photo_evidence_identifier_missing",
+			})
+		}
+	}
+	for _, item := range items {
+		counts[item.Role]++
+		if _, duplicate := ordinals[item.Ordinal]; duplicate {
+			add(MediaIntegrityIssue{
+				OwnerID: group.OwnerID, NodeID: item.NodeID, GroupID: group.ID, Role: item.Role,
+				Reason: "live_photo_duplicate_ordinal", Actual: strconv.Itoa(item.Ordinal),
+			})
+		}
+		ordinals[item.Ordinal] = struct{}{}
+
+		row, ok := metadata[item.NodeID]
+		if !ok {
+			add(MediaIntegrityIssue{
+				OwnerID: group.OwnerID, NodeID: item.NodeID, GroupID: group.ID, Role: item.Role,
+				Reason: "live_photo_metadata_missing",
+			})
+			continue
+		}
+		switch item.Role {
+		case meta.MediaGroupRoleStill:
+			if row.MediaKind != meta.MediaKindImage {
+				add(MediaIntegrityIssue{
+					OwnerID: group.OwnerID, NodeID: item.NodeID, GroupID: group.ID, Role: item.Role,
+					Reason: "live_photo_still_kind_mismatch", Expected: meta.MediaKindImage, Actual: row.MediaKind,
+				})
+			}
+		case meta.MediaGroupRoleMotion:
+			if row.MediaKind != meta.MediaKindVideo {
+				add(MediaIntegrityIssue{
+					OwnerID: group.OwnerID, NodeID: item.NodeID, GroupID: group.ID, Role: item.Role,
+					Reason: "live_photo_motion_kind_mismatch", Expected: meta.MediaKindVideo, Actual: row.MediaKind,
+				})
+			}
+		case meta.MediaGroupRoleContainer:
+		default:
+			add(MediaIntegrityIssue{
+				OwnerID: group.OwnerID, NodeID: item.NodeID, GroupID: group.ID, Role: item.Role,
+				Reason: "live_photo_role_invalid", Actual: item.Role,
+			})
+		}
+		if expectedAssetIdentifier != "" &&
+			(item.Role == meta.MediaGroupRoleStill || item.Role == meta.MediaGroupRoleMotion) {
+			actual := strings.TrimSpace(row.LivePhotoAssetIdentifier)
+			if actual != expectedAssetIdentifier {
+				add(MediaIntegrityIssue{
+					OwnerID: group.OwnerID, NodeID: item.NodeID, GroupID: group.ID, Role: item.Role,
+					Reason:   "live_photo_asset_identifier_mismatch",
+					Expected: expectedAssetIdentifier, Actual: actual,
+				})
+			}
+		}
+	}
+	if counts[meta.MediaGroupRoleStill] != 1 {
+		add(MediaIntegrityIssue{
+			OwnerID: group.OwnerID, GroupID: group.ID, Reason: "live_photo_still_count_invalid",
+			Expected: "1", Actual: strconv.Itoa(counts[meta.MediaGroupRoleStill]),
+		})
+	}
+	if counts[meta.MediaGroupRoleMotion] != 1 {
+		add(MediaIntegrityIssue{
+			OwnerID: group.OwnerID, GroupID: group.ID, Reason: "live_photo_motion_count_invalid",
+			Expected: "1", Actual: strconv.Itoa(counts[meta.MediaGroupRoleMotion]),
+		})
+	}
+	if counts[meta.MediaGroupRoleContainer] > 1 {
+		add(MediaIntegrityIssue{
+			OwnerID: group.OwnerID, GroupID: group.ID, Reason: "live_photo_container_count_invalid",
+			Expected: "0..1", Actual: strconv.Itoa(counts[meta.MediaGroupRoleContainer]),
+		})
+	}
+}
+
+func verifyDerivedResource(
+	resource meta.MediaDerivedResource,
+	nodes map[uint64]meta.Node,
+	files map[uint64]meta.File,
+	metadata map[uint64]meta.MediaMetadata,
+	add func(MediaIntegrityIssue),
+) {
+	base := MediaIntegrityIssue{
+		OwnerID: resource.OwnerID, NodeID: resource.NodeID, Role: resource.Role,
+	}
+	node, ok := nodes[resource.NodeID]
+	if !ok {
+		base.Reason = "derived_resource_node_missing"
+		add(base)
+		return
+	}
+	if node.OwnerID != resource.OwnerID {
+		issue := base
+		issue.Reason = "derived_resource_owner_mismatch"
+		issue.Expected = strconv.FormatUint(node.OwnerID, 10)
+		issue.Actual = strconv.FormatUint(resource.OwnerID, 10)
+		add(issue)
+	}
+	if node.DeletedAt != nil {
+		issue := base
+		issue.Reason = "derived_resource_node_deleted"
+		add(issue)
+	}
+	if node.Type != meta.NodeTypeFile {
+		issue := base
+		issue.Reason = "derived_resource_node_type_mismatch"
+		issue.Expected = meta.NodeTypeFile
+		issue.Actual = node.Type
+		add(issue)
+		return
+	}
+	file, ok := files[resource.NodeID]
+	if !ok {
+		issue := base
+		issue.Reason = "derived_resource_file_missing"
+		add(issue)
+		return
+	}
+	if resource.NodeRevision != node.Revision {
+		issue := base
+		issue.Reason = "derived_resource_revision_stale"
+		issue.Expected = strconv.FormatUint(node.Revision, 10)
+		issue.Actual = strconv.FormatUint(resource.NodeRevision, 10)
+		add(issue)
+	}
+	if !strings.EqualFold(strings.TrimSpace(resource.SHA256), strings.TrimSpace(file.SHA256)) {
+		issue := base
+		issue.Reason = "derived_resource_sha_stale"
+		issue.Expected = strings.ToLower(strings.TrimSpace(file.SHA256))
+		issue.Actual = strings.ToLower(strings.TrimSpace(resource.SHA256))
+		add(issue)
+	}
+	if !meta.ValidMediaDerivedResourceRole(resource.Role) {
+		issue := base
+		issue.Reason = "derived_resource_role_invalid"
+		issue.Actual = resource.Role
+		add(issue)
+	}
+	if !meta.ValidMediaKind(resource.MediaKind) {
+		issue := base
+		issue.Reason = "derived_resource_kind_invalid"
+		issue.Actual = resource.MediaKind
+		add(issue)
+	}
+	switch resource.Role {
+	case meta.MediaDerivedResourceRoleStill:
+		if resource.MediaKind != meta.MediaKindImage {
+			issue := base
+			issue.Reason = "derived_resource_still_kind_mismatch"
+			issue.Expected = meta.MediaKindImage
+			issue.Actual = resource.MediaKind
+			add(issue)
+		}
+	case meta.MediaDerivedResourceRoleMotion:
+		if resource.MediaKind != meta.MediaKindVideo {
+			issue := base
+			issue.Reason = "derived_resource_motion_kind_mismatch"
+			issue.Expected = meta.MediaKindVideo
+			issue.Actual = resource.MediaKind
+			add(issue)
+		}
+	}
+	if parent, ok := metadata[resource.NodeID]; !ok {
+		issue := base
+		issue.Reason = "derived_resource_metadata_missing"
+		add(issue)
+	} else {
+		if parent.ContainerKind != mediapkg.ContainerKindLIVP {
+			issue := base
+			issue.Reason = "derived_resource_parent_container_mismatch"
+			issue.Expected = mediapkg.ContainerKindLIVP
+			issue.Actual = parent.ContainerKind
+			add(issue)
+		}
+		expected := strings.TrimSpace(parent.LivePhotoAssetIdentifier)
+		actual := strings.TrimSpace(resource.AssetIdentifier)
+		if expected == "" || actual != expected {
+			issue := base
+			issue.Reason = "derived_resource_asset_identifier_mismatch"
+			issue.Expected = expected
+			issue.Actual = actual
+			add(issue)
+		}
+	}
+	if resource.ByteOffset < 0 || resource.ByteSize <= 0 ||
+		resource.ByteOffset > file.Size ||
+		resource.ByteSize > file.Size-resource.ByteOffset {
+		issue := base
+		issue.Reason = "derived_resource_range_invalid"
+		issue.Expected = fmt.Sprintf("0..%d", file.Size)
+		issue.Actual = fmt.Sprintf("%d+%d", resource.ByteOffset, resource.ByteSize)
+		add(issue)
+	}
+}
+
+func verifyLIVPContainers(
+	metadata []meta.MediaMetadata,
+	resourcesByNodeID map[uint64][]meta.MediaDerivedResource,
+	add func(MediaIntegrityIssue),
+) {
+	for _, row := range metadata {
+		if row.ContainerKind != mediapkg.ContainerKindLIVP {
+			continue
+		}
+		base := MediaIntegrityIssue{OwnerID: row.OwnerID, NodeID: row.NodeID}
+		if row.MediaKind != meta.MediaKindImage {
+			issue := base
+			issue.Reason = "livp_parent_kind_mismatch"
+			issue.Expected = meta.MediaKindImage
+			issue.Actual = row.MediaKind
+			add(issue)
+		}
+		if row.MIMEType != mediapkg.LIVPMIMEType {
+			issue := base
+			issue.Reason = "livp_parent_mime_mismatch"
+			issue.Expected = mediapkg.LIVPMIMEType
+			issue.Actual = row.MIMEType
+			add(issue)
+		}
+		assetIdentifier := strings.TrimSpace(row.LivePhotoAssetIdentifier)
+		if assetIdentifier == "" {
+			issue := base
+			issue.Reason = "livp_asset_identifier_missing"
+			add(issue)
+		}
+
+		resources := resourcesByNodeID[row.NodeID]
+		if len(resources) != 2 {
+			issue := base
+			issue.Reason = "livp_resource_count_invalid"
+			issue.Expected = "2"
+			issue.Actual = strconv.Itoa(len(resources))
+			add(issue)
+		}
+
+		roleCounts := map[string]int{}
+		for _, resource := range resources {
+			roleCounts[resource.Role]++
+			actualIdentifier := strings.TrimSpace(resource.AssetIdentifier)
+			if assetIdentifier != "" && actualIdentifier != assetIdentifier {
+				add(MediaIntegrityIssue{
+					OwnerID: row.OwnerID, NodeID: row.NodeID, Role: resource.Role,
+					Reason:   "livp_resource_asset_identifier_mismatch",
+					Expected: assetIdentifier, Actual: actualIdentifier,
+				})
+			}
+		}
+		if roleCounts[meta.MediaDerivedResourceRoleStill] != 1 {
+			issue := base
+			issue.Reason = "livp_still_resource_count_invalid"
+			issue.Expected = "1"
+			issue.Actual = strconv.Itoa(roleCounts[meta.MediaDerivedResourceRoleStill])
+			add(issue)
+		}
+		if roleCounts[meta.MediaDerivedResourceRoleMotion] != 1 {
+			issue := base
+			issue.Reason = "livp_motion_resource_count_invalid"
+			issue.Expected = "1"
+			issue.Actual = strconv.Itoa(roleCounts[meta.MediaDerivedResourceRoleMotion])
+			add(issue)
+		}
+	}
+}
