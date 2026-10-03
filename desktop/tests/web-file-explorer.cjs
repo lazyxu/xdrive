@@ -54,7 +54,7 @@ test('Web FileExplorer uses real file operations and server search', () => {
 
 test('Web FileExplorer search results preserve paths and directory breadcrumbs', () => {
   assert.ok(projection.includes('secondaryLabel: result?.path || undefined'), 'shared Explorer projection should show search-result paths')
-  assert.ok(explorer.includes('normalizedSearchCrumbs(result)'), 'opening a search directory should restore its breadcrumb path')
+  assert.ok(explorer.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, result?.breadcrumbs)'), 'opening a search directory should restore its breadcrumb path through the shared controller')
   assert.ok(explorer.includes("仅显示前 200 个结果"), 'search pagination truncation must be disclosed')
 })
 

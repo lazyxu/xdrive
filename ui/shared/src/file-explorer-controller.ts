@@ -196,3 +196,28 @@ export function xDriveFileExplorerExternalDropParentID<
   const targetNode = target ? nodeByID.get(Number(target.id)) : undefined
   return targetNode?.type === 'dir' ? targetNode.id : currentParentID
 }
+
+export type XDriveFileExplorerCrumb = { id: number; name: string }
+
+export function xDriveFileExplorerNormalizeCrumbs(
+  crumbs: readonly XDriveFileExplorerCrumb[],
+  rootName = '我的文件',
+): XDriveFileExplorerCrumb[] {
+  return crumbs.map((crumb, index) => ({
+    id: crumb.id,
+    name: index === 0 && !crumb.name ? rootName : crumb.name,
+  }))
+}
+
+export function xDriveFileExplorerDirectoryCrumbs<
+  TNode extends Pick<Node, 'id' | 'name'>,
+>(
+  node: TNode,
+  currentCrumbs: readonly XDriveFileExplorerCrumb[],
+  searchCrumbs?: readonly XDriveFileExplorerCrumb[],
+): XDriveFileExplorerCrumb[] {
+  if (searchCrumbs && searchCrumbs.length > 0) {
+    return xDriveFileExplorerNormalizeCrumbs(searchCrumbs)
+  }
+  return [...currentCrumbs, { id: node.id, name: node.name }]
+}
