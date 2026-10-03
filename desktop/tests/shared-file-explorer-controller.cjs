@@ -59,6 +59,12 @@ test('shared FileExplorer controller owns search pagination state', () => {
     'xDriveFileExplorerSearchPageState',
     'append',
     'cursor = page.next_cursor ??',
+    'XDriveFileExplorerSearchState',
+    'xDriveFileExplorerIdleSearchState',
+    'xDriveFileExplorerStartSearchState',
+    'xDriveFileExplorerStartSearchLoadMoreState',
+    'xDriveFileExplorerApplySearchPageState',
+    'xDriveFileExplorerSettleSearchState',
     'xDriveFileExplorerCanLoadMoreSearch',
     'results !== null && Boolean(cursor) && !loadingMore',
     'xDriveFileExplorerPaginationPresentation',
@@ -68,12 +74,19 @@ test('shared FileExplorer controller owns search pagination state', () => {
     assert.ok(shared.includes(token), `shared search pagination helper missing: ${token}`)
   }
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes("const [searchCursor, setSearchCursor] = useState('')"), `${label} search cursor state is missing`)
-    assert.ok(source.includes('const [searchLoadingMore, setSearchLoadingMore] = useState(false)'), `${label} incremental search loading state is missing`)
-    assert.ok(source.includes('xDriveFileExplorerSearchPageState('), `${label} must apply search pages through shared state transition logic`)
+    assert.ok(source.includes('XDriveFileExplorerSearchState<'), `${label} must use shared search lifecycle state`)
+    assert.ok(source.includes('xDriveFileExplorerIdleSearchState<'), `${label} must use shared search reset state`)
+    assert.ok(source.includes('xDriveFileExplorerStartSearchState<'), `${label} must use shared initial-search state`)
+    assert.ok(source.includes('xDriveFileExplorerStartSearchLoadMoreState('), `${label} must use shared incremental-search start state`)
+    assert.ok(source.includes('xDriveFileExplorerApplySearchPageState('), `${label} must apply search pages through shared lifecycle logic`)
+    assert.ok(source.includes('xDriveFileExplorerSettleSearchState('), `${label} must settle search loading through shared lifecycle logic`)
     assert.ok(source.includes('xDriveFileExplorerCanLoadMoreSearch('), `${label} must use shared search load-more eligibility`)
     assert.ok(source.includes('xDriveFileExplorerPaginationPresentation({'), `${label} must derive Explorer pagination presentation through shared logic`)
     assert.ok(source.includes("explorerPagination.mode === 'search'"), `${label} search pagination must be wired to Explorer loadMore`)
+    assert.equal(source.includes('setSearchResults('), false, `${label} must not maintain search results independently`)
+    assert.equal(source.includes('setSearchCursor('), false, `${label} must not maintain search cursor independently`)
+    assert.equal(source.includes('setSearchLoading('), false, `${label} must not maintain search loading independently`)
+    assert.equal(source.includes('setSearchLoadingMore('), false, `${label} must not maintain incremental search loading independently`)
     assert.equal(source.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), false, `${label} must not duplicate search/directory hasMore selection`)
     assert.equal(source.includes('loadingMore={searchResults ? searchLoadingMore : loadingMore}'), false, `${label} must not duplicate search/directory loadingMore selection`)
   }

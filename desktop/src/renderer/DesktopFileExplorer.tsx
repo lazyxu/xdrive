@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  xDriveFileExplorerApplySearchPageState,
   xDriveFileExplorerCanPaste,
   xDriveFileExplorerClipboardFromItems,
   xDriveFileExplorerClipboardOperationPlan,
@@ -10,14 +11,20 @@ import {
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerCanLoadMoreSearch,
   xDriveFileExplorerExternalDropParentID,
+  xDriveFileExplorerIdleSearchState,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationPresentation,
-  xDriveFileExplorerSearchPageState,
   xDriveFileExplorerOperationQueuedMessage,
+  xDriveFileExplorerSettleSearchState,
+  xDriveFileExplorerStartSearchLoadMoreState,
+  xDriveFileExplorerStartSearchState,
   xDriveFileExplorerSearchDecision,
   xDriveResolveFileExplorerPath,
 } from '@xdrive/shared'
-import type { XDriveFileExplorerClipboard } from '@xdrive/shared'
+import type {
+  XDriveFileExplorerClipboard,
+  XDriveFileExplorerSearchState,
+} from '@xdrive/shared'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
@@ -72,10 +79,15 @@ export default function DesktopFileExplorer({
 }) {
   const [searchValue, setSearchValue] = useState('')
   const searchRequestRef = useRef(0)
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchResults, setSearchResults] = useState<AgentCloudSearchResult[] | null>(null)
-  const [searchCursor, setSearchCursor] = useState('')
-  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
+  const [searchState, setSearchState] = useState<XDriveFileExplorerSearchState<AgentCloudSearchResult>>(
+    () => xDriveFileExplorerIdleSearchState<AgentCloudSearchResult>(),
+  )
+  const {
+    results: searchResults,
+    cursor: searchCursor,
+    loading: searchLoading,
+    loadingMore: searchLoadingMore,
+  } = searchState
   const [createOpen, setCreateOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<AgentCloudNode | null>(null)
   const [actionBusy, setActionBusy] = useState('')
@@ -102,10 +114,7 @@ export default function DesktopFileExplorer({
 
   const clearSearch = () => {
     searchRequestRef.current += 1
-    setSearchResults(null)
-    setSearchCursor('')
-    setSearchLoading(false)
-    setSearchLoadingMore(false)
+    setSearchState(xDriveFileExplorerIdleSearchState<AgentCloudSearchResult>())
   }
 
   const {
@@ -167,10 +176,7 @@ export default function DesktopFileExplorer({
       return
     }
     const requestID = ++searchRequestRef.current
-    setSearchResults([])
-    setSearchCursor('')
-    setSearchLoadingMore(false)
-    setSearchLoading(true)
+    setSearchState(xDriveFileExplorerStartSearchState<AgentCloudSearchResult>())
     try {
       const result = await window.xdriveDesktop.agent.cloudSearch(decision.query)
       if (requestID !== searchRequestRef.current) return
@@ -178,11 +184,15 @@ export default function DesktopFileExplorer({
         onError(result.error.message)
         return
       }
-      const searchPage = xDriveFileExplorerSearchPageState(null, result.data, false)
-      setSearchResults(searchPage.items)
-      setSearchCursor(searchPage.cursor)
+      setSearchState((currentSearchState) => (
+        xDriveFileExplorerApplySearchPageState(currentSearchState, result.data, false)
+      ))
     } finally {
-      if (requestID === searchRequestRef.current) setSearchLoading(false)
+      if (requestID === searchRequestRef.current) {
+        setSearchState((currentSearchState) => (
+          xDriveFileExplorerSettleSearchState(currentSearchState, false)
+        ))
+      }
     }
   }
 
@@ -191,7 +201,9 @@ export default function DesktopFileExplorer({
     const decision = xDriveFileExplorerSearchDecision(searchValue)
     if (decision.kind !== 'search') return
     const requestID = searchRequestRef.current
-    setSearchLoadingMore(true)
+    setSearchState((currentSearchState) => (
+      xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)
+    ))
     try {
       const result = await window.xdriveDesktop.agent.cloudSearch(decision.query, searchCursor)
       if (requestID !== searchRequestRef.current) return
@@ -199,11 +211,15 @@ export default function DesktopFileExplorer({
         onError(result.error.message)
         return
       }
-      const searchPage = xDriveFileExplorerSearchPageState(searchResults, result.data, true)
-      setSearchResults(searchPage.items)
-      setSearchCursor(searchPage.cursor)
+      setSearchState((currentSearchState) => (
+        xDriveFileExplorerApplySearchPageState(currentSearchState, result.data, true)
+      ))
     } finally {
-      if (requestID === searchRequestRef.current) setSearchLoadingMore(false)
+      if (requestID === searchRequestRef.current) {
+        setSearchState((currentSearchState) => (
+          xDriveFileExplorerSettleSearchState(currentSearchState, true)
+        ))
+      }
     }
   }
 

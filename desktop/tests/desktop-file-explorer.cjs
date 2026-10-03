@@ -57,11 +57,11 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
 })
 
 test('Desktop FileExplorer paginates server search results through Agent cursors', () => {
-  assert.ok(explorer.includes("const [searchCursor, setSearchCursor] = useState('')"), 'Desktop search cursor state is missing')
-  assert.ok(explorer.includes('const [searchLoadingMore, setSearchLoadingMore] = useState(false)'), 'Desktop search loading-more state is missing')
+  assert.ok(explorer.includes('XDriveFileExplorerSearchState<AgentCloudSearchResult>'), 'Desktop search lifecycle state must come from the shared controller')
   assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Desktop incremental search loader is missing')
   assert.ok(explorer.includes('cloudSearch(decision.query, searchCursor)'), 'Desktop search must forward the cursor through preload')
-  assert.ok(explorer.includes('xDriveFileExplorerSearchPageState(searchResults, result.data, true)'), 'Desktop search pages must use the shared page-state transition')
+  assert.ok(explorer.includes('xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)'), 'Desktop search loading-more transition must use shared lifecycle state')
+  assert.ok(explorer.includes('xDriveFileExplorerApplySearchPageState(currentSearchState, result.data, true)'), 'Desktop search pages must use the shared lifecycle transition')
   assert.ok(explorer.includes('xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)'), 'Desktop search load-more eligibility must use shared logic')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
   assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
