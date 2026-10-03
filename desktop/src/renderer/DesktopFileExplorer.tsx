@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
 import {
+  xDriveFileExplorerCanPaste,
+  xDriveFileExplorerClipboardFromItems,
   xDriveFileExplorerClipboardOperationPlan,
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerDirectoryCrumbs,
@@ -11,6 +13,7 @@ import {
   xDriveFileExplorerSearchDecision,
   xDriveResolveFileExplorerPath,
 } from '@xdrive/shared'
+import type { XDriveFileExplorerClipboard } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
@@ -27,7 +30,6 @@ import type {
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
-type DesktopExplorerClipboard = { mode: 'copy' | 'cut'; nodes: AgentCloudNode[] }
 
 export default function DesktopFileExplorer({
   items,
@@ -70,7 +72,7 @@ export default function DesktopFileExplorer({
   const [createOpen, setCreateOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<AgentCloudNode | null>(null)
   const [actionBusy, setActionBusy] = useState('')
-  const [clipboard, setClipboard] = useState<DesktopExplorerClipboard | null>(null)
+  const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<AgentCloudNode> | null>(null)
 
   const {
     nodeByID,
@@ -444,15 +446,17 @@ export default function DesktopFileExplorer({
         }}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
-          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-          if (nodes.length > 0) setClipboard({ mode: 'copy', nodes })
+          setClipboard((currentClipboard) => (
+            xDriveFileExplorerClipboardFromItems('copy', selected, nodeByID) ?? currentClipboard
+          ))
         }}
         onCutItems={(selected) => {
-          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-          if (nodes.length > 0) setClipboard({ mode: 'cut', nodes })
+          setClipboard((currentClipboard) => (
+            xDriveFileExplorerClipboardFromItems('cut', selected, nodeByID) ?? currentClipboard
+          ))
         }}
         onPaste={() => { void pasteClipboard() }}
-        canPaste={Boolean(clipboard?.nodes.length) && !actionBusy}
+        canPaste={xDriveFileExplorerCanPaste(clipboard, Boolean(actionBusy))}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)

@@ -61,7 +61,10 @@ test('Web FileExplorer search results preserve paths and directory breadcrumbs',
 test('Web FileExplorer queues copy/cut/paste as persistent file operations', () => {
   assert.ok(api.includes('copy(nodeID: number, parentID: number, name?: string)'), 'legacy Web copy API is missing')
   assert.ok(api.includes('move(nodeID: number, revision: number, parentID: number)'), 'legacy Web move API is missing')
-  assert.ok(explorer.includes("type WebExplorerClipboard = { mode: 'copy' | 'cut'; nodes: Node[] }"), 'Web clipboard state is missing')
+  assert.ok(explorer.includes('useState<XDriveFileExplorerClipboard<Node> | null>'), 'Web must use the shared clipboard contract')
+  assert.ok(explorer.includes("xDriveFileExplorerClipboardFromItems('copy', selected, nodeByID)"), 'Web copy selection must use the shared clipboard builder')
+  assert.ok(explorer.includes("xDriveFileExplorerClipboardFromItems('cut', selected, nodeByID)"), 'Web cut selection must use the shared clipboard builder')
+  assert.ok(explorer.includes('xDriveFileExplorerCanPaste(clipboard, clipboardBusy)'), 'Web paste availability must use the shared clipboard rule')
   assert.ok(explorer.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'copy/cut paste must execute the shared persistent-operation plan')
   assert.ok(explorer.includes('onOperationQueued(queued)'), 'Web Explorer must surface the newly queued operation immediately')
   assert.ok(explorer.includes('onCopyItems={(selected) => {'), 'Web shared copy adapter is missing')

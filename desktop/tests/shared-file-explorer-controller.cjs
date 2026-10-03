@@ -64,6 +64,11 @@ test('Web and Desktop delegate typed-path resolution while keeping transport ada
 test('shared FileExplorer controller owns copy/move operation planning', () => {
   for (const token of [
     'xDriveFileExplorerNodesForItems',
+    'XDriveFileExplorerClipboard',
+    'xDriveFileExplorerClipboardFromItems',
+    'return nodes.length > 0 ? { mode, nodes } : null',
+    'xDriveFileExplorerCanPaste',
+    'Boolean(clipboard?.nodes.length) && !busy',
     'xDriveFileExplorerClipboardOperationPlan',
     "mode === 'cut' ? 'move' : 'copy'",
     'node.parent_id !== targetParentID',
@@ -78,6 +83,8 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
     assert.ok(shared.includes(token), `shared FileExplorer operation planning missing: ${token}`)
   }
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('xDriveFileExplorerClipboardFromItems('), `${label} must use shared clipboard construction`)
+    assert.ok(source.includes('xDriveFileExplorerCanPaste('), `${label} must use shared paste availability`)
     assert.ok(source.includes('xDriveFileExplorerClipboardOperationPlan('), `${label} must use shared clipboard operation planning`)
     assert.ok(source.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), `${label} must use shared drop operation planning`)
     assert.ok(source.includes('xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count)'), `${label} must use shared queued feedback`)
