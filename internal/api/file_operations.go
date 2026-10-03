@@ -29,6 +29,44 @@ var fileOperationTerminalStatuses = []string{
 	meta.FileOperationStatusFailed,
 }
 
+func (s *Server) registerFileOperationCancel(operationID string, cancel context.CancelCauseFunc) {
+	if s == nil || operationID == "" || cancel == nil {
+		return
+	}
+	s.fileOperationCancelMu.Lock()
+	defer s.fileOperationCancelMu.Unlock()
+	if s.fileOperationCancels == nil {
+		s.fileOperationCancels = make(map[string]context.CancelCauseFunc)
+	}
+	s.fileOperationCancels[operationID] = cancel
+}
+
+func (s *Server) unregisterFileOperationCancel(operationID string) {
+	if s == nil || operationID == "" {
+		return
+	}
+	s.fileOperationCancelMu.Lock()
+	defer s.fileOperationCancelMu.Unlock()
+	delete(s.fileOperationCancels, operationID)
+	if len(s.fileOperationCancels) == 0 {
+		s.fileOperationCancels = nil
+	}
+}
+
+func (s *Server) interruptFileOperation(operationID string) bool {
+	if s == nil || operationID == "" {
+		return false
+	}
+	s.fileOperationCancelMu.Lock()
+	cancel := s.fileOperationCancels[operationID]
+	s.fileOperationCancelMu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel(errFileOperationCancelled)
+	return true
+}
+
 type fileOperationDTO struct {
 	ID                string     `json:"id"`
 	Type              string     `json:"type"`
@@ -211,11 +249,10 @@ func (s *Server) getFileOperation(c *gin.Context) {
 	c.JSON(http.StatusOK, toFileOperationDTO(operation))
 }
 
-func (s *Server) cancelFileOperation(c *gin.Context) {
-	id := c.Param("id")
-	uid := userID(c)
+func (s *Server) requestFileOperationCancel(ctx context.Context, uid uint64, id string) error {
 	now := time.Now()
-	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	interruptWorker := false
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var operation meta.FileOperation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, uid).
@@ -240,18 +277,32 @@ func (s *Server) cancelFileOperation(c *gin.Context) {
 			}
 			return pruneFileOperationHistoryTx(tx, uid)
 		case meta.FileOperationStatusRunning:
+			interruptWorker = true
 			return tx.Model(&meta.FileOperation{}).Where("id = ?", id).Updates(map[string]any{
 				"status":              meta.FileOperationStatusCancelRequested,
 				"cancel_requested_at": &now,
 				"updated_at":          now,
 			}).Error
 		case meta.FileOperationStatusCancelRequested:
+			interruptWorker = true
 			return nil
 		default:
 			return errFileOperationTerminal
 		}
 	})
 	if err != nil {
+		return err
+	}
+	if interruptWorker {
+		s.interruptFileOperation(id)
+	}
+	return nil
+}
+
+func (s *Server) cancelFileOperation(c *gin.Context) {
+	id := c.Param("id")
+	uid := userID(c)
+	if err := s.requestFileOperationCancel(c.Request.Context(), uid, id); err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "file operation not found")
@@ -533,34 +584,45 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 	if err != nil || !ok {
 		return ok, err
 	}
+
+	operationCtx, cancelOperation := context.WithCancelCause(ctx)
+	s.registerFileOperationCancel(operation.ID, cancelOperation)
+	defer func() {
+		s.unregisterFileOperationCancel(operation.ID)
+		cancelOperation(nil)
+	}()
+
 	refs, err := decodeFileOperationRefs(operation.ItemsJSON)
 	if err != nil {
-		return true, s.failFileOperation(ctx, operation.OwnerID, operation.ID, err)
+		if errors.Is(context.Cause(operationCtx), errFileOperationCancelled) {
+			return true, s.cancelRunningFileOperation(context.Background(), operation.OwnerID, operation.ID)
+		}
+		return true, s.failFileOperation(operationCtx, operation.OwnerID, operation.ID, err)
 	}
 
 	switch operation.Type {
 	case meta.FileOperationTypeCopy:
-		err = s.executeQueuedBatchCopy(ctx, operation, refs)
+		err = s.executeQueuedBatchCopy(operationCtx, operation, refs)
 	case meta.FileOperationTypeMove:
-		err = s.executeQueuedBatchMove(ctx, operation, refs)
+		err = s.executeQueuedBatchMove(operationCtx, operation, refs)
 	case meta.FileOperationTypeDelete:
-		err = s.executeQueuedBatchDelete(ctx, operation, refs)
+		err = s.executeQueuedBatchDelete(operationCtx, operation, refs)
 	default:
 		err = errors.New("unsupported file operation type")
 	}
 	if err == nil {
 		return true, nil
 	}
-	if errors.Is(err, errFileOperationCancelled) {
+	if errors.Is(err, errFileOperationCancelled) || errors.Is(context.Cause(operationCtx), errFileOperationCancelled) {
 		return true, s.cancelRunningFileOperation(context.Background(), operation.OwnerID, operation.ID)
 	}
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		// Server shutdown must not turn an interrupted operation into a user
 		// cancellation. Its node transaction is rolled back and startup
 		// recovery safely re-queues the running operation.
 		return true, err
 	}
-	return true, s.failFileOperation(ctx, operation.OwnerID, operation.ID, err)
+	return true, s.failFileOperation(operationCtx, operation.OwnerID, operation.ID, err)
 }
 
 func (s *Server) claimNextFileOperation(ctx context.Context) (meta.FileOperation, bool, error) {
