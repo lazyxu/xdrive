@@ -9,7 +9,7 @@ import {
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerOpenItemPlan,
   xDriveFileExplorerDownloadPlan,
-  xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerCanLoadMoreSearch,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerIdleSearchState,
@@ -411,11 +411,9 @@ export default function DesktopFileExplorer({
     target: XDriveFileExplorerItem,
     operation: 'move' | 'copy',
   ) => {
-    const targetNode = nodeByID.get(Number(target.id))
-    if (!targetNode || targetNode.type !== 'dir' || actionBusy) return
-    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-    const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)
-    if (plan.count === 0) return
+    if (actionBusy) return
+    const plan = xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)
+    if (!plan) return
     setActionBusy('drop-items')
     try {
       const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
