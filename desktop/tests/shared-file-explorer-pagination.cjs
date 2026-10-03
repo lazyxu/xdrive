@@ -14,6 +14,12 @@ test('shared FileExplorer controller owns pagination eligibility and page mergin
   for (const token of [
     'XDriveFileExplorerPageState',
     'XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200',
+    'XDriveFileExplorerPageRequestOptions',
+    'xDriveFileExplorerPageRequestOptions',
+    'limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE',
+    '...(cursor ? { cursor } : {})',
+    'sort: sort.key',
+    'order: sort.direction',
     'XDriveFileExplorerPageResult',
     'xDriveFileExplorerPageStateFromResult',
     "cursor: page.next_cursor ?? ''",
@@ -41,8 +47,10 @@ test('shared FileExplorer controller owns pagination eligibility and page mergin
 test('Web and Desktop delegate pagination rules while keeping transport/loading local', () => {
   assert.ok(web.includes('useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>'), 'Web must use the shared page-state contract')
   assert.ok(desktop.includes('useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>'), 'Desktop must use the shared page-state contract')
-  assert.ok(web.includes('limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,'), 'Web must use the shared page size')
-  assert.ok(desktop.includes('limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,'), 'Desktop must use the shared page size')
+  assert.equal((web.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Web must delegate all directory request options to the shared controller')
+  assert.equal((desktop.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Desktop must delegate all directory request options to the shared controller')
+  assert.equal(web.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), false, 'Web must not own directory page-size composition')
+  assert.equal(desktop.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), false, 'Desktop must not own directory page-size composition')
   assert.equal(web.includes('const FILE_PAGE_SIZE = 200'), false, 'Web must not own a local page-size constant')
   assert.equal(desktop.includes('const DESKTOP_FILE_PAGE_SIZE = 200'), false, 'Desktop must not own a local page-size constant')
   assert.equal((web.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'Web must use the shared directory transition for directory, load-more and initial pages')
@@ -59,8 +67,8 @@ test('Web and Desktop delegate pagination rules while keeping transport/loading 
     assert.equal(source.includes('const merged = new Map(currentItems.map((item) => [item.id, item]))'), false, `${label} must not duplicate page merging`)
   }
 
-  assert.ok(web.includes('api.listPage(id, {'), 'Web must keep REST pagination execution local')
+  assert.ok(web.includes('api.listPage(id, xDriveFileExplorerPageRequestOptions(sort))'), 'Web must keep REST pagination execution local')
   assert.ok(web.includes('setLoadingMore(true)'), 'Web must keep loading state local')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildrenPage(id, {'), 'Desktop must keep Agent pagination execution local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildrenPage(\n        id,\n        xDriveFileExplorerPageRequestOptions(sort),'), 'Desktop must keep Agent pagination execution local')
   assert.ok(desktop.includes("setCloudLoadingMore(true)"), 'Desktop must keep loading state local')
 })
