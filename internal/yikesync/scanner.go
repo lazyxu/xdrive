@@ -238,7 +238,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 		}
 		item.Path = reserveYikePath(item.Path, ownerUK, file.FSID, externalID, pathOwners)
 		seen[externalID] = true
-		result.Metadata = append(result.Metadata, metadataSnapshot(ownerUK, file))
+		result.Metadata = append(result.Metadata, metadataSnapshot(ownerUK, file, externalID))
 		if ownerUK == ownUK {
 			result.OwnItems++
 		} else {
@@ -299,7 +299,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 	result.Albums = int64(len(albums))
 
 	for _, album := range albums {
-		collectionID, err := collectionExternalID(album)
+		collectionID, err := yike.AlbumExternalID(album.AlbumID)
 		if err != nil {
 			return result, fmt.Errorf("invalid Yike album %q: %w", album.Title, err)
 		}
@@ -382,7 +382,7 @@ func queueDownloadLinks(remote Remote, transfers []pullsync.Task[TransferRef]) {
 	queuer.QueueDownloadFileLinks(fsids)
 }
 
-func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {
+func metadataSnapshot(ownerUK int64, file yike.File, externalID string) sourcemetadata.Snapshot {
 	var capturedAt *time.Time
 	if file.ShootTime > 0 {
 		value := time.Unix(file.ShootTime, 0).UTC()
@@ -400,7 +400,6 @@ func metadataSnapshot(ownerUK int64, file yike.File) sourcemetadata.Snapshot {
 			break
 		}
 	}
-	externalID, _ := yike.ExternalID(ownerUK, file.FSID)
 	return sourcemetadata.Snapshot{
 		ItemExternalID:  externalID,
 		OriginalPath:    strings.TrimSpace(file.Path),
@@ -421,18 +420,6 @@ func metadataMD5(value string) string {
 		return ""
 	}
 	return value
-}
-
-func collectionExternalID(album yike.Album) (string, error) {
-	albumID := strings.TrimSpace(album.AlbumID)
-	if albumID == "" {
-		return "", fmt.Errorf("album_id is empty")
-	}
-	value := "yike:album:" + albumID
-	if len([]byte(value)) > 512 {
-		return "", fmt.Errorf("album_id is too long")
-	}
-	return value, nil
 }
 
 func collectionName(album yike.Album) string {

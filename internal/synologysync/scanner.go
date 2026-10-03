@@ -240,7 +240,7 @@ func (s Scanner) Scan(ctx context.Context) (Result, error) {
 				} else {
 					result.SharedItems++
 				}
-				result.Metadata = append(result.Metadata, metadataSnapshot(space, folderPaths, remoteItem))
+				result.Metadata = append(result.Metadata, metadataSnapshot(folderPaths, remoteItem, item.ExternalID))
 				batchItems[item.ExternalID] = item
 				batchRefs[item.ExternalID] = TransferRef{Item: remoteItem}
 				batch = append(batch, client.SourceObservation{
@@ -457,8 +457,13 @@ func scanCollections(
 				return nil, stats, optionalCollectionFailure(
 					fmt.Errorf("invalid Synology %s album id=%d", space, album.ID))
 			}
+			collectionID, err := synology.AlbumExternalID(space, album.ID)
+			if err != nil {
+				return nil, stats, optionalCollectionFailure(
+					fmt.Errorf("invalid Synology %s album identity: %w", space, err))
+			}
 			snapshot := sourcecollection.Snapshot{
-				ExternalID:     albumCollectionExternalID(space, album.ID),
+				ExternalID:     collectionID,
 				Kind:           "album",
 				Name:           albumCollectionName(album),
 				RemoteRevision: albumCollectionRevision(album),
@@ -484,7 +489,11 @@ func scanCollections(
 				}
 				for _, remoteItem := range page.List {
 					stats.AlbumMemberships++
-					externalID := fmt.Sprintf("synology:%s:%d", space, remoteItem.ID)
+					externalID, err := synology.ExternalID(space, remoteItem.ID)
+					if err != nil {
+						return nil, stats, optionalCollectionFailure(
+							fmt.Errorf("invalid Synology %s album %q item identity: %w", space, album.Name, err))
+					}
 					if _, included := includedExternalIDs[externalID]; included {
 						if _, duplicate := memberSeen[externalID]; duplicate {
 							stats.DuplicateMemberships++
@@ -565,10 +574,6 @@ func collectAlbums(ctx context.Context, remote Remote, space synology.Space, hea
 		offset = next
 	}
 	return nil, optionalCollectionFailure(fmt.Errorf("Synology album pagination exceeded safety limit"))
-}
-
-func albumCollectionExternalID(space synology.Space, albumID int64) string {
-	return fmt.Sprintf("synology:album:%s:%d", space, albumID)
 }
 
 func albumCollectionName(album synology.Album) string {
@@ -677,7 +682,10 @@ func discoveredItem(space synology.Space, folderPaths map[int64]string, remote s
 	name := sanitizeSegment(remote.Filename, remote.ID, false)
 	relative := path.Join(prefix, parent, name)
 	modified := indexedTime(remote.IndexedTime)
-	externalID := fmt.Sprintf("synology:%s:%d", space, remote.ID)
+	externalID, err := synology.ExternalID(space, remote.ID)
+	if err != nil {
+		return sourcepkg.DiscoveredItem{}, err
+	}
 	item := sourcepkg.DiscoveredItem{
 		ExternalID:     externalID,
 		Kind:           meta.SourceItemKindFile,
@@ -692,7 +700,7 @@ func discoveredItem(space synology.Space, folderPaths map[int64]string, remote s
 	return item, nil
 }
 
-func metadataSnapshot(space synology.Space, folderPaths map[int64]string, item synology.Item) sourcemetadata.Snapshot {
+func metadataSnapshot(folderPaths map[int64]string, item synology.Item, externalID string) sourcemetadata.Snapshot {
 	var capturedAt *time.Time
 	if item.Time > 0 {
 		value := time.Unix(item.Time, 0).UTC()
@@ -700,7 +708,7 @@ func metadataSnapshot(space synology.Space, folderPaths map[int64]string, item s
 	}
 	original := path.Join(folderPaths[item.FolderID], item.Filename)
 	return sourcemetadata.Snapshot{
-		ItemExternalID:  fmt.Sprintf("synology:%s:%d", space, item.ID),
+		ItemExternalID:  externalID,
 		OriginalPath:    strings.Trim(original, "/"),
 		OwnerExternalID: strconv.FormatInt(item.OwnerUserID, 10),
 		CapturedAt:      capturedAt,
