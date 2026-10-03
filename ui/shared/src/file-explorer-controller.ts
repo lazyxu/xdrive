@@ -416,6 +416,11 @@ export type XDriveFileExplorerPageSort = {
   direction: string
 }
 
+export const XDRIVE_FILE_EXPLORER_DEFAULT_SORT = {
+  key: 'name',
+  direction: 'asc',
+} as const satisfies XDriveFileExplorerPageSort
+
 export type XDriveFileExplorerPageState<
   TSort extends XDriveFileExplorerPageSort,
 > = {

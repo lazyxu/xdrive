@@ -219,6 +219,8 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
 })
 
 test('Desktop FileExplorer uses cursor-paged server sorting for cloud directories', () => {
+  assert.equal(app.includes('DEFAULT_DESKTOP_FILE_SORT'), false, 'Desktop must not own a local default file sort')
+  assert.ok(app.includes('XDRIVE_FILE_EXPLORER_DEFAULT_SORT'), 'Desktop initial directory loads must use the shared default sort')
   assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'Desktop page-size contract must remain in the shared controller')
   assert.equal((app.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Desktop must use shared request-option construction for all directory page requests')
   assert.ok(app.includes('const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {'), 'Desktop incremental directory loader is missing')

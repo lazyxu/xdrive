@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const explorer = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorer.tsx'), 'utf8')
+const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 const propertiesDialog = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx'), 'utf8')
 const index = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'index.tsx'), 'utf8')
 
@@ -72,6 +73,8 @@ test('shared FileExplorer details view avoids admin-table chrome', () => {
 })
 
 test('shared FileExplorer keeps folders first and owns common client-side sorting', () => {
+  assert.ok(controller.includes("XDRIVE_FILE_EXPLORER_DEFAULT_SORT = {\n  key: 'name',\n  direction: 'asc',"), 'framework-neutral controller must own the default sort')
+  assert.ok(explorer.includes('useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)'), 'uncontrolled FileExplorer sort must use the shared default')
   assert.ok(explorer.includes("if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1"), 'folders should remain grouped ahead of files')
   for (const key of ["'name'", "'updated'", "'type'", "'size'"]) {
     assert.ok(explorer.includes(key), `missing explorer sort key: ${key}`)

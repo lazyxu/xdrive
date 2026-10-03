@@ -61,7 +61,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPageState,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -80,7 +80,6 @@ const USER_KEY = 'xdrive.username'
 
 type Crumb = { id: number; name: string }
 
-const DEFAULT_FILE_SORT: XDriveFileExplorerSort = { key: 'name', direction: 'asc' }
 type Feedback = {
   tone: 'good' | 'bad' | 'warning' | 'neutral'
   message: string
@@ -538,7 +537,7 @@ function FileManager({
   const loadDirectory = async (
     id: number,
     nextCrumbs?: Crumb[],
-    sort: XDriveFileExplorerSort = directoryPage?.sort ?? DEFAULT_FILE_SORT,
+    sort: XDriveFileExplorerSort = directoryPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
   ) => {
     setLoading(true)
     try {
@@ -592,9 +591,9 @@ function FileManager({
       const root = await api.root()
       const page = await api.listPage(
         root.id,
-        xDriveFileExplorerPageRequestOptions(DEFAULT_FILE_SORT),
+        xDriveFileExplorerPageRequestOptions(XDRIVE_FILE_EXPLORER_DEFAULT_SORT),
       )
-      const transition = xDriveFileExplorerDirectoryPageTransition(root.id, page, DEFAULT_FILE_SORT, false)
+      const transition = xDriveFileExplorerDirectoryPageTransition(root.id, page, XDRIVE_FILE_EXPLORER_DEFAULT_SORT, false)
       setCrumbs([{ id: root.id, name: '我的文件' }])
       setItems(transition.applyItems)
       setDirectoryPage(transition.pageState)
@@ -655,7 +654,7 @@ function FileManager({
     )
     fileOperationStatusRef.current = transition.statuses
     if (!transition.hasTerminalTransition || !current) return
-    void loadDirectory(current.id, crumbs, directoryPage?.sort ?? DEFAULT_FILE_SORT)
+    void loadDirectory(current.id, crumbs, directoryPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
     void refreshQuota()
     // Directory/task transitions are intentionally keyed only by operation snapshots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
