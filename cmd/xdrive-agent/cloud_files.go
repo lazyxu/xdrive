@@ -31,6 +31,11 @@ type agentCloudSearchResult struct {
 	Crumbs []agentCloudCrumb `json:"crumbs"`
 }
 
+type agentCloudSearchPage struct {
+	Items      []agentCloudSearchResult `json:"items"`
+	NextCursor string                   `json:"next_cursor,omitempty"`
+}
+
 type agentCreatedShare struct {
 	Share client.CreatedFileShare `json:"share"`
 	URL   string                  `json:"url"`
@@ -432,18 +437,22 @@ func replaceDownloadedFile(stagedPath, destination string) error {
 	return nil
 }
 
-func (c *agentController) CloudSearch(ctx context.Context, query string) ([]agentCloudSearchResult, error) {
+func (c *agentController) CloudSearch(ctx context.Context, query, cursor string) (agentCloudSearchPage, error) {
 	query = strings.TrimSpace(query)
 	if len([]rune(query)) < 2 {
-		return nil, fmt.Errorf("search query must contain at least 2 characters")
+		return agentCloudSearchPage{}, fmt.Errorf("search query must contain at least 2 characters")
 	}
 	cli, _, err := c.cloudClient()
 	if err != nil {
-		return nil, err
+		return agentCloudSearchPage{}, err
 	}
-	page, err := cli.Search(ctx, client.SearchOptions{Query: query, Limit: cloudSearchLimit})
+	page, err := cli.Search(ctx, client.SearchOptions{
+		Query:  query,
+		Limit:  cloudSearchLimit,
+		Cursor: strings.TrimSpace(cursor),
+	})
 	if err != nil {
-		return nil, err
+		return agentCloudSearchPage{}, err
 	}
 
 	out := make([]agentCloudSearchResult, 0, len(page.Items))
@@ -452,7 +461,7 @@ func (c *agentController) CloudSearch(ctx context.Context, query string) ([]agen
 			Node: item.Node, Path: item.Path, Crumbs: agentCloudCrumbs(item.Breadcrumbs),
 		})
 	}
-	return out, nil
+	return agentCloudSearchPage{Items: out, NextCursor: page.NextCursor}, nil
 }
 
 func agentCloudCrumbs(items []client.SearchBreadcrumb) []agentCloudCrumb {

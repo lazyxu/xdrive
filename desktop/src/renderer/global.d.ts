@@ -241,6 +241,10 @@ declare global {
     path: string
     crumbs: AgentCloudCrumb[]
   }
+  type AgentCloudSearchPage = {
+    items: AgentCloudSearchResult[]
+    next_cursor?: string
+  }
   type AgentCloudUploadBatchResult = {
     canceled: boolean
     uploaded: AgentCloudNode[]
@@ -366,7 +370,7 @@ declare global {
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>
         cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => Promise<DesktopResult<AgentCloudDownloadBatchResult>>
         openPath: (relativePath: string, reveal?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
-        cloudSearch: (query: string) => Promise<DesktopResult<AgentCloudSearchResult[]>>
+        cloudSearch: (query: string, cursor?: string) => Promise<DesktopResult<AgentCloudSearchPage>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master') => Promise<DesktopResult<AgentServerUpdateState>>

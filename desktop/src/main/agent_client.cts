@@ -516,6 +516,11 @@ export type AgentCloudSearchResult = {
   crumbs: AgentCloudCrumb[]
 }
 
+export type AgentCloudSearchPage = {
+  items: AgentCloudSearchResult[]
+  next_cursor?: string
+}
+
 export type AgentDiagnosticCheck = {
   name: string
   status: 'PASS' | 'WARN' | 'FAIL'
@@ -985,9 +990,10 @@ export class AgentIPCClient {
     }, 6 * 60 * 60 * 1000)
   }
 
-  cloudSearch(queryText: string) {
+  cloudSearch(queryText: string, cursor = '') {
     const query = new URLSearchParams({ q: queryText })
-    return this.request<AgentCloudSearchResult[]>('GET', `/v1/cloud/search?${query.toString()}`, undefined, 45_000)
+    if (cursor.trim()) query.set('cursor', cursor.trim())
+    return this.request<AgentCloudSearchPage>('GET', `/v1/cloud/search?${query.toString()}`, undefined, 45_000)
   }
 
   cloudQuota() {

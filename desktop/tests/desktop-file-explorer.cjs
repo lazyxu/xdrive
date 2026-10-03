@@ -56,6 +56,17 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
 
+test('Desktop FileExplorer paginates server search results through Agent cursors', () => {
+  assert.ok(explorer.includes("const [searchCursor, setSearchCursor] = useState('')"), 'Desktop search cursor state is missing')
+  assert.ok(explorer.includes('const [searchLoadingMore, setSearchLoadingMore] = useState(false)'), 'Desktop search loading-more state is missing')
+  assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Desktop incremental search loader is missing')
+  assert.ok(explorer.includes('cloudSearch(decision.query, searchCursor)'), 'Desktop search must forward the cursor through preload')
+  assert.ok(explorer.includes('xDriveFileExplorerMergeSearchResults(current ?? [], result.data.items)'), 'Desktop search pages must merge through shared dedupe logic')
+  assert.ok(explorer.includes('hasMore={searchResults ? Boolean(searchCursor) : hasMore}'), 'Desktop search cursor must drive Explorer hasMore')
+  assert.ok(explorer.includes('loadingMore={searchResults ? searchLoadingMore : loadingMore}'), 'Desktop search loading-more state is not wired')
+  assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop search must not truncate the UI to one page')
+})
+
 test('Desktop cloud capacity and CAS intelligence live on Storage, not Files', () => {
   assert.equal(cloudPage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy the Files workspace')
   assert.equal(cloudPage.includes('className="cloud-quota-grid"'), false, 'quota metric grid must not occupy the Files workspace')

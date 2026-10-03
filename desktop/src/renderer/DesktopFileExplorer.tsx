@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
+  XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerCanPaste,
   xDriveFileExplorerClipboardFromItems,
   xDriveFileExplorerClipboardOperationPlan,
@@ -8,6 +9,7 @@ import {
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerExternalDropParentID,
+  xDriveFileExplorerMergeSearchResults,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerSearchDecision,
@@ -67,8 +69,11 @@ export default function DesktopFileExplorer({
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
   const [searchValue, setSearchValue] = useState('')
+  const searchRequestRef = useRef(0)
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<AgentCloudSearchResult[] | null>(null)
+  const [searchCursor, setSearchCursor] = useState('')
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [renameNode, setRenameNode] = useState<AgentCloudNode | null>(null)
   const [actionBusy, setActionBusy] = useState('')
@@ -94,7 +99,11 @@ export default function DesktopFileExplorer({
   }, [])
 
   const clearSearch = () => {
+    searchRequestRef.current += 1
     setSearchResults(null)
+    setSearchCursor('')
+    setSearchLoading(false)
+    setSearchLoadingMore(false)
   }
 
   const {
@@ -155,16 +164,44 @@ export default function DesktopFileExplorer({
       onError(decision.message)
       return
     }
+    const requestID = ++searchRequestRef.current
+    setSearchResults([])
+    setSearchCursor('')
+    setSearchLoadingMore(false)
     setSearchLoading(true)
     try {
       const result = await window.xdriveDesktop.agent.cloudSearch(decision.query)
+      if (requestID !== searchRequestRef.current) return
       if (!result.ok) {
         onError(result.error.message)
         return
       }
-      setSearchResults(result.data)
+      setSearchResults(result.data.items)
+      setSearchCursor(result.data.next_cursor ?? '')
     } finally {
-      setSearchLoading(false)
+      if (requestID === searchRequestRef.current) setSearchLoading(false)
+    }
+  }
+
+  const loadMoreSearch = async () => {
+    if (!searchResults || !searchCursor || searchLoadingMore) return
+    const decision = xDriveFileExplorerSearchDecision(searchValue)
+    if (decision.kind !== 'search') return
+    const requestID = searchRequestRef.current
+    setSearchLoadingMore(true)
+    try {
+      const result = await window.xdriveDesktop.agent.cloudSearch(decision.query, searchCursor)
+      if (requestID !== searchRequestRef.current) return
+      if (!result.ok) {
+        onError(result.error.message)
+        return
+      }
+      setSearchResults((current) => (
+        xDriveFileExplorerMergeSearchResults(current ?? [], result.data.items)
+      ))
+      setSearchCursor(result.data.next_cursor ?? '')
+    } finally {
+      if (requestID === searchRequestRef.current) setSearchLoadingMore(false)
     }
   }
 
@@ -439,10 +476,14 @@ export default function DesktopFileExplorer({
         sort={sort}
         onSortChange={changeSort}
         externallySorted={!searchResults}
-        hasMore={!searchResults && hasMore}
-        loadingMore={loadingMore}
+        hasMore={searchResults ? Boolean(searchCursor) : hasMore}
+        loadingMore={searchResults ? searchLoadingMore : loadingMore}
         onLoadMore={() => {
-          if (current && !searchResults) void onLoadMore(current.id, sort)
+          if (searchResults) {
+            void loadMoreSearch()
+          } else if (current) {
+            void onLoadMore(current.id, sort)
+          }
         }}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={(selected) => {
@@ -468,7 +509,7 @@ export default function DesktopFileExplorer({
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         statusText={searchResults
-          ? `搜索“${searchValue.trim()}”${searchResults.length >= 200 ? ' · 最多显示 200 个结果' : ''}`
+          ? `搜索“${searchValue.trim()}”`
           : actionBusy === 'upload'
             ? '正在上传…'
             : actionBusy === 'paste'
