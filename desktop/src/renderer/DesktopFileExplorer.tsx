@@ -8,7 +8,7 @@ import {
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
-  xDriveFileExplorerPaginationPresentation,
+  xDriveFileExplorerPaginationController,
   xDriveFileExplorerOperationQueuedMessage,
   xDriveFileExplorerSubmitPath,
 } from '@xdrive/shared'
@@ -392,12 +392,16 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const explorerPagination = xDriveFileExplorerPaginationPresentation({
+  const explorerPagination = xDriveFileExplorerPaginationController({
     searchActive: searchResults !== null,
     searchCursor,
     searchLoadingMore,
     directoryHasMore: hasMore,
     directoryLoadingMore: loadingMore,
+    currentID: current?.id,
+    sort,
+    loadMoreSearch,
+    loadMoreDirectory: onLoadMore,
   })
 
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
@@ -438,13 +442,7 @@ export default function DesktopFileExplorer({
         externallySorted={!searchResults}
         hasMore={explorerPagination.hasMore}
         loadingMore={explorerPagination.loadingMore}
-        onLoadMore={() => {
-          if (explorerPagination.mode === 'search') {
-            void loadMoreSearch()
-          } else if (current) {
-            void onLoadMore(current.id, sort)
-          }
-        }}
+        onLoadMore={explorerPagination.onLoadMore}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         onCopyItems={copyItems}
         onCutItems={cutItems}

@@ -72,7 +72,9 @@ test('Desktop FileExplorer paginates server search results through Agent cursors
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop search controller must keep Agent cursor execution local')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
   assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
-  assert.ok(explorer.includes("explorerPagination.mode === 'search'"), 'Desktop search load-more must remain wired through shared pagination presentation')
+  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Desktop search/directory load-more dispatch must use the shared pagination controller')
+  assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer load-more must use shared pagination dispatch')
+  assert.equal(explorer.includes("explorerPagination.mode === 'search'"), false, 'Desktop must not branch search/directory pagination locally')
   assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own search request sequencing')
   assert.equal(explorer.includes('setSearchState('), false, 'Desktop must not own search lifecycle transitions')
   assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop search must not truncate the UI to one page')
@@ -242,7 +244,9 @@ test('Desktop FileExplorer uses cursor-paged server sorting for cloud directorie
   assert.equal(app.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate directory page-state derivation')
   assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Desktop directory pages should preserve server ordering')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted pages')
-  assert.ok(explorer.includes('onLoadMore(current.id, sort)'), 'Desktop Explorer must request more items near the scroll boundary')
+  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Desktop Explorer pagination dispatch must use the shared controller')
+  assert.ok(explorer.includes('loadMoreDirectory: onLoadMore'), 'Desktop Explorer must inject directory load-more into the shared controller')
+  assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer must wire shared pagination dispatch near the scroll boundary')
 })
 
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
