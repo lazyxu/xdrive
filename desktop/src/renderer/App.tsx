@@ -62,6 +62,7 @@ import {
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
+  xDriveFileExplorerDeleteOperationPlan,
   xDriveFileOperationActive,
   xDriveFileOperationTransitionSnapshot,
 } from '@xdrive/shared'
@@ -1274,9 +1275,10 @@ export default function App({
   }
 
   const removeCloudNodes = (nodes: AgentCloudNode[]) => {
-    if (nodes.length === 0) return
+    const plan = xDriveFileExplorerDeleteOperationPlan(nodes)
+    if (plan.count === 0) return
     requestConfirmation(
-      `将所选 ${nodes.length} 个项目移到回收站？`,
+      `将所选 ${plan.count} 个项目移到回收站？`,
       '所选文件和文件夹会从云端文件列表中移除，之后仍可从回收站恢复。',
       '移到回收站',
       async () => {
@@ -1284,15 +1286,15 @@ export default function App({
         setError('')
         try {
           const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
-            'delete',
-            nodes.map((node) => ({ id: node.id, revision: node.revision })),
+            plan.operation,
+            plan.items,
           )
           if (!result.ok) {
             setError(result.error.message)
             return
           }
           rememberCloudFileOperation(result.data)
-          setNotice(`已将 ${nodes.length} 个项目加入删除任务。`)
+          setNotice(plan.message)
         } finally {
           setBusy('')
         }
