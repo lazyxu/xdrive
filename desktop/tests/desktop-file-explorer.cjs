@@ -45,7 +45,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     'canGoUp={canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
-    'cloudSearch(decision.query)',
+    'useXDriveFileExplorerSearch<AgentCloudSearchResult>',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
@@ -59,15 +59,13 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
 })
 
 test('Desktop FileExplorer paginates server search results through Agent cursors', () => {
-  assert.ok(explorer.includes('XDriveFileExplorerSearchState<AgentCloudSearchResult>'), 'Desktop search lifecycle state must come from the shared controller')
-  assert.ok(explorer.includes('const loadMoreSearch = async () => {'), 'Desktop incremental search loader is missing')
-  assert.ok(explorer.includes('cloudSearch(query, searchCursor)'), 'Desktop search must forward the active query with the cursor through preload')
-  assert.ok(explorer.includes('const query = searchState.query'), 'Desktop incremental search must stay bound to the submitted query')
-  assert.ok(explorer.includes('xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)'), 'Desktop search loading-more transition must use shared lifecycle state')
-  assert.ok(explorer.includes('xDriveFileExplorerApplySearchPageState(currentSearchState, result.data, true)'), 'Desktop search pages must use the shared lifecycle transition')
-  assert.ok(explorer.includes('xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)'), 'Desktop search load-more eligibility must use shared logic')
+  assert.ok(explorer.includes('useXDriveFileExplorerSearch<AgentCloudSearchResult>'), 'Desktop search lifecycle must come from the shared React controller')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop search controller must keep Agent cursor execution local')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
   assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
+  assert.ok(explorer.includes("explorerPagination.mode === 'search'"), 'Desktop search load-more must remain wired through shared pagination presentation')
+  assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own search request sequencing')
+  assert.equal(explorer.includes('setSearchState('), false, 'Desktop must not own search lifecycle transitions')
   assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop search must not truncate the UI to one page')
 })
 
