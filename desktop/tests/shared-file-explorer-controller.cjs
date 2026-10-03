@@ -87,3 +87,27 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
   assert.ok(web.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'Web must keep REST operation execution local')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep Agent operation execution local')
 })
+
+test('shared FileExplorer controller owns bulk-download selection and feedback rules', () => {
+  for (const token of [
+    'xDriveFileExplorerDownloadPlan',
+    "node.type === 'file'",
+    'skippedFolders: nodes.length - files.length',
+    'id: node.id, name: node.name',
+    'xDriveFileExplorerWebDownloadFeedback',
+    '已开始下载',
+    'xDriveFileExplorerDesktopDownloadFeedback',
+    '个失败',
+    '跳过',
+  ]) {
+    assert.ok(shared.includes(token), `shared FileExplorer download planning missing: ${token}`)
+  }
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('xDriveFileExplorerDownloadPlan(nodes)'), `${label} must use shared download planning`)
+    assert.equal(source.includes("const files = nodes.filter((node) => node.type === 'file')"), false, `${label} must not filter download files locally`)
+  }
+  assert.ok(web.includes('for (const node of plan.files) await api.download(node)'), 'Web must keep browser download execution local')
+  assert.ok(web.includes('xDriveFileExplorerWebDownloadFeedback(plan.files.length, plan.skippedFolders)'), 'Web must use shared download feedback')
+  assert.ok(desktop.includes('cloudDownloadFiles(plan.items)'), 'Desktop must keep native batch download execution local')
+  assert.ok(desktop.includes('xDriveFileExplorerDesktopDownloadFeedback({'), 'Desktop must use shared download result feedback')
+})

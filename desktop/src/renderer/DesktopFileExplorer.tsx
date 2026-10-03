@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react'
 import {
   xDriveFileExplorerClipboardOperationPlan,
+  xDriveFileExplorerDesktopDownloadFeedback,
+  xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerOperationQueuedMessage,
@@ -300,27 +302,22 @@ export default function DesktopFileExplorer({
 
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
     const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-    const files = nodes.filter((node) => node.type === 'file')
-    if (files.length === 0 || actionBusy) return
+    const plan = xDriveFileExplorerDownloadPlan(nodes)
+    if (plan.files.length === 0 || actionBusy) return
     setActionBusy('download-many')
     try {
-      const result = await window.xdriveDesktop.agent.cloudDownloadFiles(
-        files.map((node) => ({ id: node.id, name: node.name })),
-      )
+      const result = await window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)
       if (!result.ok) {
         onError(result.error.message)
         return
       }
       if (result.data.canceled) return
-      const skipped = nodes.length - files.length
-      const failed = result.data.failures.length
-      if (failed > 0) {
-        onFeedback('warning', `已下载 ${result.data.downloaded.length} 个文件，${failed} 个失败。`)
-      } else if (skipped > 0) {
-        onFeedback('warning', `已下载 ${result.data.downloaded.length} 个文件，跳过 ${skipped} 个文件夹。`)
-      } else {
-        onFeedback('good', `已下载 ${result.data.downloaded.length} 个文件。`)
-      }
+      const feedback = xDriveFileExplorerDesktopDownloadFeedback({
+        downloaded: result.data.downloaded.length,
+        failed: result.data.failures.length,
+        skippedFolders: plan.skippedFolders,
+      })
+      onFeedback(feedback.tone, feedback.message)
     } finally {
       setActionBusy('')
     }

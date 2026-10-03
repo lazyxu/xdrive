@@ -14,9 +14,11 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   xDriveFileExplorerClipboardOperationPlan,
+  xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropOperationPlan,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerOperationQueuedMessage,
+  xDriveFileExplorerWebDownloadFeedback,
   xDriveFileExplorerSearchDecision,
   xDriveResolveFileExplorerPath,
 } from '../../ui/shared/src'
@@ -211,17 +213,12 @@ export default function WebFileExplorer({
 
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
     const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-    const files = nodes.filter((node) => node.type === 'file')
-    if (files.length === 0) return
+    const plan = xDriveFileExplorerDownloadPlan(nodes)
+    if (plan.files.length === 0) return
     try {
-      for (const node of files) await api.download(node)
-      const skipped = nodes.length - files.length
-      onFeedback(
-        skipped > 0 ? 'warning' : 'good',
-        skipped > 0
-          ? `已下载 ${files.length} 个文件，跳过 ${skipped} 个文件夹。`
-          : `已开始下载 ${files.length} 个文件。`,
-      )
+      for (const node of plan.files) await api.download(node)
+      const feedback = xDriveFileExplorerWebDownloadFeedback(plan.files.length, plan.skippedFolders)
+      onFeedback(feedback.tone, feedback.message)
     } catch (error) {
       onError(error)
     }
