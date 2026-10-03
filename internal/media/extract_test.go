@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -257,5 +258,71 @@ func TestExtractNonMediaRemainsClassifiedWithoutError(t *testing.T) {
 	}
 	if result.Kind != KindOther {
 		t.Fatalf("kind=%q", result.Kind)
+	}
+}
+
+func buildDNGFixture() []byte {
+	data := buildTIFFFixture()
+
+	// Extend IFD0 with DNGVersion and UniqueCameraModel.
+	binary.LittleEndian.PutUint16(data[8:10], 7)
+
+	version := 70
+	binary.LittleEndian.PutUint16(data[version:version+2], 0xc612)
+	binary.LittleEndian.PutUint16(data[version+2:version+4], 1)
+	binary.LittleEndian.PutUint32(data[version+4:version+8], 4)
+	copy(data[version+8:version+12], []byte{1, 6, 0, 0})
+
+	model := 82
+	binary.LittleEndian.PutUint16(data[model:model+2], 0xc614)
+	binary.LittleEndian.PutUint16(data[model+2:model+4], 2)
+	const uniqueModel = "Canon EOS R5 DNG"
+	binary.LittleEndian.PutUint32(data[model+4:model+8], uint32(len(uniqueModel)+1))
+	binary.LittleEndian.PutUint32(data[model+8:model+12], 500)
+	copy(data[500:], append([]byte(uniqueModel), 0))
+	return data
+}
+
+func TestExtractDNGUsesLocalTIFFMetadata(t *testing.T) {
+	data := buildDNGFixture()
+	result, err := Extract("capture.dng", bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != KindImage || result.MIMEType != "image/x-adobe-dng" {
+		t.Fatalf("classification kind=%q mime=%q", result.Kind, result.MIMEType)
+	}
+	if result.Width != 1920 || result.Height != 1080 || result.Orientation != 6 {
+		t.Fatalf("dimensions/orientation=%dx%d/%d", result.Width, result.Height, result.Orientation)
+	}
+	if result.CameraMake != "Canon" || result.CameraModel != "EOS R5" || result.LensModel != "RF35mm F1" {
+		t.Fatalf("camera metadata=%q/%q/%q", result.CameraMake, result.CameraModel, result.LensModel)
+	}
+	if result.Latitude == nil || result.Longitude == nil || result.CapturedAt == nil {
+		t.Fatalf("missing local DNG EXIF/GPS metadata: %+v", result)
+	}
+	if !strings.Contains(result.EXIFJSON, "\"dng_version\":\"1.6.0.0\"") ||
+		!strings.Contains(result.EXIFJSON, "\"dng_unique_camera_model\":\"Canon EOS R5 DNG\"") {
+		t.Fatalf("DNG fields missing from EXIF JSON: %q", result.EXIFJSON)
+	}
+}
+
+func TestExtractDNGDoesNotTrustSuffixWithoutTIFFBytes(t *testing.T) {
+	data := []byte("not a DNG file")
+	result, err := Extract("renamed.dng", bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != KindOther {
+		t.Fatalf("renamed non-DNG was classified as %q with mime %q", result.Kind, result.MIMEType)
+	}
+}
+
+func TestDNGVersionRequiresFourBytes(t *testing.T) {
+	if got := dngVersion([]byte{1, 6, 0, 0}); got != "1.6.0.0" {
+		t.Fatalf("version=%q", got)
+	}
+	if got := dngVersion([]byte{1, 6, 0}); got != "" {
+		t.Fatalf("short version accepted: %q", got)
 	}
 }
