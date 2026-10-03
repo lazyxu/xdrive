@@ -135,3 +135,77 @@ func TestSourceVerifyIDBatchesStayBounded(t *testing.T) {
 		t.Fatalf("seen=%d want=%d", seen, len(ids))
 	}
 }
+
+func TestVerifySourceRelationsReportsDeterministicBreakage(t *testing.T) {
+	sources := []meta.Source{
+		{ID: 1, OwnerID: 7, Status: meta.SourceStatusPaused},
+		{ID: 2, OwnerID: 7, Status: meta.SourceStatusPaused},
+	}
+	items := []meta.SourceItem{
+		{ID: 10, SourceID: 1, ExternalID: "canon-a", Kind: meta.SourceItemKindFile, State: meta.SourceItemStatePending},
+		{ID: 11, SourceID: 1, ExternalID: "canon-b", Kind: meta.SourceItemKindFile, State: meta.SourceItemStatePending},
+		{ID: 20, SourceID: 2, ExternalID: "canon-x", Kind: meta.SourceItemKindFile, State: meta.SourceItemStatePending},
+	}
+	aliases := []meta.SourceItemAlias{
+		{ID: 1, SourceID: 1, SourceItemID: 10, AliasExternalID: "canon-a", AliasKind: meta.SourceItemAliasKindExternalID},
+		{ID: 2, SourceID: 1, SourceItemID: 10, AliasExternalID: "canon-b", AliasKind: meta.SourceItemAliasKindExternalID},
+		{ID: 3, SourceID: 1, SourceItemID: 20, AliasExternalID: "cross-source", AliasKind: meta.SourceItemAliasKindExternalID},
+		{ID: 4, SourceID: 1, SourceItemID: 10, AliasExternalID: "legacy-a", AliasKind: "invalid"},
+	}
+	collections := []meta.SourceCollection{
+		{ID: 100, SourceID: 1, ExternalID: "album-a", State: meta.SourceCollectionStateActive},
+		{ID: 101, SourceID: 1, ExternalID: "album-old", State: meta.SourceCollectionStateMissing},
+	}
+	collectionItems := []meta.SourceCollectionItem{
+		{ID: 1000, CollectionID: 100, SourceItemID: 20, Position: 0},
+		{ID: 1001, CollectionID: 101, SourceItemID: 10, Position: 0},
+		{ID: 1002, CollectionID: 100, SourceItemID: 10, Position: -1},
+		{ID: 1003, CollectionID: 999, SourceItemID: 10, Position: 0},
+	}
+	itemMetadata := []meta.SourceItemMetadata{
+		{
+			SourceItemID: 20, SourceID: 1, ContentMD5: "not-md5",
+			PairGroupID: "legacy-pair",
+		},
+		{
+			SourceItemID: 10, SourceID: 1,
+			PairGroupID: "legacy-pair-2", PairRole: "invalid",
+		},
+	}
+
+	report := verifySourceState(
+		sources,
+		items,
+		aliases,
+		collections,
+		collectionItems,
+		itemMetadata,
+		nil,
+		nil,
+	)
+	if report.OK() {
+		t.Fatalf("broken source relations reported OK: %+v", report)
+	}
+	reasons := map[string]bool{}
+	for _, issue := range report.Issues {
+		reasons[issue.Reason] = true
+	}
+	for _, want := range []string{
+		"alias_matches_canonical",
+		"alias_canonical_conflict",
+		"alias_item_source_mismatch",
+		"alias_kind_invalid",
+		"collection_item_source_mismatch",
+		"missing_collection_has_membership",
+		"collection_item_position_invalid",
+		"collection_item_collection_missing",
+		"metadata_source_mismatch",
+		"metadata_md5_invalid",
+		"metadata_pair_incomplete",
+		"metadata_pair_role_invalid",
+	} {
+		if !reasons[want] {
+			t.Fatalf("missing issue reason %q: %+v", want, report.Issues)
+		}
+	}
+}

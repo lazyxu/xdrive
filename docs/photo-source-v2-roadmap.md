@@ -231,17 +231,14 @@ Remote delete/rename/album mutation and general two-way synchronization are not 
 
 ### Implemented
 
-`xdrive-server source verify [--json]` checks core Source/SourceItem -> Node/File binding invariants. `xdrive-server media verify [--json]` checks MediaMetadata freshness, MediaGroup/Live Photo evidence and membership invariants, and MediaDerivedResource ownership/revision/SHA/range plus validated LIVP resource consistency. Both are read-only.
+`xdrive-server source verify [--json]` checks core Source/SourceItem -> Node/File bindings plus SourceItem canonical/alias identity collisions, SourceCollection membership ownership/state, and SourceItemMetadata Source/MD5/pair-field invariants. `xdrive-server media verify [--json]` checks MediaMetadata freshness, MediaGroup/Live Photo evidence and membership invariants, MediaDerivedResource ownership/revision/SHA/range, validated LIVP resource consistency, and metadata-referenced thumbnail cache state. Both are read-only.
 
 ### Still TODO
 
 Extend read-only verification to cover:
 
-- SourceItem uniqueness and `SourceItemAlias` collisions/invariants;
 - Node -> File -> CAS presence and storage SHA integrity through the existing storage verifier boundary;
 - verified digest-alias consistency;
-- SourceCollection membership validity;
-- SourceItemMetadata Source ownership/attachment consistency;
 - derived thumbnail cache orphan cleanup beyond metadata-referenced entries;
 - stale running Source runs and incomplete migrations.
 
@@ -273,7 +270,7 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | Backup deletion safety | Current | Current | Current |
 | Mirror-to-trash | TODO | TODO | TODO |
 | Basic Source binding verifier | Current shared verifier | Current shared verifier | Current shared verifier |
-| Extended integrity/repair | TODO shared | TODO shared | TODO shared |
+| Extended integrity/repair | Current shared read-only verify; partial local repair | Current shared read-only verify; partial local repair | Current shared read-only verify; partial local repair |
 
 ## Implementation roadmap
 
@@ -288,7 +285,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata and safe embedded-JPEG previews are local; other RAW formats plus validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping remain | High |
-| P7 | In progress: Source/media relationship verify, thumbnail cache checks, and explicit idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
+| P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
 | P10 | Expand Gallery filters/search from xDrive-native metadata such as local capture time and GPS | Medium |

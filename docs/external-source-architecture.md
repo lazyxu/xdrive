@@ -153,9 +153,9 @@ Live Photo evidence must come from local originals such as a validated `.livp` c
 
 ## Integrity verification
 
-`xdrive-server source verify [--json]` provides the first read-only Source binding verifier. It checks core Source/SourceItem -> Node/File invariants.
+`xdrive-server source verify [--json]` is the read-only Source integrity verifier. It checks core Source/SourceItem -> Node/File bindings, canonical/alias identity collisions and cross-Source aliases, SourceCollection membership ownership/state, and SourceItemMetadata Source/MD5/pair-field invariants.
 
-Verification now covers MediaMetadata freshness, MediaGroup/Live Photo evidence, LIVP derived resources, and metadata-referenced thumbnail cache presence/format. Deterministic thumbnail-cache issues support explicit local metadata reset through `xdrive-server media repair [--dry-run]`; repair never changes original files, CAS content, Source state, or remote providers. Remaining verifier/repair work includes alias/collection/source-metadata invariants, orphan derived-cache cleanup, stale runs, migrations, and other issue types only after their repair semantics are deterministic.
+Media verification covers MediaMetadata freshness, MediaGroup/Live Photo evidence, LIVP derived resources, and metadata-referenced thumbnail cache presence/format. Deterministic thumbnail-cache issues support explicit local metadata reset through `xdrive-server media repair [--dry-run]`; repair never changes original files, CAS content, Source state, or remote providers. Remaining verifier/repair work includes storage/digest cross-checks, orphan derived-cache cleanup, stale runs, migrations, and other issue types only after their repair semantics are deterministic.
 
 Storage/CAS byte verification remains the separate `xdrive-server storage verify` responsibility.
 
