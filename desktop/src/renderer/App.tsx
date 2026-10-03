@@ -45,6 +45,8 @@ import {
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
+  XDriveCloudStoragePage,
+  XDriveLocalStoragePage,
   XDriveCoreWorkspaceNavItems,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -59,7 +61,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceManager,
 } from '@xdrive/ui/mui'
-import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
+import type { MediaGalleryDataSource, XDriveCloudStorageDataSource, XDriveLocalStorageDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
@@ -78,7 +80,6 @@ import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
 import { DesktopGalleryPage } from './DesktopGalleryPage'
 import { DesktopTransfersPage } from './DesktopTransfersPage'
-import { DesktopStoragePage } from './DesktopStoragePage'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
@@ -89,7 +90,7 @@ import type {
   XDriveServerUpdateState,
 } from '@xdrive/shared'
 
-type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics'
+type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage' | 'conflicts' | 'diagnostics'
 
 type ConfirmDialogState = {
   title: string
@@ -208,7 +209,6 @@ export default function App({
   const [cloudPage, setCloudPage] = useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>(null)
   const [cloudLoadingMore, setCloudLoadingMore] = useState(false)
   const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
-  const [cloudStorageStats, setCloudStorageStats] = useState<AgentCloudStorageStats | null>(null)
   const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -281,9 +281,6 @@ export default function App({
   const [confirmPassword, setConfirmPassword] = useState('')
   const [mountPath, setMountPath] = useState('')
   const [cacheLimit, setCacheLimit] = useState('0')
-  const [storageTree, setStorageTree] = useState<AgentStorageTreeNode | null>(null)
-  const [cacheStats, setCacheStats] = useState<AgentCacheStats | null>(null)
-  const [expandedStorage, setExpandedStorage] = useState<Set<string>>(new Set())
 
   const serverOptions = useMemo(
     () => Array.from(new Set(loginHistory.profiles.map((profile) => profile.server))),
@@ -323,7 +320,60 @@ export default function App({
     cloudFileOperations.some((item) => !xDriveFileOperationActive(item.status))
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
+  const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
+  const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>(() => ({
+    load: async () => {
+      const [quotaResult, statsResult] = await Promise.all([
+        window.xdriveDesktop.agent.cloudQuota(),
+        storageStatsSupported
+          ? window.xdriveDesktop.agent.cloudStorageStats()
+          : Promise.resolve(null),
+      ])
+      if (!quotaResult.ok) throw new Error(quotaResult.error.message)
+      setCloudQuota(quotaResult.data)
+      if (statsResult && !statsResult.ok) throw new Error(statsResult.error.message)
+      return {
+        quota: quotaResult.data,
+        stats: statsResult?.ok ? statsResult.data : null,
+        statsUnavailableMessage: storageStatsSupported
+          ? undefined
+          : '当前 xdrive-agent 不支持云端存储情报，请更新客户端核心组件。',
+      }
+    },
+  }), [storageStatsSupported])
+  const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
+    load: async () => {
+      const [treeResult, cacheResult] = await Promise.all([
+        window.xdriveDesktop.agent.getStorageTree(),
+        window.xdriveDesktop.agent.getCache(),
+      ])
+      if (!treeResult.ok) throw new Error(treeResult.error.message)
+      if (!cacheResult.ok) throw new Error(cacheResult.error.message)
+      return {
+        supported: true,
+        storagePoliciesSupported,
+        cacheStats: cacheResult.data,
+        storageTree: treeResult.data,
+      }
+    },
+    releaseCache: async () => {
+      const result = await window.xdriveDesktop.agent.releaseCache()
+      if (!result.ok) throw new Error(result.error.message)
+      return {
+        released_files: result.data.released_files,
+        released_bytes: result.data.released_bytes,
+        failed_files: result.data.failed_files,
+      }
+    },
+    setFolderMode: storagePoliciesSupported
+      ? async (path, mode) => {
+          const result = await window.xdriveDesktop.agent.setSyncRule(path, mode)
+          if (!result.ok) throw new Error(result.error.message)
+          setSettings(result.data)
+        }
+      : undefined,
+  }), [storagePoliciesSupported])
   const updateOperationBusy = clientUpdate?.status === 'checking' || clientUpdate?.status === 'downloading' || clientUpdate?.status === 'installing'
   const updateProgress = clientUpdate?.bytes_total
     ? Math.max(0, Math.min(100, ((clientUpdate.bytes_done || 0) * 100) / clientUpdate.bytes_total))
@@ -396,6 +446,10 @@ export default function App({
             document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }, 120)
         }
+        return
+      }
+      if (target === 'files') {
+        setView('local-storage')
         return
       }
       setView(target)
@@ -567,12 +621,9 @@ export default function App({
       setSettings(null)
       setConflicts([])
       setDiagnostics(null)
-      setStorageTree(null)
-      setCacheStats(null)
       setCloudItems([])
       setCloudCrumbs([])
       setCloudQuota(null)
-      setCloudStorageStats(null)
       setCloudHistoryNode(null)
       setCloudHistoryCrumbs([])
       setCloudShareNode(null)
@@ -589,14 +640,6 @@ export default function App({
     if (view !== 'diagnostics' || !agent.connected || !configured) return
     void loadDiagnostics()
     // Diagnostics run once when entering the page or reconnecting, not on every status revision.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, agent.connected, configured])
-
-  useEffect(() => {
-    if (view !== 'files' || !agent.connected || !configured) return
-    void loadStorage()
-    // Storage tree and cache telemetry load once when entering the page or reconnecting.
-    // Policy changes and the Refresh button perform explicit reloads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured])
 
@@ -930,112 +973,6 @@ export default function App({
     } finally {
       setUpdateCancelling(false)
     }
-  }
-
-  const loadStorage = async () => {
-    setBusy('storage')
-    setError('')
-    try {
-      const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
-      const [treeResult, cacheResult, quotaResult, cloudStatsResult] = await Promise.all([
-        window.xdriveDesktop.agent.getStorageTree(),
-        window.xdriveDesktop.agent.getCache(),
-        window.xdriveDesktop.agent.cloudQuota(),
-        storageStatsSupported ? window.xdriveDesktop.agent.cloudStorageStats() : Promise.resolve(null),
-      ])
-      if (!treeResult.ok) {
-        setError(treeResult.error.message)
-        return
-      }
-      if (!cacheResult.ok) {
-        setError(cacheResult.error.message)
-        return
-      }
-      setStorageTree(treeResult.data)
-      setCacheStats(cacheResult.data)
-      if (quotaResult.ok) setCloudQuota(quotaResult.data)
-      if (cloudStatsResult?.ok) setCloudStorageStats(cloudStatsResult.data)
-      else if (cloudStatsResult) setCloudStorageStats(null)
-      setExpandedStorage((current) => {
-        if (current.size > 0) return current
-        return new Set((treeResult.data.children || []).map((child) => child.path))
-      })
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const updateStorageMode = async (path: string, mode: 'exclude' | 'always-local' | 'default') => {
-    const data = await run(
-      `storage-rule-${path}-${mode}`,
-      () => window.xdriveDesktop.agent.setSyncRule(path, mode),
-      '文件夹策略已更新。',
-    )
-    if (!data) return
-    setSettings(data)
-    await loadStorage()
-  }
-
-  const releaseReclaimableCache = async () => {
-    const data = await run('release-cache', () => window.xdriveDesktop.agent.releaseCache())
-    if (!data) return
-    setCacheStats(data.stats)
-    if (data.released_files === 0 && data.failed_files === 0) {
-      setNotice('当前没有可释放的缓存。')
-      return
-    }
-    const failed = data.failed_files > 0 ? ` · ${data.failed_files} 个文件无法释放` : ''
-    setNotice(`已从 ${data.released_files} 个文件释放 ${formatBinarySize(data.released_bytes)}${failed}。`)
-  }
-
-  const toggleStoragePath = (path: string) => {
-    setExpandedStorage((current) => {
-      const next = new Set(current)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }
-
-  const renderStorageNode = (node: AgentStorageTreeNode, depth = 0) => {
-    const children = node.children || []
-    const expanded = expandedStorage.has(node.path)
-    const inherited = node.mode === 'default' && node.effective_mode !== 'default'
-    const effectiveLabel = node.effective_mode === 'exclude'
-      ? '不同步'
-      : node.effective_mode === 'always-local'
-        ? '始终保留'
-        : '默认'
-    return (
-      <div className="storage-node" key={node.path}>
-        <div className="storage-row" style={{ paddingLeft: `${12 + depth * 18}px` }}>
-          <button
-            className="tree-toggle"
-            type="button"
-            disabled={children.length === 0}
-            aria-label={expanded ? '折叠文件夹' : '展开文件夹'}
-            onClick={() => toggleStoragePath(node.path)}
-          >
-            {children.length === 0 ? '·' : expanded ? '▾' : '▸'}
-          </button>
-          <div className="storage-folder">
-            <strong>{node.name}</strong>
-            <span>{node.file_count} 个文件 · {formatBinarySize(node.total_bytes)}</span>
-            {storagePoliciesSupported && inherited && <small>继承策略：{effectiveLabel}</small>}
-          </div>
-          {storagePoliciesSupported ? (
-            <div className="storage-modes" role="group" aria-label={`${node.name} 的存储策略`}>
-              <button className={node.mode === 'default' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'default')}>默认</button>
-              <button className={node.mode === 'exclude' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'exclude')}>不同步</button>
-              <button className={node.mode === 'always-local' ? 'active' : ''} type="button" disabled={!!busy} onClick={() => void updateStorageMode(node.path, 'always-local')}>始终保留</button>
-            </div>
-          ) : (
-            <Chip size="small" variant="outlined" label="FUSE 按需访问" />
-          )}
-        </div>
-        {expanded && children.map((child) => renderStorageNode(child, depth + 1))}
-      </div>
-    )
   }
 
   const rememberCloudFileOperation = (operation: AgentCloudFileOperation) => {
@@ -1863,11 +1800,10 @@ export default function App({
         <XDriveSidebarNavList ariaLabel="桌面版功能区">
           <XDriveSidebarNavItem selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
           <XDriveCoreWorkspaceNavItems
-            selected={view === 'cloud' ? 'files' : view === 'files' ? 'storage' : view}
+            selected={view === 'cloud' ? 'files' : view}
             transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}
             onSelect={(destination) => {
               if (destination === 'files') setView('cloud')
-              else if (destination === 'storage') setView('files')
               else setView(destination)
             }}
           />
@@ -2041,18 +1977,12 @@ export default function App({
           />
         )}
 
-        {view === 'files' && (
-          <DesktopStoragePage
-            storagePoliciesSupported={storagePoliciesSupported}
-            busy={busy}
-            cloudQuota={cloudQuota}
-            cloudStorageStats={cloudStorageStats}
-            cacheStats={cacheStats}
-            storageTree={storageTree}
-            renderStorageNode={renderStorageNode}
-            onRefresh={() => { void loadStorage() }}
-            onReleaseCache={() => { void releaseReclaimableCache() }}
-          />
+        {view === 'local-storage' && (
+          <XDriveLocalStoragePage source={localStorageSource} />
+        )}
+
+        {view === 'cloud-storage' && (
+          <XDriveCloudStoragePage source={cloudStorageSource} />
         )}
 
         {view === 'conflicts' && (
@@ -2179,7 +2109,7 @@ export default function App({
             onSaveSettings={saveSettings}
             onOpenStorage={() => {
               setSettingsOpen(false)
-              setView('files')
+              setView('local-storage')
             }}
           />
         </XDriveSettingsDialog>

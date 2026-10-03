@@ -5,17 +5,20 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
+const cloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
+const localStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
 const desktopApp = [
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8'),
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8'),
-  fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8'),
+  localStorage,
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8'),
 ].join('\n')
+const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
 const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
-test('Web storage statistics use shared metric primitives', () => {
+test('Web global storage statistics use shared metric primitives', () => {
   assert.equal((storageStats.match(/<XDriveMetricGrid\b/g) || []).length, 4)
   assert.equal((storageStats.match(/<XDriveMetricCard\b/g) || []).length, 27)
   assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 6)
@@ -28,10 +31,25 @@ test('Web storage statistics use shared metric primitives', () => {
   assert.ok(sectionHeader.includes("level === 'h3'"))
 })
 
+test('Cloud storage is one shared Web/Desktop workspace', () => {
+  assert.ok(cloudStorage.includes('export function XDriveCloudStoragePage'))
+  assert.ok(cloudStorage.includes('title="云端存储"'))
+  assert.equal((cloudStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
+  assert.equal((cloudStorage.match(/<XDriveMetricCard\b/g) || []).length, 14)
+  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'))
+  assert.ok(desktopApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'))
+  assert.equal(webApp.includes('scope="self"'), false, 'Web must not keep a second account-storage presentation')
+})
 
-test('Desktop storage, diagnostics and update statistics reuse shared metric primitives', () => {
-  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 5)
-  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 29)
+test('Local storage is shared across Web/Desktop and reuses metric primitives', () => {
+  assert.ok(localStorage.includes('export function XDriveLocalStoragePage'))
+  assert.ok(localStorage.includes('title="本地存储"'))
+  assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 1)
+  assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 4)
+  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.ok(desktopApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3)
+  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 16)
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)
   assert.equal(desktopApp.includes('className="cache-metrics"'), false)
   assert.equal(desktopApp.includes('className="update-metrics"'), false)

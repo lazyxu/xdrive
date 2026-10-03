@@ -11,25 +11,46 @@ const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 
 test('core workspace navigation labels, icons and order live in shared MUI', () => {
-  assert.ok(shared.includes("export type XDriveCoreWorkspaceKey = 'files' | 'gallery' | 'sources' | 'transfers' | 'storage'"))
+  assert.ok(shared.includes("export type XDriveCoreWorkspaceKey = 'files' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage'"))
   assert.ok(shared.includes('export function XDriveCoreWorkspaceNavItems'))
-  const labels = ['primary="文件"', 'primary="图库"', 'primary="同步文件夹"', 'primary="传输"', 'primary="存储"']
+  const labels = [
+    'primary="文件"',
+    'primary="图库"',
+    'primary="同步文件夹"',
+    'primary="传输"',
+    'primary="本地存储"',
+    'primary="云端存储"',
+  ]
   let cursor = -1
   for (const label of labels) {
     const next = shared.indexOf(label)
     assert.ok(next > cursor, `shared core navigation order missing or changed: ${label}`)
     cursor = next
   }
-  for (const icon of ['FolderRoundedIcon', 'PhotoLibraryRoundedIcon', 'CloudSyncRoundedIcon', 'SwapVertRoundedIcon', 'StorageRoundedIcon']) {
+  for (const icon of [
+    'FolderRoundedIcon',
+    'PhotoLibraryRoundedIcon',
+    'CloudSyncRoundedIcon',
+    'SwapVertRoundedIcon',
+    'StorageRoundedIcon',
+    'CloudRoundedIcon',
+  ]) {
     assert.ok(shared.includes(icon), `shared core navigation icon missing: ${icon}`)
   }
   assert.ok(shared.includes('badge={transferBadge}'), 'shared transfer destination must own the transfer badge slot')
 })
 
-test('Web and Desktop consume shared core navigation without duplicating its labels', () => {
+test('Web and Desktop consume shared core navigation without duplicating shared labels', () => {
   assert.equal((web.match(/<XDriveCoreWorkspaceNavItems\b/g) || []).length, 1)
   assert.equal((desktop.match(/<XDriveCoreWorkspaceNavItems\b/g) || []).length, 1)
-  for (const label of ['primary="文件"', 'primary="图库"', 'primary="同步文件夹"', 'primary="传输"', 'primary="存储"']) {
+  for (const label of [
+    'primary="文件"',
+    'primary="图库"',
+    'primary="同步文件夹"',
+    'primary="传输"',
+    'primary="本地存储"',
+    'primary="云端存储"',
+  ]) {
     assert.equal(web.includes(label), false, `Web must not duplicate core nav label: ${label}`)
     assert.equal(desktop.includes(label), false, `Desktop must not duplicate core nav label: ${label}`)
   }
@@ -38,5 +59,9 @@ test('Web and Desktop consume shared core navigation without duplicating its lab
   assert.ok(desktop.includes('primary="冲突"'), 'Desktop conflicts remain platform-specific')
   assert.ok(desktop.includes('primary="诊断"'), 'Desktop diagnostics remain platform-specific')
   assert.ok(desktop.includes("if (destination === 'files') setView('cloud')"), 'Desktop must adapt shared Files to its cloud view')
-  assert.ok(desktop.includes("else if (destination === 'storage') setView('files')"), 'Desktop must adapt shared Storage to its local view key')
+  assert.ok(desktop.includes("else setView(destination)"), 'Desktop must route shared local/cloud storage keys without duplicate label logic')
+  assert.ok(web.includes('onSelect={setAppView}'), 'Web must route the same shared navigation keys directly')
+  assert.ok(web.includes("| 'local-storage'"), 'Web must expose the shared local-storage destination')
+  assert.ok(web.includes("| 'cloud-storage'"), 'Web must expose the shared cloud-storage destination')
+  assert.ok(desktop.includes("'local-storage' | 'cloud-storage'"), 'Desktop must expose both shared storage destinations')
 })

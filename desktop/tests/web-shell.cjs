@@ -9,6 +9,8 @@ const webStyles = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'styles.css'
 const desktopApp = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedStorageSummary = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
+const sharedCloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
+const sharedLocalStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 const sharedWorkspaceShell = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
@@ -61,7 +63,8 @@ test('Web first-class workspaces use page chrome except the full-bleed Files wor
   assert.ok(webApp.includes('className="files-workspace-surface"'), 'Files should render as the application workspace itself')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
   assert.ok(webApp.includes('<ExternalSourcesPanel'), 'External Sources should remain a first-class page')
-  assert.ok(webApp.includes('<StorageStatsPanel') && webApp.includes('scope="self"'), 'Storage should remain a first-class page')
+  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Local Storage should render through the shared page')
+  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Cloud Storage should render through the shared page')
 })
 
 test('Web admin workspaces are first-class pages while action dialogs stay local', () => {
@@ -140,6 +143,14 @@ test('Web and Desktop shell primitives live in shared MUI', () => {
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_WIDTH = 184'), 'shared sidebar width token is missing')
   assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH = 176'), 'shared compact sidebar width token is missing')
   assert.ok(sharedStorageSummary.includes('XDriveSidebarStorageSummary'), 'shared sidebar storage summary is missing')
+  assert.ok(sharedCloudStorage.includes('export function XDriveCloudStoragePage'), 'shared cloud storage workspace is missing')
+  assert.ok(sharedCloudStorage.includes('title="云端存储"'), 'shared cloud storage workspace title is missing')
+  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render the shared cloud storage workspace')
+  assert.ok(desktopApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render the same shared cloud storage workspace')
+  assert.ok(sharedLocalStorage.includes('export function XDriveLocalStoragePage'), 'shared local storage workspace is missing')
+  assert.ok(sharedLocalStorage.includes('title="本地存储"'), 'shared local storage workspace title is missing')
+  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render the shared local storage workspace')
+  assert.ok(desktopApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Desktop must render the same shared local storage workspace')
   assert.ok(sharedStorageSummary.includes('physical') === false, 'shared storage summary should remain presentation-only')
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
   assert.ok(sharedWorkspaceShell.includes('XDriveWorkspaceShell'), 'shared sidebar/workspace shell is missing')
@@ -192,7 +203,7 @@ test('Shared sidebar uses compact system navigation chrome', () => {
 })
 
 test('Web and Desktop show account storage usage at the bottom of the sidebar', () => {
-  assert.ok(sharedStorageSummary.includes("label = '存储'"), 'shared storage summary should use the compact storage label')
+  assert.ok(sharedStorageSummary.includes("label = '云端存储'"), 'shared storage summary should identify account usage as cloud storage')
   assert.ok(sharedStorageSummary.includes("boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB'"), 'tiny storage usage should avoid byte-level noise')
   assert.ok(sharedStorageSummary.includes("'无容量限制'"), 'unlimited accounts should use a natural capacity label')
   assert.ok(sharedStorageSummary.includes('diskTotalBytes?: number'), 'shared storage summary should accept real server disk total capacity')

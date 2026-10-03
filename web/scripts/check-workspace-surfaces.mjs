@@ -18,6 +18,8 @@ const webFileExplorer = read('src/WebFileExplorer.tsx')
 const styles = read('src/styles.css')
 const sources = read('src/ExternalSources.tsx') + readRepo('ui/shared/src/mui/SourceManager.tsx')
 const storage = read('src/StorageStatsPanel.tsx')
+const cloudStorage = readRepo('ui/shared/src/mui/CloudStoragePage.tsx')
+const localStorage = readRepo('ui/shared/src/mui/LocalStoragePage.tsx')
 const adminUsers = read('src/AdminUsers.tsx')
 const adminAudit = read('src/AdminAudit.tsx')
 
@@ -152,6 +154,24 @@ requireText(storage, [
   'presentation="page"',
   "title={scope === 'global' ? '全局存储' : '存储'}",
 ], 'StorageStats')
+
+requireText(cloudStorage, [
+  'export function XDriveCloudStoragePage',
+  'XDriveWorkspaceSurface',
+  'presentation="page"',
+  'title="云端存储"',
+  'title="云端容量"',
+  'title="CAS 存储情报"',
+], 'Shared CloudStorage')
+
+requireText(localStorage, [
+  'export function XDriveLocalStoragePage',
+  'XDriveWorkspaceSurface',
+  'presentation="page"',
+  'title="本地存储"',
+  'title="本地缓存"',
+  'title="文件夹本地策略"',
+], 'Shared LocalStorage')
 
 requireText(adminUsers, [
   'XDriveWorkspaceSurface',

@@ -26,6 +26,8 @@ import {
   XDriveActionButton,
   XDriveBrandLockup,
   XDriveConfirmDialog,
+  XDriveCloudStoragePage,
+  XDriveLocalStoragePage,
   XDriveCoreWorkspaceNavItems,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -46,7 +48,7 @@ import {
   XDriveWorkspaceShell,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
-import type { MediaGalleryDataSource, XDriveFileExplorerSort } from '@xdrive/ui/mui'
+import type { MediaGalleryDataSource, XDriveCloudStorageDataSource, XDriveLocalStorageDataSource, XDriveFileExplorerSort } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
@@ -98,7 +100,8 @@ type AppView =
   | 'gallery'
   | 'sources'
   | 'transfers'
-  | 'storage'
+  | 'local-storage'
+  | 'cloud-storage'
   | 'admin-users'
   | 'admin-audit'
   | 'admin-storage'
@@ -510,6 +513,29 @@ function FileManager({
     loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
     loadLivePhotoMotion: async (nodeID) => URL.createObjectURL(await api.mediaLivePhotoMotion(nodeID)),
   }), [api])
+
+  const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>(() => ({
+    load: async () => {
+      const [quotaValue, statsValue] = await Promise.all([
+        api.quota(),
+        api.storageStats().catch(() => null),
+      ])
+      setQuota(quotaValue)
+      return {
+        quota: quotaValue,
+        stats: statsValue,
+        statsUnavailableMessage: statsValue ? undefined : '当前服务端未提供云端存储情报。',
+      }
+    },
+  }), [api])
+
+  const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
+    load: async () => ({
+      supported: false,
+      storagePoliciesSupported: false,
+      reason: 'Web 端不管理当前设备的本地同步缓存；请在 xDrive Desktop 中查看本地缓存与离线保留策略。',
+    }),
+  }), [])
 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
@@ -923,7 +949,7 @@ function FileManager({
             <XDriveCoreWorkspaceNavItems
               selected={appView}
               transferBadge={(transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length + fileOperations.filter((item) => xDriveFileOperationActive(item.status)).length) || undefined}
-              onSelect={(destination) => setAppView(destination)}
+              onSelect={setAppView}
             />
           </XDriveSidebarNavList>
 
@@ -1039,11 +1065,10 @@ function FileManager({
             onCancelOperation={(id) => { void cancelFileOperation(id) }}
             onRetryOperation={(id) => { void retryFileOperation(id) }}
           />
-        ) : appView === 'storage' ? (
-          <StorageStatsPanel
-            api={api}
-            scope="self"
-          />
+        ) : appView === 'local-storage' ? (
+          <XDriveLocalStoragePage source={localStorageSource} />
+        ) : appView === 'cloud-storage' ? (
+          <XDriveCloudStoragePage source={cloudStorageSource} />
         ) : appView === 'admin-users' && profile?.role === 'admin' ? (
           <AdminUsersPanel
             api={api}

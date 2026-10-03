@@ -7,6 +7,8 @@ const root = path.join(__dirname, '..')
 const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedSourceManager = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
 const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
+const sharedCloudStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
+const sharedLocalStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
 const sharedShareDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
 const sharedTrashDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'TrashDialog.tsx'), 'utf8')
 const sharedVersionHistoryDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'VersionHistoryDialog.tsx'), 'utf8')
@@ -22,12 +24,13 @@ const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer'
 const desktopCloudPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
 const desktopGalleryPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopGalleryPage.tsx'), 'utf8')
 const desktopTransfersPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopTransfersPage.tsx'), 'utf8')
-const desktopStoragePage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopStoragePage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 const renderer = [
   rendererApp,
   sharedSourceManager,
   sharedSettingsDialog,
+  sharedCloudStoragePage,
+  sharedLocalStoragePage,
   sharedShareDialog,
   sharedTrashDialog,
   sharedVersionHistoryDialog,
@@ -43,7 +46,6 @@ const renderer = [
   desktopCloudPage,
   desktopGalleryPage,
   desktopTransfersPage,
-  desktopStoragePage,
   desktopSettingsContent,
 ].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
@@ -222,10 +224,11 @@ test('desktop sidebar consumes shared MUI navigation with icons, state and badge
     'CloudSyncRoundedIcon',
     'SwapVertRoundedIcon',
     'StorageRoundedIcon',
+    'CloudRoundedIcon',
   ]) {
     assert.ok(sharedSidebarNav.includes(icon), `missing shared core sidebar icon: ${icon}`)
   }
-  assert.equal((sharedSidebarNav.match(/<XDriveSidebarNavItem/g) || []).length, 5, 'shared sidebar module should own the five core destinations')
+  assert.equal((sharedSidebarNav.match(/<XDriveSidebarNavItem/g) || []).length, 6, 'shared sidebar module should own the same six core destinations for Web and Desktop')
   assert.ok(sidebar.includes('transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}'), 'Desktop transfer count must feed the shared core navigation')
   assert.ok(sidebar.includes('badge={status?.conflict_count || undefined}'), 'Desktop conflict count must stay on the Desktop-only conflict item')
   assert.ok(sidebar.includes('<XDriveSidebarSection pinnedBottom>'), 'diagnostics should stay in the shared pinned sidebar section')
@@ -250,9 +253,9 @@ test('desktop sidebar consumes shared MUI navigation with icons, state and badge
 
 test('desktop gates CfAPI-only storage controls by platform', () => {
   assert.ok(renderer.includes("const storagePoliciesSupported = info?.platform === 'win32'"), 'missing Windows storage capability gate')
-  assert.ok(renderer.includes('Linux FUSE 模式不提供 Windows CfAPI'), 'missing Linux FUSE storage explanation')
-  assert.ok(renderer.includes('FUSE 按需访问'), 'missing Linux read-only storage state')
-  assert.ok(renderer.includes("storagePoliciesSupported ? '管理存储' : '查看存储'"), 'missing platform-aware storage action')
+  assert.ok(renderer.includes('当前平台不提供 Windows CfAPI'), 'missing Linux FUSE storage explanation')
+  assert.ok(renderer.includes('按需访问'), 'missing local-storage on-demand access state')
+  assert.ok(renderer.includes("storagePoliciesSupported ? '管理本地存储' : '查看本地存储'"), 'missing platform-aware local-storage action')
 })
 
 test('desktop external sources expose safe source deletion', () => {
@@ -366,8 +369,8 @@ test('desktop page-level status alerts use the shared alert surface', () => {
   assert.ok(renderer.includes('{error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}'), 'login errors need a stable inline error surface')
   for (const text of [
     '存储空间已超出配额',
-    '未计入 CAS 分布',
-    'Linux FUSE 模式不提供 Windows CfAPI',
+    '未计入 CAS 尺寸分布',
+    '当前平台不提供 Windows CfAPI',
     '当前 xdrive-agent 不支持更新设置',
     'clientUpdate.last_error ? <XDriveStatusAlert tone="bad"',
     '!clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="neutral"',
@@ -524,9 +527,12 @@ test('desktop uses app-native confirmation dialogs instead of browser confirms',
   assert.ok(sharedSourceManager.includes('清除凭据'), 'Source credential clearing must use a confirmation action')
 })
 
-test('desktop cloud quota hides server disk wording for limited quotas', () => {
-  assert.ok(renderer.includes('可用空间'), 'missing cloud available-space label')
-  assert.ok(renderer.includes("cloudQuota.quota_bytes > 0 ? '用户配额限制' : '服务器磁盘可用'"), 'missing quota-aware disk visibility')
+test('shared cloud storage hides server disk wording for limited quotas', () => {
+  assert.ok(sharedCloudStoragePage.includes('可用空间'), 'missing cloud available-space label')
+  assert.ok(
+    sharedCloudStoragePage.includes("quota.quota_bytes > 0 ? '用户配额可用' : '服务器可用空间'"),
+    'missing quota-aware cloud capacity wording',
+  )
 })
 
 test('desktop external sources expose per-file failures through the shared item surface', () => {

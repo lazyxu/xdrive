@@ -331,12 +331,12 @@ export function DesktopSettingsContent({
               <strong>{storagePoliciesSupported ? '文件夹存储策略' : 'Linux FUSE 存储模式'}</strong>
               <span>
                 {storagePoliciesSupported
-                  ? '可在“存储”页面的云端目录树中选择“默认”“不同步”或“始终保留”。'
-                  : 'Linux 使用 FUSE 远程挂载；“存储”页面提供只读目录视图，不提供 Windows CfAPI 的选择性同步和固定保留。'}
+                  ? '可在“本地存储”页面的文件夹策略中选择“默认”“不同步”或“始终保留”。'
+                  : 'Linux 使用 FUSE 远程挂载；“本地存储”页面提供只读目录视图，不提供 Windows CfAPI 的选择性同步和固定保留。'}
               </span>
             </div>
             <XDriveActionButton onClick={onOpenStorage}>
-              {storagePoliciesSupported ? '管理存储' : '查看存储'}
+              {storagePoliciesSupported ? '管理本地存储' : '查看本地存储'}
             </XDriveActionButton>
           </div>
           <div className="settings-divider" />

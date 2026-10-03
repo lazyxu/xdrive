@@ -88,24 +88,25 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.match(desktopApp, /type View = [^\n]*'gallery'/)
   assert.ok(desktopApp.includes('title="图库"'), 'Desktop Gallery page must own its shared workspace title')
   assert.ok(desktopApp.includes('<XDriveCoreWorkspaceNavItems'), 'Desktop must expose Gallery through shared core navigation')
-  assert.ok(desktopApp.includes("selected={view === 'cloud' ? 'files' : view === 'files' ? 'storage' : view}"), 'Desktop must map its local view to shared core selection')
+  assert.ok(desktopApp.includes("selected={view === 'cloud' ? 'files' : view}"), 'Desktop must map Files to the shared files key while preserving local/cloud storage keys')
   assert.ok(sharedSidebar.includes("selected={selected === 'gallery'}"), 'shared core navigation must own Gallery selection')
   assert.ok(sharedSidebar.includes('primary="图库"'), 'shared core navigation must own the Gallery label')
 })
 
-test('Web exposes files, Gallery, Sync Folders, and Storage as first-class workspace views', () => {
+test('Web exposes files, Gallery, Sync Folders, Local Storage, and Cloud Storage as first-class workspace views', () => {
   assert.ok(webApp.includes('type AppView ='), 'Web workspace view type should remain explicit')
   assert.ok(webApp.includes("useState<AppView>('files')"), 'Files should remain the initial Web workspace')
-  for (const view of ['files', 'gallery', 'sources', 'storage']) {
+  for (const view of ['files', 'gallery', 'sources', 'local-storage', 'cloud-storage']) {
     assert.ok(webApp.includes(`| '${view}'`), `AppView missing first-class workspace: ${view}`)
   }
   assert.ok(webApp.includes('<XDriveCoreWorkspaceNavItems'), 'Web must expose first-class workspaces through shared core navigation')
   assert.ok(webApp.includes('selected={appView}'), 'Web must pass its active workspace to shared core navigation')
-  for (const label of ['primary="文件"', 'primary="图库"', 'primary="同步文件夹"', 'primary="存储"']) {
+  for (const label of ['primary="文件"', 'primary="图库"', 'primary="同步文件夹"', 'primary="本地存储"', 'primary="云端存储"']) {
     assert.ok(sharedSidebar.includes(label), `shared core navigation missing: ${label}`)
   }
   assert.match(webApp, /<ExternalSourcesPanel[\s\S]*defaultTargetNodeID=/)
-  assert.match(webApp, /<StorageStatsPanel[\s\S]*scope="self"/)
+  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web local storage must use the shared workspace')
+  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web cloud storage must use the shared workspace')
   assert.equal(webApp.includes('setSourcesOpen'), false)
   assert.equal(webApp.includes("setStorageStatsScope('self')"), false)
   assert.ok(webApp.includes('<WebFileExplorer'), 'Web files workspace should use the shared Explorer adapter')
