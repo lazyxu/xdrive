@@ -62,6 +62,7 @@ export interface QuotaUsage {
   physical_used_bytes: number
   reserved_bytes: number
   available_bytes: number
+  disk_total_bytes?: number
   disk_available_bytes?: number
   logical_file_bytes: number
   trash_bytes: number

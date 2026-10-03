@@ -6,6 +6,7 @@ import type { XDriveSidebarAppearance } from './SidebarNav'
 export function XDriveSidebarStorageSummary({
   usedBytes,
   totalBytes,
+  diskTotalBytes,
   diskAvailableBytes,
   appearance = 'light',
   label = '存储',
@@ -13,6 +14,7 @@ export function XDriveSidebarStorageSummary({
 }: {
   usedBytes: number
   totalBytes: number
+  diskTotalBytes?: number
   diskAvailableBytes?: number
   appearance?: XDriveSidebarAppearance
   label?: string
@@ -22,20 +24,35 @@ export function XDriveSidebarStorageSummary({
   const boundedUsed = Math.max(0, Number.isFinite(usedBytes) ? usedBytes : 0)
   const boundedTotal = Math.max(0, Number.isFinite(totalBytes) ? totalBytes : 0)
   const hasQuota = boundedTotal > 0
+  const hasDiskTotal = diskTotalBytes !== undefined && Number.isFinite(diskTotalBytes) && diskTotalBytes > 0
   const hasDiskAvailable = diskAvailableBytes !== undefined && Number.isFinite(diskAvailableBytes) && diskAvailableBytes >= 0
+  const boundedDiskTotal = hasDiskTotal ? Math.max(0, diskTotalBytes) : null
   const boundedDiskAvailable = hasDiskAvailable ? Math.max(0, diskAvailableBytes) : null
   const usedLabel = boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB' : formatBinarySize(boundedUsed)
   const percentage = hasQuota ? (boundedUsed / boundedTotal) * 100 : null
-  const progress = percentage === null ? 0 : Math.max(0, Math.min(100, percentage))
+  const diskPercentage = !hasQuota && boundedDiskTotal !== null && boundedDiskAvailable !== null
+    ? ((boundedDiskTotal - Math.min(boundedDiskTotal, boundedDiskAvailable)) / boundedDiskTotal) * 100
+    : null
+  const progressPercentage = percentage ?? diskPercentage
+  const progress = progressPercentage === null ? 0 : Math.max(0, Math.min(100, progressPercentage))
   const overQuota = percentage !== null && percentage > 100
   const fullQuota = percentage !== null && percentage >= 100 && !overQuota
   const warningQuota = percentage !== null && percentage >= 85 && percentage < 100
+  const fullDisk = diskPercentage !== null && diskPercentage >= 100
+  const warningDisk = diskPercentage !== null && diskPercentage >= 85 && diskPercentage < 100
   const percentageLabel = percentage === null
     ? '无容量限制'
     : `${percentage >= 10 ? percentage.toFixed(0) : percentage.toFixed(1)}%`
+  const diskPercentageLabel = diskPercentage === null
+    ? null
+    : `${diskPercentage > 0 && diskPercentage < 0.1 ? '<0.1' : diskPercentage >= 10 ? diskPercentage.toFixed(0) : diskPercentage.toFixed(1)}%`
   const statusLabel = overQuota ? '已超额' : fullQuota ? '已用满' : warningQuota ? '空间紧张' : ''
   const usageLabel = statusLabel ? `${percentageLabel} · ${statusLabel}` : percentageLabel
-  const progressColor = overQuota || fullQuota ? 'error' : warningQuota ? 'warning' : 'primary'
+  const progressColor = overQuota || fullQuota || fullDisk
+    ? 'error'
+    : warningQuota || warningDisk
+      ? 'warning'
+      : 'primary'
 
   return (
     <Box
@@ -96,15 +113,17 @@ export function XDriveSidebarStorageSummary({
             overflowWrap: 'anywhere',
           }}
         >
-          磁盘可用 {formatBinarySize(boundedDiskAvailable)}
+          {diskPercentageLabel
+            ? `磁盘占用 ${diskPercentageLabel} · 可用 ${formatBinarySize(boundedDiskAvailable)}`
+            : `磁盘可用 ${formatBinarySize(boundedDiskAvailable)}`}
         </Typography>
       ) : null}
-      {hasQuota ? (
+      {progressPercentage !== null ? (
         <LinearProgress
           variant="determinate"
           value={progress}
           color={progressColor}
-          aria-label={`${label}使用率 ${usageLabel}`}
+          aria-label={hasQuota ? `${label}使用率 ${usageLabel}` : `磁盘占用 ${diskPercentageLabel}`}
           sx={{
             mt: 0.75,
             height: 4,

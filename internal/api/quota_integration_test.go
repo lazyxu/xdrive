@@ -285,6 +285,9 @@ func assertQuotaUsage(t *testing.T, h http.Handler, token string, want quotaUsag
 		t.Fatalf("available bytes=%d", got.AvailableBytes)
 	}
 	if got.QuotaBytes > 0 {
+		if got.DiskTotalBytes != nil {
+			t.Fatalf("limited quota leaked disk_total_bytes=%d", *got.DiskTotalBytes)
+		}
 		if got.DiskAvailableBytes != nil {
 			t.Fatalf("limited quota leaked disk_available_bytes=%d", *got.DiskAvailableBytes)
 		}
@@ -296,8 +299,17 @@ func assertQuotaUsage(t *testing.T, h http.Handler, token string, want quotaUsag
 			t.Fatalf("available bytes=%d exceed quota remaining=%d", got.AvailableBytes, remaining)
 		}
 	} else {
+		if got.DiskTotalBytes == nil {
+			t.Fatal("unlimited quota did not expose disk_total_bytes")
+		}
 		if got.DiskAvailableBytes == nil {
 			t.Fatal("unlimited quota did not expose disk_available_bytes")
+		}
+		if *got.DiskTotalBytes <= 0 {
+			t.Fatalf("disk total=%d want > 0", *got.DiskTotalBytes)
+		}
+		if *got.DiskAvailableBytes > *got.DiskTotalBytes {
+			t.Fatalf("disk available=%d exceeds total=%d", *got.DiskAvailableBytes, *got.DiskTotalBytes)
 		}
 		if got.AvailableBytes != *got.DiskAvailableBytes {
 			t.Fatalf("unlimited available=%d disk_available=%d", got.AvailableBytes, *got.DiskAvailableBytes)
