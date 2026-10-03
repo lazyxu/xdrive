@@ -231,7 +231,7 @@ Remote delete/rename/album mutation and general two-way synchronization are not 
 
 ### Implemented
 
-`xdrive-server source verify [--json]` currently checks core Source/SourceItem -> Node/File binding invariants, including missing/wrong-owner/wrong-type/deleted Nodes and file size/SHA drift when SourceItem SHA is available.
+`xdrive-server source verify [--json]` checks core Source/SourceItem -> Node/File binding invariants. `xdrive-server media verify [--json]` checks MediaMetadata freshness, MediaGroup/Live Photo evidence and membership invariants, and MediaDerivedResource ownership/revision/SHA/range plus validated LIVP resource consistency. Both are read-only.
 
 ### Still TODO
 
@@ -242,9 +242,7 @@ Extend read-only verification to cover:
 - verified digest-alias consistency;
 - SourceCollection membership validity;
 - SourceItemMetadata Source ownership/attachment consistency;
-- MediaMetadata revision/SHA freshness;
-- future MediaGroup membership/role consistency;
-- derived thumbnail cache consistency;
+- derived thumbnail cache consistency and storage presence;
 - stale running Source runs and incomplete migrations.
 
 Only after a read-only issue type is deterministic should an explicit idempotent repair be added, for example rebuilding local media metadata/thumbnail or requeueing a genuinely missing local file. Repair must never modify the remote provider.
@@ -290,7 +288,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata and safe embedded-JPEG previews are local; other RAW formats plus validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping remain | High |
-| P7 | Extend read-only Source/media integrity verification and add explicit idempotent local repair actions | High |
+| P7 | In progress: Source binding verify plus MediaMetadata/MediaGroup/derived-resource verify are read-only and current; thumbnail/storage cross-checks and explicit idempotent repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
 | P10 | Expand Gallery filters/search from xDrive-native metadata such as local capture time and GPS | Medium |

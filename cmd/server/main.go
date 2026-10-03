@@ -55,6 +55,11 @@ func main() {
 				log.Fatal(err)
 			}
 			return
+		case "media":
+			if err := runMediaCommand(os.Args[2:]); err != nil {
+				log.Fatal(err)
+			}
+			return
 		case "source-credentials":
 			if err := runSourceCredentialCommand(os.Args[2:]); err != nil {
 				log.Fatal(err)
