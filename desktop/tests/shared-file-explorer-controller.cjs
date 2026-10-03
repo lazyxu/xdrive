@@ -60,10 +60,13 @@ test('shared FileExplorer controller owns search pagination state', () => {
     'append',
     'cursor = page.next_cursor ??',
     'XDriveFileExplorerSearchState',
+    'query: string',
+    "query: ''",
     'xDriveFileExplorerIdleSearchState',
     'xDriveFileExplorerStartSearchState',
     'xDriveFileExplorerStartSearchLoadMoreState',
     'xDriveFileExplorerApplySearchPageState',
+    '...current',
     'xDriveFileExplorerSettleSearchState',
     'xDriveFileExplorerCanLoadMoreSearch',
     'results !== null && Boolean(cursor) && !loadingMore',
@@ -193,4 +196,18 @@ test('shared FileExplorer controller owns directory crumb normalization and open
   assert.ok(desktop.includes('xDriveFileExplorerDirectoryCrumbs(node, crumbs, searchResult?.crumbs)'), 'Desktop must use shared directory crumb planning')
   assert.equal(web.includes('normalizedSearchCrumbs'), false, 'Web must not normalize search crumbs locally')
   assert.equal(desktop.includes('normalizeSearchCrumbs'), false, 'Desktop must not normalize search crumbs locally')
+})
+
+
+test('Web and Desktop keep search pagination bound to the submitted active query', () => {
+  assert.ok(shared.includes('(query: string): XDriveFileExplorerSearchState<TResult>'), 'shared search start state must capture the submitted query')
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('const query = searchState.query'), `${label} load-more must read the active submitted query`)
+    assert.equal(source.includes('xDriveFileExplorerSearchDecision(searchValue)'), false, `${label} load-more must not reinterpret the editable search draft`)
+    assert.ok(source.includes('搜索“${searchState.query}”'), `${label} status must describe the active result set rather than the editable draft`)
+  }
+  assert.ok(web.includes('xDriveFileExplorerStartSearchState<SearchResult>(decision.query)'), 'Web must store the normalized submitted query')
+  assert.ok(web.includes('query,\n        XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,\n        searchCursor,'), 'Web pagination must request the active query with its cursor')
+  assert.ok(desktop.includes('xDriveFileExplorerStartSearchState<AgentCloudSearchResult>(decision.query)'), 'Desktop must store the normalized submitted query')
+  assert.ok(desktop.includes('cloudSearch(query, searchCursor)'), 'Desktop pagination must request the active query with its cursor')
 })

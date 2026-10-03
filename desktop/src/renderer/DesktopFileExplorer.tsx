@@ -176,7 +176,7 @@ export default function DesktopFileExplorer({
       return
     }
     const requestID = ++searchRequestRef.current
-    setSearchState(xDriveFileExplorerStartSearchState<AgentCloudSearchResult>())
+    setSearchState(xDriveFileExplorerStartSearchState<AgentCloudSearchResult>(decision.query))
     try {
       const result = await window.xdriveDesktop.agent.cloudSearch(decision.query)
       if (requestID !== searchRequestRef.current) return
@@ -198,14 +198,14 @@ export default function DesktopFileExplorer({
 
   const loadMoreSearch = async () => {
     if (!xDriveFileExplorerCanLoadMoreSearch(searchResults, searchCursor, searchLoadingMore)) return
-    const decision = xDriveFileExplorerSearchDecision(searchValue)
-    if (decision.kind !== 'search') return
+    const query = searchState.query
+    if (!query) return
     const requestID = searchRequestRef.current
     setSearchState((currentSearchState) => (
       xDriveFileExplorerStartSearchLoadMoreState(currentSearchState)
     ))
     try {
-      const result = await window.xdriveDesktop.agent.cloudSearch(decision.query, searchCursor)
+      const result = await window.xdriveDesktop.agent.cloudSearch(query, searchCursor)
       if (requestID !== searchRequestRef.current) return
       if (!result.ok) {
         onError(result.error.message)
@@ -535,7 +535,7 @@ export default function DesktopFileExplorer({
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         statusText={searchResults
-          ? `搜索“${searchValue.trim()}”`
+          ? `搜索“${searchState.query}”`
           : actionBusy === 'upload'
             ? '正在上传…'
             : actionBusy === 'paste'
