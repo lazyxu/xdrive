@@ -155,7 +155,8 @@ test('Desktop FileExplorer supports bulk download and delete', () => {
 
 test('Desktop FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Desktop internal drag/drop helper is missing')
-  assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Desktop drag/drop operation selection must use the shared operation plan')
+  assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Desktop drag/drop operation selection must use the shared drop-item plan')
+  assert.equal(explorer.includes('const targetNode = nodeByID.get(Number(target.id))'), false, 'Desktop internal drag must not resolve drop targets locally')
   assert.ok(explorer.includes('plan.operation,\n        plan.items,\n        plan.parentID,'), 'Desktop internal drag must execute the shared copy/move plan')
   assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Desktop external drop should resolve the target through shared controller logic')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
@@ -242,6 +243,6 @@ test('Desktop multi-select mutations use persistent operations instead of render
   assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must queue one shared delete plan')
   assert.ok(explorer.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop paste/drop must queue one operation')
   assert.ok(explorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must preserve copy/move operation type via shared planning')
-  assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Desktop drag/drop must preserve copy/move operation type via shared planning')
+  assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Desktop drag/drop must preserve copy/move operation type via shared drop-item planning')
   assert.equal(app.includes('for (const node of nodes) {\n            const result = await window.xdriveDesktop.agent.cloudDelete'), false, 'Desktop bulk delete must not regress to N requests')
 })

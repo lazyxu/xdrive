@@ -294,6 +294,21 @@ export function xDriveFileExplorerDropOperationPlan<
   }
 }
 
+export function xDriveFileExplorerDropItemsPlan<
+  TNode extends XDriveFileExplorerOperationNode & Pick<Node, 'type'>,
+>(
+  operation: XDriveFileExplorerCopyMoveOperation,
+  selected: XDriveFileExplorerSelectionItem[],
+  target: XDriveFileExplorerSelectionItem,
+  nodeByID: ReadonlyMap<number, TNode>,
+) {
+  const targetNode = xDriveFileExplorerNodeForItem(target, nodeByID)
+  if (!targetNode || targetNode.type !== 'dir') return null
+  const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+  const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)
+  return plan.count > 0 ? plan : null
+}
+
 export function xDriveFileExplorerOperationQueuedMessage(
   operation: XDriveFileExplorerCopyMoveOperation,
   count: number,

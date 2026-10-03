@@ -21,7 +21,7 @@ import {
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerOpenItemPlan,
   xDriveFileExplorerDownloadPlan,
-  xDriveFileExplorerDropOperationPlan,
+  xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerCanLoadMoreSearch,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerIdleSearchState,
@@ -306,11 +306,9 @@ export default function WebFileExplorer({
     target: XDriveFileExplorerItem,
     operation: 'move' | 'copy',
   ) => {
-    const targetNode = nodeByID.get(Number(target.id))
-    if (!targetNode || targetNode.type !== 'dir' || clipboardBusy) return
-    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-    const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)
-    if (plan.count === 0) return
+    if (clipboardBusy) return
+    const plan = xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)
+    if (!plan) return
     setClipboardBusy(true)
     try {
       const queued = await api.createFileOperation(plan.operation, plan.items, plan.parentID)

@@ -97,7 +97,8 @@ test('Web FileExplorer supports bulk download and delete', () => {
 
 test('Web FileExplorer supports internal and external drag and drop', () => {
   assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Web internal drag/drop helper is missing')
-  assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'internal drag should use the shared copy/move operation plan')
+  assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'internal drag should use the shared drop-item plan')
+  assert.equal(explorer.includes('const targetNode = nodeByID.get(Number(target.id))'), false, 'Web internal drag must not resolve drop targets locally')
   assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Web external drop should resolve the target through shared controller logic')
   assert.ok(explorer.includes('onUploadDroppedFiles(parentID, files)'), 'Web external drop should use the target-aware upload adapter')
@@ -158,6 +159,6 @@ test('Web multi-select mutations use persistent operations while retaining legac
   }
   assert.ok(app.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web bulk delete must queue one operation')
   assert.ok(explorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Web paste must use one shared operation plan')
-  assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Web drag/drop must use one shared operation plan')
+  assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Web drag/drop must use one shared drop-item plan')
   assert.equal(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), false, 'Web bulk delete must not regress to N requests')
 })
