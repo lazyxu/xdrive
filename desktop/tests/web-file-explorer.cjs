@@ -60,9 +60,10 @@ test('Web FileExplorer uses real file operations and server search', () => {
 
 test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pagination', () => {
   assert.ok(projection.includes('secondaryLabel: result?.path || undefined'), 'shared Explorer projection should show search-result paths')
-  assert.ok(explorer.includes('xDriveFileExplorerOpenItemPlan('), 'opening a search result should use shared open-item planning')
-  assert.ok(explorer.includes('searchByID.get(node.id)?.breadcrumbs'), 'Web open-item planning should preserve search breadcrumbs')
-  assert.ok(explorer.includes('await navigateTo(plan.crumbs)'), 'opening a search directory should navigate with shared planned crumbs')
+  assert.ok(explorer.includes('xDriveFileExplorerDispatchOpenItem({'), 'opening a search result should use shared open-item dispatch')
+  assert.ok(explorer.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?.breadcrumbs'), 'Web shared open dispatch should preserve search breadcrumbs')
+  assert.ok(explorer.includes('navigate: navigateTo'), 'opening a search directory should inject shared navigation')
+  assert.ok(explorer.includes('openFile: async (node) => {'), 'opening a file should keep Web download execution local')
   assert.ok(explorer.includes('useXDriveFileExplorerSearch<SearchResult>'), 'Web search lifecycle must come from the shared React controller')
   assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Web search draft must come from the shared React controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Web must not own search draft state')

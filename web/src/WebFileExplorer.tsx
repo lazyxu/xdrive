@@ -17,7 +17,7 @@ import type {
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerNodeForItem,
-  xDriveFileExplorerOpenItemPlan,
+  xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerExternalDropParentID,
@@ -176,24 +176,20 @@ export default function WebFileExplorer({
   }
 
   const openItem = async (item: XDriveFileExplorerItem) => {
-    const node = xDriveFileExplorerNodeForItem(item, nodeByID)
-    if (!node) return
-
-    const plan = xDriveFileExplorerOpenItemPlan(
-      node,
-      crumbs,
-      searchByID.get(node.id)?.breadcrumbs,
-    )
-    if (plan.kind === 'file') {
-      try {
-        await api.download(plan.node)
-      } catch (error) {
-        onError(error)
-      }
-      return
-    }
-
-    await navigateTo(plan.crumbs)
+    await xDriveFileExplorerDispatchOpenItem({
+      item,
+      nodeByID,
+      currentCrumbs: crumbs,
+      searchCrumbsForNode: (node) => searchByID.get(node.id)?.breadcrumbs,
+      openFile: async (node) => {
+        try {
+          await api.download(node)
+        } catch (error) {
+          onError(error)
+        }
+      },
+      navigate: navigateTo,
+    })
   }
 
   const getItemMenuItems = (item: XDriveFileExplorerItem) => {
