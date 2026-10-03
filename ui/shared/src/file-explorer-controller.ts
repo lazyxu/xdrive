@@ -221,3 +221,15 @@ export function xDriveFileExplorerDirectoryCrumbs<
   }
   return [...currentCrumbs, { id: node.id, name: node.name }]
 }
+
+export function xDriveFileExplorerDeleteOperationPlan<
+  TNode extends Pick<Node, 'id' | 'revision'>,
+>(nodes: readonly TNode[]) {
+  const count = nodes.length
+  return {
+    operation: 'delete' as const,
+    items: nodes.map((node) => ({ id: node.id, revision: node.revision })),
+    count,
+    message: `已将 ${count} 个项目加入删除任务。`,
+  }
+}

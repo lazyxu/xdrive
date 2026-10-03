@@ -76,8 +76,8 @@ test('Web FileExplorer supports bulk download and delete', () => {
   assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Web shared bulk download adapter is missing')
   assert.ok(explorer.includes('onRemoveMany(nodes)'), 'Web shared bulk delete adapter is missing')
   assert.ok(app.includes('const removeMany = (nodes: Node[]) => {'), 'Web bulk delete confirmation flow is missing')
-  assert.ok(app.includes("const operation = await api.createFileOperation("), 'Web bulk delete must enqueue a persistent operation')
-  assert.ok(app.includes("'delete',"), 'Web bulk delete must enqueue delete semantics')
+  assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Web bulk delete must use the shared delete plan')
+  assert.ok(app.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web bulk delete must enqueue a persistent operation')
   assert.ok(app.includes('rememberFileOperation(operation)'), 'Web bulk delete must seed task state immediately')
 })
 
@@ -134,7 +134,7 @@ test('Web multi-select mutations use persistent operations while retaining legac
   ]) {
     assert.ok(api.includes(token), `missing Web persistent-operation contract: ${token}`)
   }
-  assert.ok(app.includes("const operation = await api.createFileOperation("), 'Web bulk delete must queue one operation')
+  assert.ok(app.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web bulk delete must queue one operation')
   assert.ok(explorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Web paste must use one shared operation plan')
   assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Web drag/drop must use one shared operation plan')
   assert.equal(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), false, 'Web bulk delete must not regress to N requests')

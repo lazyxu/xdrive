@@ -130,10 +130,9 @@ test('Desktop FileExplorer supports bulk download and delete', () => {
   assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
   assert.ok(explorer.includes('onDeleteMany(nodes)'), 'Desktop shared bulk delete adapter is missing')
   assert.ok(app.includes('const removeCloudNodes = (nodes: AgentCloudNode[]) => {'), 'Desktop bulk delete confirmation flow is missing')
-  assert.ok(app.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop bulk delete must enqueue one persistent file operation')
-  assert.ok(app.includes("'delete',"), 'Desktop bulk delete must preserve delete semantics')
+  assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must use the shared delete plan')
+  assert.ok(app.includes('plan.operation,\n            plan.items,'), 'Desktop bulk delete must enqueue one persistent file operation')
   assert.ok(app.includes('rememberCloudFileOperation(result.data)'), 'Desktop bulk delete must seed task state immediately')
-  assert.ok(app.includes('nodes.map((node) => ({ id: node.id, revision: node.revision }))'), 'Desktop bulk delete must preserve revision refs')
 })
 
 test('Desktop FileExplorer supports internal and external drag and drop', () => {
@@ -214,7 +213,7 @@ test('Desktop FileExplorer uses cursor-paged server sorting for cloud directorie
 })
 
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
-  assert.ok(app.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop bulk delete must queue one operation')
+  assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must queue one shared delete plan')
   assert.ok(explorer.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop paste/drop must queue one operation')
   assert.ok(explorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must preserve copy/move operation type via shared planning')
   assert.ok(explorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Desktop drag/drop must preserve copy/move operation type via shared planning')

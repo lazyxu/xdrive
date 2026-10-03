@@ -113,12 +113,14 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(webExplorer.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'Web paste/drop is not queued')
   assert.ok(webExplorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Web paste must use the shared operation plan')
   assert.ok(webExplorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Web drag/drop must use the shared operation plan')
-  assert.ok(web.includes("const operation = await api.createFileOperation("), 'Web bulk delete is not queued')
+  assert.ok(web.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Web bulk delete must use the shared delete plan')
+  assert.ok(web.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web bulk delete is not queued')
   assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste is not queued')
   assert.ok(desktopExplorer.includes('plan.operation,\n        plan.items,\n        plan.parentID,'), 'Desktop paste/drop must execute the shared operation plan')
   assert.ok(desktopExplorer.includes('xDriveFileExplorerClipboardOperationPlan('), 'Desktop paste must use the shared operation plan')
   assert.ok(desktopExplorer.includes('xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)'), 'Desktop drag/drop must use the shared operation plan')
-  assert.ok(desktop.includes("window.xdriveDesktop.agent.cloudCreateFileOperation("), 'Desktop bulk delete is not queued')
+  assert.ok(desktop.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must use the shared delete plan')
+  assert.ok(desktop.includes('plan.operation,\n            plan.items,'), 'Desktop bulk delete is not queued')
 })
 
 test('shared file-operation transition snapshot owns active-to-terminal refresh decisions', () => {
@@ -137,4 +139,21 @@ test('shared file-operation transition snapshot owns active-to-terminal refresh 
   assert.equal(desktop.includes('const previous = cloudFileOperationStatusRef.current'), false, 'Desktop must not duplicate transition scanning')
   assert.ok(web.includes('fileOperationStatusRef.current = transition.statuses'), 'Web must persist the shared transition snapshot')
   assert.ok(desktop.includes('cloudFileOperationStatusRef.current = transition.statuses'), 'Desktop must persist the shared transition snapshot')
+})
+
+test('shared FileExplorer delete plan owns refs, count and queued feedback', () => {
+  const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
+  for (const token of [
+    'xDriveFileExplorerDeleteOperationPlan',
+    "operation: 'delete' as const",
+    'items: nodes.map((node) => ({ id: node.id, revision: node.revision }))',
+    'const count = nodes.length',
+    '加入删除任务',
+  ]) {
+    assert.ok(controller.includes(token), `shared FileExplorer delete plan missing: ${token}`)
+  }
+  assert.equal(web.includes("nodes.map((node) => ({ id: node.id, revision: node.revision }))"), false, 'Web must not build bulk-delete refs locally')
+  assert.equal(desktop.includes("nodes.map((node) => ({ id: node.id, revision: node.revision }))"), false, 'Desktop must not build bulk-delete refs locally')
+  assert.ok(web.includes('setFeedback({ tone: \'good\', message: plan.message })'), 'Web must use the shared delete queued message')
+  assert.ok(desktop.includes('setNotice(plan.message)'), 'Desktop must use the shared delete queued message')
 })

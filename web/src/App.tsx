@@ -60,7 +60,7 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
 } from '../../ui/shared/src'
-import { xDriveFileOperationActive, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { xDriveFileExplorerDeleteOperationPlan, xDriveFileOperationActive, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -897,19 +897,17 @@ function FileManager({
   }
 
   const removeMany = (nodes: Node[]) => {
-    if (nodes.length === 0) return
+    const plan = xDriveFileExplorerDeleteOperationPlan(nodes)
+    if (plan.count === 0) return
     setConfirmAction({
-      title: `将所选 ${nodes.length} 个项目移到回收站？`,
+      title: `将所选 ${plan.count} 个项目移到回收站？`,
       description: '所选文件和文件夹会从同步文件夹中移除，但之后仍可从回收站恢复。',
       confirmLabel: '移到回收站',
       intent: 'danger',
       run: async () => {
-        const operation = await api.createFileOperation(
-          'delete',
-          nodes.map((node) => ({ id: node.id, revision: node.revision })),
-        )
+        const operation = await api.createFileOperation(plan.operation, plan.items)
         rememberFileOperation(operation)
-        setFeedback({ tone: 'good', message: `已将 ${nodes.length} 个项目加入删除任务。` })
+        setFeedback({ tone: 'good', message: plan.message })
       },
     })
   }
