@@ -786,7 +786,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	}
 	requireRaw(t, "server backup Docker-daemon boundary", serverBackupScript,
 		"tar -cf - .",
-		`> "$partial_dir/blobs.tar"`,
+		`run_to_file_with_progress "备份文件数据" "$partial_dir/blobs.tar" "$blob_bytes"`,
+		`"$@" > "$output"`,
 	)
 	if strings.Contains(serverBackupScript, `-v "$partial_dir:/backup"`) {
 		t.Errorf("server backup must stream blobs from the Docker daemon instead of bind-mounting a job-container path")

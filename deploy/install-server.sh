@@ -231,17 +231,25 @@ remove_legacy_system_manager_link() {
 }
 
 acquire_install_lock() {
+  local owner_pid=""
   prepare_host_layout
   command -v flock >/dev/null 2>&1 || {
     echo "xDrive server installer: flock is required for transactional install/update locking." >&2
     exit 1
   }
-  exec 9>"$INSTALL_LOCK_PATH"
+  # Open without truncating: a competing updater must not erase the current
+  # lock owner's PID before it discovers that flock is already held.
+  exec 9<>"$INSTALL_LOCK_PATH"
   if ! flock -n 9; then
-    echo "xDrive server installer: another install/update is already running for $XDRIVE_HOME." >&2
+    owner_pid="$(head -n1 "$INSTALL_LOCK_PATH" 2>/dev/null | tr -dc '0-9' || true)"
+    if [[ "$owner_pid" =~ ^[0-9]+$ ]]; then
+      echo "xDrive server installer: another install/update is already running for $XDRIVE_HOME (pid $owner_pid)." >&2
+    else
+      echo "xDrive server installer: another install/update is already running for $XDRIVE_HOME." >&2
+    fi
     exit 75
   fi
-  printf '%s\n' "$$" 1>&9
+  printf '%s\n' "$$" > "$INSTALL_LOCK_PATH"
 }
 
 usage() {
@@ -1585,16 +1593,50 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
 
   backup_output=""
   backup_error="$STAGING_DIR/pre-upgrade-backup.err"
+  backup_stdout="$STAGING_DIR/pre-upgrade-backup.out"
   target_server_image="$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 
-  if backup_output="$("$STAGING_DIR/server-backup.sh" \
+  run_pre_upgrade_backup() {
+    local server_image_override="${1:-}" backup_pid status=0 shown_lines=0 current_lines=0
+    local -a backup_env=(
+      "XD_BACKUP_PROGRESS_FILE=${XD_INSTALL_PROGRESS_FILE:-}"
+      "XD_BACKUP_PROGRESS_STAGE_CURRENT=5"
+      "XD_BACKUP_PROGRESS_STAGE_TOTAL=$STAGE_TOTAL"
+      "XD_BACKUP_PROGRESS_STAGE_NAME=创建升级前备份"
+    )
+    [[ -n "$server_image_override" ]] && backup_env+=("XD_SERVER_IMAGE=$server_image_override")
+    : > "$backup_stdout"
+    : > "$backup_error"
+
+    env "${backup_env[@]}" "$STAGING_DIR/server-backup.sh" \
       --config-dir "$XDRIVE_HOME" \
       --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
-      --leave-server-stopped </dev/null 2>"$backup_error")"; then
-    cat "$backup_error" >&2 || true
+      --leave-server-stopped </dev/null >"$backup_stdout" 2>"$backup_error" &
+    backup_pid=$!
+
+    while kill -0 "$backup_pid" 2>/dev/null; do
+      current_lines="$(wc -l < "$backup_error" 2>/dev/null || echo 0)"
+      [[ "$current_lines" =~ ^[0-9]+$ ]] || current_lines=0
+      if (( current_lines > shown_lines )); then
+        sed -n "$(( shown_lines + 1 )),${current_lines}p" "$backup_error" >&2 || true
+        shown_lines="$current_lines"
+      fi
+      sleep 1
+    done
+    if wait "$backup_pid"; then status=0; else status=$?; fi
+    current_lines="$(wc -l < "$backup_error" 2>/dev/null || echo 0)"
+    [[ "$current_lines" =~ ^[0-9]+$ ]] || current_lines=0
+    if (( current_lines > shown_lines )); then
+      sed -n "$(( shown_lines + 1 )),${current_lines}p" "$backup_error" >&2 || true
+    fi
+    backup_output="$(cat "$backup_stdout")"
+    return "$status"
+  }
+
+  if run_pre_upgrade_backup ""; then
+    :
   else
     backup_status=$?
-    cat "$backup_error" >&2 || true
 
     # Bootstrap compatibility: the currently deployed image may predate the
     # verifier rule that excludes generated .xdrive-media cache files. Keep the
@@ -1607,16 +1649,10 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     if grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-media/' "$backup_error" &&
        ! grep -q '"ignored_derived_files"' "$backup_error"; then
       echo "[xDrive] current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier $target_server_image ..." >&2
-      : > "$backup_error"
-      if backup_output="$(XD_SERVER_IMAGE="$target_server_image" "$STAGING_DIR/server-backup.sh" \
-          --config-dir "$XDRIVE_HOME" \
-          --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
-          --leave-server-stopped </dev/null 2>"$backup_error")"; then
-        cat "$backup_error" >&2 || true
+      if run_pre_upgrade_backup "$target_server_image"; then
         echo "[xDrive] target verifier accepted the snapshot; continuing pre-upgrade backup." >&2
       else
         backup_status=$?
-        cat "$backup_error" >&2 || true
         echo "xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment." >&2
         exit "$backup_status"
       fi

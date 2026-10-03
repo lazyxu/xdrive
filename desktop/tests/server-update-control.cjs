@@ -33,7 +33,7 @@ test('shared server update UI exposes source, channel, status and progress', () 
     'stable',
     'master',
     'LinearProgress',
-    '下载进度',
+    '当前阶段数据',
     '开始时间',
     '完成时间',
     '请求 ID',
@@ -78,5 +78,8 @@ test('host control reuses transactional xdrive-server update and installer progr
   assert.ok(hostControl.includes('9>&- &'), 'host runner must not inherit the installer transaction lock fd')
   assert.ok(installer.includes('XD_INSTALL_PROGRESS_FILE'), 'installer progress bridge missing')
   assert.ok(installer.includes('write_install_progress'), 'installer progress writer missing')
+  assert.ok(installer.includes('XD_BACKUP_PROGRESS_FILE'), 'installer must bridge backup progress into update progress')
+  assert.ok(hostManager.includes('install_update_lock_busy'), 'host manager must reject duplicate updates before downloading the installer')
+  assert.ok(installer.includes('exec 9<>"$INSTALL_LOCK_PATH"'), 'installer lock check must preserve the current lock owner metadata')
   assert.ok(installer.includes('server-control.sh'), 'installer must install host-control helper')
 })

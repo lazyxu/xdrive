@@ -58,6 +58,105 @@ env_value() {
   grep "^${key}=" "$ENV_PATH" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\r' || true
 }
 
+
+BACKUP_PROGRESS_FILE="${XD_BACKUP_PROGRESS_FILE:-}"
+BACKUP_PROGRESS_STAGE_CURRENT="${XD_BACKUP_PROGRESS_STAGE_CURRENT:-0}"
+BACKUP_PROGRESS_STAGE_TOTAL="${XD_BACKUP_PROGRESS_STAGE_TOTAL:-0}"
+BACKUP_PROGRESS_STAGE_NAME="${XD_BACKUP_PROGRESS_STAGE_NAME:-create backup}"
+BACKUP_PROGRESS_LOG_INTERVAL="${XD_BACKUP_PROGRESS_LOG_INTERVAL_SECONDS:-5}"
+case "$BACKUP_PROGRESS_LOG_INTERVAL" in
+  ''|*[!0-9]*) BACKUP_PROGRESS_LOG_INTERVAL=5 ;;
+esac
+(( BACKUP_PROGRESS_LOG_INTERVAL >= 1 )) || BACKUP_PROGRESS_LOG_INTERVAL=1
+
+write_backup_progress() {
+  local service="${1:-}" bytes_done="${2:-0}" bytes_total="${3:-0}" target="$BACKUP_PROGRESS_FILE" tmp
+  [[ -n "$target" ]] || return 0
+  [[ "$bytes_done" =~ ^[0-9]+$ ]] || bytes_done=0
+  [[ "$bytes_total" =~ ^[0-9]+$ ]] || bytes_total=0
+  mkdir -p "$(dirname "$target")" 2>/dev/null || return 0
+  tmp="$(mktemp "$(dirname "$target")/.backup-progress.XXXXXX" 2>/dev/null)" || return 0
+  {
+    printf 'stage_current=%s\n' "$BACKUP_PROGRESS_STAGE_CURRENT"
+    printf 'stage_total=%s\n' "$BACKUP_PROGRESS_STAGE_TOTAL"
+    printf 'stage=%s\n' "$BACKUP_PROGRESS_STAGE_NAME"
+    printf 'service=%s\n' "$service"
+    printf 'bytes_done=%s\n' "$bytes_done"
+    printf 'bytes_total=%s\n' "$bytes_total"
+  } > "$tmp"
+  chmod 0644 "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$target" 2>/dev/null || rm -f "$tmp"
+}
+
+format_bytes() {
+  awk -v bytes="${1:-0}" 'BEGIN {
+    split("B KiB MiB GiB TiB", unit, " ");
+    n = bytes + 0; i = 1;
+    while (n >= 1024 && i < 5) { n /= 1024; i++ }
+    if (i == 1) printf "%.0f %s", n, unit[i]; else printf "%.1f %s", n, unit[i]
+  }'
+}
+
+file_size_bytes() {
+  local file="$1"
+  stat -c %s "$file" 2>/dev/null || printf '0\n'
+}
+
+print_backup_progress() {
+  local label="$1" bytes_done="${2:-0}" bytes_total="${3:-0}" pct
+  if (( bytes_total > 0 )); then
+    (( bytes_done > bytes_total )) && bytes_done="$bytes_total"
+    pct=$(( bytes_done * 100 / bytes_total ))
+    printf '[xDrive] backup: %s | %s / %s (%s%%)\n' \
+      "$label" "$(format_bytes "$bytes_done")" "$(format_bytes "$bytes_total")" "$pct" >&2
+  elif (( bytes_done > 0 )); then
+    printf '[xDrive] backup: %s | %s written\n' "$label" "$(format_bytes "$bytes_done")" >&2
+  else
+    printf '[xDrive] backup: %s\n' "$label" >&2
+  fi
+}
+
+run_to_file_with_progress() {
+  local label="$1" output="$2" bytes_total="${3:-0}" pid status=0 bytes_done=0 now last_log=0
+  shift 3
+
+  write_backup_progress "$label" 0 "$bytes_total"
+  print_backup_progress "$label" 0 "$bytes_total"
+  "$@" > "$output" &
+  pid=$!
+
+  while kill -0 "$pid" 2>/dev/null; do
+    bytes_done="$(file_size_bytes "$output")"
+    [[ "$bytes_done" =~ ^[0-9]+$ ]] || bytes_done=0
+    if (( bytes_total > 0 && bytes_done > bytes_total )); then
+      bytes_done="$bytes_total"
+    fi
+    write_backup_progress "$label" "$bytes_done" "$bytes_total"
+    now="$(date +%s)"
+    if (( now - last_log >= BACKUP_PROGRESS_LOG_INTERVAL )); then
+      print_backup_progress "$label" "$bytes_done" "$bytes_total"
+      last_log="$now"
+    fi
+    sleep 1
+  done
+
+  if wait "$pid"; then
+    status=0
+  else
+    status=$?
+  fi
+  bytes_done="$(file_size_bytes "$output")"
+  [[ "$bytes_done" =~ ^[0-9]+$ ]] || bytes_done=0
+  if (( status == 0 && bytes_total > 0 )); then
+    bytes_done="$bytes_total"
+  elif (( bytes_total > 0 && bytes_done > bytes_total )); then
+    bytes_done="$bytes_total"
+  fi
+  write_backup_progress "$label" "$bytes_done" "$bytes_total"
+  print_backup_progress "$label" "$bytes_done" "$bytes_total"
+  return "$status"
+}
+
 wait_postgres() {
   local i
   for i in $(seq 1 60); do
@@ -132,6 +231,9 @@ fi
 postgres_id="$(compose ps -q postgres | head -n1)"
 postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </dev/null)"
 
+write_backup_progress "计算备份大小" 0 0
+print_backup_progress "计算备份大小" 0 0
+
 blob_bytes="$(docker run --rm --entrypoint sh \
   -v "$data_source:/data:ro" \
   "$postgres_image" \
@@ -165,6 +267,8 @@ if [[ "$worker_was_running" == "1" ]]; then
 fi
 compose stop server >/dev/null 2>&1 || true
 
+write_backup_progress "一致性检查" 0 0
+print_backup_progress "一致性检查" 0 0
 verify_status=0
 compose run -T --rm --no-deps server storage verify --json </dev/null > "$partial_dir/verify.json" || verify_status=$?
 if [[ "$verify_status" != "0" && "$ALLOW_INCONSISTENT" != "1" ]]; then
@@ -174,12 +278,17 @@ if [[ "$verify_status" != "0" && "$ALLOW_INCONSISTENT" != "1" ]]; then
   exit "$verify_status"
 fi
 
-compose exec -T postgres pg_dump -U xdrive -d xdrive -Fc > "$partial_dir/database.dump"
+run_to_file_with_progress "备份数据库" "$partial_dir/database.dump" 0 \
+  compose exec -T postgres pg_dump -U xdrive -d xdrive -Fc
 
-docker run --rm --entrypoint sh \
-  -v "$data_source:/data:ro" \
-  "$postgres_image" \
-  -c 'cd /data && tar -cf - .' </dev/null > "$partial_dir/blobs.tar"
+run_to_file_with_progress "备份文件数据" "$partial_dir/blobs.tar" "$blob_bytes" \
+  docker run --rm --entrypoint sh \
+    -v "$data_source:/data:ro" \
+    "$postgres_image" \
+    -c 'cd /data && tar -cf - .'
+
+write_backup_progress "生成备份清单" 0 0
+print_backup_progress "生成备份清单" 0 0
 
 created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 server_image="$(compose config --images | grep 'xdrive-server' | head -n1 || true)"
@@ -208,11 +317,32 @@ cat > "$partial_dir/manifest.json" <<EOF
 }
 EOF
 
+checksum_total=0
+for checksum_name in database.dump blobs.tar verify.json manifest.json; do
+  checksum_size="$(file_size_bytes "$partial_dir/$checksum_name")"
+  [[ "$checksum_size" =~ ^[0-9]+$ ]] || checksum_size=0
+  checksum_total=$(( checksum_total + checksum_size ))
+done
+checksum_done=0
+: > "$partial_dir/SHA256SUMS.txt"
+for checksum_name in database.dump blobs.tar verify.json manifest.json; do
+  write_backup_progress "校验备份完整性 · $checksum_name" "$checksum_done" "$checksum_total"
+  print_backup_progress "校验备份完整性 · $checksum_name" "$checksum_done" "$checksum_total"
+  (
+    cd "$partial_dir"
+    sha256sum "$checksum_name"
+  ) >> "$partial_dir/SHA256SUMS.txt"
+  checksum_size="$(file_size_bytes "$partial_dir/$checksum_name")"
+  [[ "$checksum_size" =~ ^[0-9]+$ ]] || checksum_size=0
+  checksum_done=$(( checksum_done + checksum_size ))
+  write_backup_progress "校验备份完整性 · $checksum_name" "$checksum_done" "$checksum_total"
+done
 (
   cd "$partial_dir"
-  sha256sum database.dump blobs.tar verify.json manifest.json > SHA256SUMS.txt
   sha256sum -c SHA256SUMS.txt >/dev/null
 )
+write_backup_progress "完成升级前备份" "$checksum_total" "$checksum_total"
+print_backup_progress "完成升级前备份" "$checksum_total" "$checksum_total"
 
 mv "$partial_dir" "$final_dir"
 printf '%s\n' "$final_dir"
