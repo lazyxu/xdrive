@@ -42,6 +42,35 @@ export async function xDriveResolveFileExplorerPath<
   return crumbs
 }
 
+export type XDriveFileExplorerPathRoot = { id: number }
+
+export async function xDriveFileExplorerSubmitPath<
+  TNode extends XDriveFileExplorerPathNode,
+>({
+  rawPath,
+  currentCrumbs,
+  loadRoot,
+  listChildren,
+  navigate,
+}: {
+  rawPath: string
+  currentCrumbs: readonly XDriveFileExplorerPathCrumb[]
+  loadRoot: () => Promise<XDriveFileExplorerPathRoot>
+  listChildren: (parentID: number) => Promise<TNode[]>
+  navigate: (crumbs: XDriveFileExplorerPathCrumb[]) => Promise<void>
+}) {
+  const root = await loadRoot()
+  const rootName = currentCrumbs[0]?.name || '我的文件'
+  const nextCrumbs = await xDriveResolveFileExplorerPath({
+    rawPath,
+    rootID: root.id,
+    rootName,
+    listChildren,
+  })
+  await navigate(nextCrumbs)
+  return nextCrumbs
+}
+
 export const XDRIVE_FILE_EXPLORER_SEARCH_MIN_CHARS = 2
 export const XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE = 200
 

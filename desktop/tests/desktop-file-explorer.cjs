@@ -50,7 +50,9 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
-  assert.ok(explorer.includes('xDriveResolveFileExplorerPath({'), 'Desktop Explorer should delegate typed-path traversal to the shared controller')
+  assert.ok(explorer.includes('xDriveFileExplorerSubmitPath({'), 'Desktop Explorer should delegate typed-path submission to the shared controller')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudRoot()'), 'Desktop typed-path submission should keep Agent root loading local')
+  assert.equal(explorer.includes('xDriveResolveFileExplorerPath({'), false, 'Desktop must not orchestrate typed-path traversal locally')
   assert.ok(explorer.includes('xDriveFileExplorerOpenItemPlan('), 'Desktop open-item behavior should use shared planning')
   assert.ok(explorer.includes('searchByID.get(node.id)?.crumbs'), 'Desktop open-item planning should preserve search crumbs')
   assert.ok(explorer.includes('await navigateTo(plan.crumbs)'), 'Desktop search-directory navigation should use shared planned crumbs')
