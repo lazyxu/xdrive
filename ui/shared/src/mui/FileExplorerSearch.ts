@@ -31,13 +31,23 @@ export function useXDriveFileExplorerSearch<
   onError: (error: unknown) => void
 }) {
   const requestRef = useRef(0)
+  const [searchValue, setSearchValueState] = useState('')
   const [searchState, setSearchState] = useState<XDriveFileExplorerSearchState<TResult>>(
     () => xDriveFileExplorerIdleSearchState<TResult>(),
   )
 
   const clearSearch = () => {
     requestRef.current += 1
+    setSearchValueState('')
     setSearchState(xDriveFileExplorerIdleSearchState<TResult>())
+  }
+
+  const changeSearchValue = (value: string) => {
+    if (!value.trim()) {
+      clearSearch()
+      return
+    }
+    setSearchValueState(value)
   }
 
   const submitSearch = async (rawQuery: string) => {
@@ -98,11 +108,13 @@ export function useXDriveFileExplorerSearch<
   }
 
   return {
+    searchValue,
     searchState,
     searchResults: searchState.results,
     searchCursor: searchState.cursor,
     searchLoading: searchState.loading,
     searchLoadingMore: searchState.loadingMore,
+    changeSearchValue,
     clearSearch,
     submitSearch,
     loadMoreSearch,

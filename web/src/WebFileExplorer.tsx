@@ -87,13 +87,14 @@ export default function WebFileExplorer({
   onError: (error: unknown) => void
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
-  const [searchValue, setSearchValue] = useState('')
   const {
+    searchValue,
     searchState,
     searchResults,
     searchCursor,
     searchLoading,
     searchLoadingMore,
+    changeSearchValue,
     clearSearch,
     submitSearch,
     loadMoreSearch,
@@ -308,10 +309,7 @@ export default function WebFileExplorer({
         pathValue={crumbs.map((crumb) => crumb.name).join('/')}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}
-        onSearchValueChange={(value) => {
-          setSearchValue(value)
-          if (!value.trim()) clearSearch()
-        }}
+        onSearchValueChange={changeSearchValue}
         onSearch={(query) => { void submitSearch(query) }}
         canGoBack={canGoBack}
         canGoForward={canGoForward}

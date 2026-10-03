@@ -95,8 +95,12 @@ test('shared FileExplorer controller owns search pagination state', () => {
   }
   for (const token of [
     'useRef(0)',
+    "const [searchValue, setSearchValueState] = useState('')",
     'useState<XDriveFileExplorerSearchState<TResult>>',
     'xDriveFileExplorerIdleSearchState<TResult>()',
+    "setSearchValueState('')",
+    'const changeSearchValue = (value: string) =>',
+    'if (!value.trim()) {',
     'const requestID = ++requestRef.current',
     'requestID !== requestRef.current',
     'xDriveFileExplorerStartSearchState<TResult>(decision.query)',
@@ -112,6 +116,9 @@ test('shared FileExplorer controller owns search pagination state', () => {
   }
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('useXDriveFileExplorerSearch<'), `${label} must use the shared React search lifecycle controller`)
+    assert.ok(source.includes('onSearchValueChange={changeSearchValue}'), `${label} must use the shared search draft controller`)
+    assert.equal(source.includes('const [searchValue, setSearchValue] = useState'), false, `${label} must not own search draft state`)
+    assert.equal(source.includes("setSearchValue('')"), false, `${label} must not clear the search draft separately`)
     assert.ok(source.includes('xDriveFileExplorerPaginationPresentation({'), `${label} must derive Explorer pagination presentation through shared logic`)
     assert.ok(source.includes("explorerPagination.mode === 'search'"), `${label} search pagination must be wired to Explorer loadMore`)
     assert.equal(source.includes('searchRequestRef'), false, `${label} must not own search request sequencing`)

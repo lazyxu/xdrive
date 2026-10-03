@@ -62,6 +62,9 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
 
 test('Desktop FileExplorer paginates server search results through Agent cursors', () => {
   assert.ok(explorer.includes('useXDriveFileExplorerSearch<AgentCloudSearchResult>'), 'Desktop search lifecycle must come from the shared React controller')
+  assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Desktop search draft must come from the shared React controller')
+  assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Desktop must not own search draft state')
+  assert.equal(explorer.includes("setSearchValue('')"), false, 'Desktop navigation must not clear search draft separately')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop search controller must keep Agent cursor execution local')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
   assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
