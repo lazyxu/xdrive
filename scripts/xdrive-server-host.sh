@@ -51,6 +51,7 @@ Usage:
   xdrive-server verify [--online] [--repair [--dry-run]]
   xdrive-server source verify [--json]
   xdrive-server media verify [--json]
+  xdrive-server media repair [--json] [--dry-run]
   xdrive-server migrate-user USER
   xdrive-server cleanup legacy-volumes [--yes]
   xdrive-server uninstall [--purge-data] [--purge-backups] --yes
@@ -722,8 +723,24 @@ media_cmd() {
       shift
       compose exec -T server xdrive-server media verify "$@"
       ;;
+    repair)
+      shift
+      local dry_run=0 status arg
+      for arg in "$@"; do
+        [[ "$arg" == "--dry-run" ]] && dry_run=1
+      done
+      if compose exec -T server xdrive-server media repair "$@"; then status=0; else status=$?; fi
+      if [[ "$dry_run" != "1" ]]; then
+        if [[ "$status" -eq 0 ]]; then
+          record_system_audit system.media_repair success
+        else
+          record_system_audit system.media_repair failure
+        fi
+      fi
+      return "$status"
+      ;;
     *)
-      echo "usage: xdrive-server media verify [--json]" >&2
+      echo "usage: xdrive-server media <verify|repair> [options]" >&2
       return 2
       ;;
   esac

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/maintenance"
@@ -13,10 +15,17 @@ import (
 )
 
 func runMediaCommand(args []string) error {
-	if len(args) == 0 || args[0] != "verify" {
-		return fmt.Errorf("usage: xdrive-server media verify [--json]")
+	if len(args) == 0 {
+		return fmt.Errorf("usage: xdrive-server media <verify|repair> [options]")
 	}
-	return runMediaVerify(args[1:])
+	switch args[0] {
+	case "verify":
+		return runMediaVerify(args[1:])
+	case "repair":
+		return runMediaRepair(args[1:])
+	default:
+		return fmt.Errorf("usage: xdrive-server media <verify|repair> [options]")
+	}
 }
 
 func runMediaVerify(args []string) error {
@@ -71,6 +80,75 @@ func runMediaVerify(args []string) error {
 	}
 	if !report.OK() {
 		return fmt.Errorf("media consistency check failed")
+	}
+	return nil
+}
+
+func runMediaRepair(args []string) error {
+	fs := flag.NewFlagSet("media repair", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "write machine-readable JSON")
+	dryRun := fs.Bool("dry-run", false, "show deterministic repairs without changing metadata")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: xdrive-server media repair [--json] [--dry-run]")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	report, err := maintenance.RepairMedia(
+		context.Background(),
+		db,
+		cfg.StorageRoot,
+		*dryRun,
+	)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf(
+			"media repair: dry_run=%t actions=%d skipped=%d before_issues=%d after_issues=%d\n",
+			report.DryRun,
+			len(report.Actions),
+			len(report.Skipped),
+			len(report.Before.Issues),
+			len(report.After.Issues),
+		)
+		for _, action := range report.Actions {
+			fmt.Printf(
+				"REPAIR_MEDIA_THUMBNAIL owner=%d node=%d storage_key=%q reasons=%q applied=%t\n",
+				action.OwnerID,
+				action.NodeID,
+				action.StorageKey,
+				strings.Join(action.Reasons, ","),
+				action.Applied,
+			)
+		}
+		for _, issue := range report.Skipped {
+			fmt.Printf(
+				"SKIP_MEDIA_REPAIR owner=%d node=%d group=%d role=%q reason=%s\n",
+				issue.OwnerID,
+				issue.NodeID,
+				issue.GroupID,
+				issue.Role,
+				issue.Reason,
+			)
+		}
+	}
+	if !*dryRun && !report.After.OK() {
+		return fmt.Errorf("media consistency remains inconsistent after repair")
 	}
 	return nil
 }

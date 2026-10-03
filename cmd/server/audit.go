@@ -24,9 +24,7 @@ func runAuditCommand(args []string) error {
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected positional arguments")
 	}
-	switch strings.TrimSpace(*action) {
-	case auditpkg.ActionBackup, auditpkg.ActionRestore, auditpkg.ActionUpdate:
-	default:
+	if !supportedSystemAuditAction(strings.TrimSpace(*action)) {
 		return fmt.Errorf("unsupported system audit action %q", *action)
 	}
 	if *result != auditpkg.ResultSuccess && *result != auditpkg.ResultFailure {
@@ -54,4 +52,17 @@ func runAuditCommand(args []string) error {
 		Result:        *result,
 		Metadata:      metadata,
 	})
+}
+
+func supportedSystemAuditAction(action string) bool {
+	switch strings.TrimSpace(action) {
+	case auditpkg.ActionBackup,
+		auditpkg.ActionRestore,
+		auditpkg.ActionUpdate,
+		auditpkg.ActionStorageRepair,
+		auditpkg.ActionMediaRepair:
+		return true
+	default:
+		return false
+	}
 }

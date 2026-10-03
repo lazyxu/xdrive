@@ -31,6 +31,8 @@ const (
 	ActionBackup                 = "system.backup"
 	ActionRestore                = "system.restore"
 	ActionUpdate                 = "system.update"
+	ActionStorageRepair          = "system.storage_repair"
+	ActionMediaRepair            = "system.media_repair"
 	ActionSourceCredentialUpdate = "source.credential.update"
 	ActionSourceCredentialDelete = "source.credential.delete"
 	ActionSourceCredentialReveal = "source.credential.reveal"

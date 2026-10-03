@@ -245,7 +245,7 @@ Extend read-only verification to cover:
 - derived thumbnail cache orphan cleanup beyond metadata-referenced entries;
 - stale running Source runs and incomplete migrations.
 
-Only after a read-only issue type is deterministic should an explicit idempotent repair be added, for example rebuilding local media metadata/thumbnail or requeueing a genuinely missing local file. Repair must never modify the remote provider.
+Deterministic thumbnail-cache issues now support explicit idempotent metadata reset via `xdrive-server media repair [--dry-run]`; cache bytes are left in place because identical content may share one cache key, and the next thumbnail request rebuilds/overwrites the derived cache as needed. Additional repairs should follow the same rule: prove the issue read-only first, mutate only local derived state, and never modify the remote provider.
 
 ## Capability matrix
 
@@ -288,7 +288,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P4 | Complete foundation: connector-neutral `MediaGroup` / member model plus owner-scoped idempotent local projection store; parser-driven population continues in P5/P6 | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata and safe embedded-JPEG previews are local; other RAW formats plus validated RAW/JPEG, XMP/AAE, burst/auxiliary grouping remain | High |
-| P7 | In progress: Source/media relationship verify plus read-only thumbnail cache presence/format checks are current; explicit idempotent repair actions remain | High |
+| P7 | In progress: Source/media relationship verify, thumbnail cache checks, and explicit idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
 | P10 | Expand Gallery filters/search from xDrive-native metadata such as local capture time and GPS | Medium |
