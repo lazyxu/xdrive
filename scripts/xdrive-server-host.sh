@@ -240,8 +240,37 @@ download_installer() {
   download_installer_url "$installer_url" "$destination"
 }
 
+
+install_update_lock_busy() {
+  local lock="$STATE_DIR/install.lock" owner_pid=""
+  command -v flock >/dev/null 2>&1 || return 1
+  mkdir -p "$STATE_DIR"
+  exec 7<>"$lock"
+  if flock -n 7; then
+    flock -u 7 >/dev/null 2>&1 || true
+    exec 7>&-
+    return 1
+  fi
+  owner_pid="$(head -n1 "$lock" 2>/dev/null | tr -dc '0-9' || true)"
+  exec 7>&-
+  if [[ "$owner_pid" =~ ^[0-9]+$ ]]; then
+    echo "xdrive-server: another install/update is already running for $XDRIVE_HOME (pid $owner_pid)." >&2
+  else
+    echo "xdrive-server: another install/update is already running for $XDRIVE_HOME." >&2
+  fi
+  return 0
+}
+
 update_cmd() (
   local tmp installer status target_commit audit_target="" previous="" update_source="" update_channel=""
+
+  # Refuse a duplicate update before doing any network I/O. The installer
+  # still owns the authoritative lock, so this is only a fast-path check; a
+  # race is safely caught again by install-server.sh.
+  if install_update_lock_busy; then
+    return 75
+  fi
+
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-server-update.XXXXXX")"
   installer="$tmp/install-server.sh"
   trap 'rm -rf "$tmp"' EXIT INT TERM
