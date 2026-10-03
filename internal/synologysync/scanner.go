@@ -701,17 +701,11 @@ func discoveredItem(space synology.Space, folderPaths map[int64]string, remote s
 }
 
 func metadataSnapshot(folderPaths map[int64]string, item synology.Item, externalID string) sourcemetadata.Snapshot {
-	var capturedAt *time.Time
-	if item.Time > 0 {
-		value := time.Unix(item.Time, 0).UTC()
-		capturedAt = &value
-	}
 	original := path.Join(folderPaths[item.FolderID], item.Filename)
 	return sourcemetadata.Snapshot{
 		ItemExternalID:  externalID,
 		OriginalPath:    strings.Trim(original, "/"),
 		OwnerExternalID: strconv.FormatInt(item.OwnerUserID, 10),
-		CapturedAt:      capturedAt,
 	}
 }
 

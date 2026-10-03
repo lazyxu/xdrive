@@ -133,22 +133,18 @@ func TestSourceCollectionReadAPIAndOwnerIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	capturedA1 := now.Add(-72 * time.Hour)
-	capturedA2 := now.Add(-48 * time.Hour)
 	createdA1 := now.Add(-2 * time.Hour)
 	createdA2 := now.Add(-time.Hour)
 	if err := db.Create(&[]meta.SourceItemMetadata{
 		{
 			SourceItemID: itemA1.ID, SourceID: sourceA.ID,
 			OriginalPath: "/DCIM/photo.jpg", OwnerExternalID: "123",
-			CapturedAt: &capturedA1, RemoteCreatedAt: &createdA1, ContentMD5: strings.Repeat("a", 32),
-			ThumbnailURL: "https://thumb.example/photo",
+			RemoteCreatedAt: &createdA1, ContentMD5: strings.Repeat("a", 32),
 		},
 		{
 			SourceItemID: itemA2.ID, SourceID: sourceA.ID,
 			OriginalPath: "/shared.jpg", OwnerExternalID: "999",
-			CapturedAt: &capturedA2, RemoteCreatedAt: &createdA2, ContentMD5: strings.Repeat("b", 32),
-			ThumbnailURL: "https://thumb.example/shared",
+			RemoteCreatedAt: &createdA2, ContentMD5: strings.Repeat("b", 32),
 		},
 		{
 			SourceItemID: itemB.ID, SourceID: sourceB.ID,
@@ -204,19 +200,14 @@ func TestSourceCollectionReadAPIAndOwnerIsolation(t *testing.T) {
 	if sourceItems[0].Metadata == nil ||
 		sourceItems[0].Metadata.OriginalPath != "/DCIM/photo.jpg" ||
 		sourceItems[0].Metadata.OwnerExternalID != "123" ||
-		sourceItems[0].Metadata.CapturedAt == nil ||
-		sourceItems[0].Metadata.CapturedAt.Unix() != capturedA1.Unix() ||
 		sourceItems[0].Metadata.RemoteCreatedAt == nil ||
 		sourceItems[0].Metadata.RemoteCreatedAt.Unix() != createdA1.Unix() ||
-		sourceItems[0].Metadata.ContentMD5 != strings.Repeat("a", 32) ||
-		sourceItems[0].Metadata.ThumbnailURL != "https://thumb.example/photo" {
+		sourceItems[0].Metadata.ContentMD5 != strings.Repeat("a", 32) {
 		t.Fatalf("synced source metadata=%+v", sourceItems[0].Metadata)
 	}
 	if sourceItems[1].State != meta.SourceItemStateMissing ||
 		sourceItems[1].Metadata == nil ||
 		sourceItems[1].Metadata.OwnerExternalID != "999" ||
-		sourceItems[1].Metadata.CapturedAt == nil ||
-		sourceItems[1].Metadata.CapturedAt.Unix() != capturedA2.Unix() ||
 		sourceItems[1].Metadata.ContentMD5 != strings.Repeat("b", 32) {
 		t.Fatalf("missing source metadata=%+v", sourceItems[1])
 	}
@@ -284,7 +275,6 @@ func TestSourceCollectionReadAPIAndOwnerIsolation(t *testing.T) {
 	if len(members) != 2 || members[0].Position != 0 || members[0].ExternalID != itemA1.ExternalID ||
 		members[0].NodeID == nil || *members[0].NodeID != nodeA.ID ||
 		members[0].Metadata == nil || members[0].Metadata.OwnerExternalID != "123" ||
-		members[0].Metadata.CapturedAt == nil || members[0].Metadata.CapturedAt.Unix() != capturedA1.Unix() ||
 		members[0].Metadata.ContentMD5 != strings.Repeat("a", 32) ||
 		members[1].Position != 1 || members[1].ExternalID != itemA2.ExternalID ||
 		members[1].State != meta.SourceItemStateMissing ||

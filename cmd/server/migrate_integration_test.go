@@ -321,13 +321,12 @@ func TestMigrateCreatesExternalSourceFoundation(t *testing.T) {
 		t.Fatal(err)
 	}
 	remoteCreated := now.Add(-time.Hour)
-	mediaMetadata := meta.SourceItemMetadata{
+	sourceMetadata := meta.SourceItemMetadata{
 		SourceItemID: item.ID, SourceID: source.ID,
 		OriginalPath: "/photo.jpg", OwnerExternalID: "123",
 		RemoteCreatedAt: &remoteCreated, ContentMD5: strings.Repeat("a", 32),
-		ThumbnailURL: "https://thumb.example/photo.jpg",
 	}
-	if err := db.Create(&mediaMetadata).Error; err != nil {
+	if err := db.Create(&sourceMetadata).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -536,5 +535,56 @@ func TestMigrateBackfillsStableSourceRunNumbers(t *testing.T) {
 	}
 	if err := db.Create(&duplicate).Error; err == nil {
 		t.Fatal("duplicate per-source run number was accepted")
+	}
+}
+
+func TestMigrateDropsLegacySourceMediaMetadataColumns(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "migrate_source_metadata_boundary_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error }()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`ALTER TABLE xd_source_item_metadata
+		ADD COLUMN captured_at timestamptz,
+		ADD COLUMN thumbnail_url text,
+		ADD COLUMN pair_group_id varchar(512),
+		ADD COLUMN pair_role varchar(16)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range []string{"captured_at", "thumbnail_url", "pair_group_id", "pair_role"} {
+		if db.Migrator().HasColumn("xd_source_item_metadata", column) {
+			t.Fatalf("legacy media-semantic source metadata column %q survived migration", column)
+		}
+	}
+	for _, column := range []string{"original_path", "owner_external_id", "remote_created_at", "content_md5"} {
+		if !db.Migrator().HasColumn("xd_source_item_metadata", column) {
+			t.Fatalf("provenance column %q missing after migration", column)
+		}
 	}
 }

@@ -4,21 +4,16 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/lazyxu/xdrive/internal/meta"
 )
 
-func TestValidateSnapshotsNormalizesMetadata(t *testing.T) {
-	captured := time.Date(2020, 5, 6, 7, 8, 9, 0, time.UTC)
+func TestValidateSnapshotsNormalizesProvenance(t *testing.T) {
 	created := time.Date(2026, 9, 26, 1, 2, 3, 0, time.UTC)
 	snapshots := []Snapshot{{
 		ItemExternalID:  " yike:123:1 ",
 		OriginalPath:    " /DCIM/A.JPG ",
 		OwnerExternalID: " 123 ",
-		CapturedAt:      &captured,
 		RemoteCreatedAt: &created,
 		ContentMD5:      strings.Repeat("A", 32),
-		ThumbnailURL:    " https://thumb.example/a ",
 	}}
 	if err := validateSnapshots(snapshots); err != nil {
 		t.Fatal(err)
@@ -27,25 +22,18 @@ func TestValidateSnapshotsNormalizesMetadata(t *testing.T) {
 	if got.ItemExternalID != "yike:123:1" ||
 		got.OriginalPath != "/DCIM/A.JPG" ||
 		got.OwnerExternalID != "123" ||
-		got.CapturedAt == nil || !got.CapturedAt.Equal(captured) ||
 		got.RemoteCreatedAt == nil || !got.RemoteCreatedAt.Equal(created) ||
-		got.ContentMD5 != strings.Repeat("a", 32) ||
-		got.ThumbnailURL != "https://thumb.example/a" {
+		got.ContentMD5 != strings.Repeat("a", 32) {
 		t.Fatalf("normalized snapshot=%+v", got)
 	}
 }
 
-func TestValidateSnapshotsRejectsInvalidPairingAndMD5(t *testing.T) {
-	tests := []Snapshot{
-		{ItemExternalID: "x", ContentMD5: "not-md5"},
-		{ItemExternalID: "x", PairGroupID: "group-only"},
-		{ItemExternalID: "x", PairRole: meta.SourceMediaPairRoleStill},
-		{ItemExternalID: "x", PairGroupID: "g", PairRole: "guess"},
-	}
-	for _, snapshot := range tests {
-		if err := validateSnapshots([]Snapshot{snapshot}); err == nil {
-			t.Fatalf("invalid snapshot was accepted: %+v", snapshot)
-		}
+func TestValidateSnapshotsRejectsInvalidMD5(t *testing.T) {
+	if err := validateSnapshots([]Snapshot{{
+		ItemExternalID: "x",
+		ContentMD5:     "not-md5",
+	}}); err == nil {
+		t.Fatal("invalid md5 was accepted")
 	}
 }
 

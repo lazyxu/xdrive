@@ -531,17 +531,6 @@ func verifySourceRelations(
 				add(issue)
 			}
 		}
-		if !meta.ValidSourceMediaPairRole(metadata.PairRole) {
-			issue := base
-			issue.Reason = "metadata_pair_role_invalid"
-			issue.Actual = metadata.PairRole
-			add(issue)
-		}
-		if (strings.TrimSpace(metadata.PairGroupID) == "") != (strings.TrimSpace(metadata.PairRole) == "") {
-			issue := base
-			issue.Reason = "metadata_pair_incomplete"
-			add(issue)
-		}
 	}
 }
 

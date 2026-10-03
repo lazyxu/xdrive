@@ -258,32 +258,28 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 		t.Fatalf("initial memberships=%d want=2: %+v", len(initialMemberships), initialMemberships)
 	}
 
-	var mediaMetadata []meta.SourceItemMetadata
+	var sourceMetadata []meta.SourceItemMetadata
 	if err := db.Where("source_id = ?", source.ID).Order("owner_external_id ASC").
-		Find(&mediaMetadata).Error; err != nil {
+		Find(&sourceMetadata).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(mediaMetadata) != 2 {
-		t.Fatalf("media metadata rows=%d want=2: %+v", len(mediaMetadata), mediaMetadata)
+	if len(sourceMetadata) != 2 {
+		t.Fatalf("source metadata rows=%d want=2: %+v", len(sourceMetadata), sourceMetadata)
 	}
 	metadataByOwner := map[string]meta.SourceItemMetadata{}
-	for _, row := range mediaMetadata {
+	for _, row := range sourceMetadata {
 		metadataByOwner[row.OwnerExternalID] = row
 	}
 	rootMetadata := metadataByOwner["123"]
 	if rootMetadata.OriginalPath != "/root.jpg" ||
 		rootMetadata.RemoteCreatedAt == nil || rootMetadata.RemoteCreatedAt.Unix() != 900 ||
-		rootMetadata.ContentMD5 != "1c323ac6dfdbb9b3b61fddbf84448cdd" ||
-		rootMetadata.ThumbnailURL != "https://thumb.example/root" ||
-		rootMetadata.PairGroupID != "" || rootMetadata.PairRole != "" {
+		rootMetadata.ContentMD5 != "1c323ac6dfdbb9b3b61fddbf84448cdd" {
 		t.Fatalf("unexpected root metadata: %+v", rootMetadata)
 	}
 	sharedMetadata := metadataByOwner["999"]
 	if sharedMetadata.OriginalPath != "/shared.jpg" ||
 		sharedMetadata.RemoteCreatedAt == nil || sharedMetadata.RemoteCreatedAt.Unix() != 1900 ||
-		sharedMetadata.ContentMD5 != "bd440fe2a75c94a84cc0c8cd8f5d7523" ||
-		sharedMetadata.ThumbnailURL != "https://thumb.example/shared" ||
-		sharedMetadata.PairGroupID != "" || sharedMetadata.PairRole != "" {
+		sharedMetadata.ContentMD5 != "bd440fe2a75c94a84cc0c8cd8f5d7523" {
 		t.Fatalf("unexpected shared metadata: %+v", sharedMetadata)
 	}
 
