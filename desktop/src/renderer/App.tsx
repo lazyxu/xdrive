@@ -62,10 +62,12 @@ import {
 import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
+  XDRIVE_FILE_EXPLORER_PAGE_SIZE,
   XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileExplorerCanLoadMore,
   xDriveFileExplorerDeleteOperationPlan,
   xDriveFileExplorerMergePageItems,
+  xDriveFileExplorerPageStateFromResult,
   xDriveFileOperationActive,
   xDriveFileOperationPollIntervalMs,
   xDriveFileOperationTransitionSnapshot,
@@ -153,7 +155,6 @@ function DesktopFrame({
   )
 }
 
-const DESKTOP_FILE_PAGE_SIZE = 200
 const DEFAULT_DESKTOP_FILE_SORT: XDriveFileExplorerSort = { key: 'name', direction: 'asc' }
 
 function cacheGiB(bytes: number) {
@@ -1137,7 +1138,7 @@ export default function App({
     setError('')
     try {
       const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, {
-        limit: DESKTOP_FILE_PAGE_SIZE,
+        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         sort: sort.key,
         order: sort.direction,
       })
@@ -1147,12 +1148,7 @@ export default function App({
       }
       setCloudItems(result.data.items)
       setCloudCrumbs(crumbs)
-      setCloudPage({
-        parentID: id,
-        cursor: result.data.next_cursor ?? '',
-        hasMore: result.data.has_more,
-        sort,
-      })
+      setCloudPage(xDriveFileExplorerPageStateFromResult(id, result.data, sort))
     } finally {
       setBusy('')
     }
@@ -1182,7 +1178,7 @@ export default function App({
     setCloudLoadingMore(true)
     try {
       const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, {
-        limit: DESKTOP_FILE_PAGE_SIZE,
+        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         cursor: pageState.cursor,
         sort: sort.key,
         order: sort.direction,
@@ -1192,12 +1188,7 @@ export default function App({
         return
       }
       setCloudItems((currentItems) => xDriveFileExplorerMergePageItems(currentItems, result.data.items))
-      setCloudPage({
-        parentID: id,
-        cursor: result.data.next_cursor ?? '',
-        hasMore: result.data.has_more,
-        sort,
-      })
+      setCloudPage(xDriveFileExplorerPageStateFromResult(id, result.data, sort))
     } finally {
       setCloudLoadingMore(false)
     }
@@ -1220,7 +1211,7 @@ export default function App({
         return
       }
       const childrenResult = await window.xdriveDesktop.agent.cloudChildrenPage(rootResult.data.id, {
-        limit: DESKTOP_FILE_PAGE_SIZE,
+        limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         sort: DEFAULT_DESKTOP_FILE_SORT.key,
         order: DEFAULT_DESKTOP_FILE_SORT.direction,
       })
@@ -1230,12 +1221,11 @@ export default function App({
       }
       setCloudItems(childrenResult.data.items)
       setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
-      setCloudPage({
-        parentID: rootResult.data.id,
-        cursor: childrenResult.data.next_cursor ?? '',
-        hasMore: childrenResult.data.has_more,
-        sort: DEFAULT_DESKTOP_FILE_SORT,
-      })
+      setCloudPage(xDriveFileExplorerPageStateFromResult(
+        rootResult.data.id,
+        childrenResult.data,
+        DEFAULT_DESKTOP_FILE_SORT,
+      ))
       setCloudQuota(quotaResult.data)
     } finally {
       setBusy('')

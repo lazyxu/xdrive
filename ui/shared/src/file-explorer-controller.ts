@@ -277,3 +277,25 @@ export function xDriveFileExplorerMergePageItems<
   for (const item of pageItems) merged.set(item.id, item)
   return [...merged.values()]
 }
+
+export const XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200
+
+export type XDriveFileExplorerPageResult = {
+  next_cursor?: string
+  has_more: boolean
+}
+
+export function xDriveFileExplorerPageStateFromResult<
+  TSort extends XDriveFileExplorerPageSort,
+>(
+  parentID: number,
+  page: XDriveFileExplorerPageResult,
+  sort: TSort,
+): XDriveFileExplorerPageState<TSort> {
+  return {
+    parentID,
+    cursor: page.next_cursor ?? '',
+    hasMore: page.has_more,
+    sort,
+  }
+}
