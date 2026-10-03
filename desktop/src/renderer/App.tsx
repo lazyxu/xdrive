@@ -63,7 +63,9 @@ import type { MediaGalleryDataSource, XDriveFileExplorerSort, XDriveStatusTone }
 import {
   formatBinarySize,
   XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
+  xDriveFileExplorerCanLoadMore,
   xDriveFileExplorerDeleteOperationPlan,
+  xDriveFileExplorerMergePageItems,
   xDriveFileOperationActive,
   xDriveFileOperationPollIntervalMs,
   xDriveFileOperationTransitionSnapshot,
@@ -79,6 +81,7 @@ import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
   XDriveAppearance,
+  XDriveFileExplorerPageState,
   XDriveServerUpdateChannel,
   XDriveServerUpdateSource,
   XDriveServerUpdateState,
@@ -203,12 +206,7 @@ export default function App({
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
-  const [cloudPage, setCloudPage] = useState<{
-    parentID: number
-    cursor: string
-    hasMore: boolean
-    sort: XDriveFileExplorerSort
-  } | null>(null)
+  const [cloudPage, setCloudPage] = useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>(null)
   const [cloudLoadingMore, setCloudLoadingMore] = useState(false)
   const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
   const [cloudStorageStats, setCloudStorageStats] = useState<AgentCloudStorageStats | null>(null)
@@ -1179,15 +1177,7 @@ export default function App({
 
   const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {
     const pageState = cloudPage
-    if (
-      !pageState ||
-      pageState.parentID !== id ||
-      !pageState.hasMore ||
-      !pageState.cursor ||
-      pageState.sort.key !== sort.key ||
-      pageState.sort.direction !== sort.direction ||
-      cloudLoadingMore
-    ) return
+    if (!xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)) return
 
     setCloudLoadingMore(true)
     try {
@@ -1201,11 +1191,7 @@ export default function App({
         setError(result.error.message)
         return
       }
-      setCloudItems((currentItems) => {
-        const merged = new Map(currentItems.map((item) => [item.id, item]))
-        for (const item of result.data.items) merged.set(item.id, item)
-        return [...merged.values()]
-      })
+      setCloudItems((currentItems) => xDriveFileExplorerMergePageItems(currentItems, result.data.items))
       setCloudPage({
         parentID: id,
         cursor: result.data.next_cursor ?? '',
