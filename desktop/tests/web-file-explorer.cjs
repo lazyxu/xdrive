@@ -48,7 +48,8 @@ test('Web FileExplorer uses real file operations and server search', () => {
     'api.download(node)',
     'onShare(node)',
     'onHistory(node)',
-    'onRename(node)',
+    'api.rename(node.id, node.revision, name)',
+    'onRenameItem={renameItem}',
     'onRemove(node)',
     'onUploadFiles(event.target.files)',
   ]) {

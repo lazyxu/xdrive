@@ -34,7 +34,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
   revealLabel?: string
   onShare?: () => void
   onHistory?: () => void
-  onRename: () => void
+  onRename?: () => void
   onDelete: () => void
 }): XDriveFileExplorerMenuItem[] {
   const items: XDriveFileExplorerMenuItem[] = []
@@ -104,13 +104,15 @@ export function xDriveFileExplorerStandardItemMenuItems({
     }
   }
 
-  items.push({
-    id: 'rename',
-    label: '重命名',
-    icon: <EditRoundedIcon fontSize="small" />,
-    dividerBefore: true,
-    onSelect: onRename,
-  })
+  if (onRename) {
+    items.push({
+      id: 'rename',
+      label: '重命名',
+      icon: <EditRoundedIcon fontSize="small" />,
+      dividerBefore: true,
+      onSelect: onRename,
+    })
+  }
   items.push({
     id: 'delete',
     label: '删除',
