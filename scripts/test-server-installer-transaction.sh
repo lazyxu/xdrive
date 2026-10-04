@@ -107,11 +107,13 @@ printf "%s|%s|%s|%s\n" \
 config=""
 output=""
 leave=0
+skip_file_data=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config-dir) config="$2"; shift 2 ;;
     --output-dir) output="$2"; shift 2 ;;
     --leave-server-stopped) leave=1; shift ;;
+    --skip-file-data) skip_file_data=1; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -130,6 +132,7 @@ printf "%s\n" "$dir"
   */scripts/server-restore.sh)
     emit '#!/usr/bin/env bash
 set -euo pipefail
+printf "%s\n" "$*" >> "$TEST_STATE/restore-args"
 touch "$TEST_STATE/data-restored"
 exit 0
 '
@@ -290,6 +293,7 @@ set -e
 
 [[ "$status" -ne 0 ]]
 test -f "$TMP/state/data-restored"
+grep -q -- '--database-only' "$TMP/state/restore-args"
 grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/upgrade.err"
 grep -q '^old-compose$' "$TMP/config/docker-compose.yml"
 grep -q '^old-caddy$' "$TMP/config/Caddyfile"

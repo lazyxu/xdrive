@@ -329,10 +329,10 @@ export class XDriveApi {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
   }
 
-  adminStartServerUpdate(source: XDriveServerUpdateSource, channel: XDriveServerUpdateChannel) {
+  adminStartServerUpdate(source: XDriveServerUpdateSource, channel: XDriveServerUpdateChannel, backupFileData: boolean) {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update', {
       method: 'POST',
-      body: JSON.stringify({ source, channel }),
+      body: JSON.stringify({ source, channel, backup_file_data: backupFileData }),
     })
   }
 

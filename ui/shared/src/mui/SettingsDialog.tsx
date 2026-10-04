@@ -24,6 +24,7 @@ export interface XDriveSettingsServerUpdate {
   state: XDriveServerUpdateState | null
   source: XDriveServerUpdateSource
   channel: XDriveServerUpdateChannel
+  backupFileData: boolean
   loading?: boolean
   disabled?: boolean
   canUpdate?: boolean
@@ -31,6 +32,7 @@ export interface XDriveSettingsServerUpdate {
   error?: ReactNode
   onSourceChange: (value: XDriveServerUpdateSource) => void
   onChannelChange: (value: XDriveServerUpdateChannel) => void
+  onBackupFileDataChange: (value: boolean) => void
   onStart: () => void
 }
 
@@ -105,10 +107,12 @@ export function XDriveSettingsDialog({
                     state={serverUpdate.state}
                     source={serverUpdate.source}
                     channel={serverUpdate.channel}
+                    backupFileData={serverUpdate.backupFileData}
                     loading={serverUpdate.loading}
                     disabled={serverUpdate.disabled}
                     onSourceChange={serverUpdate.onSourceChange}
                     onChannelChange={serverUpdate.onChannelChange}
+                    onBackupFileDataChange={serverUpdate.onBackupFileDataChange}
                     onStart={serverUpdate.onStart}
                   />
                   {serverUpdate.error ? (

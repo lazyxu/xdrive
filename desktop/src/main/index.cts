@@ -2247,14 +2247,15 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'server-update')
     return requireAgentClient().serverUpdate()
   }, false))
-  ipcMain.handle('agent:start-server-update', (_event, sourceValue: unknown, channelValue: unknown) => runAgentAction<AgentServerUpdateState>(async () => {
+  ipcMain.handle('agent:start-server-update', (_event, sourceValue: unknown, channelValue: unknown, backupFileDataValue: unknown) => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')
     if ((sourceValue !== 'github' && sourceValue !== 'gitlab') ||
-        (channelValue !== 'stable' && channelValue !== 'master')) {
-      throw new AgentIPCError('invalid_input', 0, 'Server update source/channel are invalid.')
+        (channelValue !== 'stable' && channelValue !== 'master') ||
+        (backupFileDataValue !== undefined && typeof backupFileDataValue !== 'boolean')) {
+      throw new AgentIPCError('invalid_input', 0, 'Server update source/channel/backup option are invalid.')
     }
-    return requireAgentClient().startServerUpdate(sourceValue, channelValue)
+    return requireAgentClient().startServerUpdate(sourceValue, channelValue, backupFileDataValue === true)
   }, false))
   ipcMain.handle('agent:cloud-storage-stats', () => runAgentAction<AgentCloudStorageStats>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

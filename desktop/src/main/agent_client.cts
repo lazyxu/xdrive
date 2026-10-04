@@ -1090,8 +1090,12 @@ export class AgentIPCClient {
     return this.request<AgentServerUpdateState>('GET', '/v1/server-update')
   }
 
-  startServerUpdate(source: 'github' | 'gitlab', channel: 'stable' | 'master') {
-    return this.request<AgentServerUpdateState>('POST', '/v1/server-update', { source, channel }, 45_000)
+  startServerUpdate(source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) {
+    return this.request<AgentServerUpdateState>('POST', '/v1/server-update', {
+      source,
+      channel,
+      backup_file_data: backupFileData,
+    }, 45_000)
   }
 
   cloudStorageStats() {

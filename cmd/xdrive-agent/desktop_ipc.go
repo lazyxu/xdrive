@@ -172,7 +172,7 @@ type desktopIPCController interface {
 	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
-	CloudStartServerUpdate(context.Context, string, string) (client.ServerUpdateState, error)
+	CloudStartServerUpdate(context.Context, string, string, bool) (client.ServerUpdateState, error)
 	CloudStorageStats(context.Context) (client.StorageStats, error)
 	CloudTrash(context.Context) ([]client.Node, error)
 	CloudRestoreTrash(context.Context, uint64, uint64) (client.Node, error)
@@ -1215,8 +1215,9 @@ func (h *desktopIPCHandler) serverUpdateState(w http.ResponseWriter, r *http.Req
 
 func (h *desktopIPCHandler) startServerUpdate(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Source  string `json:"source"`
-		Channel string `json:"channel"`
+		Source         string `json:"source"`
+		Channel        string `json:"channel"`
+		BackupFileData bool   `json:"backup_file_data"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
@@ -1228,7 +1229,7 @@ func (h *desktopIPCHandler) startServerUpdate(w http.ResponseWriter, r *http.Req
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_server_update", "source/channel are invalid")
 		return
 	}
-	state, err := h.ctrl.CloudStartServerUpdate(r.Context(), input.Source, input.Channel)
+	state, err := h.ctrl.CloudStartServerUpdate(r.Context(), input.Source, input.Channel, input.BackupFileData)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

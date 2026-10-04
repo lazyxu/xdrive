@@ -532,7 +532,7 @@ grep -Eq '^[0-9]+$' "$TMP/home/state/control/runner.pid"
 
 request_tmp="$TMP/home/state/control/.request-test.tmp"
 cat > "$request_tmp" <<EOF
-{"request_id":"test-request-1","source":"github","channel":"master","requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"request_id":"test-request-1","source":"github","channel":"master","backup_file_data":false,"requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 EOF
 chmod 660 "$request_tmp"
 ln "$request_tmp" "$TMP/home/state/control/request.json"
@@ -555,6 +555,18 @@ grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json"
 grep -q '^--source github --channel master$' "$TMP/state/installer-args"
 [[ ! -f "$TMP/home/state/control/request.json" ]]
 [[ ! -f "$TMP/home/state/control/active.json" ]]
+
+cat > "$TMP/home/state/control/request.json" <<EOF
+{"request_id":"test-request-backup-files","source":"github","channel":"master","backup_file_data":true,"requested_by":"admin","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+for _ in $(seq 1 100); do
+  if grep -q '"state":"success"' "$TMP/home/state/control/status.json" 2>/dev/null &&
+     grep -q '"request_id":"test-request-backup-files"' "$TMP/home/state/control/status.json" 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+grep -q '^--source github --channel master --backup-file-data$' "$TMP/state/installer-args"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \

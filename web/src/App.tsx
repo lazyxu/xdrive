@@ -141,6 +141,7 @@ function WebAccountMenu({
   const [serverUpdateChannel, setServerUpdateChannel] = useState<XDriveServerUpdateChannel>(
     serverBuild?.channel === 'master' ? 'master' : 'stable',
   )
+  const [serverUpdateBackupFileData, setServerUpdateBackupFileData] = useState(false)
   const [serverUpdateBusy, setServerUpdateBusy] = useState(false)
   const [serverUpdateError, setServerUpdateError] = useState('')
   const [serverUpdateConfirmOpen, setServerUpdateConfirmOpen] = useState(false)
@@ -180,7 +181,7 @@ function WebAccountMenu({
     setServerUpdateBusy(true)
     setServerUpdateError('')
     try {
-      const state = await api.adminStartServerUpdate(serverUpdateSource, serverUpdateChannel)
+      const state = await api.adminStartServerUpdate(serverUpdateSource, serverUpdateChannel, serverUpdateBackupFileData)
       setServerUpdate(state)
     } catch (error) {
       setServerUpdateError(error instanceof Error ? error.message : '提交服务端更新失败。')
@@ -234,6 +235,7 @@ function WebAccountMenu({
           state: serverUpdate,
           source: serverUpdateSource,
           channel: serverUpdateChannel,
+          backupFileData: serverUpdateBackupFileData,
           loading: serverUpdateBusy,
           disabled: serverUpdate === null,
           canUpdate: canUpdateServer,
@@ -241,13 +243,14 @@ function WebAccountMenu({
           error: serverUpdateError,
           onSourceChange: setServerUpdateSource,
           onChannelChange: setServerUpdateChannel,
+          onBackupFileDataChange: setServerUpdateBackupFileData,
           onStart: () => setServerUpdateConfirmOpen(true),
         }}
       />
       <XDriveConfirmDialog
         open={serverUpdateConfirmOpen}
         title="确认更新服务端？"
-        description={`来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel}。更新会执行升级前备份、容器更新和健康检查，期间 Web/API 可能短暂不可用。`}
+        description={`来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel} · 文件数据备份：${serverUpdateBackupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间 Web/API 可能短暂不可用。`}
         confirmLabel="开始更新"
         confirmIntent="warning"
         loading={serverUpdateBusy}

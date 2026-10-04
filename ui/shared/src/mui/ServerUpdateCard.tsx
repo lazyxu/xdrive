@@ -1,6 +1,8 @@
 import {
   Box,
+  Checkbox,
   FormControl,
+  FormControlLabel,
   InputLabel,
   LinearProgress,
   MenuItem,
@@ -42,20 +44,24 @@ export function XDriveServerUpdateCard({
   state,
   source,
   channel,
+  backupFileData,
   disabled = false,
   loading = false,
   onSourceChange,
   onChannelChange,
+  onBackupFileDataChange,
   onStart,
   sx,
 }: {
   state: XDriveServerUpdateState | null
   source: XDriveServerUpdateSource
   channel: XDriveServerUpdateChannel
+  backupFileData: boolean
   disabled?: boolean
   loading?: boolean
   onSourceChange: (value: XDriveServerUpdateSource) => void
   onChannelChange: (value: XDriveServerUpdateChannel) => void
+  onBackupFileDataChange: (value: boolean) => void
   onStart: () => void
   sx?: SxProps<Theme>
 }) {
@@ -73,10 +79,11 @@ export function XDriveServerUpdateCard({
             <XDriveStatusBadge tone={tone(state?.state)} label={xDriveServerUpdateStateLabel(state)} />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            更新由服务器宿主机执行，会自动沿用升级前备份、健康检查和失败回滚；更新期间 Web/API 可能短暂不可用。
+            更新由服务器宿主机执行；数据库与一致性备份始终保留，文件数据快照可选；更新期间 Web/API 可能短暂不可用。
           </Typography>
         </Box>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ minWidth: { md: 410 } }}>
+        <Stack spacing={0.5} sx={{ minWidth: { md: 430 } }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <FormControl size="small" sx={{ minWidth: 135 }}>
             <InputLabel id="server-update-source-label">更新来源</InputLabel>
             <Select
@@ -110,6 +117,24 @@ export function XDriveServerUpdateCard({
           >
             更新服务端
           </XDriveActionButton>
+          </Stack>
+          <Box>
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  size="small"
+                  checked={backupFileData}
+                  disabled={buttonDisabled}
+                  onChange={(event) => onBackupFileDataChange(event.target.checked)}
+                />
+              )}
+              label="备份文件数据"
+              sx={{ m: 0 }}
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              默认关闭；开启后升级前会额外复制全部文件数据，会按文件库大小增加升级时间和磁盘占用。
+            </Typography>
+          </Box>
         </Stack>
       </Stack>
 

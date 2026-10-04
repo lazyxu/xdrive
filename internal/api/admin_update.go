@@ -36,11 +36,12 @@ type serverUpdateState struct {
 }
 
 type serverUpdateRequestFile struct {
-	RequestID   string `json:"request_id"`
-	Source      string `json:"source"`
-	Channel     string `json:"channel"`
-	RequestedBy string `json:"requested_by,omitempty"`
-	CreatedAt   string `json:"created_at"`
+	RequestID      string `json:"request_id"`
+	Source         string `json:"source"`
+	Channel        string `json:"channel"`
+	BackupFileData bool   `json:"backup_file_data"`
+	RequestedBy    string `json:"requested_by,omitempty"`
+	CreatedAt      string `json:"created_at"`
 }
 
 func (s *Server) adminServerUpdateStatus(c *gin.Context) {
@@ -50,8 +51,9 @@ func (s *Server) adminServerUpdateStatus(c *gin.Context) {
 
 func (s *Server) adminStartServerUpdate(c *gin.Context) {
 	var input struct {
-		Source  string `json:"source"`
-		Channel string `json:"channel"`
+		Source         string `json:"source"`
+		Channel        string `json:"channel"`
+		BackupFileData bool   `json:"backup_file_data"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
@@ -91,11 +93,12 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 		requestedBy = user.Username
 	}
 	request := serverUpdateRequestFile{
-		RequestID:   requestID,
-		Source:      input.Source,
-		Channel:     input.Channel,
-		RequestedBy: requestedBy,
-		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+		RequestID:      requestID,
+		Source:         input.Source,
+		Channel:        input.Channel,
+		BackupFileData: input.BackupFileData,
+		RequestedBy:    requestedBy,
+		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := s.writeServerUpdateRequest(request); err != nil {
 		if errors.Is(err, os.ErrExist) {

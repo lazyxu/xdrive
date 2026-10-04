@@ -6,14 +6,15 @@ XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 OUTPUT_ROOT=""
 ALLOW_INCONSISTENT=0
 LEAVE_SERVER_STOPPED=0
+INCLUDE_FILE_DATA=1
 
 usage() {
   cat <<'EOF'
-Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped]
+Usage: server-backup.sh [--config-dir DIR] [--output-dir DIR] [--allow-inconsistent] [--leave-server-stopped] [--skip-file-data]
 
 Creates an xDrive backup directory containing:
   database.dump   PostgreSQL custom-format dump
-  blobs.tar       uncompressed file-data snapshot
+  blobs.tar       uncompressed file-data snapshot (omitted with --skip-file-data)
   verify.json     pre-backup consistency report
   manifest.json   backup metadata
   SHA256SUMS.txt  SHA-256 checksums
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --output-dir) OUTPUT_ROOT="$2"; shift 2 ;;
     --allow-inconsistent) ALLOW_INCONSISTENT=1; shift ;;
     --leave-server-stopped) LEAVE_SERVER_STOPPED=1; shift ;;
+    --skip-file-data) INCLUDE_FILE_DATA=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -234,10 +236,13 @@ postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </d
 write_backup_progress "计算备份大小" 0 0
 print_backup_progress "计算备份大小" 0 0
 
-blob_bytes="$(docker run --rm --entrypoint sh \
-  -v "$data_source:/data:ro" \
-  "$postgres_image" \
-  -c "du -sk /data | awk '{print \$1 * 1024}'" </dev/null)"
+blob_bytes=0
+if [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
+  blob_bytes="$(docker run --rm --entrypoint sh \
+    -v "$data_source:/data:ro" \
+    "$postgres_image" \
+    -c "du -sk /data | awk '{print \$1 * 1024}'" </dev/null)"
+fi
 database_bytes="$(compose exec -T postgres psql -U xdrive -d postgres -Atqc "SELECT pg_database_size('xdrive')" | tr -d '\r')"
 available_bytes="$(df -PB1 "$OUTPUT_ROOT" | awk 'NR==2 {print $4}')"
 for pair in "blob_bytes=$blob_bytes" "database_bytes=$database_bytes" "available_bytes=$available_bytes"; do
@@ -281,11 +286,16 @@ fi
 run_to_file_with_progress "备份数据库" "$partial_dir/database.dump" 0 \
   compose exec -T postgres pg_dump -U xdrive -d xdrive -Fc
 
-run_to_file_with_progress "备份文件数据" "$partial_dir/blobs.tar" "$blob_bytes" \
-  docker run --rm --entrypoint sh \
-    -v "$data_source:/data:ro" \
-    "$postgres_image" \
-    -c 'cd /data && tar -cf - .'
+if [[ "$INCLUDE_FILE_DATA" == "1" ]]; then
+  run_to_file_with_progress "备份文件数据" "$partial_dir/blobs.tar" "$blob_bytes" \
+    docker run --rm --entrypoint sh \
+      -v "$data_source:/data:ro" \
+      "$postgres_image" \
+      -c 'cd /data && tar -cf - .'
+else
+  write_backup_progress "跳过文件数据备份" 0 0
+  print_backup_progress "跳过文件数据备份（升级选项未开启）" 0 0
+fi
 
 write_backup_progress "生成备份清单" 0 0
 print_backup_progress "生成备份清单" 0 0
@@ -302,7 +312,8 @@ cat > "$partial_dir/manifest.json" <<EOF
   "format_version": 1,
   "created_at_utc": "$created_at",
   "database": {"file": "database.dump", "format": "pg_dump_custom"},
-  "blobs": {"file": "blobs.tar", "format": "tar"},
+  "blobs": $([[ "$INCLUDE_FILE_DATA" == "1" ]] && printf '{"file":"blobs.tar","format":"tar"}' || printf 'null'),
+  "file_data_included": $([[ "$INCLUDE_FILE_DATA" == "1" ]] && echo true || echo false),
   "consistency_verified": $([[ "$verify_status" == "0" ]] && echo true || echo false),
   "server_image": "$server_image",
   "caddy_image": "$caddy_image",
@@ -317,15 +328,17 @@ cat > "$partial_dir/manifest.json" <<EOF
 }
 EOF
 
+checksum_files=(database.dump verify.json manifest.json)
+[[ "$INCLUDE_FILE_DATA" == "1" ]] && checksum_files+=(blobs.tar)
 checksum_total=0
-for checksum_name in database.dump blobs.tar verify.json manifest.json; do
+for checksum_name in "${checksum_files[@]}"; do
   checksum_size="$(file_size_bytes "$partial_dir/$checksum_name")"
   [[ "$checksum_size" =~ ^[0-9]+$ ]] || checksum_size=0
   checksum_total=$(( checksum_total + checksum_size ))
 done
 checksum_done=0
 : > "$partial_dir/SHA256SUMS.txt"
-for checksum_name in database.dump blobs.tar verify.json manifest.json; do
+for checksum_name in "${checksum_files[@]}"; do
   write_backup_progress "校验备份完整性 · $checksum_name" "$checksum_done" "$checksum_total"
   print_backup_progress "校验备份完整性 · $checksum_name" "$checksum_done" "$checksum_total"
   (
