@@ -337,6 +337,13 @@ declare global {
         createMediaAlbum: (name: string) => Promise<DesktopResult<AgentMediaAlbum>>
         renameMediaAlbum: (albumID: string, revision: number, name: string) => Promise<DesktopResult<AgentMediaAlbum>>
         deleteMediaAlbum: (albumID: string, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
+        createSmartMediaAlbum: (name: string, query: MediaGalleryQuery) => Promise<DesktopResult<AgentMediaAlbum>>
+        updateSmartMediaAlbum: (
+          albumID: string,
+          revision: number,
+          input: { name?: string; query?: MediaGalleryQuery },
+        ) => Promise<DesktopResult<AgentMediaAlbum>>
+        deleteSmartMediaAlbum: (albumID: string, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
         addMediaAlbumItems: (albumID: string, revision: number, nodeIDs: number[]) => Promise<DesktopResult<AgentMediaAlbum>>
         removeMediaAlbumItem: (albumID: string, revision: number, nodeID: number) => Promise<DesktopResult<AgentMediaAlbum>>
         getMediaAlbumItems: (

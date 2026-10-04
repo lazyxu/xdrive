@@ -485,6 +485,7 @@ export type AgentMediaAlbum = {
   item_count: number
   cover_node_id?: number
   updated_at?: string
+  query?: AgentMediaQuery
 }
 
 export type AgentMediaFavorite = {
@@ -823,6 +824,29 @@ export class AgentIPCClient {
       album_id: albumID,
       revision,
       node_id: nodeID,
+    })
+  }
+
+  createSmartMediaAlbum(name: string, query: AgentMediaQuery) {
+    return this.request<AgentMediaAlbum>('POST', '/v1/media/smart-albums', { name, query })
+  }
+
+  updateSmartMediaAlbum(
+    albumID: string,
+    revision: number,
+    input: { name?: string; query?: AgentMediaQuery },
+  ) {
+    return this.request<AgentMediaAlbum>('PATCH', '/v1/media/smart-album', {
+      album_id: albumID,
+      revision,
+      ...input,
+    })
+  }
+
+  deleteSmartMediaAlbum(albumID: string, revision: number) {
+    return this.request<null>('DELETE', '/v1/media/smart-album', {
+      album_id: albumID,
+      revision,
     })
   }
 

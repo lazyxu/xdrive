@@ -1614,6 +1614,69 @@ function registerIPCHandlers() {
     return { ok: true }
   }, false))
 
+  ipcMain.handle('agent:create-smart-media-album', (_event, name: unknown, query: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new AgentIPCError('invalid_input', 0, 'Smart album name is required.')
+    }
+    return requireAgentClient().createSmartMediaAlbum(
+      name.trim(),
+      normalizeMediaGalleryQuery(query),
+    )
+  }, false))
+
+  ipcMain.handle(
+    'agent:update-smart-media-album',
+    (_event, albumID: unknown, revision: unknown, input: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof albumID !== 'string' || !albumID.startsWith('smart:') ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+        !input || typeof input !== 'object'
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Smart album id, revision, and update are required.')
+      }
+      const value = input as { name?: unknown; query?: unknown }
+      const name = value.name === undefined
+        ? undefined
+        : typeof value.name === 'string' && value.name.trim()
+          ? value.name.trim()
+          : null
+      if (name === null) {
+        throw new AgentIPCError('invalid_input', 0, 'Smart album name is invalid.')
+      }
+      const query = value.query === undefined
+        ? undefined
+        : normalizeMediaGalleryQuery(value.query)
+      if (name === undefined && query === undefined) {
+        throw new AgentIPCError('invalid_input', 0, 'Smart album name or query is required.')
+      }
+      return requireAgentClient().updateSmartMediaAlbum(
+        albumID,
+        revision,
+        {
+          ...(name !== undefined ? { name } : {}),
+          ...(query !== undefined ? { query } : {}),
+        },
+      )
+    }, false),
+  )
+
+  ipcMain.handle('agent:delete-smart-media-album', (_event, albumID: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' || !albumID.startsWith('smart:') ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Smart album id and revision are required.')
+    }
+    await requireAgentClient().deleteSmartMediaAlbum(albumID, revision)
+    return { ok: true }
+  }, false))
+
   ipcMain.handle('agent:add-media-album-items', (_event, albumID: unknown, revision: unknown, nodeIDs: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')

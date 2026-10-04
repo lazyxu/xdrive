@@ -515,6 +515,38 @@ export class XDriveApi {
     )
   }
 
+  createSmartMediaAlbum(name: string, query: MediaGalleryQuery) {
+    return this.request<MediaAlbum>('/api/v1/media/smart-albums', {
+      method: 'POST',
+      body: JSON.stringify({ name, query }),
+    })
+  }
+
+  updateSmartMediaAlbum(
+    albumID: string,
+    revision: number,
+    input: { name?: string; query?: MediaGalleryQuery },
+  ) {
+    return this.request<MediaAlbum>(
+      `/api/v1/media/smart-albums/${encodeURIComponent(albumID)}`,
+      {
+        method: 'PATCH',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify(input),
+      },
+    )
+  }
+
+  deleteSmartMediaAlbum(albumID: string, revision: number) {
+    return this.request<void>(
+      `/api/v1/media/smart-albums/${encodeURIComponent(albumID)}`,
+      {
+        method: 'DELETE',
+        headers: { 'If-Match': `"${revision}"` },
+      },
+    )
+  }
+
   mediaAlbumItems(
     albumID: string,
     limit = 100,

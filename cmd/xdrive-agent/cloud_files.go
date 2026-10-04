@@ -792,6 +792,44 @@ func (c *agentController) CloudRemoveMediaAlbumItem(
 	return cli.RemoveMediaAlbumItem(ctx, albumID, revision, nodeID)
 }
 
+func (c *agentController) CloudCreateSmartMediaAlbum(
+	ctx context.Context,
+	name string,
+	query client.MediaSmartAlbumQuery,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.CreateSmartMediaAlbum(ctx, name, query)
+}
+
+func (c *agentController) CloudUpdateSmartMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+	name *string,
+	query *client.MediaSmartAlbumQuery,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.UpdateSmartMediaAlbum(ctx, albumID, revision, name, query)
+}
+
+func (c *agentController) CloudDeleteSmartMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.DeleteSmartMediaAlbum(ctx, albumID, revision)
+}
+
 func (c *agentController) CloudMediaAlbumItems(
 	ctx context.Context,
 	albumID string,

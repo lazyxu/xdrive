@@ -496,6 +496,40 @@ func (f *fakeDesktopIPCController) CloudDeleteMediaAlbum(
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) CloudCreateSmartMediaAlbum(
+	_ context.Context,
+	name string,
+	query client.MediaSmartAlbumQuery,
+) (client.MediaAlbum, error) {
+	return client.MediaAlbum{
+		ID: "smart:test", Kind: "smart", Name: name, Revision: 1, Query: &query,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpdateSmartMediaAlbum(
+	_ context.Context,
+	albumID string,
+	revision uint64,
+	name *string,
+	query *client.MediaSmartAlbumQuery,
+) (client.MediaAlbum, error) {
+	album := client.MediaAlbum{
+		ID: albumID, Kind: "smart", Name: "Smart", Revision: revision + 1, Query: query,
+	}
+	if name != nil {
+		album.Name = *name
+	}
+	return album, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteSmartMediaAlbum(
+	context.Context,
+	string,
+	uint64,
+) error {
+	return f.err
+}
+
 func (f *fakeDesktopIPCController) CloudAddMediaAlbumItems(
 	_ context.Context,
 	albumID string,

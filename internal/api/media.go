@@ -92,13 +92,14 @@ type mediaItemDTO struct {
 }
 
 type mediaAlbumDTO struct {
-	ID          string     `json:"id"`
-	Kind        string     `json:"kind"`
-	Name        string     `json:"name"`
-	Revision    uint64     `json:"revision,omitempty"`
-	ItemCount   int64      `json:"item_count"`
-	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
-	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+	ID          string                `json:"id"`
+	Kind        string                `json:"kind"`
+	Name        string                `json:"name"`
+	Revision    uint64                `json:"revision,omitempty"`
+	ItemCount   int64                 `json:"item_count"`
+	CoverNodeID *uint64               `json:"cover_node_id,omitempty"`
+	UpdatedAt   *time.Time            `json:"updated_at,omitempty"`
+	Query       *mediaSmartAlbumQuery `json:"query,omitempty"`
 }
 
 func toMediaMetadataDTO(row meta.MediaMetadata) mediaMetadataDTO {
@@ -267,6 +268,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		Kind        string
 		Name        string
 		Revision    uint64
+		QueryJSON   string
 		ItemCount   int64
 		CoverNodeID *uint64
 		UpdatedAt   *time.Time
@@ -275,7 +277,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 	if err := s.DB.WithContext(c.Request.Context()).
 		Table("xd_photo_collections AS pc").
 		Select(
-			"pc.external_key, pc.kind, pc.name, pc.revision, COUNT(DISTINCT pca.asset_id) AS item_count, "+
+			"pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, COUNT(DISTINCT pca.asset_id) AS item_count, "+
 				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
 				"MAX(COALESCE(pm.captured_at, pc.updated_at)) AS updated_at",
 			thumbnailMIMEs,
@@ -285,7 +287,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		Joins("LEFT JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
 		Where("pc.owner_id = ? AND pc.state = ?", uid, meta.PhotoCollectionStateActive).
-		Group("pc.id, pc.external_key, pc.kind, pc.name, pc.revision").
+		Group("pc.id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json").
 		Order("updated_at DESC, lower(pc.name) ASC").
 		Scan(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list media albums failed")
@@ -294,6 +296,32 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 
 	result := make([]mediaAlbumDTO, 0, len(rows))
 	for _, row := range rows {
+		if row.Kind == meta.PhotoCollectionKindSmart {
+			query, err := decodeMediaSmartAlbumQuery(row.QueryJSON)
+			if err != nil {
+				continue
+			}
+			count, coverNodeID, err := s.smartMediaAlbumStats(
+				c.Request.Context(),
+				uid,
+				query,
+			)
+			if err != nil {
+				fail(c, http.StatusInternalServerError, "list smart media albums failed")
+				return
+			}
+			result = append(result, mediaAlbumDTO{
+				ID:          row.ExternalKey,
+				Kind:        row.Kind,
+				Name:        row.Name,
+				Revision:    row.Revision,
+				ItemCount:   count,
+				CoverNodeID: coverNodeID,
+				UpdatedAt:   row.UpdatedAt,
+				Query:       &query,
+			})
+			continue
+		}
 		kind := row.Kind
 		if kind == meta.PhotoCollectionKindSource {
 			kind = "imported"
@@ -360,6 +388,7 @@ func validMediaAlbumKey(value string) bool {
 		meta.PhotoCollectionKindFolder + ":",
 		meta.PhotoCollectionKindSource + ":",
 		meta.PhotoCollectionKindManual + ":",
+		meta.PhotoCollectionKindSmart + ":",
 	} {
 		if strings.HasPrefix(value, prefix) && len(value) > len(prefix) {
 			return true
@@ -429,12 +458,20 @@ func (s *Server) queryMediaItems(
 			First(&collection).Error; err != nil {
 			return nil, err
 		}
-		membership := s.DB.WithContext(ctx).
-			Table("xd_photo_collection_assets AS pca_media").
-			Select("pa_media.primary_node_id").
-			Joins("JOIN xd_photo_assets AS pa_media ON pa_media.id = pca_media.asset_id").
-			Where("pca_media.collection_id = ? AND pa_media.owner_id = ?", collection.ID, uid)
-		query = query.Where("n.id IN (?)", membership)
+		if collection.Kind == meta.PhotoCollectionKindSmart {
+			saved, err := decodeMediaSmartAlbumQuery(collection.QueryJSON)
+			if err != nil {
+				return nil, err
+			}
+			query = applyMediaQueryFilters(query, saved.options())
+		} else {
+			membership := s.DB.WithContext(ctx).
+				Table("xd_photo_collection_assets AS pca_media").
+				Select("pa_media.primary_node_id").
+				Joins("JOIN xd_photo_assets AS pa_media ON pa_media.id = pca_media.asset_id").
+				Where("pca_media.collection_id = ? AND pa_media.owner_id = ?", collection.ID, uid)
+			query = query.Where("n.id IN (?)", membership)
+		}
 	}
 
 	var metadata []meta.MediaMetadata

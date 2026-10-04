@@ -54,6 +54,9 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /从当前相册移除/)
   assert.match(sharedGallery, /album\.kind === 'manual'/)
   assert.match(sharedGallery, /mediaGalleryQueryFromDraft/)
+  assert.match(sharedGallery, /保存为智能相册/)
+  assert.match(sharedGallery, /保存规则/)
+  assert.match(sharedGallery, /智能相册/)
   assert.match(sharedGallery, /<video/)
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
@@ -81,6 +84,8 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /captured_to\?: string/)
   assert.match(sharedModels, /has_location\?: boolean/)
   assert.match(sharedModels, /favorite\?: boolean/)
+  assert.match(sharedModels, /kind: 'folder' \| 'imported' \| 'manual' \| 'smart' \| string/)
+  assert.match(sharedModels, /query\?: MediaGalleryQuery/)
   assert.match(sharedModels, /live_photo\?: boolean/)
   assert.match(sharedModels, /derived_resources\?: MediaDerivedResource\[\]/)
   assert.match(sharedGallery, /RAW 组合/)
@@ -90,7 +95,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -101,6 +106,9 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'createMediaAlbum:',
     'renameMediaAlbum:',
     'deleteMediaAlbum:',
+    'createSmartMediaAlbum:',
+    'updateSmartMediaAlbum:',
+    'deleteSmartMediaAlbum:',
     'addMediaAlbumItems:',
     'removeMediaAlbumItem:',
     'setMediaFavorite:',
@@ -118,6 +126,9 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'createMediaAlbum(name:',
     'renameMediaAlbum(albumID:',
     'deleteMediaAlbum(albumID:',
+    'createSmartMediaAlbum(name:',
+    'updateSmartMediaAlbum(',
+    'deleteSmartMediaAlbum(albumID:',
     'addMediaAlbumItems(albumID:',
     'removeMediaAlbumItem(albumID:',
     'setMediaFavorite(nodeID:',
@@ -135,6 +146,9 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('POST /v1/media/albums'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/album'))
   assert.ok(desktopIPC.includes('DELETE /v1/media/album'))
+  assert.ok(desktopIPC.includes('POST /v1/media/smart-albums'))
+  assert.ok(desktopIPC.includes('PATCH /v1/media/smart-album'))
+  assert.ok(desktopIPC.includes('DELETE /v1/media/smart-album'))
   assert.ok(desktopIPC.includes('POST /v1/media/album/items'))
   assert.ok(desktopIPC.includes('DELETE /v1/media/album/item'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/favorite'))

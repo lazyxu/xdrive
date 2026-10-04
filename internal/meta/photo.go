@@ -96,6 +96,7 @@ type PhotoCollection struct {
 	Name        string `gorm:"size:512;not null"`
 	State       string `gorm:"size:16;not null;default:active;index"`
 	Revision    uint64 `gorm:"not null;default:1"`
+	QueryJSON   string `gorm:"type:text"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 
