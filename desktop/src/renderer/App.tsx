@@ -1351,8 +1351,24 @@ export default function App({
           <p className="eyebrow">AGENT 连接</p>
           <h1>{headline}</h1>
           <p className="subtitle">xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。</p>
-          <div className="offline-box">{agent.error || '正在等待桌面 IPC 连接…'}</div>
-          <div className="offline-actions">
+          <MuiBox
+            sx={{
+              my: 2.25,
+              borderRadius: 1.5,
+              p: 1.5,
+              bgcolor: 'action.hover',
+              color: 'text.secondary',
+              fontSize: 13,
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {agent.error || '正在等待桌面 IPC 连接…'}
+          </MuiBox>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1.25}
+            sx={{ mt: 2.5, '& > *': { flex: 1 } }}
+          >
             <XDriveActionButton
               intent="primary"
               disabled={!!busy}
@@ -1370,8 +1386,10 @@ export default function App({
             >
               启动 / 重启 Agent
             </XDriveActionButton>
-          </div>
-          <p className="footnote">{info ? `桌面版 ${info.version} · ${platformLabel(info.platform)} ${info.arch}` : '正在加载桌面信息…'}</p>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" display="block" textAlign="center" sx={{ mt: 2.25 }}>
+            {info ? `桌面版 ${info.version} · ${platformLabel(info.platform)} ${info.arch}` : '正在加载桌面信息…'}
+          </Typography>
         </XDriveAuthPanel>
       </XDriveAuthShell>
     )

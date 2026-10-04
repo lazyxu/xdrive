@@ -47,7 +47,7 @@ test('Desktop settings form uses MUI fields and layout instead of legacy form CS
   }
 
   assert.equal(styles.includes('.update-card {'), false, 'client-update layout should stay in MUI')
-  assert.ok(styles.includes('.offline-actions {'), 'offline action styling must remain untouched')
+  assert.equal(styles.includes('.offline-actions {'), false, 'offline action layout should stay in MUI')
 })
 
 test('Desktop client update card uses MUI surfaces and progress primitives', () => {
