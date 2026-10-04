@@ -87,7 +87,6 @@ export default function DesktopFileExplorer({
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
   const [createOpen, setCreateOpen] = useState(false)
-  const [renameNode, setRenameNode] = useState<AgentCloudNode | null>(null)
   const [actionBusy, setActionBusy] = useState('')
 
   const {
@@ -244,14 +243,20 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const rename = async (name: string) => {
-    if (!renameNode || !current) return
-    setActionBusy('rename')
+  const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
+    if (actionBusy) throw new Error('当前有文件操作正在进行，请稍后重试。')
+    const node = xDriveFileExplorerNodeForItem(item, nodeByID)
+    if (!node || !current) return
+    setActionBusy('rename-' + node.id)
     try {
-      const result = await window.xdriveDesktop.agent.cloudRename(renameNode.id, renameNode.revision, name)
+      const result = await window.xdriveDesktop.agent.cloudRename(node.id, node.revision, name)
       if (!result.ok) throw new Error(result.error.message)
+      clearSearch()
       await onLoadDirectory(current.id, crumbs, sort)
       onFeedback('good', '已重命名。')
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+      throw error
     } finally {
       setActionBusy('')
     }
@@ -285,7 +290,6 @@ export default function DesktopFileExplorer({
       onHistory: node.type === 'file'
         ? () => onOpenHistory(node, searchByID.get(node.id)?.crumbs ?? crumbs)
         : undefined,
-      onRename: () => setRenameNode(node),
       onDelete: () => onDelete(node),
     })
   }
@@ -447,6 +451,8 @@ export default function DesktopFileExplorer({
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onDeleteMany(nodes)
         }}
+        onRenameItem={renameItem}
+        renameDisabled={Boolean(actionBusy)}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         getItemMenuItems={getItemMenuItems}
@@ -464,6 +470,8 @@ export default function DesktopFileExplorer({
                   ? '正在处理拖拽项目…'
                   : actionBusy === 'drop-upload'
                     ? '正在上传拖入文件…'
+                  : actionBusy.startsWith('rename-')
+                    ? '正在重命名…'
               : actionBusy.startsWith('download-')
               ? '正在另存为…'
               : actionBusy.startsWith('open-')
@@ -478,15 +486,6 @@ export default function DesktopFileExplorer({
         mode="create-folder"
         onClose={() => setCreateOpen(false)}
         onSubmit={createFolder}
-        onError={(error) => onError(error instanceof Error ? error.message : String(error))}
-      />
-
-      <XDriveFileNameDialog
-        open={Boolean(renameNode)}
-        mode="rename"
-        initialValue={renameNode?.name ?? ''}
-        onClose={() => setRenameNode(null)}
-        onSubmit={rename}
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
       />
 

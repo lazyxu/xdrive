@@ -30,20 +30,20 @@ test('shared FileNameDialog owns create/rename validation and loading UI', () =>
   assert.ok(index.includes("export * from './FileNameDialog'"), 'shared MUI index must export FileNameDialog')
 })
 
-test('Web delegates create-folder and rename dialogs to shared FileNameDialog', () => {
-  assert.ok((webApp.match(/<XDriveFileNameDialog\b/g) || []).length === 2, 'Web should render two shared name dialogs')
+test('Web keeps only create-folder in shared FileNameDialog after rename moves inline', () => {
+  assert.equal((webApp.match(/<XDriveFileNameDialog\b/g) || []).length, 1, 'Web should keep one shared create-folder dialog')
   assert.ok(webApp.includes('onSubmit={createFolder}'), 'Web create-folder dialog must call createFolder')
-  assert.ok(webApp.includes('onSubmit={rename}'), 'Web rename dialog must call rename')
+  assert.equal(webApp.includes('mode="rename"'), false, 'Web rename must no longer use FileNameDialog')
   assert.equal(webApp.includes('folderNameError'), false, 'Web must not keep local create-folder validation state')
   assert.equal(webApp.includes('renameNameError'), false, 'Web must not keep local rename validation state')
   assert.equal(/<Dialog open=\{folderOpen\}/.test(webApp), false, 'Web must not keep its local create-folder Dialog')
 })
 
-test('Desktop delegates create-folder and rename dialogs to shared FileNameDialog', () => {
-  assert.ok((desktopExplorer.match(/<XDriveFileNameDialog\b/g) || []).length === 2, 'Desktop should render two shared name dialogs')
+test('Desktop keeps only create-folder in shared FileNameDialog after rename moves inline', () => {
+  assert.equal((desktopExplorer.match(/<XDriveFileNameDialog\b/g) || []).length, 1, 'Desktop should keep one shared create-folder dialog')
   assert.ok(desktopExplorer.includes('onSubmit={createFolder}'), 'Desktop create-folder dialog must call createFolder')
-  assert.ok(desktopExplorer.includes('onSubmit={rename}'), 'Desktop rename dialog must call rename')
+  assert.equal(desktopExplorer.includes('mode="rename"'), false, 'Desktop rename must no longer use FileNameDialog')
   assert.equal(desktopExplorer.includes('createError'), false, 'Desktop must not keep local create-folder validation state')
-  assert.equal(desktopExplorer.includes('renameError'), false, 'Desktop must not keep local rename validation state')
+  assert.equal(desktopExplorer.includes('renameNode'), false, 'Desktop must not keep rename-dialog state')
   assert.equal(/<Dialog\b/.test(desktopExplorer), false, 'Desktop FileExplorer must not keep raw local Dialog shells')
 })

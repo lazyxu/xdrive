@@ -600,6 +600,83 @@ export function xDriveFileExplorerDeleteOperationPlan<
   }
 }
 
+export type XDriveFileExplorerKeyboardViewMode = 'details' | 'grid'
+
+export type XDriveFileExplorerKeyboardNavigationKey =
+  | 'ArrowUp'
+  | 'ArrowDown'
+  | 'ArrowLeft'
+  | 'ArrowRight'
+  | 'Home'
+  | 'End'
+  | 'PageUp'
+  | 'PageDown'
+
+export function xDriveFileExplorerKeyboardTargetIndex({
+  key,
+  currentIndex,
+  itemCount,
+  viewMode,
+  gridColumns = 1,
+  pageSize = 1,
+}: {
+  key: XDriveFileExplorerKeyboardNavigationKey
+  currentIndex: number
+  itemCount: number
+  viewMode: XDriveFileExplorerKeyboardViewMode
+  gridColumns?: number
+  pageSize?: number
+}) {
+  if (itemCount <= 0 || currentIndex < 0 || currentIndex >= itemCount) return null
+  const columns = Math.max(1, Math.trunc(gridColumns))
+  const page = Math.max(1, Math.trunc(pageSize))
+
+  let target = currentIndex
+  switch (key) {
+    case 'ArrowUp':
+      if (viewMode === 'grid' && currentIndex < columns) return currentIndex
+      target = currentIndex - (viewMode === 'grid' ? columns : 1)
+      break
+    case 'ArrowDown':
+      if (viewMode === 'grid' && currentIndex + columns >= itemCount) return currentIndex
+      target = currentIndex + (viewMode === 'grid' ? columns : 1)
+      break
+    case 'ArrowLeft':
+      if (viewMode !== 'grid') return null
+      target = currentIndex - 1
+      break
+    case 'ArrowRight':
+      if (viewMode !== 'grid') return null
+      target = currentIndex + 1
+      break
+    case 'Home':
+      target = 0
+      break
+    case 'End':
+      target = itemCount - 1
+      break
+    case 'PageUp':
+      target = currentIndex - page
+      break
+    case 'PageDown':
+      target = currentIndex + page
+      break
+    default:
+      return null
+  }
+
+  return Math.max(0, Math.min(itemCount - 1, target))
+}
+
+export function xDriveFileExplorerRenameSelectionEnd(
+  name: string,
+  kind: 'dir' | 'file',
+) {
+  if (kind === 'dir') return name.length
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? dot : name.length
+}
+
 export type XDriveFileExplorerPageSort = {
   key: string
   direction: string

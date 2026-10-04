@@ -8,6 +8,7 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded'
 import ContentPasteRoundedIcon from '@mui/icons-material/ContentPasteRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
@@ -49,7 +50,8 @@ import {
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import { formatSize } from '../format'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT } from '../file-explorer-controller'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd } from '../file-explorer-controller'
+import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
@@ -360,6 +362,8 @@ export function XDriveFileExplorer({
   canPaste = false,
   onDownloadItems,
   onDeleteItems,
+  onRenameItem,
+  renameDisabled = false,
   detailsPreferencesKey,
   onDropItemsToFolder,
   onExternalFilesDrop,
@@ -409,6 +413,8 @@ export function XDriveFileExplorer({
   canPaste?: boolean
   onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
   onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
+  onRenameItem?: (item: XDriveFileExplorerItem, name: string) => void | Promise<void>
+  renameDisabled?: boolean
   detailsPreferencesKey?: string
   onDropItemsToFolder?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerItem, operation: 'move' | 'copy') => void
   onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void
@@ -437,6 +443,7 @@ export function XDriveFileExplorer({
   const [internalSort, setInternalSort] = useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
   const [internalSelectedIDs, setInternalSelectedIDs] = useState<XDriveFileExplorerID[]>([...defaultSelectedIDs])
   const [selectionAnchorID, setSelectionAnchorID] = useState<XDriveFileExplorerID | null>(null)
+  const [activeItemID, setActiveItemID] = useState<XDriveFileExplorerID | null>(null)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [detailsColumnsAnchor, setDetailsColumnsAnchor] = useState<HTMLElement | null>(null)
   const [detailsLayout, setDetailsLayout] = useState<XDriveFileExplorerDetailsLayout>(() => loadFileExplorerDetailsLayout(detailsPreferencesKey))
@@ -447,6 +454,15 @@ export function XDriveFileExplorer({
     items: XDriveFileExplorerMenuItem[]
   } | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const renameInputRef = useRef<HTMLInputElement | null>(null)
+  const renameSubmittingRef = useRef(false)
+  const renameCancelledRef = useRef(false)
+  const itemElementRefs = useRef(new Map<string, HTMLElement>())
+  const [renamingID, setRenamingID] = useState<XDriveFileExplorerID | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [renameSubmitting, setRenameSubmitting] = useState(false)
+  const [renameError, setRenameError] = useState('')
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
@@ -524,6 +540,23 @@ export function XDriveFileExplorer({
     () => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id))),
     [selectedKeySet, visibleItems],
   )
+  const activeIndex = useMemo(
+    () => activeItemID === null
+      ? -1
+      : visibleItems.findIndex((item) => explorerIDKey(item.id) === explorerIDKey(activeItemID)),
+    [activeItemID, visibleItems],
+  )
+  const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : visibleItems[0]
+
+  useEffect(() => {
+    if (visibleItems.length === 0) {
+      if (activeItemID !== null) setActiveItemID(null)
+      return
+    }
+    if (activeIndex >= 0) return
+    const selected = visibleItems.find((item) => selectedKeySet.has(explorerIDKey(item.id)))
+    setActiveItemID((selected ?? visibleItems[0]).id)
+  }, [activeIndex, activeItemID, selectedKeySet, visibleItems])
 
   const commitSelection = (ids: XDriveFileExplorerID[]) => {
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs(ids)
@@ -535,6 +568,169 @@ export function XDriveFileExplorer({
     commitSelection([])
   }
 
+  const scheduleItemFocus = (id: XDriveFileExplorerID) => {
+    if (typeof window === 'undefined') return
+    let attempts = 0
+    const focus = () => {
+      const element = itemElementRefs.current.get(explorerIDKey(id))
+      if (element) {
+        element.focus()
+        return
+      }
+      attempts += 1
+      if (attempts < 4) window.requestAnimationFrame(focus)
+    }
+    window.requestAnimationFrame(focus)
+  }
+
+  const focusItemAtIndex = (index: number) => {
+    const item = visibleItems[index]
+    if (!item) return
+    setActiveItemID(item.id)
+    const host = scrollHostRef.current
+    if (host && viewMode === 'details') {
+      const top = detailsHeaderHeight + index * detailsRowHeight
+      const bottom = top + detailsRowHeight
+      if (top < host.scrollTop + detailsHeaderHeight) {
+        host.scrollTop = Math.max(0, top - detailsHeaderHeight)
+      } else if (bottom > host.scrollTop + host.clientHeight) {
+        host.scrollTop = Math.max(0, bottom - host.clientHeight)
+      }
+    }
+    scheduleItemFocus(item.id)
+  }
+
+  const beginRename = (item: XDriveFileExplorerItem) => {
+    if (!onRenameItem || renameDisabled || renameSubmitting) return
+    if (!selectedKeySet.has(explorerIDKey(item.id)) || selectedItems.length !== 1) {
+      commitSelection([item.id])
+      setSelectionAnchorID(item.id)
+    }
+    setActiveItemID(item.id)
+    renameCancelledRef.current = false
+    renameSubmittingRef.current = false
+    setRenameDraft(item.name)
+    setRenameError('')
+    setRenamingID(item.id)
+  }
+
+  const cancelRename = (item: XDriveFileExplorerItem) => {
+    renameCancelledRef.current = true
+    setRenamingID(null)
+    setRenameDraft('')
+    setRenameError('')
+    setRenameSubmitting(false)
+    scheduleItemFocus(item.id)
+  }
+
+  const submitRename = async (item: XDriveFileExplorerItem) => {
+    if (!onRenameItem || renameCancelledRef.current || renameSubmittingRef.current) return
+    const normalized = renameDraft.trim()
+    if (!normalized) {
+      setRenameError('请填写名称')
+      renameInputRef.current?.focus()
+      return
+    }
+    if (normalized.length > 255) {
+      setRenameError('名称不能超过 255 个字符')
+      renameInputRef.current?.focus()
+      return
+    }
+    if (normalized === item.name) {
+      setRenamingID(null)
+      setRenameError('')
+      scheduleItemFocus(item.id)
+      return
+    }
+
+    renameSubmittingRef.current = true
+    setRenameSubmitting(true)
+    setRenameError('')
+    try {
+      await onRenameItem(item, normalized)
+      setRenamingID(null)
+      setRenameDraft('')
+      scheduleItemFocus(item.id)
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : String(error))
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => renameInputRef.current?.focus())
+      }
+    } finally {
+      renameSubmittingRef.current = false
+      setRenameSubmitting(false)
+    }
+  }
+
+  useEffect(() => {
+    if (renamingID === null || typeof window === 'undefined') return
+    const item = visibleItems.find((candidate) => explorerIDKey(candidate.id) === explorerIDKey(renamingID))
+    if (!item) return
+    window.requestAnimationFrame(() => {
+      const input = renameInputRef.current
+      if (!input) return
+      input.focus()
+      input.setSelectionRange(0, xDriveFileExplorerRenameSelectionEnd(item.name, item.kind))
+    })
+  }, [renamingID, visibleItems])
+
+  const renderItemName = (item: XDriveFileExplorerItem, grid: boolean) => {
+    const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
+    if (renaming) {
+      return (
+        <TextField
+          inputRef={renameInputRef}
+          value={renameDraft}
+          size="small"
+          variant="standard"
+          disabled={renameSubmitting}
+          error={Boolean(renameError)}
+          title={renameError || undefined}
+          aria-label={'重命名 ' + item.name}
+          slotProps={{ htmlInput: { maxLength: 255, spellCheck: false } }}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onChange={(event) => {
+            setRenameDraft(event.target.value)
+            if (renameError) setRenameError('')
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              void submitRename(item)
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              cancelRename(item)
+            }
+          }}
+          onBlur={() => {
+            if (!renameCancelledRef.current) void submitRename(item)
+          }}
+          sx={grid ? { width: '100%' } : { minWidth: 120, maxWidth: '100%' }}
+        />
+      )
+    }
+    return grid ? (
+      <Typography
+        variant="body2"
+        sx={{
+          width: '100%',
+          overflowWrap: 'anywhere',
+          display: '-webkit-box',
+          WebkitBoxOrient: 'vertical',
+          WebkitLineClamp: 2,
+          overflow: 'hidden',
+          lineHeight: 1.25,
+        }}
+      >
+        {item.name}
+      </Typography>
+    ) : (
+      <Typography variant="body2" noWrap>{item.name}</Typography>
+    )
+  }
+
   const selectItem = (
     event: ReactMouseEvent<HTMLElement>,
     item: XDriveFileExplorerItem,
@@ -542,6 +738,7 @@ export function XDriveFileExplorer({
   ) => {
     const itemKey = explorerIDKey(item.id)
     const additive = event.ctrlKey || event.metaKey
+    setActiveItemID(item.id)
 
     if (event.shiftKey && selectionAnchorID !== null) {
       const anchorKey = explorerIDKey(selectionAnchorID)
@@ -577,6 +774,7 @@ export function XDriveFileExplorer({
 
   const toggleKeyboardSelection = (item: XDriveFileExplorerItem) => {
     const key = explorerIDKey(item.id)
+    setActiveItemID(item.id)
     if (selectedKeySet.has(key)) {
       commitSelection(selectedIDs.filter((id) => explorerIDKey(id) !== key))
     } else {
@@ -585,12 +783,12 @@ export function XDriveFileExplorer({
     setSelectionAnchorID(item.id)
   }
 
-  const openItemContextMenu = (
-    event: ReactMouseEvent<HTMLElement>,
+  const openItemContextMenuAt = (
     item: XDriveFileExplorerItem,
+    mouseX: number,
+    mouseY: number,
   ) => {
-    event.preventDefault()
-    event.stopPropagation()
+    setActiveItemID(item.id)
     if (!selectedKeySet.has(explorerIDKey(item.id))) {
       commitSelection([item.id])
       setSelectionAnchorID(item.id)
@@ -598,7 +796,28 @@ export function XDriveFileExplorer({
     const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
       ? selectedItems
       : [item]
-    const actionItems = selection.length > 1 ? [] : (getItemMenuItems?.(item) ?? [])
+    let actionItems = selection.length > 1 ? [] : (getItemMenuItems?.(item) ?? [])
+    if (selection.length === 1 && onRenameItem) {
+      const inlineRename: XDriveFileExplorerMenuItem = {
+        id: 'rename',
+        label: '重命名',
+        icon: <EditRoundedIcon fontSize="small" />,
+        dividerBefore: true,
+        disabled: renameDisabled || renameSubmitting,
+        onSelect: () => beginRename(item),
+      }
+      const renameIndex = actionItems.findIndex((menuItem) => menuItem.id === 'rename')
+      if (renameIndex >= 0) {
+        actionItems = actionItems.map((menuItem, index) => (
+          index === renameIndex ? { ...menuItem, ...inlineRename } : menuItem
+        ))
+      } else {
+        const deleteIndex = actionItems.findIndex((menuItem) => menuItem.id === 'delete')
+        actionItems = deleteIndex >= 0
+          ? [...actionItems.slice(0, deleteIndex), inlineRename, ...actionItems.slice(deleteIndex)]
+          : [...actionItems, inlineRename]
+      }
+    }
     const clipboardItems: XDriveFileExplorerMenuItem[] = []
     if (onCutItems) {
       clipboardItems.push({
@@ -648,10 +867,19 @@ export function XDriveFileExplorer({
     const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...inspectorItems]
     if (menuItems.length === 0) return
     setContextMenu({
-      mouseX: event.clientX + 2,
-      mouseY: event.clientY - 6,
+      mouseX,
+      mouseY,
       items: menuItems,
     })
+  }
+
+  const openItemContextMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    item: XDriveFileExplorerItem,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+    openItemContextMenuAt(item, event.clientX + 2, event.clientY - 6)
   }
 
   const openBackgroundContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
@@ -676,7 +904,8 @@ export function XDriveFileExplorer({
   }
 
   const startItemDrag = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
-    if (!onDropItemsToFolder) return
+    if (!onDropItemsToFolder || (renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id))) return
+    setActiveItemID(item.id)
     const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
       ? selectedItems
       : [item]
@@ -829,21 +1058,206 @@ export function XDriveFileExplorer({
     )
   }
 
+  const gridColumnCount = () => {
+    if (viewMode !== 'grid') return 1
+    const elements = visibleItems
+      .map((item) => itemElementRefs.current.get(explorerIDKey(item.id)))
+      .filter((element): element is HTMLElement => Boolean(element))
+    if (elements.length < 2) return 1
+    const firstTop = elements[0].offsetTop
+    let columns = 0
+    for (const element of elements) {
+      if (Math.abs(element.offsetTop - firstTop) > 2) break
+      columns += 1
+    }
+    return Math.max(1, columns)
+  }
+
+  const moveKeyboardFocus = (
+    event: KeyboardEvent<HTMLElement>,
+    item: XDriveFileExplorerItem,
+  ) => {
+    const currentIndex = visibleItems.findIndex((candidate) => explorerIDKey(candidate.id) === explorerIDKey(item.id))
+    if (currentIndex < 0) return false
+    const columns = gridColumnCount()
+    const visibleRows = Math.max(1, Math.floor(Math.max(viewportHeight, 128) / (viewMode === 'details' ? detailsRowHeight : 128)))
+    const pageSize = viewMode === 'details' ? visibleRows : visibleRows * columns
+    const targetIndex = xDriveFileExplorerKeyboardTargetIndex({
+      key: event.key as XDriveFileExplorerKeyboardNavigationKey,
+      currentIndex,
+      itemCount: visibleItems.length,
+      viewMode,
+      gridColumns: columns,
+      pageSize,
+    })
+    if (targetIndex === null) return false
+    event.preventDefault()
+    event.stopPropagation()
+    if (targetIndex === currentIndex) return true
+
+    const target = visibleItems[targetIndex]
+    const modifier = event.ctrlKey || event.metaKey
+    if (event.shiftKey) {
+      const anchorID = selectionAnchorID ?? item.id
+      if (selectionAnchorID === null) setSelectionAnchorID(anchorID)
+      const anchorIndex = visibleItems.findIndex((candidate) => explorerIDKey(candidate.id) === explorerIDKey(anchorID))
+      if (anchorIndex >= 0) {
+        const start = Math.min(anchorIndex, targetIndex)
+        const end = Math.max(anchorIndex, targetIndex)
+        const range = visibleItems.slice(start, end + 1).map((candidate) => candidate.id)
+        if (modifier) {
+          const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
+          for (const id of range) merged.set(explorerIDKey(id), id)
+          commitSelection([...merged.values()])
+        } else {
+          commitSelection(range)
+        }
+      }
+    } else if (!modifier) {
+      commitSelection([target.id])
+      setSelectionAnchorID(target.id)
+    }
+
+    setActiveItemID(target.id)
+    onItemClick?.(target)
+    focusItemAtIndex(targetIndex)
+    return true
+  }
+
   const itemKeyDown = (event: KeyboardEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     if (event.altKey && event.key === 'Enter') {
       event.preventDefault()
+      event.stopPropagation()
       setPropertiesItems([item])
       return
     }
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+      if (moveKeyboardFocus(event, item)) return
+    }
     if (event.key === 'Enter') {
       event.preventDefault()
+      event.stopPropagation()
       onOpenItem?.(item)
       return
     }
     if (event.key === ' ') {
       event.preventDefault()
+      event.stopPropagation()
       toggleKeyboardSelection(item)
     }
+  }
+
+  const isEditableTarget = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false
+    return target.isContentEditable || Boolean(target.closest('input, textarea, select, [role="textbox"]'))
+  }
+
+  const handleExplorerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const modifier = event.ctrlKey || event.metaKey
+    const key = event.key.toLowerCase()
+
+    if (event.altKey && event.key === 'ArrowLeft' && canGoBack && onBack) {
+      event.preventDefault()
+      onBack()
+      return
+    }
+    if (event.altKey && event.key === 'ArrowRight' && canGoForward && onForward) {
+      event.preventDefault()
+      onForward()
+      return
+    }
+    if (event.altKey && event.key === 'ArrowUp' && canGoUp && onUp) {
+      event.preventDefault()
+      onUp()
+      return
+    }
+    if ((modifier && key === 'l') || (event.altKey && key === 'd') || event.key === 'F4') {
+      if (!onPathSubmit) return
+      event.preventDefault()
+      setPathDraft(derivedPath)
+      setEditingPath(true)
+      return
+    }
+    if ((modifier && (key === 'f' || key === 'e')) || event.key === 'F3') {
+      event.preventDefault()
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+      return
+    }
+    if ((event.key === 'F5' || (modifier && key === 'r')) && onRefresh) {
+      event.preventDefault()
+      onRefresh()
+      return
+    }
+    if (modifier && event.shiftKey && key === 'n' && onCreateFolder) {
+      event.preventDefault()
+      onCreateFolder()
+      return
+    }
+    if (event.altKey && key === 'p') {
+      event.preventDefault()
+      setInspectorOpen((open) => !open)
+      return
+    }
+
+    if (isEditableTarget(event.target)) return
+
+    const navigationKeys: XDriveFileExplorerKeyboardNavigationKey[] = [
+      'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown',
+      ...(viewMode === 'grid' ? ['ArrowLeft', 'ArrowRight'] as const : []),
+    ]
+    if (activeItem && navigationKeys.includes(event.key as XDriveFileExplorerKeyboardNavigationKey)) {
+      if (moveKeyboardFocus(event, activeItem)) return
+    }
+
+    if (event.key === 'Backspace' && canGoBack && onBack) {
+      event.preventDefault()
+      onBack()
+      return
+    }
+    if (event.key === 'F2' && activeItem && onRenameItem && !renameDisabled) {
+      event.preventDefault()
+      beginRename(activeItem)
+      return
+    }
+    if (event.shiftKey && event.key === 'F10' && activeItem) {
+      event.preventDefault()
+      const element = itemElementRefs.current.get(explorerIDKey(activeItem.id))
+      const rect = element?.getBoundingClientRect()
+      openItemContextMenuAt(
+        activeItem,
+        (rect?.left ?? 12) + 12,
+        (rect?.top ?? 12) + 24,
+      )
+      return
+    }
+    if (modifier && key === 'a') {
+      event.preventDefault()
+      commitSelection(visibleItems.map((candidate) => candidate.id))
+      if (activeItemID === null && visibleItems[0]) setActiveItemID(visibleItems[0].id)
+      return
+    }
+    if (modifier && key === 'c' && onCopyItems && selectedItems.length > 0) {
+      event.preventDefault()
+      onCopyItems(selectedItems)
+      return
+    }
+    if (modifier && key === 'x' && onCutItems && selectedItems.length > 0) {
+      event.preventDefault()
+      onCutItems(selectedItems)
+      return
+    }
+    if (modifier && key === 'v' && onPaste && canPaste) {
+      event.preventDefault()
+      onPaste()
+      return
+    }
+    if (event.key === 'Delete' && onDeleteItems && selectedItems.length > 0) {
+      event.preventDefault()
+      onDeleteItems(selectedItems)
+      return
+    }
+    if (event.key === 'Escape') clearSelection()
   }
 
   const propertiesForItem = (item: XDriveFileExplorerItem) => [
@@ -932,6 +1346,7 @@ export function XDriveFileExplorer({
   return (
     <Paper
       variant={presentation === 'workspace' ? 'elevation' : 'outlined'}
+      onKeyDown={handleExplorerKeyDown}
       elevation={0}
       square={presentation === 'workspace'}
       data-xdrive-file-explorer
@@ -997,6 +1412,7 @@ export function XDriveFileExplorer({
               size="small"
               aria-label="文件路径"
               value={pathDraft}
+              onFocus={(event) => event.currentTarget.select()}
               onChange={(event) => setPathDraft(event.target.value)}
               onKeyDown={handlePathKeyDown}
               onBlur={submitPath}
@@ -1067,6 +1483,7 @@ export function XDriveFileExplorer({
         </Box>
 
         <TextField
+          inputRef={searchInputRef}
           size="small"
           value={searchValue}
           onChange={(event) => onSearchValueChange?.(event.target.value)}
@@ -1272,11 +1689,14 @@ export function XDriveFileExplorer({
       <Box
         ref={scrollHostRef}
         sx={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}
-        tabIndex={0}
+        tabIndex={visibleItems.length === 0 ? 0 : -1}
         onScroll={handleScroll}
         onClick={(event) => {
           const target = event.target as HTMLElement
-          if (!target.closest('[data-xdrive-file-explorer-item]')) clearSelection()
+          if (!target.closest('[data-xdrive-file-explorer-item]')) {
+            clearSelection()
+            scrollHostRef.current?.focus()
+          }
         }}
         onContextMenu={openBackgroundContextMenu}
         onDragOver={(event) => {
@@ -1286,36 +1706,6 @@ export function XDriveFileExplorer({
           }
         }}
         onDrop={dropExternalFilesOnBackground}
-        onKeyDown={(event) => {
-          const modifier = event.ctrlKey || event.metaKey
-          const key = event.key.toLowerCase()
-          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
-            event.preventDefault()
-            commitSelection(visibleItems.map((item) => item.id))
-            return
-          }
-          if (modifier && key === 'c' && onCopyItems && selectedItems.length > 0) {
-            event.preventDefault()
-            onCopyItems(selectedItems)
-            return
-          }
-          if (modifier && key === 'x' && onCutItems && selectedItems.length > 0) {
-            event.preventDefault()
-            onCutItems(selectedItems)
-            return
-          }
-          if (modifier && key === 'v' && onPaste && canPaste) {
-            event.preventDefault()
-            onPaste()
-            return
-          }
-          if (event.key === 'Delete' && onDeleteItems && selectedItems.length > 0) {
-            event.preventDefault()
-            onDeleteItems(selectedItems)
-            return
-          }
-          if (event.key === 'Escape') clearSelection()
-        }}
       >
         {loading && visibleItems.length === 0 ? (
           <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
@@ -1397,15 +1787,22 @@ export function XDriveFileExplorer({
             {detailItems.map((item, windowIndex) => {
               const index = virtualizeDetails ? detailsWindow.start + windowIndex : windowIndex
               const selected = selectedKeySet.has(explorerIDKey(item.id))
+              const active = activeItemID === null ? index === 0 : explorerIDKey(activeItemID) === explorerIDKey(item.id)
+              const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
               return (
               <ButtonBase
                 key={item.id}
+                ref={(element) => {
+                  const key = explorerIDKey(item.id)
+                  if (element) itemElementRefs.current.set(key, element)
+                  else itemElementRefs.current.delete(key)
+                }}
                 component="div"
                 role="row"
                 data-xdrive-file-explorer-item
-                tabIndex={0}
+                tabIndex={active ? 0 : -1}
                 aria-selected={selected}
-                draggable={Boolean(onDropItemsToFolder)}
+                draggable={Boolean(onDropItemsToFolder) && !renaming}
                 onDragStart={(event) => startItemDrag(event, item)}
                 onDragEnd={endItemDrag}
                 onDragOver={(event) => dragOverFolder(event, item)}
@@ -1414,8 +1811,11 @@ export function XDriveFileExplorer({
                 }}
                 onDrop={(event) => dropOnFolder(event, item)}
                 onClick={(event) => selectItem(event, item, index)}
-                onDoubleClick={() => onOpenItem?.(item)}
+                onDoubleClick={() => {
+                  if (!renaming) onOpenItem?.(item)
+                }}
                 onContextMenu={(event) => openItemContextMenu(event, item)}
+                onFocus={() => setActiveItemID(item.id)}
                 onKeyDown={(event) => itemKeyDown(event, item)}
                 sx={{
                   width: '100%',
@@ -1447,7 +1847,7 @@ export function XDriveFileExplorer({
                       <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
                         {defaultItemIcon(item)}
                         <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" noWrap>{item.name}</Typography>
+                          {renderItemName(item, false)}
                           {item.secondaryLabel ? (
                             <Typography variant="caption" color="text.secondary" noWrap display="block">
                               {item.secondaryLabel}
@@ -1487,15 +1887,22 @@ export function XDriveFileExplorer({
           >
             {visibleItems.map((item, index) => {
               const selected = selectedKeySet.has(explorerIDKey(item.id))
+              const active = activeItemID === null ? index === 0 : explorerIDKey(activeItemID) === explorerIDKey(item.id)
+              const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
               return (
               <ButtonBase
                 key={item.id}
+                ref={(element) => {
+                  const key = explorerIDKey(item.id)
+                  if (element) itemElementRefs.current.set(key, element)
+                  else itemElementRefs.current.delete(key)
+                }}
                 component="div"
                 role="listitem"
                 data-xdrive-file-explorer-item
-                tabIndex={0}
+                tabIndex={active ? 0 : -1}
                 aria-selected={selected}
-                draggable={Boolean(onDropItemsToFolder)}
+                draggable={Boolean(onDropItemsToFolder) && !renaming}
                 onDragStart={(event) => startItemDrag(event, item)}
                 onDragEnd={endItemDrag}
                 onDragOver={(event) => dragOverFolder(event, item)}
@@ -1504,8 +1911,11 @@ export function XDriveFileExplorer({
                 }}
                 onDrop={(event) => dropOnFolder(event, item)}
                 onClick={(event) => selectItem(event, item, index)}
-                onDoubleClick={() => onOpenItem?.(item)}
+                onDoubleClick={() => {
+                  if (!renaming) onOpenItem?.(item)
+                }}
                 onContextMenu={(event) => openItemContextMenu(event, item)}
+                onFocus={() => setActiveItemID(item.id)}
                 onKeyDown={(event) => itemKeyDown(event, item)}
                 sx={{
                   minWidth: 0,
@@ -1547,20 +1957,7 @@ export function XDriveFileExplorer({
                 >
                   {thumbnailForItem(item)}
                 </Box>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    width: '100%',
-                    overflowWrap: 'anywhere',
-                    display: '-webkit-box',
-                    WebkitBoxOrient: 'vertical',
-                    WebkitLineClamp: 2,
-                    overflow: 'hidden',
-                    lineHeight: 1.25,
-                  }}
-                >
-                  {item.name}
-                </Typography>
+                {renderItemName(item, true)}
               </ButtonBase>
               )
             })}
