@@ -1,15 +1,25 @@
 import type { ReactNode } from 'react'
 import { Box, Typography } from '@mui/material'
+import type { SxProps, Theme } from '@mui/material/styles'
 import type { XDriveStatusTone } from './StatusBadge'
 
-export function XDriveMetricGrid({ children }: { children: ReactNode }) {
+export function XDriveMetricGrid({
+  children,
+  sx,
+}: {
+  children: ReactNode
+  sx?: SxProps<Theme>
+}) {
   return (
     <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
-        gap: 2,
-      }}
+      sx={[
+        {
+          display: 'grid',
+          gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+          gap: 2,
+        },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
     >
       {children}
     </Box>
