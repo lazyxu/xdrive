@@ -127,14 +127,14 @@ if (webFileExplorer.includes('<XDriveActionButton compact startIcon={<RestoreFro
 }
 
 requireText(app, [
-  'file-manager-shell',
   'XDriveWorkspaceShell',
   'XDriveWorkspaceSidebar',
   'XDriveWorkspaceContent',
   'className="web-workspace-shell"',
   "sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}",
   "presentation={appView === 'files' ? 'files' : 'page'}",
-  'className="files-workspace-surface"',
+  "height: { md: '100vh' }",
+  "overflow: { md: 'hidden' }",
   "height: { xs: 560, md: '100%' }",
 ], 'Web files workspace')
 
@@ -148,11 +148,9 @@ for (const primitive of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDr
   if (app.includes(primitive)) throw new Error(`Web must not assemble sidebar primitive directly: ${primitive}`)
 }
 
-requireText(styles, [
-  '@media (min-width: 900px)',
-  '.file-manager-shell',
-  '.files-workspace-surface',
-], 'Web files workspace styles')
+for (const legacy of ['.app-shell', '.topbar', '.file-manager-shell', '.files-workspace-surface']) {
+  if (styles.includes(legacy)) throw new Error(`Web shell layout must live in MUI: ${legacy}`)
+}
 
 if (styles.includes('.content-wrap')) {
   throw new Error('Web workspace content layout must live in shared MUI')
