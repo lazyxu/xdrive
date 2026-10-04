@@ -107,7 +107,7 @@ test('Web FileExplorer supports bulk download and delete', () => {
 
 test('Web single-item delete queues the same persistent delete operation as bulk delete', () => {
   const start = app.indexOf('const remove = (node: Node) => {')
-  const end = app.indexOf('\n  const cancelFileOperation =', start)
+  const end = app.indexOf('\n  const removeMany =', start)
   assert.ok(start >= 0 && end > start, 'Web single-delete handler boundaries are missing')
   const body = app.slice(start, end)
   assert.ok(body.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Web single delete must use the shared delete plan')

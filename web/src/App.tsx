@@ -40,6 +40,7 @@ import {
   XDriveStatePanel,
   XDriveTaskCenterPage,
   useXDriveFileOperationLifecycle,
+  useXDriveFileOperationActions,
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
@@ -490,7 +491,6 @@ function FileManager({
   const [renameNode, setRenameNode] = useState<Node | null>(null)
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
-  const [fileOperationAction, setFileOperationAction] = useState('')
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
@@ -662,6 +662,25 @@ function FileManager({
     },
   })
 
+  const {
+    busy: fileOperationActionBusy,
+    cancellingID: fileOperationCancellingID,
+    retryingID: fileOperationRetryingID,
+    clearHistoryLoading: fileOperationClearHistoryLoading,
+    cancelOperation: cancelFileOperation,
+    retryOperation: retryFileOperation,
+    clearHistory: clearTaskHistory,
+  } = useXDriveFileOperationActions<XDriveFileOperation>({
+    cancelOperation: (id) => api.cancelFileOperation(id),
+    retryOperation: (id) => api.retryFileOperation(id),
+    clearOperationHistory: () => api.clearFileOperationHistory(),
+    clearTransferHistory: async () => { api.clearTransferHistory() },
+    rememberOperation: rememberFileOperation,
+    refreshOperations: refreshFileOperations,
+    onError: handleError,
+    onFeedback: (message) => setFeedback({ tone: 'good', message }),
+  })
+
   useEffect(() => {
     if (!profile || profile.must_change_password) return
     const timer = window.setInterval(() => {
@@ -814,46 +833,6 @@ function FileManager({
         setFeedback({ tone: 'good', message: plan.message })
       },
     })
-  }
-
-  const cancelFileOperation = async (id: string) => {
-    setFileOperationAction(`cancel:${id}`)
-    try {
-      rememberFileOperation(await api.cancelFileOperation(id))
-      await refreshFileOperations()
-    } catch (error) {
-      handleError(error)
-    } finally {
-      setFileOperationAction('')
-    }
-  }
-
-  const retryFileOperation = async (id: string) => {
-    setFileOperationAction(`retry:${id}`)
-    try {
-      const operation = await api.retryFileOperation(id)
-      rememberFileOperation(operation)
-      setFeedback({ tone: 'good', message: '文件操作已重新加入队列。' })
-      await refreshFileOperations()
-    } catch (error) {
-      handleError(error)
-    } finally {
-      setFileOperationAction('')
-    }
-  }
-
-  const clearTaskHistory = async () => {
-    setFileOperationAction('clear-history')
-    try {
-      await api.clearFileOperationHistory()
-      api.clearTransferHistory()
-      await refreshFileOperations()
-      setFeedback({ tone: 'good', message: '已清空已完成、失败和已取消的任务历史。' })
-    } catch (error) {
-      handleError(error)
-    } finally {
-      setFileOperationAction('')
-    }
   }
 
   const removeMany = (nodes: Node[]) => {
@@ -1023,13 +1002,13 @@ function FileManager({
               disabled: (
                 !transfers.some((item) => item.state === 'completed' || item.state === 'failed') &&
                 !fileOperations.some((item) => !xDriveFileOperationActive(item.status))
-              ) || Boolean(fileOperationAction),
-              loading: fileOperationAction === 'clear-history',
+              ) || fileOperationActionBusy,
+              loading: fileOperationClearHistoryLoading,
               onClear: () => { void clearTaskHistory() },
             }}
-            operationCancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
-            operationRetryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}
-            operationDisabled={Boolean(fileOperationAction)}
+            operationCancellingID={fileOperationCancellingID}
+            operationRetryingID={fileOperationRetryingID}
+            operationDisabled={fileOperationActionBusy}
             onCancelOperation={(id) => { void cancelFileOperation(id) }}
             onRetryOperation={(id) => { void retryFileOperation(id) }}
           />

@@ -61,6 +61,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceManager,
   useXDriveFileOperationLifecycle,
+  useXDriveFileOperationActions,
 } from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource, XDriveCloudStorageDataSource, XDriveLocalStorageDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
@@ -198,7 +199,6 @@ export default function App({
   const [serverUpdateError, setServerUpdateError] = useState('')
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
-  const [fileOperationAction, setFileOperationAction] = useState('')
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -335,6 +335,44 @@ export default function App({
         cloudPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
       )
     },
+  })
+
+  const {
+    busy: fileOperationActionBusy,
+    cancellingID: fileOperationCancellingID,
+    retryingID: fileOperationRetryingID,
+    clearHistoryLoading: fileOperationClearHistoryLoading,
+    cancelOperation: cancelCloudFileOperation,
+    retryOperation: retryCloudFileOperation,
+    clearHistory: clearTaskHistory,
+  } = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
+    cancelOperation: async (id) => {
+      const result = await window.xdriveDesktop.agent.cloudCancelFileOperation(id)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    retryOperation: async (id) => {
+      const result = await window.xdriveDesktop.agent.cloudRetryFileOperation(id)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    clearOperationHistory: async () => {
+      setError('')
+      const result = await window.xdriveDesktop.agent.cloudClearFileOperationHistory()
+      if (!result.ok) throw new Error(result.error.message)
+    },
+    clearTransferHistory: async () => {
+      const result = await window.xdriveDesktop.agent.clearTransferHistory()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    onTransferHistoryCleared: setTransfers,
+    rememberOperation: rememberCloudFileOperation,
+    refreshOperations: refreshCloudFileOperations,
+    onError: (operationError) => setError(
+      operationError instanceof Error ? operationError.message : String(operationError),
+    ),
+    onFeedback: setNotice,
   })
 
   const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
@@ -975,65 +1013,9 @@ export default function App({
     }
   }
 
-  const cancelCloudFileOperation = async (id: string) => {
-    setFileOperationAction(`cancel:${id}`)
-    try {
-      const result = await window.xdriveDesktop.agent.cloudCancelFileOperation(id)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      rememberCloudFileOperation(result.data)
-      await refreshCloudFileOperations()
-    } finally {
-      setFileOperationAction('')
-    }
-  }
-
-  const retryCloudFileOperation = async (id: string) => {
-    setFileOperationAction(`retry:${id}`)
-    try {
-      const result = await window.xdriveDesktop.agent.cloudRetryFileOperation(id)
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      rememberCloudFileOperation(result.data)
-      setNotice('文件操作已重新加入队列。')
-      await refreshCloudFileOperations()
-    } finally {
-      setFileOperationAction('')
-    }
-  }
-
   const retryTransfer = async (id: string) => {
     const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), '传输重试已完成。')
     if (data) setTransfers(data)
-  }
-
-  const clearTaskHistory = async () => {
-    setFileOperationAction('clear-history')
-    setError('')
-    try {
-      const operationResult = await window.xdriveDesktop.agent.cloudClearFileOperationHistory()
-      if (!operationResult.ok) {
-        setError(operationResult.error.message)
-        return
-      }
-
-      const transferResult = await window.xdriveDesktop.agent.clearTransferHistory()
-      if (!transferResult.ok) {
-        setError(transferResult.error.message)
-        await refreshCloudFileOperations()
-        return
-      }
-
-      setTransfers(transferResult.data)
-      await refreshCloudFileOperations()
-      setNotice('已清空已完成、失败和已取消的任务历史。')
-    } finally {
-      setFileOperationAction('')
-    }
   }
 
   const refreshCloudQuota = async () => {
@@ -1929,12 +1911,12 @@ export default function App({
             transfers={transfers.transfers}
             operations={cloudFileOperations}
             retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
-            retryDisabled={Boolean(busy) || fileOperationAction === 'clear-history'}
-            operationCancellingID={fileOperationAction.startsWith('cancel:') ? fileOperationAction.slice('cancel:'.length) : ''}
-            operationRetryingID={fileOperationAction.startsWith('retry:') ? fileOperationAction.slice('retry:'.length) : ''}
-            operationDisabled={Boolean(fileOperationAction)}
-            clearHistoryDisabled={!hasTaskHistory || Boolean(busy) || Boolean(fileOperationAction)}
-            clearHistoryLoading={fileOperationAction === 'clear-history'}
+            retryDisabled={Boolean(busy) || fileOperationClearHistoryLoading}
+            operationCancellingID={fileOperationCancellingID}
+            operationRetryingID={fileOperationRetryingID}
+            operationDisabled={fileOperationActionBusy}
+            clearHistoryDisabled={!hasTaskHistory || Boolean(busy) || fileOperationActionBusy}
+            clearHistoryLoading={fileOperationClearHistoryLoading}
             onRetry={(id) => { void retryTransfer(id) }}
             onCancelOperation={(id) => { void cancelCloudFileOperation(id) }}
             onRetryOperation={(id) => { void retryCloudFileOperation(id) }}
