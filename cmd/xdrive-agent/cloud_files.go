@@ -704,7 +704,7 @@ func (c *agentController) CloudMediaVideo(
 	if err != nil {
 		return client.MediaVideoStream{}, err
 	}
-	return cli.MediaVideo(ctx, nodeID, rangeHeader)
+	return cli.MediaPlayback(ctx, nodeID, rangeHeader)
 }
 
 func (c *agentController) CloudSourceItems(ctx context.Context, sourceID uint64, state string, limit, offset int) ([]client.SourceItem, error) {

@@ -5,6 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/gif"
 	"net/http"
 	"net/url"
 	"os"
@@ -168,6 +171,204 @@ func TestMediaVideoPlaybackTicketAndRange(t *testing.T) {
 	request(
 		t, router, http.MethodGet, ticket.URL, "", nil, http.StatusGone,
 	)
+}
+
+func TestMediaAnimatedImagePlaybackTicketAndRange(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "media_animation_stream_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error }()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.User{},
+		&meta.Node{},
+		&meta.File{},
+		&meta.MediaMetadata{},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{
+		DB:    db,
+		Store: store,
+		Auth:  auth.New("media-animation-integration-secret", time.Hour),
+	}
+	router := server.Router()
+
+	user := meta.User{
+		Username: "animation-owner", PasswordHash: "unused",
+		Role: meta.UserRoleUser, SessionVersion: 1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, err := server.Auth.Issue(user.ID, user.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var encoded bytes.Buffer
+	first := image.NewPaletted(
+		image.Rect(0, 0, 2, 2),
+		color.Palette{color.Black, color.White},
+	)
+	second := image.NewPaletted(
+		image.Rect(0, 0, 2, 2),
+		color.Palette{color.Black, color.White},
+	)
+	first.Pix[0] = 1
+	second.Pix[1] = 1
+	if err := gif.EncodeAll(&encoded, &gif.GIF{
+		Image:     []*image.Paletted{first, second},
+		Delay:     []int{5, 5},
+		LoopCount: 0,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	animation := encoded.Bytes()
+	const storageKey = "animation/sample.gif"
+	if _, err := store.Put(t.Context(), storageKey, bytes.NewReader(animation)); err != nil {
+		t.Fatal(err)
+	}
+	node := meta.Node{
+		Name: "sample.gif", Type: meta.NodeTypeFile,
+		OwnerID: user.ID, Revision: 1,
+	}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	file := meta.File{
+		NodeID: node.ID, Size: int64(len(animation)), StorageKey: storageKey,
+		SHA256: strings.Repeat("b", 64),
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.MediaMetadata{
+		NodeID: node.ID, OwnerID: user.ID, NodeRevision: node.Revision,
+		SHA256: file.SHA256, MediaKind: meta.MediaKindImage,
+		MIMEType: "image/gif", IndexState: meta.MediaIndexStateReady,
+		RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	ticketResponse := request(
+		t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/playback-ticket", node.ID),
+		token, nil, http.StatusOK,
+	)
+	var ticket mediaVideoTicketDTO
+	if err := json.Unmarshal(ticketResponse.Body.Bytes(), &ticket); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(
+		ticket.URL,
+		fmt.Sprintf("/api/v1/media/play/%d?ticket=", node.ID),
+	) {
+		t.Fatalf("ticket=%+v", ticket)
+	}
+
+	rangeEnd := 5
+	if len(animation) <= rangeEnd {
+		t.Fatalf("animation fixture too small: %d", len(animation))
+	}
+	rangeResponse := requestWithHeaders(
+		t, router, http.MethodGet, ticket.URL, "", nil, http.StatusPartialContent,
+		map[string]string{"Range": fmt.Sprintf("bytes=0-%d", rangeEnd)},
+	)
+	if got := rangeResponse.Header().Get("Content-Type"); got != "image/gif" {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !bytes.Equal(rangeResponse.Body.Bytes(), animation[:rangeEnd+1]) {
+		t.Fatalf("range bytes=%x want=%x", rangeResponse.Body.Bytes(), animation[:rangeEnd+1])
+	}
+
+	authedResponse := request(
+		t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/playback", node.ID),
+		token, nil, http.StatusOK,
+	)
+	if !bytes.Equal(authedResponse.Body.Bytes(), animation) {
+		t.Fatal("animated image playback bytes changed")
+	}
+
+	request(
+		t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/video-ticket", node.ID),
+		token, nil, http.StatusUnsupportedMediaType,
+	)
+}
+
+func TestMediaPlaybackSupported(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		metadata meta.MediaMetadata
+		want     bool
+	}{
+		{
+			name: "video",
+			metadata: meta.MediaMetadata{
+				MediaKind: meta.MediaKindVideo,
+				MIMEType:  "video/mp4",
+			},
+			want: true,
+		},
+		{
+			name: "gif",
+			metadata: meta.MediaMetadata{
+				MediaKind: meta.MediaKindImage,
+				MIMEType:  "image/gif",
+			},
+			want: true,
+		},
+		{
+			name: "webp",
+			metadata: meta.MediaMetadata{
+				MediaKind: meta.MediaKindImage,
+				MIMEType:  "IMAGE/WEBP",
+			},
+			want: true,
+		},
+		{
+			name: "jpeg",
+			metadata: meta.MediaMetadata{
+				MediaKind: meta.MediaKindImage,
+				MIMEType:  "image/jpeg",
+			},
+			want: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := mediaPlaybackSupported(test.metadata); got != test.want {
+				t.Fatalf("mediaPlaybackSupported=%v want=%v", got, test.want)
+			}
+		})
+	}
 }
 
 func testRangeMP4() []byte {

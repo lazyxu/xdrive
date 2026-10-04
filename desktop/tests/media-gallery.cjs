@@ -31,6 +31,9 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /loadLivePhotoMotion/)
   assert.match(sharedGallery, /loadVideo/)
   assert.match(sharedGallery, /视频播放/)
+  assert.match(sharedGallery, /动图预览/)
+  assert.match(sharedGallery, /image\/gif/)
+  assert.match(sharedGallery, /image\/webp/)
   assert.match(sharedGallery, /<video/)
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
@@ -61,7 +64,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'playback-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 

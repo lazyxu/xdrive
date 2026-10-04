@@ -489,7 +489,7 @@ export class XDriveApi {
 
   async mediaVideoURL(nodeID: number): Promise<string> {
     const ticket = await this.request<{ url: string; expires_at: string }>(
-      `/api/v1/media/items/${nodeID}/video-ticket`,
+      `/api/v1/media/items/${nodeID}/playback-ticket`,
       { method: 'POST' },
     )
     if (!ticket.url.startsWith('/')) {

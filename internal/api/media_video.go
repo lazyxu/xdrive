@@ -69,6 +69,48 @@ func (s *Server) mediaVideoTicket(c *gin.Context) {
 	})
 }
 
+func (s *Server) mediaPlaybackTicket(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	node, _, err := s.ownedPlayableMedia(c.Request.Context(), userID(c), id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			fail(c, http.StatusUnsupportedMediaType, "media is not stream-playable")
+		} else {
+			fail(c, http.StatusInternalServerError, "resolve playable media failed")
+		}
+		return
+	}
+	user, ok := currentUser(c)
+	if !ok {
+		fail(c, http.StatusUnauthorized, "user not found")
+		return
+	}
+	ticket, expiresAt, err := s.Auth.IssueMediaStream(
+		user.ID,
+		user.SessionVersion,
+		node.ID,
+		node.Revision,
+		mediaVideoTicketTTL,
+	)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "create media playback ticket failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, mediaVideoTicketDTO{
+		URL: fmt.Sprintf(
+			"/api/v1/media/play/%d?ticket=%s",
+			node.ID,
+			url.QueryEscape(ticket),
+		),
+		ExpiresAt: expiresAt.UTC(),
+	})
+}
+
 func (s *Server) mediaVideo(c *gin.Context) {
 	id, ok := parseID(c.Param("id"))
 	if !ok {
@@ -81,6 +123,24 @@ func (s *Server) mediaVideo(c *gin.Context) {
 			fail(c, http.StatusNotFound, "playable video not found")
 		} else {
 			fail(c, http.StatusInternalServerError, "resolve playable video failed")
+		}
+		return
+	}
+	s.serveMediaVideo(c, node, metadata)
+}
+
+func (s *Server) mediaPlayback(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	node, metadata, err := s.ownedPlayableMedia(c.Request.Context(), userID(c), id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			fail(c, http.StatusNotFound, "playable media not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "resolve playable media failed")
 		}
 		return
 	}
@@ -111,9 +171,9 @@ func (s *Server) mediaVideoTicketStream(c *gin.Context) {
 		return
 	}
 
-	node, metadata, err := s.ownedPlayableVideo(c.Request.Context(), claims.UserID, id)
+	node, metadata, err := s.ownedPlayableMedia(c.Request.Context(), claims.UserID, id)
 	if err != nil {
-		fail(c, http.StatusNotFound, "playable video not found")
+		fail(c, http.StatusNotFound, "playable media not found")
 		return
 	}
 	if node.Revision != claims.NodeRevision {
@@ -124,6 +184,20 @@ func (s *Server) mediaVideoTicketStream(c *gin.Context) {
 }
 
 func (s *Server) ownedPlayableVideo(
+	ctx context.Context,
+	uid, nodeID uint64,
+) (meta.Node, meta.MediaMetadata, error) {
+	node, metadata, err := s.ownedPlayableMedia(ctx, uid, nodeID)
+	if err != nil {
+		return node, metadata, err
+	}
+	if metadata.MediaKind != meta.MediaKindVideo {
+		return node, metadata, gorm.ErrRecordNotFound
+	}
+	return node, metadata, nil
+}
+
+func (s *Server) ownedPlayableMedia(
 	ctx context.Context,
 	uid, nodeID uint64,
 ) (meta.Node, meta.MediaMetadata, error) {
@@ -145,16 +219,33 @@ func (s *Server) ownedPlayableVideo(
 	var metadata meta.MediaMetadata
 	if err := s.DB.WithContext(ctx).
 		Where(
-			"node_id = ? AND owner_id = ? AND media_kind = ? AND index_state = ?",
+			"node_id = ? AND owner_id = ? AND index_state = ?",
 			node.ID,
 			uid,
-			meta.MediaKindVideo,
 			meta.MediaIndexStateReady,
 		).
 		First(&metadata).Error; err != nil {
 		return node, metadata, err
 	}
+	if !mediaPlaybackSupported(metadata) {
+		return node, metadata, gorm.ErrRecordNotFound
+	}
 	return node, metadata, nil
+}
+
+func mediaPlaybackSupported(metadata meta.MediaMetadata) bool {
+	if metadata.MediaKind == meta.MediaKindVideo {
+		return true
+	}
+	if metadata.MediaKind != meta.MediaKindImage {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(metadata.MIMEType)) {
+	case "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) serveMediaVideo(
