@@ -132,8 +132,8 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	photoMetadata := []meta.PhotoMetadata{
-		{AssetID: assets[0].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedOne, Latitude: &lat, Longitude: &lon, Favorite: true, TagsJSON: `["Family","Travel"]`},
-		{AssetID: assets[1].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedTwo, TagsJSON: `["Studio"]`},
+		{AssetID: assets[0].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedOne, Latitude: &lat, Longitude: &lon, Favorite: true, Description: "Sunset at Marina Bay", TagsJSON: `["Family","Travel"]`},
+		{AssetID: assets[1].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedTwo, Description: "Portrait lighting test", TagsJSON: `["Studio"]`},
 		{AssetID: assets[2].ID, MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime", CapturedAt: &capturedThree, Latitude: &lat, Longitude: &lon, TagsJSON: `["Family"]`},
 	}
 	if err := db.Create(&photoMetadata).Error; err != nil {
@@ -198,6 +198,12 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"",
 		nodes[0].ID,
 		nodes[2].ID,
+	)
+	assertIDs(
+		"search local description",
+		mediaQueryOptions{Search: "marina bay"},
+		"",
+		nodes[0].ID,
 	)
 	assertIDs(
 		"asset kind",

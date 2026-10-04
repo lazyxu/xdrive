@@ -538,6 +538,10 @@ function FileManager({
       const result = await api.setMediaTags(nodeID, tags)
       return result.tags
     },
+    setDescription: async (nodeID, description) => {
+      const result = await api.setMediaDescription(nodeID, description)
+      return result.description
+    },
     loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
     loadLivePhotoMotion: async (nodeID) => URL.createObjectURL(await api.mediaLivePhotoMotion(nodeID)),
     loadVideo: (nodeID) => api.mediaVideoURL(nodeID),

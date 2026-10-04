@@ -579,6 +579,14 @@ func (f *fakeDesktopIPCController) CloudSetMediaTags(
 	return client.MediaTags{Tags: append([]string(nil), tags...)}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudSetMediaDescription(
+	_ context.Context,
+	_ uint64,
+	description string,
+) (client.MediaDescription, error) {
+	return client.MediaDescription{Description: description}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	f.cloudMediaThumbnailID = nodeID
 	return f.cloudMediaThumbnail, f.err

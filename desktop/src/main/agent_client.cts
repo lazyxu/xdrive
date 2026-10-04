@@ -448,6 +448,7 @@ export type AgentMediaItem = {
   asset_kind?: string
   favorite: boolean
   tags?: string[]
+  description?: string
   resources?: AgentMediaResource[]
   derived_resources?: AgentMediaDerivedResource[]
   live_photo?: boolean
@@ -497,6 +498,10 @@ export type AgentMediaFavorite = {
 
 export type AgentMediaTags = {
   tags: string[]
+}
+
+export type AgentMediaDescription = {
+  description: string
 }
 
 export type AgentMediaThumbnail = {
@@ -885,6 +890,14 @@ export class AgentIPCClient {
       'PATCH',
       '/v1/media/tags',
       { node_id: nodeID, tags },
+    )
+  }
+
+  setMediaDescription(nodeID: number, description: string) {
+    return this.request<AgentMediaDescription>(
+      'PATCH',
+      '/v1/media/description',
+      { node_id: nodeID, description },
     )
   }
 

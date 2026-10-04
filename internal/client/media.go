@@ -66,6 +66,7 @@ type MediaItem struct {
 	AssetKind        string                 `json:"asset_kind,omitempty"`
 	Favorite         bool                   `json:"favorite"`
 	Tags             []string               `json:"tags,omitempty"`
+	Description      string                 `json:"description,omitempty"`
 	Resources        []MediaResource        `json:"resources,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
@@ -400,6 +401,26 @@ func (c *Client) SetMediaTags(
 		http.MethodPatch,
 		fmt.Sprintf("/api/v1/media/items/%d/tags", nodeID),
 		map[string][]string{"tags": tags},
+		&out,
+	)
+	return out, err
+}
+
+type MediaDescription struct {
+	Description string `json:"description"`
+}
+
+func (c *Client) SetMediaDescription(
+	ctx context.Context,
+	nodeID uint64,
+	description string,
+) (MediaDescription, error) {
+	var out MediaDescription
+	err := c.json(
+		ctx,
+		http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/items/%d/description", nodeID),
+		map[string]string{"description": description},
 		&out,
 	)
 	return out, err

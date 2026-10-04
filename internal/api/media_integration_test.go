@@ -195,6 +195,23 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("ordinary photo asset=%+v", items[0])
 	}
 
+	descriptionResponse := request(
+		t,
+		router,
+		http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/items/%d/description", file.ID),
+		token,
+		strings.NewReader(`{"description":"  Marina Bay sunset\r\nTrip note  "}`),
+		http.StatusOK,
+	)
+	var description mediaDescriptionDTO
+	if err := json.Unmarshal(descriptionResponse.Body.Bytes(), &description); err != nil {
+		t.Fatal(err)
+	}
+	if description.Description != "Marina Bay sunset\nTrip note" {
+		t.Fatalf("description=%q", description.Description)
+	}
+
 	favoriteResponse := request(
 		t,
 		router,
@@ -355,6 +372,9 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	}
 	if detail.Metadata.Width != 5 || detail.Metadata.Height != 4 {
 		t.Fatalf("reindexed metadata=%+v", detail.Metadata)
+	}
+	if detail.Description != "Marina Bay sunset\nTrip note" {
+		t.Fatalf("reindexed description=%q", detail.Description)
 	}
 	if !detail.Favorite {
 		t.Fatalf("favorite was lost after media re-index: %+v", detail)
