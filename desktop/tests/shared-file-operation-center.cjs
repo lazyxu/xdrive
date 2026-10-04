@@ -10,6 +10,7 @@ const shared = read('ui', 'shared', 'src', 'mui', 'FileOperationCenter.tsx')
 const taskCenter = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'file-operations.ts')
 const lifecycleController = read('ui', 'shared', 'src', 'mui', 'FileOperationLifecycle.ts')
+const actionController = read('ui', 'shared', 'src', 'mui', 'FileOperationActions.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
@@ -98,8 +99,9 @@ test('Web delegates persistent-operation polling and terminal refresh to the sha
     'onTerminalTransition: () => {',
     'void loadDirectory(current.id, crumbs',
     'void refreshQuota()',
-    'cancelFileOperation(id: string)',
-    'retryFileOperation(id: string)',
+    'useXDriveFileOperationActions<XDriveFileOperation>({',
+    'cancelOperation: (id) => api.cancelFileOperation(id)',
+    'retryOperation: (id) => api.retryFileOperation(id)',
   ]) {
     assert.ok((web + webApi).includes(token), `Web persistent-operation lifecycle missing: ${token}`)
   }
@@ -116,12 +118,49 @@ test('Desktop delegates persistent-operation polling and terminal refresh to the
     'onTerminalTransition: () => {',
     'void refreshCloudQuota()',
     'void loadCloudDirectory(',
-    'cloudCancelFileOperation(id)',
-    'cloudRetryFileOperation(id)',
+    'useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({',
+    'window.xdriveDesktop.agent.cloudCancelFileOperation(id)',
+    'window.xdriveDesktop.agent.cloudRetryFileOperation(id)',
   ]) {
     assert.ok(desktop.includes(token), `Desktop persistent-operation lifecycle missing: ${token}`)
   }
   assert.ok(desktopExplorer.includes('onQueued: (queued) => onOperationQueued(queued)'), 'Desktop Explorer must seed newly queued operations through the shared queue controller')
+})
+
+test('shared FileOperation action controller owns cancel retry and clear-history orchestration', () => {
+  for (const token of [
+    'useXDriveFileOperationActions',
+    'type XDriveFileOperationAction =',
+    "'clear-history'",
+    'const actionRef = useRef<XDriveFileOperationAction>(',
+    'if (actionRef.current) return false',
+    'rememberOperation(await cancelOperation(id))',
+    'const operation = await retryOperation(id)',
+    "onFeedback?.('文件操作已重新加入队列。')",
+    'await clearOperationHistory()',
+    'const transferResult = await clearTransferHistory()',
+    'onTransferHistoryCleared?.(transferResult)',
+    'await refreshOperations()',
+    "onFeedback?.('已清空已完成、失败和已取消的任务历史。')",
+    "action.startsWith('cancel:')",
+    "action.startsWith('retry:')",
+    "clearHistoryLoading: action === 'clear-history'",
+  ]) {
+    assert.ok(actionController.includes(token), `shared operation action controller missing: ${token}`)
+  }
+  assert.ok(sharedMuiIndex.includes("export * from './FileOperationActions'"), 'shared operation actions are not exported')
+
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.equal(source.includes('setFileOperationAction('), false, `${label} must not own FileOperation action state`)
+    assert.equal(source.includes("startsWith('cancel:') ?"), false, `${label} must not derive cancellation ids locally`)
+    assert.equal(source.includes("startsWith('retry:') ?"), false, `${label} must not derive retry ids locally`)
+  }
+
+  assert.ok(web.includes('useXDriveFileOperationActions<XDriveFileOperation>({'), 'Web must consume the shared operation action controller')
+  assert.ok(desktop.includes('useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({'), 'Desktop must consume the shared operation action controller')
+  assert.ok(web.includes('clearTransferHistory: async () => { api.clearTransferHistory() }'), 'Web must keep local transfer-history clearing in its adapter')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.clearTransferHistory()'), 'Desktop must keep Agent transfer-history clearing in its adapter')
+  assert.ok(desktop.includes('onTransferHistoryCleared: setTransfers'), 'Desktop must apply the Agent transfer-history result locally')
 })
 
 test('Explorer multi-select copy move delete queue one operation instead of N renderer requests', () => {
