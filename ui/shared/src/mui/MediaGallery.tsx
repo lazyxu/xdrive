@@ -57,6 +57,7 @@ export interface MediaGalleryDataSource {
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
+  setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
   createAlbum?: (name: string) => Promise<MediaAlbum>
   createSmartAlbum?: (name: string, query: MediaGalleryQuery) => Promise<MediaAlbum>
   updateSmartAlbum?: (
@@ -84,6 +85,7 @@ type MediaGalleryFilterDraft = {
   capturedTo: string
   location: 'any' | 'with' | 'without'
   favorite: 'any' | 'favorite' | 'not-favorite'
+  tag: string
 }
 
 const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
@@ -93,6 +95,7 @@ const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
   capturedTo: '',
   location: 'any',
   favorite: 'any',
+  tag: '',
 }
 
 function errorMessage(error: unknown) {
@@ -130,6 +133,7 @@ function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): MediaGaller
       : draft.favorite === 'not-favorite'
         ? { favorite: false }
         : {}),
+    ...(draft.tag.trim() ? { tag: draft.tag.trim() } : {}),
   }
 }
 
@@ -160,6 +164,7 @@ function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): MediaGallery
       : query.favorite === false
         ? 'not-favorite'
         : 'any',
+    tag: query.tag || '',
   }
 }
 
@@ -170,7 +175,8 @@ function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
     draft.capturedFrom ||
     draft.capturedTo ||
     draft.location !== 'any' ||
-    draft.favorite !== 'any',
+    draft.favorite !== 'any' ||
+    draft.tag.trim(),
   )
 }
 
@@ -210,6 +216,17 @@ function MediaGalleryFilterBar({
             if (event.key === 'Enter') onApply()
           }}
           sx={{ minWidth: { lg: 240 }, flex: { lg: 1 } }}
+        />
+        <TextField
+          size="small"
+          label="标签"
+          placeholder="精确标签"
+          value={draft.tag}
+          onChange={(event) => onChange({ ...draft, tag: event.target.value })}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onApply()
+          }}
+          sx={{ minWidth: 140 }}
         />
         <TextField
           select
@@ -565,6 +582,38 @@ export function XDriveMediaGalleryPage({
     }
   }, [currentAlbum, loadFirstPage, onError, query, source])
 
+
+  const setTags = useCallback(async (
+    item: MediaItem,
+    tags: string[],
+  ) => {
+    if (!source.setTags) return item.tags || []
+    setError('')
+    try {
+      const normalized = await source.setTags(item.node.id, tags)
+      setItems((current) => current.map((value) => (
+        value.node.id === item.node.id
+          ? { ...value, tags: normalized }
+          : value
+      )))
+      if (
+        query.tag ||
+        (currentAlbum?.kind === 'smart' && currentAlbum.query?.tag)
+      ) {
+        await loadFirstPage(
+          currentAlbum,
+          currentAlbum?.kind === 'smart' ? {} : query,
+        )
+      }
+      return normalized
+    } catch (tagError) {
+      const message = errorMessage(tagError)
+      setError(message)
+      onError?.(tagError)
+      throw tagError
+    }
+  }, [currentAlbum, loadFirstPage, onError, query, source])
+
   useEffect(() => {
     void loadFirstPage(null, {})
     return () => {
@@ -605,6 +654,7 @@ export function XDriveMediaGalleryPage({
         loadLivePhotoMotion={source.loadLivePhotoMotion}
         loadVideo={source.loadVideo}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
+        onSetTags={source.setTags ? setTags : undefined}
         onCreateAlbum={source.createAlbum ? createAlbum : undefined}
         onRenameAlbum={
           source.renameAlbum || source.updateSmartAlbum
@@ -696,6 +746,7 @@ export interface XDriveMediaGalleryProps {
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
   onCreateAlbum?: (name: string) => Promise<MediaAlbum>
   onRenameAlbum?: (album: MediaAlbum, name: string) => Promise<MediaAlbum>
   onDeleteAlbum?: (album: MediaAlbum) => Promise<void>
@@ -1007,6 +1058,13 @@ function mediaAssetChipLabel(item: MediaItem) {
   }
 }
 
+function parseMediaTagsInput(value: string) {
+  return value
+    .split(/[,，\n]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+}
+
 function mediaResourceRoleLabel(role: string) {
   switch (role) {
     case 'primary':
@@ -1093,6 +1151,7 @@ function MediaDetails({
   albums,
   currentAlbum,
   onSetFavorite,
+  onSetTags,
   onAddToAlbum,
   onRemoveFromAlbum,
   onClose,
@@ -1104,6 +1163,7 @@ function MediaDetails({
   albums: MediaAlbum[]
   currentAlbum?: MediaAlbum | null
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onClose: () => void
@@ -1114,12 +1174,22 @@ function MediaDetails({
   const [targetAlbumID, setTargetAlbumID] = useState('')
   const [albumBusy, setAlbumBusy] = useState(false)
   const [albumError, setAlbumError] = useState('')
+  const [tagsInput, setTagsInput] = useState('')
+  const [tagsBusy, setTagsBusy] = useState(false)
+  const [tagsError, setTagsError] = useState('')
+  const tagsKey = (item?.tags || []).join('\u0000')
   const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
   const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
   const animatedImage = Boolean(
     item?.metadata.media_kind === 'image' &&
       ['image/gif', 'image/webp'].includes((item.metadata.mime_type || '').toLowerCase()),
   )
+
+  useEffect(() => {
+    setTagsInput((item?.tags || []).join(', '))
+    setTagsBusy(false)
+    setTagsError('')
+  }, [item?.node.id, tagsKey])
 
   useEffect(() => {
     let active = true
@@ -1180,6 +1250,7 @@ function MediaDetails({
     const result: Array<[string, string]> = [
       ['类型', mediaAssetLabel(item)],
       ['收藏', item.favorite ? '已收藏' : '未收藏'],
+      ['标签', item.tags?.length ? item.tags.join('、') : '—'],
       ['文件名', item.node.name],
       ['大小', formatBytes(item.node.size)],
       ['格式', metadata.mime_type || '—'],
@@ -1325,6 +1396,45 @@ function MediaDetails({
                 >
                   {item.favorite ? '取消收藏' : '收藏'}
                 </Button>
+              </Box>
+            ) : null}
+            {onSetTags ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>标签</Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    label="标签"
+                    placeholder="家庭, 旅行, 工作"
+                    value={tagsInput}
+                    disabled={tagsBusy}
+                    onChange={(event) => {
+                      setTagsInput(event.target.value)
+                      setTagsError('')
+                    }}
+                    helperText="使用逗号分隔；最多 32 个标签。"
+                  />
+                  <Button
+                    variant="outlined"
+                    disabled={tagsBusy}
+                    onClick={() => {
+                      setTagsBusy(true)
+                      setTagsError('')
+                      void onSetTags(item, parseMediaTagsInput(tagsInput))
+                        .then((tags) => setTagsInput(tags.join(', ')))
+                        .catch((tagError) => setTagsError(errorMessage(tagError)))
+                        .finally(() => setTagsBusy(false))
+                    }}
+                  >
+                    保存标签
+                  </Button>
+                </Stack>
+                {tagsError ? (
+                  <Box sx={{ mt: 1 }}>
+                    <XDriveStatusAlert tone="bad">{tagsError}</XDriveStatusAlert>
+                  </Box>
+                ) : null}
               </Box>
             ) : null}
             {(onAddToAlbum || (currentAlbum?.kind === 'manual' && onRemoveFromAlbum)) ? (
@@ -1608,6 +1718,7 @@ export function XDriveMediaGallery({
   loadLivePhotoMotion,
   loadVideo,
   onSetFavorite,
+  onSetTags,
   onCreateAlbum,
   onRenameAlbum,
   onDeleteAlbum,
@@ -1887,6 +1998,15 @@ export function XDriveMediaGallery({
               ? { ...current, favorite }
               : current
           ))
+        } : undefined}
+        onSetTags={onSetTags ? async (item, tags) => {
+          const normalized = await onSetTags(item, tags)
+          setSelected((current) => (
+            current?.node.id === item.node.id
+              ? { ...current, tags: normalized }
+              : current
+          ))
+          return normalized
         } : undefined}
         onClose={() => setSelected(null)}
       />

@@ -87,6 +87,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items", s.listMediaItems)
 	authed.GET("/media/items/:id", s.getMediaItem)
 	authed.PATCH("/media/items/:id/favorite", s.setMediaFavorite)
+	authed.PATCH("/media/items/:id/tags", s.setMediaTags)
 	authed.GET("/media/items/:id/thumbnail", s.mediaThumbnail)
 	authed.GET("/media/items/:id/live-photo-motion", s.mediaLivePhotoMotion)
 	authed.GET("/media/items/:id/video", s.mediaVideo)

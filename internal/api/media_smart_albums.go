@@ -23,6 +23,7 @@ type mediaSmartAlbumQuery struct {
 	CapturedTo   *time.Time `json:"captured_to,omitempty"`
 	HasLocation  *bool      `json:"has_location,omitempty"`
 	Favorite     *bool      `json:"favorite,omitempty"`
+	Tag          string     `json:"tag,omitempty"`
 }
 
 func normalizeMediaSmartAlbumQuery(
@@ -41,6 +42,13 @@ func normalizeMediaSmartAlbumQuery(
 	value.AssetKind = strings.TrimSpace(value.AssetKind)
 	if value.AssetKind != "" && !meta.ValidPhotoAssetKind(value.AssetKind) {
 		return mediaSmartAlbumQuery{}, fmt.Errorf("asset_kind is invalid")
+	}
+	if value.Tag != "" {
+		normalized, err := normalizeMediaTag(value.Tag)
+		if err != nil {
+			return mediaSmartAlbumQuery{}, err
+		}
+		value.Tag = normalized
 	}
 	if value.CapturedFrom != nil {
 		normalized := value.CapturedFrom.UTC()
@@ -67,7 +75,8 @@ func (value mediaSmartAlbumQuery) empty() bool {
 		value.CapturedFrom == nil &&
 		value.CapturedTo == nil &&
 		value.HasLocation == nil &&
-		value.Favorite == nil
+		value.Favorite == nil &&
+		value.Tag == ""
 }
 
 func (value mediaSmartAlbumQuery) options() mediaQueryOptions {
@@ -79,6 +88,7 @@ func (value mediaSmartAlbumQuery) options() mediaQueryOptions {
 		CapturedTo:   value.CapturedTo,
 		HasLocation:  value.HasLocation,
 		Favorite:     value.Favorite,
+		Tag:          value.Tag,
 	}
 }
 

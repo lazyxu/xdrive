@@ -17,6 +17,7 @@ const agent = Object.freeze({
     captured_to?: string
     has_location?: boolean
     favorite?: boolean
+    tag?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
@@ -32,6 +33,7 @@ const agent = Object.freeze({
       captured_to?: string
       has_location?: boolean
       favorite?: boolean
+      tag?: string
     },
   ) => ipcRenderer.invoke('agent:create-smart-media-album', name, query),
   updateSmartMediaAlbum: (
@@ -46,6 +48,7 @@ const agent = Object.freeze({
         captured_to?: string
         has_location?: boolean
         favorite?: boolean
+        tag?: string
       }
     },
   ) => ipcRenderer.invoke('agent:update-smart-media-album', albumID, revision, input),
@@ -64,9 +67,11 @@ const agent = Object.freeze({
     captured_to?: string
     has_location?: boolean
     favorite?: boolean
+    tag?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),
   setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),
+  setMediaTags: (nodeID: number, tags: string[]) => ipcRenderer.invoke('agent:set-media-tags', nodeID, tags),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
   getMediaLivePhotoMotion: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID),
   getMediaVideoURL: (nodeID: number) => ipcRenderer.invoke('agent:get-media-video-url', nodeID),

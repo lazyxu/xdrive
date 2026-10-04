@@ -78,6 +78,7 @@ import {
   type AgentMediaAlbum,
   type AgentMediaQuery,
   type AgentMediaFavorite,
+  type AgentMediaTags,
   type AgentMediaThumbnail,
   type AgentMediaMotion,
   type AgentSource,
@@ -1195,6 +1196,13 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.favorite = input.favorite
   }
+  if (input.tag !== undefined) {
+    if (typeof input.tag !== 'string' || [...input.tag].length > 64) {
+      throw new AgentIPCError('invalid_input', 0, 'Media tag must be at most 64 characters.')
+    }
+    const tag = input.tag.trim()
+    if (tag) out.tag = tag
+  }
   return out
 }
 
@@ -1750,6 +1758,22 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Media node id and favorite state are required.')
     }
     return requireAgentClient().setMediaFavorite(nodeID, favorite)
+  }, false))
+
+  ipcMain.handle('agent:set-media-tags', (_event, nodeID: unknown, tags: unknown) => runAgentAction<AgentMediaTags>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0 ||
+      !Array.isArray(tags) ||
+      tags.length > 32 ||
+      !tags.every((value) => typeof value === 'string')
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id and up to 32 tags are required.')
+    }
+    return requireAgentClient().setMediaTags(nodeID, tags)
   }, false))
 
   ipcMain.handle('agent:get-media-thumbnail', (_event, nodeID: unknown) => runAgentAction<AgentMediaThumbnail>(async () => {

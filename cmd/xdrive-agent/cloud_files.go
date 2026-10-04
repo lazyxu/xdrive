@@ -855,6 +855,18 @@ func (c *agentController) CloudSetMediaFavorite(
 	return cli.SetMediaFavorite(ctx, nodeID, favorite)
 }
 
+func (c *agentController) CloudSetMediaTags(
+	ctx context.Context,
+	nodeID uint64,
+	tags []string,
+) (client.MediaTags, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaTags{}, err
+	}
+	return cli.SetMediaTags(ctx, nodeID, tags)
+}
+
 func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

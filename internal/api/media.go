@@ -86,6 +86,7 @@ type mediaItemDTO struct {
 	Metadata         mediaMetadataDTO          `json:"metadata"`
 	AssetKind        string                    `json:"asset_kind,omitempty"`
 	Favorite         bool                      `json:"favorite"`
+	Tags             []string                  `json:"tags,omitempty"`
 	Resources        []mediaResourceDTO        `json:"resources,omitempty"`
 	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
 	LivePhoto        bool                      `json:"live_photo,omitempty"`
@@ -234,6 +235,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		Metadata:         toMediaMetadataDTO(metadata),
 		AssetKind:        presentation.Kind,
 		Favorite:         presentation.Favorite,
+		Tags:             presentation.Tags,
 		Resources:        presentation.Resources,
 		DerivedResources: resources,
 		LivePhoto:        livePhoto,
@@ -520,6 +522,7 @@ func (s *Server) queryMediaItems(
 				Metadata:  toMediaMetadataDTO(row),
 				AssetKind: presentation.Kind,
 				Favorite:  presentation.Favorite,
+				Tags:      presentation.Tags,
 				Resources: presentation.Resources,
 				LivePhoto: standaloneLivePhoto || row.ContainerKind == mediapkg.ContainerKindLIVP,
 			})

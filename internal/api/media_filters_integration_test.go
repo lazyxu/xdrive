@@ -132,9 +132,9 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	photoMetadata := []meta.PhotoMetadata{
-		{AssetID: assets[0].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedOne, Latitude: &lat, Longitude: &lon, Favorite: true},
-		{AssetID: assets[1].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedTwo},
-		{AssetID: assets[2].ID, MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime", CapturedAt: &capturedThree, Latitude: &lat, Longitude: &lon},
+		{AssetID: assets[0].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedOne, Latitude: &lat, Longitude: &lon, Favorite: true, TagsJSON: `["Family","Travel"]`},
+		{AssetID: assets[1].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedTwo, TagsJSON: `["Studio"]`},
+		{AssetID: assets[2].ID, MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime", CapturedAt: &capturedThree, Latitude: &lat, Longitude: &lon, TagsJSON: `["Family"]`},
 	}
 	if err := db.Create(&photoMetadata).Error; err != nil {
 		t.Fatal(err)
@@ -227,6 +227,19 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		mediaQueryOptions{Favorite: &favorite},
 		"",
 		nodes[0].ID,
+	)
+	assertIDs(
+		"tag case insensitive",
+		mediaQueryOptions{Tag: "travel"},
+		"",
+		nodes[0].ID,
+	)
+	assertIDs(
+		"shared tag",
+		mediaQueryOptions{Tag: "Family"},
+		"",
+		nodes[0].ID,
+		nodes[2].ID,
 	)
 	withoutLocation := false
 	assertIDs(

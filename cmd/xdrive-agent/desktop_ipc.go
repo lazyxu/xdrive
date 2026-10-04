@@ -198,6 +198,7 @@ type desktopIPCController interface {
 	CloudRemoveMediaAlbumItem(context.Context, string, uint64, uint64) (client.MediaAlbum, error)
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudSetMediaFavorite(context.Context, uint64, bool) (client.MediaFavorite, error)
+	CloudSetMediaTags(context.Context, uint64, []string) (client.MediaTags, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
 	CloudMediaVideo(context.Context, uint64, string) (client.MediaVideoStream, error)
@@ -464,6 +465,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("DELETE /v1/media/album/item", h.removeMediaAlbumItem)
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("PATCH /v1/media/favorite", h.mediaFavorite)
+	mux.HandleFunc("PATCH /v1/media/tags", h.mediaTags)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
 	mux.HandleFunc("GET /v1/media/video", h.mediaVideo)
@@ -1756,6 +1758,26 @@ func (h *desktopIPCHandler) mediaFavorite(w http.ResponseWriter, r *http.Request
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
+func (h *desktopIPCHandler) mediaTags(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeID uint64   `json:"node_id"`
+		Tags   []string `json:"tags"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.NodeID == 0 || input.Tags == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_tags", "node_id and tags are required")
+		return
+	}
+	result, err := h.ctrl.CloudSetMediaTags(r.Context(), input.NodeID, input.Tags)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
 func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
 	if !ok {
@@ -1867,6 +1889,13 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 			return client.MediaQuery{}, false
 		}
 		out.Favorite = &value
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("tag")); raw != "" {
+		if len([]rune(raw)) > 64 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_tag", "tag must be at most 64 characters")
+			return client.MediaQuery{}, false
+		}
+		out.Tag = raw
 	}
 	return out, true
 }

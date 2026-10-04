@@ -132,10 +132,24 @@ func TestSmartMediaAlbumsEvaluateSavedLocalQuery(t *testing.T) {
 		Update("favorite", true).Error; err != nil {
 		t.Fatal(err)
 	}
+	tagsResponse := request(
+		t, router, http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/items/%d/tags", nodes[0].ID),
+		token,
+		strings.NewReader(`{"tags":["Travel","Family","travel"]}`),
+		http.StatusOK,
+	)
+	var tags mediaTagsDTO
+	if err := json.Unmarshal(tagsResponse.Body.Bytes(), &tags); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(tags.Tags) != "[Family Travel]" {
+		t.Fatalf("tags=%v", tags.Tags)
+	}
 
 	create := request(
 		t, router, http.MethodPost, "/api/v1/media/smart-albums", token,
-		strings.NewReader(`{"name":"Favorites","query":{"favorite":true}}`),
+		strings.NewReader(`{"name":"Favorites","query":{"favorite":true,"tag":"Travel"}}`),
 		http.StatusCreated,
 	)
 	var album mediaAlbumDTO
@@ -148,6 +162,7 @@ func TestSmartMediaAlbumsEvaluateSavedLocalQuery(t *testing.T) {
 		album.Query == nil ||
 		album.Query.Favorite == nil ||
 		!*album.Query.Favorite ||
+		album.Query.Tag != "Travel" ||
 		!strings.HasPrefix(album.ID, "smart:") {
 		t.Fatalf("created smart album=%+v", album)
 	}
@@ -176,7 +191,8 @@ func TestSmartMediaAlbumsEvaluateSavedLocalQuery(t *testing.T) {
 	if err := json.Unmarshal(items.Body.Bytes(), &mediaItems); err != nil {
 		t.Fatal(err)
 	}
-	if len(mediaItems) != 1 || mediaItems[0].Node.ID != nodes[0].ID {
+	if len(mediaItems) != 1 || mediaItems[0].Node.ID != nodes[0].ID ||
+		fmt.Sprint(mediaItems[0].Tags) != "[Family Travel]" {
 		t.Fatalf("favorite smart album items=%+v", mediaItems)
 	}
 
