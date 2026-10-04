@@ -47,6 +47,12 @@ type Node struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
+type FileTextPreview struct {
+	Text      string `json:"text"`
+	Truncated bool   `json:"truncated"`
+	Size      int64  `json:"size"`
+}
+
 type SearchBreadcrumb struct {
 	ID   uint64 `json:"id"`
 	Name string `json:"name"`
@@ -535,6 +541,12 @@ func (c *Client) Overwrite(ctx context.Context, id, revision uint64, r io.Reader
 		return out, err
 	}
 	return out, nil
+}
+
+func (c *Client) FileTextPreview(ctx context.Context, id uint64) (FileTextPreview, error) {
+	var out FileTextPreview
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/preview/text", id), nil, &out)
+	return out, err
 }
 
 type DownloadProgress func(done, total int64)

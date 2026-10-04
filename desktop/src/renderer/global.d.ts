@@ -24,6 +24,7 @@ import type {
   BuildInfo,
   UpdateExternalSourceInput,
   XDriveFileOperation,
+  XDriveFileTextPreview,
   XDriveUploadConflictPreflight,
 } from '@xdrive/shared'
 
@@ -223,6 +224,7 @@ declare global {
     deleted_ids?: number[]
   }
   type AgentCloudFileOperation = XDriveFileOperation
+  type AgentCloudFileTextPreview = XDriveFileTextPreview
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = {
     items: AgentCloudNode[]
@@ -414,6 +416,7 @@ declare global {
         ) => Promise<DesktopResult<AgentCloudUploadResult>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
+        cloudTextPreview: (id: number) => Promise<DesktopResult<AgentCloudFileTextPreview>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>
         cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => Promise<DesktopResult<AgentCloudDownloadBatchResult>>
         cloudDownloadArchive: (ids: number[]) => Promise<DesktopResult<AgentCloudArchiveDownloadResult>>

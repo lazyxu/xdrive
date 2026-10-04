@@ -55,6 +55,7 @@ export default function DesktopFileExplorer({
   onQuotaChanged,
   uploadConflictSupported = false,
   archiveDownloadSupported = false,
+  textPreviewSupported = false,
   onError,
   onFeedback,
 }: {
@@ -74,6 +75,7 @@ export default function DesktopFileExplorer({
   onQuotaChanged: () => Promise<unknown>
   uploadConflictSupported?: boolean
   archiveDownloadSupported?: boolean
+  textPreviewSupported?: boolean
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -173,6 +175,12 @@ export default function DesktopFileExplorer({
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
   const explorerActionBusy = Boolean(actionBusy) || fileOperationBusy
+
+  const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem) => {
+    if (!textPreviewSupported || item.kind !== 'file') return null
+    const result = await window.xdriveDesktop.agent.cloudTextPreview(Number(item.id))
+    return result.ok ? result.data : null
+  }, [textPreviewSupported])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
@@ -601,6 +609,7 @@ export default function DesktopFileExplorer({
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || explorerActionBusy}
         loadThumbnail={loadThumbnail}
+        loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}
