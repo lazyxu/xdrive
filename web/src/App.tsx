@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
@@ -39,6 +39,7 @@ import {
   XDriveSidebarStorageSummary,
   XDriveStatePanel,
   XDriveTaskCenterPage,
+  useXDriveFileOperationLifecycle,
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
@@ -63,7 +64,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPageState,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot, xDriveFileOperationUpsert } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -489,9 +490,7 @@ function FileManager({
   const [renameNode, setRenameNode] = useState<Node | null>(null)
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
-  const [fileOperations, setFileOperations] = useState<XDriveFileOperation[]>([])
   const [fileOperationAction, setFileOperationAction] = useState('')
-  const fileOperationStatusRef = useRef(new Map<string, string>())
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
@@ -643,48 +642,25 @@ function FileManager({
 
   useEffect(() => api.onTransfers(setTransfers), [api])
 
-  const refreshFileOperations = useCallback(async () => {
-    const operations = await api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
-    setFileOperations(operations)
-    return operations
-  }, [api])
-
-  const fileOperationPollIntervalMs = xDriveFileOperationPollIntervalMs(
-    fileOperations,
-    appView === 'transfers',
+  const loadFileOperations = useCallback(
+    (limit: number) => api.fileOperations(limit),
+    [api],
   )
-
-  useEffect(() => {
-    if (!profile || profile.must_change_password) return
-    let active = true
-    const refresh = async () => {
-      try {
-        const operations = await api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
-        if (active) setFileOperations(operations)
-      } catch {
-        // Background task polling must not turn a transient network failure into repeated UI alerts.
-      }
-    }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), fileOperationPollIntervalMs)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [api, fileOperationPollIntervalMs, profile?.id, profile?.must_change_password])
-
-  useEffect(() => {
-    const transition = xDriveFileOperationTransitionSnapshot(
-      fileOperationStatusRef.current,
-      fileOperations,
-    )
-    fileOperationStatusRef.current = transition.statuses
-    if (!transition.hasTerminalTransition || !current) return
-    void loadDirectory(current.id, crumbs, directoryPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
-    void refreshQuota()
-    // Directory/task transitions are intentionally keyed only by operation snapshots.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileOperations])
+  const {
+    operations: fileOperations,
+    rememberOperation: rememberFileOperation,
+    refreshOperations: refreshFileOperations,
+  } = useXDriveFileOperationLifecycle<XDriveFileOperation>({
+    enabled: Boolean(profile && !profile.must_change_password),
+    taskCenterVisible: appView === 'transfers',
+    loadOperations: loadFileOperations,
+    onRefreshError: handleError,
+    onTerminalTransition: () => {
+      if (!current) return
+      void loadDirectory(current.id, crumbs, directoryPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
+      void refreshQuota()
+    },
+  })
 
   useEffect(() => {
     if (!profile || profile.must_change_password) return
@@ -838,11 +814,6 @@ function FileManager({
         setFeedback({ tone: 'good', message: plan.message })
       },
     })
-  }
-
-  const rememberFileOperation = (operation: XDriveFileOperation) => {
-    fileOperationStatusRef.current.set(operation.id, operation.status)
-    setFileOperations((currentOperations) => xDriveFileOperationUpsert(currentOperations, operation))
   }
 
   const cancelFileOperation = async (id: string) => {

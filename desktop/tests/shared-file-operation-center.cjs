@@ -9,6 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const shared = read('ui', 'shared', 'src', 'mui', 'FileOperationCenter.tsx')
 const taskCenter = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'file-operations.ts')
+const lifecycleController = read('ui', 'shared', 'src', 'mui', 'FileOperationLifecycle.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
@@ -89,12 +90,12 @@ test('Web and Desktop both render the shared file-operation center through Task 
   assert.equal((desktopPage.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Desktop must not duplicate FileOperationCenter composition')
 })
 
-test('Web polls persistent operations and refreshes Explorer only on terminal transitions', () => {
+test('Web delegates persistent-operation polling and terminal refresh to the shared lifecycle controller', () => {
   for (const token of [
-    'api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)',
-    'window.setInterval(() => void refresh(), fileOperationPollIntervalMs)',
-    'xDriveFileOperationTransitionSnapshot(',
-    'transition.hasTerminalTransition',
+    'useXDriveFileOperationLifecycle<XDriveFileOperation>({',
+    'loadOperations: loadFileOperations',
+    "taskCenterVisible: appView === 'transfers'",
+    'onTerminalTransition: () => {',
     'void loadDirectory(current.id, crumbs',
     'void refreshQuota()',
     'cancelFileOperation(id: string)',
@@ -102,15 +103,17 @@ test('Web polls persistent operations and refreshes Explorer only on terminal tr
   ]) {
     assert.ok((web + webApi).includes(token), `Web persistent-operation lifecycle missing: ${token}`)
   }
+  assert.ok(web.includes('(limit: number) => api.fileOperations(limit)'), 'Web must keep REST operation loading local')
   assert.ok(webExplorer.includes('onOperationQueued(queued)'), 'Web Explorer must seed newly queued operations')
 })
 
-test('Desktop polls persistent operations and refreshes cloud Explorer only on terminal transitions', () => {
+test('Desktop delegates persistent-operation polling and terminal refresh to the shared lifecycle controller', () => {
   for (const token of [
-    'cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)',
-    'window.setInterval(() => void refresh(), fileOperationPollIntervalMs)',
-    'xDriveFileOperationTransitionSnapshot(',
-    'transition.hasTerminalTransition',
+    'useXDriveFileOperationLifecycle<AgentCloudFileOperation>({',
+    'loadOperations: loadCloudFileOperations',
+    "taskCenterVisible: view === 'transfers'",
+    'window.xdriveDesktop.agent.cloudFileOperations(limit)',
+    'onTerminalTransition: () => {',
     'void refreshCloudQuota()',
     'void loadCloudDirectory(',
     'cloudCancelFileOperation(id)',
@@ -141,18 +144,29 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(desktop.includes('rememberCloudFileOperation(result.data)'), 'Desktop single delete must seed Task Center state')
 })
 
-test('shared file-operation upsert owns dedupe and newest-first ordering', () => {
+test('shared file-operation lifecycle owns list state, polling, upsert and terminal transitions', () => {
   for (const token of [
-    'xDriveFileOperationUpsert',
-    'operation,',
-    'operations.filter((item) => item.id !== operation.id)',
+    'useXDriveFileOperationLifecycle',
+    'useState<T[]>([])',
+    'XDRIVE_FILE_OPERATION_HISTORY_LIMIT',
+    'xDriveFileOperationPollIntervalMs(operations, taskCenterVisible)',
+    'window.setInterval(() => void refresh(), pollIntervalMs)',
+    'xDriveFileOperationUpsert(currentOperations, operation)',
+    'xDriveFileOperationTransitionSnapshot(statusRef.current, operations)',
+    'statusRef.current = transition.statuses',
+    'transition.hasTerminalTransition',
+    'onTerminalTransitionRef.current?.()',
+    'statusRef.current = new Map()',
   ]) {
-    assert.ok(sharedModel.includes(token), `shared file-operation upsert missing: ${token}`)
+    assert.ok(lifecycleController.includes(token), `shared operation lifecycle missing: ${token}`)
   }
-  assert.ok(web.includes('xDriveFileOperationUpsert(currentOperations, operation)'), 'Web must use shared operation upsert')
-  assert.ok(desktop.includes('xDriveFileOperationUpsert(currentOperations, operation)'), 'Desktop must use shared operation upsert')
-  assert.equal(web.includes('...currentOperations.filter((item) => item.id !== operation.id)'), false, 'Web must not duplicate operation dedupe')
-  assert.equal(desktop.includes('...currentOperations.filter((item) => item.id !== operation.id)'), false, 'Desktop must not duplicate operation dedupe')
+  assert.ok(sharedMuiIndex.includes("export * from './FileOperationLifecycle'"), 'shared operation lifecycle is not exported')
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.equal(source.includes('xDriveFileOperationUpsert(currentOperations, operation)'), false, `${label} must not own operation upsert`)
+    assert.equal(source.includes('xDriveFileOperationTransitionSnapshot('), false, `${label} must not scan operation transitions locally`)
+    assert.equal(source.includes('window.setInterval(() => void refresh(), fileOperationPollIntervalMs)'), false, `${label} must not own operation polling timers`)
+    assert.equal(source.includes('useRef(new Map<string, string>())'), false, `${label} must not own operation status snapshots`)
+  }
 })
 
 test('shared file-operation transition snapshot owns active-to-terminal refresh decisions', () => {
@@ -167,10 +181,7 @@ test('shared file-operation transition snapshot owns active-to-terminal refresh 
   ]) {
     assert.ok(sharedModel.includes(token), `shared file-operation transition logic missing: ${token}`)
   }
-  assert.equal(web.includes('const previous = fileOperationStatusRef.current'), false, 'Web must not duplicate transition scanning')
-  assert.equal(desktop.includes('const previous = cloudFileOperationStatusRef.current'), false, 'Desktop must not duplicate transition scanning')
-  assert.ok(web.includes('fileOperationStatusRef.current = transition.statuses'), 'Web must persist the shared transition snapshot')
-  assert.ok(desktop.includes('cloudFileOperationStatusRef.current = transition.statuses'), 'Desktop must persist the shared transition snapshot')
+  assert.ok(lifecycleController.includes('xDriveFileOperationTransitionSnapshot(statusRef.current, operations)'), 'shared lifecycle must consume transition snapshots')
 })
 
 test('shared FileExplorer delete plan owns refs, count and queued feedback', () => {
@@ -192,8 +203,9 @@ test('shared FileExplorer delete plan owns refs, count and queued feedback', () 
 
 test('Task Center uses the full retained file-operation history window', () => {
   assert.ok(sharedModel.includes('XDRIVE_FILE_OPERATION_HISTORY_LIMIT = 200'), 'shared operation history limit must match Server retention')
-  assert.ok(web.includes('api.fileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)'), 'Web must request the full retained operation history')
-  assert.ok(desktop.includes('cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)'), 'Desktop must request the full retained operation history')
+  assert.ok(lifecycleController.includes('loadOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)'), 'shared lifecycle must request the full retained operation history')
+  assert.ok(web.includes('(limit: number) => api.fileOperations(limit)'), 'Web must keep REST operation loading local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudFileOperations(limit)'), 'Desktop must keep Agent operation loading local')
   assert.equal(web.includes('api.fileOperations(100)'), false, 'Web must not truncate retained operation history to 100 entries')
   assert.equal(desktop.includes('cloudFileOperations(100)'), false, 'Desktop must not truncate retained operation history to 100 entries')
 })
@@ -229,15 +241,15 @@ test('Task Center polling adapts to active, visible-idle and background-idle sta
   }
 
   assert.ok(
-    web.includes("xDriveFileOperationPollIntervalMs(\n    fileOperations,\n    appView === 'transfers',"),
-    'Web must compute polling cadence from active operations and Task Center visibility',
+    lifecycleController.includes('xDriveFileOperationPollIntervalMs(operations, taskCenterVisible)'),
+    'shared lifecycle must compute polling cadence from active operations and Task Center visibility',
   )
   assert.ok(
-    desktop.includes("xDriveFileOperationPollIntervalMs(\n    cloudFileOperations,\n    view === 'transfers',"),
-    'Desktop must compute polling cadence from active operations and Task Center visibility',
+    lifecycleController.includes('window.setInterval(() => void refresh(), pollIntervalMs)'),
+    'shared lifecycle must own the adaptive polling timer',
   )
-  assert.ok(web.includes('window.setInterval(() => void refresh(), fileOperationPollIntervalMs)'), 'Web must use shared adaptive polling cadence')
-  assert.ok(desktop.includes('window.setInterval(() => void refresh(), fileOperationPollIntervalMs)'), 'Desktop must use shared adaptive polling cadence')
+  assert.ok(web.includes("taskCenterVisible: appView === 'transfers'"), 'Web must provide Task Center visibility to shared polling')
+  assert.ok(desktop.includes("taskCenterVisible: view === 'transfers'"), 'Desktop must provide Task Center visibility to shared polling')
   assert.equal(web.includes('window.setInterval(() => void refresh(), 1500)'), false, 'Web must not keep a permanent 1.5s polling loop')
   assert.equal(desktop.includes('window.setInterval(() => void refresh(), 1500)'), false, 'Desktop must not keep a permanent 1.5s polling loop')
 })
