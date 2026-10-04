@@ -1030,6 +1030,51 @@ function mediaResourceRoleLabel(role: string) {
   }
 }
 
+type MediaGalleryViewMode = 'grid' | 'timeline'
+
+type MediaTimelineGroup = {
+  key: string
+  label: string
+  items: MediaItem[]
+}
+
+function mediaTimelineDate(item: MediaItem) {
+  if (!item.metadata.captured_at) return null
+  const captured = new Date(item.metadata.captured_at)
+  return Number.isNaN(captured.getTime()) ? null : captured
+}
+
+function mediaTimelineGroups(items: MediaItem[]): MediaTimelineGroup[] {
+  const groups = new Map<string, MediaTimelineGroup>()
+  const unknown: MediaItem[] = []
+  for (const item of items) {
+    const date = mediaTimelineDate(item)
+    if (!date) {
+      unknown.push(item)
+      continue
+    }
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const current = groups.get(key)
+    if (current) {
+      current.items.push(item)
+      continue
+    }
+    groups.set(key, {
+      key,
+      label: new Intl.DateTimeFormat('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+      }).format(date),
+      items: [item],
+    })
+  }
+  const ordered = Array.from(groups.values()).sort((a, b) => b.key.localeCompare(a.key))
+  if (unknown.length > 0) {
+    ordered.push({ key: 'unknown', label: '日期未知', items: unknown })
+  }
+  return ordered
+}
+
 function keyboardActivate(
   event: KeyboardEvent<HTMLElement>,
   action: () => void,
@@ -1401,6 +1446,156 @@ function MediaDetails({
   )
 }
 
+type MediaTileProps = {
+  item: MediaItem
+  loadThumbnail: MediaThumbnailLoader
+  loadVideo?: MediaVideoLoader
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onOpen: (item: MediaItem) => void
+  onToggleFavorite: (item: MediaItem) => void
+}
+
+function MediaTile({
+  item,
+  loadThumbnail,
+  loadVideo,
+  onSetFavorite,
+  onOpen,
+  onToggleFavorite,
+}: MediaTileProps) {
+  const video = item.metadata.media_kind === 'video'
+  const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
+  return (
+    <Paper
+      variant="outlined"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(item)}
+      onKeyDown={(event) => keyboardActivate(event, () => onOpen(item))}
+      sx={{
+        position: 'relative',
+        overflow: 'hidden',
+        aspectRatio: '1 / 1',
+        cursor: 'pointer',
+        bgcolor: 'action.hover',
+        '&:hover .media-name': { opacity: 1 },
+        '&:focus-visible': {
+          outline: '2px solid',
+          outlineColor: 'primary.main',
+          outlineOffset: 2,
+        },
+      }}
+    >
+      {video && !livePhoto && loadVideo ? (
+        <AsyncVideoPoster
+          nodeID={item.node.id}
+          alt={item.node.name}
+          loadVideo={loadVideo}
+          fallback={mediaFallback(item.metadata.media_kind)}
+        />
+      ) : (
+        <AsyncThumbnail
+          nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
+          alt={item.node.name}
+          loadThumbnail={loadThumbnail}
+          fallback={mediaFallback(item.metadata.media_kind)}
+        />
+      )}
+      {onSetFavorite ? (
+        <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
+          <IconButton
+            size="small"
+            aria-label={item.favorite ? '取消收藏' : '收藏'}
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleFavorite(item)
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            sx={{
+              position: 'absolute',
+              top: 8,
+              left: 8,
+              bgcolor: 'rgba(0,0,0,.66)',
+              color: item.favorite ? 'warning.main' : '#fff',
+              '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
+            }}
+          >
+            {item.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      <Chip
+        icon={livePhoto ? <LivePhotoIcon /> : video ? <MovieIcon /> : <ImageIcon />}
+        label={mediaAssetChipLabel(item)}
+        size="small"
+        sx={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          bgcolor: 'rgba(0,0,0,.66)',
+          color: '#fff',
+          '& .MuiChip-icon': { color: '#fff' },
+        }}
+      />
+      <Box
+        className="media-name"
+        sx={{
+          position: 'absolute',
+          inset: 'auto 0 0',
+          px: 1,
+          pt: 2.5,
+          pb: 0.75,
+          opacity: { xs: 1, md: 0 },
+          transition: 'opacity 120ms ease',
+          background: 'linear-gradient(transparent, rgba(0,0,0,.72))',
+        }}
+      >
+        <Typography variant="caption" color="#fff" noWrap display="block">
+          {item.node.name}
+        </Typography>
+      </Box>
+    </Paper>
+  )
+}
+
+function MediaTileGrid({
+  items,
+  loadThumbnail,
+  loadVideo,
+  onSetFavorite,
+  onOpen,
+  onToggleFavorite,
+}: {
+  items: MediaItem[]
+  loadThumbnail: MediaThumbnailLoader
+  loadVideo?: MediaVideoLoader
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onOpen: (item: MediaItem) => void
+  onToggleFavorite: (item: MediaItem) => void
+}) {
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+        gap: 1,
+      }}
+    >
+      {items.map((item) => (
+        <MediaTile
+          key={item.node.id}
+          item={item}
+          loadThumbnail={loadThumbnail}
+          loadVideo={loadVideo}
+          onSetFavorite={onSetFavorite}
+          onOpen={onOpen}
+          onToggleFavorite={onToggleFavorite}
+        />
+      ))}
+    </Box>
+  )
+}
+
 export function XDriveMediaGallery({
   items,
   albums = [],
@@ -1424,6 +1619,7 @@ export function XDriveMediaGallery({
   onRefresh,
 }: XDriveMediaGalleryProps) {
   const [selected, setSelected] = useState<MediaItem | null>(null)
+  const [viewMode, setViewMode] = useState<MediaGalleryViewMode>('grid')
   const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
   const [albumName, setAlbumName] = useState('')
   const [albumDialogBusy, setAlbumDialogBusy] = useState(false)
@@ -1446,6 +1642,12 @@ export function XDriveMediaGallery({
         : current
     ))
   }, [onSetFavorite])
+
+  const timelineGroups = useMemo(() => mediaTimelineGroups(items), [items])
+  const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
+  const toggleMediaFavorite = useCallback((item: MediaItem) => {
+    void toggleFavorite(item).catch(() => undefined)
+  }, [toggleFavorite])
 
   return (
     <Stack spacing={2.5} sx={{ minWidth: 0 }}>
@@ -1482,6 +1684,24 @@ export function XDriveMediaGallery({
             删除相册
           </Button>
         ) : null}
+        <Stack direction="row" spacing={0.5} aria-label="图库视图">
+          <Button
+            size="small"
+            variant={viewMode === 'grid' ? 'contained' : 'text'}
+            aria-pressed={viewMode === 'grid'}
+            onClick={() => setViewMode('grid')}
+          >
+            网格
+          </Button>
+          <Button
+            size="small"
+            variant={viewMode === 'timeline' ? 'contained' : 'text'}
+            aria-pressed={viewMode === 'timeline'}
+            onClick={() => setViewMode('timeline')}
+          >
+            时间轴
+          </Button>
+        </Stack>
         {onRefresh ? (
           <Tooltip title="刷新">
             <span>
@@ -1603,116 +1823,43 @@ export function XDriveMediaGallery({
               </Typography>
             </Stack>
           </Paper>
-        ) : (
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-              gap: 1,
-            }}
-          >
-            {items.map((item) => {
-              const video = item.metadata.media_kind === 'video'
-              const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
-              return (
-                <Paper
-                  key={item.node.id}
-                  variant="outlined"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelected(item)}
-                  onKeyDown={(event) => keyboardActivate(event, () => setSelected(item))}
-                  sx={{
-                    position: 'relative',
-                    overflow: 'hidden',
-                    aspectRatio: '1 / 1',
-                    cursor: 'pointer',
-                    bgcolor: 'action.hover',
-                    '&:hover .media-name': { opacity: 1 },
-                    '&:focus-visible': {
-                      outline: '2px solid',
-                      outlineColor: 'primary.main',
-                      outlineOffset: 2,
-                    },
-                  }}
+        ) : viewMode === 'timeline' ? (
+          <Stack spacing={2.5}>
+            {timelineGroups.map((group) => (
+              <Box key={group.key}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="baseline"
+                  sx={{ mb: 1 }}
                 >
-                  {video && !livePhoto && loadVideo ? (
-                    <AsyncVideoPoster
-                      nodeID={item.node.id}
-                      alt={item.node.name}
-                      loadVideo={loadVideo}
-                      fallback={mediaFallback(item.metadata.media_kind)}
-                    />
-                  ) : (
-                    <AsyncThumbnail
-                      nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
-                      alt={item.node.name}
-                      loadThumbnail={loadThumbnail}
-                      fallback={mediaFallback(item.metadata.media_kind)}
-                    />
-                  )}
-                  {onSetFavorite ? (
-                    <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
-                      <IconButton
-                        size="small"
-                        aria-label={item.favorite ? '取消收藏' : '收藏'}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void toggleFavorite(item).catch(() => undefined)
-                        }}
-                        onKeyDown={(event) => event.stopPropagation()}
-                        sx={{
-                          position: 'absolute',
-                          top: 8,
-                          left: 8,
-                          bgcolor: 'rgba(0,0,0,.66)',
-                          color: item.favorite ? 'warning.main' : '#fff',
-                          '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
-                        }}
-                      >
-                        {item.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
-                      </IconButton>
-                    </Tooltip>
-                  ) : null}
-                  <Chip
-                    icon={livePhoto ? <LivePhotoIcon /> : video ? <MovieIcon /> : <ImageIcon />}
-                    label={mediaAssetChipLabel(item)}
-                    size="small"
-                    sx={{
-                      position: 'absolute',
-                      top: 8,
-                      right: 8,
-                      bgcolor: 'rgba(0,0,0,.66)',
-                      color: '#fff',
-                      '& .MuiChip-icon': { color: '#fff' },
-                    }}
-                  />
-                  <Box
-                    className="media-name"
-                    sx={{
-                      position: 'absolute',
-                      inset: 'auto 0 0',
-                      px: 1,
-                      pt: 2.5,
-                      pb: 0.75,
-                      opacity: { xs: 1, md: 0 },
-                      transition: 'opacity 120ms ease',
-                      background: 'linear-gradient(transparent, rgba(0,0,0,.72))',
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      color="#fff"
-                      noWrap
-                      display="block"
-                    >
-                      {item.node.name}
-                    </Typography>
-                  </Box>
-                </Paper>
-              )
-            })}
-          </Box>
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    {group.label}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {group.items.length.toLocaleString('zh-CN')} 项
+                  </Typography>
+                </Stack>
+                <MediaTileGrid
+                  items={group.items}
+                  loadThumbnail={loadThumbnail}
+                  loadVideo={loadVideo}
+                  onSetFavorite={onSetFavorite}
+                  onOpen={openMediaItem}
+                  onToggleFavorite={toggleMediaFavorite}
+                />
+              </Box>
+            ))}
+          </Stack>
+        ) : (
+          <MediaTileGrid
+            items={items}
+            loadThumbnail={loadThumbnail}
+            loadVideo={loadVideo}
+            onSetFavorite={onSetFavorite}
+            onOpen={openMediaItem}
+            onToggleFavorite={toggleMediaFavorite}
+          />
         )}
       </Box>
 
