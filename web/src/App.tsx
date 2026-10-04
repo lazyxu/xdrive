@@ -27,16 +27,10 @@ import {
   XDriveBrandLockup,
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
-  XDriveLocalStoragePage,
-  XDriveCoreWorkspaceNavItems,
+  XDriveWorkspaceSidebar,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
-  XDriveSidebarNavItem,
-  XDriveSidebarNavList,
-  XDriveSidebarSurface,
-  XDriveSidebarSection,
-  XDriveSidebarStorageSummary,
   XDriveStatePanel,
   XDriveTaskCenterPage,
   useXDriveFileOperationLifecycle,
@@ -49,7 +43,12 @@ import {
   XDriveWorkspaceShell,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
-import type { MediaGalleryDataSource, XDriveCloudStorageDataSource, XDriveLocalStorageDataSource, XDriveFileExplorerSort } from '@xdrive/ui/mui'
+import type {
+  MediaGalleryDataSource,
+  XDriveCloudStorageDataSource,
+  XDriveFileExplorerSort,
+  XDriveWorkspaceSidebarSectionModel,
+} from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
@@ -101,7 +100,6 @@ type AppView =
   | 'gallery'
   | 'sources'
   | 'transfers'
-  | 'local-storage'
   | 'cloud-storage'
   | 'admin-users'
   | 'admin-audit'
@@ -528,14 +526,6 @@ function FileManager({
     },
   }), [api])
 
-  const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => ({
-      supported: false,
-      storagePoliciesSupported: false,
-      reason: 'Web 端不管理当前设备的本地同步缓存；请在 xDrive Desktop 中查看本地缓存与离线保留策略。',
-    }),
-  }), [])
-
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401 || err.message.includes('account_disabled')) {
@@ -876,6 +866,33 @@ function FileManager({
 
   const openHistory = (node: Node) => setHistoryNode(node)
 
+  const webSidebarSections: XDriveWorkspaceSidebarSectionModel[] = profile?.role === 'admin'
+    ? [
+        {
+          key: 'admin',
+          label: '管理',
+          ariaLabel: '管理员功能',
+          items: [
+            {
+              key: 'admin-users',
+              label: '用户管理',
+              icon: <ManageAccountsRoundedIcon fontSize="small" />,
+            },
+            {
+              key: 'admin-audit',
+              label: '审计日志',
+              icon: <AssessmentRoundedIcon fontSize="small" />,
+            },
+            {
+              key: 'admin-storage',
+              label: '全局存储',
+              icon: <StorageRoundedIcon fontSize="small" />,
+            },
+          ],
+        },
+      ]
+    : []
+
   return (
     <Box
       className="app-shell file-manager-shell"
@@ -912,51 +929,21 @@ function FileManager({
         className="web-workspace-shell"
         sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}
       >
-        <XDriveSidebarSurface ariaLabel="网页端功能区" responsive>
-          <XDriveSidebarNavList ariaLabel="网页端功能区导航" responsive>
-            <XDriveCoreWorkspaceNavItems
-              selected={appView}
-              transferBadge={(transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length + fileOperations.filter((item) => xDriveFileOperationActive(item.status)).length) || undefined}
-              onSelect={setAppView}
-            />
-          </XDriveSidebarNavList>
-
-          {profile?.role === 'admin' && (
-            <XDriveSidebarSection label="管理" responsive>
-              <XDriveSidebarNavList ariaLabel="管理员功能" responsive>
-                <XDriveSidebarNavItem
-                  selected={appView === 'admin-users'}
-                  icon={<ManageAccountsRoundedIcon fontSize="small" />}
-                  primary="用户管理"
-                  onClick={() => setAppView('admin-users')}
-                />
-                <XDriveSidebarNavItem
-                  selected={appView === 'admin-audit'}
-                  icon={<AssessmentRoundedIcon fontSize="small" />}
-                  primary="审计日志"
-                  onClick={() => setAppView('admin-audit')}
-                />
-                <XDriveSidebarNavItem
-                  selected={appView === 'admin-storage'}
-                  icon={<StorageRoundedIcon fontSize="small" />}
-                  primary="全局存储"
-                  onClick={() => setAppView('admin-storage')}
-                />
-              </XDriveSidebarNavList>
-            </XDriveSidebarSection>
-          )}
-
-          {quota && (
-            <Box sx={{ display: { xs: 'none', md: 'block' }, mt: 'auto', pt: 1.5 }}>
-              <XDriveSidebarStorageSummary
-                usedBytes={quota.physical_used_bytes}
-                totalBytes={quota.quota_bytes}
-                diskTotalBytes={quota.disk_total_bytes}
-                diskAvailableBytes={quota.disk_available_bytes}
-              />
-            </Box>
-          )}
-        </XDriveSidebarSurface>
+        <XDriveWorkspaceSidebar
+          ariaLabel="网页端功能区"
+          navAriaLabel="网页端功能区导航"
+          responsive
+          selected={appView}
+          transferBadge={(transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length + fileOperations.filter((item) => xDriveFileOperationActive(item.status)).length) || undefined}
+          sections={webSidebarSections}
+          storageSummary={quota ? {
+            usedBytes: quota.physical_used_bytes,
+            totalBytes: quota.quota_bytes,
+            diskTotalBytes: quota.disk_total_bytes,
+            diskAvailableBytes: quota.disk_available_bytes,
+          } : null}
+          onSelect={(destination) => setAppView(destination as AppView)}
+        />
 
         <Box
           component="main"
@@ -1033,8 +1020,6 @@ function FileManager({
             onCancelOperation={(id) => { void cancelFileOperation(id) }}
             onRetryOperation={(id) => { void retryFileOperation(id) }}
           />
-        ) : appView === 'local-storage' ? (
-          <XDriveLocalStoragePage source={localStorageSource} />
         ) : appView === 'cloud-storage' ? (
           <XDriveCloudStoragePage source={cloudStorageSource} />
         ) : appView === 'admin-users' && profile?.role === 'admin' ? (

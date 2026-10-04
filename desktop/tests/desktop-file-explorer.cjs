@@ -5,8 +5,8 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const app = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
-const cloudPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
-const localStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
+const filesPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
+const localStoragePage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const cloudStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
@@ -15,8 +15,8 @@ const styles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer',
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 
 test('Desktop files workspace consumes the shared FileExplorer', () => {
-  assert.ok(cloudPage.includes("import DesktopFileExplorer from './DesktopFileExplorer'"), 'Desktop Cloud page must import the Explorer adapter')
-  assert.ok(cloudPage.includes('<DesktopFileExplorer'), 'Desktop Cloud page did not render the Explorer adapter')
+  assert.ok(filesPage.includes("import DesktopFileExplorer from './DesktopFileExplorer'"), 'Desktop Files page must import the Explorer adapter')
+  assert.ok(filesPage.includes('<DesktopFileExplorer'), 'Desktop Files page did not render the Explorer adapter')
   assert.ok(explorer.includes('<XDriveFileExplorer'), 'Desktop adapter does not consume the shared FileExplorer')
   assert.equal(app.includes('className="cloud-search-row"'), false, 'legacy Desktop cloud search row remains')
   assert.equal(app.includes('className="cloud-list"'), false, 'legacy Desktop cloud list remains')
@@ -83,7 +83,7 @@ test('Desktop FileExplorer paginates server search results through Agent cursors
 })
 
 test('Desktop cloud capacity and CAS intelligence live in the shared Cloud Storage workspace', () => {
-  assert.equal(cloudPage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy the Files workspace')
+  assert.equal(filesPage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy the Files workspace')
   assert.equal(localStoragePage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy local storage')
   assert.ok(cloudStoragePage.includes('title="云端存储"'), 'shared Cloud Storage workspace is missing its title')
   assert.ok(cloudStoragePage.includes('云端容量'), 'shared Cloud Storage workspace is missing cloud capacity metrics')
@@ -110,7 +110,7 @@ test('Desktop Files home load does not fetch CAS storage intelligence', () => {
 
 test('Desktop Files is a full-bleed Explorer workspace without duplicate page chrome', () => {
   assert.ok(
-    app.includes("className={view === 'cloud' ? 'content content-files-workspace' : 'content'}"),
+    app.includes("className={view === 'files' ? 'content content-files-workspace' : 'content'}"),
     'Desktop Files should switch the main content into full-workspace mode',
   )
   assert.equal(
@@ -118,7 +118,7 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
     false,
     'Desktop App should not own a generic page header; extracted pages own shared workspace chrome',
   )
-  assert.ok(app.includes('<DesktopCloudPage'), 'Desktop Files should render through the extracted full-bleed cloud page')
+  assert.ok(app.includes('<DesktopFilesPage'), 'Desktop Files should render through the extracted full-bleed cloud page')
 
   const workspaceStart = styles.indexOf('.content-files-workspace {')
   const storageStart = styles.indexOf('.storage-panel > .cloud-subpanel', workspaceStart)
@@ -139,7 +139,7 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
     assert.ok(workspaceStyles.includes(token), `missing full-workspace Explorer rule: ${token}`)
   }
   assert.equal(workspaceStyles.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use a hard-coded viewport subtraction')
-  assert.ok(cloudPage.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'), 'over-quota warning should remain an inset workspace strip')
+  assert.ok(filesPage.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'), 'over-quota warning should remain an inset workspace strip')
 })
 
 test('Desktop FileExplorer queues copy/cut/paste through persistent Agent file operations', () => {
@@ -204,8 +204,8 @@ test('Desktop FileExplorer supplies preview/properties metadata through existing
 })
 
 test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-shared Explorer CSS', () => {
-  assert.ok(cloudPage.includes('<section className="cloud-explorer-panel">'), 'Desktop Files should use only its workspace container')
-  assert.equal(cloudPage.includes('panel cloud-panel cloud-explorer-panel'), false, 'Desktop Files must not inherit generic dashboard panel chrome')
+  assert.ok(filesPage.includes('<section className="cloud-explorer-panel">'), 'Desktop Files should use only its workspace container')
+  assert.equal(filesPage.includes('panel cloud-panel cloud-explorer-panel'), false, 'Desktop Files must not inherit generic dashboard panel chrome')
 
   for (const selector of [
     '.cloud-panel {',
@@ -227,8 +227,8 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
 })
 
 test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-shared Explorer CSS', () => {
-  assert.ok(cloudPage.includes('<section className="cloud-explorer-panel">'), 'Desktop Files should use only its workspace container')
-  assert.equal(cloudPage.includes('panel cloud-panel cloud-explorer-panel'), false, 'Desktop Files must not inherit generic dashboard panel chrome')
+  assert.ok(filesPage.includes('<section className="cloud-explorer-panel">'), 'Desktop Files should use only its workspace container')
+  assert.equal(filesPage.includes('panel cloud-panel cloud-explorer-panel'), false, 'Desktop Files must not inherit generic dashboard panel chrome')
 
   for (const selector of [
     '.cloud-panel {',

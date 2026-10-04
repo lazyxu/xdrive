@@ -4,17 +4,20 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { formatBinarySize } from '../format'
-import { XDriveActionButton } from './ActionButton'
-import { XDriveMetricCard, XDriveMetricGrid } from './MetricCards'
-import { XDriveSectionHeader } from './SectionHeader'
-import { XDriveStatePanel } from './StatePanel'
-import { XDriveStatusAlert } from './StatusAlert'
-import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { formatBinarySize } from '@xdrive/shared'
+import {
+  XDriveActionButton,
+  XDriveMetricCard,
+  XDriveMetricGrid,
+  XDriveSectionHeader,
+  XDriveStatePanel,
+  XDriveStatusAlert,
+  XDriveWorkspaceSurface,
+} from '@xdrive/ui/mui'
 
-export type XDriveLocalStorageMode = 'default' | 'exclude' | 'always-local'
+export type DesktopLocalStorageMode = 'default' | 'exclude' | 'always-local'
 
-export type XDriveLocalStorageCacheStats = {
+export type DesktopLocalStorageCacheStats = {
   supported: boolean
   reason?: string
   used_bytes: number
@@ -26,37 +29,37 @@ export type XDriveLocalStorageCacheStats = {
   pinned_files: number
 }
 
-export type XDriveLocalStorageTreeNode = {
+export type DesktopLocalStorageTreeNode = {
   path: string
   name: string
-  mode: XDriveLocalStorageMode
-  effective_mode: XDriveLocalStorageMode
+  mode: DesktopLocalStorageMode
+  effective_mode: DesktopLocalStorageMode
   file_count: number
   total_bytes: number
-  children?: XDriveLocalStorageTreeNode[]
+  children?: DesktopLocalStorageTreeNode[]
 }
 
-export type XDriveLocalStorageSnapshot = {
+export type DesktopLocalStorageSnapshot = {
   supported: boolean
   reason?: string
   storagePoliciesSupported: boolean
-  cacheStats?: XDriveLocalStorageCacheStats | null
-  storageTree?: XDriveLocalStorageTreeNode | null
+  cacheStats?: DesktopLocalStorageCacheStats | null
+  storageTree?: DesktopLocalStorageTreeNode | null
 }
 
-export type XDriveLocalStorageReleaseResult = {
+export type DesktopLocalStorageReleaseResult = {
   released_files: number
   released_bytes: number
   failed_files: number
 }
 
-export type XDriveLocalStorageDataSource = {
-  load: () => Promise<XDriveLocalStorageSnapshot>
-  releaseCache?: () => Promise<XDriveLocalStorageReleaseResult>
-  setFolderMode?: (path: string, mode: XDriveLocalStorageMode) => Promise<void>
+export type DesktopLocalStorageDataSource = {
+  load: () => Promise<DesktopLocalStorageSnapshot>
+  releaseCache?: () => Promise<DesktopLocalStorageReleaseResult>
+  setFolderMode?: (path: string, mode: DesktopLocalStorageMode) => Promise<void>
 }
 
-function modeLabel(mode: XDriveLocalStorageMode) {
+function modeLabel(mode: DesktopLocalStorageMode) {
   if (mode === 'exclude') return '不同步'
   if (mode === 'always-local') return '始终保留'
   return '默认'
@@ -71,13 +74,13 @@ function LocalFolderRow({
   onToggle,
   onModeChange,
 }: {
-  node: XDriveLocalStorageTreeNode
+  node: DesktopLocalStorageTreeNode
   depth: number
   expanded: Set<string>
   busy: boolean
   policySupported: boolean
   onToggle: (path: string) => void
-  onModeChange?: (path: string, mode: XDriveLocalStorageMode) => void
+  onModeChange?: (path: string, mode: DesktopLocalStorageMode) => void
 }) {
   const children = node.children || []
   const open = expanded.has(node.path)
@@ -122,7 +125,7 @@ function LocalFolderRow({
         </Box>
         {policySupported && onModeChange ? (
           <Stack direction="row" spacing={0.5}>
-            {(['default', 'exclude', 'always-local'] as XDriveLocalStorageMode[]).map((mode) => (
+            {(['default', 'exclude', 'always-local'] as DesktopLocalStorageMode[]).map((mode) => (
               <XDriveActionButton
                 key={mode}
                 compact
@@ -154,12 +157,12 @@ function LocalFolderRow({
   )
 }
 
-export function XDriveLocalStoragePage({
+export function DesktopLocalStoragePage({
   source,
 }: {
-  source: XDriveLocalStorageDataSource
+  source: DesktopLocalStorageDataSource
 }) {
-  const [snapshot, setSnapshot] = useState<XDriveLocalStorageSnapshot | null>(null)
+  const [snapshot, setSnapshot] = useState<DesktopLocalStorageSnapshot | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [action, setAction] = useState('')
@@ -209,7 +212,7 @@ export function XDriveLocalStoragePage({
     }
   }
 
-  const setFolderMode = async (path: string, mode: XDriveLocalStorageMode) => {
+  const setFolderMode = async (path: string, mode: DesktopLocalStorageMode) => {
     if (!source.setFolderMode) return
     setAction(`mode:${path}`)
     setError('')

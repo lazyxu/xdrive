@@ -9,6 +9,7 @@ const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
 const workspace = readRepo('ui/shared/src/mui/WorkspaceSurface.tsx')
 const workspaceShell = readRepo('ui/shared/src/mui/WorkspaceShell.tsx')
+const workspaceSidebar = readRepo('ui/shared/src/mui/WorkspaceSidebar.tsx')
 const fileExplorer = readRepo('ui/shared/src/mui/FileExplorer.tsx')
 const fileExplorerActions = readRepo('ui/shared/src/mui/FileExplorerActions.tsx')
 const desktopFileExplorer = readRepo('desktop/src/renderer/DesktopFileExplorer.tsx')
@@ -19,7 +20,6 @@ const styles = read('src/styles.css')
 const sources = read('src/ExternalSources.tsx') + readRepo('ui/shared/src/mui/SourceManager.tsx')
 const storage = read('src/StorageStatsPanel.tsx')
 const cloudStorage = readRepo('ui/shared/src/mui/CloudStoragePage.tsx')
-const localStorage = readRepo('ui/shared/src/mui/LocalStoragePage.tsx')
 const adminUsers = read('src/AdminUsers.tsx')
 const adminAudit = read('src/AdminAudit.tsx')
 
@@ -47,6 +47,15 @@ requireText(workspaceShell, [
   'XDRIVE_SIDEBAR_COMPACT_WIDTH',
   "'@media (max-width: 960px)'",
 ], 'XDriveWorkspaceShell')
+
+requireText(workspaceSidebar, [
+  'export function XDriveWorkspaceSidebar',
+  '<XDriveSidebarSurface',
+  '<XDriveSidebarNavList',
+  '<XDriveCoreWorkspaceNavItems',
+  '<XDriveSidebarSection',
+  '<XDriveSidebarStorageSummary',
+], 'XDriveWorkspaceSidebar')
 
 requireText(fileExplorer, [
   "export type XDriveFileExplorerPresentation = 'card' | 'workspace'",
@@ -109,6 +118,7 @@ if (webFileExplorer.includes('<XDriveActionButton compact startIcon={<RestoreFro
 requireText(app, [
   'file-manager-shell',
   'XDriveWorkspaceShell',
+  'XDriveWorkspaceSidebar',
   'className="web-workspace-shell"',
   "sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}",
   "className={appView === 'files' ? 'content-wrap files-workspace' : 'content-wrap'}",
@@ -119,6 +129,12 @@ requireText(app, [
 
 if (app.includes('<XDriveWorkspaceSurface presentation="page" title="文件">')) {
   throw new Error('Web files workspace must not render a duplicate page header')
+}
+if (app.includes('LocalStoragePage') || app.includes('localStorageSource')) {
+  throw new Error('Web must not expose Desktop-only Local Storage')
+}
+for (const primitive of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
+  if (app.includes(primitive)) throw new Error(`Web must not assemble sidebar primitive directly: ${primitive}`)
 }
 
 requireText(styles, [
@@ -163,15 +179,6 @@ requireText(cloudStorage, [
   'title="云端容量"',
   'title="CAS 存储情报"',
 ], 'Shared CloudStorage')
-
-requireText(localStorage, [
-  'export function XDriveLocalStoragePage',
-  'XDriveWorkspaceSurface',
-  'presentation="page"',
-  'title="本地存储"',
-  'title="本地缓存"',
-  'title="文件夹本地策略"',
-], 'Shared LocalStorage')
 
 requireText(adminUsers, [
   'XDriveWorkspaceSurface',

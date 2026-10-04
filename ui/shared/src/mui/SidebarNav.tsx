@@ -135,11 +135,13 @@ export function XDriveCoreWorkspaceNavItems({
   selected,
   transferBadge,
   appearance = 'light',
+  showLocalStorage = false,
   onSelect,
 }: {
   selected?: string
   transferBadge?: ReactNode
   appearance?: XDriveSidebarAppearance
+  showLocalStorage?: boolean
   onSelect: (key: XDriveCoreWorkspaceKey) => void
 }) {
   return (
@@ -173,13 +175,15 @@ export function XDriveCoreWorkspaceNavItems({
         appearance={appearance}
         onClick={() => onSelect('transfers')}
       />
-      <XDriveSidebarNavItem
-        selected={selected === 'local-storage'}
-        icon={<StorageRoundedIcon fontSize="small" />}
-        primary="本地存储"
-        appearance={appearance}
-        onClick={() => onSelect('local-storage')}
-      />
+      {showLocalStorage ? (
+        <XDriveSidebarNavItem
+          selected={selected === 'local-storage'}
+          icon={<StorageRoundedIcon fontSize="small" />}
+          primary="本地存储"
+          appearance={appearance}
+          onClick={() => onSelect('local-storage')}
+        />
+      ) : null}
       <XDriveSidebarNavItem
         selected={selected === 'cloud-storage'}
         icon={<CloudRoundedIcon fontSize="small" />}

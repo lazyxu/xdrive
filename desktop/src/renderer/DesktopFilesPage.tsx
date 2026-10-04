@@ -14,7 +14,7 @@ import { desktopShareDialogAdapter } from './shareDialogAdapter'
 
 type ExplorerProps = ComponentProps<typeof DesktopFileExplorer>
 
-export function DesktopCloudPage({
+export function DesktopFilesPage({
   quota,
   explorer,
   trashOpen,

@@ -8,7 +8,7 @@ const shared = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'Sh
 const sharedList = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'ShareList.tsx'), 'utf8')
 const sharedDialog = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
 const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ShareDialog.tsx'), 'utf8') + sharedDialog
-const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8') + sharedDialog
+const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8') + sharedDialog
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Web and Desktop reuse shared share creation fields', () => {
