@@ -222,26 +222,27 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep Agent operation execution local')
 })
 
-test('shared FileExplorer controller owns bulk-download selection and feedback rules', () => {
+test('shared FileExplorer controller keeps Web archive planning separate from Desktop native downloads', () => {
   for (const token of [
     'xDriveFileExplorerDownloadPlan',
     "node.type === 'file'",
     'skippedFolders: nodes.length - files.length',
     'id: node.id, name: node.name',
+    'xDriveFileExplorerWebDownloadPlan',
+    "kind: 'file'",
+    "kind: 'archive'",
+    "'xDrive-download.zip'",
     'xDriveFileExplorerWebDownloadFeedback',
-    '已开始下载',
     'xDriveFileExplorerDesktopDownloadFeedback',
     '个失败',
     '跳过',
   ]) {
     assert.ok(shared.includes(token), `shared FileExplorer download planning missing: ${token}`)
   }
-  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('xDriveFileExplorerDownloadPlan(nodes)'), `${label} must use shared download planning`)
-    assert.equal(source.includes("const files = nodes.filter((node) => node.type === 'file')"), false, `${label} must not filter download files locally`)
-  }
-  assert.ok(web.includes('for (const node of plan.files) await api.download(node)'), 'Web must keep browser download execution local')
-  assert.ok(web.includes('xDriveFileExplorerWebDownloadFeedback(plan.files.length, plan.skippedFolders)'), 'Web must use shared download feedback')
+  assert.ok(web.includes('xDriveFileExplorerWebDownloadPlan(nodes)'), 'Web must use the shared archive-aware download plan')
+  assert.equal(web.includes('xDriveFileExplorerDownloadPlan(nodes)'), false, 'Web must not use the Desktop file-only download plan')
+  assert.ok(web.includes('api.downloadArchive(plan.ids, plan.filename)'), 'Web must keep archive transport local')
+  assert.ok(desktop.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop must keep the native file-only planner until recursive native download lands')
   assert.ok(desktop.includes('cloudDownloadFiles(plan.items)'), 'Desktop must keep native batch download execution local')
   assert.ok(desktop.includes('xDriveFileExplorerDesktopDownloadFeedback({'), 'Desktop must use shared download result feedback')
 })
@@ -291,9 +292,13 @@ test('shared FileExplorer controller owns item lookup and open-item planning', (
     assert.ok(source.includes('xDriveFileExplorerDispatchOpenItem({'), `${label} must delegate open-item dispatch to shared controller`)
     assert.ok(source.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?'), `${label} must inject platform search crumbs into shared dispatch`)
     assert.equal(source.includes('xDriveFileExplorerOpenItemPlan('), false, `${label} must not branch open-item planning locally`)
-    assert.equal(source.includes("if (plan.kind === 'file')"), false, `${label} must not branch file/directory open locally`)
-    assert.equal(source.includes('await navigateTo(plan.crumbs)'), false, `${label} must not dispatch directory navigation locally`)
-    assert.equal(source.includes('const node = nodeByID.get(Number(item.id))'), false, `${label} must not duplicate item lookup in open/menu handlers`)
+    const openStart = source.indexOf('const openItem = async (item: XDriveFileExplorerItem) => {')
+    const openEnd = source.indexOf('\n  const downloadSelected =', openStart)
+    assert.ok(openStart >= 0 && openEnd > openStart, `${label} open-item handler boundaries are missing`)
+    const openBody = source.slice(openStart, openEnd)
+    assert.equal(openBody.includes("if (plan.kind === 'file')"), false, `${label} must not branch file/directory open locally`)
+    assert.equal(openBody.includes('await navigateTo(plan.crumbs)'), false, `${label} must not dispatch directory navigation locally`)
+    assert.equal(openBody.includes('const node = nodeByID.get(Number(item.id))'), false, `${label} must not duplicate item lookup in open/menu handlers`)
   }
   assert.ok(web.includes('openFile: async (node) => {'), 'Web must keep download execution as the shared dispatch callback')
   assert.ok(web.includes('await api.download(node)'), 'Web shared open callback must keep authenticated download local')

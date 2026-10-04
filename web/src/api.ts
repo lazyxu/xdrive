@@ -1113,7 +1113,19 @@ export class XDriveApi {
     await this.downloadAuthenticated(`/api/v1/files/${node.id}/content`, node.name)
   }
 
-  private async downloadAuthenticated(path: string, filename: string) {
+  async downloadArchive(ids: number[], filename: string) {
+    await this.downloadAuthenticated('/api/v1/download/archive', filename, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+  }
+
+  private async downloadAuthenticated(
+    path: string,
+    filename: string,
+    init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ) {
     const transferID = webTransferStore.create({
       fileName: filename,
       path: filename,
@@ -1122,14 +1134,18 @@ export class XDriveApi {
 
     try {
       await this.ensureFresh()
-      let response = await fetch(`${API_BASE}${path}`, {
-        headers: this.session.accessToken ? { Authorization: `Bearer ${this.session.accessToken}` } : undefined,
+      const send = () => fetch(`${API_BASE}${path}`, {
+        method: init.method,
+        headers: {
+          ...init.headers,
+          ...(this.session.accessToken ? { Authorization: `Bearer ${this.session.accessToken}` } : {}),
+        },
+        body: init.body,
       })
+      let response = await send()
       if (response.status === 401 && this.session.refreshToken) {
         await this.refresh(true)
-        response = await fetch(`${API_BASE}${path}`, {
-          headers: { Authorization: `Bearer ${this.session.accessToken}` },
-        })
+        response = await send()
       }
       if (!response.ok) throw new ApiError(response.status, response.statusText || 'Download failed')
 

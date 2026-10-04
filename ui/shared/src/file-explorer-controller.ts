@@ -440,24 +440,50 @@ export function xDriveFileExplorerDownloadPlan<TNode extends XDriveFileExplorerD
   }
 }
 
+export type XDriveFileExplorerWebDownloadPlan<
+  TNode extends XDriveFileExplorerDownloadNode,
+> =
+  | { kind: 'none' }
+  | { kind: 'file'; file: TNode }
+  | { kind: 'archive'; ids: number[]; filename: string; selectedCount: number }
+
+export function xDriveFileExplorerWebDownloadPlan<
+  TNode extends XDriveFileExplorerDownloadNode,
+>(
+  nodes: TNode[],
+): XDriveFileExplorerWebDownloadPlan<TNode> {
+  if (nodes.length === 0) return { kind: 'none' }
+  if (nodes.length === 1 && nodes[0].type === 'file') {
+    return { kind: 'file', file: nodes[0] }
+  }
+  return {
+    kind: 'archive',
+    ids: nodes.map((node) => node.id),
+    filename: nodes.length === 1 && nodes[0].type === 'dir'
+      ? `${nodes[0].name}.zip`
+      : 'xDrive-download.zip',
+    selectedCount: nodes.length,
+  }
+}
+
 export type XDriveFileExplorerFeedback = {
   tone: 'good' | 'warning'
   message: string
 }
 
-export function xDriveFileExplorerWebDownloadFeedback(
-  fileCount: number,
-  skippedFolders: number,
+export function xDriveFileExplorerWebDownloadFeedback<
+  TNode extends XDriveFileExplorerDownloadNode,
+>(
+  plan: XDriveFileExplorerWebDownloadPlan<TNode>,
 ): XDriveFileExplorerFeedback {
-  return skippedFolders > 0
-    ? {
-        tone: 'warning',
-        message: `已下载 ${fileCount} 个文件，跳过 ${skippedFolders} 个文件夹。`,
-      }
-    : {
-        tone: 'good',
-        message: `已开始下载 ${fileCount} 个文件。`,
-      }
+  switch (plan.kind) {
+    case 'file':
+      return { tone: 'good', message: `已下载 ${plan.file.name}。` }
+    case 'archive':
+      return { tone: 'good', message: `已下载 ${plan.filename}。` }
+    default:
+      return { tone: 'warning', message: '没有可下载的项目。' }
+  }
 }
 
 export function xDriveFileExplorerDesktopDownloadFeedback({

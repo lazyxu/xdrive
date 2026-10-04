@@ -18,7 +18,7 @@ import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerDispatchOpenItem,
-  xDriveFileExplorerDownloadPlan,
+  xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
@@ -190,6 +190,23 @@ export default function WebFileExplorer({
     })
   }
 
+  const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
+    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+    const plan = xDriveFileExplorerWebDownloadPlan(nodes)
+    if (plan.kind === 'none') return
+    try {
+      if (plan.kind === 'file') {
+        await api.download(plan.file)
+      } else {
+        await api.downloadArchive(plan.ids, plan.filename)
+      }
+      const feedback = xDriveFileExplorerWebDownloadFeedback(plan)
+      onFeedback(feedback.tone, feedback.message)
+    } catch (error) {
+      onError(error)
+    }
+  }
+
   const getItemMenuItems = (item: XDriveFileExplorerItem) => {
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node) return []
@@ -197,7 +214,7 @@ export default function WebFileExplorer({
     return xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       onOpen: node.type === 'dir' ? () => { void openItem(item) } : undefined,
-      onDownload: node.type === 'file' ? () => { void api.download(node).catch(onError) } : undefined,
+      onDownload: () => { void downloadSelected([item]) },
       onShare: node.type === 'file' ? () => onShare(node) : undefined,
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
       onDelete: () => onRemove(node),
@@ -215,19 +232,6 @@ export default function WebFileExplorer({
     } catch (error) {
       onError(error)
       throw error
-    }
-  }
-
-  const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
-    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-    const plan = xDriveFileExplorerDownloadPlan(nodes)
-    if (plan.files.length === 0) return
-    try {
-      for (const node of plan.files) await api.download(node)
-      const feedback = xDriveFileExplorerWebDownloadFeedback(plan.files.length, plan.skippedFolders)
-      onFeedback(feedback.tone, feedback.message)
-    } catch (error) {
-      onError(error)
     }
   }
 

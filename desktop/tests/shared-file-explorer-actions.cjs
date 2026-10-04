@@ -54,7 +54,7 @@ test('Web and Desktop consume shared FileExplorer menu/action presentation', () 
     assert.equal(source.includes('CreateNewFolderRoundedIcon'), false, `${label} must not own the common background-menu icons`)
     assert.equal(source.includes('DeleteOutlineRoundedIcon'), false, `${label} must not own the common destructive menu icon`)
   }
-  assert.ok(web.includes("onDownload: node.type === 'file'"), 'Web must keep its file-download adapter')
+  assert.ok(web.includes('onDownload: () => { void downloadSelected([item]) }'), 'Web must keep its file/folder download adapter')
   assert.ok(web.includes("onShare: node.type === 'file'"), 'Web must keep its share adapter')
   assert.ok(desktop.includes("downloadLabel: '另存为…'"), 'Desktop must preserve native save-as wording')
   assert.ok(desktop.includes('onReveal: () => { void openLocalNode(node, true) }'), 'Desktop must preserve native reveal action')
