@@ -1127,6 +1127,15 @@ function normalizeCloudFileOperationID(value: unknown) {
   return value.trim()
 }
 
+function normalizeCloudFileOperationConflictPolicy(value: unknown): 'skip' | 'keep_both' {
+  if (value === 'skip' || value === 'keep_both') return value
+  throw new AgentIPCError(
+    'invalid_input',
+    0,
+    'File operation conflict policy must be skip or keep_both.',
+  )
+}
+
 function requireAgentCapability(hello: AgentHello, capability: string) {
   if (!hello.capabilities.includes(capability)) {
     throw new AgentIPCError(
@@ -1941,6 +1950,15 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudRetryFileOperation(normalizeCloudFileOperationID(id))
+  }, false))
+  ipcMain.handle('agent:cloud-file-operation-resolve', (_event, id: unknown, policy: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    requireAgentCapability(hello, 'file-operation-conflict-resolution')
+    return requireAgentClient().cloudResolveFileOperationConflict(
+      normalizeCloudFileOperationID(id),
+      normalizeCloudFileOperationConflictPolicy(policy),
+    )
   }, false))
 
   ipcMain.handle('agent:cloud-upload-files', async (_event, parentID: unknown) => {

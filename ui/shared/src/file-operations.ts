@@ -6,6 +6,7 @@ export const XDRIVE_FILE_OPERATION_IDLE_POLL_MS = 15_000
 
 export type XDriveFileOperationType = 'copy' | 'move' | 'delete'
 export type XDriveFileOperationConflictPolicy = 'fail' | 'skip' | 'keep_both'
+export type XDriveFileOperationConflictResolution = Exclude<XDriveFileOperationConflictPolicy, 'fail'>
 
 export type XDriveFileOperationStatus =
   | 'queued'
@@ -220,6 +221,16 @@ export function xDriveFileOperationCanResolveConflict(
   return operation.status === 'failed' &&
     operation.failure_code === 'name_conflict' &&
     (operation.type === 'copy' || operation.type === 'move')
+}
+
+export function xDriveFileOperationContinuationParentIDs(
+  operations: readonly Pick<XDriveFileOperation, 'retry_of_id'>[],
+) {
+  const ids = new Set<string>()
+  for (const operation of operations) {
+    if (operation.retry_of_id) ids.add(operation.retry_of_id)
+  }
+  return ids
 }
 
 export function xDriveFileOperationConflictPolicyLabel(

@@ -72,6 +72,8 @@ const agent = Object.freeze({
   cloudFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation', id),
   cloudCancelFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation-cancel', id),
   cloudRetryFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation-retry', id),
+  cloudResolveFileOperationConflict: (id: string, policy: 'skip' | 'keep_both') =>
+    ipcRenderer.invoke('agent:cloud-file-operation-resolve', id, policy),
   cloudUploadFiles: (parentID: number) => ipcRenderer.invoke('agent:cloud-upload-files', parentID),
   cloudUploadDroppedFiles: (parentID: number, files: unknown[]) => ipcRenderer.invoke(
     'agent:cloud-upload-paths',

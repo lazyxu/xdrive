@@ -657,13 +657,17 @@ function FileManager({
     busy: fileOperationActionBusy,
     cancellingID: fileOperationCancellingID,
     retryingID: fileOperationRetryingID,
+    resolvingID: fileOperationResolvingID,
+    resolvingPolicy: fileOperationResolvingPolicy,
     clearHistoryLoading: fileOperationClearHistoryLoading,
     cancelOperation: cancelFileOperation,
     retryOperation: retryFileOperation,
+    resolveConflict: resolveFileOperationConflict,
     clearHistory: clearTaskHistory,
   } = useXDriveFileOperationActions<XDriveFileOperation>({
     cancelOperation: (id) => api.cancelFileOperation(id),
     retryOperation: (id) => api.retryFileOperation(id),
+    resolveConflict: (id, policy) => api.resolveFileOperationConflict(id, policy),
     clearOperationHistory: () => api.clearFileOperationHistory(),
     clearTransferHistory: async () => { api.clearTransferHistory() },
     rememberOperation: rememberFileOperation,
@@ -984,9 +988,12 @@ function FileManager({
             }}
             operationCancellingID={fileOperationCancellingID}
             operationRetryingID={fileOperationRetryingID}
+            operationResolvingID={fileOperationResolvingID}
+            operationResolvingPolicy={fileOperationResolvingPolicy}
             operationDisabled={fileOperationActionBusy}
             onCancelOperation={(id) => { void cancelFileOperation(id) }}
             onRetryOperation={(id) => { void retryFileOperation(id) }}
+            onResolveOperationConflict={(id, policy) => { void resolveFileOperationConflict(id, policy) }}
           />
         ) : appView === 'cloud-storage' ? (
           <XDriveCloudStoragePage source={cloudStorageSource} />

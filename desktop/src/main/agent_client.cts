@@ -357,6 +357,7 @@ export type AgentCloudFileOperation = {
   status: 'queued' | 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed'
   parent_id?: number
   retry_of_id?: string
+  conflict_policy?: 'fail' | 'skip' | 'keep_both'
   total_items: number
   processed_items: number
   total_bytes: number
@@ -1001,6 +1002,13 @@ export class AgentIPCClient {
 
   cloudRetryFileOperation(id: string) {
     return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/retry', { id }, 45_000)
+  }
+
+  cloudResolveFileOperationConflict(id: string, conflictPolicy: 'skip' | 'keep_both') {
+    return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/resolve', {
+      id,
+      conflict_policy: conflictPolicy,
+    }, 45_000)
   }
 
   cloudUpload(parentID: number, localPath: string, name: string) {

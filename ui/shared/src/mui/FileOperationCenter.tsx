@@ -7,12 +7,15 @@ import {
   xDriveFileOperationAverageItemsPerSecond,
   xDriveFileOperationElapsedMs,
   xDriveFileOperationEtaMs,
+  xDriveFileOperationCanResolveConflict,
+  xDriveFileOperationContinuationParentIDs,
   xDriveFileOperationFailureItemLabel,
   xDriveFileOperationFailureMessage,
   xDriveFileOperationPercent,
   xDriveFileOperationStatusLabel,
   xDriveFileOperationTypeLabel,
   type XDriveFileOperation,
+  type XDriveFileOperationConflictResolution,
 } from '..'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDescriptionGrid, XDriveDescriptionItem } from './DescriptionGrid'
@@ -48,16 +51,24 @@ function OperationItem({
   operation,
   cancelling,
   retrying,
+  resolving,
+  resolvingPolicy,
+  continued,
   disabled,
   onCancel,
   onRetry,
+  onResolveConflict,
 }: {
   operation: XDriveFileOperation
   cancelling: boolean
   retrying: boolean
+  resolving: boolean
+  resolvingPolicy: XDriveFileOperationConflictResolution | ''
+  continued: boolean
   disabled: boolean
   onCancel?: (id: string) => void
   onRetry?: (id: string) => void
+  onResolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
 }) {
   const active = xDriveFileOperationActive(operation.status)
   const percent = xDriveFileOperationPercent(operation)
@@ -74,6 +85,10 @@ function OperationItem({
       : formatXDriveTransferDuration(eta)
   const failureMessage = xDriveFileOperationFailureMessage(operation)
   const failureItem = xDriveFileOperationFailureItemLabel(operation)
+  const canResolveConflict =
+    !continued &&
+    xDriveFileOperationCanResolveConflict(operation) &&
+    Boolean(onResolveConflict)
 
   return (
     <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
@@ -111,7 +126,7 @@ function OperationItem({
               取消
             </XDriveActionButton>
           ) : null}
-          {operation.retryable && onRetry ? (
+          {operation.retryable && !continued && onRetry ? (
             <XDriveActionButton
               compact
               disabled={disabled}
@@ -121,6 +136,28 @@ function OperationItem({
             >
               重试
             </XDriveActionButton>
+          ) : null}
+          {canResolveConflict ? (
+            <>
+              <XDriveActionButton
+                compact
+                disabled={disabled}
+                loading={resolving && resolvingPolicy === 'skip'}
+                loadingLabel="正在处理…"
+                onClick={() => onResolveConflict?.(operation.id, 'skip')}
+              >
+                跳过冲突
+              </XDriveActionButton>
+              <XDriveActionButton
+                compact
+                disabled={disabled}
+                loading={resolving && resolvingPolicy === 'keep_both'}
+                loadingLabel="正在处理…"
+                onClick={() => onResolveConflict?.(operation.id, 'keep_both')}
+              >
+                保留两者
+              </XDriveActionButton>
+            </>
           ) : null}
         </Stack>
       </Stack>
@@ -183,21 +220,28 @@ export function XDriveFileOperationCenter({
   loading = false,
   cancellingID = '',
   retryingID = '',
+  resolvingID = '',
+  resolvingPolicy = '',
   disabled = false,
   onCancel,
   onRetry,
+  onResolveConflict,
 }: {
   operations: XDriveFileOperation[]
   loading?: boolean
   cancellingID?: string
   retryingID?: string
+  resolvingID?: string
+  resolvingPolicy?: XDriveFileOperationConflictResolution | ''
   disabled?: boolean
   onCancel?: (id: string) => void
   onRetry?: (id: string) => void
+  onResolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
 }) {
   const active = operations.filter((item) => xDriveFileOperationActive(item.status))
   const completed = operations.filter((item) => item.status === 'completed')
   const stopped = operations.filter((item) => item.status === 'failed' || item.status === 'cancelled')
+  const continuationParentIDs = xDriveFileOperationContinuationParentIDs(operations)
 
   if (loading && operations.length === 0) return <XDriveStatePanel loading message="正在加载文件操作…" />
 
@@ -230,9 +274,13 @@ export function XDriveFileOperationCenter({
                   operation={operation}
                   cancelling={cancellingID === operation.id}
                   retrying={retryingID === operation.id}
+                  resolving={resolvingID === operation.id}
+                  resolvingPolicy={resolvingID === operation.id ? resolvingPolicy : ''}
+                  continued={continuationParentIDs.has(operation.id)}
                   disabled={disabled}
                   onCancel={onCancel}
                   onRetry={onRetry}
+                  onResolveConflict={onResolveConflict}
                 />
               ))}
             </Stack>
