@@ -41,7 +41,9 @@ test('legacy desktop surfaces consume the resolved shared theme instead of ownin
   assert.ok(sharedTheme.includes("text: '#e7edf7'"), 'shared theme is missing the dark primary text')
   assert.ok(sharedTheme.includes("'--page-bg': tokens.pageBg"), 'shared theme must project page background as a CSS variable')
   assert.ok(sharedTheme.includes("'--surface': tokens.surface"), 'shared theme must project surface color as a CSS variable')
-  assert.ok(styles.includes('background: var(--surface);'), 'legacy surfaces must continue consuming shared theme variables')
+  for (const token of ['var(--surface)', 'var(--text-mid)', 'var(--border-soft)']) {
+    assert.ok(styles.includes(token), `legacy Desktop chrome must continue consuming shared theme variable: ${token}`)
+  }
   assert.equal(styles.includes('background: white;'), false, 'hard-coded white surfaces would break dark mode')
 })
 
