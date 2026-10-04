@@ -95,6 +95,8 @@ type fakeDesktopIPCController struct {
 	cloudUploadName            string
 	cloudDownloadID            uint64
 	cloudDownloadDestination   string
+	cloudResolveID             string
+	cloudResolvePolicy         string
 	cloudSearchPage            agentCloudSearchPage
 	cloudSearchCursor          string
 	cloudQuota                 client.QuotaUsage
@@ -349,6 +351,16 @@ func (f *fakeDesktopIPCController) CloudCancelFileOperation(context.Context, str
 func (f *fakeDesktopIPCController) CloudRetryFileOperation(context.Context, string) (client.FileOperation, error) {
 	retryOf := "file-op"
 	return client.FileOperation{ID: "file-op-retry", Type: "copy", Status: "queued", RetryOfID: &retryOf, TotalItems: 2}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudResolveFileOperationConflict(_ context.Context, id, policy string) (client.FileOperation, error) {
+	f.cloudResolveID = id
+	f.cloudResolvePolicy = policy
+	retryOf := id
+	return client.FileOperation{
+		ID: "file-op-resolved", Type: "move", Status: "queued", RetryOfID: &retryOf,
+		ConflictPolicy: policy, TotalItems: 1,
+	}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint64, localPath, name string) (client.Node, error) {
@@ -698,6 +710,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	if len(hello.Capabilities) == 0 {
 		t.Fatal("hello capabilities are empty")
 	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-operation-conflict-resolution") {
+		t.Fatalf("hello missing file-operation conflict resolution capability: %+v", hello.Capabilities)
+	}
 
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/lifecycle/shutdown", "")
 	if res.Code != http.StatusOK {
@@ -996,6 +1011,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/file-operation?id=file-op", "", "\"processed_items\":1"},
 		{http.MethodPost, "/v1/cloud/file-operation/cancel", `{"id":"file-op"}`, "\"status\":\"cancel_requested\""},
 		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
+		{http.MethodPost, "/v1/cloud/file-operation/resolve", `{"id":"file-op","conflict_policy":"keep_both"}`, "\"id\":\"file-op-resolved\""},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},
@@ -1039,6 +1055,13 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudDownloadID != 3 || ctrl.cloudDownloadDestination != "/tmp/report.pdf" {
 		t.Fatalf("cloud download not forwarded: id=%d destination=%q", ctrl.cloudDownloadID, ctrl.cloudDownloadDestination)
+	}
+	if ctrl.cloudResolveID != "file-op" || ctrl.cloudResolvePolicy != "keep_both" {
+		t.Fatalf(
+			"file operation conflict resolution not forwarded: id=%q policy=%q",
+			ctrl.cloudResolveID,
+			ctrl.cloudResolvePolicy,
+		)
 	}
 	if ctrl.cloudSearchCursor != "search-cursor" {
 		t.Fatalf("cloud search cursor=%q want search-cursor", ctrl.cloudSearchCursor)

@@ -19,6 +19,11 @@ const webExplorer = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const desktopPage = read('desktop', 'src', 'renderer', 'DesktopTransfersPage.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+const desktopPreload = read('desktop', 'src', 'preload', 'index.cts')
+const desktopMain = read('desktop', 'src', 'main', 'index.cts')
+const desktopAgentClient = read('desktop', 'src', 'main', 'agent_client.cts')
+const agentCloudFiles = read('cmd', 'xdrive-agent', 'cloud_files.go')
+const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 
 test('shared file-operation model covers the persistent server lifecycle', () => {
   for (const token of [
@@ -48,6 +53,10 @@ test('shared file-operation model covers the persistent server lifecycle', () =>
     'name_conflict',
     'failure_code?: string',
     'retryable: boolean',
+    "XDriveFileOperationConflictPolicy = 'fail' | 'skip' | 'keep_both'",
+    'XDriveFileOperationConflictResolution',
+    'xDriveFileOperationCanResolveConflict',
+    'xDriveFileOperationContinuationParentIDs',
   ]) {
     assert.ok(sharedModel.includes(token), `shared operation model missing: ${token}`)
   }
@@ -74,6 +83,12 @@ test('shared FileOperationCenter renders progress, history, cancel and retry act
     '任务 ID',
     '取消',
     '重试',
+    '跳过冲突',
+    '保留两者',
+    'xDriveFileOperationCanResolveConflict(operation)',
+    'xDriveFileOperationContinuationParentIDs(operations)',
+    'operation.retryable && !continued && onRetry',
+    'continued={continuationParentIDs.has(operation.id)}',
     '失败或取消',
   ]) {
     assert.ok(shared.includes(token), `shared FileOperationCenter missing: ${token}`)
@@ -102,6 +117,7 @@ test('Web delegates persistent-operation polling and terminal refresh to the sha
     'useXDriveFileOperationActions<XDriveFileOperation>({',
     'cancelOperation: (id) => api.cancelFileOperation(id)',
     'retryOperation: (id) => api.retryFileOperation(id)',
+    'resolveConflict: (id, policy) => api.resolveFileOperationConflict(id, policy)',
   ]) {
     assert.ok((web + webApi).includes(token), `Web persistent-operation lifecycle missing: ${token}`)
   }
@@ -121,6 +137,8 @@ test('Desktop delegates persistent-operation polling and terminal refresh to the
     'useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({',
     'window.xdriveDesktop.agent.cloudCancelFileOperation(id)',
     'window.xdriveDesktop.agent.cloudRetryFileOperation(id)',
+    'window.xdriveDesktop.agent.cloudResolveFileOperationConflict(id, policy)',
+    "capabilities.includes('file-operation-conflict-resolution')",
   ]) {
     assert.ok(desktop.includes(token), `Desktop persistent-operation lifecycle missing: ${token}`)
   }
@@ -144,6 +162,10 @@ test('shared FileOperation action controller owns cancel retry and clear-history
     "onFeedback?.('已清空已完成、失败和已取消的任务历史。')",
     "action.startsWith('cancel:')",
     "action.startsWith('retry:')",
+    "resolve:${policy}:${id}",
+    'const operation = await resolveConflict(id, policy)',
+    'resolvingID',
+    'resolvingPolicy',
     "clearHistoryLoading: action === 'clear-history'",
   ]) {
     assert.ok(actionController.includes(token), `shared operation action controller missing: ${token}`)
@@ -291,4 +313,19 @@ test('Task Center polling adapts to active, visible-idle and background-idle sta
   assert.ok(desktop.includes("taskCenterVisible: view === 'transfers'"), 'Desktop must provide Task Center visibility to shared polling')
   assert.equal(web.includes('window.setInterval(() => void refresh(), 1500)'), false, 'Web must not keep a permanent 1.5s polling loop')
   assert.equal(desktop.includes('window.setInterval(() => void refresh(), 1500)'), false, 'Desktop must not keep a permanent 1.5s polling loop')
+})
+
+
+test('Desktop conflict resolution crosses preload Electron Agent IPC and Server client layers', () => {
+  for (const [label, source, tokens] of [
+    ['preload', desktopPreload, ['cloudResolveFileOperationConflict', 'agent:cloud-file-operation-resolve']],
+    ['Electron main', desktopMain, ['agent:cloud-file-operation-resolve', "file-operation-conflict-resolution", 'cloudResolveFileOperationConflict']],
+    ['Agent client', desktopAgentClient, ['cloudResolveFileOperationConflict', '/v1/cloud/file-operation/resolve', 'conflict_policy']],
+    ['Agent cloud adapter', agentCloudFiles, ['CloudResolveFileOperationConflict', 'ResolveFileOperationConflict']],
+    ['Agent IPC', agentIPC, ['file-operation-conflict-resolution', '/v1/cloud/file-operation/resolve', 'cloudResolveFileOperationConflict']],
+  ]) {
+    for (const token of tokens) {
+      assert.ok(source.includes(token), `${label} conflict-resolution bridge missing: ${token}`)
+    }
+  }
 })

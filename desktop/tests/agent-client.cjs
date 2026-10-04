@@ -768,3 +768,41 @@ test('hello rejects an incompatible agent protocol', async (t) => {
     return true
   })
 })
+
+
+test('file operation conflict resolution posts the selected policy', async (t) => {
+  let seen
+  const { client } = await fixture(t, async (req, res) => {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    seen = {
+      method: req.method,
+      path: req.url,
+      body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+    }
+    json(res, 202, {
+      id: 'resolved-op',
+      type: 'move',
+      status: 'queued',
+      retry_of_id: 'failed-op',
+      conflict_policy: 'keep_both',
+      total_items: 1,
+      processed_items: 0,
+      total_bytes: 3,
+      processed_bytes: 0,
+      percent: 0,
+      retryable: false,
+      created_at: new Date(0).toISOString(),
+      updated_at: new Date(0).toISOString(),
+    })
+  })
+
+  const operation = await client.cloudResolveFileOperationConflict('failed-op', 'keep_both')
+  assert.equal(operation.id, 'resolved-op')
+  assert.equal(operation.conflict_policy, 'keep_both')
+  assert.deepEqual(seen, {
+    method: 'POST',
+    path: '/v1/cloud/file-operation/resolve',
+    body: { id: 'failed-op', conflict_policy: 'keep_both' },
+  })
+})

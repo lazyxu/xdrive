@@ -1,4 +1,5 @@
 import { XDriveTaskCenterPage } from '@xdrive/ui/mui'
+import type { XDriveFileOperationConflictResolution } from '@xdrive/shared'
 
 export function DesktopTransfersPage({
   transfers,
@@ -7,12 +8,15 @@ export function DesktopTransfersPage({
   retryDisabled,
   operationCancellingID,
   operationRetryingID,
+  operationResolvingID,
+  operationResolvingPolicy,
   operationDisabled,
   clearHistoryDisabled,
   clearHistoryLoading,
   onRetry,
   onCancelOperation,
   onRetryOperation,
+  onResolveOperationConflict,
   onClearHistory,
 }: {
   transfers: AgentTransfer[]
@@ -21,12 +25,15 @@ export function DesktopTransfersPage({
   retryDisabled: boolean
   operationCancellingID: string
   operationRetryingID: string
+  operationResolvingID: string
+  operationResolvingPolicy: XDriveFileOperationConflictResolution | ''
   operationDisabled: boolean
   clearHistoryDisabled: boolean
   clearHistoryLoading: boolean
   onRetry: (id: string) => void
   onCancelOperation: (id: string) => void
   onRetryOperation: (id: string) => void
+  onResolveOperationConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
   onClearHistory: () => void
 }) {
   return (
@@ -43,10 +50,13 @@ export function DesktopTransfersPage({
       transferRetryDisabled={retryDisabled}
       operationCancellingID={operationCancellingID}
       operationRetryingID={operationRetryingID}
+      operationResolvingID={operationResolvingID}
+      operationResolvingPolicy={operationResolvingPolicy}
       operationDisabled={operationDisabled}
       onRetryTransfer={onRetry}
       onCancelOperation={onCancelOperation}
       onRetryOperation={onRetryOperation}
+      onResolveOperationConflict={onResolveOperationConflict}
     />
   )
 }

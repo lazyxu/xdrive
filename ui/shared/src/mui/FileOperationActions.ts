@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
+import { xDriveFileOperationConflictPolicyLabel } from '../file-operations'
+import type { XDriveFileOperationConflictResolution } from '../file-operations'
 import type { XDriveFileOperationLifecycleItem } from './FileOperationLifecycle'
 
 type XDriveFileOperationAction =
@@ -6,6 +8,7 @@ type XDriveFileOperationAction =
   | 'clear-history'
   | `cancel:${string}`
   | `retry:${string}`
+  | `resolve:${XDriveFileOperationConflictResolution}:${string}`
 
 export function useXDriveFileOperationActions<
   TOperation extends XDriveFileOperationLifecycleItem,
@@ -13,6 +16,7 @@ export function useXDriveFileOperationActions<
 >({
   cancelOperation,
   retryOperation,
+  resolveConflict,
   clearOperationHistory,
   clearTransferHistory,
   onTransferHistoryCleared,
@@ -23,6 +27,7 @@ export function useXDriveFileOperationActions<
 }: {
   cancelOperation: (id: string) => Promise<TOperation>
   retryOperation: (id: string) => Promise<TOperation>
+  resolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => Promise<TOperation>
   clearOperationHistory: () => Promise<void>
   clearTransferHistory: () => Promise<TTransferHistory>
   onTransferHistoryCleared?: (result: TTransferHistory) => void
@@ -76,6 +81,33 @@ export function useXDriveFileOperationActions<
     }
   }, [beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, retryOperation])
 
+  const resolve = useCallback(async (
+    id: string,
+    policy: XDriveFileOperationConflictResolution,
+  ) => {
+    if (!resolveConflict || !beginAction(`resolve:${policy}:${id}`)) return false
+    try {
+      const operation = await resolveConflict(id, policy)
+      rememberOperation(operation)
+      onFeedback?.(`已按“${xDriveFileOperationConflictPolicyLabel(policy)}”重新加入队列。`)
+      await refreshOperations()
+      return true
+    } catch (error) {
+      onError(error)
+      return false
+    } finally {
+      finishAction()
+    }
+  }, [
+    beginAction,
+    finishAction,
+    onError,
+    onFeedback,
+    refreshOperations,
+    rememberOperation,
+    resolveConflict,
+  ])
+
   const clearHistory = useCallback(async () => {
     if (!beginAction('clear-history')) return false
     try {
@@ -107,13 +139,25 @@ export function useXDriveFileOperationActions<
     refreshOperations,
   ])
 
+  const resolvingPolicy: XDriveFileOperationConflictResolution | '' = action.startsWith('resolve:skip:')
+    ? 'skip'
+    : action.startsWith('resolve:keep_both:')
+      ? 'keep_both'
+      : ''
+  const resolvingID = resolvingPolicy
+    ? action.slice(`resolve:${resolvingPolicy}:`.length)
+    : ''
+
   return {
     busy: Boolean(action),
     cancellingID: action.startsWith('cancel:') ? action.slice('cancel:'.length) : '',
     retryingID: action.startsWith('retry:') ? action.slice('retry:'.length) : '',
+    resolvingID,
+    resolvingPolicy,
     clearHistoryLoading: action === 'clear-history',
     cancelOperation: cancel,
     retryOperation: retry,
+    resolveConflict: resolve,
     clearHistory,
   }
 }

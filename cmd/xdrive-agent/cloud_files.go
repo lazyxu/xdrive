@@ -298,6 +298,14 @@ func (c *agentController) CloudRetryFileOperation(ctx context.Context, id string
 	return cli.RetryFileOperation(ctx, strings.TrimSpace(id))
 }
 
+func (c *agentController) CloudResolveFileOperationConflict(ctx context.Context, id, policy string) (client.FileOperation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileOperation{}, err
+	}
+	return cli.ResolveFileOperationConflict(ctx, strings.TrimSpace(id), strings.TrimSpace(policy))
+}
+
 func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, localPath, name string) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

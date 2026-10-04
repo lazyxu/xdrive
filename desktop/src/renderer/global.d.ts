@@ -366,6 +366,7 @@ declare global {
         cloudFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudCancelFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudRetryFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudResolveFileOperationConflict: (id: string, policy: 'skip' | 'keep_both') => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>

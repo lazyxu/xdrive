@@ -347,13 +347,19 @@ export default function App({
     },
   })
 
+  const fileOperationConflictResolveSupported =
+    agent.hello?.capabilities.includes('file-operation-conflict-resolution') ?? false
+
   const {
     busy: fileOperationActionBusy,
     cancellingID: fileOperationCancellingID,
     retryingID: fileOperationRetryingID,
+    resolvingID: fileOperationResolvingID,
+    resolvingPolicy: fileOperationResolvingPolicy,
     clearHistoryLoading: fileOperationClearHistoryLoading,
     cancelOperation: cancelCloudFileOperation,
     retryOperation: retryCloudFileOperation,
+    resolveConflict: resolveCloudFileOperationConflict,
     clearHistory: clearTaskHistory,
   } = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
@@ -366,6 +372,13 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    resolveConflict: fileOperationConflictResolveSupported
+      ? async (id, policy) => {
+          const result = await window.xdriveDesktop.agent.cloudResolveFileOperationConflict(id, policy)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        }
+      : undefined,
     clearOperationHistory: async () => {
       setError('')
       const result = await window.xdriveDesktop.agent.cloudClearFileOperationHistory()
@@ -1957,12 +1970,17 @@ export default function App({
             retryDisabled={Boolean(busy) || fileOperationClearHistoryLoading}
             operationCancellingID={fileOperationCancellingID}
             operationRetryingID={fileOperationRetryingID}
+            operationResolvingID={fileOperationResolvingID}
+            operationResolvingPolicy={fileOperationResolvingPolicy}
             operationDisabled={fileOperationActionBusy}
             clearHistoryDisabled={!hasTaskHistory || Boolean(busy) || fileOperationActionBusy}
             clearHistoryLoading={fileOperationClearHistoryLoading}
             onRetry={(id) => { void retryTransfer(id) }}
             onCancelOperation={(id) => { void cancelCloudFileOperation(id) }}
             onRetryOperation={(id) => { void retryCloudFileOperation(id) }}
+            onResolveOperationConflict={fileOperationConflictResolveSupported
+              ? (id, policy) => { void resolveCloudFileOperationConflict(id, policy) }
+              : undefined}
             onClearHistory={() => { void clearTaskHistory() }}
           />
         )}

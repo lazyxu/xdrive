@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react'
 import { Box, Divider, Stack, Typography } from '@mui/material'
-import type { XDriveFileOperation, XDriveTransferTask } from '..'
+import type {
+  XDriveFileOperation,
+  XDriveFileOperationConflictResolution,
+  XDriveTransferTask,
+} from '..'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveFileOperationCenter } from './FileOperationCenter'
 import { XDriveTransferCenter } from './TransferCenter'
@@ -22,10 +26,13 @@ export function XDriveTaskCenterPage({
   transferRetryDisabled = false,
   operationCancellingID = '',
   operationRetryingID = '',
+  operationResolvingID = '',
+  operationResolvingPolicy = '',
   operationDisabled = false,
   onRetryTransfer,
   onCancelOperation,
   onRetryOperation,
+  onResolveOperationConflict,
 }: {
   transfers: XDriveTransferTask[]
   operations: XDriveFileOperation[]
@@ -36,10 +43,13 @@ export function XDriveTaskCenterPage({
   transferRetryDisabled?: boolean
   operationCancellingID?: string
   operationRetryingID?: string
+  operationResolvingID?: string
+  operationResolvingPolicy?: XDriveFileOperationConflictResolution | ''
   operationDisabled?: boolean
   onRetryTransfer?: (id: string) => void
   onCancelOperation?: (id: string) => void
   onRetryOperation?: (id: string) => void
+  onResolveOperationConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
 }) {
   const actions = pageActions ?? (clearHistory ? (
     <XDriveActionButton
@@ -66,9 +76,12 @@ export function XDriveTaskCenterPage({
             operations={operations}
             cancellingID={operationCancellingID}
             retryingID={operationRetryingID}
+            resolvingID={operationResolvingID}
+            resolvingPolicy={operationResolvingPolicy}
             disabled={operationDisabled}
             onCancel={onCancelOperation}
             onRetry={onRetryOperation}
+            onResolveConflict={onResolveOperationConflict}
           />
         </Box>
         <Divider />

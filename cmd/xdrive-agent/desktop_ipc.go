@@ -71,6 +71,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"file-operation-conflict-resolution",
 	"server-update",
 	"media-gallery",
 	"media-video-stream",
@@ -165,6 +166,7 @@ type desktopIPCController interface {
 	CloudFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudCancelFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudRetryFileOperation(context.Context, string) (client.FileOperation, error)
+	CloudResolveFileOperationConflict(context.Context, string, string) (client.FileOperation, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
 	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
@@ -419,6 +421,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("GET /v1/cloud/file-operation", h.cloudFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/cancel", h.cloudCancelFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/retry", h.cloudRetryFileOperation)
+	mux.HandleFunc("POST /v1/cloud/file-operation/resolve", h.cloudResolveFileOperationConflict)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
@@ -1087,6 +1090,41 @@ func (h *desktopIPCHandler) cloudRetryFileOperation(w http.ResponseWriter, r *ht
 		return
 	}
 	operation, err := h.ctrl.CloudRetryFileOperation(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, operation)
+}
+
+func (h *desktopIPCHandler) cloudResolveFileOperationConflict(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID             string `json:"id"`
+		ConflictPolicy string `json:"conflict_policy"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	input.ConflictPolicy = strings.TrimSpace(input.ConflictPolicy)
+	if input.ID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation", "id is required")
+		return
+	}
+	if input.ConflictPolicy != "skip" && input.ConflictPolicy != "keep_both" {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_file_operation_conflict_policy",
+			"conflict_policy must be skip or keep_both",
+		)
+		return
+	}
+	operation, err := h.ctrl.CloudResolveFileOperationConflict(
+		r.Context(),
+		input.ID,
+		input.ConflictPolicy,
+	)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
