@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
-import { Card, InputAdornment, Stack, TextField, Typography } from '@mui/material'
-import { XDriveActionButton, XDriveStatePanel, XDriveStatusAlert } from '@xdrive/ui/mui'
+import { Box, InputAdornment, Stack, TextField, Typography } from '@mui/material'
+import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDriveStatePanel, XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import type { PublicShare } from '../../ui/shared/src'
 import { formatSize } from '../../ui/shared/src'
+import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 export default function PublicShareView({ token }: { token: string }) {
   const api = useMemo(() => new XDriveApi(), [])
@@ -61,15 +62,13 @@ export default function PublicShareView({ token }: { token: string }) {
   const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
 
   return (
-    <div className="auth-shell">
-      <Card className="auth-card" sx={{ p: 3, borderRadius: 2 }}>
-        <div className="brand-lockup">
-          <div className="brand-mark">x</div>
-          <div>
-            <Typography component="h1" variant="h5" fontWeight={700}>xDrive</Typography>
-            <Typography variant="body2" color="text.secondary">安全文件分享</Typography>
-          </div>
-        </div>
+    <XDriveAuthShell viewport decorated spacing="compact">
+      <XDriveAuthPanel size="compact">
+        <XDriveBrandLockup
+          iconSrc={xDriveBrandIcon}
+          variant="large"
+          subtitle="安全文件分享"
+        />
 
         {loading && <XDriveStatePanel variant="plain" loading message="正在加载分享…" />}
         {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
@@ -78,10 +77,12 @@ export default function PublicShareView({ token }: { token: string }) {
           <Stack spacing={2}>
             <Stack direction="row" spacing={1.5} alignItems="flex-start">
               <InsertDriveFileRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />
-              <div>
-                <Typography component="h2" variant="h6" fontWeight={700}>{share.name}</Typography>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                  {share.name}
+                </Typography>
                 <Typography variant="body2" color="text.secondary">{formatSize(share.size)}</Typography>
-              </div>
+              </Box>
             </Stack>
 
             <Typography variant="body2" color="text.secondary">
@@ -131,7 +132,7 @@ export default function PublicShareView({ token }: { token: string }) {
             </XDriveActionButton>
           </Stack>
         )}
-      </Card>
-    </div>
+      </XDriveAuthPanel>
+    </XDriveAuthShell>
   )
 }
