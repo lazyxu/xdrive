@@ -141,6 +141,20 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(desktop.includes('rememberCloudFileOperation(result.data)'), 'Desktop single delete must seed Task Center state')
 })
 
+test('shared file-operation upsert owns dedupe and newest-first ordering', () => {
+  for (const token of [
+    'xDriveFileOperationUpsert',
+    'operation,',
+    'operations.filter((item) => item.id !== operation.id)',
+  ]) {
+    assert.ok(sharedModel.includes(token), `shared file-operation upsert missing: ${token}`)
+  }
+  assert.ok(web.includes('xDriveFileOperationUpsert(currentOperations, operation)'), 'Web must use shared operation upsert')
+  assert.ok(desktop.includes('xDriveFileOperationUpsert(currentOperations, operation)'), 'Desktop must use shared operation upsert')
+  assert.equal(web.includes('...currentOperations.filter((item) => item.id !== operation.id)'), false, 'Web must not duplicate operation dedupe')
+  assert.equal(desktop.includes('...currentOperations.filter((item) => item.id !== operation.id)'), false, 'Desktop must not duplicate operation dedupe')
+})
+
 test('shared file-operation transition snapshot owns active-to-terminal refresh decisions', () => {
   for (const token of [
     'xDriveFileOperationTransitionSnapshot',

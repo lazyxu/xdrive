@@ -177,6 +177,16 @@ export function xDriveFileOperationEtaMs(operation: XDriveFileOperation, now = D
   return undefined
 }
 
+export function xDriveFileOperationUpsert<T extends Pick<XDriveFileOperation, 'id'>>(
+  operations: readonly T[],
+  operation: T,
+): T[] {
+  return [
+    operation,
+    ...operations.filter((item) => item.id !== operation.id),
+  ]
+}
+
 export type XDriveFileOperationStatusSnapshotItem = Pick<XDriveFileOperation, 'id' | 'status'>
 
 export function xDriveFileOperationTransitionSnapshot(
