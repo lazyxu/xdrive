@@ -17,6 +17,7 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaPlaceFacet,
   Node,
   QuotaUsage,
   StorageStats,
@@ -339,6 +340,7 @@ declare global {
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItem[]>>
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
+        getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
         createMediaAlbum: (name: string) => Promise<DesktopResult<AgentMediaAlbum>>
         renameMediaAlbum: (albumID: string, revision: number, name: string) => Promise<DesktopResult<AgentMediaAlbum>>
         deleteMediaAlbum: (albumID: string, revision: number) => Promise<DesktopResult<{ ok: boolean }>>

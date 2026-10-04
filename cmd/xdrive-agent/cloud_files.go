@@ -1062,6 +1062,14 @@ func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaA
 	return cli.MediaAlbums(ctx)
 }
 
+func (c *agentController) CloudMediaPlaces(ctx context.Context, limit int) ([]client.MediaPlaceFacet, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaPlaces(ctx, limit)
+}
+
 func (c *agentController) CloudCreateMediaAlbum(
 	ctx context.Context,
 	name string,

@@ -73,6 +73,7 @@ test('media Gallery filters are serialized for items and album items', async (t)
     has_location: true,
     favorite: true,
     tag: 'Travel',
+    place: 'place:135:10381',
   }
   await client.mediaItems('', 25, 10, filters)
   await client.mediaAlbumItems('folder:9', 25, 5, filters)
@@ -86,9 +87,31 @@ test('media Gallery filters are serialized for items and album items', async (t)
     assert.equal(url.searchParams.get('has_location'), 'true')
     assert.equal(url.searchParams.get('favorite'), 'true')
     assert.equal(url.searchParams.get('tag'), 'Travel')
+    assert.equal(url.searchParams.get('place'), 'place:135:10381')
   }
   assert.equal(new URL(seen[0], 'http://127.0.0.1').searchParams.get('offset'), '10')
   assert.equal(new URL(seen[1], 'http://127.0.0.1').searchParams.get('album_id'), 'folder:9')
+})
+
+test('media places use the scoped Agent API', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    assert.equal(req.method, 'GET')
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/media/places')
+    assert.equal(url.searchParams.get('limit'), '12')
+    json(res, 200, [{
+      id: 'place:135:10381',
+      name: '约 1.355°, 103.815°',
+      latitude: 1.355,
+      longitude: 103.815,
+      item_count: 4,
+      cover_node_id: 31,
+    }])
+  })
+  const places = await client.mediaPlaces(12)
+  assert.equal(places.length, 1)
+  assert.equal(places[0].id, 'place:135:10381')
+  assert.equal(places[0].item_count, 4)
 })
 
 test('media favorite uses the scoped Agent API', async (t) => {

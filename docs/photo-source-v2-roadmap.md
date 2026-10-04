@@ -237,13 +237,14 @@ Gallery filtering, search, favorites, tags, and descriptions operate only on xDr
 - logical asset kind filters use `PhotoAsset.kind` (`image`, `video`, `live_photo`, `raw_pair`, `burst`, or `sidecar`);
 - capture-date filters use local `MediaMetadata.captured_at` only; files without a parsed capture time do not masquerade as captured on their upload/create date;
 - location filters distinguish assets with both local latitude+longitude from assets without complete GPS coordinates;
+- local place facets group GPS-bearing logical PhotoAssets into deterministic 0.01° latitude/longitude cells, return local-coordinate labels/counts/covers, and feed the same `place:<lat-cell>:<lon-cell>` key back into the shared Gallery query contract; no online reverse geocoder, city database, or provider location API is required;
 - favorite filters use local user-owned `PhotoMetadata.favorite` state;
 - local user tags use `PhotoMetadata.tags_json`; tag filters are exact case-insensitive matches against one normalized tag, not provider tags or fuzzy search;
 - tag editing replaces the asset's local tag set, with case-insensitive deduplication, deterministic ordering, at most 32 tags per asset, and at most 64 characters per tag;
 - local user descriptions use `PhotoMetadata.description`, allow multiline text, are limited to 4096 characters, participate in free-text search, and are never imported from or written back to provider description fields;
 - manual albums are user-owned `PhotoCollection(kind=manual)` rows with optimistic revisions; adding/removing media changes only `PhotoCollectionAsset` membership and never copies or deletes Node/File/CAS content;
 - smart albums are user-owned `PhotoCollection(kind=smart)` rows containing only a normalized local Gallery query in `query_json`; they persist no `PhotoCollectionAsset` membership and re-evaluate against current local Photo state on every read;
-- smart album rules use the exact same connector-neutral query contract as the shared Gallery filters (search, asset kind, capture range, GPS presence, favorite state, exact local tag), and can be renamed or revised with optimistic concurrency;
+- smart album rules use the exact same connector-neutral query contract as the shared Gallery filters (search, asset kind, capture range, GPS presence, local place cell, favorite state, exact local tag), and can be renamed or revised with optimistic concurrency;
 - empty manual/smart albums remain visible, while folder/imported collections continue to be rebuildable projections;
 - filtering happens in the paginated SQL query, not only against the items already loaded by the renderer.
 - the shared Gallery offers grid and timeline presentation modes without changing the underlying query contract;
@@ -252,7 +253,7 @@ Gallery filtering, search, favorites, tags, and descriptions operate only on xDr
 
 Favorite, user-tag, and description changes are written only to local Photo-domain state. `PhotoAsset` reconciliation deliberately excludes `favorite`, `tags_json`, and `description` from its technical-metadata upsert columns, so EXIF re-indexing, RAW/Live Photo regrouping, or provider outages cannot erase a user's choices. Provider favorite/tag/description fields are neither imported nor written back.
 
-No provider search, album semantics, EXIF endpoint, geocoder, tag service, or filename/time relationship heuristic is involved. Automatic people/tag/place-name analysis remains future connector-neutral local media-analysis work; the current tag feature is explicit user-managed metadata only.
+No provider search, album semantics, EXIF endpoint, online geocoder, tag service, or filename/time relationship heuristic is involved. The current place facet is only an approximate local coordinate bucket and does not claim a city/address name. Automatic people/tag/place-name analysis remains future connector-neutral local media-analysis work; the current tag feature is explicit user-managed metadata only.
 
 ### Live Photo
 
@@ -418,7 +419,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
-| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, user-managed local tags/descriptions, manual albums, saved-query smart albums, and shared grid/timeline month presentation are current; next add optional connector-neutral automatic people/place-name/local-analysis facets | Medium |
+| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, user-managed local tags/descriptions, manual albums, saved-query smart albums, shared grid/timeline month presentation, and offline local-GPS place facets are current; next add optional connector-neutral automatic people/place-name/local-analysis facets | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
 
 Provider semantic metadata import is deliberately removed from the roadmap. If xDrive later implements people/tag/place recognition, it belongs to a separate connector-neutral media-analysis subsystem operating on local originals, not to Yike/Synology/FileStation connectors.
@@ -441,7 +442,7 @@ Before calling this subsystem mature:
 - relation-evidence version/JSON corruption is detectable locally and stale evidence is re-indexed without provider access;
 - integrity verification detects local binding/media corruption without mutating anything;
 - repair rebuilds local derived state without writing to the provider;
-- Gallery search/filter results, local favorite/tag/description state, manual album membership, and smart-album saved queries remain usable with all providers offline.
+- Gallery search/filter results, local GPS place facets, local favorite/tag/description state, manual album membership, and smart-album saved queries remain usable with all providers offline.
 
 ## Explicit non-goals
 

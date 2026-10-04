@@ -468,6 +468,7 @@ export type AgentMediaQuery = {
   has_location?: boolean
   favorite?: boolean
   tag?: string
+  place?: string
 }
 
 function appendAgentMediaQuery(
@@ -485,6 +486,7 @@ function appendAgentMediaQuery(
     query.set('favorite', String(filters.favorite))
   }
   if (filters.tag?.trim()) query.set('tag', filters.tag.trim())
+  if (filters.place?.trim()) query.set('place', filters.place.trim())
 }
 
 export type AgentMediaAlbum = {
@@ -496,6 +498,16 @@ export type AgentMediaAlbum = {
   cover_node_id?: number
   updated_at?: string
   query?: AgentMediaQuery
+}
+
+export type AgentMediaPlaceFacet = {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
 }
 
 export type AgentMediaFavorite = {
@@ -808,6 +820,11 @@ export class AgentIPCClient {
 
   mediaAlbums() {
     return this.request<AgentMediaAlbum[]>('GET', '/v1/media/albums')
+  }
+
+  mediaPlaces(limit = 24) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    return this.request<AgentMediaPlaceFacet[]>('GET', `/v1/media/places?${query.toString()}`)
   }
 
   createMediaAlbum(name: string) {

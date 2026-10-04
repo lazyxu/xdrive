@@ -22,6 +22,7 @@ type mediaQueryOptions struct {
 	HasLocation  *bool
 	Favorite     *bool
 	Tag          string
+	Place        *mediaPlaceCell
 }
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
@@ -76,6 +77,14 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 		}
 		out.Tag = value
 	}
+	if raw := strings.TrimSpace(c.Query("place")); raw != "" {
+		value, ok := parseMediaPlaceKey(raw)
+		if !ok {
+			fail(c, http.StatusBadRequest, "place is invalid")
+			return mediaQueryOptions{}, false
+		}
+		out.Place = &value
+	}
 	return out, true
 }
 
@@ -127,6 +136,17 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 		query = query.Where(
 			"EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.tags_json, ''), '[]')::jsonb) AS media_tag(value) WHERE LOWER(media_tag.value) = LOWER(?))",
 			options.Tag,
+		)
+	}
+	if options.Place != nil {
+		latMin, latMax, lonMin, lonMax := mediaPlaceBounds(*options.Place)
+		query = query.Where(
+			"xd_media_metadata.latitude >= ? AND xd_media_metadata.latitude < ? AND "+
+				"xd_media_metadata.longitude >= ? AND xd_media_metadata.longitude < ?",
+			latMin,
+			latMax,
+			lonMin,
+			lonMax,
 		)
 	}
 	return query

@@ -227,6 +227,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    listPlaces: async (limit = 24) => {
+      const result = await window.xdriveDesktop.agent.getMediaPlaces(limit)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     createAlbum: async (name) => {
       const result = await window.xdriveDesktop.agent.createMediaAlbum(name)
       if (!result.ok) throw new Error(result.error.message)

@@ -508,6 +508,7 @@ function FileManager({
   const gallerySource = useMemo<MediaGalleryDataSource>(() => ({
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listAlbums: () => api.mediaAlbums(),
+    listPlaces: (limit = 24) => api.mediaPlaces(limit),
     createAlbum: (name) => api.createMediaAlbum(name),
     createSmartAlbum: (name, query) => api.createSmartMediaAlbum(name, query),
     updateSmartAlbum: (albumID, revision, input) =>

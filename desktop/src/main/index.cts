@@ -77,6 +77,7 @@ import {
   type AgentCloudSearchPage,
   type AgentMediaItem,
   type AgentMediaAlbum,
+  type AgentMediaPlaceFacet,
   type AgentMediaQuery,
   type AgentMediaFavorite,
   type AgentMediaTags,
@@ -1234,6 +1235,16 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     const tag = input.tag.trim()
     if (tag) out.tag = tag
   }
+  if (input.place !== undefined) {
+    if (
+      typeof input.place !== 'string' ||
+      input.place.length > 64 ||
+      !/^place:-?\d+:-?\d+$/.test(input.place.trim())
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media place filter is invalid.')
+    }
+    out.place = input.place.trim()
+  }
   return out
 }
 
@@ -1616,6 +1627,21 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
     return requireAgentClient().mediaAlbums()
+  }, false))
+
+  ipcMain.handle('agent:get-media-places', (_event, limit: unknown = 24) => runAgentAction<AgentMediaPlaceFacet[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    const requestedLimit = limit === undefined ? 24 : limit
+    if (
+      typeof requestedLimit !== 'number' ||
+      !Number.isSafeInteger(requestedLimit) ||
+      requestedLimit < 1 ||
+      requestedLimit > 100
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media place limit must be between 1 and 100.')
+    }
+    return requireAgentClient().mediaPlaces(requestedLimit)
   }, false))
 
   ipcMain.handle('agent:create-media-album', (_event, name: unknown) => runAgentAction<AgentMediaAlbum>(async () => {

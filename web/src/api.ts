@@ -22,6 +22,7 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaPlaceFacet,
   Node,
   PublicShare,
   QuotaUsage,
@@ -168,6 +169,7 @@ function appendMediaGalleryQuery(
     values.set('favorite', String(query.favorite))
   }
   if (query.tag?.trim()) values.set('tag', query.tag.trim())
+  if (query.place?.trim()) values.set('place', query.place.trim())
 }
 
 export function sessionFromAuth(result: AuthResult): AuthSession {
@@ -452,6 +454,13 @@ export class XDriveApi {
 
   mediaAlbums() {
     return this.request<MediaAlbum[]>('/api/v1/media/albums')
+  }
+
+  mediaPlaces(limit = 24) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+    })
+    return this.request<MediaPlaceFacet[]>(`/api/v1/media/places?${query.toString()}`)
   }
 
   createMediaAlbum(name: string) {
