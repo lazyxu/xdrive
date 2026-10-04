@@ -108,8 +108,8 @@ const agent = Object.freeze({
   cloudSearch: (query: string, cursor = '') => ipcRenderer.invoke('agent:cloud-search', query, cursor),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
-  startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master') =>
-    ipcRenderer.invoke('agent:start-server-update', source, channel),
+  startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+    ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
   cloudStorageStats: () => ipcRenderer.invoke('agent:cloud-storage-stats'),
   cloudTrash: () => ipcRenderer.invoke('agent:cloud-trash'),
   cloudRestoreTrash: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-restore-trash', id, revision),

@@ -500,12 +500,12 @@ func (c *agentController) CloudServerUpdateState(ctx context.Context) (client.Se
 	return cli.ServerUpdateState(ctx)
 }
 
-func (c *agentController) CloudStartServerUpdate(ctx context.Context, source, channel string) (client.ServerUpdateState, error) {
+func (c *agentController) CloudStartServerUpdate(ctx context.Context, source, channel string, backupFileData bool) (client.ServerUpdateState, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return client.ServerUpdateState{}, err
 	}
-	return cli.StartServerUpdate(ctx, source, channel)
+	return cli.StartServerUpdate(ctx, source, channel, backupFileData)
 }
 
 func (c *agentController) CloudStorageStats(ctx context.Context) (client.StorageStats, error) {

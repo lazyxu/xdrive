@@ -82,7 +82,7 @@ func TestAdminStartServerUpdateQueuesRestrictedRequest(t *testing.T) {
 		RunnerHeartbeatAt: time.Now().UTC().Format(time.RFC3339),
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(`{"source":"gitlab","channel":"master"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(`{"source":"gitlab","channel":"master","backup_file_data":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(res)
@@ -120,7 +120,7 @@ func TestAdminStartServerUpdateQueuesRestrictedRequest(t *testing.T) {
 	if err := json.Unmarshal(raw, &request); err != nil {
 		t.Fatal(err)
 	}
-	if request.Source != "gitlab" || request.Channel != "master" || request.RequestedBy != "admin" {
+	if request.Source != "gitlab" || request.Channel != "master" || !request.BackupFileData || request.RequestedBy != "admin" {
 		t.Fatalf("request=%+v", request)
 	}
 

@@ -47,6 +47,7 @@ ROLLBACK_RUNNING=0
 UPGRADE_EXISTING=0
 DATABASE_ROLLBACK_REQUIRED=0
 PRE_UPGRADE_BACKUP=""
+BACKUP_FILE_DATA=0
 PULL_MONITOR_PID=""
 DOCKER_MODE=""
 SERVER_UID=65532
@@ -257,7 +258,7 @@ usage() {
 xDrive server installer
 
 Usage:
-  install-server.sh [--source github|gitlab] [--channel stable|master]
+  install-server.sh [--source github|gitlab] [--channel stable|master] [--backup-file-data]
 
 Channels:
   stable  Latest successful vMAJOR.MINOR.PATCH release.
@@ -278,6 +279,8 @@ while [[ $# -gt 0 ]]; do
     --channel)
       [[ $# -ge 2 ]] || { echo "--channel requires a value" >&2; exit 2; }
       requested_channel="$2"; shift 2 ;;
+    --backup-file-data)
+      BACKUP_FILE_DATA=1; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -1195,6 +1198,7 @@ rollback_compose() {
 
 rollback_upgrade() {
   local ok=1 i
+  local -a rollback_restore_args
   ROLLBACK_RUNNING=1
   echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
   docker stop xdrive-caddy xdrive-server xdrive-worker xdrive-postgres \
@@ -1232,9 +1236,14 @@ rollback_upgrade() {
       ROLLBACK_RUNNING=0
       return 1
     fi
-    echo "[xDrive] rollback: restoring database and blobs from $PRE_UPGRADE_BACKUP ..." >&2
-    if ! "$UPGRADE_STATE_DIR/rollback-restore.sh" "$PRE_UPGRADE_BACKUP" \
-        --config-dir "$XDRIVE_HOME" --yes --no-safety-backup </dev/null >&2; then
+    rollback_restore_args=("$PRE_UPGRADE_BACKUP" --config-dir "$XDRIVE_HOME" --yes --no-safety-backup)
+    if [[ "$BACKUP_FILE_DATA" == "1" ]]; then
+      echo "[xDrive] rollback: restoring database and file data from $PRE_UPGRADE_BACKUP ..." >&2
+    else
+      rollback_restore_args+=(--database-only)
+      echo "[xDrive] rollback: restoring database only; existing file data is preserved." >&2
+    fi
+    if ! "$UPGRADE_STATE_DIR/rollback-restore.sh" "${rollback_restore_args[@]}" </dev/null >&2; then
       echo "[xDrive] rollback: data restore failed; API remains stopped." >&2
       ROLLBACK_RUNNING=0
       return 1
@@ -1608,10 +1617,17 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
     : > "$backup_stdout"
     : > "$backup_error"
 
-    env "${backup_env[@]}" "$STAGING_DIR/server-backup.sh" \
-      --config-dir "$XDRIVE_HOME" \
-      --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
-      --leave-server-stopped </dev/null >"$backup_stdout" 2>"$backup_error" &
+    if [[ "$BACKUP_FILE_DATA" == "1" ]]; then
+      env "${backup_env[@]}" "$STAGING_DIR/server-backup.sh" \
+        --config-dir "$XDRIVE_HOME" \
+        --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
+        --leave-server-stopped </dev/null >"$backup_stdout" 2>"$backup_error" &
+    else
+      env "${backup_env[@]}" "$STAGING_DIR/server-backup.sh" \
+        --config-dir "$XDRIVE_HOME" \
+        --output-dir "$PRE_UPGRADE_BACKUP_DIR" \
+        --leave-server-stopped --skip-file-data </dev/null >"$backup_stdout" 2>"$backup_error" &
+    fi
     backup_pid=$!
 
     while kill -0 "$backup_pid" 2>/dev/null; do
@@ -1669,7 +1685,11 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   fi
   printf '%s\n' "$PRE_UPGRADE_BACKUP" > "$UPGRADE_STATE_DIR/pre-upgrade-backup"
   chmod 600 "$UPGRADE_STATE_DIR/pre-upgrade-backup"
-  echo "[xDrive] transaction armed; rollback backup: $PRE_UPGRADE_BACKUP"
+  if [[ "$BACKUP_FILE_DATA" == "1" ]]; then
+    echo "[xDrive] transaction armed; rollback backup: $PRE_UPGRADE_BACKUP (includes file data)"
+  else
+    echo "[xDrive] transaction armed; rollback backup: $PRE_UPGRADE_BACKUP (database-only; file data backup disabled)"
+  fi
   migrate_legacy_named_volumes
 fi
 

@@ -201,6 +201,7 @@ export default function App({
   const [serverUpdate, setServerUpdate] = useState<XDriveServerUpdateState | null>(null)
   const [serverUpdateSource, setServerUpdateSource] = useState<XDriveServerUpdateSource>('github')
   const [serverUpdateChannel, setServerUpdateChannel] = useState<XDriveServerUpdateChannel>('stable')
+  const [serverUpdateBackupFileData, setServerUpdateBackupFileData] = useState(false)
   const [serverUpdateError, setServerUpdateError] = useState('')
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
@@ -815,7 +816,7 @@ export default function App({
     setBusy('server-update')
     setServerUpdateError('')
     try {
-      const result = await window.xdriveDesktop.agent.startServerUpdate(serverUpdateSource, serverUpdateChannel)
+      const result = await window.xdriveDesktop.agent.startServerUpdate(serverUpdateSource, serverUpdateChannel, serverUpdateBackupFileData)
       if (!result.ok) {
         setServerUpdateError(result.error.message)
         return
@@ -2078,14 +2079,16 @@ export default function App({
             state: serverUpdate,
             source: serverUpdateSource,
             channel: serverUpdateChannel,
+            backupFileData: serverUpdateBackupFileData,
             loading: busy === 'server-update',
             disabled: serverUpdate === null || (!!busy && busy !== 'server-update'),
             error: serverUpdateError,
             onSourceChange: setServerUpdateSource,
             onChannelChange: setServerUpdateChannel,
+            onBackupFileDataChange: setServerUpdateBackupFileData,
             onStart: () => setConfirmDialog({
               title: '确认更新服务端？',
-              message: `来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel}。更新会执行升级前备份、容器更新和健康检查，期间服务可能短暂不可用。`,
+              message: `来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel} · 文件数据备份：${serverUpdateBackupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间服务可能短暂不可用。`,
               confirmLabel: '开始更新',
               tone: 'warning',
               onConfirm: startServerUpdate,

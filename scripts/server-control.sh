@@ -62,6 +62,12 @@ json_value() {
   sed -nE "s/.*\\\"${key}\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]*)\\\".*/\\1/p" "$file" | head -n1
 }
 
+json_bool_value() {
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || return 0
+  sed -nE "s/.*\\\"${key}\\\"[[:space:]]*:[[:space:]]*(true|false).*/\\1/p" "$file" | head -n1
+}
+
 progress_value() {
   local file="$1" key="$2"
   [[ -f "$file" ]] || return 0
@@ -149,8 +155,9 @@ sync_progress() {
 }
 
 process_request() {
-  local dir request active source channel request_id requested_at started_at
+  local dir request active source channel backup_file_data request_id requested_at started_at
   local progress_file run_log update_pid status error_text
+  local -a update_args
   dir="$(prepare_dir)"
   request="$dir/request.json"
   active="$dir/active.json"
@@ -161,6 +168,8 @@ process_request() {
 
   source="$(json_value "$active" source)"
   channel="$(json_value "$active" channel)"
+  backup_file_data="$(json_bool_value "$active" backup_file_data)"
+  [[ "$backup_file_data" == "true" ]] || backup_file_data=false
   request_id="$(json_value "$active" request_id)"
   requested_at="$(json_value "$active" created_at)"
   case "$source" in github|gitlab) ;; *) source="" ;; esac
@@ -181,9 +190,11 @@ process_request() {
   write_status running "$source" "$channel" "$request_id" \
     "下载更新程序" 0 9 0 0 "正在下载并校验更新程序…" "" "$started_at" ""
 
+  update_args=(update --source "$source" --channel "$channel")
+  [[ "$backup_file_data" == "true" ]] && update_args+=(--backup-file-data)
   (
     export XD_INSTALL_PROGRESS_FILE="$progress_file"
-    XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" update --source "$source" --channel "$channel"
+    XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" "${update_args[@]}"
   ) >"$run_log" 2>&1 &
   update_pid=$!
 

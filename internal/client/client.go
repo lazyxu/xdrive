@@ -265,11 +265,12 @@ func (c *Client) ServerUpdateState(ctx context.Context) (ServerUpdateState, erro
 	return out, err
 }
 
-func (c *Client) StartServerUpdate(ctx context.Context, source, channel string) (ServerUpdateState, error) {
+func (c *Client) StartServerUpdate(ctx context.Context, source, channel string, backupFileData bool) (ServerUpdateState, error) {
 	var out ServerUpdateState
-	err := c.json(ctx, http.MethodPost, "/api/v1/admin/update", map[string]string{
-		"source":  source,
-		"channel": channel,
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/update", map[string]any{
+		"source":           source,
+		"channel":          channel,
+		"backup_file_data": backupFileData,
 	}, &out)
 	return out, err
 }

@@ -138,6 +138,25 @@ grep -Eq '^bytes_total=[1-9][0-9]*$' "$BACKUP_PROGRESS_FILE"
   sha256sum -c SHA256SUMS.txt >/dev/null
 )
 
+metadata_backup_dir="$(
+  bash "$ROOT/scripts/server-backup.sh" \
+    --config-dir "$XDRIVE_HOME" \
+    --output-dir "$XDRIVE_HOME/backups/metadata-test" \
+    --skip-file-data
+)"
+assert_runtime_services
+[[ -f "$metadata_backup_dir/database.dump" ]]
+[[ ! -e "$metadata_backup_dir/blobs.tar" ]]
+grep -q '"file_data_included": false' "$metadata_backup_dir/manifest.json"
+if grep -q 'blobs.tar' "$metadata_backup_dir/SHA256SUMS.txt"; then
+  echo "metadata-only backup unexpectedly checksums blobs.tar" >&2
+  exit 1
+fi
+(
+  cd "$metadata_backup_dir"
+  sha256sum -c SHA256SUMS.txt >/dev/null
+)
+
 # Deliberately corrupt both directions: a referenced blob disappears and an
 # unreferenced blob appears. Verification must reject the state.
 docker run --rm -v "$FILES_DIR:/data" --entrypoint sh postgres:17-alpine -c   "rm -f /data/$storage_key && printf orphan > /data/orphan.bin"

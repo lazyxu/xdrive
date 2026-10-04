@@ -6,10 +6,11 @@ XDRIVE_HOME="${XD_CONFIG_DIR:-$HOME/.xd}"
 BACKUP_DIR=""
 ASSUME_YES=0
 SAFETY_BACKUP=1
+DATABASE_ONLY=0
 
 usage() {
   cat <<'EOF'
-Usage: server-restore.sh BACKUP_DIR [--config-dir DIR] [--yes] [--no-safety-backup]
+Usage: server-restore.sh BACKUP_DIR [--config-dir DIR] [--yes] [--no-safety-backup] [--database-only]
 
 Restore is destructive. By default xDrive first creates a pre-restore safety
 backup of the current state, then stops the API and pull worker, verifies
@@ -23,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     --config-dir) XDRIVE_HOME="$2"; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
     --no-safety-backup) SAFETY_BACKUP=0; shift ;;
+    --database-only) DATABASE_ONLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*)
       echo "unknown argument: $1" >&2
@@ -51,7 +53,9 @@ ENV_PATH="$CONFIG_DIR/.env"
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
 
-for required in database.dump blobs.tar verify.json manifest.json SHA256SUMS.txt; do
+required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
+[[ "$DATABASE_ONLY" == "1" ]] || required_files+=(blobs.tar)
+for required in "${required_files[@]}"; do
   [[ -f "$BACKUP_DIR/$required" ]] || { echo "backup is missing $required" >&2; exit 1; }
 done
 grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$BACKUP_DIR/manifest.json" || {
@@ -68,7 +72,11 @@ if [[ "$ASSUME_YES" != "1" ]]; then
     echo "restore requires --yes in a non-interactive shell" >&2
     exit 2
   fi
-  printf 'Restore xDrive from %s? This replaces the current database and all blobs. [y/N] ' "$BACKUP_DIR" >/dev/tty
+  if [[ "$DATABASE_ONLY" == "1" ]]; then
+    printf 'Restore xDrive database from %s? File data will be preserved. [y/N] ' "$BACKUP_DIR" >/dev/tty
+  else
+    printf 'Restore xDrive from %s? This replaces the current database and all blobs. [y/N] ' "$BACKUP_DIR" >/dev/tty
+  fi
   read -r answer </dev/tty
   [[ "$answer" =~ ^[Yy]$ ]] || { echo "restore cancelled"; exit 0; }
 fi
@@ -165,10 +173,14 @@ compose exec -T postgres dropdb -U xdrive --if-exists xdrive
 compose exec -T postgres createdb -U xdrive -O xdrive xdrive
 compose_with_stdin exec -T postgres pg_restore -U xdrive -d xdrive --no-owner --no-privileges < "$BACKUP_DIR/database.dump"
 
-docker run --rm -i --entrypoint sh \
-  -v "$data_source:/data" \
-  "$postgres_image" \
-  -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} \; && tar -xf - -C /data' < "$BACKUP_DIR/blobs.tar"
+if [[ "$DATABASE_ONLY" != "1" ]]; then
+  docker run --rm -i --entrypoint sh \
+    -v "$data_source:/data" \
+    "$postgres_image" \
+    -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} \; && tar -xf - -C /data' < "$BACKUP_DIR/blobs.tar"
+else
+  echo "Preserving existing file data (database-only restore)."
+fi
 
 echo "Repairing restored storage ownership..."
 compose run -T --rm --no-deps --user 0:0 server storage prepare --force </dev/null

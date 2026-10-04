@@ -387,7 +387,7 @@ func (f *fakeDesktopIPCController) CloudServerUpdateState(context.Context) (clie
 	return f.cloudServerUpdate, f.err
 }
 
-func (f *fakeDesktopIPCController) CloudStartServerUpdate(_ context.Context, source, channel string) (client.ServerUpdateState, error) {
+func (f *fakeDesktopIPCController) CloudStartServerUpdate(_ context.Context, source, channel string, _ bool) (client.ServerUpdateState, error) {
 	f.cloudServerUpdateSource = source
 	f.cloudServerUpdateChannel = channel
 	return f.cloudServerUpdate, f.err

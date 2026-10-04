@@ -28,6 +28,8 @@ test('shared server update UI exposes source, channel, status and progress', () 
     '服务端更新',
     '更新来源',
     '更新通道',
+    '备份文件数据',
+    '默认关闭',
     'GitHub',
     'GitLab',
     'stable',
@@ -59,6 +61,7 @@ test('server update command boundary never mounts Docker socket into the API con
   assert.ok(apiRouter.includes('admin.POST("/update"'), 'admin update start route missing')
   assert.ok(apiUpdate.includes('input.Source != "github" && input.Source != "gitlab"'), 'API source whitelist missing')
   assert.ok(apiUpdate.includes('input.Channel != "stable" && input.Channel != "master"'), 'API channel whitelist missing')
+  assert.ok(apiUpdate.includes('BackupFileData bool'), 'API one-shot file-data backup option missing')
   assert.ok(compose.includes('XD_HOST_CONTROL_DIR: /host-control'), 'server host-control mount env missing')
   assert.ok(compose.includes(':/host-control'), 'server host-control bind mount missing')
   assert.equal(compose.includes('/var/run/docker.sock'), false, 'server API must never receive Docker socket access')
@@ -66,7 +69,8 @@ test('server update command boundary never mounts Docker socket into the API con
 
 test('host control reuses transactional xdrive-server update and installer progress', () => {
   assert.ok(hostManager.includes('control) control_cmd "$@"'), 'host manager control dispatcher missing')
-  assert.ok(hostControl.includes('"$MANAGER" update --source "$source" --channel "$channel"'), 'host control must reuse xdrive-server update')
+  assert.ok(hostControl.includes('update_args=(update --source "$source" --channel "$channel")'), 'host control must reuse xdrive-server update')
+  assert.ok(hostControl.includes('update_args+=(--backup-file-data)'), 'host control must forward the file-data backup option')
   assert.ok(hostControl.includes('case "$source" in github|gitlab)'), 'host runner source whitelist missing')
   assert.ok(hostControl.includes('case "$channel" in stable|master)'), 'host runner channel whitelist missing')
   assert.ok(hostControl.includes('heartbeat'), 'host runner heartbeat missing')
@@ -79,6 +83,9 @@ test('host control reuses transactional xdrive-server update and installer progr
   assert.ok(installer.includes('XD_INSTALL_PROGRESS_FILE'), 'installer progress bridge missing')
   assert.ok(installer.includes('write_install_progress'), 'installer progress writer missing')
   assert.ok(installer.includes('XD_BACKUP_PROGRESS_FILE'), 'installer must bridge backup progress into update progress')
+  assert.ok(installer.includes('BACKUP_FILE_DATA=0'), 'file-data upgrade backup must default off')
+  assert.ok(installer.includes('--leave-server-stopped --skip-file-data </dev/null'), 'default upgrade backup must skip file data')
+  assert.ok(installer.includes('rollback_restore_args+=(--database-only)'), 'default rollback must preserve file data')
   assert.ok(hostManager.includes('install_update_lock_busy'), 'host manager must reject duplicate updates before downloading the installer')
   assert.ok(installer.includes('exec 9<>"$INSTALL_LOCK_PATH"'), 'installer lock check must preserve the current lock owner metadata')
   assert.ok(installer.includes('server-control.sh'), 'installer must install host-control helper')

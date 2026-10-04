@@ -386,7 +386,7 @@ declare global {
         cloudSearch: (query: string, cursor?: string) => Promise<DesktopResult<AgentCloudSearchPage>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
-        startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master') => Promise<DesktopResult<AgentServerUpdateState>>
+        startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
         cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
         cloudRestoreTrash: (id: number, revision: number) => Promise<DesktopResult<AgentCloudNode>>

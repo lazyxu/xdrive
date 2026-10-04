@@ -39,7 +39,7 @@ usage() {
 xDrive server host manager
 
 Usage:
-  xdrive-server update [--source github|gitlab] [--channel stable|master]
+  xdrive-server update [--source github|gitlab] [--channel stable|master] [--backup-file-data]
   xdrive-server control <install|start|serve|stop|status>
   xdrive-server doctor [--strict]
   xdrive-server status [--summary-only]
