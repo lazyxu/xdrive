@@ -971,3 +971,26 @@ test('conflict-aware upload forwards the selected policy', async (t) => {
     },
   })
 })
+
+
+test('archive download forwards ids and destination to the Agent', async (t) => {
+  let seen
+  const { client } = await fixture(t, async (req, res) => {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    seen = {
+      method: req.method,
+      path: req.url,
+      body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+    }
+    json(res, 200, { downloaded: ['Projects', 'photo.jpg'] })
+  })
+
+  const result = await client.cloudDownloadArchive([2, 3], '/tmp/downloads')
+  assert.deepEqual(result.downloaded, ['Projects', 'photo.jpg'])
+  assert.deepEqual(seen, {
+    method: 'POST',
+    path: '/v1/cloud/download/archive',
+    body: { ids: [2, 3], destination: '/tmp/downloads' },
+  })
+})

@@ -98,6 +98,8 @@ type fakeDesktopIPCController struct {
 	cloudUploadPolicy          string
 	cloudDownloadID            uint64
 	cloudDownloadDestination   string
+	cloudArchiveIDs            []uint64
+	cloudArchiveDestination    string
 	cloudResolveID             string
 	cloudResolvePolicy         string
 	cloudSearchPage            agentCloudSearchPage
@@ -397,6 +399,16 @@ func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint6
 func (f *fakeDesktopIPCController) CloudDownload(_ context.Context, id uint64, destination string) error {
 	f.cloudDownloadID, f.cloudDownloadDestination = id, destination
 	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDownloadArchive(
+	_ context.Context,
+	ids []uint64,
+	destination string,
+) (agentCloudArchiveDownloadResult, error) {
+	f.cloudArchiveIDs = append([]uint64(nil), ids...)
+	f.cloudArchiveDestination = destination
+	return agentCloudArchiveDownloadResult{Downloaded: []string{"Projects"}}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSearch(_ context.Context, _ string, cursor string) (agentCloudSearchPage, error) {
@@ -855,6 +867,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "upload-conflict-preflight") {
 		t.Fatalf("hello missing upload conflict preflight capability: %+v", hello.Capabilities)
 	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "archive-download") {
+		t.Fatalf("hello missing archive download capability: %+v", hello.Capabilities)
+	}
 
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/lifecycle/shutdown", "")
 	if res.Code != http.StatusOK {
@@ -1129,6 +1144,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		cloudRestored: client.Node{ID: 3, Name: "report.pdf", Type: "file", Revision: 4},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+	archiveDestination := t.TempDir()
 
 	cases := []struct {
 		method string
@@ -1158,6 +1174,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/upload/conflict", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt","conflict_policy":"keep_both"}`, "\"transferred_bytes\":12"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
+		{http.MethodPost, "/v1/cloud/download/archive", fmt.Sprintf(`{"ids":[2,3],"destination":%q}`, archiveDestination), "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
@@ -1209,6 +1226,10 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudDownloadID != 3 || ctrl.cloudDownloadDestination != "/tmp/report.pdf" {
 		t.Fatalf("cloud download not forwarded: id=%d destination=%q", ctrl.cloudDownloadID, ctrl.cloudDownloadDestination)
+	}
+	if len(ctrl.cloudArchiveIDs) != 2 || ctrl.cloudArchiveIDs[0] != 2 || ctrl.cloudArchiveIDs[1] != 3 ||
+		ctrl.cloudArchiveDestination != archiveDestination {
+		t.Fatalf("cloud archive download not forwarded: ids=%v destination=%q", ctrl.cloudArchiveIDs, ctrl.cloudArchiveDestination)
 	}
 	if ctrl.cloudResolveID != "file-op" || ctrl.cloudResolvePolicy != "keep_both" {
 		t.Fatalf(

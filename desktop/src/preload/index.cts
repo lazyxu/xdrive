@@ -159,6 +159,7 @@ const agent = Object.freeze({
   ),
   cloudDownload: (id: number, name: string) => ipcRenderer.invoke('agent:cloud-download', id, name),
   cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => ipcRenderer.invoke('agent:cloud-download-files', files),
+  cloudDownloadArchive: (ids: number[]) => ipcRenderer.invoke('agent:cloud-download-archive', ids),
   openPath: (relativePath: string, reveal = false) => ipcRenderer.invoke('agent:open-path', relativePath, reveal),
   cloudSearch: (query: string, cursor = '') => ipcRenderer.invoke('agent:cloud-search', query, cursor),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),

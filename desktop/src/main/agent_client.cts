@@ -361,6 +361,10 @@ export type AgentCloudUploadResult = {
   transferred_bytes: number
 }
 
+export type AgentCloudArchiveExtractResult = {
+  downloaded: string[]
+}
+
 export type AgentCloudFileOperation = {
   id: string
   type: 'copy' | 'move' | 'delete'
@@ -1191,6 +1195,13 @@ export class AgentIPCClient {
   cloudDownload(id: number, destination: string) {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/download', {
       id,
+      destination,
+    }, 6 * 60 * 60 * 1000)
+  }
+
+  cloudDownloadArchive(ids: number[], destination: string) {
+    return this.request<AgentCloudArchiveExtractResult>('POST', '/v1/cloud/download/archive', {
+      ids,
       destination,
     }, 6 * 60 * 60 * 1000)
   }

@@ -2053,6 +2053,7 @@ export default function App({
                 agent.hello?.capabilities.includes('upload-conflict-preflight') &&
                 agent.hello?.capabilities.includes('upload-conflict-policy')
               ),
+              archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}

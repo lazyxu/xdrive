@@ -153,7 +153,7 @@ test('Desktop FileExplorer queues copy/cut/paste through persistent Agent file o
 })
 
 test('Desktop FileExplorer supports bulk download and delete', () => {
-  assert.ok(explorer.includes('const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {'), 'Desktop bulk download helper is missing')
+  assert.ok(explorer.includes('async function downloadSelected(selected: XDriveFileExplorerItem[]) {'), 'Desktop bulk download helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop bulk download must use shared download planning')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)'), 'Desktop bulk download bridge is missing')
   assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
@@ -270,6 +270,22 @@ test('Desktop upload conflicts use shared dialog and capability-gated policy upl
   }
   assert.ok(app.includes("capabilities.includes('upload-conflict-policy')"), 'Desktop must gate policy-aware uploads by Agent capability')
   assert.ok(app.includes("capabilities.includes('upload-conflict-preflight')"), 'Desktop must gate conflict preflight by Agent capability')
+})
+
+
+test('Desktop folder and mixed-selection downloads use Agent archive capability with legacy fallback', () => {
+  for (const token of [
+    'archiveDownloadSupported = false',
+    'xDriveFileExplorerArchiveDownloadPlan(nodes)',
+    'window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)',
+    "setActionBusy('download-archive')",
+    "actionBusy === 'download-archive'",
+    "downloadLabel: node.type === 'file' ? '另存为…' : '下载到…'",
+    'xDriveFileExplorerDownloadPlan(nodes)',
+    'cloudDownloadFiles(plan.items)',
+  ]) {
+    assert.ok(explorer.includes(token), `Desktop archive download wiring missing: ${token}`)
+  }
 })
 
 

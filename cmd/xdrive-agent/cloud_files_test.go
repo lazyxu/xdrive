@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -166,5 +168,135 @@ func TestAgentCloudTransferFailureIsRetainedInHistory(t *testing.T) {
 		got.Error != wantErr.Error() ||
 		got.CompletedAt == nil {
 		t.Fatalf("failed transfer=%+v", got)
+	}
+}
+
+func writeAgentArchive(t *testing.T, entries map[string]struct {
+	body string
+	mode os.FileMode
+}) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "archive.zip")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	for name, entry := range entries {
+		header := &zip.FileHeader{Name: name, Method: zip.Store}
+		if entry.mode != 0 {
+			header.SetMode(entry.mode)
+		}
+		out, err := writer.CreateHeader(header)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.body != "" {
+			if _, err := out.Write([]byte(entry.body)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestExtractDownloadedArchivePreservesTreeAndAvoidsLocalNameConflicts(t *testing.T) {
+	destination := t.TempDir()
+	if err := os.Mkdir(filepath.Join(destination, "Projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destination, "Projects", "existing.txt"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	archive := writeAgentArchive(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{
+		"Projects/":           {"", os.ModeDir | 0o755},
+		"Projects/report.txt": {"report", 0o644},
+		"Empty/":              {"", os.ModeDir | 0o755},
+	})
+
+	downloaded, err := extractDownloadedArchive(archive, destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(downloaded) != 2 {
+		t.Fatalf("downloaded=%v", downloaded)
+	}
+	got, err := os.ReadFile(filepath.Join(destination, "Projects - 副本", "report.txt"))
+	if err != nil || string(got) != "report" {
+		t.Fatalf("report=%q err=%v", got, err)
+	}
+	kept, err := os.ReadFile(filepath.Join(destination, "Projects", "existing.txt"))
+	if err != nil || string(kept) != "keep" {
+		t.Fatalf("existing=%q err=%v", kept, err)
+	}
+	if info, err := os.Stat(filepath.Join(destination, "Empty")); err != nil || !info.IsDir() {
+		t.Fatalf("empty dir missing: info=%v err=%v", info, err)
+	}
+}
+
+func TestExtractDownloadedArchiveRejectsUnsafeEntries(t *testing.T) {
+	for name, entry := range map[string]struct {
+		path string
+		mode os.FileMode
+	}{
+		"parent traversal": {"../evil.txt", 0o644},
+		"backslash":        {"folder\\evil.txt", 0o644},
+		"symlink":          {"link", os.ModeSymlink | 0o777},
+	} {
+		t.Run(name, func(t *testing.T) {
+			destination := t.TempDir()
+			archive := writeAgentArchive(t, map[string]struct {
+				body string
+				mode os.FileMode
+			}{
+				entry.path: {"payload", entry.mode},
+			})
+			if _, err := extractDownloadedArchive(archive, destination); err == nil {
+				t.Fatal("expected unsafe archive to be rejected")
+			}
+			entries, err := os.ReadDir(destination)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("unsafe archive polluted destination: %+v", entries)
+			}
+		})
+	}
+}
+
+func TestValidateDownloadedArchiveRejectsDuplicateCaseFoldedPaths(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for _, name := range []string{"Folder/a.txt", "folder/A.txt"} {
+		out, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = out.Write([]byte("x"))
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "duplicates.zip")
+	if err := os.WriteFile(path, buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, _, err := validateDownloadedArchive(reader); err == nil {
+		t.Fatal("expected case-folded duplicate archive path to be rejected")
 	}
 }

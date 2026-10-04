@@ -19,7 +19,7 @@ test('Desktop Explorer opens files from the managed sync tree instead of default
   assert.ok(app.includes('await window.xdriveDesktop.agent.openPath(relativePath, reveal)'), 'Desktop Explorer is not wired to managed-path shell actions')
   assert.ok(app.includes('xDriveFileExplorerDispatchOpenItem({'), 'double-clicking should dispatch through the shared open-item controller')
   assert.ok(app.includes('openFile: openLocalNode'), 'double-clicking a file should open the synced local item through the Desktop adapter')
-  assert.ok(app.includes("downloadLabel: '另存为…'"), 'Desktop must preserve explicit Save As wording through the shared action adapter')
+  assert.ok(app.includes("downloadLabel: node.type === 'file' ? '另存为…' : '下载到…'"), 'Desktop must preserve Save As wording for files while folders download to a directory')
   assert.ok(app.includes('onReveal: () => { void openLocalNode(node, true) }'), 'Desktop reveal adapter is missing')
   assert.ok(sharedActions.includes("revealLabel = '在文件资源管理器中显示'"), 'shared reveal-in-file-manager label is missing')
 })
@@ -45,4 +45,11 @@ test('renderer only receives relative-path shell contracts through preload/main 
 test('platform reveal semantics use the native file manager', () => {
   assert.ok(windowsPlatform.includes('exec.Command("explorer.exe", "/select,"+path)'), 'Windows reveal must select the file in Explorer')
   assert.ok(otherPlatform.includes('openFolderPlatform(filepath.Dir(path))'), 'non-Windows reveal should open the containing folder')
+})
+
+test('Desktop archive downloads stay behind a dedicated Agent capability and directory picker', () => {
+  assert.ok(main.includes("requireAgentCapability(hello, 'archive-download')"), 'Electron main must capability-gate archive download')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-download-archive'"), 'Electron archive download bridge is missing')
+  assert.ok(preload.includes("cloudDownloadArchive: (ids: number[]) => ipcRenderer.invoke('agent:cloud-download-archive', ids)"), 'preload archive bridge is missing')
+  assert.ok(types.includes('cloudDownloadArchive: (ids: number[])'), 'renderer archive bridge typing is missing')
 })

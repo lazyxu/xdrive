@@ -71,6 +71,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"archive-download",
 	"file-operation-conflict-resolution",
 	"upload-conflict-preflight",
 	"upload-conflict-policy",
@@ -173,6 +174,7 @@ type desktopIPCController interface {
 	CloudUploadWithConflictPolicy(context.Context, uint64, string, string, string) (agentCloudUploadResult, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
+	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
 	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
@@ -441,6 +443,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("POST /v1/cloud/upload/conflict", h.cloudUploadWithConflictPolicy)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
+	mux.HandleFunc("POST /v1/cloud/download/archive", h.cloudDownloadArchive)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
@@ -1267,6 +1270,43 @@ func (h *desktopIPCHandler) cloudDownload(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudDownloadArchive(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		IDs         []uint64 `json:"ids"`
+		Destination string   `json:"destination"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Destination = filepath.Clean(strings.TrimSpace(input.Destination))
+	if len(input.IDs) == 0 || len(input.IDs) > 1000 || input.Destination == "." || !filepath.IsAbs(input.Destination) {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_cloud_archive_download",
+			"ids and an absolute destination directory are required",
+		)
+		return
+	}
+	for _, id := range input.IDs {
+		if id == 0 {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_cloud_archive_download",
+				"archive node ids must be non-zero",
+			)
+			return
+		}
+	}
+	result, err := h.ctrl.CloudDownloadArchive(r.Context(), input.IDs, input.Destination)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) {
