@@ -75,6 +75,7 @@ import {
   type AgentMediaItem,
   type AgentMediaAlbum,
   type AgentMediaQuery,
+  type AgentMediaFavorite,
   type AgentMediaThumbnail,
   type AgentMediaMotion,
   type AgentSource,
@@ -1186,6 +1187,12 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.has_location = input.has_location
   }
+  if (input.favorite !== undefined) {
+    if (typeof input.favorite !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Media favorite filter must be boolean.')
+    }
+    out.favorite = input.favorite
+  }
   return out
 }
 
@@ -1602,6 +1609,20 @@ function registerIPCHandlers() {
       requestedOffset,
       normalizeMediaGalleryQuery(query),
     )
+  }, false))
+
+  ipcMain.handle('agent:set-media-favorite', (_event, nodeID: unknown, favorite: unknown) => runAgentAction<AgentMediaFavorite>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0 ||
+      typeof favorite !== 'boolean'
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id and favorite state are required.')
+    }
+    return requireAgentClient().setMediaFavorite(nodeID, favorite)
   }, false))
 
   ipcMain.handle('agent:get-media-thumbnail', (_event, nodeID: unknown) => runAgentAction<AgentMediaThumbnail>(async () => {

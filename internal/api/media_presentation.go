@@ -8,6 +8,7 @@ import (
 
 type mediaAssetPresentation struct {
 	Kind      string
+	Favorite  bool
 	Resources []mediaResourceDTO
 }
 
@@ -38,6 +39,23 @@ func (s *Server) photoAssetPresentations(
 		assetIDs = append(assetIDs, asset.ID)
 		primaryByAsset[asset.ID] = asset.PrimaryNodeID
 		out[asset.PrimaryNodeID] = mediaAssetPresentation{Kind: asset.Kind}
+	}
+
+	var assetMetadata []meta.PhotoMetadata
+	if err := s.DB.WithContext(ctx).
+		Select("asset_id", "favorite").
+		Where("asset_id IN ?", assetIDs).
+		Find(&assetMetadata).Error; err != nil {
+		return nil, err
+	}
+	for _, metadata := range assetMetadata {
+		primaryNodeID, ok := primaryByAsset[metadata.AssetID]
+		if !ok {
+			continue
+		}
+		presentation := out[primaryNodeID]
+		presentation.Favorite = metadata.Favorite
+		out[primaryNodeID] = presentation
 	}
 
 	var resources []meta.PhotoResource

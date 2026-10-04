@@ -20,6 +20,7 @@ type mediaQueryOptions struct {
 	CapturedFrom *time.Time
 	CapturedTo   *time.Time
 	HasLocation  *bool
+	Favorite     *bool
 }
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
@@ -57,6 +58,14 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 			return mediaQueryOptions{}, false
 		}
 		out.HasLocation = &value
+	}
+	if raw := strings.TrimSpace(c.Query("favorite")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "favorite must be true or false")
+			return mediaQueryOptions{}, false
+		}
+		out.Favorite = &value
 	}
 	return out, true
 }
@@ -101,6 +110,9 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 		} else {
 			query = query.Where("xd_media_metadata.latitude IS NULL OR xd_media_metadata.longitude IS NULL")
 		}
+	}
+	if options.Favorite != nil {
+		query = query.Where("pm.favorite = ?", *options.Favorite)
 	}
 	return query
 }

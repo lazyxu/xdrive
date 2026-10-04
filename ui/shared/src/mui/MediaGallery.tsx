@@ -7,6 +7,8 @@ import {
   Movie as MovieIcon,
   PlayCircleOutline as LivePhotoIcon,
   Refresh as RefreshIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon,
 } from '@mui/icons-material'
 import {
   Box,
@@ -52,6 +54,7 @@ export interface MediaGalleryDataSource {
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
+  setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
 }
 
 export interface XDriveMediaGalleryPageProps {
@@ -66,6 +69,7 @@ type MediaGalleryFilterDraft = {
   capturedFrom: string
   capturedTo: string
   location: 'any' | 'with' | 'without'
+  favorite: 'any' | 'favorite' | 'not-favorite'
 }
 
 const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
@@ -74,6 +78,7 @@ const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
   capturedFrom: '',
   capturedTo: '',
   location: 'any',
+  favorite: 'any',
 }
 
 function errorMessage(error: unknown) {
@@ -106,6 +111,11 @@ function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): MediaGaller
       : draft.location === 'without'
         ? { has_location: false }
         : {}),
+    ...(draft.favorite === 'favorite'
+      ? { favorite: true }
+      : draft.favorite === 'not-favorite'
+        ? { favorite: false }
+        : {}),
   }
 }
 
@@ -115,7 +125,8 @@ function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
     draft.assetKind ||
     draft.capturedFrom ||
     draft.capturedTo ||
-    draft.location !== 'any',
+    draft.location !== 'any' ||
+    draft.favorite !== 'any',
   )
 }
 
@@ -198,6 +209,21 @@ function MediaGalleryFilterBar({
           <MenuItem value="any">全部</MenuItem>
           <MenuItem value="with">有 GPS</MenuItem>
           <MenuItem value="without">无 GPS</MenuItem>
+        </TextField>
+        <TextField
+          select
+          size="small"
+          label="收藏"
+          value={draft.favorite}
+          onChange={(event) => onChange({
+            ...draft,
+            favorite: event.target.value as MediaGalleryFilterDraft['favorite'],
+          })}
+          sx={{ minWidth: 116 }}
+        >
+          <MenuItem value="any">全部</MenuItem>
+          <MenuItem value="favorite">已收藏</MenuItem>
+          <MenuItem value="not-favorite">未收藏</MenuItem>
         </TextField>
         <Stack direction="row" spacing={1}>
           <Button variant="contained" onClick={onApply} disabled={loading}>
@@ -312,6 +338,30 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(currentAlbum, {})
   }, [currentAlbum, loadFirstPage])
 
+  const setFavorite = useCallback(async (
+    item: MediaItem,
+    favorite: boolean,
+  ) => {
+    if (!source.setFavorite) return
+    setError('')
+    try {
+      await source.setFavorite(item.node.id, favorite)
+      setItems((current) => current.map((value) => (
+        value.node.id === item.node.id
+          ? { ...value, favorite }
+          : value
+      )))
+      if (query.favorite !== undefined) {
+        await loadFirstPage(currentAlbum, query)
+      }
+    } catch (favoriteError) {
+      const message = errorMessage(favoriteError)
+      setError(message)
+      onError?.(favoriteError)
+      throw favoriteError
+    }
+  }, [currentAlbum, loadFirstPage, onError, query, source])
+
   useEffect(() => {
     void loadFirstPage(null, {})
     return () => {
@@ -339,6 +389,7 @@ export function XDriveMediaGalleryPage({
       loadThumbnail={source.loadThumbnail}
       loadLivePhotoMotion={source.loadLivePhotoMotion}
       loadVideo={source.loadVideo}
+      onSetFavorite={source.setFavorite ? setFavorite : undefined}
       onOpenAlbum={(album) => void loadFirstPage(album, query)}
       onBack={() => void loadFirstPage(null, query)}
       onLoadMore={() => void loadMore()}
@@ -358,6 +409,7 @@ export interface XDriveMediaGalleryProps {
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onOpenAlbum?: (album: MediaAlbum) => void
   onBack?: () => void
   onLoadMore?: () => void
@@ -559,12 +611,14 @@ function MediaDetails({
   loadThumbnail,
   loadLivePhotoMotion,
   loadVideo,
+  onSetFavorite,
   onClose,
 }: {
   item: MediaItem | null
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onClose: () => void
 }) {
   const [playbackURL, setPlaybackURL] = useState('')
@@ -635,6 +689,7 @@ function MediaDetails({
     const metadata = item.metadata
     const result: Array<[string, string]> = [
       ['类型', mediaAssetLabel(item)],
+      ['收藏', item.favorite ? '已收藏' : '未收藏'],
       ['文件名', item.node.name],
       ['大小', formatBytes(item.node.size)],
       ['格式', metadata.mime_type || '—'],
@@ -768,6 +823,20 @@ function MediaDetails({
                 ) : null}
               </Box>
             ) : null}
+            {onSetFavorite ? (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  size="small"
+                  variant={item.favorite ? 'contained' : 'outlined'}
+                  startIcon={item.favorite ? <StarIcon /> : <StarBorderIcon />}
+                  onClick={() => {
+                    void onSetFavorite(item, !item.favorite).catch(() => undefined)
+                  }}
+                >
+                  {item.favorite ? '取消收藏' : '收藏'}
+                </Button>
+              </Box>
+            ) : null}
             {item.metadata.index_error ? (
               <XDriveStatusAlert tone="warning">
                 部分媒体元数据未能解析：{item.metadata.index_error}
@@ -832,12 +901,24 @@ export function XDriveMediaGallery({
   loadThumbnail,
   loadLivePhotoMotion,
   loadVideo,
+  onSetFavorite,
   onOpenAlbum,
   onBack,
   onLoadMore,
   onRefresh,
 }: XDriveMediaGalleryProps) {
   const [selected, setSelected] = useState<MediaItem | null>(null)
+
+  const toggleFavorite = useCallback(async (item: MediaItem) => {
+    if (!onSetFavorite) return
+    const favorite = !item.favorite
+    await onSetFavorite(item, favorite)
+    setSelected((current) => (
+      current?.node.id === item.node.id
+        ? { ...current, favorite }
+        : current
+    ))
+  }, [onSetFavorite])
 
   return (
     <Stack spacing={2.5} sx={{ minWidth: 0 }}>
@@ -1013,6 +1094,29 @@ export function XDriveMediaGallery({
                     loadThumbnail={loadThumbnail}
                     fallback={mediaFallback(item.metadata.media_kind)}
                   />
+                  {onSetFavorite ? (
+                    <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
+                      <IconButton
+                        size="small"
+                        aria-label={item.favorite ? '取消收藏' : '收藏'}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void toggleFavorite(item).catch(() => undefined)
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        sx={{
+                          position: 'absolute',
+                          top: 8,
+                          left: 8,
+                          bgcolor: 'rgba(0,0,0,.66)',
+                          color: item.favorite ? 'warning.main' : '#fff',
+                          '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
+                        }}
+                      >
+                        {item.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
+                  ) : null}
                   <Chip
                     icon={livePhoto ? <LivePhotoIcon /> : video ? <MovieIcon /> : <ImageIcon />}
                     label={mediaAssetChipLabel(item)}
@@ -1068,6 +1172,14 @@ export function XDriveMediaGallery({
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadVideo={loadVideo}
+        onSetFavorite={onSetFavorite ? async (item, favorite) => {
+          await onSetFavorite(item, favorite)
+          setSelected((current) => (
+            current?.node.id === item.node.id
+              ? { ...current, favorite }
+              : current
+          ))
+        } : undefined}
         onClose={() => setSelected(null)}
       />
     </Stack>

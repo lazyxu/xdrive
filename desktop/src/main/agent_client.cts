@@ -436,6 +436,7 @@ export type AgentMediaItem = {
   node: AgentCloudNode
   metadata: AgentMediaMetadata
   asset_kind?: string
+  favorite: boolean
   resources?: AgentMediaResource[]
   derived_resources?: AgentMediaDerivedResource[]
   live_photo?: boolean
@@ -447,6 +448,7 @@ export type AgentMediaQuery = {
   captured_from?: string
   captured_to?: string
   has_location?: boolean
+  favorite?: boolean
 }
 
 function appendAgentMediaQuery(
@@ -460,6 +462,9 @@ function appendAgentMediaQuery(
   if (filters.has_location !== undefined) {
     query.set('has_location', String(filters.has_location))
   }
+  if (filters.favorite !== undefined) {
+    query.set('favorite', String(filters.favorite))
+  }
 }
 
 export type AgentMediaAlbum = {
@@ -469,6 +474,10 @@ export type AgentMediaAlbum = {
   item_count: number
   cover_node_id?: number
   updated_at?: string
+}
+
+export type AgentMediaFavorite = {
+  favorite: boolean
 }
 
 export type AgentMediaThumbnail = {
@@ -784,6 +793,14 @@ export class AgentIPCClient {
     })
     appendAgentMediaQuery(query, filters)
     return this.request<AgentMediaItem[]>('GET', `/v1/media/albums/items?${query.toString()}`)
+  }
+
+  setMediaFavorite(nodeID: number, favorite: boolean) {
+    return this.request<AgentMediaFavorite>(
+      'PATCH',
+      '/v1/media/favorite',
+      { node_id: nodeID, favorite },
+    )
   }
 
   mediaThumbnail(nodeID: number) {

@@ -16,6 +16,7 @@ const agent = Object.freeze({
     captured_from?: string
     captured_to?: string
     has_location?: boolean
+    favorite?: boolean
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
@@ -29,8 +30,10 @@ const agent = Object.freeze({
     captured_from?: string
     captured_to?: string
     has_location?: boolean
+    favorite?: boolean
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),
+  setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
   getMediaLivePhotoMotion: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID),
   getMediaVideoURL: (nodeID: number) => ipcRenderer.invoke('agent:get-media-video-url', nodeID),

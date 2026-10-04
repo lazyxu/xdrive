@@ -40,6 +40,10 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /拍摄至/)
   assert.match(sharedGallery, /有 GPS/)
   assert.match(sharedGallery, /无 GPS/)
+  assert.match(sharedGallery, /收藏/)
+  assert.match(sharedGallery, /已收藏/)
+  assert.match(sharedGallery, /未收藏/)
+  assert.match(sharedGallery, /StarIcon/)
   assert.match(sharedGallery, /mediaGalleryQueryFromDraft/)
   assert.match(sharedGallery, /<video/)
 
@@ -67,6 +71,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /captured_from\?: string/)
   assert.match(sharedModels, /captured_to\?: string/)
   assert.match(sharedModels, /has_location\?: boolean/)
+  assert.match(sharedModels, /favorite\?: boolean/)
   assert.match(sharedModels, /live_photo\?: boolean/)
   assert.match(sharedModels, /derived_resources\?: MediaDerivedResource\[\]/)
   assert.match(sharedGallery, /RAW 组合/)
@@ -76,7 +81,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'setMediaFavorite(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -84,6 +89,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'getMediaItems:',
     'getMediaAlbums:',
     'getMediaAlbumItems:',
+    'setMediaFavorite:',
     'getMediaThumbnail:',
     'getMediaLivePhotoMotion:',
     'getMediaVideoURL:',
@@ -95,6 +101,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'mediaItems(',
     'mediaAlbums()',
     'mediaAlbumItems(',
+    'setMediaFavorite(nodeID:',
     'mediaThumbnail(nodeID:',
     'mediaLivePhotoMotion(nodeID:',
     'mediaVideoURL(nodeID:',
@@ -106,6 +113,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('"media-video-stream"'))
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
+  assert.ok(desktopIPC.includes('PATCH /v1/media/favorite'))
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
   assert.ok(desktopIPC.includes('GET /v1/media/video'))

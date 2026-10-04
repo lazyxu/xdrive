@@ -670,6 +670,18 @@ func (c *agentController) CloudMediaAlbumItems(
 	return cli.MediaAlbumItemsQuery(ctx, albumID, query, limit, offset)
 }
 
+func (c *agentController) CloudSetMediaFavorite(
+	ctx context.Context,
+	nodeID uint64,
+	favorite bool,
+) (client.MediaFavorite, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaFavorite{}, err
+	}
+	return cli.SetMediaFavorite(ctx, nodeID, favorite)
+}
+
 func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -165,6 +165,9 @@ function appendMediaGalleryQuery(
   if (query.has_location !== undefined) {
     values.set('has_location', String(query.has_location))
   }
+  if (query.favorite !== undefined) {
+    values.set('favorite', String(query.favorite))
+  }
 }
 
 export function sessionFromAuth(result: AuthResult): AuthSession {
@@ -464,6 +467,16 @@ export class XDriveApi {
     appendMediaGalleryQuery(query, filters)
     return this.request<MediaItem[]>(
       `/api/v1/media/albums/${encodeURIComponent(albumID)}/items?${query.toString()}`,
+    )
+  }
+
+  setMediaFavorite(nodeID: number, favorite: boolean) {
+    return this.request<{ favorite: boolean }>(
+      `/api/v1/media/items/${nodeID}/favorite`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ favorite }),
+      },
     )
   }
 

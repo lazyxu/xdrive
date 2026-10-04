@@ -46,7 +46,7 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoResource{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 	); err != nil {
 		t.Fatal(err)
@@ -129,6 +129,14 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		{OwnerID: owner.ID, PrimaryNodeID: nodes[2].ID, Kind: meta.PhotoAssetKindVideo, EvidenceKey: "node:3"},
 	}
 	if err := db.Create(&assets).Error; err != nil {
+		t.Fatal(err)
+	}
+	photoMetadata := []meta.PhotoMetadata{
+		{AssetID: assets[0].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedOne, Latitude: &lat, Longitude: &lon, Favorite: true},
+		{AssetID: assets[1].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedTwo},
+		{AssetID: assets[2].ID, MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime", CapturedAt: &capturedThree, Latitude: &lat, Longitude: &lon},
+	}
+	if err := db.Create(&photoMetadata).Error; err != nil {
 		t.Fatal(err)
 	}
 	resources := []meta.PhotoResource{
@@ -217,6 +225,14 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		0,
 		nodes[0].ID,
 		nodes[2].ID,
+	)
+	favorite := true
+	assertIDs(
+		"favorite",
+		mediaQueryOptions{Favorite: &favorite},
+		"",
+		0,
+		nodes[0].ID,
 	)
 	withoutLocation := false
 	assertIDs(

@@ -289,6 +289,12 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 		t.Fatalf("photo metadata=%+v", assetMetadata)
 	}
 
+	if err := db.Model(&meta.PhotoMetadata{}).
+		Where("asset_id = ?", live.ID).
+		Update("favorite", true).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	idsBefore := make(map[uint64]uint64)
 	for _, asset := range assets {
 		idsBefore[asset.PrimaryNodeID] = asset.ID
@@ -299,6 +305,13 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 	var again []meta.PhotoAsset
 	if err := db.Where("owner_id = ?", owner.ID).Find(&again).Error; err != nil {
 		t.Fatal(err)
+	}
+	var favoriteMetadata meta.PhotoMetadata
+	if err := db.First(&favoriteMetadata, "asset_id = ?", live.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !favoriteMetadata.Favorite {
+		t.Fatal("favorite was overwritten by PhotoAsset reconciliation")
 	}
 	for _, asset := range again {
 		if idsBefore[asset.PrimaryNodeID] != asset.ID {

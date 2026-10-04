@@ -195,6 +195,41 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("ordinary photo asset=%+v", items[0])
 	}
 
+	favoriteResponse := request(
+		t,
+		router,
+		http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/items/%d/favorite", file.ID),
+		token,
+		strings.NewReader(`{"favorite":true}`),
+		http.StatusOK,
+	)
+	var favorite mediaFavoriteDTO
+	if err := json.Unmarshal(favoriteResponse.Body.Bytes(), &favorite); err != nil {
+		t.Fatal(err)
+	}
+	if !favorite.Favorite {
+		t.Fatalf("favorite response=%+v", favorite)
+	}
+	favoriteItemsResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/items?favorite=true&limit=100",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var favoriteItems []mediaItemDTO
+	if err := json.Unmarshal(favoriteItemsResponse.Body.Bytes(), &favoriteItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(favoriteItems) != 1 ||
+		favoriteItems[0].Node.ID != file.ID ||
+		!favoriteItems[0].Favorite {
+		t.Fatalf("favorite items=%+v", favoriteItems)
+	}
+
 	albumsResponse := request(
 		t,
 		router,
@@ -320,6 +355,9 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	}
 	if detail.Metadata.Width != 5 || detail.Metadata.Height != 4 {
 		t.Fatalf("reindexed metadata=%+v", detail.Metadata)
+	}
+	if !detail.Favorite {
+		t.Fatalf("favorite was lost after media re-index: %+v", detail)
 	}
 
 	var persisted meta.MediaMetadata

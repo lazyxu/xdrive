@@ -64,6 +64,7 @@ type MediaItem struct {
 	Node             Node                   `json:"node"`
 	Metadata         MediaMetadata          `json:"metadata"`
 	AssetKind        string                 `json:"asset_kind,omitempty"`
+	Favorite         bool                   `json:"favorite"`
 	Resources        []MediaResource        `json:"resources,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
@@ -85,6 +86,7 @@ type MediaQuery struct {
 	CapturedFrom *time.Time
 	CapturedTo   *time.Time
 	HasLocation  *bool
+	Favorite     *bool
 }
 
 func (q MediaQuery) add(values url.Values) {
@@ -105,6 +107,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if q.HasLocation != nil {
 		values.Set("has_location", strconv.FormatBool(*q.HasLocation))
+	}
+	if q.Favorite != nil {
+		values.Set("favorite", strconv.FormatBool(*q.Favorite))
 	}
 }
 
@@ -195,6 +200,26 @@ func (c *Client) MediaAlbumItemsQuery(
 	}
 	var out []MediaItem
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+type MediaFavorite struct {
+	Favorite bool `json:"favorite"`
+}
+
+func (c *Client) SetMediaFavorite(
+	ctx context.Context,
+	nodeID uint64,
+	favorite bool,
+) (MediaFavorite, error) {
+	var out MediaFavorite
+	err := c.json(
+		ctx,
+		http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/items/%d/favorite", nodeID),
+		map[string]bool{"favorite": favorite},
+		&out,
+	)
 	return out, err
 }
 
