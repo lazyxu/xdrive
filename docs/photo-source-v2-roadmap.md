@@ -60,7 +60,7 @@ The following foundations already exist and should be extended rather than repla
 - `SourceCollection` / `SourceCollectionItem` for optional provider collection provenance;
 - provenance-only `SourceItemMetadata` for original path, owner identity, remote create time, and provider MD5; media-semantic legacy columns are removed during migration;
 - canonical `MediaMetadata` for node-scoped parsing plus the derived `PhotoAsset` / `PhotoResource` / `PhotoMetadata` logical asset layer;
-- xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, versioned local relation evidence (`ImageUniqueID` / Apple `BurstUUID` / XMP Media Management IDs), derived thumbnail caching, and Gallery indexing;
+- xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, versioned local relation evidence (`ImageUniqueID` / Apple `BurstUUID` / XMP Media Management IDs), local JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails, derived thumbnail caching, and Gallery indexing;
 - Yike Pull stable `yike:<owner_uk>:<fsid>` identity, file/albums discovery, MD5 hint, Range download, resumable upload, bounded API rate, cancellation, and incomplete-inventory safety;
 - Synology Photos Pull stable `synology:<space>:<item_id>` identity, Personal/Shared spaces, file/albums discovery, Range download, cancellation, retry classification, and optional-album failure isolation;
 - Synology Push hybrid identity foundation: filesystem-complete inventory/fast byte reads plus optional Photos item-ID canonicalization with filesystem aliases and in-place promotion;
@@ -159,6 +159,36 @@ xDrive owns extraction of:
 - canonical thumbnails/previews.
 
 Provider timestamps may remain sync hints, but must not override valid embedded capture metadata.
+
+### Current format support matrix
+
+Support is tracked by capability rather than file extension alone. "Gallery" means the original is indexed and shown as a logical `PhotoAsset`; "thumbnail" means xDrive can generate its own local JPEG preview without provider thumbnails.
+
+| Format / family | Detection + metadata | Local thumbnail | Gallery presentation | Current limits |
+| --- | --- | --- | --- | --- |
+| JPEG / JPG | Complete for common EXIF/GPS/camera/lens fields | Complete | Complete | Animated/multi-picture JPEG variants are not treated as animation |
+| PNG | Dimensions/basic image metadata | Complete | Complete | No special animation handling |
+| GIF | Dimensions/basic image metadata | First-frame thumbnail | Complete as image | Animated GIF playback is not yet a Gallery feature |
+| HEIC / HEIF | Dimensions + supported embedded EXIF; Apple asset ID where present | Complete through local HEIC decoder | Complete | Apple Live Photo supported when deterministic local evidence exists |
+| WebP | Dimensions/basic image metadata | Complete through local WebP decoder | Complete | Animated WebP playback is not yet a Gallery feature |
+| AVIF | ISO-BMFF classification and dimensions | **Partial: no local AVIF thumbnail decoder yet** | Indexed with fallback tile | Keep marked partial until decoder/preview is verified |
+| TIFF | TIFF/EXIF/GPS metadata | Complete through local TIFF decoder | Complete | Common TIFF still images only |
+| BMP | Dimensions/basic metadata | Complete through local BMP decoder | Complete | Still image only |
+| DNG | TIFF/DNG metadata, EXIF/GPS, safe embedded-JPEG preview | Complete when a valid embedded JPEG preview exists | Complete; may become `raw_pair` | DNG without a safe embedded preview has no thumbnail |
+| CR3 / NEF / ARW / other RAW | Original file preserved | Not yet | Not yet native Gallery media | Parser work remains P6 |
+| `.livp` | Strict local container validation | Complete from embedded still resource | Complete as one `live_photo` asset | Original container remains one Node/CAS object |
+| Apple still + MOV Live Photo | Exact embedded Apple identifiers | Still thumbnail complete | Complete as one `live_photo` asset | No filename/time fallback |
+| MP4 / MOV / M4V / 3GP / 3G2 | ISO-BMFF duration/dimensions/rotation/frame-rate/codec where present | No ordinary video poster yet | Indexed as video | Ordinary Gallery playback needs authenticated Range streaming; Live Photo motion playback is already supported |
+| MKV / WebM / AVI / MTS / M2TS / MPEG / MPG | File type classification only | No | Indexed with fallback tile | Native technical metadata, poster and playback remain TODO |
+| XMP | Local relation evidence such as `DocumentID` / `DerivedFrom` | N/A | Not shown as standalone Gallery media | Can join a validated RAW/image asset as sidecar |
+| AAE | Original file preserved | N/A | Not shown as standalone Gallery media | No pairing without a deterministic embedded target identity |
+
+Phone-oriented status:
+
+- iPhone common still formats (JPEG/HEIC), common video containers (MOV/MP4), Apple Live Photo, and preserved `.livp` are supported by the shared local pipeline.
+- Manufacturer-specific Huawei/Xiaomi/OPPO/vivo/Samsung moving-photo protocols are intentionally deferred; do not infer them from filename or timestamp proximity.
+- Animated GIF/WebP files remain preserved originals and are indexed as images, but Gallery animation playback is a separate feature from thumbnail support.
+- Ordinary phone-video playback is intentionally not implemented through Desktop base64 IPC. It should use authenticated HTTP Range streaming so large 4K files do not have to be buffered in memory.
 
 ### Live Photo
 
@@ -312,14 +342,14 @@ The ordering keeps file synchronization independent from media enrichment:
 | P0 | Complete: scheduler, retries, cancellation, account coordination, SourceItemAlias, FileStation Pull | Complete |
 | P1 | Complete: basic read-only Source binding verifier | Complete |
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
-| P3 | Expand native media parser coverage from original files: EXIF/TIFF/GPS/video/container edge cases | Highest |
+| P3 | In progress: common phone still formats are indexed; JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails are local; AVIF preview, ordinary video poster/playback, and non-ISO video metadata remain | Highest |
 | P4 | Complete: connector-neutral `MediaGroup` evidence plus `PhotoAsset` / `PhotoResource` / `PhotoMetadata` / `PhotoCollection` logical projection | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata/preview plus exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are local; AAE without embedded target identity and other RAW formats remain ungrouped/TODO | High |
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
-| P10 | Expand Gallery filters/search from xDrive-native metadata such as local capture time and GPS | Medium |
+| P10 | In progress: expose logical PhotoAsset kinds/resources in Gallery; next add authenticated Range video playback/posters, animation playback, then filters/search from capture time/GPS | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
 
 Provider semantic metadata import is deliberately removed from the roadmap. If xDrive later implements people/tag/place recognition, it belongs to a separate connector-neutral media-analysis subsystem operating on local originals, not to Yike/Synology/FileStation connectors.

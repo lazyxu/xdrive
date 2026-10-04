@@ -235,6 +235,9 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 		First(&livp).Error; err != nil {
 		t.Fatal(err)
 	}
+	if livp.Kind != meta.PhotoAssetKindLivePhoto {
+		t.Fatalf("livp kind=%q want=%q", livp.Kind, meta.PhotoAssetKindLivePhoto)
+	}
 	var livpResources []meta.PhotoResource
 	if err := db.Where("asset_id = ?", livp.ID).Order("ordinal ASC").Find(&livpResources).Error; err != nil {
 		t.Fatal(err)

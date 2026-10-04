@@ -11,6 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/robfig/cron/v3 v3.0.0
 	golang.org/x/crypto v0.31.0
+	golang.org/x/image v0.23.0
 	golang.org/x/sys v0.28.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.5.11

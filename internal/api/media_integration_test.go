@@ -188,6 +188,12 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		!items[0].Metadata.HasThumbnail {
 		t.Fatalf("metadata=%+v", items[0].Metadata)
 	}
+	if items[0].AssetKind != meta.PhotoAssetKindImage ||
+		len(items[0].Resources) != 1 ||
+		items[0].Resources[0].Role != meta.PhotoResourceRolePrimary ||
+		items[0].Resources[0].NodeID != file.ID {
+		t.Fatalf("ordinary photo asset=%+v", items[0])
+	}
 
 	albumsResponse := request(
 		t,
@@ -353,6 +359,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if liveDetail.Metadata.MediaKind != meta.MediaKindImage ||
 		liveDetail.Metadata.ContainerKind != "livp" ||
 		liveDetail.Metadata.LivePhotoAssetIdentifier != liveIdentifier ||
+		liveDetail.AssetKind != meta.PhotoAssetKindLivePhoto ||
+		len(liveDetail.Resources) != 3 ||
 		len(liveDetail.DerivedResources) != 2 ||
 		!liveDetail.LivePhoto {
 		t.Fatalf("livp detail=%+v", liveDetail)
@@ -466,6 +474,8 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	}
 	if len(pairItems) != 1 ||
 		pairItems[0].Node.ID != pairStill.ID ||
+		pairItems[0].AssetKind != meta.PhotoAssetKindLivePhoto ||
+		len(pairItems[0].Resources) != 2 ||
 		!pairItems[0].LivePhoto {
 		t.Fatalf("standalone live photo Gallery items=%+v", pairItems)
 	}
