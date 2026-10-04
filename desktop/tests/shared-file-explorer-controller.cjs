@@ -388,3 +388,16 @@ test('shared FileExplorer controller owns folder-upload path planning and direct
     assert.equal(source.includes(".split('/').slice(0, -1)"), false, `${label} must not duplicate relative-path tree planning`)
   }
 })
+
+
+test('shared folder-upload planner preserves explicit dropped directories including empty folders', () => {
+  for (const token of [
+    'explicitDirectoryPaths: readonly string[] = []',
+    'const registerDirectoryPath = (relativePath: string) =>',
+    'for (const path of explicitDirectoryPaths) registerDirectoryPath(path)',
+    'directoryPaths = []',
+    'xDriveFileExplorerFolderUploadPlan(entries, directoryPaths)',
+  ]) {
+    assert.ok(shared.includes(token), `missing explicit folder-drop directory support: ${token}`)
+  }
+})

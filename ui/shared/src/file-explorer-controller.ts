@@ -905,23 +905,33 @@ function xDriveFileExplorerFolderUploadPathParts(relativePath: string) {
 
 export function xDriveFileExplorerFolderUploadPlan<TFile>(
   entries: readonly XDriveFileExplorerFolderUploadEntry<TFile>[],
+  explicitDirectoryPaths: readonly string[] = [],
 ) {
   const directories = new Map<string, XDriveFileExplorerFolderUploadDirectory>()
   const files: XDriveFileExplorerFolderUploadFile<TFile>[] = []
 
-  for (const entry of entries) {
-    const parts = xDriveFileExplorerFolderUploadPathParts(entry.relativePath)
-    const name = parts.at(-1)!
+  const registerDirectoryPath = (relativePath: string) => {
+    const parts = xDriveFileExplorerFolderUploadPathParts(relativePath)
     let parentPath = ''
-    for (const part of parts.slice(0, -1)) {
+    for (const part of parts) {
       const path = parentPath ? `${parentPath}/${part}` : part
       if (!directories.has(path)) directories.set(path, { path, parentPath, name: part })
       parentPath = path
     }
+  }
+
+  for (const path of explicitDirectoryPaths) registerDirectoryPath(path)
+
+  for (const entry of entries) {
+    const parts = xDriveFileExplorerFolderUploadPathParts(entry.relativePath)
+    const name = parts.at(-1)!
+    const directoryParts = parts.slice(0, -1)
+    if (directoryParts.length > 0) registerDirectoryPath(directoryParts.join('/'))
+    const directoryPath = directoryParts.join('/')
     files.push({
       file: entry.file,
       relativePath: parts.join('/'),
-      directoryPath: parentPath,
+      directoryPath,
       name,
     })
   }
@@ -968,13 +978,15 @@ export async function xDriveFileExplorerEnsureUploadDirectory<
 export async function xDriveFileExplorerResolveFolderUploadTargets<TFile>({
   rootParentID,
   entries,
+  directoryPaths = [],
   ensureDirectory,
 }: {
   rootParentID: number
   entries: readonly XDriveFileExplorerFolderUploadEntry<TFile>[]
+  directoryPaths?: readonly string[]
   ensureDirectory: (parentID: number, name: string) => Promise<number>
 }): Promise<XDriveFileExplorerResolvedFolderUploadFile<TFile>[]> {
-  const plan = xDriveFileExplorerFolderUploadPlan(entries)
+  const plan = xDriveFileExplorerFolderUploadPlan(entries, directoryPaths)
   const directoryIDs = new Map<string, number>([['', rootParentID]])
 
   for (const directory of plan.directories) {

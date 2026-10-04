@@ -8,6 +8,7 @@ const explorer = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 const propertiesDialog = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx'), 'utf8')
 const index = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'index.tsx'), 'utf8')
+const externalDrop = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts'), 'utf8')
 
 test('shared FileExplorer exports one reusable Web/Desktop shell', () => {
   assert.ok(index.includes("export * from './FileExplorer'"), 'shared MUI index does not export FileExplorer')
@@ -268,4 +269,28 @@ test('shared FileExplorer exposes file and folder upload commands', () => {
   assert.ok(explorer.includes('onUploadFolder?: () => void'), 'folder upload command contract is missing')
   assert.ok(explorer.includes('DriveFolderUploadRoundedIcon'), 'folder upload command icon is missing')
   assert.ok(explorer.includes('上传文件夹'), 'folder upload command label is missing')
+})
+
+
+test('shared FileExplorer recursively reads dropped folders before platform upload', () => {
+  for (const token of [
+    'xDriveFileExplorerReadExternalDrop',
+    'webkitGetAsEntry',
+    'createReader',
+    'readEntries',
+    'directories.add(relativePath)',
+    'files.push({ file, relativePath })',
+    "items.length === 0",
+  ]) {
+    assert.ok(externalDrop.includes(token), `missing shared dropped-folder reader: ${token}`)
+  }
+  assert.ok(index.includes("export * from './FileExplorerExternalDrop'"), 'external-drop reader must be exported')
+  for (const token of [
+    'onExternalFolderDrop?:',
+    'onExternalFolderDropToCrumb?:',
+    'await xDriveFileExplorerReadExternalDrop(dataTransfer)',
+    'payload.directories.length > 0',
+  ]) {
+    assert.ok(explorer.includes(token), `missing shared folder-drop dispatch: ${token}`)
+  }
 })
