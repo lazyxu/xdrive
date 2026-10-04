@@ -24,7 +24,17 @@ const (
 	Pass = "PASS"
 	Warn = "WARN"
 	Fail = "FAIL"
+
+	lowDiskWarningPercent   = uint64(10)
+	lowDiskWarningFreeBytes = uint64(20 * 1024 * 1024 * 1024)
 )
+
+func diskSpaceStatus(free, total uint64) string {
+	if total > 0 && free*100/total < lowDiskWarningPercent && free < lowDiskWarningFreeBytes {
+		return Warn
+	}
+	return Pass
+}
 
 type Check struct {
 	Name   string `json:"name"`

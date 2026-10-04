@@ -383,6 +383,7 @@ test('desktop global sync and diagnostic statuses use the cross-client MUI badge
   assert.ok(renderer.includes('tone={globalSyncState.tone}'), 'global sync status does not use the shared status badge')
   assert.ok(renderer.includes('ariaLabel="同步状态"'), 'global sync status lost its accessible label')
   assert.ok(renderer.includes("PASS: { label: '正常', tone: 'good' as const }"), 'diagnostic PASS status must map to the shared good tone')
+  assert.ok(renderer.includes("INFO: { label: '提示', tone: 'neutral' as const }"), 'diagnostic INFO status must map to the shared neutral tone')
   assert.ok(renderer.includes("WARN: { label: '需注意', tone: 'warning' as const }"), 'diagnostic WARN status must map to the shared warning tone')
   assert.ok(renderer.includes("FAIL: { label: '异常', tone: 'bad' as const }"), 'diagnostic FAIL status must map to the shared bad tone')
   assert.equal(renderer.includes('diagnostic-badge'), false, 'legacy diagnostic badge remains')

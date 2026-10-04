@@ -49,11 +49,7 @@ func PlatformChecks(mountPath string) []Check {
 func linuxDiskCheck(stat syscall.Statfs_t) Check {
 	free := uint64(stat.Bavail) * uint64(stat.Bsize)
 	total := uint64(stat.Blocks) * uint64(stat.Bsize)
-	status := Pass
-	if total > 0 && free*100/total < 10 {
-		status = Warn
-	}
-	return Check{Name: "disk space", Status: status, Detail: fmt.Sprintf("%s free of %s", FormatBytes(free), FormatBytes(total))}
+	return Check{Name: "disk space", Status: diskSpaceStatus(free, total), Detail: fmt.Sprintf("%s free of %s", FormatBytes(free), FormatBytes(total))}
 }
 
 func systemdCheck(name string, user bool, unit string) Check {

@@ -21,11 +21,7 @@ func PlatformChecks(mountPath string) []Check {
 		if err == nil {
 			var free, total, totalFree uint64
 			if err = windows.GetDiskFreeSpaceEx(path16, &free, &total, &totalFree); err == nil {
-				status := Pass
-				if total > 0 && free*100/total < 10 {
-					status = Warn
-				}
-				checks = append(checks, Check{Name: "disk space", Status: status, Detail: fmt.Sprintf("%s free of %s", FormatBytes(free), FormatBytes(total))})
+				checks = append(checks, Check{Name: "disk space", Status: diskSpaceStatus(free, total), Detail: fmt.Sprintf("%s free of %s", FormatBytes(free), FormatBytes(total))})
 			} else {
 				checks = append(checks, Check{Name: "disk space", Status: Warn, Detail: err.Error()})
 			}
