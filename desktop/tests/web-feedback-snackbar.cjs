@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
-const shareDialog = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'ShareDialog.tsx'), 'utf8') + fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
+const shareDialog = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(repoRoot, 'web', 'src', 'fileDialogAdapters.ts'), 'utf8') + fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
 const sharedFeedback = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FeedbackSnackbar.tsx'), 'utf8')
 
 test('Web ShareDialog reuses shared feedback snackbar', () => {
