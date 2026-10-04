@@ -350,7 +350,7 @@ func (c *agentController) CloudUploadWithConflictPolicy(
 	}
 	policy := client.UploadConflictPolicy(strings.TrimSpace(conflictPolicy))
 	switch policy {
-	case client.UploadConflictPolicyFail, client.UploadConflictPolicySkip, client.UploadConflictPolicyKeepBoth:
+	case client.UploadConflictPolicyFail, client.UploadConflictPolicySkip, client.UploadConflictPolicyKeepBoth, client.UploadConflictPolicyOverwrite:
 	default:
 		return agentCloudUploadResult{}, fmt.Errorf("invalid upload conflict policy %q", conflictPolicy)
 	}

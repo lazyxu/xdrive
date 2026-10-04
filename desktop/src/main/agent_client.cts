@@ -353,6 +353,8 @@ export type AgentCloudBatchResult = {
 
 export type AgentCloudUploadConflictPreflight = {
   conflict: boolean
+  target_type?: 'file' | 'dir'
+  can_overwrite?: boolean
 }
 
 export type AgentCloudUploadResult = {
@@ -1170,7 +1172,7 @@ export class AgentIPCClient {
     parentID: number,
     localPath: string,
     name: string,
-    conflictPolicy: 'fail' | 'skip' | 'keep_both',
+    conflictPolicy: 'fail' | 'skip' | 'keep_both' | 'overwrite',
   ) {
     return this.request<AgentCloudUploadResult>('POST', '/v1/cloud/upload/conflict', {
       parent_id: parentID,

@@ -156,9 +156,10 @@ const (
 	UploadStatusFinalized = "finalized"
 	UploadStatusSkipped   = "skipped"
 
-	UploadConflictPolicyFail     = "fail"
-	UploadConflictPolicySkip     = "skip"
-	UploadConflictPolicyKeepBoth = "keep_both"
+	UploadConflictPolicyFail      = "fail"
+	UploadConflictPolicySkip      = "skip"
+	UploadConflictPolicyKeepBoth  = "keep_both"
+	UploadConflictPolicyOverwrite = "overwrite"
 )
 
 func NormalizeUploadConflictPolicy(value string) (string, bool) {
@@ -167,7 +168,7 @@ func NormalizeUploadConflictPolicy(value string) (string, bool) {
 		return UploadConflictPolicyFail, true
 	}
 	switch value {
-	case UploadConflictPolicyFail, UploadConflictPolicySkip, UploadConflictPolicyKeepBoth:
+	case UploadConflictPolicyFail, UploadConflictPolicySkip, UploadConflictPolicyKeepBoth, UploadConflictPolicyOverwrite:
 		return value, true
 	default:
 		return "", false

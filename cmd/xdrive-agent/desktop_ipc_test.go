@@ -374,7 +374,9 @@ func (f *fakeDesktopIPCController) CloudUploadConflictPreflight(
 ) (client.UploadConflictPreflight, error) {
 	f.cloudPreflightParent = parentID
 	f.cloudPreflightName = name
-	return client.UploadConflictPreflight{Conflict: true}, f.err
+	return client.UploadConflictPreflight{
+		Conflict: true, TargetType: "file", CanOverwrite: true,
+	}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudUploadWithConflictPolicy(

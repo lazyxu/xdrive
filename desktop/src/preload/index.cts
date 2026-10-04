@@ -143,7 +143,7 @@ const agent = Object.freeze({
   cloudUploadFile: (
     parentID: number,
     file: unknown,
-    conflictPolicy: 'fail' | 'skip' | 'keep_both',
+    conflictPolicy: 'fail' | 'skip' | 'keep_both' | 'overwrite',
   ) => ipcRenderer.invoke(
     'agent:cloud-upload-file',
     parentID,

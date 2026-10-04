@@ -1,11 +1,20 @@
-export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both'
+export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both' | 'overwrite'
 
 export type XDriveUploadConflictResolution = Exclude<XDriveUploadConflictPolicy, 'fail'>
 
 export type XDriveUploadConflictPreflight = {
   conflict: boolean
+  target_type?: 'file' | 'dir'
+  can_overwrite?: boolean
 }
 
+export function xDriveUploadConflictCanOverwrite(
+  preflight: XDriveUploadConflictPreflight,
+) {
+  return preflight.conflict &&
+    preflight.target_type === 'file' &&
+    preflight.can_overwrite === true
+}
 
 export type XDriveUploadConflictDecision = XDriveUploadConflictResolution | 'cancel'
 

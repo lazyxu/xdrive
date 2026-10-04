@@ -72,7 +72,7 @@ import type {
   XDriveCloudFilesPort,
   XDriveUploadConflictPolicy,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive, xDriveUploadBatchSummary } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive, xDriveUploadBatchSummary, xDriveUploadConflictCanOverwrite } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -781,7 +781,9 @@ function FileManager({
         try {
           const preflight = await api.uploadConflictPreflight(parentID, file.name)
           if (preflight.conflict) {
-            const decision = await uploadConflicts.resolveConflict(file.name)
+            const decision = await uploadConflicts.resolveConflict(file.name, {
+              canOverwrite: xDriveUploadConflictCanOverwrite(preflight),
+            })
             if (decision === 'cancel') {
               cancelled = true
               break

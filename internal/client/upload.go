@@ -30,13 +30,16 @@ type UploadResult struct {
 type UploadConflictPolicy string
 
 type UploadConflictPreflight struct {
-	Conflict bool `json:"conflict"`
+	Conflict     bool   `json:"conflict"`
+	TargetType   string `json:"target_type,omitempty"`
+	CanOverwrite bool   `json:"can_overwrite,omitempty"`
 }
 
 const (
-	UploadConflictPolicyFail     UploadConflictPolicy = "fail"
-	UploadConflictPolicySkip     UploadConflictPolicy = "skip"
-	UploadConflictPolicyKeepBoth UploadConflictPolicy = "keep_both"
+	UploadConflictPolicyFail      UploadConflictPolicy = "fail"
+	UploadConflictPolicySkip      UploadConflictPolicy = "skip"
+	UploadConflictPolicyKeepBoth  UploadConflictPolicy = "keep_both"
+	UploadConflictPolicyOverwrite UploadConflictPolicy = "overwrite"
 )
 
 type UploadInit struct {
@@ -164,7 +167,7 @@ func (c *Client) UploadFileResumableWithConflictPolicyResult(
 	progress UploadProgress,
 ) (UploadResult, error) {
 	switch policy {
-	case UploadConflictPolicyFail, UploadConflictPolicySkip, UploadConflictPolicyKeepBoth:
+	case UploadConflictPolicyFail, UploadConflictPolicySkip, UploadConflictPolicyKeepBoth, UploadConflictPolicyOverwrite:
 	default:
 		return UploadResult{}, fmt.Errorf("invalid upload conflict policy %q", policy)
 	}
