@@ -1,3 +1,4 @@
+import { Box } from '@mui/material'
 import type { ComponentProps } from 'react'
 import {
   XDriveShareDialog,
@@ -42,7 +43,21 @@ export function DesktopFilesPage({
   onFileDialogFeedback: (message: string) => void
 }) {
   return (
-    <section className="cloud-explorer-panel">
+    <Box
+      component="section"
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        bgcolor: 'background.paper',
+        '& > [data-xdrive-file-explorer]': {
+          flex: 1,
+          minHeight: 0,
+        },
+      }}
+    >
       {quota?.over_quota ? (
         <XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>
           存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
@@ -78,6 +93,6 @@ export function DesktopFilesPage({
         listVariant="compact"
         showCloseAction
       />
-    </section>
+    </Box>
   )
 }

@@ -122,20 +122,21 @@ test('Desktop Files uses shared workspace content for full-bleed Explorer layout
   assert.equal(styles.includes('.content-files-workspace {'), false, 'Desktop must not retain local Files workspace layout CSS')
   assert.equal(styles.includes('.content {'), false, 'Desktop must not retain local page-content layout CSS')
 
-  const workspaceStart = styles.indexOf('.cloud-explorer-panel {')
-  assert.ok(workspaceStart >= 0, 'Desktop Explorer-local CSS is missing')
-  const workspaceStyles = styles.slice(workspaceStart)
   for (const token of [
-    'flex: 1;',
-    'min-height: 0;',
-    'margin-top: 0;',
-    'border: 0;',
-    'border-radius: 0;',
-    '.cloud-explorer-panel > [data-xdrive-file-explorer]',
+    "import { Box } from '@mui/material'",
+    '<Box',
+    'component="section"',
+    'flex: 1,',
+    'minHeight: 0,',
+    "flexDirection: 'column'",
+    "overflow: 'hidden'",
+    "bgcolor: 'background.paper'",
+    "'& > [data-xdrive-file-explorer]'",
   ]) {
-    assert.ok(workspaceStyles.includes(token), `missing Explorer-local rule: ${token}`)
+    assert.ok(filesPage.includes(token), `missing MUI Explorer host rule: ${token}`)
   }
-  assert.equal(workspaceStyles.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use hard-coded viewport subtraction')
+  assert.equal(styles.includes('.cloud-explorer-panel {'), false, 'Desktop Files host must not retain local CSS')
+  assert.equal(filesPage.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use hard-coded viewport subtraction')
   assert.ok(filesPage.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'), 'over-quota warning should remain an inset workspace strip')
 })
 
@@ -201,8 +202,9 @@ test('Desktop FileExplorer supplies preview/properties metadata through existing
 })
 
 test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-shared Explorer CSS', () => {
-  assert.ok(filesPage.includes('<section className="cloud-explorer-panel">'), 'Desktop Files should use only its workspace container')
-  assert.equal(filesPage.includes('panel cloud-panel cloud-explorer-panel'), false, 'Desktop Files must not inherit generic dashboard panel chrome')
+  assert.ok(filesPage.includes('<Box'), 'Desktop Files should use a MUI workspace host')
+  assert.ok(filesPage.includes('component="section"'), 'Desktop Files should preserve section semantics')
+  assert.equal(filesPage.includes('cloud-explorer-panel'), false, 'Desktop Files must not retain the legacy Explorer host class')
 
   for (const selector of [
     '.cloud-panel {',
