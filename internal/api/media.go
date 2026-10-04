@@ -95,6 +95,7 @@ type mediaAlbumDTO struct {
 	ID          string     `json:"id"`
 	Kind        string     `json:"kind"`
 	Name        string     `json:"name"`
+	Revision    uint64     `json:"revision,omitempty"`
 	ItemCount   int64      `json:"item_count"`
 	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
@@ -160,7 +161,6 @@ func (s *Server) listMediaItems(c *gin.Context) {
 		userID(c),
 		options,
 		"",
-		0,
 		limit,
 		offset,
 	)
@@ -266,6 +266,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		ExternalKey string
 		Kind        string
 		Name        string
+		Revision    uint64
 		ItemCount   int64
 		CoverNodeID *uint64
 		UpdatedAt   *time.Time
@@ -274,17 +275,17 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 	if err := s.DB.WithContext(c.Request.Context()).
 		Table("xd_photo_collections AS pc").
 		Select(
-			"pc.external_key, pc.kind, pc.name, COUNT(DISTINCT pca.asset_id) AS item_count, "+
+			"pc.external_key, pc.kind, pc.name, pc.revision, COUNT(DISTINCT pca.asset_id) AS item_count, "+
 				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
 				"MAX(COALESCE(pm.captured_at, pc.updated_at)) AS updated_at",
 			thumbnailMIMEs,
 		).
-		Joins("JOIN xd_photo_collection_assets AS pca ON pca.collection_id = pc.id").
-		Joins("JOIN xd_photo_assets AS pa ON pa.id = pca.asset_id AND pa.owner_id = pc.owner_id").
-		Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
-		Joins("JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
+		Joins("LEFT JOIN xd_photo_collection_assets AS pca ON pca.collection_id = pc.id").
+		Joins("LEFT JOIN xd_photo_assets AS pa ON pa.id = pca.asset_id AND pa.owner_id = pc.owner_id").
+		Joins("LEFT JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
+		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
 		Where("pc.owner_id = ? AND pc.state = ?", uid, meta.PhotoCollectionStateActive).
-		Group("pc.id, pc.external_key, pc.kind, pc.name").
+		Group("pc.id, pc.external_key, pc.kind, pc.name, pc.revision").
 		Order("updated_at DESC, lower(pc.name) ASC").
 		Scan(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list media albums failed")
@@ -301,6 +302,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 			ID:          row.ExternalKey,
 			Kind:        kind,
 			Name:        row.Name,
+			Revision:    row.Revision,
 			ItemCount:   row.ItemCount,
 			CoverNodeID: row.CoverNodeID,
 			UpdatedAt:   row.UpdatedAt,
@@ -320,13 +322,7 @@ func (s *Server) listMediaAlbumItems(c *gin.Context) {
 		return
 	}
 	raw := strings.TrimSpace(c.Param("albumID"))
-	parts := strings.SplitN(raw, ":", 2)
-	if len(parts) != 2 {
-		fail(c, http.StatusBadRequest, "invalid media album id")
-		return
-	}
-	id, err := strconv.ParseUint(parts[1], 10, 64)
-	if err != nil || id == 0 {
+	if !validMediaAlbumKey(raw) {
 		fail(c, http.StatusBadRequest, "invalid media album id")
 		return
 	}
@@ -342,8 +338,7 @@ func (s *Server) listMediaAlbumItems(c *gin.Context) {
 		c.Request.Context(),
 		userID(c),
 		options,
-		parts[0],
-		id,
+		raw,
 		limit,
 		offset,
 	)
@@ -357,6 +352,20 @@ func (s *Server) listMediaAlbumItems(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, items)
+}
+
+func validMediaAlbumKey(value string) bool {
+	value = strings.TrimSpace(value)
+	for _, prefix := range []string{
+		meta.PhotoCollectionKindFolder + ":",
+		meta.PhotoCollectionKindSource + ":",
+		meta.PhotoCollectionKindManual + ":",
+	} {
+		if strings.HasPrefix(value, prefix) && len(value) > len(prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func mediaListWindow(c *gin.Context) (int, int, bool) {
@@ -385,8 +394,7 @@ func (s *Server) queryMediaItems(
 	ctx context.Context,
 	uid uint64,
 	options mediaQueryOptions,
-	albumKind string,
-	albumID uint64,
+	albumKey string,
 	limit, offset int,
 ) ([]mediaItemDTO, error) {
 	query := s.DB.WithContext(ctx).
@@ -406,17 +414,16 @@ func (s *Server) queryMediaItems(
 		)
 	query = applyMediaQueryFilters(query, options)
 
-	if albumKind != "" {
-		if albumKind != meta.PhotoCollectionKindFolder && albumKind != meta.PhotoCollectionKindSource {
+	if albumKey != "" {
+		if !validMediaAlbumKey(albumKey) {
 			return nil, gorm.ErrRecordNotFound
 		}
-		key := fmt.Sprintf("%s:%d", albumKind, albumID)
 		var collection meta.PhotoCollection
 		if err := s.DB.WithContext(ctx).
 			Where(
 				"owner_id = ? AND external_key = ? AND state = ?",
 				uid,
-				key,
+				albumKey,
 				meta.PhotoCollectionStateActive,
 			).
 			First(&collection).Error; err != nil {

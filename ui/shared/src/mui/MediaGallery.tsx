@@ -16,6 +16,7 @@ import {
   Chip,
   CircularProgress,
   Dialog,
+  DialogActions,
   IconButton,
   MenuItem,
   Paper,
@@ -56,6 +57,11 @@ export interface MediaGalleryDataSource {
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
+  createAlbum?: (name: string) => Promise<MediaAlbum>
+  renameAlbum?: (albumID: string, revision: number, name: string) => Promise<MediaAlbum>
+  deleteAlbum?: (albumID: string, revision: number) => Promise<void>
+  addToAlbum?: (albumID: string, revision: number, nodeIDs: number[]) => Promise<MediaAlbum>
+  removeFromAlbum?: (albumID: string, revision: number, nodeID: number) => Promise<MediaAlbum>
 }
 
 export interface XDriveMediaGalleryPageProps {
@@ -260,6 +266,11 @@ export function XDriveMediaGalleryPage({
   const [error, setError] = useState('')
   const requestID = useRef(0)
 
+  const replaceAlbum = useCallback((next: MediaAlbum) => {
+    setAlbums((current) => current.map((album) => album.id === next.id ? next : album))
+    setCurrentAlbum((current) => current?.id === next.id ? next : current)
+  }, [])
+
   const loadFirstPage = useCallback(async (
     album: MediaAlbum | null,
     nextQuery: MediaGalleryQuery,
@@ -339,6 +350,46 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(currentAlbum, {})
   }, [currentAlbum, loadFirstPage])
 
+  const createAlbum = useCallback(async (name: string) => {
+    if (!source.createAlbum) throw new Error('当前客户端不支持创建相册')
+    const created = await source.createAlbum(name)
+    setAlbums((current) => [created, ...current.filter((album) => album.id !== created.id)])
+    return created
+  }, [source])
+
+  const renameAlbum = useCallback(async (album: MediaAlbum, name: string) => {
+    if (!source.renameAlbum || !album.revision) throw new Error('当前相册不可重命名')
+    const updated = await source.renameAlbum(album.id, album.revision, name)
+    replaceAlbum(updated)
+    return updated
+  }, [replaceAlbum, source])
+
+  const deleteAlbum = useCallback(async (album: MediaAlbum) => {
+    if (!source.deleteAlbum || !album.revision) throw new Error('当前相册不可删除')
+    await source.deleteAlbum(album.id, album.revision)
+    setAlbums((current) => current.filter((value) => value.id !== album.id))
+    if (currentAlbum?.id === album.id) {
+      await loadFirstPage(null, query)
+    }
+  }, [currentAlbum?.id, loadFirstPage, query, source])
+
+  const addToAlbum = useCallback(async (album: MediaAlbum, item: MediaItem) => {
+    if (!source.addToAlbum || !album.revision) throw new Error('当前相册不可编辑')
+    const updated = await source.addToAlbum(album.id, album.revision, [item.node.id])
+    replaceAlbum(updated)
+    return updated
+  }, [replaceAlbum, source])
+
+  const removeFromAlbum = useCallback(async (album: MediaAlbum, item: MediaItem) => {
+    if (!source.removeFromAlbum || !album.revision) throw new Error('当前相册不可编辑')
+    const updated = await source.removeFromAlbum(album.id, album.revision, item.node.id)
+    replaceAlbum(updated)
+    if (currentAlbum?.id === album.id) {
+      await loadFirstPage(updated, query)
+    }
+    return updated
+  }, [currentAlbum?.id, loadFirstPage, query, replaceAlbum, source])
+
   const setFavorite = useCallback(async (
     item: MediaItem,
     favorite: boolean,
@@ -392,6 +443,11 @@ export function XDriveMediaGalleryPage({
         loadLivePhotoMotion={source.loadLivePhotoMotion}
         loadVideo={source.loadVideo}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
+        onCreateAlbum={source.createAlbum ? createAlbum : undefined}
+        onRenameAlbum={source.renameAlbum ? renameAlbum : undefined}
+        onDeleteAlbum={source.deleteAlbum ? deleteAlbum : undefined}
+        onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
+        onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
         onOpenAlbum={(album) => void loadFirstPage(album, query)}
         onBack={() => void loadFirstPage(null, query)}
         onLoadMore={() => void loadMore()}
@@ -413,6 +469,11 @@ export interface XDriveMediaGalleryProps {
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onCreateAlbum?: (name: string) => Promise<MediaAlbum>
+  onRenameAlbum?: (album: MediaAlbum, name: string) => Promise<MediaAlbum>
+  onDeleteAlbum?: (album: MediaAlbum) => Promise<void>
+  onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
+  onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onOpenAlbum?: (album: MediaAlbum) => void
   onBack?: () => void
   onLoadMore?: () => void
@@ -757,19 +818,30 @@ function MediaDetails({
   loadThumbnail,
   loadLivePhotoMotion,
   loadVideo,
+  albums,
+  currentAlbum,
   onSetFavorite,
+  onAddToAlbum,
+  onRemoveFromAlbum,
   onClose,
 }: {
   item: MediaItem | null
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
+  albums: MediaAlbum[]
+  currentAlbum?: MediaAlbum | null
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
+  onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onClose: () => void
 }) {
   const [playbackURL, setPlaybackURL] = useState('')
   const [playbackLoading, setPlaybackLoading] = useState(false)
   const [playbackError, setPlaybackError] = useState('')
+  const [targetAlbumID, setTargetAlbumID] = useState('')
+  const [albumBusy, setAlbumBusy] = useState(false)
+  const [albumError, setAlbumError] = useState('')
   const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
   const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
   const animatedImage = Boolean(
@@ -983,6 +1055,72 @@ function MediaDetails({
                 </Button>
               </Box>
             ) : null}
+            {(onAddToAlbum || (currentAlbum?.kind === 'manual' && onRemoveFromAlbum)) ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>相册</Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  {onAddToAlbum ? (
+                    <>
+                      <TextField
+                        select
+                        size="small"
+                        label="添加到手动相册"
+                        value={targetAlbumID}
+                        onChange={(event) => {
+                          setTargetAlbumID(event.target.value)
+                          setAlbumError('')
+                        }}
+                        sx={{ minWidth: 220, flex: 1 }}
+                      >
+                        <MenuItem value="">选择相册</MenuItem>
+                        {albums.filter((album) => album.kind === 'manual').map((album) => (
+                          <MenuItem key={album.id} value={album.id}>
+                            {album.name}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                      <Button
+                        variant="outlined"
+                        disabled={!targetAlbumID || albumBusy}
+                        onClick={() => {
+                          const album = albums.find((value) => value.id === targetAlbumID)
+                          if (!album) return
+                          setAlbumBusy(true)
+                          setAlbumError('')
+                          void onAddToAlbum(album, item)
+                            .then(() => setTargetAlbumID(''))
+                            .catch((error) => setAlbumError(errorMessage(error)))
+                            .finally(() => setAlbumBusy(false))
+                        }}
+                      >
+                        添加
+                      </Button>
+                    </>
+                  ) : null}
+                  {currentAlbum?.kind === 'manual' && onRemoveFromAlbum ? (
+                    <Button
+                      color="error"
+                      variant="outlined"
+                      disabled={albumBusy}
+                      onClick={() => {
+                        setAlbumBusy(true)
+                        setAlbumError('')
+                        void onRemoveFromAlbum(currentAlbum, item)
+                          .catch((error) => setAlbumError(errorMessage(error)))
+                          .finally(() => setAlbumBusy(false))
+                      }}
+                    >
+                      从当前相册移除
+                    </Button>
+                  ) : null}
+                </Stack>
+                {albumError ? (
+                  <Box sx={{ mt: 1 }}>
+                    <XDriveStatusAlert tone="bad">{albumError}</XDriveStatusAlert>
+                  </Box>
+                ) : null}
+              </Box>
+            ) : null}
             {item.metadata.index_error ? (
               <XDriveStatusAlert tone="warning">
                 部分媒体元数据未能解析：{item.metadata.index_error}
@@ -1048,12 +1186,28 @@ export function XDriveMediaGallery({
   loadLivePhotoMotion,
   loadVideo,
   onSetFavorite,
+  onCreateAlbum,
+  onRenameAlbum,
+  onDeleteAlbum,
+  onAddToAlbum,
+  onRemoveFromAlbum,
   onOpenAlbum,
   onBack,
   onLoadMore,
   onRefresh,
 }: XDriveMediaGalleryProps) {
   const [selected, setSelected] = useState<MediaItem | null>(null)
+  const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
+  const [albumName, setAlbumName] = useState('')
+  const [albumDialogBusy, setAlbumDialogBusy] = useState(false)
+  const [albumDialogError, setAlbumDialogError] = useState('')
+  const [deleteAlbumOpen, setDeleteAlbumOpen] = useState(false)
+
+  const openAlbumDialog = (mode: 'create' | 'rename', album?: MediaAlbum) => {
+    setAlbumDialog({ mode, album })
+    setAlbumName(album?.name || '')
+    setAlbumDialogError('')
+  }
 
   const toggleFavorite = useCallback(async (item: MediaItem) => {
     if (!onSetFavorite) return
@@ -1086,6 +1240,21 @@ export function XDriveMediaGallery({
               : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'}
           </Typography>
         </Box>
+        {!currentAlbum && onCreateAlbum ? (
+          <Button size="small" variant="outlined" onClick={() => openAlbumDialog('create')}>
+            新建相册
+          </Button>
+        ) : null}
+        {currentAlbum?.kind === 'manual' && onRenameAlbum ? (
+          <Button size="small" variant="text" onClick={() => openAlbumDialog('rename', currentAlbum)}>
+            重命名
+          </Button>
+        ) : null}
+        {currentAlbum?.kind === 'manual' && onDeleteAlbum ? (
+          <Button size="small" color="error" variant="text" onClick={() => setDeleteAlbumOpen(true)}>
+            删除相册
+          </Button>
+        ) : null}
         {onRefresh ? (
           <Tooltip title="刷新">
             <span>
@@ -1170,7 +1339,11 @@ export function XDriveMediaGallery({
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {album.item_count.toLocaleString('zh-CN')} 个项目
-                    {album.kind === 'imported' ? ' · 导入相册' : ''}
+                    {album.kind === 'imported'
+                      ? ' · 导入相册'
+                      : album.kind === 'manual'
+                        ? ' · 手动相册'
+                        : ''}
                   </Typography>
                 </Box>
               </Paper>
@@ -1327,6 +1500,10 @@ export function XDriveMediaGallery({
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadVideo={loadVideo}
+        albums={albums}
+        currentAlbum={currentAlbum}
+        onAddToAlbum={onAddToAlbum}
+        onRemoveFromAlbum={onRemoveFromAlbum}
         onSetFavorite={onSetFavorite ? async (item, favorite) => {
           await onSetFavorite(item, favorite)
           setSelected((current) => (
@@ -1337,6 +1514,106 @@ export function XDriveMediaGallery({
         } : undefined}
         onClose={() => setSelected(null)}
       />
+      <Dialog
+        open={Boolean(albumDialog)}
+        onClose={() => !albumDialogBusy && setAlbumDialog(null)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title={albumDialog?.mode === 'rename' ? '重命名相册' : '新建相册'}
+          onClose={() => !albumDialogBusy && setAlbumDialog(null)}
+        />
+        <XDriveDialogContent dividers>
+          <Stack spacing={1.5}>
+            <TextField
+              autoFocus
+              label="相册名称"
+              value={albumName}
+              onChange={(event) => {
+                setAlbumName(event.target.value)
+                setAlbumDialogError('')
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && albumName.trim() && !albumDialogBusy) {
+                  event.preventDefault()
+                  const task = albumDialog?.mode === 'rename' && albumDialog.album && onRenameAlbum
+                    ? onRenameAlbum(albumDialog.album, albumName.trim())
+                    : onCreateAlbum
+                      ? onCreateAlbum(albumName.trim())
+                      : Promise.reject(new Error('当前客户端不支持相册编辑'))
+                  setAlbumDialogBusy(true)
+                  void task
+                    .then(() => setAlbumDialog(null))
+                    .catch((error) => setAlbumDialogError(errorMessage(error)))
+                    .finally(() => setAlbumDialogBusy(false))
+                }
+              }}
+            />
+            {albumDialogError ? <XDriveStatusAlert tone="bad">{albumDialogError}</XDriveStatusAlert> : null}
+          </Stack>
+        </XDriveDialogContent>
+        <DialogActions>
+          <Button onClick={() => setAlbumDialog(null)} disabled={albumDialogBusy}>取消</Button>
+          <Button
+            variant="contained"
+            disabled={!albumName.trim() || albumDialogBusy}
+            onClick={() => {
+              const task = albumDialog?.mode === 'rename' && albumDialog.album && onRenameAlbum
+                ? onRenameAlbum(albumDialog.album, albumName.trim())
+                : onCreateAlbum
+                  ? onCreateAlbum(albumName.trim())
+                  : Promise.reject(new Error('当前客户端不支持相册编辑'))
+              setAlbumDialogBusy(true)
+              setAlbumDialogError('')
+              void task
+                .then(() => setAlbumDialog(null))
+                .catch((error) => setAlbumDialogError(errorMessage(error)))
+                .finally(() => setAlbumDialogBusy(false))
+            }}
+          >
+            {albumDialog?.mode === 'rename' ? '保存' : '创建'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={deleteAlbumOpen}
+        onClose={() => !albumDialogBusy && setDeleteAlbumOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title="删除相册"
+          onClose={() => !albumDialogBusy && setDeleteAlbumOpen(false)}
+        />
+        <XDriveDialogContent dividers>
+          <Typography variant="body2">
+            删除手动相册“{currentAlbum?.name || ''}”只会删除相册关系，不会删除其中的照片或视频。
+          </Typography>
+        </XDriveDialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteAlbumOpen(false)} disabled={albumDialogBusy}>取消</Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={!currentAlbum || albumDialogBusy || !onDeleteAlbum}
+            onClick={() => {
+              if (!currentAlbum || !onDeleteAlbum) return
+              setAlbumDialogBusy(true)
+              void onDeleteAlbum(currentAlbum)
+                .then(() => setDeleteAlbumOpen(false))
+                .catch((error) => setAlbumDialogError(errorMessage(error)))
+                .finally(() => setAlbumDialogBusy(false))
+            }}
+          >
+            删除
+          </Button>
+        </DialogActions>
+      </Dialog>
+
     </Stack>
   )
 }

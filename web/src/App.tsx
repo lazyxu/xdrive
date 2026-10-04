@@ -509,6 +509,11 @@ function FileManager({
   const gallerySource = useMemo<MediaGalleryDataSource>(() => ({
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listAlbums: () => api.mediaAlbums(),
+    createAlbum: (name) => api.createMediaAlbum(name),
+    renameAlbum: (albumID, revision, name) => api.renameMediaAlbum(albumID, revision, name),
+    deleteAlbum: (albumID, revision) => api.deleteMediaAlbum(albumID, revision),
+    addToAlbum: (albumID, revision, nodeIDs) => api.addMediaAlbumItems(albumID, revision, nodeIDs),
+    removeFromAlbum: (albumID, revision, nodeID) => api.removeMediaAlbumItem(albumID, revision, nodeID),
     listAlbumItems: (albumID, limit, offset, query) => api.mediaAlbumItems(
       albumID,
       limit,

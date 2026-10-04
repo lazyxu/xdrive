@@ -466,6 +466,55 @@ export class XDriveApi {
     return this.request<MediaAlbum[]>('/api/v1/media/albums')
   }
 
+  createMediaAlbum(name: string) {
+    return this.request<MediaAlbum>('/api/v1/media/albums', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  renameMediaAlbum(albumID: string, revision: number, name: string) {
+    return this.request<MediaAlbum>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}`,
+      {
+        method: 'PATCH',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify({ name }),
+      },
+    )
+  }
+
+  deleteMediaAlbum(albumID: string, revision: number) {
+    return this.request<void>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}`,
+      {
+        method: 'DELETE',
+        headers: { 'If-Match': `"${revision}"` },
+      },
+    )
+  }
+
+  addMediaAlbumItems(albumID: string, revision: number, nodeIDs: number[]) {
+    return this.request<MediaAlbum>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}/items`,
+      {
+        method: 'POST',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify({ node_ids: nodeIDs }),
+      },
+    )
+  }
+
+  removeMediaAlbumItem(albumID: string, revision: number, nodeID: number) {
+    return this.request<MediaAlbum>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}/items/${nodeID}`,
+      {
+        method: 'DELETE',
+        headers: { 'If-Match': `"${revision}"` },
+      },
+    )
+  }
+
   mediaAlbumItems(
     albumID: string,
     limit = 100,

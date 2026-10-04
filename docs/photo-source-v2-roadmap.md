@@ -238,6 +238,8 @@ Gallery filtering, search, and favorites operate only on xDrive-local canonical 
 - capture-date filters use local `MediaMetadata.captured_at` only; files without a parsed capture time do not masquerade as captured on their upload/create date;
 - location filters distinguish assets with both local latitude+longitude from assets without complete GPS coordinates;
 - favorite filters use local user-owned `PhotoMetadata.favorite` state;
+- manual albums are user-owned `PhotoCollection(kind=manual)` rows with optimistic revisions; adding/removing media changes only `PhotoCollectionAsset` membership and never copies or deletes Node/File/CAS content;
+- empty manual albums remain visible, while folder/imported collections continue to be rebuildable projections;
 - filtering happens in the paginated SQL query, not only against the items already loaded by the renderer.
 
 Favorite changes are written only to local Photo-domain state. `PhotoAsset` reconciliation deliberately excludes `favorite` from its technical-metadata upsert columns, so EXIF re-indexing, RAW/Live Photo regrouping, or provider outages cannot erase a user's favorite choice. Provider favorite flags are neither imported nor written back.
@@ -382,6 +384,7 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | RAW/JPEG/XMP/AAE/burst grouping | Current local subset: DNG/rendered exact ImageUniqueID, XMP explicit DerivedFrom, Apple BurstUUID; AAE/other RAW TODO | Same shared local pipeline | Same shared local pipeline |
 | People/tags/favorite/description from provider | Not used by design | Not used by design | Not used by design |
 | Local user favorite | Current shared PhotoMetadata state | Same local Photo-domain feature | Same local Photo-domain feature |
+| Local manual albums | Current shared PhotoCollection membership; no provider writeback | Same local Photo-domain feature | Same local Photo-domain feature |
 | Reliable incremental cursor | TODO only if proven | TODO only if proven | TODO only if proven |
 | Backup deletion safety | Current | Current | Current |
 | Mirror-to-trash | TODO | TODO | TODO |
@@ -404,7 +407,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
-| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters (filename/camera/lens, asset kind, capture date, GPS presence), and local user favorites are shared by Web/Desktop; next add richer saved/manual/smart collections | Medium |
+| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, and user-managed manual albums are shared by Web/Desktop; next add saved searches/smart collections and richer local facets | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
 
 Provider semantic metadata import is deliberately removed from the roadmap. If xDrive later implements people/tag/place recognition, it belongs to a separate connector-neutral media-analysis subsystem operating on local originals, not to Yike/Synology/FileStation connectors.
@@ -427,7 +430,7 @@ Before calling this subsystem mature:
 - relation-evidence version/JSON corruption is detectable locally and stale evidence is re-indexed without provider access;
 - integrity verification detects local binding/media corruption without mutating anything;
 - repair rebuilds local derived state without writing to the provider;
-- Gallery search/filter results and local favorite state remain usable with all providers offline.
+- Gallery search/filter results, local favorite state, and manual album membership remain usable with all providers offline.
 
 ## Explicit non-goals
 

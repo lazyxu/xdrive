@@ -475,6 +475,7 @@ export type AgentMediaAlbum = {
   id: string
   kind: string
   name: string
+  revision?: number
   item_count: number
   cover_node_id?: number
   updated_at?: string
@@ -782,6 +783,41 @@ export class AgentIPCClient {
 
   mediaAlbums() {
     return this.request<AgentMediaAlbum[]>('GET', '/v1/media/albums')
+  }
+
+  createMediaAlbum(name: string) {
+    return this.request<AgentMediaAlbum>('POST', '/v1/media/albums', { name })
+  }
+
+  renameMediaAlbum(albumID: string, revision: number, name: string) {
+    return this.request<AgentMediaAlbum>('PATCH', '/v1/media/album', {
+      album_id: albumID,
+      revision,
+      name,
+    })
+  }
+
+  deleteMediaAlbum(albumID: string, revision: number) {
+    return this.request<null>('DELETE', '/v1/media/album', {
+      album_id: albumID,
+      revision,
+    })
+  }
+
+  addMediaAlbumItems(albumID: string, revision: number, nodeIDs: number[]) {
+    return this.request<AgentMediaAlbum>('POST', '/v1/media/album/items', {
+      album_id: albumID,
+      revision,
+      node_ids: nodeIDs,
+    })
+  }
+
+  removeMediaAlbumItem(albumID: string, revision: number, nodeID: number) {
+    return this.request<AgentMediaAlbum>('DELETE', '/v1/media/album/item', {
+      album_id: albumID,
+      revision,
+      node_id: nodeID,
+    })
   }
 
   mediaAlbumItems(

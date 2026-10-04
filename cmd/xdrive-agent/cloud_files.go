@@ -669,6 +669,67 @@ func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaA
 	return cli.MediaAlbums(ctx)
 }
 
+func (c *agentController) CloudCreateMediaAlbum(
+	ctx context.Context,
+	name string,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.CreateMediaAlbum(ctx, name)
+}
+
+func (c *agentController) CloudRenameMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+	name string,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.RenameMediaAlbum(ctx, albumID, revision, name)
+}
+
+func (c *agentController) CloudDeleteMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.DeleteMediaAlbum(ctx, albumID, revision)
+}
+
+func (c *agentController) CloudAddMediaAlbumItems(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+	nodeIDs []uint64,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.AddMediaAlbumItems(ctx, albumID, revision, nodeIDs)
+}
+
+func (c *agentController) CloudRemoveMediaAlbumItem(
+	ctx context.Context,
+	albumID string,
+	revision, nodeID uint64,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.RemoveMediaAlbumItem(ctx, albumID, revision, nodeID)
+}
+
 func (c *agentController) CloudMediaAlbumItems(
 	ctx context.Context,
 	albumID string,

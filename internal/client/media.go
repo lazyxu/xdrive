@@ -74,6 +74,7 @@ type MediaAlbum struct {
 	ID          string     `json:"id"`
 	Kind        string     `json:"kind"`
 	Name        string     `json:"name"`
+	Revision    uint64     `json:"revision,omitempty"`
 	ItemCount   int64      `json:"item_count"`
 	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
@@ -163,6 +164,93 @@ func (c *Client) MediaItem(ctx context.Context, nodeID uint64) (MediaItem, error
 func (c *Client) MediaAlbums(ctx context.Context) ([]MediaAlbum, error) {
 	var out []MediaAlbum
 	err := c.json(ctx, http.MethodGet, "/api/v1/media/albums", nil, &out)
+	return out, err
+}
+
+func (c *Client) CreateMediaAlbum(
+	ctx context.Context,
+	name string,
+) (MediaAlbum, error) {
+	var out MediaAlbum
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/albums",
+		map[string]string{"name": name},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) RenameMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+	name string,
+) (MediaAlbum, error) {
+	var out MediaAlbum
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPatch,
+		"/api/v1/media/albums/"+url.PathEscape(albumID),
+		revision,
+		map[string]string{"name": name},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) DeleteMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+) error {
+	return c.jsonRevision(
+		ctx,
+		http.MethodDelete,
+		"/api/v1/media/albums/"+url.PathEscape(albumID),
+		revision,
+		nil,
+		nil,
+	)
+}
+
+func (c *Client) AddMediaAlbumItems(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+	nodeIDs []uint64,
+) (MediaAlbum, error) {
+	var out MediaAlbum
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/albums/"+url.PathEscape(albumID)+"/items",
+		revision,
+		map[string][]uint64{"node_ids": nodeIDs},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) RemoveMediaAlbumItem(
+	ctx context.Context,
+	albumID string,
+	revision, nodeID uint64,
+) (MediaAlbum, error) {
+	var out MediaAlbum
+	err := c.jsonRevision(
+		ctx,
+		http.MethodDelete,
+		fmt.Sprintf(
+			"/api/v1/media/albums/%s/items/%d",
+			url.PathEscape(albumID),
+			nodeID,
+		),
+		revision,
+		nil,
+		&out,
+	)
 	return out, err
 }
 

@@ -186,6 +186,11 @@ type desktopIPCController interface {
 	CloudRevokeShare(context.Context, uint64) error
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
+	CloudCreateMediaAlbum(context.Context, string) (client.MediaAlbum, error)
+	CloudRenameMediaAlbum(context.Context, string, uint64, string) (client.MediaAlbum, error)
+	CloudDeleteMediaAlbum(context.Context, string, uint64) error
+	CloudAddMediaAlbumItems(context.Context, string, uint64, []uint64) (client.MediaAlbum, error)
+	CloudRemoveMediaAlbumItem(context.Context, string, uint64, uint64) (client.MediaAlbum, error)
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudSetMediaFavorite(context.Context, uint64, bool) (client.MediaFavorite, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
@@ -443,6 +448,11 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
+	mux.HandleFunc("POST /v1/media/albums", h.createMediaAlbum)
+	mux.HandleFunc("PATCH /v1/media/album", h.renameMediaAlbum)
+	mux.HandleFunc("DELETE /v1/media/album", h.deleteMediaAlbum)
+	mux.HandleFunc("POST /v1/media/album/items", h.addMediaAlbumItems)
+	mux.HandleFunc("DELETE /v1/media/album/item", h.removeMediaAlbumItem)
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("PATCH /v1/media/favorite", h.mediaFavorite)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
@@ -1447,9 +1457,131 @@ func (h *desktopIPCHandler) mediaAlbums(w http.ResponseWriter, r *http.Request) 
 	writeDesktopIPCJSON(w, http.StatusOK, items)
 }
 
+func desktopIPCValidMediaAlbumID(value string, manualOnly bool) bool {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "manual:") && len(value) > len("manual:") {
+		return true
+	}
+	if manualOnly {
+		return false
+	}
+	return (strings.HasPrefix(value, "folder:") && len(value) > len("folder:")) ||
+		(strings.HasPrefix(value, "source:") && len(value) > len("source:"))
+}
+
+func (h *desktopIPCHandler) createMediaAlbum(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name string `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_name", "name is required")
+		return
+	}
+	album, err := h.ctrl.CloudCreateMediaAlbum(r.Context(), input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, album)
+}
+
+func (h *desktopIPCHandler) renameMediaAlbum(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string `json:"album_id"`
+		Revision uint64 `json:"revision"`
+		Name     string `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidMediaAlbumID(input.AlbumID, true) ||
+		input.Revision == 0 || strings.TrimSpace(input.Name) == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album", "manual album id, revision, and name are required")
+		return
+	}
+	album, err := h.ctrl.CloudRenameMediaAlbum(
+		r.Context(), input.AlbumID, input.Revision, input.Name,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, album)
+}
+
+func (h *desktopIPCHandler) deleteMediaAlbum(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string `json:"album_id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidMediaAlbumID(input.AlbumID, true) || input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album", "manual album id and revision are required")
+		return
+	}
+	if err := h.ctrl.CloudDeleteMediaAlbum(r.Context(), input.AlbumID, input.Revision); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *desktopIPCHandler) addMediaAlbumItems(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string   `json:"album_id"`
+		Revision uint64   `json:"revision"`
+		NodeIDs  []uint64 `json:"node_ids"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidMediaAlbumID(input.AlbumID, true) ||
+		input.Revision == 0 || len(input.NodeIDs) == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_items", "manual album id, revision, and node_ids are required")
+		return
+	}
+	album, err := h.ctrl.CloudAddMediaAlbumItems(
+		r.Context(), input.AlbumID, input.Revision, input.NodeIDs,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, album)
+}
+
+func (h *desktopIPCHandler) removeMediaAlbumItem(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string `json:"album_id"`
+		Revision uint64 `json:"revision"`
+		NodeID   uint64 `json:"node_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidMediaAlbumID(input.AlbumID, true) ||
+		input.Revision == 0 || input.NodeID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_item", "manual album id, revision, and node_id are required")
+		return
+	}
+	album, err := h.ctrl.CloudRemoveMediaAlbumItem(
+		r.Context(), input.AlbumID, input.Revision, input.NodeID,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, album)
+}
+
 func (h *desktopIPCHandler) mediaAlbumItems(w http.ResponseWriter, r *http.Request) {
 	albumID := strings.TrimSpace(r.URL.Query().Get("album_id"))
-	if albumID == "" || (!strings.HasPrefix(albumID, "folder:") && !strings.HasPrefix(albumID, "source:")) {
+	if !desktopIPCValidMediaAlbumID(albumID, false) {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_id", "album_id must be a Gallery album id")
 		return
 	}

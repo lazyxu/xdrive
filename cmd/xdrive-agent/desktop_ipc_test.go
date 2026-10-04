@@ -459,6 +459,50 @@ func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.M
 	return append([]client.MediaAlbum(nil), f.cloudMediaAlbums...), f.err
 }
 
+func (f *fakeDesktopIPCController) CloudCreateMediaAlbum(
+	_ context.Context,
+	name string,
+) (client.MediaAlbum, error) {
+	return client.MediaAlbum{ID: "manual:test", Kind: "manual", Name: name, Revision: 1}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRenameMediaAlbum(
+	_ context.Context,
+	albumID string,
+	revision uint64,
+	name string,
+) (client.MediaAlbum, error) {
+	return client.MediaAlbum{ID: albumID, Kind: "manual", Name: name, Revision: revision + 1}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteMediaAlbum(
+	context.Context,
+	string,
+	uint64,
+) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudAddMediaAlbumItems(
+	_ context.Context,
+	albumID string,
+	revision uint64,
+	nodeIDs []uint64,
+) (client.MediaAlbum, error) {
+	return client.MediaAlbum{
+		ID: albumID, Kind: "manual", Revision: revision + 1,
+		ItemCount: int64(len(nodeIDs)),
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudRemoveMediaAlbumItem(
+	_ context.Context,
+	albumID string,
+	revision, _ uint64,
+) (client.MediaAlbum, error) {
+	return client.MediaAlbum{ID: albumID, Kind: "manual", Revision: revision + 1}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaAlbumItems(
 	_ context.Context,
 	albumID string,

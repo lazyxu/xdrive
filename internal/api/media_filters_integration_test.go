@@ -166,15 +166,14 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 	}
 
 	server := &Server{DB: db}
-	assertIDs := func(name string, options mediaQueryOptions, albumKind string, albumID uint64, want ...uint64) {
+	assertIDs := func(name string, options mediaQueryOptions, albumKey string, want ...uint64) {
 		t.Helper()
 		t.Run(name, func(t *testing.T) {
 			items, err := server.queryMediaItems(
 				context.Background(),
 				owner.ID,
 				options,
-				albumKind,
-				albumID,
+				albumKey,
 				100,
 				0,
 			)
@@ -197,7 +196,6 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"search filename camera lens",
 		mediaQueryOptions{Search: "iphone"},
 		"",
-		0,
 		nodes[0].ID,
 		nodes[2].ID,
 	)
@@ -205,7 +203,6 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"asset kind",
 		mediaQueryOptions{AssetKind: meta.PhotoAssetKindRAWPair},
 		"",
-		0,
 		nodes[1].ID,
 	)
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
@@ -214,7 +211,6 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"capture date",
 		mediaQueryOptions{CapturedFrom: &from, CapturedTo: &to},
 		"",
-		0,
 		nodes[0].ID,
 	)
 	withLocation := true
@@ -222,7 +218,6 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"with location",
 		mediaQueryOptions{HasLocation: &withLocation},
 		"",
-		0,
 		nodes[0].ID,
 		nodes[2].ID,
 	)
@@ -231,7 +226,6 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"favorite",
 		mediaQueryOptions{Favorite: &favorite},
 		"",
-		0,
 		nodes[0].ID,
 	)
 	withoutLocation := false
@@ -239,14 +233,12 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		"without location",
 		mediaQueryOptions{HasLocation: &withoutLocation},
 		"",
-		0,
 		nodes[1].ID,
 	)
 	assertIDs(
 		"album search",
 		mediaQueryOptions{Search: "sony"},
-		meta.PhotoCollectionKindFolder,
-		folder.ID,
+		fmt.Sprintf("%s:%d", meta.PhotoCollectionKindFolder, folder.ID),
 		nodes[1].ID,
 	)
 	assertIDs(
@@ -257,7 +249,6 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 			HasLocation: &withLocation,
 		},
 		"",
-		0,
 		nodes[0].ID,
 	)
 }
