@@ -48,6 +48,8 @@ test('shared sidebar exposes one destination, section and badge contract', () =>
   }
   assert.equal(sharedSidebar.includes('leadingItems'), false, 'complete sidebar should not keep a second extension API')
   assert.equal(sharedSidebar.includes('trailingItems'), false, 'complete sidebar should not keep a second extension API')
+  assert.equal(sharedSidebar.includes('XDriveSidebarDestination ='), false, 'legacy destination alias should not remain exported')
+  assert.equal(sharedSidebar.includes('XDriveWorkspaceSidebarSectionModel'), false, 'legacy section-model alias should not remain exported')
 })
 
 test('shared WorkspaceSidebar owns the complete sidebar composition and extension placement', () => {
