@@ -151,7 +151,8 @@ test('Web exposes files, Gallery, Sync Folders, and Cloud Storage as first-class
   for (const label of ['primary="文件"', 'primary="图库"', 'primary="同步文件夹"', 'primary="云端存储"']) {
     assert.ok(sharedSidebar.includes(label), `shared core navigation missing: ${label}`)
   }
-  assert.match(webApp, /<ExternalSourcesPanel[\s\S]*defaultTargetNodeID=/)
+  assert.match(webApp, /<XDriveSourceManager[\s\S]*defaultTargetNodeID=/)
+  assert.equal(fs.existsSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx')), false, 'Web must not keep a pass-through Source manager wrapper')
   assert.equal(webApp.includes('LocalStoragePage'), false, 'Web must not expose Desktop-only Local Storage')
   assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web cloud storage must use the shared workspace')
   assert.equal(webApp.includes('setSourcesOpen'), false)

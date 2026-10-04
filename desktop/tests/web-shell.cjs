@@ -54,7 +54,7 @@ test('Web first-class workspaces use page chrome except the full-bleed Files wor
   assert.ok(webApp.includes('className="files-workspace-surface"'), 'Files should render as the application workspace itself')
   assert.ok(webApp.includes('<XDriveMediaGalleryPage'), 'Gallery should mount the shared page directly')
   assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'shared Gallery page must own workspace page chrome')
-  assert.ok(webApp.includes('<ExternalSourcesPanel'), 'External Sources should remain a first-class page')
+  assert.ok(webApp.includes('<XDriveSourceManager'), 'Sync Folders should mount the shared manager directly')
   assert.equal(webApp.includes('LocalStoragePage'), false, 'Local Storage is Desktop-only')
   assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Cloud Storage should render through the shared page')
 })

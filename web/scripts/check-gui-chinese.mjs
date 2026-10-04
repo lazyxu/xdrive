@@ -19,7 +19,7 @@ const files = {
   versionHistoryDialog: readRepo('ui/shared/src/mui/VersionHistoryDialog.tsx'),
   fileNameDialog: readRepo('ui/shared/src/mui/FileNameDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
-  sources: read('src/ExternalSources.tsx') + readRepo('ui/shared/src/mui/SourceManager.tsx'),
+  sources: readRepo('ui/shared/src/mui/SourceManager.tsx'),
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
   settingsDialog: readRepo('ui/shared/src/mui/SettingsDialog.tsx'),
   accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),
@@ -75,6 +75,7 @@ requireText(files.sidebarStorageSummary, ['XDriveSidebarStorageSummary', '存储
 requireText(files.descriptionGrid, ['XDriveDescriptionGrid', 'XDriveDescriptionItem', "columns === 4", "columns === 3", "columns?: 2 | 3 | 4", "fullColumnsAt", "bgcolor: 'action.hover'", 'fullWidth', "gridColumn: fullWidth ? '1 / -1' : undefined"], '共享描述网格')
 requireText(files.sectionHeader, ['XDriveSectionHeader', "level === 'h3'", 'eyebrow', 'subtitle', 'actions', 'component={level}'], '共享分区标题')
 requireText(files.tableSurface, ['XDriveTableSurface', 'TableContainer', 'border: 1', "borderColor: 'divider'", 'borderRadius: 1.5', "overflowX: 'auto'"], '共享表格表面')
+requireText(files.app, ['<XDriveSourceManager', 'adapter={api}'], 'Web 同步文件夹挂载')
 requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem'], '外部来源描述网格')
 if ((files.sources.match(/<XDriveSectionHeader\b/g) || []).length !== 5) throw new Error('Web 外部来源小节标题没有完整复用共享 SectionHeader')
 if (files.sources.includes('<MuiDivider') || files.sources.includes('Divider as MuiDivider')) throw new Error('Web 外部来源仍保留本地 Divider 小节标题')
