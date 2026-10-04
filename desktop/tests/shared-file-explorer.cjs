@@ -238,3 +238,27 @@ test('shared FileExplorer supports server-paged incremental loading without re-s
     assert.ok(explorer.includes(token), `missing server-paging contract: ${token}`)
   }
 })
+
+
+test('shared FileExplorer supports Windows-style marquee selection in Details and Grid views', () => {
+  for (const token of [
+    'type XDriveFileExplorerMarqueeSession = {',
+    'const marqueeSessionRef = useRef<XDriveFileExplorerMarqueeSession | null>(null)',
+    "event.pointerType !== 'mouse'",
+    'host.setPointerCapture(event.pointerId)',
+    'const additive = event.ctrlKey || event.metaKey',
+    "if (viewMode === 'details')",
+    'detailsHeaderHeight',
+    'detailsRowHeight',
+    'element.getBoundingClientRect()',
+    'commitSelection(marqueeSelectionIDs(',
+    'suppressBackgroundClickRef.current = true',
+    'onPointerDown={startMarqueeSelection}',
+    'onPointerMove={updateMarqueeSelection}',
+    'onPointerUp={(event) => finishMarqueeSelection(event)}',
+    'onPointerCancel={(event) => finishMarqueeSelection(event, true)}',
+    'data-xdrive-file-explorer-marquee',
+  ]) {
+    assert.ok(explorer.includes(token), `missing FileExplorer marquee contract: ${token}`)
+  }
+})
