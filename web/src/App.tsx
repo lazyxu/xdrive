@@ -9,7 +9,6 @@ import {
   AppBar,
   Box,
   Button,
-  Card,
   Chip,
   Divider,
   ListItemIcon,
@@ -24,6 +23,8 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
   XDriveActionButton,
+  XDriveAuthPanel,
+  XDriveAuthShell,
   XDriveBrandLockup,
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
@@ -401,8 +402,8 @@ function AuthView({
   }
 
   return (
-    <div className="auth-shell">
-      <Card className="auth-card" sx={{ p: 3, borderRadius: 2 }}>
+    <XDriveAuthShell viewport decorated spacing="compact">
+      <XDriveAuthPanel size="compact">
         <XDriveBrandLockup
           iconSrc={xDriveBrandIcon}
           variant="large"
@@ -456,8 +457,8 @@ function AuthView({
         <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 2 }}>
           账户由 xDrive 管理员创建。
         </Typography>
-      </Card>
-    </div>
+      </XDriveAuthPanel>
+    </XDriveAuthShell>
   )
 }
 
@@ -745,7 +746,7 @@ function FileManager({
           </Toolbar>
         </AppBar>
         <XDriveWorkspaceContent responsive>
-          <Card className="auth-card" sx={{ p: 3, mx: 'auto', borderRadius: 2 }}>
+          <XDriveAuthPanel size="compact">
             <Typography component="h2" variant="h6" fontWeight={700} sx={{ mb: 2 }}>
               修改临时密码
             </Typography>
@@ -761,7 +762,7 @@ function FileManager({
               }}
               onSubmit={(event) => { void submitPassword(event) }}
             />
-          </Card>
+          </XDriveAuthPanel>
         </XDriveWorkspaceContent>
         <XDriveFeedbackSnackbar
           open={Boolean(feedback)}
