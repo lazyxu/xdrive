@@ -41,16 +41,9 @@ a { user-select: none; }
   justify-content: space-between;
   padding-inline: 16px;
 }
-.content-wrap { padding: 32px clamp(16px, 4vw, 56px); }
-
 @media (min-width: 900px) {
   .file-manager-shell {
     height: 100vh;
-    overflow: hidden;
-  }
-
-  .content-wrap.files-workspace {
-    padding: 0;
     overflow: hidden;
   }
 
@@ -59,10 +52,6 @@ a { user-select: none; }
     min-height: 0;
   }
 
-}
-
-@media (max-width: 720px) {
-  .content-wrap { padding: 16px; }
 }
 
 

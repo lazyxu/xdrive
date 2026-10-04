@@ -9,6 +9,7 @@ const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 
 const workspace = readRepo('ui/shared/src/mui/WorkspaceSurface.tsx')
 const workspaceShell = readRepo('ui/shared/src/mui/WorkspaceShell.tsx')
+const workspaceContent = readRepo('ui/shared/src/mui/WorkspaceContent.tsx')
 const workspaceSidebar = readRepo('ui/shared/src/mui/WorkspaceSidebar.tsx')
 const fileExplorer = readRepo('ui/shared/src/mui/FileExplorer.tsx')
 const fileExplorerActions = readRepo('ui/shared/src/mui/FileExplorerActions.tsx')
@@ -47,6 +48,16 @@ requireText(workspaceShell, [
   'XDRIVE_SIDEBAR_COMPACT_WIDTH',
   "'@media (max-width: 960px)'",
 ], 'XDriveWorkspaceShell')
+
+requireText(workspaceContent, [
+  "export type XDriveWorkspaceContentPresentation = 'page' | 'files'",
+  'export function XDriveWorkspaceContent',
+  "const files = presentation === 'files'",
+  "p: '34px 40px 48px'",
+  "'@media (max-width: 960px)'",
+  "'@media (min-width: 900px)'",
+  "overflow: 'hidden'",
+], 'XDriveWorkspaceContent')
 
 requireText(workspaceSidebar, [
   'export function XDriveWorkspaceSidebar',
@@ -119,12 +130,12 @@ requireText(app, [
   'file-manager-shell',
   'XDriveWorkspaceShell',
   'XDriveWorkspaceSidebar',
+  'XDriveWorkspaceContent',
   'className="web-workspace-shell"',
   "sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}",
-  "className={appView === 'files' ? 'content-wrap files-workspace' : 'content-wrap'}",
+  "presentation={appView === 'files' ? 'files' : 'page'}",
   'className="files-workspace-surface"',
   "height: { xs: 560, md: '100%' }",
-  "overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }",
 ], 'Web files workspace')
 
 if (app.includes('<XDriveWorkspaceSurface presentation="page" title="文件">')) {
@@ -140,16 +151,18 @@ for (const primitive of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDr
 requireText(styles, [
   '@media (min-width: 900px)',
   '.file-manager-shell',
-  '.content-wrap.files-workspace',
-  'padding: 0',
-  'overflow: hidden',
+  '.files-workspace-surface',
 ], 'Web files workspace styles')
+
+if (styles.includes('.content-wrap')) {
+  throw new Error('Web workspace content layout must live in shared MUI')
+}
 
 if (styles.includes('.files-workspace-surface [data-xdrive-file-explorer]')) {
   throw new Error('Web must not override shared FileExplorer workspace chrome')
 }
-if (/\.content-wrap\.files-workspace\s*\{[^}]*background\s*:\s*#fff\b/.test(styles)) {
-  throw new Error('Web files workspace must not hard-code a light-only background')
+if (/background\s*:\s*#fff\b/.test(workspaceContent)) {
+  throw new Error('Shared Files workspace content must not hard-code a light-only background')
 }
 if (/\.cloud-explorer-panel > \[data-xdrive-file-explorer\]\s*\{[^}]*\b(border|border-radius)\s*:/.test(desktopStyles)) {
   throw new Error('Desktop must not override shared FileExplorer workspace chrome')
