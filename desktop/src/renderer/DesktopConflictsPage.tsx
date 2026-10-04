@@ -1,3 +1,4 @@
+import { Box, Paper, Stack, Typography } from '@mui/material'
 import {
   XDriveActionButton,
   XDriveSectionHeader,
@@ -28,22 +29,46 @@ export function DesktopConflictsPage({
         actions={<XDriveActionButton disabled={busy} onClick={onRefresh}>刷新</XDriveActionButton>}
       />
       {conflicts.length === 0 ? <XDriveStatePanel message="没有未解决的冲突。" /> : (
-        <div className="conflict-list">
+        <Stack spacing={1.25} sx={{ mt: 2.25 }}>
           {conflicts.map((item) => (
-            <article className="conflict-row" key={item.id}>
-              <div className="conflict-copy">
-                <strong>{item.original_path}</strong>
-                <span>冲突副本：{item.conflict_path}</span>
-                <span>{new Date(item.created_at).toLocaleString()}</span>
-              </div>
-              <div className="row-actions">
+            <Paper
+              key={item.id}
+              variant="outlined"
+              sx={{
+                p: 1.75,
+                display: 'flex',
+                alignItems: { xs: 'flex-start', md: 'center' },
+                flexDirection: { xs: 'column', md: 'row' },
+                justifyContent: 'space-between',
+                gap: 2.25,
+                borderRadius: 1.5,
+              }}
+            >
+              <Box sx={{ minWidth: 0, display: 'grid', gap: 0.35 }}>
+                <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                  {item.original_path}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                  冲突副本：{item.conflict_path}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(item.created_at).toLocaleString()}
+                </Typography>
+              </Box>
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                flexWrap="wrap"
+                sx={{ flexShrink: 0, justifyContent: { xs: 'flex-start', md: 'flex-end' } }}
+              >
                 <XDriveActionButton compact onClick={() => onOpenBoth(item)}>同时打开</XDriveActionButton>
                 <XDriveActionButton compact onClick={() => onKeepServer(item)}>保留服务器版本</XDriveActionButton>
                 <XDriveActionButton compact intent="primary" onClick={() => onKeepLocal(item)}>保留本地版本</XDriveActionButton>
-              </div>
-            </article>
+              </Stack>
+            </Paper>
           ))}
-        </div>
+        </Stack>
       )}
     </XDriveWorkspaceSurface>
   )

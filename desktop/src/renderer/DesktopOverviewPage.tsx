@@ -1,7 +1,10 @@
+import { Paper } from '@mui/material'
 import {
   XDriveActionButton,
   XDriveDescriptionGrid,
   XDriveDescriptionItem,
+  XDriveMetricCard,
+  XDriveMetricGrid,
   XDriveSectionHeader,
   XDriveWorkspaceSurface,
 } from '@xdrive/ui/mui'
@@ -19,14 +22,33 @@ export function DesktopOverviewPage({
 }) {
   return (
     <XDriveWorkspaceSurface presentation="page" title="概览">
-      <section className="status-grid">
-        <article className="status-card"><span className={`status-dot ${status?.paused ? 'waiting' : 'ready'}`} /><div><strong>同步</strong><p>{status?.sync_status}</p></div></article>
-        <article className="status-card"><span className={`status-dot ${status?.has_conflict ? 'warning' : 'ready'}`} /><div><strong>冲突</strong><p>{status?.conflict_count || 0} 个未解决</p></div></article>
-        <article className="status-card"><span className="status-dot ready" /><div><strong>Agent</strong><p>{status?.auth_status} · v{hello?.agent_version || status?.version} · IPC {hello?.protocol_min ?? '?'}-{hello?.protocol_max ?? '?'}</p></div></article>
-        <article className="status-card"><span className="status-dot ready" /><div><strong>桌面桥接</strong><p>已通过受保护的本地 IPC 连接。</p></div></article>
-      </section>
+      <XDriveMetricGrid sx={{ mt: 1.5 }}>
+        <XDriveMetricCard
+          title="同步"
+          value={status?.paused ? '已暂停' : status?.sync_status || '未知'}
+          tone={status?.paused ? 'warning' : 'good'}
+        />
+        <XDriveMetricCard
+          title="冲突"
+          value={status?.conflict_count || 0}
+          suffix="个未解决"
+          tone={status?.has_conflict ? 'warning' : 'good'}
+        />
+        <XDriveMetricCard
+          title="Agent"
+          value={status?.auth_status || '未知'}
+          suffix={`v${hello?.agent_version || status?.version || '?'} · IPC ${hello?.protocol_min ?? '?'}-${hello?.protocol_max ?? '?'}`}
+          tone="good"
+        />
+        <XDriveMetricCard
+          title="桌面桥接"
+          value="已连接"
+          suffix="已通过受保护的本地 IPC 连接。"
+          tone="good"
+        />
+      </XDriveMetricGrid>
 
-      <section className="system-card">
+      <Paper variant="outlined" sx={{ mt: 2.25, p: 2.75, borderRadius: 2 }}>
         <XDriveSectionHeader
           eyebrow="同步位置"
           title={status?.mount_path || '默认 xDrive 文件夹'}
@@ -46,7 +68,7 @@ export function DesktopOverviewPage({
           <XDriveDescriptionItem label="状态">{status?.paused ? '已暂停' : status?.sync_status}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="修订号">{status?.revision}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
-      </section>
+      </Paper>
     </XDriveWorkspaceSurface>
   )
 }
