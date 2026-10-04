@@ -33,6 +33,7 @@ import type {
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
@@ -370,31 +371,33 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   return (
-    <XDriveMediaGallery
-      items={items}
-      albums={albums}
-      currentAlbum={currentAlbum}
-      loading={loading}
-      hasMore={hasMore}
-      error={error}
-      filters={(
-        <MediaGalleryFilterBar
-          draft={draftFilters}
-          loading={loading}
-          onChange={setDraftFilters}
-          onApply={applyFilters}
-          onClear={clearFilters}
-        />
-      )}
-      loadThumbnail={source.loadThumbnail}
-      loadLivePhotoMotion={source.loadLivePhotoMotion}
-      loadVideo={source.loadVideo}
-      onSetFavorite={source.setFavorite ? setFavorite : undefined}
-      onOpenAlbum={(album) => void loadFirstPage(album, query)}
-      onBack={() => void loadFirstPage(null, query)}
-      onLoadMore={() => void loadMore()}
-      onRefresh={() => void loadFirstPage(currentAlbum, query)}
-    />
+    <XDriveWorkspaceSurface presentation="page" title="图库">
+      <XDriveMediaGallery
+        items={items}
+        albums={albums}
+        currentAlbum={currentAlbum}
+        loading={loading}
+        hasMore={hasMore}
+        error={error}
+        filters={(
+          <MediaGalleryFilterBar
+            draft={draftFilters}
+            loading={loading}
+            onChange={setDraftFilters}
+            onApply={applyFilters}
+            onClear={clearFilters}
+          />
+        )}
+        loadThumbnail={source.loadThumbnail}
+        loadLivePhotoMotion={source.loadLivePhotoMotion}
+        loadVideo={source.loadVideo}
+        onSetFavorite={source.setFavorite ? setFavorite : undefined}
+        onOpenAlbum={(album) => void loadFirstPage(album, query)}
+        onBack={() => void loadFirstPage(null, query)}
+        onLoadMore={() => void loadMore()}
+        onRefresh={() => void loadFirstPage(currentAlbum, query)}
+      />
+    </XDriveWorkspaceSurface>
   )
 }
 

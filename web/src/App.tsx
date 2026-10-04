@@ -41,7 +41,6 @@ import {
   XDriveFileNameDialog,
   XDriveTrashDialog,
   XDriveVersionHistoryDialog,
-  XDriveWorkspaceSurface,
   XDriveWorkspaceShell,
   XDriveWorkspaceContent,
   XDriveStatusAlert,
@@ -975,9 +974,7 @@ function FileManager({
               />
           </Box>
         ) : appView === 'gallery' ? (
-          <XDriveWorkspaceSurface presentation="page" title="图库">
-            <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
-          </XDriveWorkspaceSurface>
+          <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
         ) : appView === 'sources' ? (
           <ExternalSourcesPanel
             api={api}
