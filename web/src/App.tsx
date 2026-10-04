@@ -38,6 +38,7 @@ import {
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
   useXDriveUploadConflictResolver,
+  useXDriveCloudFilesController,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   XDrivePasswordChangeForm,
@@ -68,10 +69,10 @@ import type {
   XDriveServerUpdateState,
   XDriveTransferTask,
   XDriveFileOperation,
-  XDriveFileExplorerPageState,
+  XDriveCloudFilesPort,
   XDriveUploadConflictPolicy,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerPageRequestOptions, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive, xDriveUploadBatchSummary } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive, xDriveUploadBatchSummary } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -86,7 +87,6 @@ const EXPIRES_KEY = 'xdrive.access_expires_at'
 const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 
-type Crumb = { id: number; name: string }
 
 type Feedback = {
   tone: 'good' | 'bad' | 'warning' | 'neutral'
@@ -486,12 +486,6 @@ function FileManager({
   onLogout: () => void
 }) {
   const [profile, setProfile] = useState<MeResult | null>(null)
-  const [quota, setQuota] = useState<QuotaUsage | null>(null)
-  const [items, setItems] = useState<Node[]>([])
-  const [crumbs, setCrumbs] = useState<Crumb[]>([])
-  const [directoryPage, setDirectoryPage] = useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const [appView, setAppView] = useState<AppView>('files')
@@ -506,7 +500,6 @@ function FileManager({
   const [confirmBusy, setConfirmBusy] = useState(false)
   const uploadConflicts = useXDriveUploadConflictResolver()
 
-  const current = crumbs.at(-1)
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
@@ -547,21 +540,6 @@ function FileManager({
     loadVideo: (nodeID) => api.mediaVideoURL(nodeID),
   }), [api])
 
-  const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>(() => ({
-    load: async () => {
-      const [quotaValue, statsValue] = await Promise.all([
-        api.quota(),
-        api.storageStats().catch(() => null),
-      ])
-      setQuota(quotaValue)
-      return {
-        quota: quotaValue,
-        stats: statsValue,
-        statsUnavailableMessage: statsValue ? undefined : '当前服务端未提供云端存储情报。',
-      }
-    },
-  }), [api])
-
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401 || err.message.includes('account_disabled')) {
@@ -585,86 +563,59 @@ function FileManager({
     setFeedback({ tone: 'bad', message: err instanceof Error ? err.message : '请求失败' })
   }, [onAuthExpired])
 
-  const loadDirectory = async (
-    id: number,
-    nextCrumbs?: Crumb[],
-    sort: XDriveFileExplorerSort = directoryPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
-  ) => {
-    setLoading(true)
-    try {
-      const page = await api.listPage(id, xDriveFileExplorerPageRequestOptions(sort))
-      const transition = xDriveFileExplorerDirectoryPageTransition(id, page, sort, false)
-      setItems(transition.applyItems)
-      setDirectoryPage(transition.pageState)
-      if (nextCrumbs) setCrumbs(nextCrumbs)
-    } catch (err) {
-      handleError(err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const cloudFilesPort = useMemo<XDriveCloudFilesPort<Node, QuotaUsage, XDriveFileExplorerSort>>(() => ({
+    getRoot: () => api.root(),
+    getPage: (parentID, options) => api.listPage(parentID, options),
+    getQuota: () => api.quota(),
+  }), [api])
 
-  const loadMoreDirectory = async (id: number, sort: XDriveFileExplorerSort) => {
-    const pageState = directoryPage
-    if (!xDriveFileExplorerCanLoadMore(pageState, id, sort, loadingMore)) return
+  const {
+    quota,
+    items,
+    crumbs,
+    current,
+    pageState: directoryPage,
+    loading,
+    loadingMore,
+    applyQuota,
+    refreshQuota,
+    loadDirectory,
+    loadMoreDirectory,
+  } = useXDriveCloudFilesController<Node, QuotaUsage, XDriveFileExplorerSort>({
+    port: cloudFilesPort,
+    enabled: Boolean(profile && !profile.must_change_password),
+    defaultSort: XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+    onError: handleError,
+  })
 
-    setLoadingMore(true)
-    try {
-      const page = await api.listPage(
-        id,
-        xDriveFileExplorerPageRequestOptions(sort, pageState.cursor),
-      )
-      const transition = xDriveFileExplorerDirectoryPageTransition(id, page, sort, true)
-      setItems(transition.applyItems)
-      setDirectoryPage(transition.pageState)
-    } catch (err) {
-      handleError(err)
-    } finally {
-      setLoadingMore(false)
-    }
-  }
-
-  const refreshQuota = async () => {
-    try {
-      setQuota(await api.quota())
-    } catch (err) {
-      handleError(err)
-    }
-  }
-
-  const loadInitial = async () => {
-    setLoading(true)
-    try {
-      const me = await api.me()
-      setProfile(me)
-      if (me.must_change_password) return
-      setQuota(await api.quota())
-      const root = await api.root()
-      const page = await api.listPage(
-        root.id,
-        xDriveFileExplorerPageRequestOptions(XDRIVE_FILE_EXPLORER_DEFAULT_SORT),
-      )
-      const transition = xDriveFileExplorerDirectoryPageTransition(root.id, page, XDRIVE_FILE_EXPLORER_DEFAULT_SORT, false)
-      setCrumbs([{ id: root.id, name: '我的文件' }])
-      setItems(transition.applyItems)
-      setDirectoryPage(transition.pageState)
-    } catch (err) {
-      handleError(err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>(() => ({
+    load: async () => {
+      const [quotaValue, statsValue] = await Promise.all([
+        api.quota(),
+        api.storageStats().catch(() => null),
+      ])
+      applyQuota(quotaValue)
+      return {
+        quota: quotaValue,
+        stats: statsValue,
+        statsUnavailableMessage: statsValue ? undefined : '当前服务端未提供云端存储情报。',
+      }
+    },
+  }), [api, applyQuota])
 
   useEffect(() => {
     let active = true
-    ;(async () => {
-      if (!active) return
-      await loadInitial()
-    })()
-    return () => { active = false }
-    // api changes when auth tokens rotate; reload identity and data then.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api])
+    void api.me()
+      .then((me) => {
+        if (active) setProfile(me)
+      })
+      .catch((error) => {
+        if (active) handleError(error)
+      })
+    return () => {
+      active = false
+    }
+  }, [api, handleError])
 
   useEffect(() => api.onTransfers(setTransfers), [api])
 
@@ -710,16 +661,6 @@ function FileManager({
     onError: handleError,
     onFeedback: (message) => setFeedback({ tone: 'good', message }),
   })
-
-  useEffect(() => {
-    if (!profile || profile.must_change_password) return
-    const timer = window.setInterval(() => {
-      void api.quota()
-        .then(setQuota)
-        .catch(handleError)
-    }, 60_000)
-    return () => window.clearInterval(timer)
-  }, [api, handleError, profile?.id, profile?.must_change_password])
 
   useEffect(() => {
     if (profile && profile.role !== 'admin' && appView.startsWith('admin-')) {

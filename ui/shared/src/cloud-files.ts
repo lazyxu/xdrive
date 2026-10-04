@@ -1,0 +1,41 @@
+import type { QuotaUsage } from './models'
+import type {
+  XDriveFileExplorerPageRequestOptions,
+  XDriveFileExplorerPageSort,
+} from './file-explorer-controller'
+
+export type XDriveCloudFilesSortKey = 'name' | 'updated' | 'type' | 'size'
+export type XDriveCloudFilesSortDirection = 'asc' | 'desc'
+
+export type XDriveCloudFilesPageOptions = {
+  limit?: number
+  cursor?: string
+  sort?: XDriveCloudFilesSortKey
+  order?: XDriveCloudFilesSortDirection
+}
+
+export type XDriveCloudFilesPage<TNode extends { id: number }> = {
+  items: TNode[]
+  next_cursor?: string
+  has_more: boolean
+  sort: XDriveCloudFilesSortKey
+  order: XDriveCloudFilesSortDirection
+}
+
+export type XDriveCloudFilesCrumb = {
+  id: number
+  name: string
+}
+
+export interface XDriveCloudFilesPort<
+  TNode extends { id: number },
+  TQuota extends QuotaUsage = QuotaUsage,
+  TSort extends XDriveFileExplorerPageSort = XDriveFileExplorerPageSort,
+> {
+  getRoot: () => Promise<TNode>
+  getPage: (
+    parentID: number,
+    options: XDriveFileExplorerPageRequestOptions<TSort>,
+  ) => Promise<XDriveCloudFilesPage<TNode>>
+  getQuota: () => Promise<TQuota>
+}

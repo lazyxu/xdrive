@@ -11,6 +11,7 @@ const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src',
 const sharedWorkspaceSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx'), 'utf8')
 const sharedStorageSummary = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
 const sharedCloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
+const sharedCloudFilesController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'), 'utf8')
 const desktopLocalStorage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 const sharedWorkspaceShell = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
@@ -226,7 +227,8 @@ test('Web and Desktop pass account quota into the shared sidebar footer', () => 
   ]) {
     assert.ok(desktopApp.includes(token), `Desktop sidebar quota adapter missing: ${token}`)
   }
-  assert.ok(webApp.includes('void api.quota()'), 'Web should refresh sidebar quota outside manual file actions')
+  assert.ok(sharedCloudFilesController.includes('quotaRefreshIntervalMs = 60_000'), 'shared Cloud Files controller should keep Web sidebar quota reasonably fresh')
+  assert.ok(sharedCloudFilesController.includes('globalThis.setInterval(() => {'), 'shared Cloud Files controller should own periodic quota refresh')
   assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
 })
 test('shared workspace content owns page spacing and Files full-bleed behavior', () => {
