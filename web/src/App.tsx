@@ -32,6 +32,7 @@ import {
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
+  XDriveShareDialog,
   XDriveSourceManager,
   XDriveStatePanel,
   XDriveTaskCenterPage,
@@ -73,10 +74,9 @@ import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCanLoadMore, xDriv
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
-import ShareDialog from './ShareDialog'
 import StorageStatsPanel from './StorageStatsPanel'
 import WebFileExplorer from './WebFileExplorer'
-import { createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
+import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const ACCESS_KEY = 'xdrive.access_token'
@@ -509,6 +509,7 @@ function FileManager({
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
+  const shareDialogAdapter = useMemo(() => createWebShareDialogAdapter(api), [api])
 
   const gallerySource = useMemo<MediaGalleryDataSource>(() => ({
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
@@ -1119,7 +1120,14 @@ function FileManager({
         onConfirm={() => void executeConfirm()}
       />
 
-      <ShareDialog api={api} node={shareNode} onClose={() => setShareNode(null)} onError={handleError} />
+      <XDriveShareDialog
+        adapter={shareDialogAdapter}
+        node={shareNode}
+        onClose={() => setShareNode(null)}
+        onError={handleError}
+        expiryMode="datetime"
+        listVariant="table"
+      />
 
       <XDriveFeedbackSnackbar
         open={Boolean(feedback)}

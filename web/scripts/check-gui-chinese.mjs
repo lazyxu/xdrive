@@ -12,7 +12,7 @@ const files = {
   users: read('src/AdminUsers.tsx'),
   audit: read('src/AdminAudit.tsx'),
   storageStats: read('src/StorageStatsPanel.tsx'),
-  share: read('src/ShareDialog.tsx') + readRepo('ui/shared/src/mui/ShareDialog.tsx'),
+  share: read('src/App.tsx') + read('src/fileDialogAdapters.ts') + readRepo('ui/shared/src/mui/ShareDialog.tsx'),
   shareFields: readRepo('ui/shared/src/mui/ShareFields.tsx'),
   shareList: readRepo('ui/shared/src/mui/ShareList.tsx'),
   trashDialog: readRepo('ui/shared/src/mui/TrashDialog.tsx'),
