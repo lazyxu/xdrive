@@ -95,6 +95,7 @@ type fakeDesktopIPCController struct {
 	cloudUploadParent          uint64
 	cloudUploadPath            string
 	cloudUploadName            string
+	cloudUploadPolicy          string
 	cloudDownloadID            uint64
 	cloudDownloadDestination   string
 	cloudResolveID             string
@@ -374,6 +375,18 @@ func (f *fakeDesktopIPCController) CloudUploadConflictPreflight(
 	f.cloudPreflightParent = parentID
 	f.cloudPreflightName = name
 	return client.UploadConflictPreflight{Conflict: true}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUploadWithConflictPolicy(
+	_ context.Context,
+	parentID uint64,
+	localPath, name, policy string,
+) (agentCloudUploadResult, error) {
+	f.cloudUploadParent = parentID
+	f.cloudUploadPath = localPath
+	f.cloudUploadName = name
+	f.cloudUploadPolicy = policy
+	return agentCloudUploadResult{Node: f.cloudUploaded, TransferredBytes: 12}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint64, localPath, name string) (client.Node, error) {
@@ -1048,6 +1061,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
 		{http.MethodPost, "/v1/cloud/file-operation/resolve", `{"id":"file-op","conflict_policy":"keep_both"}`, "\"id\":\"file-op-resolved\""},
 		{http.MethodPost, "/v1/cloud/upload/preflight", `{"parent_id":2,"name":"upload.txt"}`, "\"conflict\":true"},
+		{http.MethodPost, "/v1/cloud/upload/conflict", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt","conflict_policy":"keep_both"}`, "\"transferred_bytes\":12"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},
@@ -1095,6 +1109,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudUploadParent != 2 || ctrl.cloudUploadPath != "/tmp/upload.txt" || ctrl.cloudUploadName != "upload.txt" {
 		t.Fatalf("cloud upload not forwarded: parent=%d path=%q name=%q", ctrl.cloudUploadParent, ctrl.cloudUploadPath, ctrl.cloudUploadName)
+	}
+	if ctrl.cloudUploadPolicy != "keep_both" {
+		t.Fatalf("cloud upload conflict policy=%q", ctrl.cloudUploadPolicy)
 	}
 	if ctrl.cloudDownloadID != 3 || ctrl.cloudDownloadDestination != "/tmp/report.pdf" {
 		t.Fatalf("cloud download not forwarded: id=%d destination=%q", ctrl.cloudDownloadID, ctrl.cloudDownloadDestination)

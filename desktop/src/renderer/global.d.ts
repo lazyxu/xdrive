@@ -247,6 +247,11 @@ declare global {
     items: AgentCloudSearchResult[]
     next_cursor?: string
   }
+  type AgentCloudUploadResult = {
+    node: AgentCloudNode
+    skipped: boolean
+    transferred_bytes: number
+  }
   type AgentCloudUploadBatchResult = {
     canceled: boolean
     uploaded: AgentCloudNode[]
@@ -381,6 +386,11 @@ declare global {
         cloudRetryFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudResolveFileOperationConflict: (id: string, policy: 'skip' | 'keep_both') => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudUploadPreflight: (parentID: number, name: string) => Promise<DesktopResult<XDriveUploadConflictPreflight>>
+        cloudUploadFile: (
+          parentID: number,
+          file: File,
+          conflictPolicy: 'fail' | 'skip' | 'keep_both',
+        ) => Promise<DesktopResult<AgentCloudUploadResult>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>

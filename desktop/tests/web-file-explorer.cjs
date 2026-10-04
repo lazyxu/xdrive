@@ -237,3 +237,19 @@ test('Web skipped uploads finish without pretending bytes were transferred', () 
   assert.ok(transfers.includes('bytes_done: 0'), 'skipped upload must preserve zero transferred bytes')
   assert.ok(sharedTransfers.includes("if (task.state === 'completed') return 100"), 'completed skipped transfer should render terminal progress')
 })
+
+
+test('Web upload batches prompt through the shared conflict resolver before transferring bytes', () => {
+  const app = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
+  for (const token of [
+    'useXDriveUploadConflictResolver()',
+    '<XDriveUploadConflictDialog {...uploadConflicts.dialogProps}',
+    'api.uploadConflictPreflight(parentID, file.name)',
+    'api.uploadWithConflictPolicy(',
+    "let conflictPolicy: XDriveUploadConflictPolicy = 'fail'",
+    "if (decision === 'cancel')",
+    'xDriveUploadBatchSummary({ uploaded, skipped, failed: 0, cancelled })',
+  ]) {
+    assert.ok(app.includes(token), `missing Web upload conflict UI: ${token}`)
+  }
+})

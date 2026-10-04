@@ -138,3 +138,20 @@ func TestManagerClearHistoryPreservesActiveTransfers(t *testing.T) {
 		t.Fatalf("clear history should keep only active transfer: %+v", tasks)
 	}
 }
+
+func TestManagerCompleteSkippedKeepsZeroTransferredBytes(t *testing.T) {
+	m := NewManager(10)
+	h := m.Start(Spec{FileName: "skip.bin", Kind: KindUpload, Direction: "upload", TotalBytes: 100})
+	h.CompleteSkipped()
+	_, tasks := m.Snapshot()
+	if len(tasks) != 1 {
+		t.Fatalf("tasks=%+v", tasks)
+	}
+	task := tasks[0]
+	if task.State != StateCompleted || task.BytesDone != 0 || task.BytesTotal != 100 || task.Percent != 100 {
+		t.Fatalf("unexpected skipped completion: %+v", task)
+	}
+	if task.InstantBytesPerSecond != 0 || task.AverageBytesPerSecond != 0 || task.CompletedAt == nil {
+		t.Fatalf("skipped transfer must have zero rate and completed timestamp: %+v", task)
+	}
+}

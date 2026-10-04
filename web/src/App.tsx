@@ -34,6 +34,8 @@ import {
   XDriveMediaGalleryPage,
   XDriveStatePanel,
   XDriveTaskCenterPage,
+  XDriveUploadConflictDialog,
+  useXDriveUploadConflictResolver,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   XDrivePasswordChangeForm,
@@ -64,8 +66,9 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
   XDriveFileExplorerPageState,
+  XDriveUploadConflictPolicy,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveUploadBatchSummary } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -500,6 +503,7 @@ function FileManager({
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const uploadConflicts = useXDriveUploadConflictResolver()
 
   const current = crumbs.at(-1)
 
@@ -790,20 +794,56 @@ function FileManager({
 
   const uploadFilesTo = async (parentID: number, files: File[]) => {
     if (files.length === 0) return
-    for (const file of files) {
-      try {
-        setUploadProgress(0)
-        await api.upload(parentID, file, setUploadProgress)
-        setFeedback({ tone: 'good', message: `${file.name} 已上传` })
-      } catch (err) {
-        handleError(err)
-        break
-      } finally {
-        setUploadProgress(null)
+    if (!uploadConflicts.beginBatch()) return
+    let uploaded = 0
+    let skipped = 0
+    let cancelled = false
+    let fatalError: unknown = null
+    try {
+      for (const file of files) {
+        let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
+        try {
+          const preflight = await api.uploadConflictPreflight(parentID, file.name)
+          if (preflight.conflict) {
+            const decision = await uploadConflicts.resolveConflict(file.name)
+            if (decision === 'cancel') {
+              cancelled = true
+              break
+            }
+            conflictPolicy = decision
+          }
+          if (conflictPolicy === 'skip') {
+            skipped += 1
+            continue
+          }
+          setUploadProgress(0)
+          const result = await api.uploadWithConflictPolicy(
+            parentID,
+            file,
+            conflictPolicy,
+            setUploadProgress,
+          )
+          if (result.skipped) skipped += 1
+          else uploaded += 1
+        } catch (error) {
+          fatalError = error
+          break
+        } finally {
+          setUploadProgress(null)
+        }
       }
+    } finally {
+      uploadConflicts.endBatch()
     }
-    if (current) await loadDirectory(current.id)
-    await refreshQuota()
+
+    if (uploaded > 0 && current) await loadDirectory(current.id)
+    if (uploaded > 0) await refreshQuota()
+    if (fatalError) {
+      handleError(fatalError)
+      return
+    }
+    const summary = xDriveUploadBatchSummary({ uploaded, skipped, failed: 0, cancelled })
+    if (summary) setFeedback(summary)
   }
 
   const uploadFiles = async (files: FileList | null) => {
@@ -1026,6 +1066,8 @@ function FileManager({
         )}
         </XDriveWorkspaceContent>
       </XDriveWorkspaceShell>
+
+      <XDriveUploadConflictDialog {...uploadConflicts.dialogProps} />
 
       <XDriveFileNameDialog
         open={folderOpen}

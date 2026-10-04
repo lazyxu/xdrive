@@ -36,6 +36,12 @@ type agentCloudSearchPage struct {
 	NextCursor string                   `json:"next_cursor,omitempty"`
 }
 
+type agentCloudUploadResult struct {
+	Node             client.Node `json:"node"`
+	Skipped          bool        `json:"skipped"`
+	TransferredBytes int64       `json:"transferred_bytes"`
+}
+
 type agentCreatedShare struct {
 	Share client.CreatedFileShare `json:"share"`
 	URL   string                  `json:"url"`
@@ -316,6 +322,62 @@ func (c *agentController) CloudUploadConflictPreflight(
 		return client.UploadConflictPreflight{}, err
 	}
 	return cli.UploadConflictPreflight(ctx, parentID, strings.TrimSpace(name))
+}
+
+func (c *agentController) CloudUploadWithConflictPolicy(
+	ctx context.Context,
+	parentID uint64,
+	localPath, name, conflictPolicy string,
+) (agentCloudUploadResult, error) {
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return agentCloudUploadResult{}, err
+	}
+	localPath = filepath.Clean(strings.TrimSpace(localPath))
+	if parentID == 0 || localPath == "." || !filepath.IsAbs(localPath) {
+		return agentCloudUploadResult{}, fmt.Errorf("parent id and absolute local path are required")
+	}
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return agentCloudUploadResult{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return agentCloudUploadResult{}, fmt.Errorf("upload path must reference a regular file")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = filepath.Base(localPath)
+	}
+	policy := client.UploadConflictPolicy(strings.TrimSpace(conflictPolicy))
+	switch policy {
+	case client.UploadConflictPolicyFail, client.UploadConflictPolicySkip, client.UploadConflictPolicyKeepBoth:
+	default:
+		return agentCloudUploadResult{}, fmt.Errorf("invalid upload conflict policy %q", conflictPolicy)
+	}
+	handle, progress := startAgentCloudTransfer(
+		c.transfers,
+		transfer.KindUpload,
+		"upload",
+		name,
+		localPath,
+		info.Size(),
+	)
+	result, err := cli.UploadFileResumableWithConflictPolicyResult(
+		ctx, parentID, localPath, name, policy, progress,
+	)
+	if err != nil {
+		finishAgentCloudTransfer(handle, err)
+		return agentCloudUploadResult{}, err
+	}
+	if result.Skipped {
+		handle.CompleteSkipped()
+	} else {
+		finishAgentCloudTransfer(handle, nil)
+		c.requestCloudSync(cfg)
+	}
+	return agentCloudUploadResult{
+		Node: result.Node, Skipped: result.Skipped, TransferredBytes: result.TransferredBytes,
+	}, nil
 }
 
 func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, localPath, name string) (client.Node, error) {

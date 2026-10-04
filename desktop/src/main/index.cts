@@ -66,6 +66,7 @@ import {
   type AgentCloudBatchResult,
   type AgentCloudFileOperation,
   type AgentCloudUploadConflictPreflight,
+  type AgentCloudUploadResult,
   type AgentCloudChildrenPage,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
@@ -2062,6 +2063,35 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().cloudUploadPreflight(parentID, name.trim())
     }, false))
+
+  ipcMain.handle(
+    'agent:cloud-upload-file',
+    (_event, parentID: unknown, localPath: unknown, name: unknown, policy: unknown) =>
+      runAgentAction<AgentCloudUploadResult>(async () => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'cloud-files')
+        requireAgentCapability(hello, 'upload-conflict-policy')
+        if (
+          typeof parentID !== 'number' ||
+          !Number.isSafeInteger(parentID) ||
+          parentID <= 0 ||
+          typeof localPath !== 'string' ||
+          !localPath.trim() ||
+          !path.isAbsolute(localPath) ||
+          typeof name !== 'string' ||
+          !name.trim() ||
+          (policy !== 'fail' && policy !== 'skip' && policy !== 'keep_both')
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Valid upload path, name, and conflict policy are required.')
+        }
+        return requireAgentClient().cloudUploadWithConflictPolicy(
+          parentID,
+          path.resolve(localPath),
+          name.trim(),
+          policy,
+        )
+      }, false),
+  )
 
   ipcMain.handle('agent:cloud-upload-files', async (_event, parentID: unknown) => {
     if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {

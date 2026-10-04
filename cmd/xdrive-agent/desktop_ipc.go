@@ -73,6 +73,7 @@ var desktopIPCCapabilities = []string{
 	"cloud-files",
 	"file-operation-conflict-resolution",
 	"upload-conflict-preflight",
+	"upload-conflict-policy",
 	"server-update",
 	"media-gallery",
 	"media-video-stream",
@@ -169,6 +170,7 @@ type desktopIPCController interface {
 	CloudRetryFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudResolveFileOperationConflict(context.Context, string, string) (client.FileOperation, error)
 	CloudUploadConflictPreflight(context.Context, uint64, string) (client.UploadConflictPreflight, error)
+	CloudUploadWithConflictPolicy(context.Context, uint64, string, string, string) (agentCloudUploadResult, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
 	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
@@ -426,6 +428,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("POST /v1/cloud/file-operation/retry", h.cloudRetryFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/resolve", h.cloudResolveFileOperationConflict)
 	mux.HandleFunc("POST /v1/cloud/upload/preflight", h.cloudUploadConflictPreflight)
+	mux.HandleFunc("POST /v1/cloud/upload/conflict", h.cloudUploadWithConflictPolicy)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
@@ -1156,6 +1159,46 @@ func (h *desktopIPCHandler) cloudUploadConflictPreflight(w http.ResponseWriter, 
 		return
 	}
 	result, err := h.ctrl.CloudUploadConflictPreflight(r.Context(), input.ParentID, input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudUploadWithConflictPolicy(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ParentID       uint64 `json:"parent_id"`
+		LocalPath      string `json:"local_path"`
+		Name           string `json:"name"`
+		ConflictPolicy string `json:"conflict_policy"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.LocalPath = strings.TrimSpace(input.LocalPath)
+	input.Name = strings.TrimSpace(input.Name)
+	input.ConflictPolicy = strings.TrimSpace(input.ConflictPolicy)
+	if input.ParentID == 0 || input.LocalPath == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_upload", "parent_id and local_path are required")
+		return
+	}
+	if input.ConflictPolicy != "fail" && input.ConflictPolicy != "skip" && input.ConflictPolicy != "keep_both" {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_upload_conflict_policy",
+			"conflict_policy must be fail, skip, or keep_both",
+		)
+		return
+	}
+	result, err := h.ctrl.CloudUploadWithConflictPolicy(
+		r.Context(),
+		input.ParentID,
+		input.LocalPath,
+		input.Name,
+		input.ConflictPolicy,
+	)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

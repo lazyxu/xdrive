@@ -1940,6 +1940,10 @@ export default function App({
               onDeleteMany: removeCloudNodes,
               onOperationQueued: rememberCloudFileOperation,
               onQuotaChanged: refreshCloudQuota,
+              uploadConflictSupported: Boolean(
+                agent.hello?.capabilities.includes('upload-conflict-preflight') &&
+                agent.hello?.capabilities.includes('upload-conflict-policy')
+              ),
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}

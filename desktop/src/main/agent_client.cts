@@ -355,6 +355,12 @@ export type AgentCloudUploadConflictPreflight = {
   conflict: boolean
 }
 
+export type AgentCloudUploadResult = {
+  node: AgentCloudNode
+  skipped: boolean
+  transferred_bytes: number
+}
+
 export type AgentCloudFileOperation = {
   id: string
   type: 'copy' | 'move' | 'delete'
@@ -1070,6 +1076,20 @@ export class AgentIPCClient {
       parent_id: parentID,
       name,
     }, 45_000)
+  }
+
+  cloudUploadWithConflictPolicy(
+    parentID: number,
+    localPath: string,
+    name: string,
+    conflictPolicy: 'fail' | 'skip' | 'keep_both',
+  ) {
+    return this.request<AgentCloudUploadResult>('POST', '/v1/cloud/upload/conflict', {
+      parent_id: parentID,
+      local_path: localPath,
+      name,
+      conflict_policy: conflictPolicy,
+    }, 6 * 60 * 60 * 1000)
   }
 
   cloudUpload(parentID: number, localPath: string, name: string) {
