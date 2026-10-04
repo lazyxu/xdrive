@@ -14,6 +14,7 @@ const sharedCloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', '
 const desktopLocalStorage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 const sharedWorkspaceShell = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
+const sharedWorkspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers.tsx'), 'utf8')
@@ -152,8 +153,11 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
   assert.ok(sharedWorkspaceShell.includes('XDriveWorkspaceShell'), 'shared workspace shell is missing')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_WIDTH'), 'shared workspace shell should own sidebar width')
+  assert.ok(sharedWorkspaceContent.includes('export function XDriveWorkspaceContent'), 'shared workspace content is missing')
   assert.ok(webApp.includes('<XDriveWorkspaceShell'), 'Web should consume the shared workspace shell')
   assert.ok(desktopApp.includes('<XDriveWorkspaceShell>'), 'Desktop should consume the shared workspace shell')
+  assert.ok((webApp.match(/<XDriveWorkspaceContent\b/g) || []).length >= 2, 'Web should use shared workspace content for authenticated shells')
+  assert.ok(desktopApp.includes('<XDriveWorkspaceContent'), 'Desktop should use shared workspace content')
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
 })
@@ -210,18 +214,22 @@ test('Web and Desktop pass account quota into the shared sidebar footer', () => 
   assert.ok(webApp.includes('void api.quota()'), 'Web should refresh sidebar quota outside manual file actions')
   assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
 })
-test('Files App Shell stays full-bleed and delegates scrolling to FileExplorer', () => {
+test('shared workspace content owns page spacing and Files full-bleed behavior', () => {
+  for (const token of [
+    "export type XDriveWorkspaceContentPresentation = 'page' | 'files'",
+    'export function XDriveWorkspaceContent',
+    "const files = presentation === 'files'",
+    "p: '34px 40px 48px'",
+    "'@media (max-width: 960px)'",
+    "'@media (min-width: 900px)'",
+    "overflow: 'hidden'",
+  ]) {
+    assert.ok(sharedWorkspaceContent.includes(token), `shared workspace content missing: ${token}`)
+  }
   assert.ok(webStyles.includes('.file-manager-shell {\n    height: 100vh;\n    overflow: hidden;'), 'wide Web shell should own the viewport without page scrolling')
-  assert.ok(webStyles.includes('.content-wrap.files-workspace {\n    padding: 0;\n    overflow: hidden;'), 'Files workspace should remain full-bleed without dashboard padding')
-  assert.ok(webStyles.includes('.files-workspace-surface {\n    height: 100%;\n    min-height: 0;'), 'Files workspace surface should fill the remaining shell height')
-  assert.ok(webApp.includes("overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }"), 'Files should delegate vertical scrolling to FileExplorer')
-  assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
-})
-
-test('Files App Shell stays full-bleed and delegates scrolling to FileExplorer', () => {
-  assert.ok(webStyles.includes('.file-manager-shell {\n    height: 100vh;\n    overflow: hidden;'), 'wide Web shell should own the viewport without page scrolling')
-  assert.ok(webStyles.includes('.content-wrap.files-workspace {\n    padding: 0;\n    overflow: hidden;'), 'Files workspace should remain full-bleed without dashboard padding')
-  assert.ok(webStyles.includes('.files-workspace-surface {\n    height: 100%;\n    min-height: 0;'), 'Files workspace surface should fill the remaining shell height')
-  assert.ok(webApp.includes("overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }"), 'Files should delegate vertical scrolling to FileExplorer')
+  assert.ok(webStyles.includes('.files-workspace-surface {\n    height: 100%;\n    min-height: 0;'), 'Web Files surface should fill the shared content area')
+  assert.equal(webStyles.includes('.content-wrap'), false, 'Web must not retain local workspace-content layout CSS')
+  assert.ok(webApp.includes('<XDriveWorkspaceContent\n          responsive\n          presentation={appView === \'files\' ? \'files\' : \'page\'}'), 'Web workspace must use shared content presentation')
+  assert.ok(desktopApp.includes("presentation={view === 'files' ? 'files' : 'page'}"), 'Desktop workspace must use shared content presentation')
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
 })

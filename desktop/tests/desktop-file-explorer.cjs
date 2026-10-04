@@ -8,6 +8,7 @@ const app = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'A
 const filesPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 const localStoragePage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const cloudStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
+const workspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
@@ -109,27 +110,23 @@ test('Desktop Files home load does not fetch CAS storage intelligence', () => {
 })
 
 
-test('Desktop Files is a full-bleed Explorer workspace without duplicate page chrome', () => {
-  assert.ok(
-    app.includes("className={view === 'files' ? 'content content-files-workspace' : 'content'}"),
-    'Desktop Files should switch the main content into full-workspace mode',
-  )
-  assert.equal(
-    app.includes('<XDrivePageHeader'),
-    false,
-    'Desktop App should not own a generic page header; extracted pages own shared workspace chrome',
-  )
-  assert.ok(app.includes('<DesktopFilesPage'), 'Desktop Files should render through the extracted full-bleed cloud page')
+test('Desktop Files uses shared workspace content for full-bleed Explorer layout', () => {
+  assert.ok(app.includes('<XDriveWorkspaceContent'), 'Desktop App must use shared workspace content')
+  assert.ok(app.includes("presentation={view === 'files' ? 'files' : 'page'}"), 'Desktop Files should select the shared full-bleed presentation')
+  assert.equal(app.includes('<XDrivePageHeader'), false, 'Desktop App should not own duplicate generic page chrome')
+  assert.ok(app.includes('<DesktopFilesPage'), 'Desktop Files should render through the extracted full-bleed page')
+  assert.ok(workspaceContent.includes("export type XDriveWorkspaceContentPresentation = 'page' | 'files'"), 'shared content presentation contract is missing')
+  assert.ok(workspaceContent.includes("const files = presentation === 'files'"), 'shared content must derive Files presentation centrally')
+  assert.ok(workspaceContent.includes("p: 0"), 'shared Files presentation must remove page padding')
+  assert.ok(workspaceContent.includes("overflow: 'hidden'"), 'shared Desktop Files presentation must own clipping')
+  assert.equal(styles.includes('.content-files-workspace {'), false, 'Desktop must not retain local Files workspace layout CSS')
+  assert.equal(styles.includes('.content {'), false, 'Desktop must not retain local page-content layout CSS')
 
-  const workspaceStart = styles.indexOf('.content-files-workspace {')
+  const workspaceStart = styles.indexOf('.cloud-explorer-panel {')
   const storageStart = styles.indexOf('.storage-panel > .cloud-subpanel', workspaceStart)
-  assert.ok(workspaceStart >= 0 && storageStart > workspaceStart, 'Desktop Files workspace CSS boundaries are missing')
+  assert.ok(workspaceStart >= 0 && storageStart > workspaceStart, 'Desktop Explorer-local CSS boundaries are missing')
   const workspaceStyles = styles.slice(workspaceStart, storageStart)
-
   for (const token of [
-    'padding: 0;',
-    'overflow: hidden;',
-    '.cloud-explorer-panel {',
     'flex: 1;',
     'min-height: 0;',
     'margin-top: 0;',
@@ -137,9 +134,9 @@ test('Desktop Files is a full-bleed Explorer workspace without duplicate page ch
     'border-radius: 0;',
     '.cloud-explorer-panel > [data-xdrive-file-explorer]',
   ]) {
-    assert.ok(workspaceStyles.includes(token), `missing full-workspace Explorer rule: ${token}`)
+    assert.ok(workspaceStyles.includes(token), `missing Explorer-local rule: ${token}`)
   }
-  assert.equal(workspaceStyles.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use a hard-coded viewport subtraction')
+  assert.equal(workspaceStyles.includes('calc(100vh - 170px)'), false, 'Desktop Files should not use hard-coded viewport subtraction')
   assert.ok(filesPage.includes('<XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>'), 'over-quota warning should remain an inset workspace strip')
 })
 

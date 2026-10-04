@@ -42,6 +42,7 @@ import {
   XDriveVersionHistoryDialog,
   XDriveWorkspaceSurface,
   XDriveWorkspaceShell,
+  XDriveWorkspaceContent,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
 import type {
@@ -743,7 +744,7 @@ function FileManager({
             />
           </Toolbar>
         </AppBar>
-        <Box component="main" className="content-wrap">
+        <XDriveWorkspaceContent responsive>
           <Card className="auth-card" sx={{ p: 3, mx: 'auto', borderRadius: 2 }}>
             <Typography component="h2" variant="h6" fontWeight={700} sx={{ mb: 2 }}>
               修改临时密码
@@ -761,7 +762,7 @@ function FileManager({
               onSubmit={(event) => { void submitPassword(event) }}
             />
           </Card>
-        </Box>
+        </XDriveWorkspaceContent>
         <XDriveFeedbackSnackbar
           open={Boolean(feedback)}
           tone={feedback?.tone ?? 'neutral'}
@@ -919,15 +920,9 @@ function FileManager({
           onSelect={(destination) => setAppView(destination as AppView)}
         />
 
-        <Box
-          component="main"
-          className={appView === 'files' ? 'content-wrap files-workspace' : 'content-wrap'}
-          sx={{
-            minWidth: 0,
-            minHeight: 0,
-            width: '100%',
-            overflowY: { md: appView === 'files' ? 'hidden' : 'auto' },
-          }}
+        <XDriveWorkspaceContent
+          responsive
+          presentation={appView === 'files' ? 'files' : 'page'}
         >
         {appView === 'files' ? (
           <Box
@@ -1013,7 +1008,7 @@ function FileManager({
             <XDriveStatePanel variant="plain" loading message="正在切换工作区…" />
           </Box>
         )}
-        </Box>
+        </XDriveWorkspaceContent>
       </XDriveWorkspaceShell>
 
       <XDriveFileNameDialog

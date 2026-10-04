@@ -47,6 +47,7 @@ import {
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
   XDriveWorkspaceSidebar,
+  XDriveWorkspaceContent,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveWorkspaceShell,
@@ -1809,7 +1810,7 @@ export default function App({
         onSelect={(destination) => setView(destination as View)}
       />
 
-      <main className={view === 'files' ? 'content content-files-workspace' : 'content'}>
+      <XDriveWorkspaceContent presentation={view === 'files' ? 'files' : 'page'}>
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack
             spacing={1}
@@ -2029,7 +2030,7 @@ export default function App({
           />
         )}
 
-      </main>
+      </XDriveWorkspaceContent>
 
         <XDriveSettingsDialog
           open={settingsOpen}
