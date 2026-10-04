@@ -123,9 +123,8 @@ test('Desktop Files uses shared workspace content for full-bleed Explorer layout
   assert.equal(styles.includes('.content {'), false, 'Desktop must not retain local page-content layout CSS')
 
   const workspaceStart = styles.indexOf('.cloud-explorer-panel {')
-  const storageStart = styles.indexOf('.storage-panel > .cloud-subpanel', workspaceStart)
-  assert.ok(workspaceStart >= 0 && storageStart > workspaceStart, 'Desktop Explorer-local CSS boundaries are missing')
-  const workspaceStyles = styles.slice(workspaceStart, storageStart)
+  assert.ok(workspaceStart >= 0, 'Desktop Explorer-local CSS is missing')
+  const workspaceStyles = styles.slice(workspaceStart)
   for (const token of [
     'flex: 1;',
     'min-height: 0;',
@@ -216,35 +215,11 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
     '.cloud-list-header',
     '.cloud-row {',
     '.cloud-name {',
+    '.cloud-row-actions {',
+    '.cloud-compact-row {',
   ]) {
     assert.equal(styles.includes(selector), false, `dead legacy Desktop Explorer CSS remains: ${selector}`)
   }
-
-  assert.ok(styles.includes('.cloud-row-actions {'), 'shared dialog/list row actions are still required')
-  assert.ok(styles.includes('.cloud-compact-row {'), 'trash/version compact rows are still required')
-})
-
-test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-shared Explorer CSS', () => {
-  assert.ok(filesPage.includes('<section className="cloud-explorer-panel">'), 'Desktop Files should use only its workspace container')
-  assert.equal(filesPage.includes('panel cloud-panel cloud-explorer-panel'), false, 'Desktop Files must not inherit generic dashboard panel chrome')
-
-  for (const selector of [
-    '.cloud-panel {',
-    '.cloud-note {',
-    '.cloud-heading-actions {',
-    '.cloud-search-row {',
-    '.cloud-search-input {',
-    '.cloud-breadcrumbs {',
-    '.cloud-list {',
-    '.cloud-list-header',
-    '.cloud-row {',
-    '.cloud-name {',
-  ]) {
-    assert.equal(styles.includes(selector), false, `dead legacy Desktop Explorer CSS remains: ${selector}`)
-  }
-
-  assert.ok(styles.includes('.cloud-row-actions {'), 'shared dialog/list row actions are still required')
-  assert.ok(styles.includes('.cloud-compact-row {'), 'trash/version compact rows are still required')
 })
 
 test('Desktop FileExplorer uses cursor-paged server sorting for cloud directories', () => {
