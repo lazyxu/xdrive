@@ -571,6 +571,14 @@ func (f *fakeDesktopIPCController) CloudSetMediaFavorite(
 	return client.MediaFavorite{Favorite: favorite}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudSetMediaTags(
+	_ context.Context,
+	_ uint64,
+	tags []string,
+) (client.MediaTags, error) {
+	return client.MediaTags{Tags: append([]string(nil), tags...)}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	f.cloudMediaThumbnailID = nodeID
 	return f.cloudMediaThumbnail, f.err
@@ -1250,7 +1258,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t,
 		handler,
 		http.MethodGet,
-		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true",
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel",
 		"",
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
@@ -1263,6 +1271,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		ctrl.cloudMediaQuery.AssetKind != "live_photo" ||
 		ctrl.cloudMediaQuery.HasLocation == nil ||
 		!*ctrl.cloudMediaQuery.HasLocation ||
+		ctrl.cloudMediaQuery.Tag != "Travel" ||
 		ctrl.cloudMediaQuery.CapturedFrom == nil ||
 		ctrl.cloudMediaQuery.CapturedTo == nil {
 		t.Fatalf(
@@ -1315,6 +1324,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media favorite status=%d body=%s", res.Code, res.Body.String())
 	}
 
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPatch,
+		"/v1/media/tags",
+		`{"node_id":31,"tags":["Family","Travel"]}`,
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), `"tags":["Family","Travel"]`) {
+		t.Fatalf("media tags status=%d body=%s", res.Code, res.Body.String())
+	}
+
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/thumbnail?node_id=31", "")
 	if res.Code != http.StatusOK ||
 		!strings.Contains(res.Body.String(), "\"content_type\":\"image/jpeg\"") ||
@@ -1362,6 +1383,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?captured_from=not-a-date",
 		"/v1/media/items?has_location=maybe",
 		"/v1/media/items?favorite=maybe",
+		"/v1/media/items?tag=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 		"/v1/media/items?limit=0",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",

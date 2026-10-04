@@ -283,6 +283,11 @@ export default function App({
       const result = await window.xdriveDesktop.agent.setMediaFavorite(nodeID, favorite)
       if (!result.ok) throw new Error(result.error.message)
     },
+    setTags: async (nodeID, tags) => {
+      const result = await window.xdriveDesktop.agent.setMediaTags(nodeID, tags)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data.tags
+    },
     loadThumbnail: async (nodeID) => {
       const result = await window.xdriveDesktop.agent.getMediaThumbnail(nodeID)
       if (!result.ok) throw new Error(result.error.message)

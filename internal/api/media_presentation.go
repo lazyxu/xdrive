@@ -9,6 +9,7 @@ import (
 type mediaAssetPresentation struct {
 	Kind      string
 	Favorite  bool
+	Tags      []string
 	Resources []mediaResourceDTO
 }
 
@@ -43,7 +44,7 @@ func (s *Server) photoAssetPresentations(
 
 	var assetMetadata []meta.PhotoMetadata
 	if err := s.DB.WithContext(ctx).
-		Select("asset_id", "favorite").
+		Select("asset_id", "favorite", "tags_json").
 		Where("asset_id IN ?", assetIDs).
 		Find(&assetMetadata).Error; err != nil {
 		return nil, err
@@ -55,6 +56,11 @@ func (s *Server) photoAssetPresentations(
 		}
 		presentation := out[primaryNodeID]
 		presentation.Favorite = metadata.Favorite
+		tags, err := decodeMediaTags(metadata.TagsJSON)
+		if err != nil {
+			return nil, err
+		}
+		presentation.Tags = tags
 		out[primaryNodeID] = presentation
 	}
 

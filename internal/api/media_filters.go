@@ -21,6 +21,7 @@ type mediaQueryOptions struct {
 	CapturedTo   *time.Time
 	HasLocation  *bool
 	Favorite     *bool
+	Tag          string
 }
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
@@ -66,6 +67,14 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 			return mediaQueryOptions{}, false
 		}
 		out.Favorite = &value
+	}
+	if raw := strings.TrimSpace(c.Query("tag")); raw != "" {
+		value, err := normalizeMediaTag(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err.Error())
+			return mediaQueryOptions{}, false
+		}
+		out.Tag = value
 	}
 	return out, true
 }
@@ -113,6 +122,12 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 	}
 	if options.Favorite != nil {
 		query = query.Where("pm.favorite = ?", *options.Favorite)
+	}
+	if options.Tag != "" {
+		query = query.Where(
+			"EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.tags_json, ''), '[]')::jsonb) AS media_tag(value) WHERE LOWER(media_tag.value) = LOWER(?))",
+			options.Tag,
+		)
 	}
 	return query
 }

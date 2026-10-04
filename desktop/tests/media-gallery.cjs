@@ -47,6 +47,9 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /收藏/)
   assert.match(sharedGallery, /已收藏/)
   assert.match(sharedGallery, /未收藏/)
+  assert.match(sharedGallery, /标签/)
+  assert.match(sharedGallery, /保存标签/)
+  assert.match(sharedGallery, /精确标签/)
   assert.match(sharedGallery, /StarIcon/)
   assert.match(sharedGallery, /新建相册/)
   assert.match(sharedGallery, /重命名/)
@@ -89,6 +92,8 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /captured_to\?: string/)
   assert.match(sharedModels, /has_location\?: boolean/)
   assert.match(sharedModels, /favorite\?: boolean/)
+  assert.match(sharedModels, /tags\?: string\[\]/)
+  assert.match(sharedModels, /tag\?: string/)
   assert.match(sharedModels, /kind: 'folder' \| 'imported' \| 'manual' \| 'smart' \| string/)
   assert.match(sharedModels, /query\?: MediaGalleryQuery/)
   assert.match(sharedModels, /live_photo\?: boolean/)
@@ -100,7 +105,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -117,6 +122,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'addMediaAlbumItems:',
     'removeMediaAlbumItem:',
     'setMediaFavorite:',
+    'setMediaTags:',
     'getMediaThumbnail:',
     'getMediaLivePhotoMotion:',
     'getMediaVideoURL:',
@@ -137,6 +143,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'addMediaAlbumItems(albumID:',
     'removeMediaAlbumItem(albumID:',
     'setMediaFavorite(nodeID:',
+    'setMediaTags(nodeID:',
     'mediaThumbnail(nodeID:',
     'mediaLivePhotoMotion(nodeID:',
     'mediaVideoURL(nodeID:',
@@ -157,6 +164,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('POST /v1/media/album/items'))
   assert.ok(desktopIPC.includes('DELETE /v1/media/album/item'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/favorite'))
+  assert.ok(desktopIPC.includes('PATCH /v1/media/tags'))
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
   assert.ok(desktopIPC.includes('GET /v1/media/video'))
@@ -167,6 +175,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(desktopApp, /loadVideo/)
   assert.match(preload, /agent:get-media-items', kind, limit, offset, query/)
   assert.match(agentClient, /appendAgentMediaQuery\(query, filters\)/)
+  assert.match(agentClient, /query\.set\('tag', filters\.tag\.trim\(\)\)/)
   assert.match(desktopIndexHTML, /media-src 'self' data: blob: http:\/\/127\.0\.0\.1:\*/)
 })
 

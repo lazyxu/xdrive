@@ -180,6 +180,7 @@ function appendMediaGalleryQuery(
   if (query.favorite !== undefined) {
     values.set('favorite', String(query.favorite))
   }
+  if (query.tag?.trim()) values.set('tag', query.tag.trim())
 }
 
 export function sessionFromAuth(result: AuthResult): AuthSession {
@@ -569,6 +570,16 @@ export class XDriveApi {
       {
         method: 'PATCH',
         body: JSON.stringify({ favorite }),
+      },
+    )
+  }
+
+  setMediaTags(nodeID: number, tags: string[]) {
+    return this.request<{ tags: string[] }>(
+      `/api/v1/media/items/${nodeID}/tags`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ tags }),
       },
     )
   }

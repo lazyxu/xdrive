@@ -65,6 +65,7 @@ type MediaItem struct {
 	Metadata         MediaMetadata          `json:"metadata"`
 	AssetKind        string                 `json:"asset_kind,omitempty"`
 	Favorite         bool                   `json:"favorite"`
+	Tags             []string               `json:"tags,omitempty"`
 	Resources        []MediaResource        `json:"resources,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
@@ -78,6 +79,7 @@ type MediaSmartAlbumQuery struct {
 	CapturedTo   *time.Time `json:"captured_to,omitempty"`
 	HasLocation  *bool      `json:"has_location,omitempty"`
 	Favorite     *bool      `json:"favorite,omitempty"`
+	Tag          string     `json:"tag,omitempty"`
 }
 
 type MediaAlbum struct {
@@ -99,6 +101,7 @@ type MediaQuery struct {
 	CapturedTo   *time.Time
 	HasLocation  *bool
 	Favorite     *bool
+	Tag          string
 }
 
 func (q MediaQuery) add(values url.Values) {
@@ -122,6 +125,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if q.Favorite != nil {
 		values.Set("favorite", strconv.FormatBool(*q.Favorite))
+	}
+	if value := strings.TrimSpace(q.Tag); value != "" {
+		values.Set("tag", value)
 	}
 }
 
@@ -374,6 +380,26 @@ func (c *Client) SetMediaFavorite(
 		http.MethodPatch,
 		fmt.Sprintf("/api/v1/media/items/%d/favorite", nodeID),
 		map[string]bool{"favorite": favorite},
+		&out,
+	)
+	return out, err
+}
+
+type MediaTags struct {
+	Tags []string `json:"tags"`
+}
+
+func (c *Client) SetMediaTags(
+	ctx context.Context,
+	nodeID uint64,
+	tags []string,
+) (MediaTags, error) {
+	var out MediaTags
+	err := c.json(
+		ctx,
+		http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/items/%d/tags", nodeID),
+		map[string][]string{"tags": tags},
 		&out,
 	)
 	return out, err

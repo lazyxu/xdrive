@@ -291,7 +291,10 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 
 	if err := db.Model(&meta.PhotoMetadata{}).
 		Where("asset_id = ?", live.ID).
-		Update("favorite", true).Error; err != nil {
+		Updates(map[string]any{
+			"favorite":  true,
+			"tags_json": `["Family","Travel"]`,
+		}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -312,6 +315,9 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 	}
 	if !favoriteMetadata.Favorite {
 		t.Fatal("favorite was overwritten by PhotoAsset reconciliation")
+	}
+	if favoriteMetadata.TagsJSON != `["Family","Travel"]` {
+		t.Fatalf("tags were overwritten by PhotoAsset reconciliation: %q", favoriteMetadata.TagsJSON)
 	}
 	for _, asset := range again {
 		if idsBefore[asset.PrimaryNodeID] != asset.ID {

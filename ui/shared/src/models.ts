@@ -327,6 +327,7 @@ export interface MediaItem {
   metadata: MediaMetadata
   asset_kind?: PhotoAssetKind
   favorite?: boolean
+  tags?: string[]
   resources?: MediaResource[]
   derived_resources?: MediaDerivedResource[]
   live_photo?: boolean
@@ -350,4 +351,5 @@ export interface MediaGalleryQuery {
   captured_to?: string
   has_location?: boolean
   favorite?: boolean
+  tag?: string
 }

@@ -533,6 +533,10 @@ function FileManager({
     setFavorite: async (nodeID, favorite) => {
       await api.setMediaFavorite(nodeID, favorite)
     },
+    setTags: async (nodeID, tags) => {
+      const result = await api.setMediaTags(nodeID, tags)
+      return result.tags
+    },
     loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
     loadLivePhotoMotion: async (nodeID) => URL.createObjectURL(await api.mediaLivePhotoMotion(nodeID)),
     loadVideo: (nodeID) => api.mediaVideoURL(nodeID),
