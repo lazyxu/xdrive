@@ -83,6 +83,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/trash/:id/restore", s.trashRestore)
 	authed.DELETE("/trash/:id", s.trashDeletePermanently)
 	authed.GET("/files/:id/content", s.downloadFile)
+	authed.POST("/download/archive", s.downloadArchive)
 	authed.GET("/media/items", s.listMediaItems)
 	authed.GET("/media/items/:id", s.getMediaItem)
 	authed.PATCH("/media/items/:id/favorite", s.setMediaFavorite)
