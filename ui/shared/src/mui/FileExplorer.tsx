@@ -359,6 +359,23 @@ const detailsHeaderHeight = 32
 const detailsVirtualizationThreshold = 240
 const detailsOverscan = 10
 
+type XDriveFileExplorerMarqueeRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+type XDriveFileExplorerMarqueeSession = {
+  pointerId: number
+  startClientX: number
+  startClientY: number
+  startContentX: number
+  startContentY: number
+  baseIDs: XDriveFileExplorerID[]
+  moved: boolean
+}
+
 export function XDriveFileExplorer({
   items,
   crumbs,
@@ -494,6 +511,8 @@ export function XDriveFileExplorer({
   const itemElementRefs = useRef(new Map<string, HTMLElement>())
   const dragAutoScrollFrameRef = useRef<number | null>(null)
   const dragPointerYRef = useRef<number | null>(null)
+  const marqueeSessionRef = useRef<XDriveFileExplorerMarqueeSession | null>(null)
+  const suppressBackgroundClickRef = useRef(false)
   const [renamingID, setRenamingID] = useState<XDriveFileExplorerID | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [renameSubmitting, setRenameSubmitting] = useState(false)
@@ -505,6 +524,7 @@ export function XDriveFileExplorer({
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
   const [dropTargetCrumbID, setDropTargetCrumbID] = useState<XDriveFileExplorerID | null>(null)
+  const [marqueeRect, setMarqueeRect] = useState<XDriveFileExplorerMarqueeRect | null>(null)
 
   const viewMode = controlledViewMode ?? internalViewMode
   const sort = controlledSort ?? internalSort
@@ -602,6 +622,125 @@ export function XDriveFileExplorer({
   const clearSelection = () => {
     setSelectionAnchorID(null)
     commitSelection([])
+  }
+
+  const marqueeSelectionIDs = (
+    session: XDriveFileExplorerMarqueeSession,
+    currentClientX: number,
+    currentClientY: number,
+    currentContentY: number,
+  ) => {
+    const selected = new Map(session.baseIDs.map((id) => [explorerIDKey(id), id]))
+
+    if (viewMode === 'details') {
+      const top = Math.min(session.startContentY, currentContentY)
+      const bottom = Math.max(session.startContentY, currentContentY)
+      if (bottom > detailsHeaderHeight && visibleItems.length > 0) {
+        const first = Math.max(
+          0,
+          Math.floor((Math.max(detailsHeaderHeight, top) - detailsHeaderHeight) / detailsRowHeight),
+        )
+        const last = Math.min(
+          visibleItems.length - 1,
+          Math.floor((Math.max(detailsHeaderHeight, bottom - 0.001) - detailsHeaderHeight) / detailsRowHeight),
+        )
+        for (let index = first; index <= last; index += 1) {
+          const item = visibleItems[index]
+          if (item) selected.set(explorerIDKey(item.id), item.id)
+        }
+      }
+      return [...selected.values()]
+    }
+
+    const left = Math.min(session.startClientX, currentClientX)
+    const right = Math.max(session.startClientX, currentClientX)
+    const top = Math.min(session.startClientY, currentClientY)
+    const bottom = Math.max(session.startClientY, currentClientY)
+    for (const item of visibleItems) {
+      const element = itemElementRefs.current.get(explorerIDKey(item.id))
+      if (!element) continue
+      const rect = element.getBoundingClientRect()
+      if (rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom) {
+        selected.set(explorerIDKey(item.id), item.id)
+      }
+    }
+    return [...selected.values()]
+  }
+
+  const startMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || renamingID !== null || draggedItems.length > 0) return
+    const target = event.target as HTMLElement
+    if (target.closest(
+      '[data-xdrive-file-explorer-item], button, input, textarea, select, [role="columnheader"], [role="separator"], [data-xdrive-file-explorer-marquee]',
+    )) return
+
+    const host = event.currentTarget
+    const rect = host.getBoundingClientRect()
+    const verticalScrollbar = host.offsetWidth - host.clientWidth
+    const horizontalScrollbar = host.offsetHeight - host.clientHeight
+    if (verticalScrollbar > 0 && event.clientX >= rect.right - verticalScrollbar) return
+    if (horizontalScrollbar > 0 && event.clientY >= rect.bottom - horizontalScrollbar) return
+
+    const additive = event.ctrlKey || event.metaKey
+    const contentX = event.clientX - rect.left + host.scrollLeft
+    const contentY = event.clientY - rect.top + host.scrollTop
+    marqueeSessionRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startContentX: contentX,
+      startContentY: contentY,
+      baseIDs: additive ? [...selectedIDs] : [],
+      moved: false,
+    }
+    setSelectionAnchorID(null)
+    if (!additive) commitSelection([])
+    setMarqueeRect({ left: contentX, top: contentY, width: 0, height: 0 })
+    host.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+
+  const updateMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = marqueeSessionRef.current
+    if (!session || session.pointerId !== event.pointerId) return
+    const host = event.currentTarget
+    const rect = host.getBoundingClientRect()
+    const currentContentX = event.clientX - rect.left + host.scrollLeft
+    const currentContentY = event.clientY - rect.top + host.scrollTop
+    const moved = Math.max(
+      Math.abs(event.clientX - session.startClientX),
+      Math.abs(event.clientY - session.startClientY),
+    ) >= 3
+    if (!session.moved && !moved) return
+    session.moved = true
+    event.preventDefault()
+    setMarqueeRect({
+      left: Math.min(session.startContentX, currentContentX),
+      top: Math.min(session.startContentY, currentContentY),
+      width: Math.abs(currentContentX - session.startContentX),
+      height: Math.abs(currentContentY - session.startContentY),
+    })
+    commitSelection(marqueeSelectionIDs(
+      session,
+      event.clientX,
+      event.clientY,
+      currentContentY,
+    ))
+  }
+
+  const finishMarqueeSelection = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    cancelled = false,
+  ) => {
+    const session = marqueeSessionRef.current
+    if (!session || session.pointerId !== event.pointerId) return
+    if (cancelled) commitSelection(session.baseIDs)
+    if (session.moved && !cancelled) suppressBackgroundClickRef.current = true
+    marqueeSessionRef.current = null
+    setMarqueeRect(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
   }
 
   const scheduleItemFocus = (id: XDriveFileExplorerID) => {
@@ -1814,10 +1953,25 @@ export function XDriveFileExplorer({
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
       <Box
         ref={scrollHostRef}
-        sx={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}
+        sx={{
+          position: 'relative',
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'auto',
+          userSelect: marqueeRect ? 'none' : undefined,
+        }}
         tabIndex={visibleItems.length === 0 ? 0 : -1}
         onScroll={handleScroll}
+        onPointerDown={startMarqueeSelection}
+        onPointerMove={updateMarqueeSelection}
+        onPointerUp={(event) => finishMarqueeSelection(event)}
+        onPointerCancel={(event) => finishMarqueeSelection(event, true)}
         onClick={(event) => {
+          if (suppressBackgroundClickRef.current) {
+            suppressBackgroundClickRef.current = false
+            return
+          }
           const target = event.target as HTMLElement
           if (!target.closest('[data-xdrive-file-explorer-item]')) {
             clearSelection()
@@ -2098,6 +2252,25 @@ export function XDriveFileExplorer({
             })}
           </Box>
         )}
+
+        {marqueeRect ? (
+          <Box
+            data-xdrive-file-explorer-marquee
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              left: marqueeRect.left,
+              top: marqueeRect.top,
+              width: marqueeRect.width,
+              height: marqueeRect.height,
+              border: '1px solid',
+              borderColor: 'primary.main',
+              bgcolor: 'action.selected',
+              pointerEvents: 'none',
+              zIndex: 4,
+            }}
+          />
+        ) : null}
 
         {loading && visibleItems.length > 0 ? (
           <Box
