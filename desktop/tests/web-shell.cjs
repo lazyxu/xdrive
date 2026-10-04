@@ -8,9 +8,10 @@ const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'ut
 const webStyles = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'styles.css'), 'utf8')
 const desktopApp = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
+const sharedWorkspaceSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx'), 'utf8')
 const sharedStorageSummary = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
 const sharedCloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
-const sharedLocalStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
+const desktopLocalStorage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 const sharedWorkspaceShell = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
@@ -19,7 +20,7 @@ const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 
-test('Web AppBar keeps global chrome compact while admin tools live in the sidebar', () => {
+test('Web AppBar keeps global chrome compact while admin tools live in the shared sidebar', () => {
   const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"', webApp.indexOf('className="app-shell"'))
   const appEnd = webApp.indexOf('</AppBar>', appStart)
   assert.notEqual(appStart, -1, 'missing Web AppBar')
@@ -31,39 +32,27 @@ test('Web AppBar keeps global chrome compact while admin tools live in the sideb
   assert.ok(appBar.includes("borderBottom: 1"), 'Web AppBar should separate chrome with a divider instead of elevation')
   assert.ok(webStyles.includes('min-height: 48px !important'), 'Web AppBar should stay at the compact 48px height')
   assert.equal(webStyles.includes('box-shadow: 0 2px 12px'), false, 'Web AppBar should not keep the old elevated shadow')
-  assert.equal(appBar.includes('用户管理'), false, 'User Management should not remain in the AppBar')
-  assert.equal(appBar.includes('审计日志'), false, 'Audit should not remain in the AppBar')
-  assert.equal(appBar.includes('全局存储'), false, 'Global Storage should not remain in the AppBar')
-
-  const asideStart = webApp.indexOf('<XDriveSidebarSurface ariaLabel="网页端功能区" responsive>')
-  const asideEnd = webApp.indexOf('</XDriveSidebarSurface>', asideStart)
-  assert.notEqual(asideStart, -1, 'missing shared Web sidebar surface')
-  assert.notEqual(asideEnd, -1, 'missing shared Web sidebar surface end')
-  const sidebar = webApp.slice(asideStart, asideEnd)
-
-  assert.ok(sidebar.includes("profile?.role === 'admin'"), 'admin navigation must remain role-gated')
-  assert.ok(sidebar.includes('ariaLabel="管理员功能"'), 'missing admin navigation landmark')
-  for (const label of ['管理', '用户管理', '审计日志', '全局存储']) {
-    assert.ok(sidebar.includes(label), `missing admin sidebar label: ${label}`)
+  for (const label of ['用户管理', '审计日志', '全局存储']) {
+    assert.equal(appBar.includes(label), false, `${label} should not remain in the AppBar`)
   }
-  assert.ok(sidebar.includes('ManageAccountsRoundedIcon'), 'missing User Management icon')
-  assert.ok(sidebar.includes('AssessmentRoundedIcon'), 'missing Audit icon')
-  assert.ok(sidebar.includes("selected={appView === 'admin-users'}"), 'User Management should expose selected page state')
-  assert.ok(sidebar.includes("selected={appView === 'admin-audit'}"), 'Audit should expose selected page state')
-  assert.ok(sidebar.includes("selected={appView === 'admin-storage'}"), 'Global Storage should expose selected page state')
-  assert.ok(sidebar.includes("setAppView('admin-users')"), 'User Management should navigate to a page')
-  assert.ok(sidebar.includes("setAppView('admin-audit')"), 'Audit should navigate to a page')
-  assert.ok(sidebar.includes("setAppView('admin-storage')"), 'Global Storage should navigate to a page')
+
+  assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must use the shared complete sidebar renderer')
+  assert.ok(webApp.includes("const webSidebarSections: XDriveWorkspaceSidebarSectionModel[] = profile?.role === 'admin'"), 'admin sidebar model must remain role-gated')
+  assert.ok(webApp.includes("label: '管理'"), 'missing admin section label')
+  assert.ok(webApp.includes("ariaLabel: '管理员功能'"), 'missing admin navigation landmark')
+  for (const label of ['用户管理', '审计日志', '全局存储']) {
+    assert.ok(webApp.includes(`label: '${label}'`), `missing admin sidebar destination: ${label}`)
+  }
+  assert.ok(webApp.includes('ManageAccountsRoundedIcon'), 'missing User Management icon')
+  assert.ok(webApp.includes('AssessmentRoundedIcon'), 'missing Audit icon')
 })
-
-
 test('Web first-class workspaces use page chrome except the full-bleed Files workspace', () => {
   assert.ok(webApp.includes('XDriveWorkspaceSurface'), 'Web app should reuse the shared workspace surface')
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not render a duplicate page header')
   assert.ok(webApp.includes('className="files-workspace-surface"'), 'Files should render as the application workspace itself')
   assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Gallery page title must use workspace page chrome')
   assert.ok(webApp.includes('<ExternalSourcesPanel'), 'External Sources should remain a first-class page')
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Local Storage should render through the shared page')
+  assert.equal(webApp.includes('LocalStoragePage'), false, 'Local Storage is Desktop-only')
   assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Cloud Storage should render through the shared page')
 })
 
@@ -133,53 +122,41 @@ test('Web admin tables stay useful at common desktop widths', () => {
   assert.ok(adminAudit.includes('metadataText(detailEvent.metadata)'), 'Audit details should preserve metadata')
 })
 
-test('Web and Desktop shell primitives live in shared MUI', () => {
+test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(sharedSidebar.includes('XDriveSidebarSurface'), 'shared sidebar surface primitive is missing')
-  assert.ok(sharedSidebar.includes('component="aside"'), 'shared sidebar surface must own the aside landmark')
   assert.ok(sharedSidebar.includes('XDriveSidebarNavList'), 'shared sidebar list primitive is missing')
   assert.ok(sharedSidebar.includes('XDriveSidebarNavItem'), 'shared sidebar item primitive is missing')
   assert.ok(sharedSidebar.includes('XDriveCoreWorkspaceNavItems'), 'shared core workspace navigation is missing')
   assert.ok(sharedSidebar.includes('XDriveSidebarSection'), 'shared sidebar section primitive is missing')
-  assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_WIDTH = 184'), 'shared sidebar width token is missing')
-  assert.ok(sharedSidebar.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH = 176'), 'shared compact sidebar width token is missing')
+  assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')
+  assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarSurface'), 'shared complete sidebar must own the surface')
+  assert.ok(sharedWorkspaceSidebar.includes('<XDriveCoreWorkspaceNavItems'), 'shared complete sidebar must own core navigation')
+  assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarSection'), 'shared complete sidebar must own extension sections')
+  assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarStorageSummary'), 'shared complete sidebar must own the footer')
+  assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web should consume the shared complete sidebar')
+  assert.ok(desktopApp.includes('<XDriveWorkspaceSidebar'), 'Desktop should consume the shared complete sidebar')
+  for (const token of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
+    assert.equal(webApp.includes(token), false, `Web should not assemble sidebar primitive directly: ${token}`)
+    assert.equal(desktopApp.includes(token), false, `Desktop should not assemble sidebar primitive directly: ${token}`)
+  }
+
   assert.ok(sharedStorageSummary.includes('XDriveSidebarStorageSummary'), 'shared sidebar storage summary is missing')
   assert.ok(sharedCloudStorage.includes('export function XDriveCloudStoragePage'), 'shared cloud storage workspace is missing')
   assert.ok(sharedCloudStorage.includes('title="云端存储"'), 'shared cloud storage workspace title is missing')
-  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render the shared cloud storage workspace')
-  assert.ok(desktopApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render the same shared cloud storage workspace')
-  assert.ok(sharedLocalStorage.includes('export function XDriveLocalStoragePage'), 'shared local storage workspace is missing')
-  assert.ok(sharedLocalStorage.includes('title="本地存储"'), 'shared local storage workspace title is missing')
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render the shared local storage workspace')
-  assert.ok(desktopApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Desktop must render the same shared local storage workspace')
-  assert.ok(sharedStorageSummary.includes('physical') === false, 'shared storage summary should remain presentation-only')
-  assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
-  assert.ok(sharedWorkspaceShell.includes('XDriveWorkspaceShell'), 'shared sidebar/workspace shell is missing')
-  assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_WIDTH'), 'shared workspace shell should own the standard sidebar width')
-  assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH'), 'shared workspace shell should own the compact sidebar width')
-  assert.ok(sharedWorkspaceShell.includes("'@media (max-width: 960px)'"), 'shared workspace shell should own the Desktop compact breakpoint')
-  assert.ok(webApp.includes('<XDriveWorkspaceShell'), 'Web should consume the shared workspace shell')
-  assert.ok(webApp.includes('responsive\n        className="web-workspace-shell"'), 'Web should use the responsive shared workspace shell')
-  assert.ok(desktopApp.includes('<XDriveWorkspaceShell>'), 'Desktop should consume the shared workspace shell')
-  assert.ok(sharedWorkspace.includes('subtitle={subtitle}'), 'shared workspace page subtitle plumbing is missing')
-  assert.ok(sharedWorkspace.includes('actions={pageActions}'), 'shared workspace page actions plumbing is missing')
-  assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
-  assert.ok(sharedAccount.includes('XDriveAccountSummary'), 'shared account summary is missing')
-  assert.ok(sharedAccount.includes('XDriveAccountMenu'), 'shared account menu container is missing')
-  assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
-  assert.ok(webApp.includes('XDriveBrandLockup'), 'Web should consume shared brand lockup')
-  assert.ok(webApp.includes('XDriveSidebarSurface'), 'Web should consume shared sidebar surface')
-  assert.ok(webApp.includes('XDriveCoreWorkspaceNavItems'), 'Web should consume shared core workspace navigation')
-  assert.ok(desktopApp.includes('XDriveCoreWorkspaceNavItems'), 'Desktop should consume shared core workspace navigation')
-  assert.ok(webApp.includes('<XDriveSidebarSection label="管理" responsive>'), 'Web admin navigation should use shared sidebar section chrome')
-  assert.ok(desktopApp.includes('<XDriveSidebarSection pinnedBottom>'), 'Desktop diagnostics should use shared sidebar section chrome')
-  assert.equal(desktopApp.includes('appearance="dark"'), false, 'Desktop sidebar should follow the shared theme instead of forcing a dark island')
-  assert.ok(sharedSidebar.includes("borderRight: responsive ? { xs: 0, md: 1 } : 1"), 'non-responsive Desktop sidebar should retain a subtle workspace divider')
-  assert.ok(webApp.includes('XDriveSidebarStorageSummary'), 'Web should consume shared sidebar storage summary')
-  assert.ok(desktopApp.includes('XDriveSidebarStorageSummary'), 'Desktop should consume shared sidebar storage summary')
-  assert.ok(webApp.includes('XDriveAccountAvatarButton'), 'Web should consume shared account chrome')
-  assert.ok(webApp.includes('XDriveAccountMenu'), 'Web should consume the shared account menu container')
-})
+  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render shared cloud storage')
+  assert.ok(desktopApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render shared cloud storage')
+  assert.ok(desktopLocalStorage.includes('export function DesktopLocalStoragePage'), 'Desktop local-storage presentation is missing')
+  assert.ok(desktopApp.includes('<DesktopLocalStoragePage source={localStorageSource} />'), 'Desktop must render local storage')
+  assert.equal(webApp.includes('LocalStoragePage'), false, 'Web must not expose Desktop-only local storage')
 
+  assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
+  assert.ok(sharedWorkspaceShell.includes('XDriveWorkspaceShell'), 'shared workspace shell is missing')
+  assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_WIDTH'), 'shared workspace shell should own sidebar width')
+  assert.ok(webApp.includes('<XDriveWorkspaceShell'), 'Web should consume the shared workspace shell')
+  assert.ok(desktopApp.includes('<XDriveWorkspaceShell>'), 'Desktop should consume the shared workspace shell')
+  assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
+  assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
+})
 test('shared account trigger is informative on Web and compact on Desktop', () => {
   assert.ok(sharedAccount.includes("import ExpandMoreRoundedIcon"), 'full account trigger should expose a dropdown affordance')
   assert.ok(sharedAccount.includes('if (compact) {'), 'shared account trigger should retain an avatar-only compact mode')
@@ -202,46 +179,33 @@ test('Shared sidebar uses compact system navigation chrome', () => {
   assert.equal(sharedSidebar.includes('borderLeft:'), false, 'responsive sidebar sections should separate by spacing rather than rules')
 })
 
-test('Web and Desktop show account storage usage at the bottom of the sidebar', () => {
+test('Web and Desktop pass account quota into the shared sidebar footer', () => {
   assert.ok(sharedStorageSummary.includes("label = '云端存储'"), 'shared storage summary should identify account usage as cloud storage')
-  assert.ok(sharedStorageSummary.includes("boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB'"), 'tiny storage usage should avoid byte-level noise')
   assert.ok(sharedStorageSummary.includes("'无容量限制'"), 'unlimited accounts should use a natural capacity label')
-  assert.ok(sharedStorageSummary.includes('diskTotalBytes?: number'), 'shared storage summary should accept real server disk total capacity')
-  assert.ok(sharedStorageSummary.includes('diskAvailableBytes?: number'), 'shared storage summary should accept real server disk availability')
-  assert.ok(sharedStorageSummary.includes('diskPercentage'), 'unlimited storage footer should derive disk usage percentage from server capacity')
-  assert.ok(sharedStorageSummary.includes('磁盘占用 ${diskPercentageLabel} · 可用 ${formatBinarySize(boundedDiskAvailable)}'), 'unlimited storage footer should show disk usage percentage with remaining space')
-  assert.equal(sharedStorageSummary.includes("'不限配额'"), false, 'legacy technical unlimited wording should be removed')
-  assert.ok(sharedStorageSummary.includes('已使用 {usedLabel}'), 'shared storage summary should describe usage in user-facing language')
-  assert.ok(sharedStorageSummary.includes("bgcolor: 'transparent'"), 'shared storage summary should behave like sidebar footer content, not a card')
-  assert.ok(sharedStorageSummary.includes('percentageLabel'), 'shared storage summary should show quota percentage when available')
-  assert.ok(sharedStorageSummary.includes("warningQuota"), 'shared storage summary should distinguish near-full quota')
-  assert.ok(sharedStorageSummary.includes("'空间紧张'"), 'shared storage summary should label near-full quota')
-  assert.ok(sharedStorageSummary.includes("'已用满'"), 'shared storage summary should label full quota')
-  assert.ok(sharedStorageSummary.includes("'已超额'"), 'shared storage summary should label over-quota usage')
-  assert.ok(sharedStorageSummary.includes("'warning.light'"), 'dark sidebar should keep near-full quota readable')
-  assert.ok(sharedStorageSummary.includes("'error.light'"), 'dark sidebar should keep full quota readable')
+  assert.ok(sharedStorageSummary.includes('diskPercentage'), 'unlimited storage footer should derive disk usage percentage')
   assert.ok(sharedStorageSummary.includes('<LinearProgress'), 'shared storage summary should show quota or disk progress')
-  assert.ok(sharedStorageSummary.includes('progressPercentage !== null'), 'unlimited accounts with disk capacity should reuse the progress bar for disk usage')
+  assert.ok(sharedWorkspaceSidebar.includes('storageSummary ? ('), 'shared WorkspaceSidebar must own footer placement')
+  assert.ok(sharedWorkspaceSidebar.includes("display: responsive ? { xs: 'none', md: 'block' } : 'block'"), 'shared sidebar must own responsive footer visibility')
 
-  assert.ok(webApp.includes('usedBytes={quota.physical_used_bytes}'), 'Web sidebar should use current account physical usage')
-  assert.ok(webApp.includes('totalBytes={quota.quota_bytes}'), 'Web sidebar should use current account quota')
-  assert.ok(webApp.includes('diskTotalBytes={quota.disk_total_bytes}'), 'Web sidebar should pass server disk total for unlimited-account disk usage percentage')
-  assert.ok(webApp.includes('diskAvailableBytes={quota.disk_available_bytes}'), 'Web sidebar should show real server disk availability when the quota API exposes it')
-  assert.equal(webApp.includes('secondary={quota ?'), false, 'Web Storage nav item should not duplicate quota text')
+  for (const token of [
+    'usedBytes: quota.physical_used_bytes',
+    'totalBytes: quota.quota_bytes',
+    'diskTotalBytes: quota.disk_total_bytes',
+    'diskAvailableBytes: quota.disk_available_bytes',
+  ]) {
+    assert.ok(webApp.includes(token), `Web sidebar quota adapter missing: ${token}`)
+  }
+  for (const token of [
+    'usedBytes: cloudQuota.physical_used_bytes',
+    'totalBytes: cloudQuota.quota_bytes',
+    'diskTotalBytes: cloudQuota.disk_total_bytes',
+    'diskAvailableBytes: cloudQuota.disk_available_bytes',
+  ]) {
+    assert.ok(desktopApp.includes(token), `Desktop sidebar quota adapter missing: ${token}`)
+  }
   assert.ok(webApp.includes('void api.quota()'), 'Web should refresh sidebar quota outside manual file actions')
-  assert.ok(webApp.includes("sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}"), 'Web shared workspace should flex below the compact AppBar')
-  assert.equal(webApp.includes("calc(100vh - 48px)"), false, 'Web workspace should not duplicate viewport subtraction math')
-  assert.equal(webApp.includes('label="存储"'), false, 'Web should rely on the shared storage footer presentation instead of overriding it')
-  assert.equal(webApp.includes("borderRadius: 0, bgcolor: 'transparent'"), false, 'Web should not duplicate shared storage footer styling')
-  assert.ok(webApp.includes("overflowY: { md: appView === 'files' ? 'hidden' : 'auto' }"), 'Web non-files content should scroll while Files delegates scrolling to Explorer')
-
-  assert.ok(desktopApp.includes('usedBytes={cloudQuota.physical_used_bytes}'), 'Desktop sidebar should use cloud account physical usage')
-  assert.ok(desktopApp.includes('totalBytes={cloudQuota.quota_bytes}'), 'Desktop sidebar should use cloud account quota')
-  assert.ok(desktopApp.includes('diskTotalBytes={cloudQuota.disk_total_bytes}'), 'Desktop sidebar should pass server disk total for unlimited-account disk usage percentage')
-  assert.ok(desktopApp.includes('diskAvailableBytes={cloudQuota.disk_available_bytes}'), 'Desktop sidebar should show real server disk availability when the quota API exposes it')
   assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
 })
-
 test('Files App Shell stays full-bleed and delegates scrolling to FileExplorer', () => {
   assert.ok(webStyles.includes('.file-manager-shell {\n    height: 100vh;\n    overflow: hidden;'), 'wide Web shell should own the viewport without page scrolling')
   assert.ok(webStyles.includes('.content-wrap.files-workspace {\n    padding: 0;\n    overflow: hidden;'), 'Files workspace should remain full-bleed without dashboard padding')

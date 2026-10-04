@@ -46,15 +46,9 @@ import {
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
-  XDriveLocalStoragePage,
-  XDriveCoreWorkspaceNavItems,
+  XDriveWorkspaceSidebar,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
-  XDriveSidebarNavItem,
-  XDriveSidebarNavList,
-  XDriveSidebarSurface,
-  XDriveSidebarSection,
-  XDriveSidebarStorageSummary,
   XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -63,7 +57,14 @@ import {
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
 } from '@xdrive/ui/mui'
-import type { MediaGalleryDataSource, XDriveCloudStorageDataSource, XDriveLocalStorageDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
+import type {
+  MediaGalleryDataSource,
+  XDriveCloudStorageDataSource,
+  XDriveFileExplorerSort,
+  XDriveSidebarDestination,
+  XDriveWorkspaceSidebarSectionModel,
+  XDriveStatusTone,
+} from '@xdrive/ui/mui'
 import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
@@ -73,7 +74,9 @@ import {
   xDriveFileExplorerPageRequestOptions,
   xDriveFileOperationActive,
 } from '@xdrive/shared'
-import { DesktopCloudPage } from './DesktopCloudPage'
+import { DesktopFilesPage } from './DesktopFilesPage'
+import { DesktopLocalStoragePage } from './DesktopLocalStoragePage'
+import type { DesktopLocalStorageDataSource } from './DesktopLocalStoragePage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
 import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
@@ -89,7 +92,7 @@ import type {
   XDriveServerUpdateState,
 } from '@xdrive/shared'
 
-type View = 'overview' | 'cloud' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage' | 'conflicts' | 'diagnostics'
+type View = 'overview' | 'files' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage' | 'conflicts' | 'diagnostics'
 
 type ConfirmDialogState = {
   title: string
@@ -404,7 +407,7 @@ export default function App({
       }
     },
   }), [storageStatsSupported])
-  const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
+  const localStorageSource = useMemo<DesktopLocalStorageDataSource>(() => ({
     load: async () => {
       const [treeResult, cacheResult] = await Promise.all([
         window.xdriveDesktop.agent.getStorageTree(),
@@ -512,6 +515,10 @@ export default function App({
       }
       if (target === 'files') {
         setView('local-storage')
+        return
+      }
+      if (target === 'cloud') {
+        setView('files')
         return
       }
       setView(target)
@@ -682,7 +689,7 @@ export default function App({
   }, [view, agent.connected, configured])
 
   useEffect(() => {
-    if (view !== 'cloud' || !agent.connected || !configured) return
+    if (view !== 'files' || !agent.connected || !configured) return
     void loadCloudHome()
     // Cloud browser loads once when entering the page or reconnecting.
     // Navigation, search, mutations and Refresh perform explicit reloads.
@@ -1245,6 +1252,36 @@ export default function App({
     </DesktopFrame>
   )
 
+  const desktopSidebarLeadingItems: XDriveSidebarDestination[] = [
+    {
+      key: 'overview',
+      label: '概览',
+      icon: <DashboardRoundedIcon fontSize="small" />,
+    },
+  ]
+  const desktopSidebarTrailingItems: XDriveSidebarDestination[] = [
+    {
+      key: 'conflicts',
+      label: '冲突',
+      icon: <WarningAmberRoundedIcon fontSize="small" />,
+      badge: status?.conflict_count || undefined,
+    },
+  ]
+  const desktopSidebarSections: XDriveWorkspaceSidebarSectionModel[] = [
+    {
+      key: 'diagnostics',
+      ariaLabel: '桌面版辅助功能',
+      pinnedBottom: true,
+      items: [
+        {
+          key: 'diagnostics',
+          label: '诊断',
+          icon: <BuildRoundedIcon fontSize="small" />,
+        },
+      ],
+    },
+  ]
+
   if (!agent.connected) {
     return renderDesktopFrame(
       <div className="center-shell">
@@ -1743,43 +1780,32 @@ export default function App({
 
   return renderDesktopFrame(
     <XDriveWorkspaceShell>
-      <XDriveSidebarSurface ariaLabel="桌面版侧边栏" className="sidebar">
-        <XDriveSidebarNavList ariaLabel="桌面版功能区">
-          <XDriveSidebarNavItem selected={view === 'overview'} icon={<DashboardRoundedIcon fontSize="small" />} primary="概览" onClick={() => setView('overview')} />
-          <XDriveCoreWorkspaceNavItems
-            selected={view === 'cloud' ? 'files' : view}
-            transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}
-            onSelect={(destination) => {
-              if (destination === 'files') setView('cloud')
-              else setView(destination)
-            }}
-          />
-          <XDriveSidebarNavItem selected={view === 'conflicts'} icon={<WarningAmberRoundedIcon fontSize="small" />} primary="冲突" badge={status?.conflict_count || undefined} onClick={() => setView('conflicts')} />
-        </XDriveSidebarNavList>
-        <XDriveSidebarSection pinnedBottom>
-          <XDriveSidebarNavList ariaLabel="桌面版辅助功能">
-            <XDriveSidebarNavItem selected={view === 'diagnostics'} icon={<BuildRoundedIcon fontSize="small" />} primary="诊断" onClick={() => setView('diagnostics')} />
-          </XDriveSidebarNavList>
-        </XDriveSidebarSection>
-        {cloudQuota && (
-          <XDriveSidebarStorageSummary
-           
-            usedBytes={cloudQuota.physical_used_bytes}
-            totalBytes={cloudQuota.quota_bytes}
-            diskTotalBytes={cloudQuota.disk_total_bytes}
-            diskAvailableBytes={cloudQuota.disk_available_bytes}
-            sx={{ mt: 1.25 }}
-          />
-        )}
-      </XDriveSidebarSurface>
+      <XDriveWorkspaceSidebar
+        ariaLabel="桌面版侧边栏"
+        navAriaLabel="桌面版功能区"
+        className="sidebar"
+        selected={view}
+        transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}
+        showLocalStorage
+        leadingItems={desktopSidebarLeadingItems}
+        trailingItems={desktopSidebarTrailingItems}
+        sections={desktopSidebarSections}
+        storageSummary={cloudQuota ? {
+          usedBytes: cloudQuota.physical_used_bytes,
+          totalBytes: cloudQuota.quota_bytes,
+          diskTotalBytes: cloudQuota.disk_total_bytes,
+          diskAvailableBytes: cloudQuota.disk_available_bytes,
+        } : null}
+        onSelect={(destination) => setView(destination as View)}
+      />
 
-      <main className={view === 'cloud' ? 'content content-files-workspace' : 'content'}>
+      <main className={view === 'files' ? 'content content-files-workspace' : 'content'}>
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack
             spacing={1}
             sx={{
-              mt: view === 'cloud' ? 1.5 : 2,
-              mx: view === 'cloud' ? 1.5 : 0,
+              mt: view === 'files' ? 1.5 : 2,
+              mx: view === 'files' ? 1.5 : 0,
               flexShrink: 0,
             }}
           >
@@ -1856,8 +1882,8 @@ export default function App({
           )
         )}
 
-        {view === 'cloud' && (
-          <DesktopCloudPage
+        {view === 'files' && (
+          <DesktopFilesPage
             quota={cloudQuota}
             explorer={{
               items: cloudItems,
@@ -1925,7 +1951,7 @@ export default function App({
         )}
 
         {view === 'local-storage' && (
-          <XDriveLocalStoragePage source={localStorageSource} />
+          <DesktopLocalStoragePage source={localStorageSource} />
         )}
 
         {view === 'cloud-storage' && (

@@ -8,7 +8,7 @@ const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageS
 const cloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
-const localStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
+const localStorage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const desktopApp = [
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8'),
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8'),
@@ -41,13 +41,14 @@ test('Cloud storage is one shared Web/Desktop workspace', () => {
   assert.equal(webApp.includes('scope="self"'), false, 'Web must not keep a second account-storage presentation')
 })
 
-test('Local storage is shared across Web/Desktop and reuses metric primitives', () => {
-  assert.ok(localStorage.includes('export function XDriveLocalStoragePage'))
+test('Local storage is a Desktop-only page and reuses shared metric primitives', () => {
+  assert.ok(localStorage.includes('export function DesktopLocalStoragePage'))
   assert.ok(localStorage.includes('title="本地存储"'))
   assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 1)
   assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 4)
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
-  assert.ok(desktopApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.equal(webApp.includes('LocalStoragePage'), false)
+  assert.equal(webApp.includes('localStorageSource'), false)
+  assert.ok(desktopApp.includes('<DesktopLocalStoragePage source={localStorageSource} />'))
   assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3)
   assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 16)
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)

@@ -11,7 +11,7 @@ const versions = read('ui', 'shared', 'src', 'mui', 'VersionHistoryDialog.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const webAdapters = read('web', 'src', 'fileDialogAdapters.ts')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
-const desktopCloud = read('desktop', 'src', 'renderer', 'DesktopCloudPage.tsx')
+const desktopCloud = read('desktop', 'src', 'renderer', 'DesktopFilesPage.tsx')
 const desktopAdapters = read('desktop', 'src', 'renderer', 'fileDialogAdapters.ts')
 
 test('Trash dialog owns loading, restore and permanent-delete UI', () => {

@@ -8,7 +8,7 @@ const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'
 const sharedSourceManager = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
 const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
 const sharedCloudStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
-const sharedLocalStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
+const desktopLocalStoragePage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const sharedShareDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
 const sharedTrashDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'TrashDialog.tsx'), 'utf8')
 const sharedVersionHistoryDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'VersionHistoryDialog.tsx'), 'utf8')
@@ -21,7 +21,7 @@ const desktopShareAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', '
 const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopOverviewPage.tsx'), 'utf8')
 const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
 const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
-const desktopCloudPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopCloudPage.tsx'), 'utf8')
+const desktopFilesPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 const desktopGalleryPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopGalleryPage.tsx'), 'utf8')
 const desktopTransfersPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopTransfersPage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
@@ -30,7 +30,7 @@ const renderer = [
   sharedSourceManager,
   sharedSettingsDialog,
   sharedCloudStoragePage,
-  sharedLocalStoragePage,
+  desktopLocalStoragePage,
   sharedShareDialog,
   sharedTrashDialog,
   sharedVersionHistoryDialog,
@@ -43,7 +43,7 @@ const renderer = [
   desktopOverviewPage,
   desktopConflictsPage,
   desktopDiagnosticsPage,
-  desktopCloudPage,
+  desktopFilesPage,
   desktopGalleryPage,
   desktopTransfersPage,
   desktopSettingsContent,
@@ -58,6 +58,7 @@ const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedSourceSummaryCard = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
 const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusAlert.tsx'), 'utf8')
 const sharedSidebarNav = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
+const sharedWorkspaceSidebar = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx'), 'utf8')
 const sharedWorkspaceShell = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
 const sharedAccountChrome = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrandLockup = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
@@ -200,23 +201,23 @@ test('desktop keeps global sync, settings and account actions in the window titl
   assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
 })
 
-test('desktop sidebar consumes shared MUI navigation with icons, state and badges', () => {
-  const start = renderer.indexOf('<XDriveSidebarSurface ariaLabel="桌面版侧边栏" className="sidebar">')
-  const end = renderer.indexOf('</XDriveSidebarSurface>', start)
-  assert.notEqual(start, -1, 'missing shared desktop sidebar surface')
-  assert.notEqual(end, -1, 'missing shared desktop sidebar surface end')
-  const sidebar = renderer.slice(start, end)
+test('desktop sidebar uses the shared complete sidebar renderer with Desktop-only extensions', () => {
+  assert.ok(rendererApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must render the shared complete sidebar')
+  assert.ok(rendererApp.includes('showLocalStorage'), 'Desktop must opt into Local Storage')
+  assert.ok(rendererApp.includes('leadingItems={desktopSidebarLeadingItems}'), 'Desktop overview should be supplied through the shared sidebar model')
+  assert.ok(rendererApp.includes('trailingItems={desktopSidebarTrailingItems}'), 'Desktop conflicts should be supplied through the shared sidebar model')
+  assert.ok(rendererApp.includes('sections={desktopSidebarSections}'), 'Desktop diagnostics should be supplied through the shared sidebar model')
+  assert.ok(rendererApp.includes("label: '概览'"), 'Desktop overview extension is missing')
+  assert.ok(rendererApp.includes("label: '冲突'"), 'Desktop conflict extension is missing')
+  assert.ok(rendererApp.includes("label: '诊断'"), 'Desktop diagnostics extension is missing')
+  assert.ok(rendererApp.includes('badge: status?.conflict_count || undefined'), 'Desktop conflict badge is missing')
 
-  assert.equal(sidebar.includes("view === 'settings'"), false, 'settings should live in the titlebar, not the feature sidebar')
-  assert.equal(sidebar.includes('className="account"'), false, 'legacy sidebar account summary should be removed')
-  assert.equal((sidebar.match(/<XDriveSidebarNavItem/g) || []).length, 3, 'Desktop-only overview/conflict/diagnostic destinations should remain local sidebar items')
-  assert.equal((sidebar.match(/<XDriveCoreWorkspaceNavItems/g) || []).length, 1, 'Desktop must reuse the shared core workspace destinations')
   for (const icon of [
     'DashboardRoundedIcon',
     'WarningAmberRoundedIcon',
     'BuildRoundedIcon',
   ]) {
-    assert.ok(sidebar.includes(icon), `missing Desktop-only sidebar icon: ${icon}`)
+    assert.ok(rendererApp.includes(icon), `missing Desktop-only sidebar icon: ${icon}`)
   }
   for (const icon of [
     'FolderRoundedIcon',
@@ -228,29 +229,18 @@ test('desktop sidebar consumes shared MUI navigation with icons, state and badge
   ]) {
     assert.ok(sharedSidebarNav.includes(icon), `missing shared core sidebar icon: ${icon}`)
   }
-  assert.equal((sharedSidebarNav.match(/<XDriveSidebarNavItem/g) || []).length, 6, 'shared sidebar module should own the same six core destinations for Web and Desktop')
-  assert.ok(sidebar.includes('transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}'), 'Desktop transfer count must feed the shared core navigation')
-  assert.ok(sidebar.includes('badge={status?.conflict_count || undefined}'), 'Desktop conflict count must stay on the Desktop-only conflict item')
-  assert.ok(sidebar.includes('<XDriveSidebarSection pinnedBottom>'), 'diagnostics should stay in the shared pinned sidebar section')
-  assert.equal(sidebar.includes('appearance="dark"'), false, 'Desktop sidebar should inherit the application theme instead of forcing dark mode')
+  assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must capability-gate Local Storage')
+  assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')
+  assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarStorageSummary'), 'shared complete sidebar must own the footer')
+  for (const token of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
+    assert.equal(rendererApp.includes(token), false, `Desktop should not assemble sidebar primitive directly: ${token}`)
+  }
   assert.ok(renderer.includes('<XDriveWorkspaceShell>'), 'Desktop should consume the shared sidebar/workspace shell')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_WIDTH'), 'shared workspace shell should own the standard sidebar width token')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH'), 'shared workspace shell should own the compact sidebar width token')
   assert.equal(styles.includes('.shell {'), false, 'Desktop should not keep a duplicate local workspace grid')
-  assert.equal(styles.includes('--xdrive-sidebar-width'), false, 'Desktop CSS should not duplicate the shared sidebar width')
-  assert.equal(styles.includes('--xdrive-sidebar-compact-width'), false, 'Desktop CSS should not duplicate the shared compact sidebar width')
-  assert.ok(sharedSidebarNav.includes('export function XDriveSidebarSurface'), 'shared sidebar surface primitive is missing')
-  assert.ok(sharedSidebarNav.includes('component="aside"'), 'shared sidebar surface must own the aside landmark')
-  assert.ok(sharedSidebarNav.includes("responsive ? { xs: 'block', md: 'flex' } : 'flex'"), 'shared responsive sidebar surface behavior is missing')
-  assert.ok(sharedSidebarNav.includes("appearance = 'light'"), 'shared sidebar appearance contract is missing')
-  assert.ok(sharedSidebarNav.includes("appearance === 'dark'"), 'shared dark sidebar appearance is missing')
-  assert.ok(sharedSidebarNav.includes('export function XDriveSidebarSection'), 'shared sidebar section primitive is missing')
-  assert.ok(sharedSidebarNav.includes("pinnedBottom ? 'auto'"), 'shared pinned-bottom sidebar section behavior is missing')
-  assert.ok(sharedSidebarNav.includes('primary="文件"'), 'shared core navigation should own the common file label')
-  assert.equal(sidebar.includes('primary="云端文件"'), false, 'desktop sidebar should not use the legacy cloud-files label')
   assert.equal(styles.includes('.sidebar {'), false, 'Desktop should not keep a duplicate local sidebar surface implementation')
 })
-
 test('desktop gates CfAPI-only storage controls by platform', () => {
   assert.ok(renderer.includes("const storagePoliciesSupported = info?.platform === 'win32'"), 'missing Windows storage capability gate')
   assert.ok(renderer.includes('当前平台不提供 Windows CfAPI'), 'missing Linux FUSE storage explanation')
@@ -276,11 +266,11 @@ test('desktop settings use a dialog instead of a workspace page', () => {
 test('desktop transient management surfaces use shared modal features', () => {
   assert.ok(rendererApp.includes('<XDriveSettingsDialog'), 'Desktop must render the shared settings dialog')
   assert.ok(rendererApp.includes('<XDriveSourceManager'), 'Desktop must render the shared Source manager')
-  assert.ok(desktopCloudPage.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
+  assert.ok(desktopFilesPage.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
   assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
   assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
-  assert.ok(desktopCloudPage.includes('<XDriveTrashDialog'), 'Desktop cloud page must render the shared trash dialog')
-  assert.ok(desktopCloudPage.includes('<XDriveVersionHistoryDialog'), 'Desktop cloud page must render the shared version history dialog')
+  assert.ok(desktopFilesPage.includes('<XDriveTrashDialog'), 'Desktop cloud page must render the shared trash dialog')
+  assert.ok(desktopFilesPage.includes('<XDriveVersionHistoryDialog'), 'Desktop cloud page must render the shared version history dialog')
   assert.ok(desktopFileExplorer.includes('<XDriveFileNameDialog'), 'Desktop FileExplorer must render the shared file-name dialog')
   assert.equal(rendererApp.includes('source-create modal-form-surface'), false, 'Desktop must not retain a local Source create shell')
   assert.equal(rendererApp.includes('source-settings modal-form-surface'), false, 'Desktop must not retain a local Source settings shell')

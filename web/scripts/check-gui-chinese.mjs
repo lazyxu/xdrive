@@ -27,6 +27,7 @@ const files = {
   confirmDialog: readRepo('ui/shared/src/mui/ConfirmDialog.tsx'),
   metricCards: readRepo('ui/shared/src/mui/MetricCards.tsx'),
   sidebarStorageSummary: readRepo('ui/shared/src/mui/SidebarStorageSummary.tsx'),
+  workspaceSidebar: readRepo('ui/shared/src/mui/WorkspaceSidebar.tsx'),
   descriptionGrid: readRepo('ui/shared/src/mui/DescriptionGrid.tsx'),
   sectionHeader: readRepo('ui/shared/src/mui/SectionHeader.tsx'),
   tableSurface: readRepo('ui/shared/src/mui/TableSurface.tsx'),
@@ -77,7 +78,8 @@ requireText(files.tableSurface, ['XDriveTableSurface', 'TableContainer', 'border
 requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem'], '外部来源描述网格')
 if ((files.sources.match(/<XDriveSectionHeader\b/g) || []).length !== 5) throw new Error('Web 外部来源小节标题没有完整复用共享 SectionHeader')
 if (files.sources.includes('<MuiDivider') || files.sources.includes('Divider as MuiDivider')) throw new Error('Web 外部来源仍保留本地 Divider 小节标题')
-requireText(files.app, ['XDriveSidebarStorageSummary', 'usedBytes={quota.physical_used_bytes}', 'totalBytes={quota.quota_bytes}', 'diskAvailableBytes={quota.disk_available_bytes}'], 'Web 侧栏存储摘要')
+requireText(files.workspaceSidebar, ['XDriveWorkspaceSidebar', 'XDriveSidebarStorageSummary'], '共享完整侧栏')
+requireText(files.app, ['XDriveWorkspaceSidebar', 'usedBytes: quota.physical_used_bytes', 'totalBytes: quota.quota_bytes', 'diskAvailableBytes: quota.disk_available_bytes'], 'Web 侧栏存储摘要')
 requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'web-account-menu', '退出登录'], 'Web 账号菜单')
 requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', 'XDriveAccountMenu', '<Avatar', '<Menu', '<Divider'], '共享账号 chrome')
 if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')

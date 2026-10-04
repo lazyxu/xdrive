@@ -56,8 +56,8 @@ test('Web and Desktop both render the shared task center workspace', () => {
   assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')
   assert.equal((web.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Web must not duplicate the transfer-center workspace')
   assert.ok(sidebarNav.includes('primary="传输"'), 'shared core navigation must expose Transfers')
-  assert.ok(web.includes('<XDriveCoreWorkspaceNavItems'), 'Web must consume shared core navigation')
-  assert.ok(desktop.includes('<XDriveCoreWorkspaceNavItems'), 'Desktop must consume shared core navigation')
+  assert.ok(web.includes('<XDriveWorkspaceSidebar'), 'Web must consume the shared workspace sidebar')
+  assert.ok(desktop.includes('<XDriveWorkspaceSidebar'), 'Desktop must consume the shared workspace sidebar')
 })
 
 test('Web upload and download operations feed persistent transfer history', () => {
