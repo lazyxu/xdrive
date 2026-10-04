@@ -60,7 +60,7 @@ The following foundations already exist and should be extended rather than repla
 - `SourceCollection` / `SourceCollectionItem` for optional provider collection provenance;
 - provenance-only `SourceItemMetadata` for original path, owner identity, remote create time, and provider MD5; media-semantic legacy columns are removed during migration;
 - canonical `MediaMetadata` for node-scoped parsing plus the derived `PhotoAsset` / `PhotoResource` / `PhotoMetadata` logical asset layer;
-- xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, versioned local relation evidence (`ImageUniqueID` / Apple `BurstUUID` / XMP Media Management IDs), local JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails, derived thumbnail caching, and Gallery indexing;
+- xDrive-native image/video classification, MIME detection, image dimensions, EXIF orientation/camera/lens/date fields, GPS extraction, MP4/MOV duration/display dimensions/rotation/frame rate/bitrate/codec parsing, versioned local relation evidence (`ImageUniqueID` / Apple `BurstUUID` / XMP Media Management IDs), local JPEG/PNG/GIF/HEIC/HEIF/WebP/AVIF/TIFF/BMP/DNG-preview thumbnails, derived thumbnail caching, and Gallery indexing;
 - Yike Pull stable `yike:<owner_uk>:<fsid>` identity, file/albums discovery, MD5 hint, Range download, resumable upload, bounded API rate, cancellation, and incomplete-inventory safety;
 - Synology Photos Pull stable `synology:<space>:<item_id>` identity, Personal/Shared spaces, file/albums discovery, Range download, cancellation, retry classification, and optional-album failure isolation;
 - Synology Push hybrid identity foundation: filesystem-complete inventory/fast byte reads plus optional Photos item-ID canonicalization with filesystem aliases and in-place promotion;
@@ -171,7 +171,7 @@ Support is tracked by capability rather than file extension alone. "Gallery" mea
 | GIF | Dimensions/basic image metadata | First-frame thumbnail | Complete as image | Animated GIF playback is not yet a Gallery feature |
 | HEIC / HEIF | Dimensions + supported embedded EXIF; Apple asset ID where present | Complete through local HEIC decoder | Complete | Apple Live Photo supported when deterministic local evidence exists |
 | WebP | Dimensions/basic image metadata | Complete through local WebP decoder | Complete | Animated WebP playback is not yet a Gallery feature |
-| AVIF | ISO-BMFF classification and dimensions | **Partial: no local AVIF thumbnail decoder yet** | Indexed with fallback tile | Keep marked partial until decoder/preview is verified |
+| AVIF | ISO-BMFF classification and dimensions | Complete through local AVIF decoder | Complete as image | Animated/multi-image AVIF playback is not yet a Gallery feature |
 | TIFF | TIFF/EXIF/GPS metadata | Complete through local TIFF decoder | Complete | Common TIFF still images only |
 | BMP | Dimensions/basic metadata | Complete through local BMP decoder | Complete | Still image only |
 | DNG | TIFF/DNG metadata, EXIF/GPS, safe embedded-JPEG preview | Complete when a valid embedded JPEG preview exists | Complete; may become `raw_pair` | DNG without a safe embedded preview has no thumbnail |
@@ -357,7 +357,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P0 | Complete: scheduler, retries, cancellation, account coordination, SourceItemAlias, FileStation Pull | Complete |
 | P1 | Complete: basic read-only Source binding verifier | Complete |
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
-| P3 | In progress: common phone still formats are indexed; JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails are local; ordinary ISO-BMFF videos use Range playback; AVIF preview, video posters, and non-ISO video metadata remain | Highest |
+| P3 | In progress: common phone still formats are indexed; JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails are local; ordinary ISO-BMFF videos use Range playback; video posters, animation playback, and non-ISO video metadata remain | Highest |
 | P4 | Complete: connector-neutral `MediaGroup` evidence plus `PhotoAsset` / `PhotoResource` / `PhotoMetadata` / `PhotoCollection` logical projection | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata/preview plus exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are local; AAE without embedded target identity and other RAW formats remain ungrouped/TODO | High |
