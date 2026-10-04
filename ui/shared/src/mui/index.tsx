@@ -1,6 +1,7 @@
 export * from './ActionButton'
 export * from './StatePanel'
 export * from './theme'
+export * from './AppearanceThemeProvider'
 export * from './AppearanceField'
 export * from './BuildInfoCard'
 export * from './TransferCenter'

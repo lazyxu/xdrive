@@ -1,7 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { CssBaseline, ThemeProvider as MuiThemeProvider, useMediaQuery } from '@mui/material'
-import { createXDriveMuiTheme } from '@xdrive/ui/mui'
+import { XDriveAppearanceThemeProvider } from '@xdrive/ui/mui'
 import { normalizeXDriveAppearance, type XDriveAppearance } from '../../ui/shared/src'
 import App from './App'
 import './styles.css'
@@ -9,18 +8,9 @@ import './styles.css'
 const APPEARANCE_KEY = 'xdrive.appearance'
 
 function Root() {
-  const prefersDark = useMediaQuery('(prefers-color-scheme: dark)', { noSsr: true })
   const [appearance, setAppearance] = React.useState<XDriveAppearance>(
     () => normalizeXDriveAppearance(localStorage.getItem(APPEARANCE_KEY)),
   )
-  const resolvedMode = appearance === 'system'
-    ? (prefersDark ? 'dark' : 'light')
-    : appearance
-  const theme = React.useMemo(() => createXDriveMuiTheme(resolvedMode), [resolvedMode])
-
-  React.useEffect(() => {
-    document.documentElement.dataset.xdriveTheme = resolvedMode
-  }, [resolvedMode])
 
   const changeAppearance = React.useCallback((next: XDriveAppearance) => {
     localStorage.setItem(APPEARANCE_KEY, next)
@@ -28,10 +18,9 @@ function Root() {
   }, [])
 
   return (
-    <MuiThemeProvider theme={theme}>
-      <CssBaseline />
+    <XDriveAppearanceThemeProvider appearance={appearance}>
       <App appearance={appearance} onAppearanceChange={changeAppearance} />
-    </MuiThemeProvider>
+    </XDriveAppearanceThemeProvider>
   )
 }
 
