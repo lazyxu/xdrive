@@ -56,6 +56,8 @@ import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-c
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
+import { xDriveFileExplorerReadExternalDrop } from './FileExplorerExternalDrop'
+import type { XDriveFileExplorerExternalDropPayload } from './FileExplorerExternalDrop'
 
 export type XDriveFileExplorerID = string | number
 export type XDriveFileExplorerViewMode = 'details' | 'grid'
@@ -417,6 +419,8 @@ export function XDriveFileExplorer({
   onDropItemsToCrumb,
   onExternalFilesDrop,
   onExternalFilesDropToCrumb,
+  onExternalFolderDrop,
+  onExternalFolderDropToCrumb,
   getItemMenuItems,
   backgroundMenuItems = [],
   viewMode: controlledViewMode,
@@ -469,8 +473,10 @@ export function XDriveFileExplorer({
   detailsPreferencesKey?: string
   onDropItemsToFolder?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerItem, operation: 'move' | 'copy') => void
   onDropItemsToCrumb?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerCrumb, operation: 'move' | 'copy') => void
-  onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void
-  onExternalFilesDropToCrumb?: (files: File[], target: XDriveFileExplorerCrumb) => void
+  onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void | Promise<void>
+  onExternalFilesDropToCrumb?: (files: File[], target: XDriveFileExplorerCrumb) => void | Promise<void>
+  onExternalFolderDrop?: (payload: XDriveFileExplorerExternalDropPayload, target?: XDriveFileExplorerItem) => void | Promise<void>
+  onExternalFolderDropToCrumb?: (payload: XDriveFileExplorerExternalDropPayload, target: XDriveFileExplorerCrumb) => void | Promise<void>
   getItemMenuItems?: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
   backgroundMenuItems?: XDriveFileExplorerMenuItem[]
   viewMode?: XDriveFileExplorerViewMode
@@ -1140,7 +1146,7 @@ export function XDriveFileExplorer({
   }
 
   const dragOverFolder = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
-    const external = event.dataTransfer.types.includes('Files')
+    const external = event.dataTransfer.types.includes('Files') && Boolean(onExternalFilesDrop || onExternalFolderDrop)
     const internal = draggedItems.length > 0
     if (item.kind !== 'dir' || (!external && !internal)) return
     if (internal && draggedItems.some((candidate) => explorerIDKey(candidate.id) === explorerIDKey(item.id))) return
@@ -1151,28 +1157,38 @@ export function XDriveFileExplorer({
     setDropTargetID(item.id)
   }
 
-  const dropOnFolder = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
+  const dropOnFolder = async (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     if (item.kind !== 'dir') return
     event.preventDefault()
     event.stopPropagation()
-    const files = Array.from(event.dataTransfer.files)
-    if (files.length > 0 && onExternalFilesDrop) {
-      onExternalFilesDrop(files, item)
+    const dataTransfer = event.dataTransfer
+    const files = Array.from(dataTransfer.files)
+    try {
+      if (dataTransfer.types.includes('Files') && onExternalFolderDrop) {
+        const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+        if (payload.directories.length > 0) {
+          await onExternalFolderDrop(payload, item)
+          return
+        }
+      }
+      if (files.length > 0 && onExternalFilesDrop) {
+        await onExternalFilesDrop(files, item)
+        return
+      }
+      if (draggedItems.length > 0 && onDropItemsToFolder) {
+        const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'
+        onDropItemsToFolder(draggedItems, item, operation)
+      }
+    } finally {
       endItemDrag()
-      return
     }
-    if (draggedItems.length > 0 && onDropItemsToFolder) {
-      const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'
-      onDropItemsToFolder(draggedItems, item, operation)
-    }
-    endItemDrag()
   }
 
   const dragOverCrumb = (
     event: ReactDragEvent<HTMLElement>,
     crumb: XDriveFileExplorerCrumb,
   ) => {
-    const external = event.dataTransfer.types.includes('Files') && Boolean(onExternalFilesDropToCrumb)
+    const external = event.dataTransfer.types.includes('Files') && Boolean(onExternalFilesDropToCrumb || onExternalFolderDropToCrumb)
     const internal = draggedItems.length > 0 && Boolean(onDropItemsToCrumb)
     if (!external && !internal) return
     event.preventDefault()
@@ -1181,31 +1197,52 @@ export function XDriveFileExplorer({
     setDropTargetCrumbID(crumb.id)
   }
 
-  const dropOnCrumb = (
+  const dropOnCrumb = async (
     event: ReactDragEvent<HTMLElement>,
     crumb: XDriveFileExplorerCrumb,
   ) => {
     event.preventDefault()
     event.stopPropagation()
-    const files = Array.from(event.dataTransfer.files)
-    if (files.length > 0 && onExternalFilesDropToCrumb) {
-      onExternalFilesDropToCrumb(files, crumb)
+    const dataTransfer = event.dataTransfer
+    const files = Array.from(dataTransfer.files)
+    try {
+      if (dataTransfer.types.includes('Files') && onExternalFolderDropToCrumb) {
+        const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+        if (payload.directories.length > 0) {
+          await onExternalFolderDropToCrumb(payload, crumb)
+          return
+        }
+      }
+      if (files.length > 0 && onExternalFilesDropToCrumb) {
+        await onExternalFilesDropToCrumb(files, crumb)
+        return
+      }
+      if (draggedItems.length > 0 && onDropItemsToCrumb) {
+        const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'
+        onDropItemsToCrumb(draggedItems, crumb, operation)
+      }
+    } finally {
       endItemDrag()
-      return
     }
-    if (draggedItems.length > 0 && onDropItemsToCrumb) {
-      const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'
-      onDropItemsToCrumb(draggedItems, crumb, operation)
-    }
-    endItemDrag()
   }
 
-  const dropExternalFilesOnBackground = (event: ReactDragEvent<HTMLElement>) => {
-    if (!onExternalFilesDrop || !event.dataTransfer.types.includes('Files')) return
+  const dropExternalFilesOnBackground = async (event: ReactDragEvent<HTMLElement>) => {
+    if (!(onExternalFilesDrop || onExternalFolderDrop) || !event.dataTransfer.types.includes('Files')) return
     event.preventDefault()
-    const files = Array.from(event.dataTransfer.files)
-    if (files.length > 0) onExternalFilesDrop(files)
-    endItemDrag()
+    const dataTransfer = event.dataTransfer
+    const files = Array.from(dataTransfer.files)
+    try {
+      if (onExternalFolderDrop) {
+        const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+        if (payload.directories.length > 0) {
+          await onExternalFolderDrop(payload)
+          return
+        }
+      }
+      if (files.length > 0 && onExternalFilesDrop) await onExternalFilesDrop(files)
+    } finally {
+      endItemDrag()
+    }
   }
 
   const contextMenuItems = contextMenu?.items ?? []
@@ -1988,7 +2025,7 @@ export function XDriveFileExplorer({
         }}
         onContextMenu={openBackgroundContextMenu}
         onDragOver={(event) => {
-          const external = onExternalFilesDrop && event.dataTransfer.types.includes('Files')
+          const external = Boolean(onExternalFilesDrop || onExternalFolderDrop) && event.dataTransfer.types.includes('Files')
           const internal = draggedItems.length > 0
           if (external || internal) updateDragAutoScroll(event.clientY)
           if (external) {

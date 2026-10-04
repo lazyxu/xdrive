@@ -12,6 +12,7 @@ import {
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
+  XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
@@ -54,6 +55,7 @@ export default function WebFileExplorer({
   onUploadFiles,
   onUploadFolderFiles,
   onUploadDroppedFiles,
+  onUploadDroppedFolderEntries,
   onCreateFolder,
   onOpenTrash,
   onRemove,
@@ -76,6 +78,10 @@ export default function WebFileExplorer({
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadFolderFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
+  onUploadDroppedFolderEntries: (
+    parentID: number,
+    payload: XDriveFileExplorerExternalDropPayload,
+  ) => Promise<void>
   onCreateFolder: () => void
   onOpenTrash: () => void
   onRemove: (node: Node) => void
@@ -316,8 +322,32 @@ export default function WebFileExplorer({
     await dropExternalFilesToParent(files, parentID)
   }
 
+  const dropExternalFolderEntriesToParent = async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    parentID: number,
+  ) => {
+    await onUploadDroppedFolderEntries(parentID, payload)
+    if (current) await onLoadDirectory(current.id, crumbs, sort)
+  }
+
+  const dropExternalFolderEntries = async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    target?: XDriveFileExplorerItem,
+  ) => {
+    if (!current) return
+    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
+    await dropExternalFolderEntriesToParent(payload, parentID)
+  }
+
   const dropExternalFilesToCrumb = async (files: File[], crumb: XDriveFileExplorerCrumb) => {
     await dropExternalFilesToParent(files, Number(crumb.id))
+  }
+
+  const dropExternalFolderEntriesToCrumb = async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    crumb: XDriveFileExplorerCrumb,
+  ) => {
+    await dropExternalFolderEntriesToParent(payload, Number(crumb.id))
   }
 
   const explorerPagination = xDriveFileExplorerPaginationController({
@@ -421,6 +451,8 @@ export default function WebFileExplorer({
         onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         onExternalFilesDropToCrumb={(files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
+        onExternalFolderDrop={(payload, target) => { void dropExternalFolderEntries(payload, target) }}
+        onExternalFolderDropToCrumb={(payload, crumb) => { void dropExternalFolderEntriesToCrumb(payload, crumb) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}

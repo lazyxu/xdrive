@@ -290,3 +290,17 @@ test('Desktop FileExplorer uploads selected folders through the shared hierarchy
     assert.ok(explorer.includes(token), `missing Desktop folder-upload support: ${token}`)
   }
 })
+
+
+test('Desktop FileExplorer recursively uploads dropped folders through shared payloads', () => {
+  for (const token of [
+    'XDriveFileExplorerExternalDropPayload',
+    'dropExternalFolderEntriesToParent',
+    'payload.files',
+    'payload.directories',
+    'onExternalFolderDrop={uploadConflictSupported',
+    'onExternalFolderDropToCrumb={uploadConflictSupported',
+  ]) {
+    assert.ok(explorer.includes(token), `missing Desktop dropped-folder support: ${token}`)
+  }
+})

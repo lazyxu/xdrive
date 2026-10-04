@@ -281,3 +281,25 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
     assert.ok(app.includes(token), `missing Web folder-upload orchestration: ${token}`)
   }
 })
+
+
+test('Web FileExplorer recursively uploads dropped folders and empty directories', () => {
+  for (const token of [
+    'XDriveFileExplorerExternalDropPayload',
+    'dropExternalFolderEntriesToParent',
+    'onUploadDroppedFolderEntries(parentID, payload)',
+    'onExternalFolderDrop={(payload, target) =>',
+    'onExternalFolderDropToCrumb={(payload, crumb) =>',
+  ]) {
+    assert.ok(explorer.includes(token), `missing Web dropped-folder wiring: ${token}`)
+  }
+  for (const token of [
+    'uploadDroppedFolderEntries',
+    "XDriveFileExplorerExternalDropPayload['files']",
+    'payload.files',
+    'payload.directories',
+    'onUploadDroppedFolderEntries={uploadDroppedFolderEntries}',
+  ]) {
+    assert.ok(app.includes(token), `missing Web dropped-folder orchestration: ${token}`)
+  }
+})

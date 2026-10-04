@@ -35,6 +35,7 @@ import type {
 } from '@xdrive/shared'
 import type {
   XDriveFileExplorerCrumb,
+  XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
@@ -296,31 +297,41 @@ export default function DesktopFileExplorer({
     )
   }
 
+  const resolveFolderUploadTargets = (
+    rootParentID: number,
+    entries: XDriveFileExplorerExternalDropPayload['files'],
+    directoryPaths: readonly string[] = [],
+  ) => xDriveFileExplorerResolveFolderUploadTargets({
+    rootParentID,
+    entries,
+    directoryPaths,
+    ensureDirectory: (parentID, name) => xDriveFileExplorerEnsureUploadDirectory({
+      parentID,
+      name,
+      createDirectory: async (id, directoryName) => {
+        const result = await window.xdriveDesktop.agent.cloudCreateDirectory(id, directoryName)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+      listChildren: async (id) => {
+        const result = await window.xdriveDesktop.agent.cloudChildren(id)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }),
+  })
+
   const uploadFolderFiles = async (files: File[]) => {
     if (!current || files.length === 0 || !uploadConflictSupported) return
     await uploadConflictAwareTargets(
       async () => {
-        const targets = await xDriveFileExplorerResolveFolderUploadTargets({
-          rootParentID: current.id,
-          entries: files.map((file) => ({
+        const targets = await resolveFolderUploadTargets(
+          current.id,
+          files.map((file) => ({
             file,
             relativePath: file.webkitRelativePath || file.name,
           })),
-          ensureDirectory: (parentID, name) => xDriveFileExplorerEnsureUploadDirectory({
-            parentID,
-            name,
-            createDirectory: async (id, directoryName) => {
-              const result = await window.xdriveDesktop.agent.cloudCreateDirectory(id, directoryName)
-              if (!result.ok) throw new Error(result.error.message)
-              return result.data
-            },
-            listChildren: async (id) => {
-              const result = await window.xdriveDesktop.agent.cloudChildren(id)
-              if (!result.ok) throw new Error(result.error.message)
-              return result.data
-            },
-          }),
-        })
+        )
         return targets.map(({ parentID, file }) => ({ parentID, file }))
       },
       'upload-folder',
@@ -551,8 +562,46 @@ export default function DesktopFileExplorer({
     await dropExternalFilesToParent(files, parentID)
   }
 
+  const dropExternalFolderEntriesToParent = async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    parentID: number,
+  ) => {
+    if (!uploadConflictSupported || actionBusy) return
+    await uploadConflictAwareTargets(
+      async () => {
+        const targets = await resolveFolderUploadTargets(
+          parentID,
+          payload.files,
+          payload.directories,
+        )
+        return targets.map(({ parentID: targetParentID, file }) => ({
+          parentID: targetParentID,
+          file,
+        }))
+      },
+      'drop-upload',
+      true,
+    )
+  }
+
+  const dropExternalFolderEntries = async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    target?: XDriveFileExplorerItem,
+  ) => {
+    if (!current) return
+    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
+    await dropExternalFolderEntriesToParent(payload, parentID)
+  }
+
   const dropExternalFilesToCrumb = async (files: File[], crumb: XDriveFileExplorerCrumb) => {
     await dropExternalFilesToParent(files, Number(crumb.id))
+  }
+
+  const dropExternalFolderEntriesToCrumb = async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    crumb: XDriveFileExplorerCrumb,
+  ) => {
+    await dropExternalFolderEntriesToParent(payload, Number(crumb.id))
   }
 
   const explorerPagination = xDriveFileExplorerPaginationController({
@@ -657,6 +706,12 @@ export default function DesktopFileExplorer({
         onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         onExternalFilesDropToCrumb={(files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
+        onExternalFolderDrop={uploadConflictSupported
+          ? (payload, target) => { void dropExternalFolderEntries(payload, target) }
+          : undefined}
+        onExternalFolderDropToCrumb={uploadConflictSupported
+          ? (payload, crumb) => { void dropExternalFolderEntriesToCrumb(payload, crumb) }
+          : undefined}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}

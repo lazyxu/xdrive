@@ -52,6 +52,7 @@ import {
 import type {
   MediaGalleryDataSource,
   XDriveCloudStorageDataSource,
+  XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
 } from '@xdrive/ui/mui'
@@ -886,27 +887,53 @@ function FileManager({
     await uploadFilesTo(current.id, Array.from(files))
   }
 
+  const uploadFolderEntriesTo = async (
+    parentID: number,
+    entries: XDriveFileExplorerExternalDropPayload['files'],
+    directoryPaths: readonly string[] = [],
+  ) => {
+    const targets = await xDriveFileExplorerResolveFolderUploadTargets({
+      rootParentID: parentID,
+      entries,
+      directoryPaths,
+      ensureDirectory: (directoryParentID, name) => xDriveFileExplorerEnsureUploadDirectory({
+        parentID: directoryParentID,
+        name,
+        createDirectory: (id, directoryName) => api.createDirectory(id, directoryName),
+        listChildren: (id) => api.list(id),
+      }),
+    })
+    await uploadTargets(
+      targets.map(({ parentID: targetParentID, file }) => ({
+        parentID: targetParentID,
+        file,
+      })),
+      false,
+    )
+  }
+
   const uploadFolderFiles = async (files: FileList | null) => {
     if (!current || !files?.length) return
     try {
-      const targets = await xDriveFileExplorerResolveFolderUploadTargets({
-        rootParentID: current.id,
-        entries: Array.from(files).map((file) => ({
+      await uploadFolderEntriesTo(
+        current.id,
+        Array.from(files).map((file) => ({
           file,
           relativePath: file.webkitRelativePath || file.name,
         })),
-        ensureDirectory: (parentID, name) => xDriveFileExplorerEnsureUploadDirectory({
-          parentID,
-          name,
-          createDirectory: (id, directoryName) => api.createDirectory(id, directoryName),
-          listChildren: (id) => api.list(id),
-        }),
-      })
-      await uploadTargets(
-        targets.map(({ parentID, file }) => ({ parentID, file })),
-        false,
       )
       await loadDirectory(current.id)
+    } catch (error) {
+      handleError(error)
+    }
+  }
+
+  const uploadDroppedFolderEntries = async (
+    parentID: number,
+    payload: XDriveFileExplorerExternalDropPayload,
+  ) => {
+    try {
+      await uploadFolderEntriesTo(parentID, payload.files, payload.directories)
     } catch (error) {
       handleError(error)
     }
@@ -1074,6 +1101,7 @@ function FileManager({
                 onUploadFiles={uploadFiles}
                 onUploadFolderFiles={uploadFolderFiles}
                 onUploadDroppedFiles={uploadFilesTo}
+                onUploadDroppedFolderEntries={uploadDroppedFolderEntries}
                 onCreateFolder={() => setFolderOpen(true)}
                 onOpenTrash={openTrash}
                 onRemove={remove}
