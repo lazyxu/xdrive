@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const model = read('ui', 'shared', 'src', 'upload-conflicts.ts')
 const dialog = read('ui', 'shared', 'src', 'mui', 'UploadConflictDialog.tsx')
+const uploadController = read('ui', 'shared', 'src', 'mui', 'FileExplorerUploadController.ts')
 const muiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const main = read('desktop', 'src', 'main', 'index.cts')
@@ -34,6 +35,20 @@ test('shared upload conflict resolver owns dialog choice and apply-to-remaining 
     assert.ok((model + dialog).includes(token), `missing shared upload conflict behavior: ${token}`)
   }
   assert.ok(muiIndex.includes("export * from './UploadConflictDialog'"), 'shared upload conflict dialog is not exported')
+  for (const token of [
+    'useXDriveFileExplorerUploadController',
+    'useXDriveUploadConflictResolver()',
+    'if (!conflicts.beginBatch())',
+    'conflicts.resolveConflict(name',
+    'xDriveUploadConflictCanOverwrite(conflict)',
+    "if (conflictPolicy === 'skip')",
+    'continueOnUploadError',
+    'xDriveUploadBatchSummary(result)',
+    'dialogProps: conflicts.dialogProps',
+  ]) {
+    assert.ok(uploadController.includes(token), `shared upload batch controller missing: ${token}`)
+  }
+  assert.ok(muiIndex.includes("export * from './FileExplorerUploadController'"), 'shared upload batch controller is not exported')
 })
 
 test('Desktop policy-aware upload keeps one protected bridge and the old fallback', () => {
@@ -52,17 +67,15 @@ test('Desktop policy-aware upload keeps one protected bridge and the old fallbac
 })
 
 
-test('preflight skip does not enter the upload/hash bridge', () => {
+test('preflight skip stays inside the shared upload controller before platform upload bridges', () => {
   const webApp = read('web', 'src', 'App.tsx')
   const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
-  for (const [label, source, uploadToken] of [
-    ['Web', webApp, 'api.uploadWithConflictPolicy('],
-    ['Desktop', desktopExplorer, 'window.xdriveDesktop.agent.cloudUploadFile('],
-  ]) {
-    const skip = source.indexOf("if (conflictPolicy === 'skip')")
-    const upload = source.indexOf(uploadToken, skip)
-    assert.ok(skip >= 0, `${label} local skip guard is missing`)
-    assert.ok(upload > skip, `${label} upload bridge must remain after the local skip guard`)
-    assert.ok(source.slice(skip, upload).includes('continue'), `${label} skip must short-circuit before upload/hash work`)
-  }
+  const skip = uploadController.indexOf("if (conflictPolicy === 'skip')")
+  const upload = uploadController.indexOf('const result = await upload(', skip)
+  assert.ok(skip >= 0, 'shared upload controller skip guard is missing')
+  assert.ok(upload > skip, 'shared upload transport call must remain after the skip guard')
+  assert.ok(uploadController.slice(skip, upload).includes('continue'), 'skip must short-circuit before upload/hash work')
+  assert.ok(webApp.includes('api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress)'), 'Web must keep its upload transport adapter local')
+  assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudUploadFile('), 'Desktop must keep its upload transport adapter local')
 })
+

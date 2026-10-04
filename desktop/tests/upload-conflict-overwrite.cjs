@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const model = read('ui', 'shared', 'src', 'upload-conflicts.ts')
 const dialog = read('ui', 'shared', 'src', 'mui', 'UploadConflictDialog.tsx')
+const uploadController = read('ui', 'shared', 'src', 'mui', 'FileExplorerUploadController.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
@@ -35,12 +36,18 @@ test('upload overwrite is file-only and shared across Web and Desktop', () => {
     assert.ok(dialog.includes(token), `shared overwrite dialog/resolver missing: ${token}`)
   }
   assert.ok(
-    webApp.includes('canOverwrite: xDriveUploadConflictCanOverwrite(preflight)'),
-    'Web must pass file-only overwrite availability',
+    uploadController.includes('canOverwrite: xDriveUploadConflictCanOverwrite(conflict)'),
+    'shared upload controller must derive file-only overwrite availability',
   )
-  assert.ok(
-    desktopExplorer.includes('canOverwrite: xDriveUploadConflictCanOverwrite(preflight.data)'),
-    'Desktop must pass file-only overwrite availability',
+  assert.equal(
+    webApp.includes('xDriveUploadConflictCanOverwrite('),
+    false,
+    'Web must not duplicate overwrite eligibility',
+  )
+  assert.equal(
+    desktopExplorer.includes('xDriveUploadConflictCanOverwrite('),
+    false,
+    'Desktop must not duplicate overwrite eligibility',
   )
 })
 
