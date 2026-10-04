@@ -14,9 +14,11 @@ extraResources:
       - "*.png"
   - from: ../assets/icon/web/pwa-192.png
     to: app-icon.png
+  - from: ../assets/icon/windows/app.ico
+    to: app-icon.ico
 win:
   executableName: xdrive-desktop
-  icon: ../assets/icon/master/xdrive-icon-master.svg
+  icon: ../assets/icon/windows/app.ico
 linux:
   executableName: xdrive-desktop
   icon: ../assets/icon/master/xdrive-icon-master.svg

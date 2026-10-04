@@ -16,6 +16,7 @@ import {
   shell,
   safeStorage,
   Tray,
+  type NativeImage,
   type OpenDialogOptions,
 } from 'electron'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
@@ -119,6 +120,7 @@ type DesktopResult<T> =
   | { ok: false; error: { code: string; message: string; status?: number; detail?: string } }
 
 let mainWindow: BrowserWindow | null = null
+let desktopWindowIcon: NativeImage | null = null
 let desktopPreferences = defaultDesktopPreferences()
 let loginHistory: LoginHistory = emptyLoginHistory()
 let lastAutoLoginError = ''
@@ -575,9 +577,11 @@ function updateTaskbarProgress() {
   const progress = desktopTaskbarProgress(agentUpdateState, agentTransfers, agentState.status)
   if (!progress) {
     mainWindow.setProgressBar(-1)
+    restoreWindowsTaskbarIcon()
     return
   }
   mainWindow.setProgressBar(progress.value, { mode: progress.mode })
+  restoreWindowsTaskbarIcon()
 }
 
 function desktopWindowBackground() {
@@ -603,9 +607,35 @@ function requestTaskbarAttention() {
 }
 
 function desktopRuntimeIconPath() {
+  if (process.platform === 'win32') {
+    return app.isPackaged
+      ? path.join(process.resourcesPath, 'app-icon.ico')
+      : path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'windows', 'app.ico')
+  }
   return app.isPackaged
     ? path.join(process.resourcesPath, 'app-icon.png')
     : path.resolve(app.getAppPath(), '..', 'assets', 'icon', 'web', 'pwa-192.png')
+}
+
+function desktopRuntimeIcon(): NativeImage | string {
+  if (desktopWindowIcon && !desktopWindowIcon.isEmpty()) return desktopWindowIcon
+  const assetPath = desktopRuntimeIconPath()
+  const image = nativeImage.createFromPath(assetPath)
+  if (image.isEmpty()) {
+    lifecycleLog?.record('desktop_window_icon_invalid', { asset_path: assetPath })
+    return assetPath
+  }
+  desktopWindowIcon = image
+  return image
+}
+
+function restoreWindowsTaskbarIcon() {
+  if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return
+  try {
+    mainWindow.setIcon(desktopRuntimeIcon())
+  } catch (error) {
+    lifecycleLog?.record('taskbar_icon_restore_failed', { error: formatLifecycleError(error) })
+  }
 }
 
 function createMainWindow(showOnReady = true) {
@@ -620,7 +650,7 @@ function createMainWindow(showOnReady = true) {
     show: false,
     frame: false,
     title: 'xDrive 桌面版',
-    icon: desktopRuntimeIconPath(),
+    icon: desktopRuntimeIcon(),
     backgroundColor: desktopWindowBackground(),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),
