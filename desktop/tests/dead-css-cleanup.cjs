@@ -30,6 +30,8 @@ test('Desktop removes dead storage and cloud subpanel CSS after MUI migrations',
 
   assert.equal(styles.includes('.setting-link-row {'), false, 'settings link layout should stay in MUI')
   assert.equal(styles.includes('.cloud-explorer-panel {'), false, 'Desktop Files host layout should stay in MUI')
+  assert.equal(styles.includes('h2 {'), false, 'unused global h2 styling must not return')
+  assert.equal(styles.includes('.actions {'), false, 'unused global actions layout must not return')
   assert.ok(localStorage.includes('<XDriveMetricGrid>'), 'Local Storage should stay on shared MUI metrics')
   assert.ok(localStorage.includes("borderColor: 'divider'"), 'Local Storage tree should stay on MUI surface styling')
   assert.ok(filesPage.includes('component="section"'), 'Desktop Files should preserve section semantics through MUI')
