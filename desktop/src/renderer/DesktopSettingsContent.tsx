@@ -6,7 +6,9 @@ import {
   FormControlLabel,
   InputAdornment,
   InputLabel,
+  LinearProgress,
   MenuItem,
+  Paper,
   Select,
   Stack,
   Switch,
@@ -152,12 +154,30 @@ export function DesktopSettingsContent({
         </Typography>
       </Stack>
 
-      <div className="update-card" id="client-update-card">
-        <div className="update-card-header">
-          <div>
-            <strong>客户端更新</strong>
-            <span>默认不自动更新。你可以选择只检查、自动下载，或自动下载安装。</span>
-          </div>
+      <Paper
+        id="client-update-card"
+        variant="outlined"
+        sx={{
+          mt: 1.75,
+          p: 2,
+          borderRadius: 1.75,
+          display: 'grid',
+          gap: 1.5,
+          bgcolor: 'action.hover',
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={2.25}
+          alignItems="flex-start"
+          justifyContent="space-between"
+        >
+          <MuiBox sx={{ minWidth: 0, display: 'grid', gap: 0.5 }}>
+            <Typography variant="subtitle2" fontWeight={700}>客户端更新</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+              默认不自动更新。你可以选择只检查、自动下载，或自动下载安装。
+            </Typography>
+          </MuiBox>
           {updateSupported && clientUpdate ? (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ minWidth: { sm: 360 } }}>
               <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -190,7 +210,7 @@ export function DesktopSettingsContent({
               </FormControl>
             </Stack>
           ) : null}
-        </div>
+        </Stack>
 
         {!updateSupported ? (
           <XDriveStatusAlert tone="warning">当前 xdrive-agent 不支持更新设置，请先安装包含新 Agent 的统一客户端版本。</XDriveStatusAlert>
@@ -201,11 +221,11 @@ export function DesktopSettingsContent({
           </Stack>
         ) : (
           <>
-            <p className="update-mode-note">
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
               当前来源：{clientUpdate.source === 'gitlab' ? 'GitLab · http://gitlab.t-fluid.com:1080' : 'GitHub'}。
               {' '}{updateModeDescription(clientUpdate.mode)}
               {!clientUpdate.install_supported ? ' 当前平台不会后台安装更新；下载后请使用系统包管理器完成安装。' : ''}
-            </p>
+            </Typography>
             <XDriveMetricGrid>
               <XDriveMetricCard title="当前版本" value={clientUpdate.current_version || currentVersion || '未知'} />
               <XDriveMetricCard title="最新版本" value={clientUpdate.latest_version || '尚未检查'} />
@@ -233,28 +253,39 @@ export function DesktopSettingsContent({
             ) : null}
 
             {(clientUpdate.status === 'downloading' || clientUpdate.bytes_done || clientUpdate.bytes_total) ? (
-              <div className="update-progress">
-                <div className="update-progress-copy">
-                  <span>{clientUpdate.message || '正在处理更新…'}</span>
-                  <strong>
+              <Stack spacing={0.75}>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1}
+                  alignItems={{ xs: 'flex-start', sm: 'center' }}
+                  justifyContent="space-between"
+                >
+                  <Typography variant="caption" color="text.secondary">
+                    {clientUpdate.message || '正在处理更新…'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" fontWeight={600}>
                     {clientUpdate.bytes_total
                       ? `${formatBinarySize(clientUpdate.bytes_done || 0)} / ${formatBinarySize(clientUpdate.bytes_total)} · ${updateProgress.toFixed(1)}%`
                       : clientUpdate.bytes_done
                         ? formatBinarySize(clientUpdate.bytes_done)
                         : ''}
-                  </strong>
-                </div>
+                  </Typography>
+                </Stack>
                 {clientUpdate.bytes_total ? (
-                  <div className="update-progress-track"><span style={{ width: `${updateProgress}%` }} /></div>
+                  <LinearProgress variant="determinate" value={updateProgress} />
                 ) : null}
-                {clientUpdate.bytes_per_second ? <small>{formatTransferSpeed(clientUpdate.bytes_per_second)}</small> : null}
-              </div>
+                {clientUpdate.bytes_per_second ? (
+                  <Typography variant="caption" color="text.secondary">
+                    {formatTransferSpeed(clientUpdate.bytes_per_second)}
+                  </Typography>
+                ) : null}
+              </Stack>
             ) : null}
 
             {clientUpdate.last_error ? <XDriveStatusAlert tone="bad">{clientUpdate.last_error}</XDriveStatusAlert> : null}
             {!clientUpdate.last_error && clientUpdate.message ? <XDriveStatusAlert tone="neutral">{clientUpdate.message}</XDriveStatusAlert> : null}
 
-            <div className="update-actions">
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
               <XDriveActionButton
                 disabled={Boolean(busy) || updateOperationBusy}
                 loading={busy === 'update-check' || clientUpdate.status === 'checking'}
@@ -290,11 +321,13 @@ export function DesktopSettingsContent({
                   取消
                 </XDriveActionButton>
               ) : null}
-            </div>
-            <small className="update-footnote">自动策略在 Agent 启动后约 90 秒首次运行，之后约每 6 小时检查一次；切换到自动策略时会立即检查一次。</small>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+              自动策略在 Agent 启动后约 90 秒首次运行，之后约每 6 小时检查一次；切换到自动策略时会立即检查一次。
+            </Typography>
           </>
         )}
-      </div>
+      </Paper>
 
       {!settings ? (
         <XDriveStatePanel loading message="正在加载设置…" />
