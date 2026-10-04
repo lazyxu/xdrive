@@ -58,6 +58,7 @@ export interface MediaGalleryDataSource {
   loadVideo?: MediaVideoLoader
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
+  setDescription?: (nodeID: number, description: string) => Promise<string>
   createAlbum?: (name: string) => Promise<MediaAlbum>
   createSmartAlbum?: (name: string, query: MediaGalleryQuery) => Promise<MediaAlbum>
   updateSmartAlbum?: (
@@ -614,6 +615,37 @@ export function XDriveMediaGalleryPage({
     }
   }, [currentAlbum, loadFirstPage, onError, query, source])
 
+  const setDescription = useCallback(async (
+    item: MediaItem,
+    description: string,
+  ) => {
+    if (!source.setDescription) return item.description || ''
+    setError('')
+    try {
+      const normalized = await source.setDescription(item.node.id, description)
+      setItems((current) => current.map((value) => (
+        value.node.id === item.node.id
+          ? { ...value, description: normalized }
+          : value
+      )))
+      if (
+        query.search ||
+        (currentAlbum?.kind === 'smart' && currentAlbum.query?.search)
+      ) {
+        await loadFirstPage(
+          currentAlbum,
+          currentAlbum?.kind === 'smart' ? {} : query,
+        )
+      }
+      return normalized
+    } catch (descriptionError) {
+      const message = errorMessage(descriptionError)
+      setError(message)
+      onError?.(descriptionError)
+      throw descriptionError
+    }
+  }, [currentAlbum, loadFirstPage, onError, query, source])
+
   useEffect(() => {
     void loadFirstPage(null, {})
     return () => {
@@ -655,6 +687,7 @@ export function XDriveMediaGalleryPage({
         loadVideo={source.loadVideo}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
         onSetTags={source.setTags ? setTags : undefined}
+        onSetDescription={source.setDescription ? setDescription : undefined}
         onCreateAlbum={source.createAlbum ? createAlbum : undefined}
         onRenameAlbum={
           source.renameAlbum || source.updateSmartAlbum
@@ -747,6 +780,7 @@ export interface XDriveMediaGalleryProps {
   loadVideo?: MediaVideoLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
+  onSetDescription?: (item: MediaItem, description: string) => Promise<string>
   onCreateAlbum?: (name: string) => Promise<MediaAlbum>
   onRenameAlbum?: (album: MediaAlbum, name: string) => Promise<MediaAlbum>
   onDeleteAlbum?: (album: MediaAlbum) => Promise<void>
@@ -1152,6 +1186,7 @@ function MediaDetails({
   currentAlbum,
   onSetFavorite,
   onSetTags,
+  onSetDescription,
   onAddToAlbum,
   onRemoveFromAlbum,
   onClose,
@@ -1164,6 +1199,7 @@ function MediaDetails({
   currentAlbum?: MediaAlbum | null
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
+  onSetDescription?: (item: MediaItem, description: string) => Promise<string>
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onClose: () => void
@@ -1177,6 +1213,9 @@ function MediaDetails({
   const [tagsInput, setTagsInput] = useState('')
   const [tagsBusy, setTagsBusy] = useState(false)
   const [tagsError, setTagsError] = useState('')
+  const [descriptionInput, setDescriptionInput] = useState('')
+  const [descriptionBusy, setDescriptionBusy] = useState(false)
+  const [descriptionError, setDescriptionError] = useState('')
   const tagsKey = (item?.tags || []).join('\u0000')
   const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
   const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
@@ -1190,6 +1229,12 @@ function MediaDetails({
     setTagsBusy(false)
     setTagsError('')
   }, [item?.node.id, tagsKey])
+
+  useEffect(() => {
+    setDescriptionInput(item?.description || '')
+    setDescriptionBusy(false)
+    setDescriptionError('')
+  }, [item?.node.id, item?.description])
 
   useEffect(() => {
     let active = true
@@ -1433,6 +1478,49 @@ function MediaDetails({
                 {tagsError ? (
                   <Box sx={{ mt: 1 }}>
                     <XDriveStatusAlert tone="bad">{tagsError}</XDriveStatusAlert>
+                  </Box>
+                ) : null}
+              </Box>
+            ) : null}
+            {onSetDescription ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>描述 / 备注</Typography>
+                <Stack spacing={1}>
+                  <TextField
+                    multiline
+                    minRows={3}
+                    maxRows={8}
+                    fullWidth
+                    label="描述"
+                    placeholder="为这张照片或视频添加本地备注"
+                    value={descriptionInput}
+                    disabled={descriptionBusy}
+                    onChange={(event) => {
+                      setDescriptionInput(event.target.value)
+                      setDescriptionError('')
+                    }}
+                    helperText={`${Array.from(descriptionInput).length.toLocaleString('zh-CN')} / 4096 字符；仅保存在 xDrive 本地图库。`}
+                  />
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                      variant="outlined"
+                      disabled={descriptionBusy || Array.from(descriptionInput).length > 4096}
+                      onClick={() => {
+                        setDescriptionBusy(true)
+                        setDescriptionError('')
+                        void onSetDescription(item, descriptionInput)
+                          .then((description) => setDescriptionInput(description))
+                          .catch((saveError) => setDescriptionError(errorMessage(saveError)))
+                          .finally(() => setDescriptionBusy(false))
+                      }}
+                    >
+                      保存描述
+                    </Button>
+                  </Box>
+                </Stack>
+                {descriptionError ? (
+                  <Box sx={{ mt: 1 }}>
+                    <XDriveStatusAlert tone="bad">{descriptionError}</XDriveStatusAlert>
                   </Box>
                 ) : null}
               </Box>
@@ -1719,6 +1807,7 @@ export function XDriveMediaGallery({
   loadVideo,
   onSetFavorite,
   onSetTags,
+  onSetDescription,
   onCreateAlbum,
   onRenameAlbum,
   onDeleteAlbum,
@@ -2004,6 +2093,15 @@ export function XDriveMediaGallery({
           setSelected((current) => (
             current?.node.id === item.node.id
               ? { ...current, tags: normalized }
+              : current
+          ))
+          return normalized
+        } : undefined}
+        onSetDescription={onSetDescription ? async (item, description) => {
+          const normalized = await onSetDescription(item, description)
+          setSelected((current) => (
+            current?.node.id === item.node.id
+              ? { ...current, description: normalized }
               : current
           ))
           return normalized

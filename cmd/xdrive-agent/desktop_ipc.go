@@ -199,6 +199,7 @@ type desktopIPCController interface {
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudSetMediaFavorite(context.Context, uint64, bool) (client.MediaFavorite, error)
 	CloudSetMediaTags(context.Context, uint64, []string) (client.MediaTags, error)
+	CloudSetMediaDescription(context.Context, uint64, string) (client.MediaDescription, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
 	CloudMediaVideo(context.Context, uint64, string) (client.MediaVideoStream, error)
@@ -466,6 +467,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("PATCH /v1/media/favorite", h.mediaFavorite)
 	mux.HandleFunc("PATCH /v1/media/tags", h.mediaTags)
+	mux.HandleFunc("PATCH /v1/media/description", h.mediaDescription)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
 	mux.HandleFunc("GET /v1/media/video", h.mediaVideo)
@@ -1771,6 +1773,26 @@ func (h *desktopIPCHandler) mediaTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := h.ctrl.CloudSetMediaTags(r.Context(), input.NodeID, input.Tags)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) mediaDescription(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeID      uint64  `json:"node_id"`
+		Description *string `json:"description"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.NodeID == 0 || input.Description == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_description", "node_id and description are required")
+		return
+	}
+	result, err := h.ctrl.CloudSetMediaDescription(r.Context(), input.NodeID, *input.Description)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

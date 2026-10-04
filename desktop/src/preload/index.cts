@@ -72,6 +72,7 @@ const agent = Object.freeze({
   ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),
   setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),
   setMediaTags: (nodeID: number, tags: string[]) => ipcRenderer.invoke('agent:set-media-tags', nodeID, tags),
+  setMediaDescription: (nodeID: number, description: string) => ipcRenderer.invoke('agent:set-media-description', nodeID, description),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
   getMediaLivePhotoMotion: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID),
   getMediaVideoURL: (nodeID: number) => ipcRenderer.invoke('agent:get-media-video-url', nodeID),

@@ -584,6 +584,16 @@ export class XDriveApi {
     )
   }
 
+  setMediaDescription(nodeID: number, description: string) {
+    return this.request<{ description: string }>(
+      `/api/v1/media/items/${nodeID}/description`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ description }),
+      },
+    )
+  }
+
   async mediaThumbnail(nodeID: number): Promise<Blob> {
     await this.ensureFresh()
     const path = `/api/v1/media/items/${nodeID}/thumbnail`

@@ -79,6 +79,7 @@ import {
   type AgentMediaQuery,
   type AgentMediaFavorite,
   type AgentMediaTags,
+  type AgentMediaDescription,
   type AgentMediaThumbnail,
   type AgentMediaMotion,
   type AgentSource,
@@ -1774,6 +1775,21 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Media node id and up to 32 tags are required.')
     }
     return requireAgentClient().setMediaTags(nodeID, tags)
+  }, false))
+
+  ipcMain.handle('agent:set-media-description', (_event, nodeID: unknown, description: unknown) => runAgentAction<AgentMediaDescription>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0 ||
+      typeof description !== 'string' ||
+      Array.from(description).length > 4096
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id and description up to 4096 characters are required.')
+    }
+    return requireAgentClient().setMediaDescription(nodeID, description)
   }, false))
 
   ipcMain.handle('agent:get-media-thumbnail', (_event, nodeID: unknown) => runAgentAction<AgentMediaThumbnail>(async () => {

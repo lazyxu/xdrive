@@ -328,6 +328,7 @@ export interface MediaItem {
   asset_kind?: PhotoAssetKind
   favorite?: boolean
   tags?: string[]
+  description?: string
   resources?: MediaResource[]
   derived_resources?: MediaDerivedResource[]
   live_photo?: boolean

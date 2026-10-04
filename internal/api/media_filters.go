@@ -103,8 +103,8 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 	if options.Search != "" {
 		like := "%" + strings.ToLower(options.Search) + "%"
 		query = query.Where(
-			"LOWER(n.name) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_make, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_model, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.lens_model, '')) LIKE ?",
-			like, like, like, like,
+			"LOWER(n.name) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_make, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_model, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.lens_model, '')) LIKE ? OR LOWER(COALESCE(pm.description, '')) LIKE ?",
+			like, like, like, like, like,
 		)
 	}
 	if options.CapturedFrom != nil {

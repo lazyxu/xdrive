@@ -288,6 +288,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data.tags
     },
+    setDescription: async (nodeID, description) => {
+      const result = await window.xdriveDesktop.agent.setMediaDescription(nodeID, description)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data.description
+    },
     loadThumbnail: async (nodeID) => {
       const result = await window.xdriveDesktop.agent.getMediaThumbnail(nodeID)
       if (!result.ok) throw new Error(result.error.message)
