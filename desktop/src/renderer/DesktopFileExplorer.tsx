@@ -10,8 +10,6 @@ import {
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerResolveFolderUploadTargets,
-  xDriveUploadBatchSummary,
-  xDriveUploadConflictCanOverwrite,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -21,12 +19,9 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerOperationController,
+  useXDriveFileExplorerUploadController,
   XDriveUploadConflictDialog,
-  useXDriveUploadConflictResolver,
 } from '@xdrive/ui/mui'
-import type {
-  XDriveUploadConflictPolicy,
-} from '@xdrive/shared'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerExternalDropPayload,
@@ -81,7 +76,6 @@ export default function DesktopFileExplorer({
   const [actionBusy, setActionBusy] = useState('')
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
-  const uploadConflicts = useXDriveUploadConflictResolver()
 
   const {
     searchValue,
@@ -145,6 +139,33 @@ export default function DesktopFileExplorer({
   })
 
   const {
+    busy: uploadBusy,
+    busyAction: uploadBusyAction,
+    runTargets: runUploadTargets,
+    dialogProps: uploadConflictDialogProps,
+  } = useXDriveFileExplorerUploadController<File>({
+    disabled: Boolean(actionBusy),
+    continueOnUploadError: true,
+    fileName: (file) => file.name,
+    preflight: async (parentID, file) => {
+      const result = await window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    upload: async (parentID, file, conflictPolicy) => {
+      const result = await window.xdriveDesktop.agent.cloudUploadFile(
+        parentID,
+        file,
+        conflictPolicy,
+      )
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+    onFeedback,
+  })
+
+  const {
     busy: fileOperationBusy,
     busyAction: fileOperationBusyAction,
     canPaste: fileOperationCanPaste,
@@ -154,7 +175,7 @@ export default function DesktopFileExplorer({
   } = useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>({
     nodeByID,
     currentID: current?.id,
-    disabled: Boolean(actionBusy),
+    disabled: Boolean(actionBusy) || uploadBusy,
     planPaste,
     completePaste,
     canPaste,
@@ -172,7 +193,7 @@ export default function DesktopFileExplorer({
     onFeedback,
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
-  const explorerActionBusy = Boolean(actionBusy) || fileOperationBusy
+  const explorerActionBusy = Boolean(actionBusy) || fileOperationBusy || uploadBusy
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
@@ -227,65 +248,15 @@ export default function DesktopFileExplorer({
     refreshEvenWithoutUploads = false,
   ) => {
     if (explorerActionBusy) return
-    if (!uploadConflicts.beginBatch()) return
-    setActionBusy(busyState)
-    let uploaded = 0
-    let skipped = 0
-    let failed = 0
-    let cancelled = false
-    let fatalError = ''
     try {
       const targets = await resolveTargets()
-      for (const target of targets) {
-        const { parentID, file } = target
-        let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
-        const preflight = await window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)
-        if (!preflight.ok) {
-          fatalError = preflight.error.message
-          break
-        }
-        if (preflight.data.conflict) {
-          const decision = await uploadConflicts.resolveConflict(file.name, {
-            canOverwrite: xDriveUploadConflictCanOverwrite(preflight.data),
-          })
-          if (decision === 'cancel') {
-            cancelled = true
-            break
-          }
-          conflictPolicy = decision
-        }
-        if (conflictPolicy === 'skip') {
-          skipped += 1
-          continue
-        }
-        const result = await window.xdriveDesktop.agent.cloudUploadFile(
-          parentID,
-          file,
-          conflictPolicy,
-        )
-        if (!result.ok) {
-          failed += 1
-          continue
-        }
-        if (result.data.skipped) skipped += 1
-        else uploaded += 1
-      }
-
-      if ((uploaded > 0 || refreshEvenWithoutUploads) && current) {
+      const result = await runUploadTargets(targets, busyState)
+      if ((result.uploaded > 0 || refreshEvenWithoutUploads) && current) {
         await onLoadDirectory(current.id, crumbs, sort)
       }
-      if (uploaded > 0) await onQuotaChanged()
-      if (fatalError) {
-        onError(fatalError)
-        return
-      }
-      const summary = xDriveUploadBatchSummary({ uploaded, skipped, failed, cancelled })
-      if (summary) onFeedback(summary.tone, summary.message)
+      if (result.uploaded > 0) await onQuotaChanged()
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))
-    } finally {
-      uploadConflicts.endBatch()
-      setActionBusy('')
     }
   }
 
@@ -656,7 +627,7 @@ export default function DesktopFileExplorer({
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         statusText={searchStatusText ?? (
-          actionBusy === 'upload'
+          (actionBusy === 'upload' || uploadBusyAction === 'upload')
             ? '正在上传…'
             : fileOperationBusyAction === 'paste'
               ? '正在粘贴…'
@@ -666,9 +637,9 @@ export default function DesktopFileExplorer({
                   ? '正在下载文件夹…'
                 : fileOperationBusyAction === 'drop-items'
                   ? '正在处理拖拽项目…'
-                  : actionBusy === 'drop-upload'
+                  : uploadBusyAction === 'drop-upload'
                     ? '正在上传拖入文件…'
-                  : actionBusy === 'upload-folder'
+                  : uploadBusyAction === 'upload-folder'
                     ? '正在上传文件夹…'
                   : actionBusy.startsWith('rename-')
                     ? '正在重命名…'
@@ -682,7 +653,7 @@ export default function DesktopFileExplorer({
         )}
       />
 
-      <XDriveUploadConflictDialog {...uploadConflicts.dialogProps} />
+      <XDriveUploadConflictDialog {...uploadConflictDialogProps} />
 
       <XDriveFileNameDialog
         open={createOpen}

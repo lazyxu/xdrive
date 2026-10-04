@@ -16,6 +16,7 @@ const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 
 const styles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 const operationController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts'), 'utf8')
+const uploadController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerUploadController.ts'), 'utf8')
 
 test('Desktop files workspace consumes the shared FileExplorer', () => {
   assert.ok(filesPage.includes("import DesktopFileExplorer from './DesktopFileExplorer'"), 'Desktop Files page must import the Explorer adapter')
@@ -258,21 +259,25 @@ test('Desktop multi-select mutations use persistent operations instead of render
 })
 
 
-test('Desktop upload conflicts use shared dialog and capability-gated policy uploads', () => {
+test('Desktop upload conflicts use the shared upload controller with capability-gated transports', () => {
   for (const token of [
-    'useXDriveUploadConflictResolver()',
-    '<XDriveUploadConflictDialog {...uploadConflicts.dialogProps}',
+    'useXDriveFileExplorerUploadController<File>({',
+    'continueOnUploadError: true',
     'window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)',
     'window.xdriveDesktop.agent.cloudUploadFile(',
-    "conflictPolicy: XDriveUploadConflictPolicy = 'fail'",
-    "if (decision === 'cancel')",
-    'xDriveUploadBatchSummary({ uploaded, skipped, failed, cancelled })',
+    'const result = await runUploadTargets(targets, busyState)',
+    '<XDriveUploadConflictDialog {...uploadConflictDialogProps}',
     'uploadConflictSupported',
     'cloudUploadFiles(current.id)',
     'cloudUploadDroppedFiles(parentID, files)',
   ]) {
-    assert.ok(explorer.includes(token), `missing Desktop upload conflict UI: ${token}`)
+    assert.ok(explorer.includes(token), `missing Desktop shared upload-controller wiring: ${token}`)
   }
+  assert.ok(uploadController.includes("if (conflictPolicy === 'skip')"), 'shared upload controller must own skip handling')
+  assert.ok(uploadController.includes('continueOnUploadError'), 'shared upload controller must support Desktop continue-on-error behavior')
+  assert.ok(uploadController.includes('xDriveUploadBatchSummary(result)'), 'shared upload controller must own upload summaries')
+  assert.equal(explorer.includes('useXDriveUploadConflictResolver()'), false, 'Desktop must not own conflict-resolver lifecycle')
+  assert.equal(explorer.includes("let conflictPolicy: XDriveUploadConflictPolicy = 'fail'"), false, 'Desktop must not own per-file conflict state')
   assert.ok(app.includes("capabilities.includes('upload-conflict-policy')"), 'Desktop must gate policy-aware uploads by Agent capability')
   assert.ok(app.includes("capabilities.includes('upload-conflict-preflight')"), 'Desktop must gate conflict preflight by Agent capability')
 })

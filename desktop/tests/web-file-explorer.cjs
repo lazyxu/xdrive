@@ -12,6 +12,7 @@ const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 
 const operationController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts'), 'utf8')
 const api = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'api.ts'), 'utf8')
 const uploadConflicts = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'upload-conflicts.ts'), 'utf8')
+const uploadController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerUploadController.ts'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 const cloudFilesContract = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'cloud-files.ts'), 'utf8')
 const cloudFilesController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'), 'utf8')
@@ -140,8 +141,9 @@ test('Web FileExplorer uses shared internal drag operations and local external u
   assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Web external drop should resolve the target through shared controller logic')
   assert.ok(explorer.includes('onUploadDroppedFiles(parentID, files)'), 'Web external drop should use the target-aware upload adapter')
-  assert.ok(app.includes('const uploadFilesTo = async (parentID: number, files: File[]) => {'), 'Web target-aware upload helper is missing')
-  assert.ok(app.includes('onUploadDroppedFiles={uploadFilesTo}'), 'Web dropped-file upload adapter is not wired')
+  assert.ok(app.includes('const uploadFilesTo = async ('), 'Web target-aware upload helper is missing')
+  assert.ok(app.includes("action: 'upload' | 'drop-upload' = 'upload'"), 'Web target-aware upload helper must distinguish dropped uploads')
+  assert.ok(app.includes("onUploadDroppedFiles={(parentID, files) => uploadFilesTo(parentID, files, 'drop-upload')}"), 'Web dropped-file upload adapter is not wired')
 })
 
 test('Web uses a dedicated persistent FileExplorer details-column layout', () => {
@@ -253,19 +255,24 @@ test('Web skipped uploads finish without pretending bytes were transferred', () 
 })
 
 
-test('Web upload batches prompt through the shared conflict resolver before transferring bytes', () => {
+test('Web upload batches use the shared upload controller before transferring bytes', () => {
   const app = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
   for (const token of [
-    'useXDriveUploadConflictResolver()',
-    '<XDriveUploadConflictDialog {...uploadConflicts.dialogProps}',
-    'api.uploadConflictPreflight(parentID, file.name)',
-    'api.uploadWithConflictPolicy(',
-    "let conflictPolicy: XDriveUploadConflictPolicy = 'fail'",
-    "if (decision === 'cancel')",
-    'xDriveUploadBatchSummary({ uploaded, skipped, failed: 0, cancelled })',
+    'useXDriveFileExplorerUploadController<File>({',
+    'trackProgress: true',
+    'preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name)',
+    'api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress)',
+    'fileUploads.runTargets(targets, action)',
+    '<XDriveUploadConflictDialog {...fileUploads.dialogProps}',
+    'uploadProgress={fileUploads.progress}',
   ]) {
-    assert.ok(app.includes(token), `missing Web upload conflict UI: ${token}`)
+    assert.ok(app.includes(token), `missing Web shared upload-controller wiring: ${token}`)
   }
+  assert.ok(uploadController.includes("if (conflictPolicy === 'skip')"), 'shared upload controller must own skip handling')
+  assert.ok(uploadController.includes("if (decision === 'cancel')"), 'shared upload controller must own batch cancellation')
+  assert.ok(uploadController.includes('xDriveUploadBatchSummary(result)'), 'shared upload controller must own batch summaries')
+  assert.equal(app.includes('useXDriveUploadConflictResolver()'), false, 'Web must not own conflict-resolver lifecycle')
+  assert.equal(app.includes("let conflictPolicy: XDriveUploadConflictPolicy = 'fail'"), false, 'Web must not own per-file conflict state')
 })
 
 

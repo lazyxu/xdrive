@@ -37,7 +37,7 @@ import {
   XDriveStatePanel,
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
-  useXDriveUploadConflictResolver,
+  useXDriveFileExplorerUploadController,
   useXDriveCloudFilesController,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
@@ -70,9 +70,8 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
   XDriveCloudFilesPort,
-  XDriveUploadConflictPolicy,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive, xDriveUploadBatchSummary, xDriveUploadConflictCanOverwrite } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -486,7 +485,6 @@ function FileManager({
   onLogout: () => void
 }) {
   const [profile, setProfile] = useState<MeResult | null>(null)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
@@ -498,8 +496,6 @@ function FileManager({
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
-  const uploadConflicts = useXDriveUploadConflictResolver()
-
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
@@ -563,6 +559,16 @@ function FileManager({
     }
     setFeedback({ tone: 'bad', message: err instanceof Error ? err.message : '请求失败' })
   }, [onAuthExpired])
+
+  const fileUploads = useXDriveFileExplorerUploadController<File>({
+    trackProgress: true,
+    fileName: (file) => file.name,
+    preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name),
+    upload: (parentID, file, conflictPolicy, onProgress) =>
+      api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress),
+    onError: handleError,
+    onFeedback: (tone, message) => setFeedback({ tone, message }),
+  })
 
   const cloudFilesPort = useMemo<XDriveCloudFilesPort<Node, QuotaUsage, XDriveFileExplorerSort>>(() => ({
     getRoot: () => api.root(),
@@ -768,66 +774,22 @@ function FileManager({
   const uploadTargets = async (
     targets: readonly WebUploadTarget[],
     reloadCurrent = true,
+    action: 'upload' | 'drop-upload' | 'upload-folder' = 'upload',
   ) => {
-    if (targets.length === 0) return { uploaded: 0, skipped: 0, cancelled: false }
-    if (!uploadConflicts.beginBatch()) return { uploaded: 0, skipped: 0, cancelled: true }
-    let uploaded = 0
-    let skipped = 0
-    let cancelled = false
-    let fatalError: unknown = null
-    try {
-      for (const target of targets) {
-        const { parentID, file } = target
-        let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
-        try {
-          const preflight = await api.uploadConflictPreflight(parentID, file.name)
-          if (preflight.conflict) {
-            const decision = await uploadConflicts.resolveConflict(file.name, {
-              canOverwrite: xDriveUploadConflictCanOverwrite(preflight),
-            })
-            if (decision === 'cancel') {
-              cancelled = true
-              break
-            }
-            conflictPolicy = decision
-          }
-          if (conflictPolicy === 'skip') {
-            skipped += 1
-            continue
-          }
-          setUploadProgress(0)
-          const result = await api.uploadWithConflictPolicy(
-            parentID,
-            file,
-            conflictPolicy,
-            setUploadProgress,
-          )
-          if (result.skipped) skipped += 1
-          else uploaded += 1
-        } catch (error) {
-          fatalError = error
-          break
-        } finally {
-          setUploadProgress(null)
-        }
-      }
-    } finally {
-      uploadConflicts.endBatch()
+    const result = await fileUploads.runTargets(targets, action)
+    if (result.uploaded > 0 && reloadCurrent && current) {
+      await loadDirectory(current.id)
     }
-
-    if (uploaded > 0 && reloadCurrent && current) await loadDirectory(current.id)
-    if (uploaded > 0) await refreshQuota()
-    if (fatalError) {
-      handleError(fatalError)
-      return { uploaded, skipped, cancelled }
-    }
-    const summary = xDriveUploadBatchSummary({ uploaded, skipped, failed: 0, cancelled })
-    if (summary) setFeedback(summary)
-    return { uploaded, skipped, cancelled }
+    if (result.uploaded > 0) await refreshQuota()
+    return result
   }
 
-  const uploadFilesTo = async (parentID: number, files: File[]) => {
-    await uploadTargets(files.map((file) => ({ parentID, file })))
+  const uploadFilesTo = async (
+    parentID: number,
+    files: File[],
+    action: 'upload' | 'drop-upload' = 'upload',
+  ) => {
+    await uploadTargets(files.map((file) => ({ parentID, file })), true, action)
   }
 
   const uploadFiles = async (files: FileList | null) => {
@@ -857,6 +819,7 @@ function FileManager({
         file,
       })),
       false,
+      'upload-folder',
     )
   }
 
@@ -1043,12 +1006,12 @@ function FileManager({
                 loading={loading}
                 loadingMore={loadingMore}
                 hasMore={directoryPage?.hasMore ?? false}
-                uploadProgress={uploadProgress}
+                uploadProgress={fileUploads.progress}
                 onLoadDirectory={loadDirectory}
                 onLoadMore={loadMoreDirectory}
                 onUploadFiles={uploadFiles}
                 onUploadFolderFiles={uploadFolderFiles}
-                onUploadDroppedFiles={uploadFilesTo}
+                onUploadDroppedFiles={(parentID, files) => uploadFilesTo(parentID, files, 'drop-upload')}
                 onUploadDroppedFolderEntries={uploadDroppedFolderEntries}
                 onCreateFolder={() => setFolderOpen(true)}
                 onOpenTrash={openTrash}
@@ -1115,7 +1078,7 @@ function FileManager({
         </XDriveWorkspaceContent>
       </XDriveWorkspaceShell>
 
-      <XDriveUploadConflictDialog {...uploadConflicts.dialogProps} />
+      <XDriveUploadConflictDialog {...fileUploads.dialogProps} />
 
       <XDriveFileNameDialog
         open={folderOpen}
