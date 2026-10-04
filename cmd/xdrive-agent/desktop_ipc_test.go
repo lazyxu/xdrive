@@ -460,6 +460,14 @@ func (f *fakeDesktopIPCController) CloudMediaAlbumItems(
 	return append([]client.MediaItem(nil), f.cloudMediaAlbumItems...), f.err
 }
 
+func (f *fakeDesktopIPCController) CloudSetMediaFavorite(
+	_ context.Context,
+	nodeID uint64,
+	favorite bool,
+) (client.MediaFavorite, error) {
+	return client.MediaFavorite{Favorite: favorite}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	f.cloudMediaThumbnailID = nodeID
 	return f.cloudMediaThumbnail, f.err
@@ -1178,6 +1186,17 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		)
 	}
 
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPatch,
+		"/v1/media/favorite",
+		`{"node_id":31,"favorite":true}`,
+	)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"favorite":true`) {
+		t.Fatalf("media favorite status=%d body=%s", res.Code, res.Body.String())
+	}
+
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/thumbnail?node_id=31", "")
 	if res.Code != http.StatusOK ||
 		!strings.Contains(res.Body.String(), "\"content_type\":\"image/jpeg\"") ||
@@ -1222,6 +1241,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?asset_kind=provider_magic",
 		"/v1/media/items?captured_from=not-a-date",
 		"/v1/media/items?has_location=maybe",
+		"/v1/media/items?favorite=maybe",
 		"/v1/media/items?limit=0",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",

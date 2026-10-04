@@ -334,6 +334,7 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItem[]>>
+        setMediaFavorite: (nodeID: number, favorite: boolean) => Promise<DesktopResult<{ favorite: boolean }>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaLivePhotoMotion: (nodeID: number) => Promise<DesktopResult<AgentMediaMotion>>
         getMediaVideoURL: (nodeID: number) => Promise<DesktopResult<string>>

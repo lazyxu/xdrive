@@ -71,6 +71,7 @@ test('media Gallery filters are serialized for items and album items', async (t)
     captured_from: '2026-09-01T00:00:00.000Z',
     captured_to: '2026-10-01T00:00:00.000Z',
     has_location: true,
+    favorite: true,
   }
   await client.mediaItems('', 25, 10, filters)
   await client.mediaAlbumItems('folder:9', 25, 5, filters)
@@ -82,9 +83,26 @@ test('media Gallery filters are serialized for items and album items', async (t)
     assert.equal(url.searchParams.get('captured_from'), filters.captured_from)
     assert.equal(url.searchParams.get('captured_to'), filters.captured_to)
     assert.equal(url.searchParams.get('has_location'), 'true')
+    assert.equal(url.searchParams.get('favorite'), 'true')
   }
   assert.equal(new URL(seen[0], 'http://127.0.0.1').searchParams.get('offset'), '10')
   assert.equal(new URL(seen[1], 'http://127.0.0.1').searchParams.get('album_id'), 'folder:9')
+})
+
+test('media favorite uses the scoped Agent API', async (t) => {
+  const { client } = await fixture(t, async (req, res) => {
+    assert.equal(req.method, 'PATCH')
+    assert.equal(req.url, '/v1/media/favorite')
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString('utf8')), {
+      node_id: 31,
+      favorite: true,
+    })
+    json(res, 200, { favorite: true })
+  })
+  const result = await client.setMediaFavorite(31, true)
+  assert.equal(result.favorite, true)
 })
 
 test('client update endpoints keep check download and install separate', async (t) => {

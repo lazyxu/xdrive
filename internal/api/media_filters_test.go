@@ -14,7 +14,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(
 		"GET",
-		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true",
+		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true",
 		nil,
 	)
 	ctx.Request = req
@@ -25,7 +25,8 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	}
 	if query.Search != "iPhone" ||
 		query.AssetKind != "live_photo" ||
-		query.HasLocation == nil || !*query.HasLocation {
+		query.HasLocation == nil || !*query.HasLocation ||
+		query.Favorite == nil || !*query.Favorite {
 		t.Fatalf("query=%+v", query)
 	}
 	if query.CapturedFrom == nil ||
@@ -68,6 +69,24 @@ func TestMediaQueryFromRequestRejectsInvalidAssetKind(t *testing.T) {
 
 	if _, ok := mediaQueryFromRequest(ctx); ok {
 		t.Fatal("invalid asset kind was accepted")
+	}
+	if recorder.Code != 400 {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMediaQueryFromRequestRejectsInvalidFavorite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(
+		"GET",
+		"/api/v1/media/items?favorite=maybe",
+		nil,
+	)
+
+	if _, ok := mediaQueryFromRequest(ctx); ok {
+		t.Fatal("invalid favorite filter was accepted")
 	}
 	if recorder.Code != 400 {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())

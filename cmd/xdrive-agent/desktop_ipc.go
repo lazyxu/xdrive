@@ -185,6 +185,7 @@ type desktopIPCController interface {
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
+	CloudSetMediaFavorite(context.Context, uint64, bool) (client.MediaFavorite, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
 	CloudMediaVideo(context.Context, uint64, string) (client.MediaVideoStream, error)
@@ -440,6 +441,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
+	mux.HandleFunc("PATCH /v1/media/favorite", h.mediaFavorite)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
 	mux.HandleFunc("GET /v1/media/video", h.mediaVideo)
@@ -1437,6 +1439,26 @@ func (h *desktopIPCHandler) mediaAlbumItems(w http.ResponseWriter, r *http.Reque
 	writeDesktopIPCJSON(w, http.StatusOK, items)
 }
 
+func (h *desktopIPCHandler) mediaFavorite(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeID   uint64 `json:"node_id"`
+		Favorite *bool  `json:"favorite"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.NodeID == 0 || input.Favorite == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_favorite", "node_id and favorite are required")
+		return
+	}
+	result, err := h.ctrl.CloudSetMediaFavorite(r.Context(), input.NodeID, *input.Favorite)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
 func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
 	if !ok {
@@ -1538,6 +1560,14 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 			return client.MediaQuery{}, false
 		}
 		out.HasLocation = &value
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("favorite")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_favorite", "favorite must be true or false")
+			return client.MediaQuery{}, false
+		}
+		out.Favorite = &value
 	}
 	return out, true
 }
