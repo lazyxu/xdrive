@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
+const cloudController = read('ui', 'shared', 'src', 'mui', 'CloudFilesController.ts')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 
@@ -44,31 +45,33 @@ test('shared FileExplorer controller owns pagination eligibility and page mergin
   }
 })
 
-test('Web and Desktop delegate pagination rules while keeping transport/loading local', () => {
-  assert.ok(web.includes('useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>'), 'Web must use the shared page-state contract')
-  assert.ok(desktop.includes('useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>'), 'Desktop must use the shared page-state contract')
-  assert.equal((web.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Web must delegate all directory request options to the shared controller')
-  assert.equal((desktop.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Desktop must delegate all directory request options to the shared controller')
+test('Web and Desktop delegate pagination rules while keeping transport adapters local', () => {
+  assert.ok(web.includes('useXDriveCloudFilesController<Node, QuotaUsage, XDriveFileExplorerSort>'), 'Web must delegate cloud page state to the shared Cloud Files controller')
+  assert.ok(desktop.includes('useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>'), 'Desktop keeps the current page-state adapter until the active FileExplorer branch lands')
+
+  assert.equal((web.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 0, 'Web App must not duplicate directory request-option construction')
+  assert.equal((cloudController.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'shared Cloud Files controller must own directory, load-more and initial request options')
+  assert.equal((desktop.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Desktop must continue delegating request options to the framework-neutral helper')
+
   assert.equal(web.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), false, 'Web must not own directory page-size composition')
-  assert.equal(desktop.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), false, 'Desktop must not own directory page-size composition')
+  assert.equal(desktop.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE'), false, 'Desktop must not own a local page-size constant')
   assert.equal(web.includes('const FILE_PAGE_SIZE = 200'), false, 'Web must not own a local page-size constant')
   assert.equal(desktop.includes('const DESKTOP_FILE_PAGE_SIZE = 200'), false, 'Desktop must not own a local page-size constant')
-  assert.equal((web.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'Web must use the shared directory transition for directory, load-more and initial pages')
-  assert.equal((desktop.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'Desktop must use the shared directory transition for directory, load-more and initial pages')
 
-  assert.ok(web.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, loadingMore)'), 'Web must use shared pagination eligibility')
-  assert.ok(desktop.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)'), 'Desktop must use shared pagination eligibility')
-  assert.equal(web.includes('xDriveFileExplorerPageStateFromResult('), false, 'Web must not duplicate page-state derivation outside the shared transition')
+  assert.equal((web.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 0, 'Web App must not own directory transitions')
+  assert.equal((cloudController.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'shared Cloud Files controller must own directory, load-more and initial transitions')
+  assert.equal((desktop.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'Desktop must continue using the shared directory transition until its controller migration')
+
+  assert.ok(cloudController.includes('xDriveFileExplorerCanLoadMore(currentPage, id, sort, loadingMore)'), 'shared Cloud Files controller must own Web pagination eligibility')
+  assert.ok(desktop.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)'), 'Desktop must keep shared pagination eligibility')
+  assert.equal(web.includes('xDriveFileExplorerPageStateFromResult('), false, 'Web must not duplicate page-state derivation')
   assert.equal(desktop.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate page-state derivation outside the shared transition')
-  assert.equal(web.includes('xDriveFileExplorerMergePageItems(currentItems, page.items)'), false, 'Web must not duplicate incremental page merging outside the shared transition')
+  assert.equal(web.includes('xDriveFileExplorerMergePageItems(currentItems, page.items)'), false, 'Web must not duplicate incremental page merging')
   assert.equal(desktop.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), false, 'Desktop must not duplicate incremental page merging outside the shared transition')
 
-  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.equal(source.includes('const merged = new Map(currentItems.map((item) => [item.id, item]))'), false, `${label} must not duplicate page merging`)
-  }
-
-  assert.ok(web.includes('api.listPage(id, xDriveFileExplorerPageRequestOptions(sort))'), 'Web must keep REST pagination execution local')
-  assert.ok(web.includes('setLoadingMore(true)'), 'Web must keep loading state local')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildrenPage(\n        id,\n        xDriveFileExplorerPageRequestOptions(sort),'), 'Desktop must keep Agent pagination execution local')
-  assert.ok(desktop.includes("setCloudLoadingMore(true)"), 'Desktop must keep loading state local')
+  assert.ok(web.includes('getPage: (parentID, options) => api.listPage(parentID, options)'), 'Web must keep REST transport execution local behind the shared port')
+  assert.equal(web.includes('setLoadingMore(true)'), false, 'Web App loading-more state must move into the shared controller')
+  assert.ok(cloudController.includes('setLoadingMore(true)'), 'shared Cloud Files controller must own Web loading-more state')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildrenPage('), 'Desktop must keep Agent pagination execution local')
+  assert.ok(desktop.includes('setCloudLoadingMore(true)'), 'Desktop must keep loading state local until its controller migration')
 })
