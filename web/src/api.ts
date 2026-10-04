@@ -815,14 +815,27 @@ export class XDriveApi {
     })
   }
 
-  createFileOperation(type: XDriveFileOperationType, items: BatchNodeRef[], parentID?: number) {
+  createFileOperation(
+    type: XDriveFileOperationType,
+    items: BatchNodeRef[],
+    parentID?: number,
+    conflictPolicy?: XDriveFileOperation['conflict_policy'],
+  ) {
     return this.request<XDriveFileOperation>('/api/v1/file-operations', {
       method: 'POST',
       body: JSON.stringify({
         type,
         items,
         ...(parentID ? { parent_id: parentID } : {}),
+        ...(conflictPolicy ? { conflict_policy: conflictPolicy } : {}),
       }),
+    })
+  }
+
+  resolveFileOperationConflict(id: string, conflictPolicy: 'skip' | 'keep_both') {
+    return this.request<XDriveFileOperation>(`/api/v1/file-operations/${encodeURIComponent(id)}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ conflict_policy: conflictPolicy }),
     })
   }
 

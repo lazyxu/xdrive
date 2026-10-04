@@ -102,6 +102,7 @@ type FileOperation struct {
 	Status            string     `json:"status"`
 	ParentID          *uint64    `json:"parent_id,omitempty"`
 	RetryOfID         *string    `json:"retry_of_id,omitempty"`
+	ConflictPolicy    string     `json:"conflict_policy,omitempty"`
 	TotalItems        int64      `json:"total_items"`
 	ProcessedItems    int64      `json:"processed_items"`
 	TotalBytes        int64      `json:"total_bytes"`
@@ -375,12 +376,37 @@ func (c *Client) BatchDelete(ctx context.Context, items []BatchNodeRef) (BatchNo
 }
 
 func (c *Client) CreateFileOperation(ctx context.Context, operationType string, items []BatchNodeRef, parentID uint64) (FileOperation, error) {
+	return c.CreateFileOperationWithConflictPolicy(ctx, operationType, items, parentID, "")
+}
+
+func (c *Client) CreateFileOperationWithConflictPolicy(
+	ctx context.Context,
+	operationType string,
+	items []BatchNodeRef,
+	parentID uint64,
+	conflictPolicy string,
+) (FileOperation, error) {
 	var out FileOperation
 	body := map[string]any{"type": operationType, "items": items}
 	if parentID != 0 {
 		body["parent_id"] = parentID
 	}
+	if conflictPolicy != "" {
+		body["conflict_policy"] = conflictPolicy
+	}
 	err := c.json(ctx, http.MethodPost, "/api/v1/file-operations", body, &out)
+	return out, err
+}
+
+func (c *Client) ResolveFileOperationConflict(ctx context.Context, id, conflictPolicy string) (FileOperation, error) {
+	var out FileOperation
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/file-operations/%s/resolve", url.PathEscape(id)),
+		map[string]any{"conflict_policy": conflictPolicy},
+		&out,
+	)
 	return out, err
 }
 
