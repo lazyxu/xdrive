@@ -31,6 +31,7 @@ import type {
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
@@ -320,7 +321,8 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   return (
-    <XDriveMediaGallery
+    <XDriveWorkspaceSurface presentation="page" title="图库">
+      <XDriveMediaGallery
       items={items}
       albums={albums}
       currentAlbum={currentAlbum}
@@ -343,7 +345,8 @@ export function XDriveMediaGalleryPage({
       onBack={() => void loadFirstPage(null, query)}
       onLoadMore={() => void loadMore()}
       onRefresh={() => void loadFirstPage(currentAlbum, query)}
-    />
+      />
+    </XDriveWorkspaceSurface>
   )
 }
 

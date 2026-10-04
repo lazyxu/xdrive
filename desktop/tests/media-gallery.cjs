@@ -11,7 +11,7 @@ const sharedModels = read('ui', 'shared', 'src', 'models.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const webAPI = read('web', 'src', 'api.ts')
-const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx') + read('desktop', 'src', 'renderer', 'DesktopGalleryPage.tsx')
+const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
 const desktopIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -45,8 +45,8 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
   assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
-  assert.ok(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Web Gallery must use the shared workspace surface')
-  assert.ok(desktopApp.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'Desktop Gallery must use the shared workspace surface')
+  assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'shared Gallery page must own workspace chrome')
+  assert.equal(fs.existsSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopGalleryPage.tsx')), false, 'Desktop must not keep a pass-through Gallery wrapper')
   assert.equal(webApp.includes('<Paper variant="outlined"'), false, 'Web Gallery must not add a platform-only Paper shell around shared content')
   assert.equal(webApp.includes('function MediaGallery'), false)
   assert.equal(desktopApp.includes('function MediaGallery'), false)
@@ -121,7 +121,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 
 test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.match(desktopApp, /type View = [^\n]*'gallery'/)
-  assert.ok(desktopApp.includes('title="图库"'), 'Desktop Gallery page must own its shared workspace title')
+  assert.ok(sharedGallery.includes('title="图库"'), 'shared Gallery page must own its workspace title')
   assert.ok(desktopApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must expose Gallery through the shared workspace sidebar')
   assert.ok(desktopApp.includes('selected={view}'), 'Desktop must use its unified workspace key directly')
   assert.ok(sharedSidebar.includes("selected={selected === 'gallery'}"), 'shared core navigation must own Gallery selection')
@@ -139,7 +139,8 @@ test('Web exposes files, Gallery, Sync Folders, and Cloud Storage as first-class
   for (const label of ['primary="文件"', 'primary="图库"', 'primary="同步文件夹"', 'primary="云端存储"']) {
     assert.ok(sharedSidebar.includes(label), `shared core navigation missing: ${label}`)
   }
-  assert.match(webApp, /<ExternalSourcesPanel[\s\S]*defaultTargetNodeID=/)
+  assert.match(webApp, /<XDriveSourceManager[\s\S]*defaultTargetNodeID=/)
+  assert.equal(fs.existsSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx')), false, 'Web must not keep a pass-through Source manager wrapper')
   assert.equal(webApp.includes('LocalStoragePage'), false, 'Web must not expose Desktop-only Local Storage')
   assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web cloud storage must use the shared workspace')
   assert.equal(webApp.includes('setSourcesOpen'), false)

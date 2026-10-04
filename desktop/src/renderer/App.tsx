@@ -52,6 +52,8 @@ import {
   XDriveWorkspaceContent,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
+  XDriveMediaGalleryPage,
+  XDriveTaskCenterPage,
   XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -82,8 +84,6 @@ import type { DesktopLocalStorageDataSource } from './DesktopLocalStoragePage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
 import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
-import { DesktopGalleryPage } from './DesktopGalleryPage'
-import { DesktopTransfersPage } from './DesktopTransfersPage'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
@@ -1892,7 +1892,7 @@ export default function App({
         )}
 
         {view === 'gallery' && (
-          <DesktopGalleryPage
+          <XDriveMediaGalleryPage
             source={mediaGallerySource}
             onError={(galleryError) => setError(
               galleryError instanceof Error ? galleryError.message : String(galleryError),
@@ -1968,25 +1968,28 @@ export default function App({
         )}
 
         {view === 'transfers' && (
-          <DesktopTransfersPage
+          <XDriveTaskCenterPage
             transfers={transfers.transfers}
             operations={cloudFileOperations}
-            retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
-            retryDisabled={Boolean(busy) || fileOperationClearHistoryLoading}
+            subtitle="统一查看文件操作、上传、下载、本地可用性与历史状态。"
+            clearHistory={{
+              disabled: !hasTaskHistory || Boolean(busy) || fileOperationActionBusy,
+              loading: fileOperationClearHistoryLoading,
+              onClear: () => { void clearTaskHistory() },
+            }}
+            transferRetryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
+            transferRetryDisabled={Boolean(busy) || fileOperationClearHistoryLoading}
             operationCancellingID={fileOperationCancellingID}
             operationRetryingID={fileOperationRetryingID}
             operationResolvingID={fileOperationResolvingID}
             operationResolvingPolicy={fileOperationResolvingPolicy}
             operationDisabled={fileOperationActionBusy}
-            clearHistoryDisabled={!hasTaskHistory || Boolean(busy) || fileOperationActionBusy}
-            clearHistoryLoading={fileOperationClearHistoryLoading}
-            onRetry={(id) => { void retryTransfer(id) }}
+            onRetryTransfer={(id) => { void retryTransfer(id) }}
             onCancelOperation={(id) => { void cancelCloudFileOperation(id) }}
             onRetryOperation={(id) => { void retryCloudFileOperation(id) }}
             onResolveOperationConflict={fileOperationConflictResolveSupported
               ? (id, policy) => { void resolveCloudFileOperationConflict(id, policy) }
               : undefined}
-            onClearHistory={() => { void clearTaskHistory() }}
           />
         )}
 

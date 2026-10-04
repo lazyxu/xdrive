@@ -32,6 +32,7 @@ import {
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
+  XDriveSourceManager,
   XDriveStatePanel,
   XDriveTaskCenterPage,
   useXDriveFileOperationLifecycle,
@@ -41,7 +42,6 @@ import {
   XDriveFileNameDialog,
   XDriveTrashDialog,
   XDriveVersionHistoryDialog,
-  XDriveWorkspaceSurface,
   XDriveWorkspaceShell,
   XDriveWorkspaceContent,
   XDriveStatusAlert,
@@ -72,7 +72,6 @@ import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import ShareDialog from './ShareDialog'
 import StorageStatsPanel from './StorageStatsPanel'
-import ExternalSourcesPanel from './ExternalSources'
 import WebFileExplorer from './WebFileExplorer'
 import { createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
@@ -969,12 +968,10 @@ function FileManager({
               />
           </Box>
         ) : appView === 'gallery' ? (
-          <XDriveWorkspaceSurface presentation="page" title="图库">
-            <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
-          </XDriveWorkspaceSurface>
+          <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
         ) : appView === 'sources' ? (
-          <ExternalSourcesPanel
-            api={api}
+          <XDriveSourceManager
+            adapter={api}
             defaultTargetNodeID={current?.id}
             defaultTargetLabel={current?.name ?? '我的文件'}
             defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
