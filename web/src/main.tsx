@@ -20,7 +20,6 @@ function Root() {
 
   React.useEffect(() => {
     document.documentElement.dataset.xdriveTheme = resolvedMode
-    document.documentElement.style.colorScheme = resolvedMode
   }, [resolvedMode])
 
   const changeAppearance = React.useCallback((next: XDriveAppearance) => {

@@ -24,7 +24,6 @@ function Root() {
 
   React.useEffect(() => {
     document.documentElement.dataset.xdriveTheme = resolvedMode
-    document.documentElement.style.colorScheme = resolvedMode
   }, [resolvedMode])
 
   const theme = React.useMemo(
