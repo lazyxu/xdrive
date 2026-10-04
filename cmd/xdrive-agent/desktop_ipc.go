@@ -1517,6 +1517,8 @@ func (h *desktopIPCHandler) mediaVideo(w http.ResponseWriter, r *http.Request) {
 	if stream.ContentLength >= 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(stream.ContentLength, 10))
 	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 	w.Header().Set("Content-Disposition", "inline")
 	w.WriteHeader(stream.StatusCode)
 	_, _ = io.Copy(w, stream.Body)

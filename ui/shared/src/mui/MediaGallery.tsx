@@ -480,6 +480,149 @@ function AsyncThumbnail({
   )
 }
 
+const mediaPosterConcurrency = 3
+let mediaPosterActive = 0
+const mediaPosterQueue: Array<() => void> = []
+
+function scheduleMediaPoster<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      mediaPosterActive += 1
+      void task()
+        .then(resolve, reject)
+        .finally(() => {
+          mediaPosterActive = Math.max(0, mediaPosterActive - 1)
+          mediaPosterQueue.shift()?.()
+        })
+    }
+    if (mediaPosterActive < mediaPosterConcurrency) run()
+    else mediaPosterQueue.push(run)
+  })
+}
+
+async function captureVideoPoster(
+  nodeID: number,
+  loadVideo: MediaVideoLoader,
+): Promise<string | null> {
+  const source = await loadVideo(nodeID)
+  if (!source) return null
+
+  return new Promise<string | null>((resolve) => {
+    const video = document.createElement('video')
+    let settled = false
+    const finish = (value: string | null) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      video.removeAttribute('src')
+      video.load()
+      revokeIfBlob(source)
+      resolve(value)
+    }
+    const timer = window.setTimeout(() => finish(null), 15_000)
+
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.addEventListener('loadeddata', () => {
+      try {
+        if (video.videoWidth < 1 || video.videoHeight < 1) {
+          finish(null)
+          return
+        }
+        const maxEdge = 512
+        const scale = Math.min(
+          1,
+          maxEdge / Math.max(video.videoWidth, video.videoHeight),
+        )
+        const width = Math.max(1, Math.round(video.videoWidth * scale))
+        const height = Math.max(1, Math.round(video.videoHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const context = canvas.getContext('2d')
+        if (!context) {
+          finish(null)
+          return
+        }
+        context.drawImage(video, 0, 0, width, height)
+        finish(canvas.toDataURL('image/jpeg', 0.82))
+      } catch {
+        finish(null)
+      }
+    }, { once: true })
+    video.addEventListener('error', () => finish(null), { once: true })
+    video.src = source
+    video.load()
+  })
+}
+
+function AsyncVideoPoster({
+  nodeID,
+  alt,
+  loadVideo,
+  fallback,
+}: {
+  nodeID: number
+  alt: string
+  loadVideo: MediaVideoLoader
+  fallback: ReactNode
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [visible, setVisible] = useState(false)
+  const [src, setSrc] = useState('')
+
+  useEffect(() => {
+    setVisible(false)
+    const root = rootRef.current
+    if (!root) return () => undefined
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true)
+      return () => undefined
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: '240px' })
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [nodeID])
+
+  useEffect(() => {
+    let active = true
+    setSrc('')
+    if (!visible) return () => { active = false }
+
+    void scheduleMediaPoster(() => captureVideoPoster(nodeID, loadVideo))
+      .then((value) => {
+        if (active && value) setSrc(value)
+      })
+      .catch(() => undefined)
+
+    return () => {
+      active = false
+    }
+  }, [loadVideo, nodeID, visible])
+
+  return (
+    <Box ref={rootRef} sx={{ width: '100%', height: '100%' }}>
+      {src ? (
+        <Box
+          component="img"
+          src={src}
+          alt={alt}
+          sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+        />
+      ) : (
+        fallback
+      )}
+    </Box>
+  )
+}
+
 function mediaFallback(kind: MediaMetadata['media_kind']) {
   const Icon = kind === 'video' ? MovieIcon : ImageIcon
   return (
@@ -1088,12 +1231,21 @@ export function XDriveMediaGallery({
                     },
                   }}
                 >
-                  <AsyncThumbnail
-                    nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
-                    alt={item.node.name}
-                    loadThumbnail={loadThumbnail}
-                    fallback={mediaFallback(item.metadata.media_kind)}
-                  />
+                  {video && !livePhoto && loadVideo ? (
+                    <AsyncVideoPoster
+                      nodeID={item.node.id}
+                      alt={item.node.name}
+                      loadVideo={loadVideo}
+                      fallback={mediaFallback(item.metadata.media_kind)}
+                    />
+                  ) : (
+                    <AsyncThumbnail
+                      nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
+                      alt={item.node.name}
+                      loadThumbnail={loadThumbnail}
+                      fallback={mediaFallback(item.metadata.media_kind)}
+                    />
+                  )}
                   {onSetFavorite ? (
                     <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
                       <IconButton

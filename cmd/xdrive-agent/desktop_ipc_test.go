@@ -1229,7 +1229,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	if res.Code != http.StatusPartialContent ||
 		res.Body.String() != "abcd" ||
 		res.Header().Get("Content-Type") != "video/mp4" ||
-		res.Header().Get("Content-Range") != "bytes 0-3/8" {
+		res.Header().Get("Content-Range") != "bytes 0-3/8" ||
+		res.Header().Get("Access-Control-Allow-Origin") != "*" ||
+		res.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" {
 		t.Fatalf("media video status=%d headers=%v body=%q", res.Code, res.Header(), res.Body.String())
 	}
 	if ctrl.cloudMediaVideoID != 31 || ctrl.cloudMediaVideoRange != "bytes=0-3" {
