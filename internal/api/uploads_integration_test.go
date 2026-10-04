@@ -288,6 +288,50 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	preflightMissing := request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/uploads/preflight",
+		token,
+		strings.NewReader(fmt.Sprintf(`{"parent_id":%d,"name":"preflight.txt"}`, root.ID)),
+		http.StatusOK,
+	)
+	var missingPreflight uploadConflictPreflightDTO
+	if err := json.Unmarshal(preflightMissing.Body.Bytes(), &missingPreflight); err != nil {
+		t.Fatal(err)
+	}
+	if missingPreflight.Conflict {
+		t.Fatal("preflight reported conflict for missing name")
+	}
+
+	preflightExistingNode := meta.Node{
+		ParentID: &rootModel.ID,
+		Name:     "preflight.txt",
+		Type:     meta.NodeTypeFile,
+		OwnerID:  rootModel.OwnerID,
+		Revision: 1,
+	}
+	if err := db.Create(&preflightExistingNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	preflightExisting := request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/uploads/preflight",
+		token,
+		strings.NewReader(fmt.Sprintf(`{"parent_id":%d,"name":"preflight.txt"}`, root.ID)),
+		http.StatusOK,
+	)
+	var existingPreflight uploadConflictPreflightDTO
+	if err := json.Unmarshal(preflightExisting.Body.Bytes(), &existingPreflight); err != nil {
+		t.Fatal(err)
+	}
+	if !existingPreflight.Conflict {
+		t.Fatal("preflight missed existing upload target")
+	}
+
 	// A conflict that appears after chunk upload but before finalize still
 	// honors skip and must not leave temporary parts or an unreferenced CAS row.
 	skipRaceData := []byte("skip-race-content-unique")

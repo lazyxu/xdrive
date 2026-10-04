@@ -90,6 +90,8 @@ type fakeDesktopIPCController struct {
 	cloudMutationDeleteID      uint64
 	cloudMutationDeleteRev     uint64
 	cloudUploaded              client.Node
+	cloudPreflightParent       uint64
+	cloudPreflightName         string
 	cloudUploadParent          uint64
 	cloudUploadPath            string
 	cloudUploadName            string
@@ -362,6 +364,16 @@ func (f *fakeDesktopIPCController) CloudResolveFileOperationConflict(_ context.C
 		ID: "file-op-resolved", Type: "move", Status: "queued", RetryOfID: &retryOf,
 		ConflictPolicy: policy, TotalItems: 1,
 	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUploadConflictPreflight(
+	_ context.Context,
+	parentID uint64,
+	name string,
+) (client.UploadConflictPreflight, error) {
+	f.cloudPreflightParent = parentID
+	f.cloudPreflightName = name
+	return client.UploadConflictPreflight{Conflict: true}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint64, localPath, name string) (client.Node, error) {
@@ -733,6 +745,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-operation-conflict-resolution") {
 		t.Fatalf("hello missing file-operation conflict resolution capability: %+v", hello.Capabilities)
 	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "upload-conflict-preflight") {
+		t.Fatalf("hello missing upload conflict preflight capability: %+v", hello.Capabilities)
+	}
 
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/lifecycle/shutdown", "")
 	if res.Code != http.StatusOK {
@@ -1032,6 +1047,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/file-operation/cancel", `{"id":"file-op"}`, "\"status\":\"cancel_requested\""},
 		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
 		{http.MethodPost, "/v1/cloud/file-operation/resolve", `{"id":"file-op","conflict_policy":"keep_both"}`, "\"id\":\"file-op-resolved\""},
+		{http.MethodPost, "/v1/cloud/upload/preflight", `{"parent_id":2,"name":"upload.txt"}`, "\"conflict\":true"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},
@@ -1057,6 +1073,13 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudCreateParent != 1 || ctrl.cloudCreateName != "New Folder" {
 		t.Fatalf("cloud create not forwarded: parent=%d name=%q", ctrl.cloudCreateParent, ctrl.cloudCreateName)
+	}
+	if ctrl.cloudPreflightParent != 2 || ctrl.cloudPreflightName != "upload.txt" {
+		t.Fatalf(
+			"cloud upload preflight not forwarded: parent=%d name=%q",
+			ctrl.cloudPreflightParent,
+			ctrl.cloudPreflightName,
+		)
 	}
 	if ctrl.cloudRenameID != 3 || ctrl.cloudRenameRev != 2 || ctrl.cloudRenameName != "renamed.pdf" {
 		t.Fatalf("cloud rename not forwarded: id=%d revision=%d name=%q", ctrl.cloudRenameID, ctrl.cloudRenameRev, ctrl.cloudRenameName)
