@@ -1348,9 +1348,25 @@ export default function App({
     return renderDesktopFrame(
       <XDriveAuthShell>
         <XDriveAuthPanel className="auth-panel">
-          <p className="eyebrow">AGENT 连接</p>
-          <h1>{headline}</h1>
-          <p className="subtitle">xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。</p>
+          <Typography
+            variant="overline"
+            color="primary.main"
+            fontWeight={800}
+            sx={{ display: 'block', mb: 1, letterSpacing: '0.14em', lineHeight: 1.4 }}
+          >
+            AGENT 连接
+          </Typography>
+          <Typography
+            component="h1"
+            variant="h4"
+            fontWeight={700}
+            sx={{ fontSize: 27, letterSpacing: '-0.015em', lineHeight: 1.15 }}
+          >
+            {headline}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 500, mt: 1, lineHeight: 1.6 }}>
+            xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。
+          </Typography>
           <MuiBox
             sx={{
               my: 2.25,
@@ -1418,12 +1434,19 @@ export default function App({
             subtitle="桌面版"
             className="auth-brand-lockup"
           />
-          <h1>{reloginRequired ? '登录状态已失效' : '欢迎使用 xDrive'}</h1>
-          <p className="subtitle">
+          <Typography
+            component="h1"
+            variant="h4"
+            fontWeight={700}
+            sx={{ fontSize: 27, letterSpacing: '-0.015em', lineHeight: 1.15 }}
+          >
+            {reloginRequired ? '登录状态已失效' : '欢迎使用 xDrive'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 500, mt: 1, lineHeight: 1.6 }}>
             {reloginRequired
               ? '你的登录状态已过期，请重新验证身份。原有同步设置会继续保留。'
               : '连接到你的 xDrive 服务器，登录后即可访问并同步文件。'}
-          </p>
+          </Typography>
 
           <Stack className="auth-form" spacing={1.75}>
             {loginHistory.auto_login_error ? (
@@ -1725,9 +1748,25 @@ export default function App({
     return renderDesktopFrame(
       <XDriveAuthShell>
         <XDriveAuthPanel className="auth-panel auth-panel-form">
-          <p className="eyebrow">需要修改密码</p>
-          <h1>{headline}</h1>
-          <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
+          <Typography
+            variant="overline"
+            color="primary.main"
+            fontWeight={800}
+            sx={{ display: 'block', mb: 1, letterSpacing: '0.14em', lineHeight: 1.4 }}
+          >
+            需要修改密码
+          </Typography>
+          <Typography
+            component="h1"
+            variant="h4"
+            fontWeight={700}
+            sx={{ fontSize: 27, letterSpacing: '-0.015em', lineHeight: 1.15 }}
+          >
+            {headline}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 500, mt: 1, lineHeight: 1.6 }}>
+            管理员要求先修改密码，之后才能开始同步。
+          </Typography>
           <XDrivePasswordChangeForm
             className="auth-form"
             buttonClassName="auth-submit"
