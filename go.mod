@@ -3,6 +3,7 @@ module github.com/lazyxu/xdrive
 go 1.25
 
 require (
+	github.com/gen2brain/avif v0.4.4
 	github.com/gen2brain/heic v0.4.9
 	github.com/gin-gonic/gin v1.10.1
 	github.com/golang-jwt/jwt/v5 v5.2.1

@@ -171,7 +171,7 @@ Support is tracked by capability rather than file extension alone. "Gallery" mea
 | GIF | Dimensions/basic image metadata | First-frame thumbnail | Complete as image | Animated GIF playback is not yet a Gallery feature |
 | HEIC / HEIF | Dimensions + supported embedded EXIF; Apple asset ID where present | Complete through local HEIC decoder | Complete | Apple Live Photo supported when deterministic local evidence exists |
 | WebP | Dimensions/basic image metadata | Complete through local WebP decoder | Complete | Animated WebP playback is not yet a Gallery feature |
-| AVIF | ISO-BMFF classification and dimensions | **Partial: no local AVIF thumbnail decoder yet** | Indexed with fallback tile | Keep marked partial until decoder/preview is verified |
+| AVIF | ISO-BMFF classification and dimensions | Complete for static/first-frame preview through local AVIF decoder | Complete as image | Animated AVIF playback is not yet a Gallery feature |
 | TIFF | TIFF/EXIF/GPS metadata | Complete through local TIFF decoder | Complete | Common TIFF still images only |
 | BMP | Dimensions/basic metadata | Complete through local BMP decoder | Complete | Still image only |
 | DNG | TIFF/DNG metadata, EXIF/GPS, safe embedded-JPEG preview | Complete when a valid embedded JPEG preview exists | Complete; may become `raw_pair` | DNG without a safe embedded preview has no thumbnail |
@@ -187,7 +187,7 @@ Phone-oriented status:
 
 - iPhone common still formats (JPEG/HEIC), common video containers (MOV/MP4), Apple Live Photo, and preserved `.livp` are supported by the shared local pipeline.
 - Manufacturer-specific Huawei/Xiaomi/OPPO/vivo/Samsung moving-photo protocols are intentionally deferred; do not infer them from filename or timestamp proximity.
-- Animated GIF/WebP files remain preserved originals and are indexed as images, but Gallery animation playback is a separate feature from thumbnail support.
+- Animated GIF/WebP/AVIF files remain preserved originals and are indexed as images, but Gallery animation playback is a separate feature from first-frame thumbnail support.
 - Ordinary phone-video playback uses HTTP Range streaming rather than Desktop base64 IPC, so large 4K files do not have to be buffered in renderer/main/Agent memory.
 - Web playback uses a short-lived signed media ticket scoped to the current user session, Node and Node revision. Desktop uses the loopback-only Agent IPC as a Range proxy with a separate media-only token; the general Desktop IPC bearer is never exposed to the renderer.
 - Video playback still depends on codecs supported by the browser/Electron runtime. The streaming transport does not imply that every classified container/codec is decodable.
@@ -357,7 +357,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P0 | Complete: scheduler, retries, cancellation, account coordination, SourceItemAlias, FileStation Pull | Complete |
 | P1 | Complete: basic read-only Source binding verifier | Complete |
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
-| P3 | In progress: common phone still formats are indexed; JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails are local; ordinary ISO-BMFF videos use Range playback; AVIF preview, video posters, and non-ISO video metadata remain | Highest |
+| P3 | In progress: common phone still formats are indexed; JPEG/PNG/GIF/HEIC/HEIF/WebP/AVIF/TIFF/BMP/DNG-preview thumbnails are local; ordinary ISO-BMFF videos use Range playback; video posters and non-ISO video metadata remain | Highest |
 | P4 | Complete: connector-neutral `MediaGroup` evidence plus `PhotoAsset` / `PhotoResource` / `PhotoMetadata` / `PhotoCollection` logical projection | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata/preview plus exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are local; AAE without embedded target identity and other RAW formats remain ungrouped/TODO | High |

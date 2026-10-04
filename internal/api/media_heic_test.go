@@ -25,3 +25,10 @@ func TestMediaThumbnailSupportedLIVPHEICStill(t *testing.T) {
 		t.Fatal("validated LIVP HEIC still was rejected for thumbnail decoding")
 	}
 }
+
+
+func TestMediaThumbnailSupportedAVIF(t *testing.T) {
+	if !mediaThumbnailSupported(meta.MediaMetadata{MIMEType: "image/avif"}) {
+		t.Fatal("AVIF thumbnail MIME was rejected")
+	}
+}

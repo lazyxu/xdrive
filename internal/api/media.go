@@ -253,6 +253,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		"image/png",
 		"image/gif",
 		"image/webp",
+		"image/avif",
 		"image/tiff",
 		"image/bmp",
 		"image/heic",
@@ -716,7 +717,7 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 	}
 	switch mimeType {
 	case "image/jpeg", "image/png", "image/gif", "image/webp",
-		"image/tiff", "image/bmp", "image/heic", "image/heif",
+		"image/avif", "image/tiff", "image/bmp", "image/heic", "image/heif",
 		"image/x-adobe-dng":
 		return true
 	default:
