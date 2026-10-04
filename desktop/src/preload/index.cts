@@ -101,6 +101,17 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-file-operation-resolve', id, policy),
   cloudUploadPreflight: (parentID: number, name: string) =>
     ipcRenderer.invoke('agent:cloud-upload-preflight', parentID, name),
+  cloudUploadFile: (
+    parentID: number,
+    file: unknown,
+    conflictPolicy: 'fail' | 'skip' | 'keep_both',
+  ) => ipcRenderer.invoke(
+    'agent:cloud-upload-file',
+    parentID,
+    webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]),
+    (file as { name?: string }).name || '',
+    conflictPolicy,
+  ),
   cloudUploadFiles: (parentID: number) => ipcRenderer.invoke('agent:cloud-upload-files', parentID),
   cloudUploadDroppedFiles: (parentID: number, files: unknown[]) => ipcRenderer.invoke(
     'agent:cloud-upload-paths',

@@ -166,6 +166,13 @@ func (h *Handle) Complete() {
 	h.manager.finish(h.id, nil)
 }
 
+func (h *Handle) CompleteSkipped() {
+	if h == nil || h.manager == nil {
+		return
+	}
+	h.manager.finishSkipped(h.id)
+}
+
 func (h *Handle) Fail(err error) {
 	if h == nil || h.manager == nil {
 		return
@@ -373,6 +380,27 @@ func (m *Manager) progress(id string, done, total int64) {
 	e.task.UpdatedAt = now
 	e.lastBytes = done
 	e.lastAt = now
+	m.touchLocked()
+}
+
+func (m *Manager) finishSkipped(id string) {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[id]
+	if e == nil {
+		return
+	}
+	e.task.State = StateCompleted
+	e.task.Error = ""
+	e.task.BytesDone = 0
+	e.task.Percent = 100
+	e.task.InstantBytesPerSecond = 0
+	e.task.AverageBytesPerSecond = 0
+	e.task.UpdatedAt = now
+	e.task.ElapsedMilliseconds = now.Sub(e.task.StartedAt).Milliseconds()
+	e.task.CompletedAt = &now
+	m.trimLocked()
 	m.touchLocked()
 }
 

@@ -875,3 +875,36 @@ test('upload conflict preflight forwards parent and name', async (t) => {
     body: { parent_id: 7, name: 'same.bin' },
   })
 })
+
+
+test('conflict-aware upload forwards the selected policy', async (t) => {
+  let seen
+  const { client } = await fixture(t, async (req, res) => {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    seen = {
+      method: req.method,
+      path: req.url,
+      body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+    }
+    json(res, 200, {
+      node: { id: 9, parent_id: 2, name: 'upload - 副本.txt', type: 'file', revision: 1 },
+      skipped: false,
+      transferred_bytes: 12,
+    })
+  })
+
+  const result = await client.cloudUploadWithConflictPolicy(2, '/tmp/upload.txt', 'upload.txt', 'keep_both')
+  assert.equal(result.node.id, 9)
+  assert.equal(result.transferred_bytes, 12)
+  assert.deepEqual(seen, {
+    method: 'POST',
+    path: '/v1/cloud/upload/conflict',
+    body: {
+      parent_id: 2,
+      local_path: '/tmp/upload.txt',
+      name: 'upload.txt',
+      conflict_policy: 'keep_both',
+    },
+  })
+})

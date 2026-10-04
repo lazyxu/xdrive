@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerDesktopDownloadFeedback,
@@ -11,6 +11,7 @@ import {
   xDriveFileExplorerPaginationController,
   xDriveFileExplorerRunQueuedOperation,
   xDriveFileExplorerSubmitPath,
+  xDriveUploadBatchSummary,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -22,8 +23,13 @@ import {
   useXDriveFileExplorerNavigation,
   useXDriveFileExplorerProjection,
   useXDriveFileExplorerSearch,
+  XDriveUploadConflictDialog,
+  useXDriveUploadConflictResolver,
 } from '@xdrive/ui/mui'
-import type { XDriveFileExplorerQueuedOperationPlan } from '@xdrive/shared'
+import type {
+  XDriveFileExplorerQueuedOperationPlan,
+  XDriveUploadConflictPolicy,
+} from '@xdrive/shared'
 import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
@@ -47,6 +53,7 @@ export default function DesktopFileExplorer({
   onDeleteMany,
   onOperationQueued,
   onQuotaChanged,
+  uploadConflictSupported = false,
   onError,
   onFeedback,
 }: {
@@ -64,6 +71,7 @@ export default function DesktopFileExplorer({
   onDeleteMany: (nodes: AgentCloudNode[]) => void
   onOperationQueued: (operation: AgentCloudFileOperation) => void
   onQuotaChanged: () => Promise<unknown>
+  uploadConflictSupported?: boolean
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -88,6 +96,8 @@ export default function DesktopFileExplorer({
   })
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
+  const uploadInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadConflicts = useXDriveUploadConflictResolver()
 
   const {
     nodeByID,
@@ -201,8 +211,74 @@ export default function DesktopFileExplorer({
     }
   }
 
+  const uploadConflictAwareFiles = async (
+    parentID: number,
+    files: File[],
+    busyState: 'upload' | 'drop-upload',
+  ) => {
+    if (files.length === 0 || actionBusy) return
+    if (!uploadConflicts.beginBatch()) return
+    setActionBusy(busyState)
+    let uploaded = 0
+    let skipped = 0
+    let failed = 0
+    let cancelled = false
+    let fatalError = ''
+    try {
+      for (const file of files) {
+        let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
+        const preflight = await window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)
+        if (!preflight.ok) {
+          fatalError = preflight.error.message
+          break
+        }
+        if (preflight.data.conflict) {
+          const decision = await uploadConflicts.resolveConflict(file.name)
+          if (decision === 'cancel') {
+            cancelled = true
+            break
+          }
+          conflictPolicy = decision
+        }
+        if (conflictPolicy === 'skip') {
+          skipped += 1
+          continue
+        }
+        const result = await window.xdriveDesktop.agent.cloudUploadFile(
+          parentID,
+          file,
+          conflictPolicy,
+        )
+        if (!result.ok) {
+          failed += 1
+          continue
+        }
+        if (result.data.skipped) skipped += 1
+        else uploaded += 1
+      }
+
+      if (uploaded > 0 && current) {
+        await onLoadDirectory(current.id, crumbs, sort)
+        await onQuotaChanged()
+      }
+      if (fatalError) {
+        onError(fatalError)
+        return
+      }
+      const summary = xDriveUploadBatchSummary({ uploaded, skipped, failed, cancelled })
+      if (summary) onFeedback(summary.tone, summary.message)
+    } finally {
+      uploadConflicts.endBatch()
+      setActionBusy('')
+    }
+  }
+
   const uploadFiles = async () => {
-    if (!current) return
+    if (!current || actionBusy) return
+    if (uploadConflictSupported) {
+      uploadInputRef.current?.click()
+      return
+    }
     setActionBusy('upload')
     try {
       const result = await window.xdriveDesktop.agent.cloudUploadFiles(current.id)
@@ -371,6 +447,10 @@ export default function DesktopFileExplorer({
   const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
     if (!current || files.length === 0 || actionBusy) return
     const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
+    if (uploadConflictSupported) {
+      await uploadConflictAwareFiles(parentID, files, 'drop-upload')
+      return
+    }
     setActionBusy('drop-upload')
     try {
       const result = await window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)
@@ -411,6 +491,18 @@ export default function DesktopFileExplorer({
 
   return (
     <>
+      <input
+        ref={uploadInputRef}
+        hidden
+        type="file"
+        multiple
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ''
+          if (current) void uploadConflictAwareFiles(current.id, files, 'upload')
+        }}
+      />
+
       <XDriveFileExplorer
         presentation="workspace"
         items={explorerItems}
@@ -480,6 +572,8 @@ export default function DesktopFileExplorer({
                   ? '正在定位…'
                   : undefined}
       />
+
+      <XDriveUploadConflictDialog {...uploadConflicts.dialogProps} />
 
       <XDriveFileNameDialog
         open={createOpen}

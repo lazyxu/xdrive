@@ -251,3 +251,23 @@ test('Desktop multi-select mutations use persistent operations instead of render
   assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Desktop drag/drop must preserve copy/move operation type via shared drop-item planning')
   assert.equal(app.includes('for (const node of nodes) {\n            const result = await window.xdriveDesktop.agent.cloudDelete'), false, 'Desktop bulk delete must not regress to N requests')
 })
+
+
+test('Desktop upload conflicts use shared dialog and capability-gated policy uploads', () => {
+  for (const token of [
+    'useXDriveUploadConflictResolver()',
+    '<XDriveUploadConflictDialog {...uploadConflicts.dialogProps}',
+    'window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)',
+    'window.xdriveDesktop.agent.cloudUploadFile(',
+    "conflictPolicy: XDriveUploadConflictPolicy = 'fail'",
+    "if (decision === 'cancel')",
+    'xDriveUploadBatchSummary({ uploaded, skipped, failed, cancelled })',
+    'uploadConflictSupported',
+    'cloudUploadFiles(current.id)',
+    'cloudUploadDroppedFiles(parentID, files)',
+  ]) {
+    assert.ok(explorer.includes(token), `missing Desktop upload conflict UI: ${token}`)
+  }
+  assert.ok(app.includes("capabilities.includes('upload-conflict-policy')"), 'Desktop must gate policy-aware uploads by Agent capability')
+  assert.ok(app.includes("capabilities.includes('upload-conflict-preflight')"), 'Desktop must gate conflict preflight by Agent capability')
+})
