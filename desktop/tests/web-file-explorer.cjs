@@ -258,3 +258,26 @@ test('Web upload batches prompt through the shared conflict resolver before tran
     assert.ok(app.includes(token), `missing Web upload conflict UI: ${token}`)
   }
 })
+
+
+test('Web FileExplorer uploads selected folders with preserved relative paths', () => {
+  for (const token of [
+    'onUploadFolderFiles',
+    'folderUploadInputRef',
+    "element.setAttribute('webkitdirectory', '')",
+    "element.setAttribute('directory', '')",
+    'onUploadFolder={() => folderUploadInputRef.current?.click()}',
+  ]) {
+    assert.ok(explorer.includes(token), `missing Web folder-upload picker: ${token}`)
+  }
+  for (const token of [
+    'xDriveFileExplorerResolveFolderUploadTargets({',
+    'xDriveFileExplorerEnsureUploadDirectory({',
+    'relativePath: file.webkitRelativePath || file.name',
+    'createDirectory: (id, directoryName) => api.createDirectory(id, directoryName)',
+    'listChildren: (id) => api.list(id)',
+    'onUploadFolderFiles={uploadFolderFiles}',
+  ]) {
+    assert.ok(app.includes(token), `missing Web folder-upload orchestration: ${token}`)
+  }
+})

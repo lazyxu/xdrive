@@ -863,3 +863,130 @@ export function xDriveFileExplorerDirectoryPageTransition<
     ),
   }
 }
+
+
+export type XDriveFileExplorerFolderUploadEntry<TFile> = {
+  file: TFile
+  relativePath: string
+}
+
+export type XDriveFileExplorerFolderUploadDirectory = {
+  path: string
+  parentPath: string
+  name: string
+}
+
+export type XDriveFileExplorerFolderUploadFile<TFile> = {
+  file: TFile
+  relativePath: string
+  directoryPath: string
+  name: string
+}
+
+export type XDriveFileExplorerResolvedFolderUploadFile<TFile> =
+  XDriveFileExplorerFolderUploadFile<TFile> & {
+    parentID: number
+  }
+
+function xDriveFileExplorerFolderUploadPathParts(relativePath: string) {
+  const normalized = relativePath.replace(/\\/g, '/')
+  if (!normalized || normalized.startsWith('/')) {
+    throw new Error('文件夹上传路径无效。')
+  }
+  const parts = normalized.split('/').filter(Boolean)
+  if (
+    parts.length === 0 ||
+    parts.some((part) => part === '.' || part === '..' || part.includes('\0'))
+  ) {
+    throw new Error('文件夹上传路径无效。')
+  }
+  return parts
+}
+
+export function xDriveFileExplorerFolderUploadPlan<TFile>(
+  entries: readonly XDriveFileExplorerFolderUploadEntry<TFile>[],
+) {
+  const directories = new Map<string, XDriveFileExplorerFolderUploadDirectory>()
+  const files: XDriveFileExplorerFolderUploadFile<TFile>[] = []
+
+  for (const entry of entries) {
+    const parts = xDriveFileExplorerFolderUploadPathParts(entry.relativePath)
+    const name = parts.at(-1)!
+    let parentPath = ''
+    for (const part of parts.slice(0, -1)) {
+      const path = parentPath ? `${parentPath}/${part}` : part
+      if (!directories.has(path)) directories.set(path, { path, parentPath, name: part })
+      parentPath = path
+    }
+    files.push({
+      file: entry.file,
+      relativePath: parts.join('/'),
+      directoryPath: parentPath,
+      name,
+    })
+  }
+
+  return {
+    directories: [...directories.values()].sort((left, right) => {
+      const depth = left.path.split('/').length - right.path.split('/').length
+      return depth || left.path.localeCompare(right.path, undefined, { numeric: true })
+    }),
+    files,
+  }
+}
+
+export async function xDriveFileExplorerEnsureUploadDirectory<
+  TNode extends { id: number; name: string; type: string },
+>({
+  parentID,
+  name,
+  createDirectory,
+  listChildren,
+}: {
+  parentID: number
+  name: string
+  createDirectory: (parentID: number, name: string) => Promise<TNode>
+  listChildren: (parentID: number) => Promise<readonly TNode[]>
+}) {
+  try {
+    return (await createDirectory(parentID, name)).id
+  } catch (createError) {
+    try {
+      const children = await listChildren(parentID)
+      const existing = children.find((node) => (
+        node.type === 'dir' &&
+        node.name.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0
+      ))
+      if (existing) return existing.id
+    } catch {
+      // Preserve the original create error when fallback lookup also fails.
+    }
+    throw createError
+  }
+}
+
+export async function xDriveFileExplorerResolveFolderUploadTargets<TFile>({
+  rootParentID,
+  entries,
+  ensureDirectory,
+}: {
+  rootParentID: number
+  entries: readonly XDriveFileExplorerFolderUploadEntry<TFile>[]
+  ensureDirectory: (parentID: number, name: string) => Promise<number>
+}): Promise<XDriveFileExplorerResolvedFolderUploadFile<TFile>[]> {
+  const plan = xDriveFileExplorerFolderUploadPlan(entries)
+  const directoryIDs = new Map<string, number>([['', rootParentID]])
+
+  for (const directory of plan.directories) {
+    const parentID = directoryIDs.get(directory.parentPath)
+    if (parentID === undefined) throw new Error(`文件夹上传路径无法解析：${directory.path}`)
+    const id = await ensureDirectory(parentID, directory.name)
+    directoryIDs.set(directory.path, id)
+  }
+
+  return plan.files.map((file) => {
+    const parentID = directoryIDs.get(file.directoryPath)
+    if (parentID === undefined) throw new Error(`文件夹上传路径无法解析：${file.relativePath}`)
+    return { ...file, parentID }
+  })
+}

@@ -262,3 +262,10 @@ test('shared FileExplorer supports Windows-style marquee selection in Details an
     assert.ok(explorer.includes(token), `missing FileExplorer marquee contract: ${token}`)
   }
 })
+
+
+test('shared FileExplorer exposes file and folder upload commands', () => {
+  assert.ok(explorer.includes('onUploadFolder?: () => void'), 'folder upload command contract is missing')
+  assert.ok(explorer.includes('DriveFolderUploadRoundedIcon'), 'folder upload command icon is missing')
+  assert.ok(explorer.includes('上传文件夹'), 'folder upload command label is missing')
+})

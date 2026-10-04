@@ -70,7 +70,7 @@ import type {
   XDriveFileExplorerPageState,
   XDriveUploadConflictPolicy,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveUploadBatchSummary } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerPageRequestOptions, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive, xDriveUploadBatchSummary } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -812,15 +812,21 @@ function FileManager({
     )
   }
 
-  const uploadFilesTo = async (parentID: number, files: File[]) => {
-    if (files.length === 0) return
-    if (!uploadConflicts.beginBatch()) return
+  type WebUploadTarget = { parentID: number; file: File }
+
+  const uploadTargets = async (
+    targets: readonly WebUploadTarget[],
+    reloadCurrent = true,
+  ) => {
+    if (targets.length === 0) return { uploaded: 0, skipped: 0, cancelled: false }
+    if (!uploadConflicts.beginBatch()) return { uploaded: 0, skipped: 0, cancelled: true }
     let uploaded = 0
     let skipped = 0
     let cancelled = false
     let fatalError: unknown = null
     try {
-      for (const file of files) {
+      for (const target of targets) {
+        const { parentID, file } = target
         let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
         try {
           const preflight = await api.uploadConflictPreflight(parentID, file.name)
@@ -856,19 +862,50 @@ function FileManager({
       uploadConflicts.endBatch()
     }
 
-    if (uploaded > 0 && current) await loadDirectory(current.id)
+    if (uploaded > 0 && reloadCurrent && current) await loadDirectory(current.id)
     if (uploaded > 0) await refreshQuota()
     if (fatalError) {
       handleError(fatalError)
-      return
+      return { uploaded, skipped, cancelled }
     }
     const summary = xDriveUploadBatchSummary({ uploaded, skipped, failed: 0, cancelled })
     if (summary) setFeedback(summary)
+    return { uploaded, skipped, cancelled }
+  }
+
+  const uploadFilesTo = async (parentID: number, files: File[]) => {
+    await uploadTargets(files.map((file) => ({ parentID, file })))
   }
 
   const uploadFiles = async (files: FileList | null) => {
     if (!current || !files?.length) return
     await uploadFilesTo(current.id, Array.from(files))
+  }
+
+  const uploadFolderFiles = async (files: FileList | null) => {
+    if (!current || !files?.length) return
+    try {
+      const targets = await xDriveFileExplorerResolveFolderUploadTargets({
+        rootParentID: current.id,
+        entries: Array.from(files).map((file) => ({
+          file,
+          relativePath: file.webkitRelativePath || file.name,
+        })),
+        ensureDirectory: (parentID, name) => xDriveFileExplorerEnsureUploadDirectory({
+          parentID,
+          name,
+          createDirectory: (id, directoryName) => api.createDirectory(id, directoryName),
+          listChildren: (id) => api.list(id),
+        }),
+      })
+      await uploadTargets(
+        targets.map(({ parentID, file }) => ({ parentID, file })),
+        false,
+      )
+      await loadDirectory(current.id)
+    } catch (error) {
+      handleError(error)
+    }
   }
 
   const createFolder = async (name: string) => {
@@ -1031,6 +1068,7 @@ function FileManager({
                 onLoadDirectory={loadDirectory}
                 onLoadMore={loadMoreDirectory}
                 onUploadFiles={uploadFiles}
+                onUploadFolderFiles={uploadFolderFiles}
                 onUploadDroppedFiles={uploadFilesTo}
                 onCreateFolder={() => setFolderOpen(true)}
                 onOpenTrash={openTrash}
