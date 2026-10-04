@@ -101,6 +101,10 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /query\?: MediaGalleryQuery/)
   assert.match(sharedModels, /live_photo\?: boolean/)
   assert.match(sharedModels, /derived_resources\?: MediaDerivedResource\[\]/)
+  assert.match(sharedModels, /place\?: string/)
+  assert.match(sharedModels, /export interface MediaPlaceFacet/)
+  assert.match(sharedGallery, /按本地 GPS 坐标近似聚合，不使用在线地理服务/)
+  assert.match(sharedGallery, /地点/)
   assert.match(sharedGallery, /RAW 组合/)
   assert.match(sharedGallery, /连拍/)
   assert.match(sharedGallery, /资产资源/)
@@ -108,13 +112,14 @@ test('Gallery contracts are node-level and connector-neutral', () => {
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
   for (const token of [
     'getMediaItems:',
     'getMediaAlbums:',
+    'getMediaPlaces:',
     'getMediaAlbumItems:',
     'createMediaAlbum:',
     'renameMediaAlbum:',
@@ -137,6 +142,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   for (const token of [
     'mediaItems(',
     'mediaAlbums()',
+    'mediaPlaces(',
     'mediaAlbumItems(',
     'createMediaAlbum(name:',
     'renameMediaAlbum(albumID:',
@@ -160,6 +166,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('"media-video-stream"'))
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
+  assert.ok(desktopIPC.includes('GET /v1/media/places'))
   assert.ok(desktopIPC.includes('POST /v1/media/albums'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/album'))
   assert.ok(desktopIPC.includes('DELETE /v1/media/album'))

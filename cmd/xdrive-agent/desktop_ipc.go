@@ -190,6 +190,7 @@ type desktopIPCController interface {
 	CloudRevokeShare(context.Context, uint64) error
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
+	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
 	CloudCreateMediaAlbum(context.Context, string) (client.MediaAlbum, error)
 	CloudRenameMediaAlbum(context.Context, string, uint64, string) (client.MediaAlbum, error)
 	CloudDeleteMediaAlbum(context.Context, string, uint64) error
@@ -459,6 +460,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
+	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
 	mux.HandleFunc("POST /v1/media/albums", h.createMediaAlbum)
 	mux.HandleFunc("PATCH /v1/media/album", h.renameMediaAlbum)
 	mux.HandleFunc("DELETE /v1/media/album", h.deleteMediaAlbum)
@@ -1553,6 +1555,24 @@ func (h *desktopIPCHandler) mediaAlbums(w http.ResponseWriter, r *http.Request) 
 	writeDesktopIPCJSON(w, http.StatusOK, items)
 }
 
+func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) {
+	limit := 24
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place_limit", "limit must be between 1 and 100")
+			return
+		}
+		limit = value
+	}
+	items, err := h.ctrl.CloudMediaPlaces(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
 func desktopIPCValidMediaAlbumID(value string, manualOnly bool) bool {
 	value = strings.TrimSpace(value)
 	if strings.HasPrefix(value, "manual:") && len(value) > len("manual:") {
@@ -1961,6 +1981,13 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 			return client.MediaQuery{}, false
 		}
 		out.Tag = raw
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("place")); raw != "" {
+		if len(raw) > 64 || !strings.HasPrefix(raw, "place:") {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place", "place is invalid")
+			return client.MediaQuery{}, false
+		}
+		out.Place = raw
 	}
 	return out, true
 }

@@ -99,12 +99,15 @@ func TestSmartMediaAlbumsEvaluateSavedLocalQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	captured := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	latitude, longitude := 1.3521, 103.8198
 	metadata := []meta.MediaMetadata{
 		{
 			NodeID: nodes[0].ID, OwnerID: user.ID, NodeRevision: 1,
 			SHA256: files[0].SHA256, MediaKind: meta.MediaKindImage,
 			MIMEType: "image/jpeg", Width: 10, Height: 10,
 			CapturedAt:              &captured,
+			Latitude:                &latitude,
+			Longitude:               &longitude,
 			IndexState:              meta.MediaIndexStateReady,
 			RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
 		},
@@ -149,7 +152,7 @@ func TestSmartMediaAlbumsEvaluateSavedLocalQuery(t *testing.T) {
 
 	create := request(
 		t, router, http.MethodPost, "/api/v1/media/smart-albums", token,
-		strings.NewReader(`{"name":"Favorites","query":{"favorite":true,"tag":"Travel"}}`),
+		strings.NewReader(`{"name":"Favorites","query":{"favorite":true,"tag":"Travel","place":"place:135:10381"}}`),
 		http.StatusCreated,
 	)
 	var album mediaAlbumDTO
@@ -163,6 +166,7 @@ func TestSmartMediaAlbumsEvaluateSavedLocalQuery(t *testing.T) {
 		album.Query.Favorite == nil ||
 		!*album.Query.Favorite ||
 		album.Query.Tag != "Travel" ||
+		album.Query.Place != "place:135:10381" ||
 		!strings.HasPrefix(album.ID, "smart:") {
 		t.Fatalf("created smart album=%+v", album)
 	}

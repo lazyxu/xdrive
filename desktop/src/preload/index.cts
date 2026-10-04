@@ -18,9 +18,11 @@ const agent = Object.freeze({
     has_location?: boolean
     favorite?: boolean
     tag?: string
+    place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
+  getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
   createMediaAlbum: (name: string) => ipcRenderer.invoke('agent:create-media-album', name),
   renameMediaAlbum: (albumID: string, revision: number, name: string) => ipcRenderer.invoke('agent:rename-media-album', albumID, revision, name),
   deleteMediaAlbum: (albumID: string, revision: number) => ipcRenderer.invoke('agent:delete-media-album', albumID, revision),
@@ -34,6 +36,7 @@ const agent = Object.freeze({
       has_location?: boolean
       favorite?: boolean
       tag?: string
+      place?: string
     },
   ) => ipcRenderer.invoke('agent:create-smart-media-album', name, query),
   updateSmartMediaAlbum: (
@@ -49,6 +52,7 @@ const agent = Object.freeze({
         has_location?: boolean
         favorite?: boolean
         tag?: string
+        place?: string
       }
     },
   ) => ipcRenderer.invoke('agent:update-smart-media-album', albumID, revision, input),
@@ -68,6 +72,7 @@ const agent = Object.freeze({
     has_location?: boolean
     favorite?: boolean
     tag?: string
+    place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),
   setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),

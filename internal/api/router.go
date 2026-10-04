@@ -97,6 +97,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/media/items/:id/playback-ticket", s.mediaPlaybackTicket)
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
+	authed.GET("/media/places", s.listMediaPlaces)
 	authed.POST("/media/albums", s.createMediaAlbum)
 	authed.PATCH("/media/albums/:albumID", s.renameMediaAlbum)
 	authed.DELETE("/media/albums/:albumID", s.deleteMediaAlbum)

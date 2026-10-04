@@ -81,6 +81,7 @@ type MediaSmartAlbumQuery struct {
 	HasLocation  *bool      `json:"has_location,omitempty"`
 	Favorite     *bool      `json:"favorite,omitempty"`
 	Tag          string     `json:"tag,omitempty"`
+	Place        string     `json:"place,omitempty"`
 }
 
 type MediaAlbum struct {
@@ -94,6 +95,16 @@ type MediaAlbum struct {
 	Query       *MediaSmartAlbumQuery `json:"query,omitempty"`
 }
 
+type MediaPlaceFacet struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Latitude    float64    `json:"latitude"`
+	Longitude   float64    `json:"longitude"`
+	ItemCount   int64      `json:"item_count"`
+	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
 type MediaQuery struct {
 	MediaKind    string
 	Search       string
@@ -103,6 +114,7 @@ type MediaQuery struct {
 	HasLocation  *bool
 	Favorite     *bool
 	Tag          string
+	Place        string
 }
 
 func (q MediaQuery) add(values url.Values) {
@@ -129,6 +141,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if value := strings.TrimSpace(q.Tag); value != "" {
 		values.Set("tag", value)
+	}
+	if value := strings.TrimSpace(q.Place); value != "" {
+		values.Set("place", value)
 	}
 }
 
@@ -182,6 +197,20 @@ func (c *Client) MediaItem(ctx context.Context, nodeID uint64) (MediaItem, error
 func (c *Client) MediaAlbums(ctx context.Context) ([]MediaAlbum, error) {
 	var out []MediaAlbum
 	err := c.json(ctx, http.MethodGet, "/api/v1/media/albums", nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaPlaces(ctx context.Context, limit int) ([]MediaPlaceFacet, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/api/v1/media/places"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out []MediaPlaceFacet
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 

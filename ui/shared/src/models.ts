@@ -353,4 +353,15 @@ export interface MediaGalleryQuery {
   has_location?: boolean
   favorite?: boolean
   tag?: string
+  place?: string
+}
+
+export interface MediaPlaceFacet {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
 }

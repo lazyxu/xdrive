@@ -30,6 +30,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaMetadata,
+  MediaPlaceFacet,
 } from '../models'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
@@ -47,6 +48,7 @@ export interface MediaGalleryDataSource {
     query?: MediaGalleryQuery,
   ) => Promise<MediaItem[]>
   listAlbums: () => Promise<MediaAlbum[]>
+  listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
   listAlbumItems: (
     albumID: string,
     limit: number,
@@ -87,6 +89,7 @@ type MediaGalleryFilterDraft = {
   location: 'any' | 'with' | 'without'
   favorite: 'any' | 'favorite' | 'not-favorite'
   tag: string
+  place: string
 }
 
 const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
@@ -97,6 +100,7 @@ const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
   location: 'any',
   favorite: 'any',
   tag: '',
+  place: '',
 }
 
 function errorMessage(error: unknown) {
@@ -135,6 +139,7 @@ function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): MediaGaller
         ? { favorite: false }
         : {}),
     ...(draft.tag.trim() ? { tag: draft.tag.trim() } : {}),
+    ...(draft.place.trim() ? { place: draft.place.trim() } : {}),
   }
 }
 
@@ -166,6 +171,7 @@ function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): MediaGallery
         ? 'not-favorite'
         : 'any',
     tag: query.tag || '',
+    place: query.place || '',
   }
 }
 
@@ -177,7 +183,8 @@ function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
     draft.capturedTo ||
     draft.location !== 'any' ||
     draft.favorite !== 'any' ||
-    draft.tag.trim(),
+    draft.tag.trim() ||
+    draft.place.trim(),
   )
 }
 
@@ -186,6 +193,7 @@ function MediaGalleryFilterBar({
   loading,
   applyLabel = '应用',
   clearLabel = '清除',
+  placeLabel,
   onChange,
   onApply,
   onClear,
@@ -195,6 +203,7 @@ function MediaGalleryFilterBar({
   loading: boolean
   applyLabel?: string
   clearLabel?: string
+  placeLabel?: string
   onChange: (next: MediaGalleryFilterDraft) => void
   onApply: () => void
   onClear: () => void
@@ -268,10 +277,14 @@ function MediaGalleryFilterBar({
           size="small"
           label="位置"
           value={draft.location}
-          onChange={(event) => onChange({
-            ...draft,
-            location: event.target.value as MediaGalleryFilterDraft['location'],
-          })}
+          onChange={(event) => {
+            const location = event.target.value as MediaGalleryFilterDraft['location']
+            onChange({
+              ...draft,
+              location,
+              ...(location === 'with' ? {} : { place: '' }),
+            })
+          }}
           sx={{ minWidth: 116 }}
         >
           <MenuItem value="any">全部</MenuItem>
@@ -293,6 +306,14 @@ function MediaGalleryFilterBar({
           <MenuItem value="favorite">已收藏</MenuItem>
           <MenuItem value="not-favorite">未收藏</MenuItem>
         </TextField>
+        {draft.place && placeLabel ? (
+          <Chip
+            label={`地点 · ${placeLabel}`}
+            onDelete={() => onChange({ ...draft, place: '', location: 'any' })}
+            variant="outlined"
+            size="small"
+          />
+        ) : null}
         <Stack direction="row" spacing={1}>
           <Button variant="contained" onClick={onApply} disabled={loading}>
             {applyLabel}
@@ -325,6 +346,7 @@ export function XDriveMediaGalleryPage({
   onError,
 }: XDriveMediaGalleryPageProps) {
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
+  const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
   const [items, setItems] = useState<MediaItem[]>([])
   const [currentAlbum, setCurrentAlbum] = useState<MediaAlbum | null>(null)
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
@@ -366,13 +388,15 @@ export function XDriveMediaGalleryPage({
         setHasMore(nextItems.length > pageSize)
         return
       }
-      const [nextItems, nextAlbums] = await Promise.all([
+      const [nextItems, nextAlbums, nextPlaces] = await Promise.all([
         source.listItems(pageSize + 1, 0, nextQuery),
         source.listAlbums(),
+        source.listPlaces ? source.listPlaces(24) : Promise.resolve([]),
       ])
       if (request !== requestID.current) return
       setCurrentAlbum(null)
       setAlbums(nextAlbums)
+      setPlaces(nextPlaces)
       setItems(nextItems.slice(0, pageSize))
       setHasMore(nextItems.length > pageSize)
     } catch (loadError) {
@@ -543,6 +567,18 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(album, query)
   }, [loadFirstPage, query])
 
+  const openPlace = useCallback((place: MediaPlaceFacet) => {
+    const nextDraft: MediaGalleryFilterDraft = {
+      ...draftFilters,
+      location: 'with',
+      place: place.id,
+    }
+    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    setDraftFilters(nextDraft)
+    setQuery(nextQuery)
+    void loadFirstPage(null, nextQuery)
+  }, [draftFilters, loadFirstPage])
+
   const leaveAlbum = useCallback(() => {
     if (currentAlbum?.kind === 'smart') {
       setDraftFilters(emptyMediaGalleryFilterDraft)
@@ -658,6 +694,8 @@ export function XDriveMediaGalleryPage({
       <XDriveMediaGallery
         items={items}
         albums={albums}
+        places={places}
+        activePlaceID={query.place}
         currentAlbum={currentAlbum}
         loading={loading}
         hasMore={hasMore}
@@ -668,6 +706,7 @@ export function XDriveMediaGalleryPage({
             loading={loading}
             applyLabel={currentAlbum?.kind === 'smart' ? '保存规则' : '应用'}
             clearLabel={currentAlbum?.kind === 'smart' ? '还原规则' : '清除'}
+            placeLabel={places.find((place) => place.id === draftFilters.place)?.name}
             onChange={setDraftFilters}
             onApply={applyFilters}
             onClear={clearFilters}
@@ -702,6 +741,7 @@ export function XDriveMediaGalleryPage({
         onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
         onOpenAlbum={openAlbum}
+        onOpenPlace={openPlace}
         onBack={leaveAlbum}
         onLoadMore={() => void loadMore()}
         onRefresh={() => void loadFirstPage(currentAlbum, query)}
@@ -770,6 +810,8 @@ export function XDriveMediaGalleryPage({
 export interface XDriveMediaGalleryProps {
   items: MediaItem[]
   albums?: MediaAlbum[]
+  places?: MediaPlaceFacet[]
+  activePlaceID?: string
   currentAlbum?: MediaAlbum | null
   loading?: boolean
   hasMore?: boolean
@@ -787,6 +829,7 @@ export interface XDriveMediaGalleryProps {
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onOpenAlbum?: (album: MediaAlbum) => void
+  onOpenPlace?: (place: MediaPlaceFacet) => void
   onBack?: () => void
   onLoadMore?: () => void
   onRefresh?: () => void
@@ -1797,6 +1840,8 @@ function MediaTileGrid({
 export function XDriveMediaGallery({
   items,
   albums = [],
+  places = [],
+  activePlaceID,
   currentAlbum = null,
   loading = false,
   hasMore = false,
@@ -1814,6 +1859,7 @@ export function XDriveMediaGallery({
   onAddToAlbum,
   onRemoveFromAlbum,
   onOpenAlbum,
+  onOpenPlace,
   onBack,
   onLoadMore,
   onRefresh,
@@ -1993,6 +2039,75 @@ export function XDriveMediaGallery({
                         : album.kind === 'smart'
                           ? ' · 智能相册'
                           : ''}
+                  </Typography>
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+        </Box>
+      ) : null}
+
+      {!currentAlbum && places.length > 0 ? (
+        <Box>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={0.75}
+            alignItems={{ xs: 'flex-start', sm: 'baseline' }}
+            sx={{ mb: 1.25 }}
+          >
+            <Typography variant="subtitle1" fontWeight={700}>
+              地点
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              按本地 GPS 坐标近似聚合，不使用在线地理服务
+            </Typography>
+          </Stack>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: 1.5,
+            }}
+          >
+            {places.map((place) => (
+              <Paper
+                key={place.id}
+                variant="outlined"
+                role={onOpenPlace ? 'button' : undefined}
+                tabIndex={onOpenPlace ? 0 : undefined}
+                onClick={() => onOpenPlace?.(place)}
+                onKeyDown={(event) => {
+                  if (onOpenPlace) keyboardActivate(event, () => onOpenPlace(place))
+                }}
+                sx={{
+                  overflow: 'hidden',
+                  cursor: onOpenPlace ? 'pointer' : 'default',
+                  borderColor: activePlaceID === place.id ? 'primary.main' : 'divider',
+                  transition: 'transform 120ms ease, box-shadow 120ms ease',
+                  '&:hover': onOpenPlace
+                    ? { transform: 'translateY(-1px)', boxShadow: 2 }
+                    : undefined,
+                  '&:focus-visible': {
+                    outline: '2px solid',
+                    outlineColor: 'primary.main',
+                    outlineOffset: 2,
+                  },
+                }}
+              >
+                <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
+                  <AsyncThumbnail
+                    nodeID={place.cover_node_id}
+                    alt={place.name}
+                    loadThumbnail={loadThumbnail}
+                    fallback={mediaFallback('image')}
+                  />
+                </Box>
+                <Box sx={{ px: 1.5, py: 1.2 }}>
+                  <Typography variant="body2" fontWeight={650} noWrap>
+                    {place.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {place.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS
                   </Typography>
                 </Box>
               </Paper>

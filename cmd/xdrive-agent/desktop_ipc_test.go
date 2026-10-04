@@ -119,6 +119,7 @@ type fakeDesktopIPCController struct {
 	cloudDeleteRev             uint64
 	cloudMediaItems            []client.MediaItem
 	cloudMediaAlbums           []client.MediaAlbum
+	cloudMediaPlaces           []client.MediaPlaceFacet
 	cloudMediaAlbumItems       []client.MediaItem
 	cloudMediaThumbnail        agentMediaThumbnail
 	cloudMediaMotion           agentMediaMotion
@@ -484,6 +485,10 @@ func (f *fakeDesktopIPCController) CloudMediaItems(
 
 func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error) {
 	return append([]client.MediaAlbum(nil), f.cloudMediaAlbums...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error) {
+	return append([]client.MediaPlaceFacet(nil), f.cloudMediaPlaces...), f.err
 }
 
 func (f *fakeDesktopIPCController) CloudCreateMediaAlbum(
@@ -1260,6 +1265,11 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			ID: "folder:8", Kind: "folder", Name: "Camera Uploads", ItemCount: 1,
 			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
 		}},
+		cloudMediaPlaces: []client.MediaPlaceFacet{{
+			ID: "place:135:10381", Name: "约 1.355°, 103.815°",
+			Latitude: 1.355, Longitude: 103.815, ItemCount: 2,
+			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
+		}},
 		cloudMediaAlbumItems: []client.MediaItem{{
 			Node: client.Node{ID: 31, Name: "photo.jpg", Type: "file", Revision: 1, Size: 123},
 			Metadata: client.MediaMetadata{
@@ -1289,7 +1299,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t,
 		handler,
 		http.MethodGet,
-		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel",
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&place=place%3A135%3A10381",
 		"",
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
@@ -1303,6 +1313,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		ctrl.cloudMediaQuery.HasLocation == nil ||
 		!*ctrl.cloudMediaQuery.HasLocation ||
 		ctrl.cloudMediaQuery.Tag != "Travel" ||
+		ctrl.cloudMediaQuery.Place != "place:135:10381" ||
 		ctrl.cloudMediaQuery.CapturedFrom == nil ||
 		ctrl.cloudMediaQuery.CapturedTo == nil {
 		t.Fatalf(
@@ -1317,6 +1328,13 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/albums", "")
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"Camera Uploads\"") {
 		t.Fatalf("media albums status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/places?limit=12", "")
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"place:135:10381\"") ||
+		!strings.Contains(res.Body.String(), "\"item_count\":2") {
+		t.Fatalf("media places status=%d body=%s", res.Code, res.Body.String())
 	}
 
 	res = desktopIPCRequest(
@@ -1415,6 +1433,8 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?has_location=maybe",
 		"/v1/media/items?favorite=maybe",
 		"/v1/media/items?tag=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		"/v1/media/items?place=invalid",
+		"/v1/media/places?limit=0",
 		"/v1/media/items?limit=0",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",
