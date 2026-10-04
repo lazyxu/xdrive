@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"testing"
 
+	"github.com/gen2brain/avif"
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
 )
@@ -33,6 +34,10 @@ func TestThumbnailJPEGAdditionalImageFormats(t *testing.T) {
 	if err := tiff.Encode(&tiffBytes, img, nil); err != nil {
 		t.Fatal(err)
 	}
+	var avifBytes bytes.Buffer
+	if err := avif.Encode(&avifBytes, img); err != nil {
+		t.Fatal(err)
+	}
 	webpBytes, err := base64.StdEncoding.DecodeString(
 		"UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA",
 	)
@@ -44,6 +49,7 @@ func TestThumbnailJPEGAdditionalImageFormats(t *testing.T) {
 		name string
 		data []byte
 	}{
+		{name: "avif", data: avifBytes.Bytes()},
 		{name: "bmp", data: bmpBytes.Bytes()},
 		{name: "tiff", data: tiffBytes.Bytes()},
 		{name: "webp", data: webpBytes},
