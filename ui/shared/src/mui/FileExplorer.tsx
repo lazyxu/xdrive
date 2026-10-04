@@ -50,7 +50,7 @@ import {
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import { formatSize } from '../format'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd } from '../file-explorer-controller'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd } from '../file-explorer-controller'
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
@@ -229,6 +229,35 @@ function explorerIDKey(id: XDriveFileExplorerID) {
   return `${typeof id}:${String(id)}`
 }
 
+function setFileExplorerDragImage(
+  event: ReactDragEvent<HTMLElement>,
+  items: readonly XDriveFileExplorerItem[],
+) {
+  if (typeof document === 'undefined' || items.length === 0) return
+  const ghost = document.createElement('div')
+  ghost.textContent = items.length > 1 ? `${items.length} 个项目` : items[0].name
+  ghost.style.cssText = [
+    'position:fixed',
+    'left:-10000px',
+    'top:-10000px',
+    'max-width:260px',
+    'padding:6px 10px',
+    'border-radius:6px',
+    'background:rgba(32,33,36,.92)',
+    'color:white',
+    'font:500 13px system-ui,sans-serif',
+    'white-space:nowrap',
+    'overflow:hidden',
+    'text-overflow:ellipsis',
+    'box-shadow:0 4px 14px rgba(0,0,0,.28)',
+    'pointer-events:none',
+    'z-index:2147483647',
+  ].join(';')
+  document.body.appendChild(ghost)
+  event.dataTransfer.setDragImage(ghost, 18, 18)
+  window.setTimeout(() => ghost.remove(), 0)
+}
+
 function XDriveLazyFileThumbnail({
   item,
   loadThumbnail,
@@ -366,7 +395,9 @@ export function XDriveFileExplorer({
   renameDisabled = false,
   detailsPreferencesKey,
   onDropItemsToFolder,
+  onDropItemsToCrumb,
   onExternalFilesDrop,
+  onExternalFilesDropToCrumb,
   getItemMenuItems,
   backgroundMenuItems = [],
   viewMode: controlledViewMode,
@@ -417,7 +448,9 @@ export function XDriveFileExplorer({
   renameDisabled?: boolean
   detailsPreferencesKey?: string
   onDropItemsToFolder?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerItem, operation: 'move' | 'copy') => void
+  onDropItemsToCrumb?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerCrumb, operation: 'move' | 'copy') => void
   onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void
+  onExternalFilesDropToCrumb?: (files: File[], target: XDriveFileExplorerCrumb) => void
   getItemMenuItems?: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
   backgroundMenuItems?: XDriveFileExplorerMenuItem[]
   viewMode?: XDriveFileExplorerViewMode
@@ -459,6 +492,8 @@ export function XDriveFileExplorer({
   const renameSubmittingRef = useRef(false)
   const renameCancelledRef = useRef(false)
   const itemElementRefs = useRef(new Map<string, HTMLElement>())
+  const dragAutoScrollFrameRef = useRef<number | null>(null)
+  const dragPointerYRef = useRef<number | null>(null)
   const [renamingID, setRenamingID] = useState<XDriveFileExplorerID | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [renameSubmitting, setRenameSubmitting] = useState(false)
@@ -469,6 +504,7 @@ export function XDriveFileExplorer({
   const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
+  const [dropTargetCrumbID, setDropTargetCrumbID] = useState<XDriveFileExplorerID | null>(null)
 
   const viewMode = controlledViewMode ?? internalViewMode
   const sort = controlledSort ?? internalSort
@@ -905,6 +941,39 @@ export function XDriveFileExplorer({
     })
   }
 
+  const stopDragAutoScroll = () => {
+    dragPointerYRef.current = null
+    if (dragAutoScrollFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(dragAutoScrollFrameRef.current)
+    }
+    dragAutoScrollFrameRef.current = null
+  }
+
+  const runDragAutoScroll = () => {
+    dragAutoScrollFrameRef.current = null
+    const host = scrollHostRef.current
+    const pointerY = dragPointerYRef.current
+    if (!host || pointerY === null || typeof window === 'undefined') return
+    const rect = host.getBoundingClientRect()
+    const delta = xDriveFileExplorerDragAutoScrollDelta(pointerY, rect.top, rect.bottom)
+    if (delta === 0) return
+    host.scrollTop += delta
+    dragAutoScrollFrameRef.current = window.requestAnimationFrame(runDragAutoScroll)
+  }
+
+  const updateDragAutoScroll = (clientY: number) => {
+    dragPointerYRef.current = clientY
+    if (dragAutoScrollFrameRef.current === null && typeof window !== 'undefined') {
+      dragAutoScrollFrameRef.current = window.requestAnimationFrame(runDragAutoScroll)
+    }
+  }
+
+  useEffect(() => () => {
+    if (dragAutoScrollFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(dragAutoScrollFrameRef.current)
+    }
+  }, [])
+
   const startItemDrag = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     if (!onDropItemsToFolder || (renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id))) return
     setActiveItemID(item.id)
@@ -918,11 +987,14 @@ export function XDriveFileExplorer({
     setDraggedItems(selection)
     event.dataTransfer.effectAllowed = 'copyMove'
     event.dataTransfer.setData('application/x-xdrive-fileexplorer', '1')
+    setFileExplorerDragImage(event, selection)
   }
 
   const endItemDrag = () => {
+    stopDragAutoScroll()
     setDraggedItems([])
     setDropTargetID(null)
+    setDropTargetCrumbID(null)
   }
 
   const dragOverFolder = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
@@ -932,6 +1004,7 @@ export function XDriveFileExplorer({
     if (internal && draggedItems.some((candidate) => explorerIDKey(candidate.id) === explorerIDKey(item.id))) return
     event.preventDefault()
     event.stopPropagation()
+    updateDragAutoScroll(event.clientY)
     event.dataTransfer.dropEffect = internal && (event.ctrlKey || event.metaKey) ? 'copy' : external ? 'copy' : 'move'
     setDropTargetID(item.id)
   }
@@ -949,6 +1022,38 @@ export function XDriveFileExplorer({
     if (draggedItems.length > 0 && onDropItemsToFolder) {
       const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'
       onDropItemsToFolder(draggedItems, item, operation)
+    }
+    endItemDrag()
+  }
+
+  const dragOverCrumb = (
+    event: ReactDragEvent<HTMLElement>,
+    crumb: XDriveFileExplorerCrumb,
+  ) => {
+    const external = event.dataTransfer.types.includes('Files') && Boolean(onExternalFilesDropToCrumb)
+    const internal = draggedItems.length > 0 && Boolean(onDropItemsToCrumb)
+    if (!external && !internal) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = internal && (event.ctrlKey || event.metaKey) ? 'copy' : external ? 'copy' : 'move'
+    setDropTargetCrumbID(crumb.id)
+  }
+
+  const dropOnCrumb = (
+    event: ReactDragEvent<HTMLElement>,
+    crumb: XDriveFileExplorerCrumb,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length > 0 && onExternalFilesDropToCrumb) {
+      onExternalFilesDropToCrumb(files, crumb)
+      endItemDrag()
+      return
+    }
+    if (draggedItems.length > 0 && onDropItemsToCrumb) {
+      const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'
+      onDropItemsToCrumb(draggedItems, crumb, operation)
     }
     endItemDrag()
   }
@@ -1461,11 +1566,21 @@ export function XDriveFileExplorer({
                 {crumbs.map((crumb, index) => (
                   <ButtonBase
                     key={crumb.id}
-                    disabled={index === crumbs.length - 1}
+                    aria-current={index === crumbs.length - 1 ? 'page' : undefined}
                     onClick={(event) => {
                       event.stopPropagation()
-                      onCrumbClick?.(crumb, index)
+                      if (index !== crumbs.length - 1) onCrumbClick?.(crumb, index)
                     }}
+                    onDragOver={(event) => dragOverCrumb(event, crumb)}
+                    onDragLeave={(event) => {
+                      const related = event.relatedTarget
+                      if (!(related instanceof HTMLElement) || !event.currentTarget.contains(related)) {
+                        if (dropTargetCrumbID !== null && explorerIDKey(dropTargetCrumbID) === explorerIDKey(crumb.id)) {
+                          setDropTargetCrumbID(null)
+                        }
+                      }
+                    }}
+                    onDrop={(event) => dropOnCrumb(event, crumb)}
                     sx={{
                       px: 0.5,
                       py: 0.25,
@@ -1474,6 +1589,15 @@ export function XDriveFileExplorer({
                       color: index === crumbs.length - 1 ? 'text.primary' : 'text.secondary',
                       fontSize: 13,
                       justifyContent: 'flex-start',
+                      cursor: index === crumbs.length - 1 ? 'default' : 'pointer',
+                      bgcolor: dropTargetCrumbID !== null && explorerIDKey(dropTargetCrumbID) === explorerIDKey(crumb.id)
+                        ? 'action.hover'
+                        : 'transparent',
+                      outline: dropTargetCrumbID !== null && explorerIDKey(dropTargetCrumbID) === explorerIDKey(crumb.id)
+                        ? '2px solid'
+                        : undefined,
+                      outlineColor: 'primary.main',
+                      outlineOffset: -2,
                     }}
                   >
                     <Typography variant="body2" noWrap>{crumb.name}</Typography>
@@ -1702,9 +1826,18 @@ export function XDriveFileExplorer({
         }}
         onContextMenu={openBackgroundContextMenu}
         onDragOver={(event) => {
-          if (onExternalFilesDrop && event.dataTransfer.types.includes('Files')) {
+          const external = onExternalFilesDrop && event.dataTransfer.types.includes('Files')
+          const internal = draggedItems.length > 0
+          if (external || internal) updateDragAutoScroll(event.clientY)
+          if (external) {
             event.preventDefault()
             event.dataTransfer.dropEffect = 'copy'
+          }
+        }}
+        onDragLeave={(event) => {
+          const related = event.relatedTarget
+          if (!(related instanceof HTMLElement) || !event.currentTarget.contains(related)) {
+            stopDragAutoScroll()
           }
         }}
         onDrop={dropExternalFilesOnBackground}

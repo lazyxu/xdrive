@@ -333,3 +333,32 @@ test('shared FileExplorer controller owns directory page replace/append transiti
     assert.ok(shared.includes(token), `shared directory page transition missing: ${token}`)
   }
 })
+
+
+test('shared FileExplorer owns parent-target drop planning and edge autoscroll decisions', () => {
+  for (const token of [
+    'xDriveFileExplorerDropItemsToParentPlan',
+    "operation !== 'move' || node.parent_id !== targetParentID",
+    'xDriveFileExplorerDragAutoScrollDelta',
+    'Math.min(edgeSize, height / 2)',
+    'return -Math.max(1, Math.ceil(speed * (1 - topDistance / edge)))',
+    'return Math.max(1, Math.ceil(speed * (1 - bottomDistance / edge)))',
+  ]) {
+    assert.ok(shared.includes(token), `shared drag polish helper missing: ${token}`)
+  }
+
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(
+      source.includes('xDriveFileExplorerDropItemsToParentPlan('),
+      `${label} breadcrumb drop must use shared parent-target planning`,
+    )
+    assert.ok(
+      source.includes('onDropItemsToCrumb={(selected, crumb, operation) =>'),
+      `${label} must wire internal breadcrumb drops`,
+    )
+    assert.ok(
+      source.includes('onExternalFilesDropToCrumb={(files, crumb) =>'),
+      `${label} must wire external breadcrumb drops`,
+    )
+  }
+})

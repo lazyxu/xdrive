@@ -6,6 +6,7 @@ import {
   xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
+  xDriveFileExplorerDropItemsToParentPlan,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationController,
@@ -31,6 +32,7 @@ import type {
   XDriveUploadConflictPolicy,
 } from '@xdrive/shared'
 import type {
+  XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
@@ -444,9 +446,29 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
-    if (!current || files.length === 0 || actionBusy) return
-    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
+  const dropItemsToCrumb = async (
+    selected: XDriveFileExplorerItem[],
+    crumb: XDriveFileExplorerCrumb,
+    operation: 'move' | 'copy',
+  ) => {
+    if (actionBusy) return
+    const plan = xDriveFileExplorerDropItemsToParentPlan(
+      operation,
+      selected,
+      Number(crumb.id),
+      nodeByID,
+    )
+    if (!plan) return
+    setActionBusy('drop-items')
+    try {
+      await runQueuedOperation(plan, clearSearch)
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  const dropExternalFilesToParent = async (files: File[], parentID: number) => {
+    if (files.length === 0 || actionBusy) return
     if (uploadConflictSupported) {
       await uploadConflictAwareFiles(parentID, files, 'drop-upload')
       return
@@ -468,6 +490,16 @@ export default function DesktopFileExplorer({
     } finally {
       setActionBusy('')
     }
+  }
+
+  const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
+    if (!current || files.length === 0) return
+    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
+    await dropExternalFilesToParent(files, parentID)
+  }
+
+  const dropExternalFilesToCrumb = async (files: File[], crumb: XDriveFileExplorerCrumb) => {
+    await dropExternalFilesToParent(files, Number(crumb.id))
   }
 
   const explorerPagination = xDriveFileExplorerPaginationController({
@@ -546,7 +578,9 @@ export default function DesktopFileExplorer({
         onRenameItem={renameItem}
         renameDisabled={Boolean(actionBusy)}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
+        onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
+        onExternalFilesDropToCrumb={(files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
