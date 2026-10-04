@@ -150,12 +150,19 @@ test('shared FileExplorer supports selection bulk actions', () => {
 test('shared FileExplorer provides internal and external drag and drop contracts', () => {
   for (const token of [
     "onDropItemsToFolder?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerItem, operation: 'move' | 'copy') => void",
+    "onDropItemsToCrumb?: (items: XDriveFileExplorerItem[], target: XDriveFileExplorerCrumb, operation: 'move' | 'copy') => void",
     'onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void',
+    'onExternalFilesDropToCrumb?: (files: File[], target: XDriveFileExplorerCrumb) => void',
     "event.dataTransfer.effectAllowed = 'copyMove'",
     "event.dataTransfer.setData('application/x-xdrive-fileexplorer', '1')",
+    'setFileExplorerDragImage(event, selection)',
+    'event.dataTransfer.setDragImage(ghost, 18, 18)',
     "const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'",
     "event.dataTransfer.types.includes('Files')",
     'draggable={Boolean(onDropItemsToFolder) && !renaming}',
+    'updateDragAutoScroll(event.clientY)',
+    'onDrop={(event) => dropOnCrumb(event, crumb)}',
+    'dropTargetCrumbID',
     'onDrop={dropExternalFilesOnBackground}',
   ]) {
     assert.ok(explorer.includes(token), `missing FileExplorer drag/drop contract: ${token}`)

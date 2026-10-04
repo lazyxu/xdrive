@@ -11,6 +11,7 @@ import {
   useXDriveFileExplorerSearch,
 } from '@xdrive/ui/mui'
 import type {
+  XDriveFileExplorerCrumb,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
 } from '@xdrive/ui/mui'
@@ -20,6 +21,7 @@ import {
   xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
+  xDriveFileExplorerDropItemsToParentPlan,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationController,
@@ -278,11 +280,41 @@ export default function WebFileExplorer({
     }
   }
 
+  const dropItemsToCrumb = async (
+    selected: XDriveFileExplorerItem[],
+    crumb: XDriveFileExplorerCrumb,
+    operation: 'move' | 'copy',
+  ) => {
+    if (clipboardBusy) return
+    const plan = xDriveFileExplorerDropItemsToParentPlan(
+      operation,
+      selected,
+      Number(crumb.id),
+      nodeByID,
+    )
+    if (!plan) return
+    setClipboardBusy(true)
+    try {
+      await runQueuedOperation(plan, clearSearch)
+    } finally {
+      setClipboardBusy(false)
+    }
+  }
+
+  const dropExternalFilesToParent = async (files: File[], parentID: number) => {
+    if (files.length === 0) return
+    await onUploadDroppedFiles(parentID, files)
+    if (current) await onLoadDirectory(current.id, crumbs, sort)
+  }
+
   const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
     if (!current || files.length === 0) return
     const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
-    await onUploadDroppedFiles(parentID, files)
-    if (current) await onLoadDirectory(current.id, crumbs, sort)
+    await dropExternalFilesToParent(files, parentID)
+  }
+
+  const dropExternalFilesToCrumb = async (files: File[], crumb: XDriveFileExplorerCrumb) => {
+    await dropExternalFilesToParent(files, Number(crumb.id))
   }
 
   const explorerPagination = xDriveFileExplorerPaginationController({
@@ -365,7 +397,9 @@ export default function WebFileExplorer({
         onRenameItem={renameItem}
         renameDisabled={clipboardBusy}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
+        onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
+        onExternalFilesDropToCrumb={(files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}

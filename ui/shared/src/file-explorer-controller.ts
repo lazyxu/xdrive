@@ -358,13 +358,29 @@ export function xDriveFileExplorerDropOperationPlan<
   nodes: TNode[],
   targetParentID: number,
 ) {
-  const effectiveNodes = nodes.filter((node) => node.id !== targetParentID)
+  const effectiveNodes = nodes.filter((node) => (
+    node.id !== targetParentID &&
+    (operation !== 'move' || node.parent_id !== targetParentID)
+  ))
   return {
     operation,
     parentID: targetParentID,
     items: effectiveNodes.map((node) => ({ id: node.id, revision: node.revision })),
     count: effectiveNodes.length,
   }
+}
+
+export function xDriveFileExplorerDropItemsToParentPlan<
+  TNode extends XDriveFileExplorerOperationNode,
+>(
+  operation: XDriveFileExplorerCopyMoveOperation,
+  selected: XDriveFileExplorerSelectionItem[],
+  targetParentID: number,
+  nodeByID: ReadonlyMap<number, TNode>,
+) {
+  const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+  const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetParentID)
+  return plan.count > 0 ? plan : null
 }
 
 export function xDriveFileExplorerDropItemsPlan<
@@ -377,9 +393,37 @@ export function xDriveFileExplorerDropItemsPlan<
 ) {
   const targetNode = xDriveFileExplorerNodeForItem(target, nodeByID)
   if (!targetNode || targetNode.type !== 'dir') return null
-  const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-  const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetNode.id)
-  return plan.count > 0 ? plan : null
+  return xDriveFileExplorerDropItemsToParentPlan(
+    operation,
+    selected,
+    targetNode.id,
+    nodeByID,
+  )
+}
+
+export function xDriveFileExplorerDragAutoScrollDelta(
+  pointerY: number,
+  top: number,
+  bottom: number,
+  edgeSize = 56,
+  maxSpeed = 24,
+) {
+  const height = bottom - top
+  if (!Number.isFinite(pointerY) || !Number.isFinite(height) || height <= 0) return 0
+  const edge = Math.max(1, Math.min(edgeSize, height / 2))
+  const speed = Math.max(1, maxSpeed)
+
+  const topDistance = Math.max(0, pointerY - top)
+  if (topDistance < edge) {
+    return -Math.max(1, Math.ceil(speed * (1 - topDistance / edge)))
+  }
+
+  const bottomDistance = Math.max(0, bottom - pointerY)
+  if (bottomDistance < edge) {
+    return Math.max(1, Math.ceil(speed * (1 - bottomDistance / edge)))
+  }
+
+  return 0
 }
 
 export function xDriveFileExplorerOperationQueuedMessage(
