@@ -638,6 +638,7 @@ export function xDriveFileExplorerKeyboardTargetIndex({
       target = currentIndex - (viewMode === 'grid' ? columns : 1)
       break
     case 'ArrowDown':
+      if (viewMode === 'grid' && currentIndex + columns >= itemCount) return currentIndex
       target = currentIndex + (viewMode === 'grid' ? columns : 1)
       break
     case 'ArrowLeft':
