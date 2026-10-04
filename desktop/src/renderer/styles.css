@@ -240,13 +240,6 @@ h2 { margin: 0; font-size: 18px; }
 }
 
 
-.diagnostics-panel { display: grid; gap: 20px; }
-.diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.diagnostic-list { display: grid; gap: 8px; }
-.diagnostic-row { display: grid; grid-template-columns: 54px minmax(0,1fr); align-items: start; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-.diagnostic-row strong { color: var(--text-strong); font-size: 13px; }
-.diagnostic-row p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-
 .storage-panel { display: grid; gap: 20px; }
 .cache-card { border: 1px solid var(--border); border-radius: 14px; background: var(--surface-soft); overflow: hidden; }
 .cache-actions { border-top: 1px solid var(--border-soft); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
