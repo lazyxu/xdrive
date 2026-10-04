@@ -51,7 +51,7 @@ import {
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import { formatSize } from '../format'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd } from '../file-explorer-controller'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
@@ -643,6 +643,7 @@ export function XDriveFileExplorer({
   const dragPointerYRef = useRef<number | null>(null)
   const marqueeSessionRef = useRef<XDriveFileExplorerMarqueeSession | null>(null)
   const suppressBackgroundClickRef = useRef(false)
+  const typeSelectRef = useRef({ query: '', updatedAt: 0 })
   const [renamingID, setRenamingID] = useState<XDriveFileExplorerID | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [renameSubmitting, setRenameSubmitting] = useState(false)
@@ -762,7 +763,12 @@ export function XDriveFileExplorer({
     onSelectionChange?.(ids)
   }
 
+  const resetTypeSelect = () => {
+    typeSelectRef.current = { query: '', updatedAt: 0 }
+  }
+
   const clearSelection = () => {
+    resetTypeSelect()
     setSelectionAnchorID(null)
     commitSelection([])
   }
@@ -920,6 +926,7 @@ export function XDriveFileExplorer({
 
   const beginRename = (item: XDriveFileExplorerItem) => {
     if (!onRenameItem || renameDisabled || renameSubmitting) return
+    resetTypeSelect()
     if (!selectedKeySet.has(explorerIDKey(item.id)) || selectedItems.length !== 1) {
       commitSelection([item.id])
       setSelectionAnchorID(item.id)
@@ -1058,6 +1065,7 @@ export function XDriveFileExplorer({
   ) => {
     const itemKey = explorerIDKey(item.id)
     const additive = event.ctrlKey || event.metaKey
+    resetTypeSelect()
     setActiveItemID(item.id)
 
     if (event.shiftKey && selectionAnchorID !== null) {
@@ -1634,6 +1642,7 @@ export function XDriveFileExplorer({
     if (targetIndex === null) return false
     event.preventDefault()
     event.stopPropagation()
+    resetTypeSelect()
     if (targetIndex === currentIndex) return true
     const target = visibleItems[targetIndex]
 
@@ -1693,6 +1702,48 @@ export function XDriveFileExplorer({
     return target.isContentEditable || Boolean(target.closest('input, textarea, select, [role="textbox"]'))
   }
 
+  const typeSelectFromKeyboard = (event: KeyboardEvent<HTMLElement>) => {
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.nativeEvent.isComposing ||
+      event.key === ' ' ||
+      Array.from(event.key).length !== 1
+    ) {
+      return false
+    }
+
+    const now = Date.now()
+    const previous = now - typeSelectRef.current.updatedAt <= XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS
+      ? typeSelectRef.current.query
+      : ''
+    const typed = event.key.normalize('NFKC')
+    const repeatedSingleKey =
+      Array.from(previous).length === 1 &&
+      previous.normalize('NFKC').toLocaleLowerCase() === typed.toLocaleLowerCase()
+    const query = repeatedSingleKey ? typed : previous + typed
+    typeSelectRef.current = { query, updatedAt: now }
+
+    const targetIndex = xDriveFileExplorerTypeSelectTargetIndex({
+      names: visibleItems.map((item) => item.name),
+      currentIndex: activeIndex,
+      query,
+      cycle: repeatedSingleKey,
+    })
+    event.preventDefault()
+    event.stopPropagation()
+    if (targetIndex === null) return true
+
+    const target = visibleItems[targetIndex]
+    commitSelection([target.id])
+    setSelectionAnchorID(target.id)
+    setActiveItemID(target.id)
+    onItemClick?.(target)
+    focusItemAtIndex(targetIndex)
+    return true
+  }
+
   const handleExplorerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const modifier = event.ctrlKey || event.metaKey
     const key = event.key.toLowerCase()
@@ -1742,6 +1793,7 @@ export function XDriveFileExplorer({
     }
 
     if (isEditableTarget(event.target)) return
+    if (typeSelectFromKeyboard(event)) return
 
     const navigationKeys: XDriveFileExplorerKeyboardNavigationKey[] = [
       'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown',
