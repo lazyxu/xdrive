@@ -2275,7 +2275,7 @@ function registerIPCHandlers() {
           !path.isAbsolute(localPath) ||
           typeof name !== 'string' ||
           !name.trim() ||
-          (policy !== 'fail' && policy !== 'skip' && policy !== 'keep_both')
+          (policy !== 'fail' && policy !== 'skip' && policy !== 'keep_both' && policy !== 'overwrite')
         ) {
           throw new AgentIPCError('invalid_input', 0, 'Valid upload path, name, and conflict policy are required.')
         }

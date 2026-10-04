@@ -40,7 +40,9 @@ type uploadConflictPreflightRequest struct {
 }
 
 type uploadConflictPreflightDTO struct {
-	Conflict bool `json:"conflict"`
+	Conflict     bool   `json:"conflict"`
+	TargetType   string `json:"target_type,omitempty"`
+	CanOverwrite bool   `json:"can_overwrite,omitempty"`
 }
 
 type uploadInitRequest struct {
@@ -107,12 +109,17 @@ func (s *Server) preflightUploadConflict(c *gin.Context) {
 		fail(c, statusForLookup(err), "parent directory not found")
 		return
 	}
-	_, exists, err := uploadNameConflictNode(s.DB, uid, req.ParentID, req.Name)
+	conflict, exists, err := uploadNameConflictNode(s.DB, uid, req.ParentID, req.Name)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "check upload target failed")
 		return
 	}
-	c.JSON(http.StatusOK, uploadConflictPreflightDTO{Conflict: exists})
+	out := uploadConflictPreflightDTO{Conflict: exists}
+	if exists {
+		out.TargetType = conflict.Type
+		out.CanOverwrite = conflict.Type == meta.NodeTypeFile
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 func (s *Server) createUploadSession(c *gin.Context) {
@@ -154,7 +161,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	policyProvided := strings.TrimSpace(req.ConflictPolicy) != ""
 	conflictPolicy, ok := meta.NormalizeUploadConflictPolicy(req.ConflictPolicy)
 	if !ok {
-		fail(c, http.StatusBadRequest, "conflict_policy must be fail, skip, or keep_both")
+		fail(c, http.StatusBadRequest, "conflict_policy must be fail, skip, keep_both, or overwrite")
 		return
 	}
 	req.ConflictPolicy = conflictPolicy
@@ -226,7 +233,19 @@ func (s *Server) createUploadSession(c *gin.Context) {
 				s.writeUploadSession(c, existing, http.StatusOK)
 				return
 			}
-			if time.Now().Before(existing.ExpiresAt) {
+			if existing.Status == meta.UploadStatusActive &&
+				existing.ConflictPolicy == meta.UploadConflictPolicyOverwrite &&
+				existing.NodeID != nil {
+				current, lookupErr := s.ownedNode(uid, *existing.NodeID, true)
+				if lookupErr != nil || current.Revision != existing.ExpectedRevision {
+					if abortErr := s.abortUploadSessionData(c.Request.Context(), existing); abortErr != nil {
+						fail(c, http.StatusInternalServerError, "reset stale overwrite upload failed")
+						return
+					}
+					existing.Status = ""
+				}
+			}
+			if existing.Status == meta.UploadStatusActive && time.Now().Before(existing.ExpiresAt) {
 				quotaKey := ""
 				if existing.SHA256 != "" {
 					quotaKey, _ = storage.ContentAddressedKey(existing.SHA256)
@@ -331,6 +350,21 @@ func (s *Server) createUploadSession(c *gin.Context) {
 					return
 				}
 				req.Name = resolved
+			case meta.UploadConflictPolicyOverwrite:
+				if conflict.Type != meta.NodeTypeFile {
+					fail(c, http.StatusConflict, "only files can be overwritten")
+					return
+				}
+				target, err := s.ownedNode(uid, conflict.ID, true)
+				if err != nil || target.Type != meta.NodeTypeFile || target.File == nil {
+					fail(c, http.StatusConflict, "overwrite target is no longer available")
+					return
+				}
+				source := *target.File
+				reuseSource = &source
+				req.NodeID = &target.ID
+				req.ExpectedRevision = target.Revision
+				req.Name = target.Name
 			default:
 				fail(c, http.StatusConflict, "name already exists")
 				return

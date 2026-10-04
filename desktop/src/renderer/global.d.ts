@@ -408,7 +408,7 @@ declare global {
         cloudUploadFile: (
           parentID: number,
           file: File,
-          conflictPolicy: 'fail' | 'skip' | 'keep_both',
+          conflictPolicy: 'fail' | 'skip' | 'keep_both' | 'overwrite',
         ) => Promise<DesktopResult<AgentCloudUploadResult>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>

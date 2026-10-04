@@ -17,6 +17,7 @@ import {
   xDriveFileExplorerRunQueuedOperation,
   xDriveFileExplorerSubmitPath,
   xDriveUploadBatchSummary,
+  xDriveUploadConflictCanOverwrite,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -247,7 +248,9 @@ export default function DesktopFileExplorer({
           break
         }
         if (preflight.data.conflict) {
-          const decision = await uploadConflicts.resolveConflict(file.name)
+          const decision = await uploadConflicts.resolveConflict(file.name, {
+            canOverwrite: xDriveUploadConflictCanOverwrite(preflight.data),
+          })
           if (decision === 'cancel') {
             cancelled = true
             break

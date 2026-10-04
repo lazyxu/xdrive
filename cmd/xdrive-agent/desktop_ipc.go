@@ -1206,12 +1206,15 @@ func (h *desktopIPCHandler) cloudUploadWithConflictPolicy(w http.ResponseWriter,
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_upload", "parent_id and local_path are required")
 		return
 	}
-	if input.ConflictPolicy != "fail" && input.ConflictPolicy != "skip" && input.ConflictPolicy != "keep_both" {
+	if input.ConflictPolicy != "fail" &&
+		input.ConflictPolicy != "skip" &&
+		input.ConflictPolicy != "keep_both" &&
+		input.ConflictPolicy != "overwrite" {
 		writeDesktopIPCError(
 			w,
 			http.StatusBadRequest,
 			"invalid_upload_conflict_policy",
-			"conflict_policy must be fail, skip, or keep_both",
+			"conflict_policy must be fail, skip, keep_both, or overwrite",
 		)
 		return
 	}
