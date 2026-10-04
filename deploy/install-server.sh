@@ -1654,17 +1654,20 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   else
     backup_status=$?
 
-    # Bootstrap compatibility: the currently deployed image may predate the
-    # verifier rule that excludes generated .xdrive-media cache files. Keep the
-    # backup script invocation compatible with older releases; only when its
-    # report contains a derived-cache storage key and lacks the new verifier's
-    # ignored_derived_files field do we retry with the fully published target
-    # server image. This deliberately avoids matching human-readable error
-    # wording, which changed between verifier and backup layers. Any real inconsistency is
-    # still rejected by the target verifier.
+    # Bootstrap compatibility: the currently deployed image may predate
+    # verifier rules for xDrive-owned disposable files. Retry with the fully
+    # published target verifier only when the machine-readable report proves
+    # that the old verifier rejected a known internal path. Any real
+    # inconsistency is still rejected by the target verifier.
+    verifier_compat_reason=""
     if grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-media/' "$backup_error" &&
        ! grep -q '"ignored_derived_files"' "$backup_error"; then
-      echo "[xDrive] current deployment verifier rejected derived media cache; retrying the pre-upgrade backup with target verifier $target_server_image ..." >&2
+      verifier_compat_reason="derived media cache"
+    elif grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-ready-[^"]*"' "$backup_error"; then
+      verifier_compat_reason="storage readiness probe"
+    fi
+    if [[ -n "$verifier_compat_reason" ]]; then
+      echo "[xDrive] current deployment verifier rejected $verifier_compat_reason; retrying the pre-upgrade backup with target verifier $target_server_image ..." >&2
       if run_pre_upgrade_backup "$target_server_image"; then
         echo "[xDrive] target verifier accepted the snapshot; continuing pre-upgrade backup." >&2
       else

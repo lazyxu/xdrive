@@ -123,6 +123,11 @@ if [[ "${TEST_BACKUP_LEGACY_DERIVED_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" !
   echo '"'"'{"orphans":[{"storage_key":".xdrive-media/thumbnails/aa/test-512.jpg","size":123}],"hash_mismatches":null}'"'"' >&2
   exit 1
 fi
+if [[ "${TEST_BACKUP_LEGACY_READY_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" != "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]; then
+  echo "xDrive consistency verification failed; backup aborted." >&2
+  echo '"'"'{"orphans":[{"storage_key":".xdrive-ready-2918308328","size":0}],"hash_mismatches":null}'"'"' >&2
+  exit 1
+fi
 dir="$output/xdrive-backup-test"
 mkdir -p "$dir"
 touch "$dir/database.dump" "$dir/blobs.tar" "$dir/verify.json" "$dir/manifest.json" "$dir/SHA256SUMS.txt"
@@ -332,6 +337,28 @@ if grep -q 'storage consistency verification failed' "$TMP/upgrade.err"; then
   echo "test fixture unexpectedly contains the obsolete installer match phrase" >&2
   exit 1
 fi
+
+# A stale root-level .xdrive-ready-* probe comes from Local.Ready() and can be
+# left behind by a hard process/container stop. An old verifier reports it as
+# an orphan, so the installer must bootstrap through the target verifier
+# without asking the operator to delete storage files manually.
+cp -a "$TMP/config" "$TMP/ready-config"
+mkdir -p "$TMP/ready-state"
+set +e
+TEST_STATE="$TMP/ready-state" \
+TEST_BACKUP_LEGACY_READY_FAIL=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/ready-config" \
+XD_SHELL_RC_PATH="$TMP/ready-config.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+bash "$INSTALLER" --channel master >"$TMP/ready.out" 2>"$TMP/ready.err"
+ready_status=$?
+set -e
+[[ "$ready_status" -eq 0 ]]
+grep -q 'current deployment verifier rejected storage readiness probe; retrying the pre-upgrade backup with target verifier' "$TMP/ready.err"
+grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/ready.err"
+grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/ready-state/backup-images"
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
 if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then
