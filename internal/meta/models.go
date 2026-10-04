@@ -154,7 +154,25 @@ func (AuditEvent) TableName() string { return "xd_audit_events" }
 const (
 	UploadStatusActive    = "active"
 	UploadStatusFinalized = "finalized"
+	UploadStatusSkipped   = "skipped"
+
+	UploadConflictPolicyFail     = "fail"
+	UploadConflictPolicySkip     = "skip"
+	UploadConflictPolicyKeepBoth = "keep_both"
 )
+
+func NormalizeUploadConflictPolicy(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return UploadConflictPolicyFail, true
+	}
+	switch value {
+	case UploadConflictPolicyFail, UploadConflictPolicySkip, UploadConflictPolicyKeepBoth:
+		return value, true
+	default:
+		return "", false
+	}
+}
 
 type UploadSession struct {
 	ID                 string  `gorm:"size:36;primaryKey"`
@@ -162,6 +180,8 @@ type UploadSession struct {
 	ParentID           *uint64 `gorm:"index"`
 	NodeID             *uint64 `gorm:"index"`
 	Name               string  `gorm:"size:255"`
+	RequestedName      string  `gorm:"size:255"`
+	ConflictPolicy     string  `gorm:"size:16;not null;default:'';index"`
 	ExpectedRevision   uint64
 	TotalSize          int64  `gorm:"not null"`
 	ChunkSize          int64  `gorm:"not null"`

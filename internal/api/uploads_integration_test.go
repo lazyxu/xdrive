@@ -253,6 +253,147 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	}
 	node := *finalized.Result
 
+	// Upload conflict policy is resolved before any chunk bytes are accepted.
+	failConflictBody := fmt.Sprintf(
+		`{"parent_id":%d,"name":"large.bin","size":0,"chunk_size":%d,"resume_key":"conflict-fail","conflict_policy":"fail"}`,
+		root.ID, chunkSize,
+	)
+	request(
+		t, router, http.MethodPost, "/api/v1/uploads", token,
+		strings.NewReader(failConflictBody), http.StatusConflict,
+	)
+
+	skipConflictBody := fmt.Sprintf(
+		`{"parent_id":%d,"name":"large.bin","size":0,"chunk_size":%d,"resume_key":"conflict-skip","conflict_policy":"skip"}`,
+		root.ID, chunkSize,
+	)
+	skipConflict := request(
+		t, router, http.MethodPost, "/api/v1/uploads", token,
+		strings.NewReader(skipConflictBody), http.StatusOK,
+	)
+	var skipped uploadSessionDTO
+	if err := json.Unmarshal(skipConflict.Body.Bytes(), &skipped); err != nil {
+		t.Fatal(err)
+	}
+	if skipped.Status != meta.UploadStatusSkipped ||
+		skipped.ConflictPolicy != meta.UploadConflictPolicySkip ||
+		skipped.RequestedName != "large.bin" ||
+		skipped.Result == nil || skipped.Result.ID != node.ID ||
+		len(skipped.Received) != 0 || skipped.QuotaReservedBytes != 0 {
+		t.Fatalf("skipped conflict result=%+v", skipped)
+	}
+
+	var rootModel meta.Node
+	if err := db.First(&rootModel, root.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// A conflict that appears after chunk upload but before finalize still
+	// honors skip and must not leave temporary parts or an unreferenced CAS row.
+	skipRaceData := []byte("skip-race-content-unique")
+	skipRaceHash := sha256Hex(skipRaceData)
+	skipRaceBody := fmt.Sprintf(
+		`{"parent_id":%d,"name":"skip-race.bin","size":%d,"chunk_size":%d,"sha256":%q,"resume_key":"skip-race","conflict_policy":"skip"}`,
+		root.ID, len(skipRaceData), chunkSize, skipRaceHash,
+	)
+	skipRaceInit := request(
+		t, router, http.MethodPost, "/api/v1/uploads", token,
+		strings.NewReader(skipRaceBody), http.StatusCreated,
+	)
+	var skipRaceSession uploadSessionDTO
+	if err := json.Unmarshal(skipRaceInit.Body.Bytes(), &skipRaceSession); err != nil {
+		t.Fatal(err)
+	}
+	putPart(skipRaceSession.ID, 0, skipRaceData, skipRaceHash, http.StatusCreated)
+	skipRaceBlocker := meta.Node{
+		ParentID: &rootModel.ID, Name: "skip-race.bin", Type: meta.NodeTypeDir,
+		OwnerID: rootModel.OwnerID, Revision: 1,
+	}
+	if err := db.Create(&skipRaceBlocker).Error; err != nil {
+		t.Fatal(err)
+	}
+	skipRaceFinal := request(
+		t, router, http.MethodPost, "/api/v1/uploads/"+skipRaceSession.ID+"/finalize",
+		token, strings.NewReader(`{}`), http.StatusOK,
+	)
+	var skipRaceSkipped uploadSessionDTO
+	if err := json.Unmarshal(skipRaceFinal.Body.Bytes(), &skipRaceSkipped); err != nil {
+		t.Fatal(err)
+	}
+	if skipRaceSkipped.Status != meta.UploadStatusSkipped ||
+		skipRaceSkipped.Result == nil || skipRaceSkipped.Result.ID != skipRaceBlocker.ID {
+		t.Fatalf("skip-race finalize=%+v", skipRaceSkipped)
+	}
+	var skipRaceParts int64
+	if err := db.Model(&meta.UploadPart{}).
+		Where("session_id = ?", skipRaceSession.ID).
+		Count(&skipRaceParts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if skipRaceParts != 0 {
+		t.Fatalf("skip-race retained upload parts=%d", skipRaceParts)
+	}
+	var skipRaceBlobs int64
+	if err := db.Model(&meta.ContentBlob{}).
+		Where("sha256 = ?", skipRaceHash).
+		Count(&skipRaceBlobs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if skipRaceBlobs != 0 {
+		t.Fatalf("skip-race retained unreferenced content blobs=%d", skipRaceBlobs)
+	}
+
+	keepConflictBody := fmt.Sprintf(
+		`{"parent_id":%d,"name":"large.bin","size":0,"chunk_size":%d,"resume_key":"conflict-keep","conflict_policy":"keep_both"}`,
+		root.ID, chunkSize,
+	)
+	keepConflict := request(
+		t, router, http.MethodPost, "/api/v1/uploads", token,
+		strings.NewReader(keepConflictBody), http.StatusCreated,
+	)
+	var keepSession uploadSessionDTO
+	if err := json.Unmarshal(keepConflict.Body.Bytes(), &keepSession); err != nil {
+		t.Fatal(err)
+	}
+	if keepSession.Status != meta.UploadStatusActive ||
+		keepSession.ConflictPolicy != meta.UploadConflictPolicyKeepBoth ||
+		keepSession.RequestedName != "large.bin" ||
+		keepSession.Name != "large - 副本.bin" {
+		t.Fatalf("keep-both preflight=%+v", keepSession)
+	}
+	keepResume := request(
+		t, router, http.MethodPost, "/api/v1/uploads", token,
+		strings.NewReader(keepConflictBody), http.StatusOK,
+	)
+	var keepResumed uploadSessionDTO
+	if err := json.Unmarshal(keepResume.Body.Bytes(), &keepResumed); err != nil {
+		t.Fatal(err)
+	}
+	if keepResumed.ID != keepSession.ID || keepResumed.Name != keepSession.Name {
+		t.Fatalf("keep-both resume=%+v want session=%+v", keepResumed, keepSession)
+	}
+
+	blocker := meta.Node{
+		ParentID: &rootModel.ID, Name: keepSession.Name, Type: meta.NodeTypeDir,
+		OwnerID: rootModel.OwnerID, Revision: 1,
+	}
+	if err := db.Create(&blocker).Error; err != nil {
+		t.Fatal(err)
+	}
+	keepFinal := request(
+		t, router, http.MethodPost, "/api/v1/uploads/"+keepSession.ID+"/finalize",
+		token, strings.NewReader(`{}`), http.StatusOK,
+	)
+	var kept uploadSessionDTO
+	if err := json.Unmarshal(keepFinal.Body.Bytes(), &kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept.Status != meta.UploadStatusFinalized || kept.Result == nil ||
+		kept.Result.Name != "large - 副本 (2).bin" ||
+		kept.Name != kept.Result.Name {
+		t.Fatalf("keep-both finalize race result=%+v", kept)
+	}
+
 	download := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", node.ID), token, nil, http.StatusOK)
 	if !bytes.Equal(download.Body.Bytes(), data) {
 		t.Fatal("assembled content differs from source")

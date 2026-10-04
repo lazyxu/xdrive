@@ -421,3 +421,69 @@ func TestUploadStreamResumableUsesOffsetAndSkipsReceivedChunks(t *testing.T) {
 }
 
 func uint64Ptr(v uint64) *uint64 { return &v }
+
+func TestUploadFileResumableConflictSkipStopsBeforeChunks(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "same.bin")
+	data := []byte("same-file-content")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	full := sha256.Sum256(data)
+	fullHash := hex.EncodeToString(full[:])
+
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/uploads" {
+			t.Fatalf("unexpected request after skipped preflight: %s %s", r.Method, r.URL.Path)
+		}
+		var init UploadInit
+		if err := json.NewDecoder(r.Body).Decode(&init); err != nil {
+			t.Fatal(err)
+		}
+		if init.ConflictPolicy != UploadConflictPolicySkip {
+			t.Fatalf("conflict policy=%q", init.ConflictPolicy)
+		}
+		if init.ResumeKey == "" || init.ResumeKey == fullHash || len(init.ResumeKey) != 64 {
+			t.Fatalf("policy-aware resume key=%q", init.ResumeKey)
+		}
+		_ = json.NewEncoder(w).Encode(UploadSession{
+			ID: "skip-session", ParentID: init.ParentID, Name: init.Name,
+			RequestedName: init.Name, ConflictPolicy: UploadConflictPolicySkip,
+			Size: init.Size, ChunkSize: DefaultUploadChunkSize, ChunkCount: 1,
+			SHA256: fullHash, ResumeKey: init.ResumeKey, Status: "skipped",
+			ExpiresAt: time.Now().Add(time.Hour),
+			Result: &Node{
+				ID: 42, ParentID: uint64Ptr(1), Name: "same.bin", Type: "file",
+				Size: 99, Revision: 3, SHA256: strings.Repeat("a", 64),
+			},
+		})
+	}))
+	defer server.Close()
+
+	var progress [][2]int64
+	cli := New(server.URL, "token")
+	result, err := cli.UploadFileResumableWithConflictPolicyResult(
+		context.Background(),
+		1,
+		path,
+		"same.bin",
+		UploadConflictPolicySkip,
+		func(done, total int64) {
+			progress = append(progress, [2]int64{done, total})
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Skipped || result.Node.ID != 42 || result.TransferredBytes != 0 {
+		t.Fatalf("skipped result=%+v", result)
+	}
+	if len(progress) != 0 {
+		t.Fatalf("skipped upload reported transfer progress: %v", progress)
+	}
+	if len(requests) != 1 || requests[0] != "POST /api/v1/uploads" {
+		t.Fatalf("requests=%v", requests)
+	}
+}
