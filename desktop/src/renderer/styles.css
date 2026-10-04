@@ -16,8 +16,6 @@ button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 
-.auth-panel h1 { margin-bottom: 0; font-size: 27px; letter-spacing: -.015em; }
-.auth-panel .subtitle { max-width: 500px; margin-top: 8px; font-size: 13px; line-height: 1.6; }
 .auth-brand-lockup { margin-bottom: 18px; }
 .auth-brand-lockup .MuiTypography-body2 { color: var(--text-faint); }
 .auth-form { margin-top: 22px; }
@@ -195,10 +193,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .auth-submit-hint.MuiTypography-root { text-align: center; }
 }
 
-.eyebrow { margin: 0 0 8px; color: var(--link); font-size: 11px; font-weight: 800; letter-spacing: .14em; }
-h1 { margin: 0; font-size: 30px; line-height: 1.15; }
 h2 { margin: 0; font-size: 18px; }
-.subtitle { max-width: 690px; margin: 10px 0 0; color: var(--text-muted); line-height: 1.5; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
 
 
