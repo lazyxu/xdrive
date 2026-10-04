@@ -1177,7 +1177,7 @@ export function XDriveSourceManager({
       ) : rows.length === 0 ? (
           <XDriveStatePanel variant="plain" message="尚未添加同步文件夹" />
         ) : (
-          <div className="external-source-list">
+          <Stack spacing={1.75}>
             {rows.map((row) => {
               const card = externalSourceCardView(row)
               const stats = card.scannedItems === undefined || card.scannedBytes === undefined
@@ -1249,7 +1249,7 @@ export function XDriveSourceManager({
                 />
               )
             })}
-          </div>
+          </Stack>
         )}
       </XDriveWorkspaceSurface>
 
