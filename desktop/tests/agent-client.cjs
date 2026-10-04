@@ -854,6 +854,51 @@ test('file operation conflict resolution posts the selected policy', async (t) =
 })
 
 
+test('manual Gallery albums use scoped Agent IPC endpoints', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, async (req, res) => {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    seen.push({
+      method: req.method,
+      url: req.url,
+      body: chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null,
+    })
+    const revision = seen.length + 1
+    if (req.method === 'DELETE' && req.url === '/v1/media/album') {
+      res.writeHead(204).end()
+      return
+    }
+    json(res, seen.length === 1 ? 201 : 200, {
+      id: 'manual:test',
+      kind: 'manual',
+      name: 'Trip',
+      revision,
+      item_count: 1,
+    })
+  })
+
+  await client.createMediaAlbum('Trip')
+  await client.renameMediaAlbum('manual:test', 1, 'Trip 2')
+  await client.addMediaAlbumItems('manual:test', 2, [31, 32])
+  await client.removeMediaAlbumItem('manual:test', 3, 31)
+  await client.deleteMediaAlbum('manual:test', 4)
+
+  assert.deepEqual(seen.map((value) => [value.method, value.url]), [
+    ['POST', '/v1/media/albums'],
+    ['PATCH', '/v1/media/album'],
+    ['POST', '/v1/media/album/items'],
+    ['DELETE', '/v1/media/album/item'],
+    ['DELETE', '/v1/media/album'],
+  ])
+  assert.deepEqual(seen[0].body, { name: 'Trip' })
+  assert.deepEqual(seen[1].body, { album_id: 'manual:test', revision: 1, name: 'Trip 2' })
+  assert.deepEqual(seen[2].body, { album_id: 'manual:test', revision: 2, node_ids: [31, 32] })
+  assert.deepEqual(seen[3].body, { album_id: 'manual:test', revision: 3, node_id: 31 })
+  assert.deepEqual(seen[4].body, { album_id: 'manual:test', revision: 4 })
+})
+
+
 test('upload conflict preflight forwards parent and name', async (t) => {
   let seen
   const { client } = await fixture(t, async (req, res) => {

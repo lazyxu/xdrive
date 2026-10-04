@@ -334,8 +334,9 @@ export interface MediaItem {
 
 export interface MediaAlbum {
   id: string
-  kind: 'folder' | 'imported' | string
+  kind: 'folder' | 'imported' | 'manual' | string
   name: string
+  revision?: number
   item_count: number
   cover_node_id?: number
   updated_at?: string

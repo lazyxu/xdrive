@@ -227,6 +227,30 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    createAlbum: async (name) => {
+      const result = await window.xdriveDesktop.agent.createMediaAlbum(name)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    renameAlbum: async (albumID, revision, name) => {
+      const result = await window.xdriveDesktop.agent.renameMediaAlbum(albumID, revision, name)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    deleteAlbum: async (albumID, revision) => {
+      const result = await window.xdriveDesktop.agent.deleteMediaAlbum(albumID, revision)
+      if (!result.ok) throw new Error(result.error.message)
+    },
+    addToAlbum: async (albumID, revision, nodeIDs) => {
+      const result = await window.xdriveDesktop.agent.addMediaAlbumItems(albumID, revision, nodeIDs)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    removeFromAlbum: async (albumID, revision, nodeID) => {
+      const result = await window.xdriveDesktop.agent.removeMediaAlbumItem(albumID, revision, nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     listAlbumItems: async (albumID, limit, offset, query) => {
       const result = await window.xdriveDesktop.agent.getMediaAlbumItems(
         albumID,

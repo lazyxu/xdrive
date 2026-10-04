@@ -20,6 +20,11 @@ const agent = Object.freeze({
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
+  createMediaAlbum: (name: string) => ipcRenderer.invoke('agent:create-media-album', name),
+  renameMediaAlbum: (albumID: string, revision: number, name: string) => ipcRenderer.invoke('agent:rename-media-album', albumID, revision, name),
+  deleteMediaAlbum: (albumID: string, revision: number) => ipcRenderer.invoke('agent:delete-media-album', albumID, revision),
+  addMediaAlbumItems: (albumID: string, revision: number, nodeIDs: number[]) => ipcRenderer.invoke('agent:add-media-album-items', albumID, revision, nodeIDs),
+  removeMediaAlbumItem: (albumID: string, revision: number, nodeID: number) => ipcRenderer.invoke('agent:remove-media-album-item', albumID, revision, nodeID),
   getMediaAlbumItems: (
     albumID: string,
     limit = 100,

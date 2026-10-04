@@ -1579,6 +1579,68 @@ function registerIPCHandlers() {
     return requireAgentClient().mediaAlbums()
   }, false))
 
+  ipcMain.handle('agent:create-media-album', (_event, name: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new AgentIPCError('invalid_input', 0, 'Media album name is required.')
+    }
+    return requireAgentClient().createMediaAlbum(name.trim())
+  }, false))
+
+  ipcMain.handle('agent:rename-media-album', (_event, albumID: unknown, revision: unknown, name: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' || !albumID.startsWith('manual:') ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      typeof name !== 'string' || !name.trim()
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Manual album id, revision, and name are required.')
+    }
+    return requireAgentClient().renameMediaAlbum(albumID, revision, name.trim())
+  }, false))
+
+  ipcMain.handle('agent:delete-media-album', (_event, albumID: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' || !albumID.startsWith('manual:') ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Manual album id and revision are required.')
+    }
+    await requireAgentClient().deleteMediaAlbum(albumID, revision)
+    return { ok: true }
+  }, false))
+
+  ipcMain.handle('agent:add-media-album-items', (_event, albumID: unknown, revision: unknown, nodeIDs: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' || !albumID.startsWith('manual:') ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      !Array.isArray(nodeIDs) || nodeIDs.length === 0 ||
+      !nodeIDs.every((value) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Manual album id, revision, and media node ids are required.')
+    }
+    return requireAgentClient().addMediaAlbumItems(albumID, revision, nodeIDs as number[])
+  }, false))
+
+  ipcMain.handle('agent:remove-media-album-item', (_event, albumID: unknown, revision: unknown, nodeID: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' || !albumID.startsWith('manual:') ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Manual album id, revision, and media node id are required.')
+    }
+    return requireAgentClient().removeMediaAlbumItem(albumID, revision, nodeID)
+  }, false))
+
   ipcMain.handle('agent:get-media-album-items', (_event, albumID: unknown, limit: unknown = 100, offset: unknown = 0, query: unknown = undefined) => runAgentAction<AgentMediaItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
