@@ -28,10 +28,6 @@ export type XDriveSidebarSectionModel = {
   items: XDriveSidebarDestinationModel[]
 }
 
-// Compatibility aliases for callers that adopted the first complete-sidebar API.
-export type XDriveSidebarDestination = XDriveSidebarDestinationModel
-export type XDriveWorkspaceSidebarSectionModel = XDriveSidebarSectionModel
-
 export type XDriveWorkspaceSidebarStorageSummary = {
   usedBytes: number
   totalBytes: number
