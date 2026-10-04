@@ -207,23 +207,6 @@ h2 { margin: 0; font-size: 18px; }
 .offline-actions { display: flex; gap: 10px; margin-top: 20px; }
 .offline-actions button { flex: 1; }
 
-.update-card { margin-top: 14px; border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: var(--surface-soft); display: grid; gap: 12px; }
-.update-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.update-card-header > div { min-width: 0; display: grid; gap: 4px; }
-.update-card-header strong { color: var(--text-strong); font-size: 14px; }
-.update-card-header span { color: var(--text-muted); font-size: 11px; line-height: 1.45; }
-.update-mode-note { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
-.update-progress { display: grid; gap: 6px; }
-.update-progress-copy { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-muted); font-size: 11px; }
-.update-progress-copy strong { color: var(--text-mid); font-size: 10px; font-weight: 600; }
-.update-progress-track { overflow: hidden; height: 7px; border-radius: 999px; background: var(--surface-muted); }
-.update-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width .18s ease; }
-.update-progress small, .update-footnote { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
-.update-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-@media (max-width: 760px) {
-  .update-card-header, .update-progress-copy { align-items: flex-start; flex-direction: column; }
-}
-
 
 
 .cloud-explorer-panel {
