@@ -195,17 +195,10 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .auth-submit-hint.MuiTypography-root { text-align: center; }
 }
 
-.offline-box { margin: 18px 0; border-radius: 12px; padding: 12px 14px; background: var(--surface-subtle); color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
-.footnote { margin: 18px 0 0; text-align: center; color: var(--text-muted); font-size: 12px; }
-
 .eyebrow { margin: 0 0 8px; color: var(--link); font-size: 11px; font-weight: 800; letter-spacing: .14em; }
 h1 { margin: 0; font-size: 30px; line-height: 1.15; }
 h2 { margin: 0; font-size: 18px; }
 .subtitle { max-width: 690px; margin: 10px 0 0; color: var(--text-muted); line-height: 1.5; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
-
-.offline-actions { display: flex; gap: 10px; margin-top: 20px; }
-.offline-actions button { flex: 1; }
-
 
 
