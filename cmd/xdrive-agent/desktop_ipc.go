@@ -72,6 +72,7 @@ var desktopIPCCapabilities = []string{
 	"cache-management",
 	"cloud-files",
 	"file-operation-conflict-resolution",
+	"upload-conflict-preflight",
 	"server-update",
 	"media-gallery",
 	"media-video-stream",
@@ -167,6 +168,7 @@ type desktopIPCController interface {
 	CloudCancelFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudRetryFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudResolveFileOperationConflict(context.Context, string, string) (client.FileOperation, error)
+	CloudUploadConflictPreflight(context.Context, uint64, string) (client.UploadConflictPreflight, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudDownload(context.Context, uint64, string) error
 	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
@@ -423,6 +425,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("POST /v1/cloud/file-operation/cancel", h.cloudCancelFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/retry", h.cloudRetryFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/resolve", h.cloudResolveFileOperationConflict)
+	mux.HandleFunc("POST /v1/cloud/upload/preflight", h.cloudUploadConflictPreflight)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
@@ -1132,6 +1135,32 @@ func (h *desktopIPCHandler) cloudResolveFileOperationConflict(w http.ResponseWri
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusAccepted, operation)
+}
+
+func (h *desktopIPCHandler) cloudUploadConflictPreflight(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ParentID uint64 `json:"parent_id"`
+		Name     string `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if input.ParentID == 0 || input.Name == "" {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_cloud_upload_preflight",
+			"parent_id and name are required",
+		)
+		return
+	}
+	result, err := h.ctrl.CloudUploadConflictPreflight(r.Context(), input.ParentID, input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudUpload(w http.ResponseWriter, r *http.Request) {

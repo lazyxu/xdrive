@@ -422,6 +422,32 @@ func TestUploadStreamResumableUsesOffsetAndSkipsReceivedChunks(t *testing.T) {
 
 func uint64Ptr(v uint64) *uint64 { return &v }
 
+func TestUploadConflictPreflight(t *testing.T) {
+	var seen map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/uploads/preflight" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&seen); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(UploadConflictPreflight{Conflict: true})
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	result, err := cli.UploadConflictPreflight(context.Background(), 7, "same.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Conflict {
+		t.Fatal("expected upload conflict")
+	}
+	if seen["parent_id"] != float64(7) || seen["name"] != "same.bin" {
+		t.Fatalf("preflight payload=%v", seen)
+	}
+}
+
 func TestUploadFileResumableConflictSkipStopsBeforeChunks(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "same.bin")

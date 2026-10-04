@@ -351,6 +351,10 @@ export type AgentCloudBatchResult = {
   deleted_ids?: number[]
 }
 
+export type AgentCloudUploadConflictPreflight = {
+  conflict: boolean
+}
+
 export type AgentCloudFileOperation = {
   id: string
   type: 'copy' | 'move' | 'delete'
@@ -1058,6 +1062,13 @@ export class AgentIPCClient {
     return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/resolve', {
       id,
       conflict_policy: conflictPolicy,
+    }, 45_000)
+  }
+
+  cloudUploadPreflight(parentID: number, name: string) {
+    return this.request<AgentCloudUploadConflictPreflight>('POST', '/v1/cloud/upload/preflight', {
+      parent_id: parentID,
+      name,
     }, 45_000)
   }
 

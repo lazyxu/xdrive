@@ -23,6 +23,7 @@ import type {
   BuildInfo,
   UpdateExternalSourceInput,
   XDriveFileOperation,
+  XDriveUploadConflictPreflight,
 } from '@xdrive/shared'
 
 export {}
@@ -379,6 +380,7 @@ declare global {
         cloudCancelFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudRetryFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudResolveFileOperationConflict: (id: string, policy: 'skip' | 'keep_both') => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudUploadPreflight: (parentID: number, name: string) => Promise<DesktopResult<XDriveUploadConflictPreflight>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>

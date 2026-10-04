@@ -852,3 +852,26 @@ test('file operation conflict resolution posts the selected policy', async (t) =
     body: { id: 'failed-op', conflict_policy: 'keep_both' },
   })
 })
+
+
+test('upload conflict preflight forwards parent and name', async (t) => {
+  let seen
+  const { client } = await fixture(t, async (req, res) => {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    seen = {
+      method: req.method,
+      path: req.url,
+      body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+    }
+    json(res, 200, { conflict: true })
+  })
+
+  const result = await client.cloudUploadPreflight(7, 'same.bin')
+  assert.equal(result.conflict, true)
+  assert.deepEqual(seen, {
+    method: 'POST',
+    path: '/v1/cloud/upload/preflight',
+    body: { parent_id: 7, name: 'same.bin' },
+  })
+})

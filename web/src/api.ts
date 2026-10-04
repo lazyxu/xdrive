@@ -39,10 +39,14 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
   XDriveFileOperationType,
+  XDriveUploadConflictPolicy,
+  XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
 import { webTransferStore } from './transfers'
 
 export type {
+  XDriveUploadConflictPolicy,
+  XDriveUploadConflictPreflight,
   ExternalSource,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
@@ -123,8 +127,6 @@ export interface UploadChunkState {
   sha256: string
   reused?: boolean
 }
-
-export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both'
 
 export interface XDriveUploadResult {
   node: Node
@@ -717,6 +719,13 @@ export class XDriveApi {
   createDirectory(parentID: number, name: string) {
     return this.request<Node>(`/api/v1/nodes/${parentID}/directories`, {
       method: 'POST', body: JSON.stringify({ name }),
+    })
+  }
+
+  uploadConflictPreflight(parentID: number, name: string) {
+    return this.request<XDriveUploadConflictPreflight>('/api/v1/uploads/preflight', {
+      method: 'POST',
+      body: JSON.stringify({ parent_id: parentID, name }),
     })
   }
 

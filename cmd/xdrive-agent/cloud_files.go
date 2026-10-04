@@ -306,6 +306,18 @@ func (c *agentController) CloudResolveFileOperationConflict(ctx context.Context,
 	return cli.ResolveFileOperationConflict(ctx, strings.TrimSpace(id), strings.TrimSpace(policy))
 }
 
+func (c *agentController) CloudUploadConflictPreflight(
+	ctx context.Context,
+	parentID uint64,
+	name string,
+) (client.UploadConflictPreflight, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.UploadConflictPreflight{}, err
+	}
+	return cli.UploadConflictPreflight(ctx, parentID, strings.TrimSpace(name))
+}
+
 func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, localPath, name string) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

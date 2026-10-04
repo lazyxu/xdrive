@@ -9,6 +9,7 @@ const explorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplo
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const api = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'api.ts'), 'utf8')
+const uploadConflicts = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'upload-conflicts.ts'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 
 test('Web files workspace consumes the shared FileExplorer instead of a bespoke table', () => {
@@ -195,7 +196,8 @@ test('Web multi-select mutations use persistent operations while retaining legac
 
 test('Web upload API exposes conflict-aware skip/keep-both without changing legacy upload return type', () => {
   for (const token of [
-    "export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both'",
+    'XDriveUploadConflictPolicy,',
+    'XDriveUploadConflictPreflight,',
     'export interface XDriveUploadResult',
     "status: 'active' | 'finalized' | 'skipped'",
     'uploadWithConflictPolicy(',
@@ -212,6 +214,19 @@ test('Web upload API exposes conflict-aware skip/keep-both without changing lega
     'legacy Web upload API must keep returning Node',
   )
   assert.ok(api.includes("this.uploadWithConflictPolicy(parentID, file, 'fail', onProgress)"), 'legacy upload must delegate to fail policy')
+  assert.ok(
+    uploadConflicts.includes("XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both'"),
+    'upload conflict policy must live in shared',
+  )
+  assert.ok(
+    uploadConflicts.includes('XDriveUploadConflictPreflight'),
+    'upload conflict preflight contract must live in shared',
+  )
+  assert.equal(
+    api.includes("export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both'"),
+    false,
+    'Web must not duplicate the shared upload conflict policy',
+  )
 })
 
 

@@ -29,6 +29,10 @@ type UploadResult struct {
 
 type UploadConflictPolicy string
 
+type UploadConflictPreflight struct {
+	Conflict bool `json:"conflict"`
+}
+
 const (
 	UploadConflictPolicyFail     UploadConflictPolicy = "fail"
 	UploadConflictPolicySkip     UploadConflictPolicy = "skip"
@@ -74,6 +78,19 @@ type UploadSession struct {
 	ExpiresAt        time.Time            `json:"expires_at"`
 	Received         []UploadPart         `json:"received_chunks"`
 	Result           *Node                `json:"result,omitempty"`
+}
+
+func (c *Client) UploadConflictPreflight(
+	ctx context.Context,
+	parentID uint64,
+	name string,
+) (UploadConflictPreflight, error) {
+	var out UploadConflictPreflight
+	err := c.json(ctx, http.MethodPost, "/api/v1/uploads/preflight", map[string]any{
+		"parent_id": parentID,
+		"name":      name,
+	}, &out)
+	return out, err
 }
 
 func (c *Client) StartUpload(ctx context.Context, init UploadInit) (UploadSession, error) {

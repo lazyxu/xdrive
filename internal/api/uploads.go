@@ -34,6 +34,15 @@ var (
 	errUploadNameTaken = errors.New("upload target name exists")
 )
 
+type uploadConflictPreflightRequest struct {
+	ParentID uint64 `json:"parent_id"`
+	Name     string `json:"name"`
+}
+
+type uploadConflictPreflightDTO struct {
+	Conflict bool `json:"conflict"`
+}
+
 type uploadInitRequest struct {
 	ParentID         *uint64  `json:"parent_id,omitempty"`
 	NodeID           *uint64  `json:"node_id,omitempty"`
@@ -75,6 +84,35 @@ type uploadSessionDTO struct {
 	ExpiresAt          time.Time       `json:"expires_at"`
 	Received           []uploadPartDTO `json:"received_chunks"`
 	Result             *nodeDTO        `json:"result,omitempty"`
+}
+
+func (s *Server) preflightUploadConflict(c *gin.Context) {
+	var req uploadConflictPreflightRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.ParentID == 0 {
+		fail(c, http.StatusBadRequest, "parent_id is required")
+		return
+	}
+	if err := meta.ValidateName(req.Name); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	uid := userID(c)
+	if _, err := s.ownedDirectory(uid, req.ParentID); err != nil {
+		fail(c, statusForLookup(err), "parent directory not found")
+		return
+	}
+	_, exists, err := uploadNameConflictNode(s.DB, uid, req.ParentID, req.Name)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "check upload target failed")
+		return
+	}
+	c.JSON(http.StatusOK, uploadConflictPreflightDTO{Conflict: exists})
 }
 
 func (s *Server) createUploadSession(c *gin.Context) {
