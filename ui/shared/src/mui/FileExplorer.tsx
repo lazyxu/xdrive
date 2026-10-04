@@ -524,6 +524,7 @@ export function XDriveFileExplorer({
   onPaste,
   canPaste = false,
   onDownloadItems,
+  folderDownloadSupported = false,
   onDeleteItems,
   onRenameItem,
   renameDisabled = false,
@@ -581,6 +582,7 @@ export function XDriveFileExplorer({
   onPaste?: () => void
   canPaste?: boolean
   onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
+  folderDownloadSupported?: boolean
   onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
   onRenameItem?: (item: XDriveFileExplorerItem, name: string) => void | Promise<void>
   renameDisabled?: boolean
@@ -1156,10 +1158,13 @@ export function XDriveFileExplorer({
       })
     }
     const bulkItems: XDriveFileExplorerMenuItem[] = []
-    if (selection.length > 1 && onDownloadItems && selection.some((candidate) => candidate.kind === 'file')) {
+    const downloadableSelection = selection.some((candidate) => (
+      candidate.kind === 'file' || folderDownloadSupported
+    ))
+    if (selection.length > 1 && onDownloadItems && downloadableSelection) {
       bulkItems.push({
         id: 'download-selected',
-        label: '下载所选文件',
+        label: folderDownloadSupported ? '下载所选项目' : '下载所选文件',
         icon: <DownloadRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length + clipboardItems.length > 0,
         onSelect: () => onDownloadItems(selection),
@@ -2108,7 +2113,9 @@ export function XDriveFileExplorer({
                 复制
               </XDriveFileExplorerCommandButton>
             ) : null}
-            {onDownloadItems && selectedItems.some((item) => item.kind === 'file') ? (
+            {onDownloadItems && selectedItems.some((item) => (
+              item.kind === 'file' || folderDownloadSupported
+            )) ? (
               <XDriveFileExplorerCommandButton
                 startIcon={<DownloadRoundedIcon />}
                 onClick={() => onDownloadItems(selectedItems)}

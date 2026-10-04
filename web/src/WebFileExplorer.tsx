@@ -390,6 +390,7 @@ export default function WebFileExplorer({
         onPaste={() => { void pasteClipboard() }}
         canPaste={canPaste(clipboardBusy)}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
+        folderDownloadSupported
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onRemoveMany(nodes)

@@ -680,6 +680,7 @@ export default function DesktopFileExplorer({
         onPaste={() => { void pasteClipboard() }}
         canPaste={canPaste(Boolean(actionBusy))}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
+        folderDownloadSupported={archiveDownloadSupported}
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onDeleteMany(nodes)
