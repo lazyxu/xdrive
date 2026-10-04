@@ -21,7 +21,8 @@ test('application icon has one SVG source of truth and platform wiring', () => {
 
   const builder = text('desktop/electron-builder.yml')
   const masterRef = '../assets/icon/master/xdrive-icon-master.svg'
-  assert.equal(builder.split(masterRef).length - 1, 2, 'Windows and Linux Desktop builds must both use the master SVG')
+  assert.equal(builder.split(masterRef).length - 1, 1, 'Linux Desktop must use the master SVG directly')
+  assert.ok(builder.includes('icon: ../assets/icon/windows/app.ico'), 'Windows Desktop executable must use the generated multi-size app.ico')
 
   const desktopRenderer = text('desktop/src/renderer/App.tsx')
   assert.ok(
@@ -67,10 +68,15 @@ test('application icon has one SVG source of truth and platform wiring', () => {
     'direct Windows installer builds must generate agent icon resources before go build',
   )
 
-  assert.ok(builder.includes('../assets/icon/web/pwa-192.png'), 'Desktop package must include a master-derived runtime window icon')
+  assert.ok(builder.includes('../assets/icon/web/pwa-192.png'), 'Desktop package must include the cross-platform PNG runtime icon')
+  assert.ok(builder.includes('../assets/icon/windows/app.ico'), 'Desktop package must include the Windows ICO runtime icon')
+  assert.ok(builder.includes('to: app-icon.ico'), 'Windows runtime ICO must be copied beside packaged resources')
   const desktopMain = text('desktop/src/main/index.cts')
-  assert.ok(desktopMain.includes("path.join(process.resourcesPath, 'app-icon.png')"), 'Packaged Desktop window must use the packaged master-derived icon')
-  assert.ok(desktopMain.includes("'assets', 'icon', 'web', 'pwa-192.png'"), 'Development Desktop window must use a master-derived icon')
+  assert.ok(desktopMain.includes("path.join(process.resourcesPath, 'app-icon.ico')"), 'Packaged Windows Desktop window must use the packaged ICO')
+  assert.ok(desktopMain.includes("'assets', 'icon', 'windows', 'app.ico'"), 'Development Windows Desktop window must use the generated ICO')
+  assert.ok(desktopMain.includes("path.join(process.resourcesPath, 'app-icon.png')"), 'Non-Windows packaged Desktop window must retain the PNG runtime icon')
+  assert.ok(desktopMain.includes('nativeImage.createFromPath(assetPath)'), 'Desktop must keep a native runtime icon handle')
+  assert.ok(desktopMain.includes('mainWindow.setIcon(desktopRuntimeIcon())'), 'Windows taskbar decoration updates must restore the xDrive window icon')
 })
 
 test('generated icon derivatives match the recorded source contract', () => {

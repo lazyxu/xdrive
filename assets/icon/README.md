@@ -5,7 +5,7 @@
 ## Usage
 
 - Web: generated derivatives live in `assets/icon/web/` — SVG/ICO favicon, Apple Touch 180 px, PWA 192 px and PWA 512 px. In-app Web brand lockups import the master SVG directly.
-- Electron Desktop (Windows/Linux): electron-builder consumes the master SVG directly and generates the platform icon set; renderer brand lockups import the same master SVG.
+- Electron Desktop: Linux consumes the master SVG directly. Windows uses the generated multi-size `assets/icon/windows/app.ico` for both the executable and runtime taskbar/window icon so Explorer can re-resolve the icon reliably while taskbar progress/overlay state changes. Renderer brand lockups still import the same master SVG.
 - Linux DEB: installs the master SVG as `hicolor/scalable/apps/xdrive.svg`.
 - Windows Inno Setup: uses `assets/icon/windows/app.ico`, a generated derivative of the master SVG.
 - Tray/status icons are master-derived operational variants. The generator renders the approved master at tray scale and overlays small state badges; their canonical PNGs live in `assets/icon/tray/` and are copied into packaged Electron resources.
