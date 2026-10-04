@@ -1092,10 +1092,11 @@ export function XDriveFileExplorer({
       gridColumns: columns,
       pageSize,
     })
-    if (targetIndex === null || targetIndex === currentIndex) return false
-    const target = visibleItems[targetIndex]
+    if (targetIndex === null) return false
     event.preventDefault()
     event.stopPropagation()
+    if (targetIndex === currentIndex) return true
+    const target = visibleItems[targetIndex]
 
     const modifier = event.ctrlKey || event.metaKey
     if (event.shiftKey) {
@@ -1202,6 +1203,14 @@ export function XDriveFileExplorer({
     }
 
     if (isEditableTarget(event.target)) return
+
+    const navigationKeys: XDriveFileExplorerKeyboardNavigationKey[] = [
+      'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown',
+      ...(viewMode === 'grid' ? ['ArrowLeft', 'ArrowRight'] as const : []),
+    ]
+    if (activeItem && navigationKeys.includes(event.key as XDriveFileExplorerKeyboardNavigationKey)) {
+      if (moveKeyboardFocus(event, activeItem)) return
+    }
 
     if (event.key === 'Backspace' && canGoBack && onBack) {
       event.preventDefault()

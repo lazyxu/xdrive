@@ -26,6 +26,7 @@ test('shared FileExplorer owns Windows-style keyboard navigation semantics', () 
     "'PageDown'",
     "viewMode === 'grid' ? columns : 1",
     "viewMode === 'grid' && currentIndex < columns",
+    "viewMode === 'grid' && currentIndex + columns >= itemCount",
     'return currentIndex',
     'Math.max(0, Math.min(itemCount - 1, target))',
   ]) assert.ok(controller.includes(token), 'shared keyboard navigation helper missing: ' + token)
@@ -34,9 +35,11 @@ test('shared FileExplorer owns Windows-style keyboard navigation semantics', () 
     'const itemElementRefs = useRef(new Map<string, HTMLElement>())',
     'tabIndex={active ? 0 : -1}',
     'moveKeyboardFocus(event, item)',
+    'if (targetIndex === currentIndex) return true',
     'event.shiftKey',
     'const modifier = event.ctrlKey || event.metaKey',
     'focusItemAtIndex(targetIndex)',
+    'navigationKeys.includes(event.key as XDriveFileExplorerKeyboardNavigationKey)',
   ]) assert.ok(explorer.includes(token), 'shared Explorer roving-focus behavior missing: ' + token)
   assert.equal(explorer.includes('tabIndex={0}\n                aria-selected={selected}'), false, 'every Explorer item must not remain a tab stop')
 })
