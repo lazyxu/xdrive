@@ -17,6 +17,7 @@ const sharedWorkspaceShell = fs.readFileSync(path.join(repoRoot, 'ui', 'shared',
 const sharedWorkspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
+const sharedAuthSurface = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AuthSurface.tsx'), 'utf8')
 const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers.tsx'), 'utf8')
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
@@ -161,6 +162,19 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
 })
+test('Web and Desktop share the authentication surface while keeping auth logic local', () => {
+  assert.ok(sharedAuthSurface.includes('export function XDriveAuthShell'), 'shared auth shell is missing')
+  assert.ok(sharedAuthSurface.includes('export function XDriveAuthPanel'), 'shared auth panel is missing')
+  assert.ok(sharedAuthSurface.includes('viewport ? \'100vh\' : \'100%\''), 'shared auth shell must support viewport and parent filling')
+  assert.ok(sharedAuthSurface.includes('decorated'), 'shared auth shell must support the Web login background')
+  assert.ok(webApp.includes('<XDriveAuthShell viewport decorated spacing="compact">'), 'Web login should use the shared auth shell')
+  assert.ok(webApp.includes('<XDriveAuthPanel size="compact">'), 'Web login/password surfaces should use the shared auth panel')
+  assert.ok(desktopApp.includes('<XDriveAuthShell>'), 'Desktop auth states should use the shared auth shell')
+  assert.ok(desktopApp.includes('<XDriveAuthPanel'), 'Desktop auth states should use the shared auth panel')
+  assert.equal(webStyles.includes('.auth-shell'), false, 'Web must not retain a local auth shell implementation')
+  assert.equal(webStyles.includes('.auth-card'), false, 'Web must not retain a local auth card implementation')
+})
+
 test('shared account trigger is informative on Web and compact on Desktop', () => {
   assert.ok(sharedAccount.includes("import ExpandMoreRoundedIcon"), 'full account trigger should expose a dropdown affordance')
   assert.ok(sharedAccount.includes('if (compact) {'), 'shared account trigger should retain an avatar-only compact mode')

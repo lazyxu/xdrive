@@ -41,6 +41,8 @@ import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
   XDriveActionButton,
+  XDriveAuthPanel,
+  XDriveAuthShell,
   XDriveBrandLockup,
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
@@ -1297,8 +1299,8 @@ export default function App({
 
   if (!agent.connected) {
     return renderDesktopFrame(
-      <div className="center-shell">
-        <section className="auth-panel">
+      <XDriveAuthShell>
+        <XDriveAuthPanel className="auth-panel">
           <p className="eyebrow">AGENT 连接</p>
           <h1>{headline}</h1>
           <p className="subtitle">xDrive 桌面版会自动启动并监控 Go 后台 Agent。如果自动恢复失败，请确认已安装完整的 xDrive 客户端。</p>
@@ -1323,8 +1325,8 @@ export default function App({
             </XDriveActionButton>
           </div>
           <p className="footnote">{info ? `桌面版 ${info.version} · ${platformLabel(info.platform)} ${info.arch}` : '正在加载桌面信息…'}</p>
-        </section>
-      </div>
+        </XDriveAuthPanel>
+      </XDriveAuthShell>
     )
   }
 
@@ -1339,8 +1341,12 @@ export default function App({
       : '正在加载桌面信息…'
 
     return renderDesktopFrame(
-      <div className="center-shell">
-        <form className="auth-panel auth-panel-form" onSubmit={login}>
+      <XDriveAuthShell>
+        <XDriveAuthPanel
+          form
+          className="auth-panel auth-panel-form"
+          onSubmit={login}
+        >
           <XDriveBrandLockup
             iconSrc={xDriveBrandIcon}
             variant="compact"
@@ -1645,15 +1651,15 @@ export default function App({
               </XDriveActionButton>
             </MuiBox>
           ) : null}
-        </form>
-      </div>
+        </XDriveAuthPanel>
+      </XDriveAuthShell>
     )
   }
 
   if (status?.must_change_password) {
     return renderDesktopFrame(
-      <div className="center-shell">
-        <div className="auth-panel auth-panel-form">
+      <XDriveAuthShell>
+        <XDriveAuthPanel className="auth-panel auth-panel-form">
           <p className="eyebrow">需要修改密码</p>
           <h1>{headline}</h1>
           <p className="subtitle">管理员要求先修改密码，之后才能开始同步。</p>
@@ -1676,8 +1682,8 @@ export default function App({
             }}
             onSubmit={changePassword}
           />
-        </div>
-      </div>
+        </XDriveAuthPanel>
+      </XDriveAuthShell>
     )
   }
 
