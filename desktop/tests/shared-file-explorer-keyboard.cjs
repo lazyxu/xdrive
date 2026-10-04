@@ -44,6 +44,30 @@ test('shared FileExplorer owns Windows-style keyboard navigation semantics', () 
   assert.equal(explorer.includes('tabIndex={0}\n                aria-selected={selected}'), false, 'every Explorer item must not remain a tab stop')
 })
 
+test('shared FileExplorer supports Windows-style type-to-select', () => {
+  for (const token of [
+    'XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS = 900',
+    'xDriveFileExplorerTypeSelectTargetIndex',
+    "query.normalize('NFKC').toLocaleLowerCase()",
+    'cycle ? (currentIndex + 1) % names.length : currentIndex',
+    'normalizedName.startsWith(normalizedQuery)',
+  ]) assert.ok(controller.includes(token), 'shared type-select controller missing: ' + token)
+
+  for (const token of [
+    "const typeSelectRef = useRef({ query: '', updatedAt: 0 })",
+    'event.nativeEvent.isComposing',
+    "event.key === ' '",
+    'Array.from(event.key).length !== 1',
+    'XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS',
+    'const repeatedSingleKey =',
+    'names: visibleItems.map((item) => item.name)',
+    'cycle: repeatedSingleKey',
+    'commitSelection([target.id])',
+    'focusItemAtIndex(targetIndex)',
+    'if (typeSelectFromKeyboard(event)) return',
+  ]) assert.ok(explorer.includes(token), 'shared Explorer type-select behavior missing: ' + token)
+})
+
 test('shared FileExplorer owns Windows-style Explorer shortcuts without stealing text editing keys', () => {
   for (const token of [
     "event.altKey && event.key === 'ArrowLeft'",

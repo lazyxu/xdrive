@@ -759,6 +759,36 @@ export function xDriveFileExplorerKeyboardTargetIndex({
   return Math.max(0, Math.min(itemCount - 1, target))
 }
 
+export const XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS = 900
+
+export function xDriveFileExplorerTypeSelectTargetIndex({
+  names,
+  currentIndex,
+  query,
+  cycle = false,
+}: {
+  names: readonly string[]
+  currentIndex: number
+  query: string
+  cycle?: boolean
+}) {
+  if (names.length === 0) return null
+  const normalizedQuery = query.normalize('NFKC').toLocaleLowerCase()
+  if (!normalizedQuery) return null
+
+  const hasCurrent = currentIndex >= 0 && currentIndex < names.length
+  const start = hasCurrent
+    ? cycle ? (currentIndex + 1) % names.length : currentIndex
+    : 0
+
+  for (let offset = 0; offset < names.length; offset += 1) {
+    const index = (start + offset) % names.length
+    const normalizedName = names[index].normalize('NFKC').toLocaleLowerCase()
+    if (normalizedName.startsWith(normalizedQuery)) return index
+  }
+  return null
+}
+
 export function xDriveFileExplorerRenameSelectionEnd(
   name: string,
   kind: 'dir' | 'file',
