@@ -28,14 +28,16 @@ test('desktop renderer supports light, dark, and system appearance', () => {
   assert.ok(sharedAppearance.includes('xDriveAppearanceOptions.map'), 'shared appearance field must render the shared options')
 })
 
-test('legacy desktop CSS follows the resolved appearance instead of only the OS', () => {
-  assert.ok(styles.includes("@media (prefers-color-scheme: dark)"), 'system dark fallback is missing')
-  assert.ok(styles.includes(":root[data-xdrive-theme='light']"), 'forced light selector is missing')
-  assert.ok(styles.includes(":root[data-xdrive-theme='dark']"), 'forced dark selector is missing')
-  assert.ok(styles.includes('--page-bg: #0f141d'), 'missing dark page surface')
-  assert.ok(styles.includes('--surface: #171d27'), 'missing dark panel surface')
-  assert.ok(styles.includes('--text: #e7edf7'), 'missing dark primary text')
-  assert.ok(styles.includes('background: var(--surface);'), 'legacy surfaces must use theme variables')
+test('legacy desktop surfaces consume the resolved shared theme instead of owning theme selection', () => {
+  assert.equal(styles.includes("@media (prefers-color-scheme: dark)"), false, 'system appearance should resolve in React before shared theme creation')
+  assert.equal(styles.includes(":root[data-xdrive-theme='light']"), false, 'forced light tokens should live in the shared MUI baseline')
+  assert.equal(styles.includes(":root[data-xdrive-theme='dark']"), false, 'forced dark tokens should live in the shared MUI baseline')
+  assert.ok(sharedTheme.includes("pageBg: '#0f141d'"), 'shared theme is missing the dark page surface')
+  assert.ok(sharedTheme.includes("surface: '#171d27'"), 'shared theme is missing the dark panel surface')
+  assert.ok(sharedTheme.includes("text: '#e7edf7'"), 'shared theme is missing the dark primary text')
+  assert.ok(sharedTheme.includes("'--page-bg': tokens.pageBg"), 'shared theme must project page background as a CSS variable')
+  assert.ok(sharedTheme.includes("'--surface': tokens.surface"), 'shared theme must project surface color as a CSS variable')
+  assert.ok(styles.includes('background: var(--surface);'), 'legacy surfaces must continue consuming shared theme variables')
   assert.equal(styles.includes('background: white;'), false, 'hard-coded white surfaces would break dark mode')
 })
 
