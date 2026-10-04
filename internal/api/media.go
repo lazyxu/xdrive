@@ -71,9 +71,21 @@ type mediaDerivedResourceDTO struct {
 	Size      int64  `json:"size"`
 }
 
+type mediaResourceDTO struct {
+	Kind      string `json:"kind"`
+	NodeID    uint64 `json:"node_id"`
+	Role      string `json:"role"`
+	Name      string `json:"name"`
+	MediaKind string `json:"media_kind"`
+	MIMEType  string `json:"mime_type,omitempty"`
+	Size      int64  `json:"size"`
+}
+
 type mediaItemDTO struct {
 	Node             nodeDTO                   `json:"node"`
 	Metadata         mediaMetadataDTO          `json:"metadata"`
+	AssetKind        string                    `json:"asset_kind,omitempty"`
+	Resources        []mediaResourceDTO        `json:"resources,omitempty"`
 	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
 	LivePhoto        bool                      `json:"live_photo,omitempty"`
 }
@@ -190,10 +202,37 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "resolve live photo failed")
 		return
 	}
+	if err := mediagroup.ReconcileLocalEvidenceGroups(
+		c.Request.Context(),
+		s.DB,
+		node.OwnerID,
+	); err != nil {
+		fail(c, http.StatusInternalServerError, "resolve media relations failed")
+		return
+	}
+	if _, err := photoasset.ReconcileOwner(
+		c.Request.Context(),
+		s.DB,
+		node.OwnerID,
+	); err != nil {
+		fail(c, http.StatusInternalServerError, "resolve photo asset failed")
+		return
+	}
+	presentation, err := s.photoAssetPresentation(
+		c.Request.Context(),
+		node.OwnerID,
+		node.ID,
+	)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "resolve photo asset failed")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, mediaItemDTO{
 		Node:             toNodeDTO(node),
 		Metadata:         toMediaMetadataDTO(metadata),
+		AssetKind:        presentation.Kind,
+		Resources:        presentation.Resources,
 		DerivedResources: resources,
 		LivePhoto:        livePhoto,
 	})
@@ -209,7 +248,17 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		return
 	}
 	uid := userID(c)
-	thumbnailMIMEs := []string{"image/jpeg", "image/png", "image/gif"}
+	thumbnailMIMEs := []string{
+		"image/jpeg",
+		"image/png",
+		"image/gif",
+		"image/webp",
+		"image/tiff",
+		"image/bmp",
+		"image/heic",
+		"image/heif",
+		"image/x-adobe-dng",
+	}
 
 	type albumRow struct {
 		ExternalKey string
@@ -406,14 +455,21 @@ func (s *Server) queryMediaItems(
 	if err != nil {
 		return nil, err
 	}
+	assetPresentations, err := s.photoAssetPresentations(ctx, uid, ids)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]mediaItemDTO, 0, len(metadata))
 	for _, row := range metadata {
 		if node, ok := byID[row.NodeID]; ok {
 			_, standaloneLivePhoto := livePhotoIDs[row.NodeID]
+			presentation := assetPresentations[row.NodeID]
 			out = append(out, mediaItemDTO{
 				Node:      toNodeDTO(node),
 				Metadata:  toMediaMetadataDTO(row),
+				AssetKind: presentation.Kind,
+				Resources: presentation.Resources,
 				LivePhoto: standaloneLivePhoto || row.ContainerKind == mediapkg.ContainerKindLIVP,
 			})
 		}
@@ -659,7 +715,9 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 		}
 	}
 	switch mimeType {
-	case "image/jpeg", "image/png", "image/gif", "image/heic", "image/heif", "image/x-adobe-dng":
+	case "image/jpeg", "image/png", "image/gif", "image/webp",
+		"image/tiff", "image/bmp", "image/heic", "image/heif",
+		"image/x-adobe-dng":
 		return true
 	default:
 		return false

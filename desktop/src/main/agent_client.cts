@@ -421,9 +421,21 @@ export type AgentMediaDerivedResource = {
   size: number
 }
 
+export type AgentMediaResource = {
+  kind: string
+  node_id: number
+  role: string
+  name: string
+  media_kind: string
+  mime_type?: string
+  size: number
+}
+
 export type AgentMediaItem = {
   node: AgentCloudNode
   metadata: AgentMediaMetadata
+  asset_kind?: string
+  resources?: AgentMediaResource[]
   derived_resources?: AgentMediaDerivedResource[]
   live_photo?: boolean
 }

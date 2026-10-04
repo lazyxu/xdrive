@@ -47,8 +47,13 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /thumbnail_width\?: number/)
   assert.match(sharedModels, /thumbnail_height\?: number/)
   assert.match(sharedModels, /container_kind\?: string/)
+  assert.match(sharedModels, /asset_kind\?: PhotoAssetKind/)
+  assert.match(sharedModels, /resources\?: MediaResource\[\]/)
   assert.match(sharedModels, /live_photo\?: boolean/)
   assert.match(sharedModels, /derived_resources\?: MediaDerivedResource\[\]/)
+  assert.match(sharedGallery, /RAW 组合/)
+  assert.match(sharedGallery, /连拍/)
+  assert.match(sharedGallery, /资产资源/)
   assert.equal(sharedModels.includes('source_item_id: number\n  metadata: MediaMetadata'), false)
 })
 

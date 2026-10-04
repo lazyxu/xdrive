@@ -303,9 +303,30 @@ export interface MediaDerivedResource {
   size: number
 }
 
+export type PhotoAssetKind =
+  | 'image'
+  | 'video'
+  | 'live_photo'
+  | 'raw_pair'
+  | 'sidecar'
+  | 'burst'
+  | string
+
+export interface MediaResource {
+  kind: 'node' | 'derived' | string
+  node_id: number
+  role: string
+  name: string
+  media_kind: MediaKind | 'other' | string
+  mime_type?: string
+  size: number
+}
+
 export interface MediaItem {
   node: Node
   metadata: MediaMetadata
+  asset_kind?: PhotoAssetKind
+  resources?: MediaResource[]
   derived_resources?: MediaDerivedResource[]
   live_photo?: boolean
 }

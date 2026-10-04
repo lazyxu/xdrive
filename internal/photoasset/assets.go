@@ -399,8 +399,12 @@ func desiredFromGroup(
 }
 
 func desiredFromNode(tx *gorm.DB, node meta.Node, row meta.MediaMetadata) (desiredAsset, error) {
+	assetKind := row.MediaKind
+	if strings.EqualFold(strings.TrimSpace(row.ContainerKind), "livp") {
+		assetKind = meta.PhotoAssetKindLivePhoto
+	}
 	asset := desiredAsset{
-		kind:      row.MediaKind,
+		kind:      assetKind,
 		evidence:  "node:" + strconv.FormatUint(node.ID, 10),
 		primaryID: node.ID,
 		metadata:  row,

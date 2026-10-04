@@ -50,9 +50,21 @@ type MediaDerivedResource struct {
 	Size      int64  `json:"size"`
 }
 
+type MediaResource struct {
+	Kind      string `json:"kind"`
+	NodeID    uint64 `json:"node_id"`
+	Role      string `json:"role"`
+	Name      string `json:"name"`
+	MediaKind string `json:"media_kind"`
+	MIMEType  string `json:"mime_type,omitempty"`
+	Size      int64  `json:"size"`
+}
+
 type MediaItem struct {
 	Node             Node                   `json:"node"`
 	Metadata         MediaMetadata          `json:"metadata"`
+	AssetKind        string                 `json:"asset_kind,omitempty"`
+	Resources        []MediaResource        `json:"resources,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
 }

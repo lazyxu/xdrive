@@ -275,6 +275,66 @@ function orientationLabel(orientation?: number) {
   return orientation ? (labels[orientation] || `EXIF ${orientation}`) : '—'
 }
 
+function mediaAssetLabel(item: MediaItem) {
+  if (item.live_photo || item.asset_kind === 'live_photo') return '实况照片'
+  switch (item.asset_kind) {
+    case 'raw_pair':
+      return 'RAW 组合'
+    case 'burst':
+      return '连拍'
+    case 'sidecar':
+      return '编辑组合'
+    case 'video':
+      return '视频'
+    case 'image':
+      return '图片'
+    default:
+      return item.metadata.media_kind === 'video' ? '视频' : '图片'
+  }
+}
+
+function mediaAssetChipLabel(item: MediaItem) {
+  if (item.live_photo || item.asset_kind === 'live_photo') return '实况'
+  switch (item.asset_kind) {
+    case 'raw_pair':
+      return 'RAW'
+    case 'burst':
+      return '连拍'
+    case 'sidecar':
+      return '组合'
+    default:
+      if (item.metadata.media_kind === 'video') {
+        return item.metadata.duration_ms
+          ? formatDuration(item.metadata.duration_ms)
+          : '视频'
+      }
+      return '图片'
+  }
+}
+
+function mediaResourceRoleLabel(role: string) {
+  switch (role) {
+    case 'primary':
+      return '主资源'
+    case 'still':
+      return '静态照片'
+    case 'motion':
+      return '动态视频'
+    case 'raw':
+      return 'RAW'
+    case 'rendered':
+      return '渲染照片'
+    case 'sidecar':
+      return 'Sidecar'
+    case 'container':
+      return '原始容器'
+    case 'auxiliary':
+      return '辅助资源'
+    default:
+      return role || '资源'
+  }
+}
+
 function keyboardActivate(
   event: KeyboardEvent<HTMLElement>,
   action: () => void,
@@ -336,7 +396,7 @@ function MediaDetails({
     if (!item) return []
     const metadata = item.metadata
     const result: Array<[string, string]> = [
-      ['类型', item.live_photo ? '实况照片' : metadata.media_kind === 'video' ? '视频' : '图片'],
+      ['类型', mediaAssetLabel(item)],
       ['文件名', item.node.name],
       ['大小', formatBytes(item.node.size)],
       ['格式', metadata.mime_type || '—'],
@@ -385,6 +445,9 @@ function MediaDetails({
         '缩略图',
         `${metadata.thumbnail_width} × ${metadata.thumbnail_height} · ${metadata.thumbnail_mime_type || 'image/jpeg'}`,
       ])
+    }
+    if (item.resources && item.resources.length > 1) {
+      result.push(['资源数', String(item.resources.length)])
     }
     return result
   }, [item])
@@ -468,6 +531,32 @@ function MediaDetails({
                 </Box>
               ))}
             </Stack>
+            {item.resources && item.resources.length > 1 ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>资产资源</Typography>
+                <Stack spacing={0.75}>
+                  {item.resources.map((resource, index) => (
+                    <Box
+                      key={`${resource.kind}:${resource.node_id}:${resource.role}:${index}`}
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '88px minmax(0, 1fr)', sm: '112px minmax(0, 1fr)' },
+                        gap: 2,
+                      }}
+                    >
+                      <Typography variant="body2" color="text.secondary">
+                        {mediaResourceRoleLabel(resource.role)}
+                      </Typography>
+                      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                        {resource.name}
+                        {resource.mime_type ? ` · ${resource.mime_type}` : ''}
+                        {resource.size > 0 ? ` · ${formatBytes(resource.size)}` : ''}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            ) : null}
           </Stack>
         ) : null}
       </XDriveDialogContent>
@@ -634,7 +723,7 @@ export function XDriveMediaGallery({
           >
             {items.map((item) => {
               const video = item.metadata.media_kind === 'video'
-              const livePhoto = Boolean(item.live_photo)
+              const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
               return (
                 <Paper
                   key={item.node.id}
@@ -665,15 +754,7 @@ export function XDriveMediaGallery({
                   />
                   <Chip
                     icon={livePhoto ? <LivePhotoIcon /> : video ? <MovieIcon /> : <ImageIcon />}
-                    label={
-                      livePhoto
-                        ? '实况'
-                        : video && item.metadata.duration_ms
-                          ? formatDuration(item.metadata.duration_ms)
-                          : video
-                            ? '视频'
-                            : '图片'
-                    }
+                    label={mediaAssetChipLabel(item)}
                     size="small"
                     sx={{
                       position: 'absolute',
