@@ -14,6 +14,7 @@ const sharedTrashDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedVersionHistoryDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'VersionHistoryDialog.tsx'), 'utf8')
 const sharedFileNameDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'FileNameDialog.tsx'), 'utf8')
 const sharedTaskCenterPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx'), 'utf8')
+const sharedMediaGalleryPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
 const sharedPasswordChangeForm = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PasswordChangeForm.tsx'), 'utf8')
 const desktopFileExplorer = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const desktopSourceAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
@@ -22,7 +23,6 @@ const desktopOverviewPage = fs.readFileSync(path.join(root, 'src', 'renderer', '
 const desktopConflictsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopConflictsPage.tsx'), 'utf8')
 const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
 const desktopFilesPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
-const desktopGalleryPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopGalleryPage.tsx'), 'utf8')
 const desktopTransfersPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopTransfersPage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 const renderer = [
@@ -36,6 +36,7 @@ const renderer = [
   sharedVersionHistoryDialog,
   sharedFileNameDialog,
   sharedTaskCenterPage,
+  sharedMediaGalleryPage,
   sharedPasswordChangeForm,
   desktopFileExplorer,
   desktopSourceAdapter,
@@ -44,7 +45,6 @@ const renderer = [
   desktopConflictsPage,
   desktopDiagnosticsPage,
   desktopFilesPage,
-  desktopGalleryPage,
   desktopTransfersPage,
   desktopSettingsContent,
 ].join('\n')

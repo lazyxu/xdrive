@@ -52,6 +52,7 @@ import {
   XDriveWorkspaceContent,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
+  XDriveMediaGalleryPage,
   XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -82,7 +83,6 @@ import type { DesktopLocalStorageDataSource } from './DesktopLocalStoragePage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
 import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
-import { DesktopGalleryPage } from './DesktopGalleryPage'
 import { DesktopTransfersPage } from './DesktopTransfersPage'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
@@ -1897,7 +1897,7 @@ export default function App({
         )}
 
         {view === 'gallery' && (
-          <DesktopGalleryPage
+          <XDriveMediaGalleryPage
             source={mediaGallerySource}
             onError={(galleryError) => setError(
               galleryError instanceof Error ? galleryError.message : String(galleryError),
