@@ -88,6 +88,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id/live-photo-motion", s.mediaLivePhotoMotion)
 	authed.GET("/media/items/:id/video", s.mediaVideo)
 	authed.POST("/media/items/:id/video-ticket", s.mediaVideoTicket)
+	authed.GET("/media/items/:id/playback", s.mediaPlayback)
+	authed.POST("/media/items/:id/playback-ticket", s.mediaPlaybackTicket)
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/albums/:albumID/items", s.listMediaAlbumItems)

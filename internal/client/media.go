@@ -203,7 +203,7 @@ type MediaVideoStream struct {
 	ContentLength int64
 }
 
-func (c *Client) MediaVideo(
+func (c *Client) MediaPlayback(
 	ctx context.Context,
 	nodeID uint64,
 	rangeHeader string,
@@ -212,7 +212,7 @@ func (c *Client) MediaVideo(
 	req, err := c.request(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("/api/v1/media/items/%d/video", nodeID),
+		fmt.Sprintf("/api/v1/media/items/%d/playback", nodeID),
 		nil,
 	)
 	if err != nil {
@@ -240,4 +240,12 @@ func (c *Client) MediaVideo(
 		ETag:          resp.Header.Get("ETag"),
 		ContentLength: resp.ContentLength,
 	}, nil
+}
+
+func (c *Client) MediaVideo(
+	ctx context.Context,
+	nodeID uint64,
+	rangeHeader string,
+) (MediaVideoStream, error) {
+	return c.MediaPlayback(ctx, nodeID, rangeHeader)
 }

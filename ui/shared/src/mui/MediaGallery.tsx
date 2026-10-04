@@ -367,6 +367,10 @@ function MediaDetails({
   const [playbackError, setPlaybackError] = useState('')
   const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
   const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
+  const animatedImage = Boolean(
+    item?.metadata.media_kind === 'image' &&
+      ['image/gif', 'image/webp'].includes((item.metadata.mime_type || '').toLowerCase()),
+  )
 
   useEffect(() => {
     let active = true
@@ -375,7 +379,11 @@ function MediaDetails({
     setPlaybackError('')
     setPlaybackLoading(false)
 
-    const loader = livePhoto ? loadLivePhotoMotion : ordinaryVideo ? loadVideo : undefined
+    const loader = livePhoto
+      ? loadLivePhotoMotion
+      : ordinaryVideo || animatedImage
+        ? loadVideo
+        : undefined
     if (!item || !loader) return () => undefined
 
     setPlaybackLoading(true)
@@ -383,7 +391,13 @@ function MediaDetails({
       .then((value) => {
         if (!value) {
           if (active) {
-            setPlaybackError(livePhoto ? '实况视频暂不可用。' : '视频暂不可播放。')
+            setPlaybackError(
+              livePhoto
+                ? '实况视频暂不可用。'
+                : ordinaryVideo
+                  ? '视频暂不可播放。'
+                  : '动图暂不可播放。',
+            )
           }
           return
         }
@@ -406,6 +420,7 @@ function MediaDetails({
     item,
     livePhoto,
     ordinaryVideo,
+    animatedImage,
     loadLivePhotoMotion,
     loadVideo,
   ])
@@ -502,30 +517,47 @@ function MediaDetails({
                 fallback={mediaFallback(item.metadata.media_kind)}
               />
             </Box>
-            {(livePhoto && loadLivePhotoMotion) || (ordinaryVideo && loadVideo) ? (
+            {(livePhoto && loadLivePhotoMotion) ||
+            ((ordinaryVideo || animatedImage) && loadVideo) ? (
               <Box>
                 <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
-                  {livePhoto ? '实况视频' : '视频播放'}
+                  {livePhoto ? '实况视频' : ordinaryVideo ? '视频播放' : '动图预览'}
                 </Typography>
                 {playbackLoading ? (
                   <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
                     <CircularProgress size={28} />
                   </Box>
                 ) : playbackURL ? (
-                  <video
-                    src={playbackURL}
-                    controls
-                    loop={livePhoto}
-                    playsInline
-                    preload="metadata"
-                    style={{
-                      width: '100%',
-                      maxHeight: 420,
-                      display: 'block',
-                      borderRadius: 8,
-                      background: '#000',
-                    }}
-                  />
+                  livePhoto || ordinaryVideo ? (
+                    <video
+                      src={playbackURL}
+                      controls
+                      loop={livePhoto}
+                      playsInline
+                      preload="metadata"
+                      style={{
+                        width: '100%',
+                        maxHeight: 420,
+                        display: 'block',
+                        borderRadius: 8,
+                        background: '#000',
+                      }}
+                    />
+                  ) : (
+                    <Box
+                      component="img"
+                      src={playbackURL}
+                      alt={item.node.name}
+                      sx={{
+                        width: '100%',
+                        maxHeight: 420,
+                        display: 'block',
+                        objectFit: 'contain',
+                        borderRadius: 1,
+                        bgcolor: 'action.hover',
+                      }}
+                    />
+                  )
                 ) : playbackError ? (
                   <XDriveStatusAlert tone="warning">{playbackError}</XDriveStatusAlert>
                 ) : null}
