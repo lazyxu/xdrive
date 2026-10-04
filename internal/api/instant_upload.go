@@ -42,6 +42,8 @@ func (s *Server) tryInstantUploadSession(
 		ParentID:         req.ParentID,
 		NodeID:           req.NodeID,
 		Name:             req.Name,
+		RequestedName:    req.RequestedName,
+		ConflictPolicy:   req.ConflictPolicy,
 		ExpectedRevision: req.ExpectedRevision,
 		TotalSize:        req.Size,
 		ChunkSize:        req.ChunkSize,
@@ -55,6 +57,45 @@ func (s *Server) tryInstantUploadSession(
 
 	var currentRevision uint64
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		var resultID uint64
+		if req.NodeID == nil {
+			var parent meta.Node
+			if err := tx.Where(
+				"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+				*req.ParentID, uid, meta.NodeTypeDir,
+			).First(&parent).Error; err != nil {
+				return err
+			}
+			conflict, exists, err := uploadNameConflictNode(tx, uid, parent.ID, session.Name)
+			if err != nil {
+				return err
+			}
+			if exists {
+				policy, _ := meta.NormalizeUploadConflictPolicy(session.ConflictPolicy)
+				switch policy {
+				case meta.UploadConflictPolicySkip:
+					session.Status = meta.UploadStatusSkipped
+					session.ResultNodeID = &conflict.ID
+					return tx.Create(&session).Error
+				case meta.UploadConflictPolicyKeepBoth:
+					requested := session.RequestedName
+					if requested == "" {
+						requested = session.Name
+					}
+					resolved, err := copyDestinationNameTx(
+						tx, uid, parent.ID, requested, meta.NodeTypeFile, nil,
+					)
+					if err != nil {
+						return errUploadNameTaken
+					}
+					session.Name = resolved
+				default:
+					return errUploadNameTaken
+				}
+			}
+		}
+
 		if _, err := s.ensureQuotaForStorageKey(tx, uid, req.Size, storageKey, true); err != nil {
 			return err
 		}
@@ -67,21 +108,9 @@ func (s *Server) tryInstantUploadSession(
 			return errInstantUploadUnavailable
 		}
 
-		now := time.Now()
-		var resultID uint64
 		if req.NodeID == nil {
-			var parent meta.Node
-			if err := tx.Where(
-				"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				*req.ParentID, uid, meta.NodeTypeDir,
-			).First(&parent).Error; err != nil {
-				return err
-			}
-			if s.nameExistsTx(tx, uid, parent.ID, req.Name, 0) {
-				return errUploadNameTaken
-			}
 			node := meta.Node{
-				ParentID: req.ParentID, Name: req.Name,
+				ParentID: req.ParentID, Name: session.Name,
 				Type: meta.NodeTypeFile, OwnerID: uid, Revision: 1,
 			}
 			if err := tx.Create(&node).Error; err != nil {

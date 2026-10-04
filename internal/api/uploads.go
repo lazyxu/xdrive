@@ -38,6 +38,8 @@ type uploadInitRequest struct {
 	ParentID         *uint64  `json:"parent_id,omitempty"`
 	NodeID           *uint64  `json:"node_id,omitempty"`
 	Name             string   `json:"name,omitempty"`
+	RequestedName    string   `json:"-"`
+	ConflictPolicy   string   `json:"conflict_policy,omitempty"`
 	Size             int64    `json:"size"`
 	ChunkSize        int64    `json:"chunk_size,omitempty"`
 	SHA256           string   `json:"sha256,omitempty"`
@@ -59,6 +61,8 @@ type uploadSessionDTO struct {
 	ParentID           *uint64         `json:"parent_id,omitempty"`
 	NodeID             *uint64         `json:"node_id,omitempty"`
 	Name               string          `json:"name,omitempty"`
+	RequestedName      string          `json:"requested_name,omitempty"`
+	ConflictPolicy     string          `json:"conflict_policy,omitempty"`
 	Size               int64           `json:"size"`
 	ChunkSize          int64           `json:"chunk_size"`
 	ChunkCount         int             `json:"chunk_count"`
@@ -109,6 +113,17 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "exactly one of parent_id or node_id is required")
 		return
 	}
+	policyProvided := strings.TrimSpace(req.ConflictPolicy) != ""
+	conflictPolicy, ok := meta.NormalizeUploadConflictPolicy(req.ConflictPolicy)
+	if !ok {
+		fail(c, http.StatusBadRequest, "conflict_policy must be fail, skip, or keep_both")
+		return
+	}
+	req.ConflictPolicy = conflictPolicy
+	if req.NodeID != nil && conflictPolicy != meta.UploadConflictPolicyFail {
+		fail(c, http.StatusBadRequest, "conflict_policy applies only to uploads into a directory")
+		return
+	}
 
 	chunkCount := 0
 	if req.Size > 0 {
@@ -149,11 +164,18 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	if req.ResumeKey != "" {
 		var existing meta.UploadSession
 		q := s.DB.Where("owner_id = ? AND resume_key = ? AND total_size = ? AND chunk_size = ? AND status IN ?",
-			uid, req.ResumeKey, req.Size, req.ChunkSize, []string{meta.UploadStatusActive, meta.UploadStatusFinalized})
+			uid, req.ResumeKey, req.Size, req.ChunkSize,
+			[]string{meta.UploadStatusActive, meta.UploadStatusFinalized, meta.UploadStatusSkipped})
 		if req.NodeID != nil {
 			q = q.Where("node_id = ? AND expected_revision = ?", *req.NodeID, req.ExpectedRevision)
+		} else if policyProvided {
+			q = q.Where(
+				"parent_id = ? AND requested_name = ? AND conflict_policy = ?",
+				*req.ParentID, req.Name, req.ConflictPolicy,
+			)
 		} else {
-			q = q.Where("parent_id = ? AND name = ?", *req.ParentID, req.Name)
+			q = q.Where("parent_id = ? AND name = ?", *req.ParentID, req.Name).
+				Where("(conflict_policy = '' OR conflict_policy = ?)", meta.UploadConflictPolicyFail)
 		}
 		if req.SHA256 != "" {
 			q = q.Where("sha256 = ? OR sha256 = ''", req.SHA256)
@@ -162,7 +184,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			q = q.Where("expected_md5 = ? OR expected_md5 = ''", req.MD5)
 		}
 		if err := q.Order("created_at DESC").First(&existing).Error; err == nil {
-			if existing.Status == meta.UploadStatusFinalized {
+			if existing.Status == meta.UploadStatusFinalized || existing.Status == meta.UploadStatusSkipped {
 				s.writeUploadSession(c, existing, http.StatusOK)
 				return
 			}
@@ -241,6 +263,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		source := *n.File
 		reuseSource = &source
 		req.Name = n.Name
+		req.RequestedName = n.Name
 	} else {
 		if _, err := s.ownedDirectory(uid, *req.ParentID); err != nil {
 			fail(c, statusForLookup(err), "parent directory not found")
@@ -250,9 +273,30 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if s.nameExists(uid, *req.ParentID, req.Name, 0) {
-			fail(c, http.StatusConflict, "name already exists")
+		req.RequestedName = req.Name
+		conflict, exists, err := uploadNameConflictNode(s.DB, uid, *req.ParentID, req.Name)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "check upload target failed")
 			return
+		}
+		if exists {
+			switch req.ConflictPolicy {
+			case meta.UploadConflictPolicySkip:
+				s.createSkippedUploadSession(c, uid, req, chunkCount, conflict)
+				return
+			case meta.UploadConflictPolicyKeepBoth:
+				resolved, err := copyDestinationNameTx(
+					s.DB, uid, *req.ParentID, req.RequestedName, meta.NodeTypeFile, nil,
+				)
+				if err != nil {
+					fail(c, http.StatusConflict, "cannot allocate upload destination name")
+					return
+				}
+				req.Name = resolved
+			default:
+				fail(c, http.StatusConflict, "name already exists")
+				return
+			}
 		}
 	}
 
@@ -277,6 +321,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 			return
 		}
 		if instant {
+			if session.Status == meta.UploadStatusSkipped {
+				s.writeUploadSession(c, session, http.StatusOK)
+				return
+			}
 			s.ensureObservability()
 			s.obs.noteUpload("instant", "success")
 			c.Header("X-XDrive-Instant-Upload", "1")
@@ -302,6 +350,8 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		ParentID:         req.ParentID,
 		NodeID:           req.NodeID,
 		Name:             req.Name,
+		RequestedName:    req.RequestedName,
+		ConflictPolicy:   req.ConflictPolicy,
 		ExpectedRevision: req.ExpectedRevision,
 		TotalSize:        req.Size,
 		ChunkSize:        req.ChunkSize,
@@ -626,6 +676,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		result          meta.Node
 		currentRevision uint64
 		retainedKey     string
+		skippedFinalize bool
 	)
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		var currentSession meta.UploadSession
@@ -633,11 +684,57 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			Where("id = ? AND owner_id = ?", session.ID, session.OwnerID).First(&currentSession).Error; err != nil {
 			return err
 		}
-		if currentSession.Status == meta.UploadStatusFinalized {
+		if currentSession.Status == meta.UploadStatusFinalized ||
+			currentSession.Status == meta.UploadStatusSkipped {
 			return errUploadFinalized
 		}
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
+		}
+		now := time.Now()
+		skipped := false
+		if currentSession.NodeID == nil {
+			conflict, exists, err := uploadNameConflictNode(
+				tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name,
+			)
+			if err != nil {
+				return err
+			}
+			if exists {
+				policy, _ := meta.NormalizeUploadConflictPolicy(currentSession.ConflictPolicy)
+				switch policy {
+				case meta.UploadConflictPolicySkip:
+					resultID := conflict.ID
+					if err := tx.Model(&meta.UploadSession{}).
+						Where("id = ? AND owner_id = ?", currentSession.ID, currentSession.OwnerID).
+						Updates(map[string]any{
+							"status": meta.UploadStatusSkipped, "result_node_id": resultID,
+							"reserved_bytes": 0, "quota_reserved_bytes": 0, "updated_at": now,
+						}).Error; err != nil {
+						return err
+					}
+					skipped = true
+					skippedFinalize = true
+				case meta.UploadConflictPolicyKeepBoth:
+					requested := currentSession.RequestedName
+					if requested == "" {
+						requested = currentSession.Name
+					}
+					resolved, err := copyDestinationNameTx(
+						tx, currentSession.OwnerID, *currentSession.ParentID,
+						requested, meta.NodeTypeFile, nil,
+					)
+					if err != nil {
+						return errUploadNameTaken
+					}
+					currentSession.Name = resolved
+				default:
+					return errUploadNameTaken
+				}
+			}
+		}
+		if skipped {
+			return tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error
 		}
 		if _, err := s.ensureQuotaForStorageKeyExcludingSession(
 			tx, currentSession.OwnerID, currentSession.TotalSize, casKey, currentSession.ID, true,
@@ -652,11 +749,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			return retainErr
 		}
 
-		now := time.Now()
 		if currentSession.NodeID == nil {
-			if s.nameExistsTx(tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name, 0) {
-				return errUploadNameTaken
-			}
 			result = meta.Node{
 				ParentID: currentSession.ParentID, Name: currentSession.Name,
 				Type: meta.NodeTypeFile, OwnerID: currentSession.OwnerID, Revision: 1,
@@ -714,7 +807,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		resultID := result.ID
 		if err := tx.Model(&meta.UploadSession{}).Where("id = ?", currentSession.ID).Updates(map[string]any{
 			"status": meta.UploadStatusFinalized, "result_node_id": resultID,
-			"sha256": actualHash, "reserved_bytes": 0, "quota_reserved_bytes": 0, "updated_at": now,
+			"name": currentSession.Name, "sha256": actualHash,
+			"reserved_bytes": 0, "quota_reserved_bytes": 0, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
@@ -746,6 +840,9 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 	_ = s.Store.Delete(c.Request.Context(), newKey)
+	if skippedFinalize {
+		s.cleanupUncommittedContentBlob(c.Request.Context(), actualHash, casKey)
+	}
 	for _, part := range parts {
 		if !part.Reused {
 			_ = s.Store.Delete(c.Request.Context(), part.StorageKey)
@@ -765,8 +862,8 @@ func (s *Server) abortUploadSession(c *gin.Context) {
 		fail(c, http.StatusNotFound, "upload session not found")
 		return
 	}
-	if session.Status == meta.UploadStatusFinalized {
-		fail(c, http.StatusConflict, "finalized upload cannot be aborted")
+	if session.Status == meta.UploadStatusFinalized || session.Status == meta.UploadStatusSkipped {
+		fail(c, http.StatusConflict, "terminal upload cannot be aborted")
 		return
 	}
 	if err := s.abortUploadSessionData(c.Request.Context(), session); err != nil {
@@ -781,6 +878,7 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 	_ = s.DB.Where("session_id = ?", session.ID).Order("part_index ASC").Find(&parts).Error
 	out := uploadSessionDTO{
 		ID: session.ID, ParentID: session.ParentID, NodeID: session.NodeID, Name: session.Name,
+		RequestedName: session.RequestedName, ConflictPolicy: session.ConflictPolicy,
 		Size: session.TotalSize, ChunkSize: session.ChunkSize, ChunkCount: session.ChunkCount,
 		SHA256: session.SHA256, MD5: session.ExpectedMD5,
 		ResumeKey: session.ResumeKey, ExpectedRevision: session.ExpectedRevision,
@@ -800,6 +898,57 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 		}
 	}
 	c.JSON(status, out)
+}
+
+func uploadNameConflictNode(
+	db *gorm.DB,
+	uid, parentID uint64,
+	name string,
+) (meta.Node, bool, error) {
+	var node meta.Node
+	err := db.Where(
+		"owner_id = ? AND parent_id = ? AND deleted_at IS NULL AND lower(name) = lower(?)",
+		uid, parentID, name,
+	).First(&node).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return meta.Node{}, false, nil
+	}
+	if err != nil {
+		return meta.Node{}, false, err
+	}
+	return node, true, nil
+}
+
+func (s *Server) createSkippedUploadSession(
+	c *gin.Context,
+	uid uint64,
+	req uploadInitRequest,
+	chunkCount int,
+	conflict meta.Node,
+) {
+	resultID := conflict.ID
+	session := meta.UploadSession{
+		ID:             uuid.NewString(),
+		OwnerID:        uid,
+		ParentID:       req.ParentID,
+		Name:           req.Name,
+		RequestedName:  req.RequestedName,
+		ConflictPolicy: req.ConflictPolicy,
+		TotalSize:      req.Size,
+		ChunkSize:      req.ChunkSize,
+		ChunkCount:     chunkCount,
+		SHA256:         req.SHA256,
+		ExpectedMD5:    req.MD5,
+		ResumeKey:      req.ResumeKey,
+		Status:         meta.UploadStatusSkipped,
+		ResultNodeID:   &resultID,
+		ExpiresAt:      time.Now().Add(uploadSessionTTL),
+	}
+	if err := s.DB.Create(&session).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "record skipped upload failed")
+		return
+	}
+	s.writeUploadSession(c, session, http.StatusOK)
 }
 
 func (s *Server) ownedUploadSession(uid uint64, id string) (meta.UploadSession, error) {
@@ -953,7 +1102,11 @@ func (s *Server) cleanupExpiredUploads(ctx context.Context, uid uint64) error {
 		}
 		var sessions []meta.UploadSession
 		q := s.DB.WithContext(ctx).
-			Where("status IN ? AND expires_at < ?", []string{meta.UploadStatusActive, meta.UploadStatusFinalized}, time.Now()).
+			Where(
+				"status IN ? AND expires_at < ?",
+				[]string{meta.UploadStatusActive, meta.UploadStatusFinalized, meta.UploadStatusSkipped},
+				time.Now(),
+			).
 			Order("expires_at ASC, id ASC")
 		if uid != 0 {
 			q = q.Where("owner_id = ?", uid)

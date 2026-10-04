@@ -24,19 +24,29 @@ type UploadResult struct {
 	Node             Node
 	SHA256           string
 	TransferredBytes int64
+	Skipped          bool
 }
 
+type UploadConflictPolicy string
+
+const (
+	UploadConflictPolicyFail     UploadConflictPolicy = "fail"
+	UploadConflictPolicySkip     UploadConflictPolicy = "skip"
+	UploadConflictPolicyKeepBoth UploadConflictPolicy = "keep_both"
+)
+
 type UploadInit struct {
-	ParentID         *uint64  `json:"parent_id,omitempty"`
-	NodeID           *uint64  `json:"node_id,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	Size             int64    `json:"size"`
-	ChunkSize        int64    `json:"chunk_size,omitempty"`
-	SHA256           string   `json:"sha256,omitempty"`
-	MD5              string   `json:"md5,omitempty"`
-	ChunkSHA256      []string `json:"chunk_sha256,omitempty"`
-	ResumeKey        string   `json:"resume_key,omitempty"`
-	ExpectedRevision uint64   `json:"expected_revision,omitempty"`
+	ParentID         *uint64              `json:"parent_id,omitempty"`
+	NodeID           *uint64              `json:"node_id,omitempty"`
+	Name             string               `json:"name,omitempty"`
+	ConflictPolicy   UploadConflictPolicy `json:"conflict_policy,omitempty"`
+	Size             int64                `json:"size"`
+	ChunkSize        int64                `json:"chunk_size,omitempty"`
+	SHA256           string               `json:"sha256,omitempty"`
+	MD5              string               `json:"md5,omitempty"`
+	ChunkSHA256      []string             `json:"chunk_sha256,omitempty"`
+	ResumeKey        string               `json:"resume_key,omitempty"`
+	ExpectedRevision uint64               `json:"expected_revision,omitempty"`
 }
 
 type UploadPart struct {
@@ -47,21 +57,23 @@ type UploadPart struct {
 }
 
 type UploadSession struct {
-	ID               string       `json:"id"`
-	ParentID         *uint64      `json:"parent_id,omitempty"`
-	NodeID           *uint64      `json:"node_id,omitempty"`
-	Name             string       `json:"name,omitempty"`
-	Size             int64        `json:"size"`
-	ChunkSize        int64        `json:"chunk_size"`
-	ChunkCount       int          `json:"chunk_count"`
-	SHA256           string       `json:"sha256,omitempty"`
-	MD5              string       `json:"md5,omitempty"`
-	ResumeKey        string       `json:"resume_key,omitempty"`
-	ExpectedRevision uint64       `json:"expected_revision,omitempty"`
-	Status           string       `json:"status"`
-	ExpiresAt        time.Time    `json:"expires_at"`
-	Received         []UploadPart `json:"received_chunks"`
-	Result           *Node        `json:"result,omitempty"`
+	ID               string               `json:"id"`
+	ParentID         *uint64              `json:"parent_id,omitempty"`
+	NodeID           *uint64              `json:"node_id,omitempty"`
+	Name             string               `json:"name,omitempty"`
+	RequestedName    string               `json:"requested_name,omitempty"`
+	ConflictPolicy   UploadConflictPolicy `json:"conflict_policy,omitempty"`
+	Size             int64                `json:"size"`
+	ChunkSize        int64                `json:"chunk_size"`
+	ChunkCount       int                  `json:"chunk_count"`
+	SHA256           string               `json:"sha256,omitempty"`
+	MD5              string               `json:"md5,omitempty"`
+	ResumeKey        string               `json:"resume_key,omitempty"`
+	ExpectedRevision uint64               `json:"expected_revision,omitempty"`
+	Status           string               `json:"status"`
+	ExpiresAt        time.Time            `json:"expires_at"`
+	Received         []UploadPart         `json:"received_chunks"`
+	Result           *Node                `json:"result,omitempty"`
 }
 
 func (c *Client) StartUpload(ctx context.Context, init UploadInit) (UploadSession, error) {
@@ -124,6 +136,26 @@ func (c *Client) UploadFileResumableResult(ctx context.Context, parentID uint64,
 		ParentID:  &parentID,
 		Name:      name,
 		ChunkSize: DefaultUploadChunkSize,
+	}, progress)
+}
+
+func (c *Client) UploadFileResumableWithConflictPolicyResult(
+	ctx context.Context,
+	parentID uint64,
+	path, name string,
+	policy UploadConflictPolicy,
+	progress UploadProgress,
+) (UploadResult, error) {
+	switch policy {
+	case UploadConflictPolicyFail, UploadConflictPolicySkip, UploadConflictPolicyKeepBoth:
+	default:
+		return UploadResult{}, fmt.Errorf("invalid upload conflict policy %q", policy)
+	}
+	return c.uploadPathResult(ctx, path, UploadInit{
+		ParentID:       &parentID,
+		Name:           name,
+		ChunkSize:      DefaultUploadChunkSize,
+		ConflictPolicy: policy,
 	}, progress)
 }
 
@@ -351,7 +383,13 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 	}
 	init.SHA256 = fullHash
 	init.ChunkSHA256 = chunkHashes
-	init.ResumeKey = init.SHA256
+	if init.ConflictPolicy != "" && init.ParentID != nil {
+		init.ResumeKey = uploadConflictResumeKey(
+			fullHash, *init.ParentID, init.Name, init.ConflictPolicy,
+		)
+	} else {
+		init.ResumeKey = init.SHA256
+	}
 	result := UploadResult{SHA256: fullHash}
 	defer f.Close()
 
@@ -364,6 +402,11 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 			progress(init.Size, init.Size)
 		}
 		result.Node = *session.Result
+		return result, nil
+	}
+	if session.Status == "skipped" && session.Result != nil {
+		result.Node = *session.Result
+		result.Skipped = true
 		return result, nil
 	}
 
@@ -431,6 +474,22 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 	result.Node = *final.Result
 	result.TransferredBytes = transferredBytes
 	return result, nil
+}
+
+func uploadConflictResumeKey(
+	contentHash string,
+	parentID uint64,
+	name string,
+	policy UploadConflictPolicy,
+) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf(
+		"%s\n%d\n%s\n%s",
+		contentHash,
+		parentID,
+		name,
+		policy,
+	)))
+	return hex.EncodeToString(sum[:])
 }
 
 func hashUploadFile(f *os.File, size, chunkSize int64) (string, []string, error) {
