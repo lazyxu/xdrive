@@ -36,10 +36,45 @@ test('shared FileExplorer provides command bar, details/grid views, and status b
   }
   assert.ok(explorer.includes("viewMode === 'details'"), 'details view is missing')
   assert.ok(explorer.includes('role="list"'), 'grid/icon view is missing')
-  assert.ok(explorer.includes('repeat(auto-fill, minmax(112px, 1fr))'), 'grid view should adapt to available width')
+  assert.ok(explorer.includes('repeat(auto-fill, minmax(${gridMetrics.minWidth}px, 1fr))'), 'grid view should adapt to available width and selected icon size')
   assert.ok(explorer.includes('{items.length} 个项目'), 'Explorer status bar needs item count')
   assert.ok(explorer.includes("if (!renaming) onOpenItem?.(item)"), 'items need Explorer-style double-click opening outside inline rename')
   assert.ok(explorer.includes("event.key === 'Enter'"), 'items need keyboard open support')
+})
+
+test('shared FileExplorer supports persisted small, medium and large grid icon sizes', () => {
+  for (const token of [
+    "export type XDriveFileExplorerGridSize = 'small' | 'medium' | 'large'",
+    "XDRIVE_FILE_EXPLORER_GRID_SIZE_KEY = 'xdrive.files.grid_size'",
+    "fileExplorerGridSizeOrder: XDriveFileExplorerGridSize[] = ['small', 'medium', 'large']",
+    "label: '小图标'",
+    "label: '中等图标'",
+    "label: '大图标'",
+    'window.localStorage.setItem(XDRIVE_FILE_EXPLORER_GRID_SIZE_KEY, gridSize)',
+    'gridMetrics.minWidth',
+    'gridMetrics.tileMinHeight',
+    'gridMetrics.previewWidth',
+    'gridMetrics.previewHeight',
+    'gridMetrics.iconSize',
+    'gridMetrics.rowHeight',
+    '图标大小',
+  ]) {
+    assert.ok(explorer.includes(token), `missing grid-size feature: ${token}`)
+  }
+})
+
+test('shared FileExplorer changes grid size with Ctrl/Cmd+wheel without stealing normal scrolling', () => {
+  for (const token of [
+    'const handleGridWheel = (event: ReactWheelEvent<HTMLDivElement>) =>',
+    "viewMode !== 'grid'",
+    '!(event.ctrlKey || event.metaKey)',
+    'event.deltaY === 0',
+    'event.preventDefault()',
+    'stepGridSize(event.deltaY < 0 ? 1 : -1)',
+    'onWheel={handleGridWheel}',
+  ]) {
+    assert.ok(explorer.includes(token), `missing Ctrl/Cmd+wheel grid sizing: ${token}`)
+  }
 })
 
 test('shared FileExplorer uses compact system-style density without breaking virtualization math', () => {

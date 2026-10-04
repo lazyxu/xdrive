@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { DragEvent as ReactDragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
+import type { DragEvent as ReactDragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent, WheelEvent as ReactWheelEvent } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
@@ -61,6 +61,7 @@ import type { XDriveFileExplorerExternalDropPayload } from './FileExplorerExtern
 
 export type XDriveFileExplorerID = string | number
 export type XDriveFileExplorerViewMode = 'details' | 'grid'
+export type XDriveFileExplorerGridSize = 'small' | 'medium' | 'large'
 export type XDriveFileExplorerPresentation = 'card' | 'workspace'
 export type XDriveFileExplorerSortKey = 'name' | 'updated' | 'type' | 'size'
 export type XDriveFileExplorerSortDirection = 'asc' | 'desc'
@@ -69,6 +70,66 @@ export type XDriveFileExplorerDetailsColumnKey = XDriveFileExplorerSortKey
 export type XDriveFileExplorerDetailsLayout = {
   visible: XDriveFileExplorerDetailsColumnKey[]
   widths: Record<XDriveFileExplorerDetailsColumnKey, number>
+}
+
+export const XDRIVE_FILE_EXPLORER_GRID_SIZE_KEY = 'xdrive.files.grid_size'
+
+const fileExplorerGridSizeOrder: XDriveFileExplorerGridSize[] = ['small', 'medium', 'large']
+const fileExplorerGridSizeMeta: Record<XDriveFileExplorerGridSize, {
+  label: string
+  minWidth: number
+  tileMinHeight: number
+  tileMaxWidth: number
+  previewWidth: number
+  previewHeight: number
+  iconSize: number
+  rowHeight: number
+}> = {
+  small: {
+    label: '小图标',
+    minWidth: 88,
+    tileMinHeight: 98,
+    tileMaxWidth: 144,
+    previewWidth: 52,
+    previewHeight: 48,
+    iconSize: 36,
+    rowHeight: 108,
+  },
+  medium: {
+    label: '中等图标',
+    minWidth: 112,
+    tileMinHeight: 116,
+    tileMaxWidth: 180,
+    previewWidth: 72,
+    previewHeight: 64,
+    iconSize: 48,
+    rowHeight: 128,
+  },
+  large: {
+    label: '大图标',
+    minWidth: 152,
+    tileMinHeight: 152,
+    tileMaxWidth: 236,
+    previewWidth: 104,
+    previewHeight: 96,
+    iconSize: 72,
+    rowHeight: 164,
+  },
+}
+
+export function xDriveNormalizeFileExplorerGridSize(value: unknown): XDriveFileExplorerGridSize {
+  return value === 'small' || value === 'large' ? value : 'medium'
+}
+
+function loadFileExplorerGridSize() {
+  if (typeof window === 'undefined') return 'medium' as XDriveFileExplorerGridSize
+  try {
+    return xDriveNormalizeFileExplorerGridSize(
+      window.localStorage.getItem(XDRIVE_FILE_EXPLORER_GRID_SIZE_KEY),
+    )
+  } catch {
+    return 'medium'
+  }
 }
 
 const detailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = ['name', 'updated', 'type', 'size']
@@ -505,6 +566,8 @@ export function XDriveFileExplorer({
   const [activeItemID, setActiveItemID] = useState<XDriveFileExplorerID | null>(null)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [detailsColumnsAnchor, setDetailsColumnsAnchor] = useState<HTMLElement | null>(null)
+  const [gridSizeAnchor, setGridSizeAnchor] = useState<HTMLElement | null>(null)
+  const [gridSize, setGridSizeState] = useState<XDriveFileExplorerGridSize>(loadFileExplorerGridSize)
   const [detailsLayout, setDetailsLayout] = useState<XDriveFileExplorerDetailsLayout>(() => loadFileExplorerDetailsLayout(detailsPreferencesKey))
   const detailsResizeRef = useRef<{ key: XDriveFileExplorerDetailsColumnKey; startX: number; startWidth: number } | null>(null)
   const [contextMenu, setContextMenu] = useState<{
@@ -537,6 +600,7 @@ export function XDriveFileExplorer({
 
   const viewMode = controlledViewMode ?? internalViewMode
   const sort = controlledSort ?? internalSort
+  const gridMetrics = fileExplorerGridSizeMeta[gridSize]
   const visibleDetailsColumns = useMemo(
     () => detailsColumnKeys.filter((key) => detailsLayout.visible.includes(key)),
     [detailsLayout.visible],
@@ -567,6 +631,11 @@ export function XDriveFileExplorer({
     if (!detailsPreferencesKey || typeof window === 'undefined') return
     window.localStorage.setItem(detailsPreferencesKey, JSON.stringify(detailsLayout))
   }, [detailsLayout, detailsPreferencesKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(XDRIVE_FILE_EXPLORER_GRID_SIZE_KEY, gridSize)
+  }, [gridSize])
 
   useEffect(() => {
     const host = scrollHostRef.current
@@ -1252,6 +1321,24 @@ export function XDriveFileExplorer({
     onViewModeChange?.(mode)
   }
 
+  const setGridSize = (size: XDriveFileExplorerGridSize) => {
+    setGridSizeState(xDriveNormalizeFileExplorerGridSize(size))
+    setGridSizeAnchor(null)
+  }
+
+  const stepGridSize = (direction: -1 | 1) => {
+    const index = fileExplorerGridSizeOrder.indexOf(gridSize)
+    const next = Math.max(0, Math.min(fileExplorerGridSizeOrder.length - 1, index + direction))
+    if (next !== index) setGridSizeState(fileExplorerGridSizeOrder[next])
+  }
+
+  const handleGridWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (viewMode !== 'grid' || !(event.ctrlKey || event.metaKey) || event.deltaY === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    stepGridSize(event.deltaY < 0 ? 1 : -1)
+  }
+
   const setSort = (next: XDriveFileExplorerSort) => {
     if (controlledSort === undefined) setInternalSort(next)
     onSortChange?.(next)
@@ -1315,11 +1402,15 @@ export function XDriveFileExplorer({
     item.typeLabel || xDriveFileTypeLabel(item.name, item.kind)
   )
 
-  const defaultItemIcon = (item: XDriveFileExplorerItem, large = false) => {
+  const defaultItemIcon = (
+    item: XDriveFileExplorerItem,
+    large = false,
+    largeSize = 48,
+  ) => {
     if (item.icon) return item.icon
-    const fontSize = large ? 48 : 21
+    const fontSize = large ? largeSize : 21
     const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
-    if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: large ? 52 : 22, color: xDriveWindowsFolderYellow }} />
+    if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: large ? Math.round(largeSize * 1.08) : 22, color: xDriveWindowsFolderYellow }} />
     if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
     if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
     if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
@@ -1331,15 +1422,15 @@ export function XDriveFileExplorer({
     return <InsertDriveFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
   }
 
-  const thumbnailForItem = (item: XDriveFileExplorerItem) => {
+  const thumbnailForItem = (item: XDriveFileExplorerItem, iconSize = 48) => {
     if (item.thumbnail) return item.thumbnail
     const eligible = item.thumbnailEligible ?? xDriveFileSupportsThumbnail(item.name, item.kind)
-    if (!eligible || !loadThumbnail) return defaultItemIcon(item, true)
+    if (!eligible || !loadThumbnail) return defaultItemIcon(item, true, iconSize)
     return (
       <XDriveLazyFileThumbnail
         item={item}
         loadThumbnail={loadThumbnail}
-        fallback={defaultItemIcon(item, true)}
+        fallback={defaultItemIcon(item, true, iconSize)}
       />
     )
   }
@@ -1366,7 +1457,8 @@ export function XDriveFileExplorer({
     const currentIndex = visibleItems.findIndex((candidate) => explorerIDKey(candidate.id) === explorerIDKey(item.id))
     if (currentIndex < 0) return false
     const columns = gridColumnCount()
-    const visibleRows = Math.max(1, Math.floor(Math.max(viewportHeight, 128) / (viewMode === 'details' ? detailsRowHeight : 128)))
+    const rowHeight = viewMode === 'details' ? detailsRowHeight : gridMetrics.rowHeight
+    const visibleRows = Math.max(1, Math.floor(Math.max(viewportHeight, rowHeight) / rowHeight))
     const pageSize = viewMode === 'details' ? visibleRows : visibleRows * columns
     const targetIndex = xDriveFileExplorerKeyboardTargetIndex({
       key: event.key as XDriveFileExplorerKeyboardNavigationKey,
@@ -1975,6 +2067,34 @@ export function XDriveFileExplorer({
           ))}
         </Menu>
 
+        {viewMode === 'grid' ? (
+          <>
+            <XDriveFileExplorerCommandButton
+              startIcon={<GridViewRoundedIcon />}
+              onClick={(event) => setGridSizeAnchor(event.currentTarget)}
+              aria-haspopup="menu"
+              aria-expanded={Boolean(gridSizeAnchor)}
+            >
+              图标大小
+            </XDriveFileExplorerCommandButton>
+            <Menu
+              anchorEl={gridSizeAnchor}
+              open={Boolean(gridSizeAnchor)}
+              onClose={() => setGridSizeAnchor(null)}
+            >
+              {fileExplorerGridSizeOrder.map((size) => (
+                <MenuItem
+                  key={size}
+                  selected={gridSize === size}
+                  onClick={() => setGridSize(size)}
+                >
+                  {fileExplorerGridSizeMeta[size].label}
+                </MenuItem>
+              ))}
+            </Menu>
+          </>
+        ) : null}
+
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -2008,6 +2128,7 @@ export function XDriveFileExplorer({
         }}
         tabIndex={visibleItems.length === 0 ? 0 : -1}
         onScroll={handleScroll}
+        onWheel={handleGridWheel}
         onPointerDown={startMarqueeSelection}
         onPointerMove={updateMarqueeSelection}
         onPointerUp={(event) => finishMarqueeSelection(event)}
@@ -2213,7 +2334,7 @@ export function XDriveFileExplorer({
             aria-label="文件图标"
             sx={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))',
+              gridTemplateColumns: `repeat(auto-fill, minmax(${gridMetrics.minWidth}px, 1fr))`,
               gap: 1,
               p: 1.25,
               alignContent: 'start',
@@ -2253,8 +2374,8 @@ export function XDriveFileExplorer({
                 onKeyDown={(event) => itemKeyDown(event, item)}
                 sx={{
                   minWidth: 0,
-                  minHeight: 116,
-                  maxWidth: 180,
+                  minHeight: gridMetrics.tileMinHeight,
+                  maxWidth: gridMetrics.tileMaxWidth,
                   borderRadius: 1,
                   p: 1,
                   display: 'flex',
@@ -2269,7 +2390,7 @@ export function XDriveFileExplorer({
                   outlineColor: 'primary.main',
                   outlineOffset: -2,
                   contentVisibility: 'auto',
-                  containIntrinsicSize: '132px 128px',
+                  containIntrinsicSize: `${gridMetrics.tileMaxWidth}px ${gridMetrics.rowHeight}px`,
                   '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
                   '&:focus-visible': {
                     outline: '2px solid',
@@ -2280,8 +2401,8 @@ export function XDriveFileExplorer({
               >
                 <Box
                   sx={{
-                    width: 72,
-                    height: 64,
+                    width: gridMetrics.previewWidth,
+                    height: gridMetrics.previewHeight,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -2289,7 +2410,7 @@ export function XDriveFileExplorer({
                     borderRadius: 1,
                   }}
                 >
-                  {thumbnailForItem(item)}
+                  {thumbnailForItem(item, gridMetrics.iconSize)}
                 </Box>
                 {renderItemName(item, true)}
               </ButtonBase>
