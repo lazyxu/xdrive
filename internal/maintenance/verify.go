@@ -206,6 +206,15 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 			report.IgnoredTemps++
 			return nil
 		}
+		if filepath.Clean(filepath.Dir(path)) == filepath.Clean(root) &&
+			strings.HasPrefix(entry.Name(), ".xdrive-ready-") {
+			// Local storage readiness probes are created directly under the
+			// storage root and normally removed immediately. A hard process or
+			// container stop can leave the zero-byte probe behind; it is
+			// internal liveness state, not user content or an orphan blob.
+			report.IgnoredTemps++
+			return nil
+		}
 		info, err := entry.Info()
 		if err != nil {
 			return err

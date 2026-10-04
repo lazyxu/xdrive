@@ -104,6 +104,9 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".xdrive-upload-temp"), []byte("temp"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".xdrive-ready-crash-leftover"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	uploadTemp := filepath.Join(root, ".xdrive-uploads", "session", "000000")
 	if err := os.MkdirAll(filepath.Dir(uploadTemp), 0o750); err != nil {
 		t.Fatal(err)
@@ -120,7 +123,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 1 || report.IgnoredDerived != 1 {
+		report.IgnoredTemps != 2 || report.IgnoredDerived != 1 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
