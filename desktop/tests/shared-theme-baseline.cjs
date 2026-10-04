@@ -42,7 +42,18 @@ test('Web keeps only platform and feature CSS outside the shared baseline', () =
   assert.equal(/^:root\[data-xdrive-theme='dark'\]\s*\{/m.test(webStyles), false, 'Web must not keep a local dark root palette block')
   assert.equal(webStyles.includes('* { box-sizing: border-box; }'), false, 'Web box sizing must come from CssBaseline')
   assert.ok(webStyles.includes('body { min-width: 320px; min-height: 100vh; }'), 'Web responsive minimums remain platform-local')
-  assert.ok(webStyles.includes(":root[data-xdrive-theme='dark'] .external-source-subtitle"), 'feature-specific dark styling should remain local')
+  for (const selector of [
+    '.external-source-list',
+    '.external-source-card-header',
+    '.external-source-card-meta',
+    '.external-source-subtitle',
+    '.external-source-time',
+    '.external-source-stats',
+    '.external-source-empty',
+    '.external-source-actions',
+  ]) {
+    assert.equal(webStyles.includes(selector), false, `shared SourceManager styling must not remain Web-local: ${selector}`)
+  }
 })
 
 test('Desktop keeps window constraints local but consumes shared root tokens', () => {
