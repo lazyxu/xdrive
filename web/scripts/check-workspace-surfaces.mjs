@@ -18,7 +18,7 @@ const desktopStyles = readRepo('desktop/src/renderer/styles.css')
 const app = read('src/App.tsx')
 const webFileExplorer = read('src/WebFileExplorer.tsx')
 const styles = read('src/styles.css')
-const sources = read('src/ExternalSources.tsx') + readRepo('ui/shared/src/mui/SourceManager.tsx')
+const sources = readRepo('ui/shared/src/mui/SourceManager.tsx')
 const storage = read('src/StorageStatsPanel.tsx')
 const cloudStorage = readRepo('ui/shared/src/mui/CloudStoragePage.tsx')
 const adminUsers = read('src/AdminUsers.tsx')
@@ -167,6 +167,11 @@ if (/background\s*:\s*#fff\b/.test(workspaceContent)) {
 if (/\.cloud-explorer-panel > \[data-xdrive-file-explorer\]\s*\{[^}]*\b(border|border-radius)\s*:/.test(desktopStyles)) {
   throw new Error('Desktop must not override shared FileExplorer workspace chrome')
 }
+
+requireText(app, [
+  '<XDriveSourceManager',
+  'adapter={api}',
+], 'Web Source manager mount')
 
 requireText(sources, [
   'XDriveWorkspaceSurface',

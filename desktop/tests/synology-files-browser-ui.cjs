@@ -9,7 +9,7 @@ const shared = fs.readFileSync(
   'utf8',
 )
 const sourceManager = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
-const web = fs.readFileSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx'), 'utf8') + sourceManager
+const web = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8') + sourceManager
 const webApi = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
 const desktopAdapter = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
 const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceManager + desktopAdapter
