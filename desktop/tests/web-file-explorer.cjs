@@ -176,8 +176,10 @@ test('Web multi-select mutations use persistent operations while retaining legac
     assert.ok(api.includes(token), `legacy Web batch API contract was removed: ${token}`)
   }
   for (const token of [
-    'createFileOperation(type: XDriveFileOperationType, items: BatchNodeRef[], parentID?: number)',
+    'createFileOperation(',
+    "conflictPolicy?: XDriveFileOperation['conflict_policy']",
     "'/api/v1/file-operations'",
+    'resolveFileOperationConflict(id: string',
     'fileOperations(limit = 100)',
     'cancelFileOperation(id: string)',
     'retryFileOperation(id: string)',

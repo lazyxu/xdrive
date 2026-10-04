@@ -565,3 +565,144 @@ func TestRecursiveCopyOperationHooksProgressAndCancel(t *testing.T) {
 		t.Fatalf("cancelled recursive copy did not reset rolled-back progress: %+v", cancelled)
 	}
 }
+
+func TestFileOperationConflictPolicies(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(
+		&meta.FileOperation{}, &meta.Share{}, &meta.File{}, &meta.Node{}, &meta.User{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Share{}, &meta.FileOperation{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name ON xd_nodes(owner_id, parent_id, lower(name)) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	user := meta.User{Username: "file-operation-conflict-owner", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := meta.Node{ParentID: &root.ID, Name: "source", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	target := meta.Node{ParentID: &root.ID, Name: "target", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	createFile := func(parentID uint64, name string, size int64) meta.Node {
+		node := meta.Node{ParentID: &parentID, Name: name, Type: meta.NodeTypeFile, OwnerID: user.ID, Revision: 1}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.File{NodeID: node.ID, Size: size, StorageKey: fmt.Sprintf("legacy/%d/%s", parentID, name)}).Error; err != nil {
+			t.Fatal(err)
+		}
+		return node
+	}
+
+	existing := createFile(target.ID, "same.txt", 2)
+	_ = existing
+	moveSource := createFile(source.ID, "same.txt", 3)
+	srv := &Server{DB: db}
+
+	failed, err := srv.enqueueFileOperation(context.Background(), user.ID, meta.FileOperationTypeMove, []batchNodeRef{
+		{ID: moveSource.ID, Revision: moveSource.Revision},
+	}, target.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.ConflictPolicy != meta.FileOperationConflictPolicyFail {
+		t.Fatalf("default move conflict policy=%q", failed.ConflictPolicy)
+	}
+	if processed, err := srv.processNextFileOperation(context.Background()); err != nil || !processed {
+		t.Fatalf("process conflicting move: processed=%v err=%v", processed, err)
+	}
+	failed, err = srv.loadOwnedFileOperation(context.Background(), user.ID, failed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.Status != meta.FileOperationStatusFailed || failed.FailureCode != "name_conflict" {
+		t.Fatalf("expected name conflict failure: %+v", failed)
+	}
+
+	retryOf := failed.ID
+	keepBoth, err := srv.enqueueFileOperationWithConflictPolicy(
+		context.Background(), user.ID, meta.FileOperationTypeMove,
+		[]batchNodeRef{{ID: moveSource.ID, Revision: moveSource.Revision}},
+		target.ID, &retryOf, meta.FileOperationConflictPolicyKeepBoth,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keepBoth.ConflictPolicy != meta.FileOperationConflictPolicyKeepBoth || keepBoth.RetryOfID == nil || *keepBoth.RetryOfID != failed.ID {
+		t.Fatalf("unexpected keep-both retry: %+v", keepBoth)
+	}
+	if processed, err := srv.processNextFileOperation(context.Background()); err != nil || !processed {
+		t.Fatalf("process keep-both move: processed=%v err=%v", processed, err)
+	}
+	var moved meta.Node
+	if err := db.Where("id = ?", moveSource.ID).First(&moved).Error; err != nil {
+		t.Fatal(err)
+	}
+	if moved.ParentID == nil || *moved.ParentID != target.ID || moved.Name != "same - 副本.txt" {
+		t.Fatalf("keep-both move result=%+v", moved)
+	}
+
+	skipExisting := createFile(target.ID, "skip.txt", 2)
+	_ = skipExisting
+	skipSource := createFile(source.ID, "skip.txt", 4)
+	skipOp, err := srv.enqueueFileOperationWithConflictPolicy(
+		context.Background(), user.ID, meta.FileOperationTypeMove,
+		[]batchNodeRef{{ID: skipSource.ID, Revision: skipSource.Revision}},
+		target.ID, nil, meta.FileOperationConflictPolicySkip,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := srv.processNextFileOperation(context.Background()); err != nil || !processed {
+		t.Fatalf("process skip move: processed=%v err=%v", processed, err)
+	}
+	skipOp, err = srv.loadOwnedFileOperation(context.Background(), user.ID, skipOp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skipOp.Status != meta.FileOperationStatusCompleted || skipOp.ProcessedItems != 1 || skipOp.ProcessedBytes != 4 {
+		t.Fatalf("unexpected skipped operation result: %+v", skipOp)
+	}
+	var skipped meta.Node
+	if err := db.Where("id = ?", skipSource.ID).First(&skipped).Error; err != nil {
+		t.Fatal(err)
+	}
+	if skipped.ParentID == nil || *skipped.ParentID != source.ID || skipped.Name != "skip.txt" {
+		t.Fatalf("skip policy must leave source untouched: %+v", skipped)
+	}
+
+	defaultCopy, err := srv.enqueueFileOperation(
+		context.Background(), user.ID, meta.FileOperationTypeCopy,
+		[]batchNodeRef{{ID: skipped.ID, Revision: skipped.Revision}},
+		target.ID, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultCopy.ConflictPolicy != meta.FileOperationConflictPolicyKeepBoth {
+		t.Fatalf("default copy conflict policy=%q", defaultCopy.ConflictPolicy)
+	}
+}

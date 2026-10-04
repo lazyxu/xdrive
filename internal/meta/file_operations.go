@@ -13,6 +13,10 @@ const (
 	FileOperationStatusCancelled       = "cancelled"
 	FileOperationStatusCompleted       = "completed"
 	FileOperationStatusFailed          = "failed"
+
+	FileOperationConflictPolicyFail     = "fail"
+	FileOperationConflictPolicySkip     = "skip"
+	FileOperationConflictPolicyKeepBoth = "keep_both"
 )
 
 type FileOperation struct {
@@ -22,6 +26,7 @@ type FileOperation struct {
 	Status            string     `gorm:"size:24;not null;default:queued;index"`
 	ParentID          *uint64    `gorm:"index"`
 	RetryOfID         *string    `gorm:"size:36;index"`
+	ConflictPolicy    string     `gorm:"size:16;not null;default:''"`
 	ItemsJSON         string     `gorm:"type:text;not null"`
 	TotalItems        int64      `gorm:"not null;default:0"`
 	ProcessedItems    int64      `gorm:"not null;default:0"`
@@ -58,4 +63,36 @@ func FileOperationTerminal(status string) bool {
 	default:
 		return false
 	}
+}
+
+func DefaultFileOperationConflictPolicy(operationType string) string {
+	if operationType == FileOperationTypeCopy {
+		return FileOperationConflictPolicyKeepBoth
+	}
+	return FileOperationConflictPolicyFail
+}
+
+func ValidFileOperationConflictPolicy(value string) bool {
+	switch value {
+	case FileOperationConflictPolicyFail, FileOperationConflictPolicySkip, FileOperationConflictPolicyKeepBoth:
+		return true
+	default:
+		return false
+	}
+}
+
+func NormalizeFileOperationConflictPolicy(operationType, value string) (string, bool) {
+	if !ValidFileOperationType(operationType) {
+		return "", false
+	}
+	if value == "" {
+		value = DefaultFileOperationConflictPolicy(operationType)
+	}
+	if !ValidFileOperationConflictPolicy(value) {
+		return "", false
+	}
+	if operationType == FileOperationTypeDelete && value != FileOperationConflictPolicyFail {
+		return "", false
+	}
+	return value, true
 }

@@ -5,6 +5,7 @@ export const XDRIVE_FILE_OPERATION_VISIBLE_IDLE_POLL_MS = 3_000
 export const XDRIVE_FILE_OPERATION_IDLE_POLL_MS = 15_000
 
 export type XDriveFileOperationType = 'copy' | 'move' | 'delete'
+export type XDriveFileOperationConflictPolicy = 'fail' | 'skip' | 'keep_both'
 
 export type XDriveFileOperationStatus =
   | 'queued'
@@ -20,6 +21,7 @@ export type XDriveFileOperation = {
   status: XDriveFileOperationStatus
   parent_id?: number
   retry_of_id?: string
+  conflict_policy?: XDriveFileOperationConflictPolicy
   total_items: number
   processed_items: number
   total_bytes: number
@@ -209,4 +211,23 @@ export function xDriveFileOperationTransitionSnapshot(
   }
 
   return { statuses, hasTerminalTransition }
+}
+
+
+export function xDriveFileOperationCanResolveConflict(
+  operation: Pick<XDriveFileOperation, 'status' | 'failure_code' | 'type'>,
+) {
+  return operation.status === 'failed' &&
+    operation.failure_code === 'name_conflict' &&
+    (operation.type === 'copy' || operation.type === 'move')
+}
+
+export function xDriveFileOperationConflictPolicyLabel(
+  policy: XDriveFileOperationConflictPolicy,
+) {
+  switch (policy) {
+    case 'skip': return '跳过冲突'
+    case 'keep_both': return '保留两者'
+    default: return '遇到冲突时停止'
+  }
 }

@@ -73,6 +73,7 @@ type fileOperationDTO struct {
 	Status            string     `json:"status"`
 	ParentID          *uint64    `json:"parent_id,omitempty"`
 	RetryOfID         *string    `json:"retry_of_id,omitempty"`
+	ConflictPolicy    string     `json:"conflict_policy,omitempty"`
 	TotalItems        int64      `json:"total_items"`
 	ProcessedItems    int64      `json:"processed_items"`
 	TotalBytes        int64      `json:"total_bytes"`
@@ -91,9 +92,14 @@ type fileOperationDTO struct {
 }
 
 type createFileOperationRequest struct {
-	Type     string         `json:"type"`
-	Items    []batchNodeRef `json:"items"`
-	ParentID uint64         `json:"parent_id"`
+	Type           string         `json:"type"`
+	Items          []batchNodeRef `json:"items"`
+	ParentID       uint64         `json:"parent_id"`
+	ConflictPolicy string         `json:"conflict_policy,omitempty"`
+}
+
+type resolveFileOperationConflictRequest struct {
+	ConflictPolicy string `json:"conflict_policy"`
 }
 
 func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
@@ -118,6 +124,7 @@ func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
 		Status:            operation.Status,
 		ParentID:          operation.ParentID,
 		RetryOfID:         operation.RetryOfID,
+		ConflictPolicy:    operation.ConflictPolicy,
 		TotalItems:        operation.TotalItems,
 		ProcessedItems:    operation.ProcessedItems,
 		TotalBytes:        operation.TotalBytes,
@@ -185,7 +192,9 @@ func (s *Server) createFileOperation(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
-	operation, err := s.enqueueFileOperation(c.Request.Context(), userID(c), req.Type, req.Items, req.ParentID, nil)
+	operation, err := s.enqueueFileOperationWithConflictPolicy(
+		c.Request.Context(), userID(c), req.Type, req.Items, req.ParentID, nil, req.ConflictPolicy,
+	)
 	if err != nil {
 		writeFileOperationError(c, req.Type, err)
 		return
@@ -349,7 +358,55 @@ func (s *Server) retryFileOperation(c *gin.Context) {
 		parentID = *old.ParentID
 	}
 	retryOf := old.ID
-	operation, err := s.enqueueFileOperation(c.Request.Context(), userID(c), old.Type, refs, parentID, &retryOf)
+	operation, err := s.enqueueFileOperationWithConflictPolicy(
+		c.Request.Context(), userID(c), old.Type, refs, parentID, &retryOf, old.ConflictPolicy,
+	)
+	if err != nil {
+		writeFileOperationError(c, old.Type, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, toFileOperationDTO(operation))
+}
+
+func (s *Server) resolveFileOperationConflict(c *gin.Context) {
+	old, err := s.loadOwnedFileOperation(c.Request.Context(), userID(c), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "file operation not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "load file operation failed")
+		}
+		return
+	}
+	if old.Status != meta.FileOperationStatusFailed || old.FailureCode != "name_conflict" {
+		fail(c, http.StatusConflict, "file operation has no resolvable name conflict")
+		return
+	}
+
+	var req resolveFileOperationConflictRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	policy, ok := meta.NormalizeFileOperationConflictPolicy(old.Type, req.ConflictPolicy)
+	if !ok || policy == meta.FileOperationConflictPolicyFail {
+		fail(c, http.StatusBadRequest, "conflict_policy must be skip or keep_both")
+		return
+	}
+
+	refs, err := decodeFileOperationRefs(old.ItemsJSON)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "stored file operation is invalid")
+		return
+	}
+	parentID := uint64(0)
+	if old.ParentID != nil {
+		parentID = *old.ParentID
+	}
+	retryOf := old.ID
+	operation, err := s.enqueueFileOperationWithConflictPolicy(
+		c.Request.Context(), userID(c), old.Type, refs, parentID, &retryOf, policy,
+	)
 	if err != nil {
 		writeFileOperationError(c, old.Type, err)
 		return
@@ -367,7 +424,7 @@ func writeFileOperationError(c *gin.Context, operationType string, err error) {
 		fail(c, http.StatusConflict, err.Error())
 		return
 	}
-	if err != nil && err.Error() == "invalid file operation type" {
+	if err != nil && (err.Error() == "invalid file operation type" || err.Error() == "invalid file operation conflict policy") {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -393,8 +450,26 @@ func (s *Server) enqueueFileOperation(
 	parentID uint64,
 	retryOfID *string,
 ) (meta.FileOperation, error) {
+	return s.enqueueFileOperationWithConflictPolicy(
+		ctx, uid, operationType, requested, parentID, retryOfID, "",
+	)
+}
+
+func (s *Server) enqueueFileOperationWithConflictPolicy(
+	ctx context.Context,
+	uid uint64,
+	operationType string,
+	requested []batchNodeRef,
+	parentID uint64,
+	retryOfID *string,
+	conflictPolicy string,
+) (meta.FileOperation, error) {
 	if !meta.ValidFileOperationType(operationType) {
 		return meta.FileOperation{}, errors.New("invalid file operation type")
+	}
+	resolvedConflictPolicy, ok := meta.NormalizeFileOperationConflictPolicy(operationType, conflictPolicy)
+	if !ok {
+		return meta.FileOperation{}, errors.New("invalid file operation conflict policy")
 	}
 	if err := validateBatchNodeRefs(requested); err != nil {
 		return meta.FileOperation{}, err
@@ -448,14 +523,15 @@ func (s *Server) enqueueFileOperation(
 			return err
 		}
 		operation = meta.FileOperation{
-			ID:         uuid.NewString(),
-			OwnerID:    uid,
-			Type:       operationType,
-			Status:     meta.FileOperationStatusQueued,
-			RetryOfID:  retryOfID,
-			ItemsJSON:  string(rawRefs),
-			TotalItems: int64(len(refs)),
-			TotalBytes: totalBytes,
+			ID:             uuid.NewString(),
+			OwnerID:        uid,
+			Type:           operationType,
+			Status:         meta.FileOperationStatusQueued,
+			RetryOfID:      retryOfID,
+			ConflictPolicy: resolvedConflictPolicy,
+			ItemsJSON:      string(rawRefs),
+			TotalItems:     int64(len(refs)),
+			TotalBytes:     totalBytes,
 		}
 		if operationType == meta.FileOperationTypeCopy || operationType == meta.FileOperationTypeMove {
 			target := parentID
@@ -722,6 +798,10 @@ func (s *Server) recordFileOperationProgress(ctx context.Context, operationID st
 	return s.recordFileOperationProgressDelta(ctx, operationID, 1, bytes)
 }
 
+func (s *Server) recordSkippedFileOperationItem(ctx context.Context, operationID string, bytes int64) error {
+	return s.recordFileOperationProgress(ctx, operationID, bytes)
+}
+
 func (s *Server) fileOperationCopyHooks(ctx context.Context, operationID string) *copyNodeTxHooks {
 	return &copyNodeTxHooks{
 		BeforeNode: func(_ meta.Node, relativePath string) error {
@@ -802,9 +882,34 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot copy a directory into itself or its descendant"}
 				}
 			}
-			name, err := copyDestinationNameTx(tx, uid, parentID, source.Name, source.Type, nil)
+			policy := operation.ConflictPolicy
+			if policy == "" {
+				policy = meta.DefaultFileOperationConflictPolicy(operation.Type)
+			}
+			name := source.Name
+			exists, err := batchNameExistsTx(tx, uid, parentID, source.Name, 0)
 			if err != nil {
-				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "cannot allocate destination name"}
+				return err
+			}
+			if exists {
+				switch policy {
+				case meta.FileOperationConflictPolicySkip:
+					size, err := fileOperationNodeBytesTx(tx, uid, source)
+					if err != nil {
+						return err
+					}
+					if err := s.recordSkippedFileOperationItem(ctx, operation.ID, size); err != nil {
+						return err
+					}
+					continue
+				case meta.FileOperationConflictPolicyKeepBoth:
+					name, err = copyDestinationNameTx(tx, uid, parentID, source.Name, source.Type, nil)
+					if err != nil {
+						return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "cannot allocate destination name"}
+					}
+				default:
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "name already exists in target directory"}
+				}
 			}
 			if _, err := s.copyNodeTxWithHooks(tx, uid, source, parentID, name, source.Name, hooks); err != nil {
 				return err
@@ -862,17 +967,43 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Yike target path cannot be moved"}
 			}
 			if node.ParentID == nil || *node.ParentID != parentID {
+				policy := operation.ConflictPolicy
+				if policy == "" {
+					policy = meta.DefaultFileOperationConflictPolicy(operation.Type)
+				}
+				targetName := node.Name
 				exists, err := batchNameExistsTx(tx, uid, parentID, node.Name, node.ID)
 				if err != nil {
 					return err
 				}
 				if exists {
-					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "name already exists in target directory"}
+					switch policy {
+					case meta.FileOperationConflictPolicySkip:
+						size, err := fileOperationNodeBytesTx(tx, uid, node)
+						if err != nil {
+							return err
+						}
+						if err := s.recordSkippedFileOperationItem(ctx, operation.ID, size); err != nil {
+							return err
+						}
+						continue
+					case meta.FileOperationConflictPolicyKeepBoth:
+						targetName, err = copyDestinationNameTx(tx, uid, parentID, node.Name, node.Type, nil)
+						if err != nil {
+							return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "cannot allocate destination name"}
+						}
+					default:
+						return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "name already exists in target directory"}
+					}
 				}
 				now := time.Now()
+				updates := map[string]any{"parent_id": parentID, "revision": gorm.Expr("revision + 1"), "updated_at": now}
+				if targetName != node.Name {
+					updates["name"] = targetName
+				}
 				result := tx.Model(&meta.Node{}).
 					Where("id = ? AND owner_id = ? AND revision = ? AND deleted_at IS NULL", node.ID, uid, ref.Revision).
-					Updates(map[string]any{"parent_id": parentID, "revision": gorm.Expr("revision + 1"), "updated_at": now})
+					Updates(updates)
 				if result.Error != nil {
 					if isDuplicate(result.Error) {
 						return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "name already exists in target directory"}
