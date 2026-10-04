@@ -9,6 +9,7 @@ const explorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplo
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'), 'utf8')
+const operationController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts'), 'utf8')
 const api = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'api.ts'), 'utf8')
 const uploadConflicts = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'upload-conflicts.ts'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
@@ -83,18 +84,19 @@ test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pa
   assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web search must not truncate the UI to the first page')
 })
 
-test('Web FileExplorer queues copy/cut/paste as persistent file operations', () => {
+test('Web FileExplorer queues copy/cut/paste through the shared operation controller', () => {
   assert.ok(api.includes('copy(nodeID: number, parentID: number, name?: string)'), 'legacy Web copy API is missing')
   assert.ok(api.includes('move(nodeID: number, revision: number, parentID: number)'), 'legacy Web move API is missing')
   assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, SearchResult>'), 'Web must consume clipboard state through the shared workspace controller')
-  assert.ok(explorer.includes('const plan = planPaste(current.id)'), 'Web paste must use the shared clipboard plan')
-  assert.ok(explorer.includes('completePaste(plan)'), 'Web must clear completed cut state through the shared clipboard controller')
-  assert.ok(explorer.includes('canPaste={canPaste(clipboardBusy)}'), 'Web paste availability must use the shared clipboard controller')
-  assert.ok(explorer.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'copy/cut paste must execute the shared persistent-operation plan')
-  assert.ok(explorer.includes('onQueued: (queued) => onOperationQueued(queued)'), 'Web Explorer must surface the newly queued operation immediately through the shared queue controller')
+  assert.ok(explorer.includes('useXDriveFileExplorerOperationController<Node, XDriveFileOperation>'), 'Web must consume the shared queued-operation controller')
+  assert.ok(explorer.includes('submitOperation: (plan) => api.createFileOperation('), 'Web must keep persistent-operation transport local')
+  assert.ok(explorer.includes('onQueued: onOperationQueued'), 'Web must surface queued operations immediately')
+  assert.ok(explorer.includes('canPaste={fileOperationCanPaste}'), 'Web paste availability must come from shared operation state')
   assert.ok(explorer.includes('onCopyItems={copyItems}'), 'Web shared copy adapter is missing')
   assert.ok(explorer.includes('onCutItems={cutItems}'), 'Web shared cut adapter is missing')
   assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Web shared paste adapter is missing')
+  assert.ok(operationController.includes("await runPlan('paste', plan"), 'shared controller must execute Web paste plans')
+  assert.equal(explorer.includes('const plan = planPaste(current.id)'), false, 'Web must not execute paste planning locally')
 })
 
 test('Web FileExplorer supports file, folder, and mixed-selection download', () => {
@@ -129,9 +131,11 @@ test('Web single-item delete queues the same persistent delete operation as bulk
   assert.equal(body.includes('refreshQuota()'), false, 'Web single delete must rely on terminal operation quota refresh')
 })
 
-test('Web FileExplorer supports internal and external drag and drop', () => {
-  assert.ok(explorer.includes('const dropItemsToFolder = async ('), 'Web internal drag/drop helper is missing')
-  assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'internal drag should use the shared drop-item plan')
+test('Web FileExplorer uses shared internal drag operations and local external uploads', () => {
+  assert.ok(explorer.includes('useXDriveFileExplorerOperationController<Node, XDriveFileOperation>'), 'Web internal drag/drop must use the shared operation controller')
+  assert.ok(operationController.includes('xDriveFileExplorerDropItemsPlan('), 'shared operation controller must own Web folder-drop planning')
+  assert.ok(operationController.includes('xDriveFileExplorerDropItemsToParentPlan('), 'shared operation controller must own Web breadcrumb-drop planning')
+  assert.equal(explorer.includes('xDriveFileExplorerDropItemsPlan('), false, 'Web must not plan internal drag/drop locally')
   assert.equal(explorer.includes('const targetNode = nodeByID.get(Number(target.id))'), false, 'Web internal drag must not resolve drop targets locally')
   assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Web external drop should resolve the target through shared controller logic')
@@ -197,8 +201,9 @@ test('Web multi-select mutations use persistent operations while retaining legac
     assert.ok(api.includes(token), `missing Web persistent-operation contract: ${token}`)
   }
   assert.ok(app.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web bulk delete must queue one operation')
-  assert.ok(explorer.includes('const plan = planPaste(current.id)'), 'Web paste must use the shared clipboard controller')
-  assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Web drag/drop must use one shared drop-item plan')
+  assert.ok(explorer.includes('useXDriveFileExplorerOperationController<Node, XDriveFileOperation>'), 'Web paste/drop must use one shared queued-operation controller')
+  assert.ok(operationController.includes('planPaste(currentID)'), 'shared controller must own Web paste planning')
+  assert.ok(operationController.includes('xDriveFileExplorerDropItemsPlan('), 'shared controller must own Web internal-drop planning')
   assert.equal(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), false, 'Web bulk delete must not regress to N requests')
 })
 

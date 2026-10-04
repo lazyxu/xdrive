@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
@@ -6,6 +6,7 @@ import {
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
+  useXDriveFileExplorerOperationController,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
@@ -17,16 +18,12 @@ import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerWebDownloadPlan,
-  xDriveFileExplorerDropItemsPlan,
-  xDriveFileExplorerDropItemsToParentPlan,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
-  xDriveFileExplorerRunQueuedOperation,
   xDriveFileExplorerWebDownloadFeedback,
 } from '../../ui/shared/src'
 import type {
   Node,
-  XDriveFileExplorerQueuedOperationPlan,
   XDriveFileOperation,
 } from '../../ui/shared/src'
 import type { SearchResult, XDriveApi } from './api'
@@ -89,8 +86,6 @@ export default function WebFileExplorer({
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
-  const [clipboardBusy, setClipboardBusy] = useState(false)
-
   const {
     searchValue,
     searchLoading,
@@ -140,6 +135,29 @@ export default function WebFileExplorer({
     loadRoot: () => api.root(),
     listChildren: (parentID) => api.list(parentID),
     searchCrumbsForResult: (result) => result.breadcrumbs,
+    onError,
+  })
+
+  const {
+    busy: fileOperationBusy,
+    canPaste: fileOperationCanPaste,
+    pasteClipboard,
+    dropItemsToFolder,
+    dropItemsToCrumb,
+  } = useXDriveFileExplorerOperationController<Node, XDriveFileOperation>({
+    nodeByID,
+    currentID: current?.id,
+    planPaste,
+    completePaste,
+    canPaste,
+    clearSearch,
+    submitOperation: (plan) => api.createFileOperation(
+      plan.operation,
+      plan.items,
+      plan.parentID,
+    ),
+    onQueued: onOperationQueued,
+    onFeedback,
     onError,
   })
 
@@ -203,70 +221,6 @@ export default function WebFileExplorer({
     } catch (error) {
       onError(error)
       throw error
-    }
-  }
-
-  const runQueuedOperation = (
-    plan: XDriveFileExplorerQueuedOperationPlan,
-    onComplete: () => void,
-  ) => xDriveFileExplorerRunQueuedOperation({
-    plan,
-    submit: () => api.createFileOperation(plan.operation, plan.items, plan.parentID),
-    onQueued: (queued) => onOperationQueued(queued),
-    onFeedback,
-    onComplete,
-    onError,
-  })
-
-  const pasteClipboard = async () => {
-    if (!current || clipboardBusy) return
-    const plan = planPaste(current.id)
-    if (!plan) return
-    setClipboardBusy(true)
-    try {
-      await runQueuedOperation(plan, () => {
-        completePaste(plan)
-        clearSearch()
-      })
-    } finally {
-      setClipboardBusy(false)
-    }
-  }
-
-  const dropItemsToFolder = async (
-    selected: XDriveFileExplorerItem[],
-    target: XDriveFileExplorerItem,
-    operation: 'move' | 'copy',
-  ) => {
-    if (clipboardBusy) return
-    const plan = xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)
-    if (!plan) return
-    setClipboardBusy(true)
-    try {
-      await runQueuedOperation(plan, clearSearch)
-    } finally {
-      setClipboardBusy(false)
-    }
-  }
-
-  const dropItemsToCrumb = async (
-    selected: XDriveFileExplorerItem[],
-    crumb: XDriveFileExplorerCrumb,
-    operation: 'move' | 'copy',
-  ) => {
-    if (clipboardBusy) return
-    const plan = xDriveFileExplorerDropItemsToParentPlan(
-      operation,
-      selected,
-      Number(crumb.id),
-      nodeByID,
-    )
-    if (!plan) return
-    setClipboardBusy(true)
-    try {
-      await runQueuedOperation(plan, clearSearch)
-    } finally {
-      setClipboardBusy(false)
     }
   }
 
@@ -356,7 +310,7 @@ export default function WebFileExplorer({
         presentation="workspace"
         items={explorerItems}
         crumbs={explorerCrumbs}
-        loading={loading || searchLoading || clipboardBusy}
+        loading={loading || searchLoading || fileOperationBusy}
         loadThumbnail={loadThumbnail}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
@@ -388,7 +342,7 @@ export default function WebFileExplorer({
         onCopyItems={copyItems}
         onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}
-        canPaste={canPaste(clipboardBusy)}
+        canPaste={fileOperationCanPaste}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         folderDownloadSupported
         onDeleteItems={(selected) => {
@@ -396,7 +350,7 @@ export default function WebFileExplorer({
           if (nodes.length > 0) onRemoveMany(nodes)
         }}
         onRenameItem={renameItem}
-        renameDisabled={clipboardBusy}
+        renameDisabled={fileOperationBusy}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
         onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}

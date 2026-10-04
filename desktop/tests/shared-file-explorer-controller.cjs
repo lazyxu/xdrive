@@ -12,6 +12,7 @@ const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const searchController = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
 const workspaceController = read('ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts')
 const clipboardController = read('ui', 'shared', 'src', 'mui', 'FileExplorerClipboard.ts')
+const operationController = read('ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -161,37 +162,19 @@ test('Web and Desktop delegate typed-path submission while keeping transport ada
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildren(parentID)'), 'Desktop must keep Agent directory loading local')
 })
 
-test('shared FileExplorer controller owns copy/move operation planning', () => {
+test('shared FileExplorer controller owns copy/move planning and queued execution', () => {
   for (const token of [
     'xDriveFileExplorerNodesForItems',
     'XDriveFileExplorerClipboard',
     'xDriveFileExplorerClipboardFromItems',
-    'return nodes.length > 0 ? { mode, nodes } : null',
     'xDriveFileExplorerCanPaste',
-    'Boolean(clipboard?.nodes.length) && !busy',
     'xDriveFileExplorerClipboardOperationPlan',
     "mode === 'cut' ? 'move' : 'copy'",
-    'node.parent_id !== targetParentID',
-    "clearClipboard: mode === 'cut'",
     'xDriveFileExplorerDropOperationPlan',
-    'node.id !== targetParentID',
     'xDriveFileExplorerDropItemsPlan',
-    'const targetNode = xDriveFileExplorerNodeForItem(target, nodeByID)',
-    "targetNode.type !== 'dir'",
-    'const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)',
-    'return plan.count > 0 ? plan : null',
-    'id: node.id, revision: node.revision',
-    'xDriveFileExplorerOperationQueuedMessage',
-    'XDriveFileExplorerQueuedOperationPlan',
+    'xDriveFileExplorerDropItemsToParentPlan',
     'xDriveFileExplorerRunQueuedOperation',
-    'if (plan.count > 0)',
-    'const queued = await submit()',
-    'onQueued(queued)',
-    "onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))",
-    'onComplete()',
-    'onError(error)',
-    '加入复制任务',
-    '加入移动任务',
+    'xDriveFileExplorerOperationQueuedMessage',
   ]) {
     assert.ok(shared.includes(token), `shared FileExplorer operation planning missing: ${token}`)
   }
@@ -200,35 +183,40 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
     'xDriveFileExplorerClipboardFromItems(mode, selected, nodeByID)',
     "setFromItems('copy', selected)",
     "setFromItems('cut', selected)",
-    'const planPaste = (targetParentID: number) => {',
     'xDriveFileExplorerClipboardOperationPlan(',
-    'const completePaste = (plan: { clearClipboard: boolean }) => {',
     'if (plan.clearClipboard) setClipboard(null)',
-    'canPaste: (busy: boolean) => xDriveFileExplorerCanPaste(clipboard, busy)',
   ]) {
     assert.ok(clipboardController.includes(token), `shared React clipboard controller missing: ${token}`)
   }
-  assert.ok(sharedMuiIndex.includes("export * from './FileExplorerClipboard'"), 'shared React clipboard controller must be exported')
+  for (const token of [
+    'useXDriveFileExplorerOperationController',
+    "useState<XDriveFileExplorerQueuedOperationAction>('')",
+    'xDriveFileExplorerRunQueuedOperation({',
+    'submit: () => submitOperation(plan)',
+    "await runPlan('paste', plan",
+    'completePaste(plan)',
+    'xDriveFileExplorerDropItemsPlan(',
+    "await runPlan('drop-items', plan, clearSearch)",
+    'xDriveFileExplorerDropItemsToParentPlan(',
+    'canPaste: canPaste(disabled || busy)',
+  ]) {
+    assert.ok(operationController.includes(token), `shared operation controller missing: ${token}`)
+  }
+  assert.ok(sharedMuiIndex.includes("export * from './FileExplorerOperationController'"), 'shared operation controller must be exported')
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must consume clipboard state through the shared workspace controller`)
-    assert.ok(source.includes('const plan = planPaste(current.id)'), `${label} paste must use the shared clipboard plan`)
-    assert.ok(source.includes('completePaste(plan)'), `${label} must let the shared clipboard controller clear completed cuts`)
-    assert.ok(source.includes('onCopyItems={copyItems}'), `${label} must delegate copy selection to the shared clipboard controller`)
-    assert.ok(source.includes('onCutItems={cutItems}'), `${label} must delegate cut selection to the shared clipboard controller`)
-    assert.ok(source.includes('canPaste={canPaste('), `${label} must delegate paste availability to the shared clipboard controller`)
-    assert.equal(source.includes('xDriveFileExplorerClipboardFromItems('), false, `${label} must not construct clipboard state locally`)
-    assert.equal(source.includes('xDriveFileExplorerCanPaste('), false, `${label} must not derive paste availability locally`)
-    assert.equal(source.includes('xDriveFileExplorerClipboardOperationPlan('), false, `${label} must not plan clipboard operations locally`)
-    assert.ok(source.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), `${label} must use shared drop item planning`)
-    assert.equal(source.includes('const targetNode = nodeByID.get(Number(target.id))'), false, `${label} must not duplicate internal-drop target resolution`)
-    assert.ok(source.includes('xDriveFileExplorerRunQueuedOperation({'), `${label} must use shared queued-operation completion`)
-    assert.equal(source.includes("onFeedback('good', xDriveFileExplorerOperationQueuedMessage(plan.operation, plan.count))"), false, `${label} must not duplicate queued-operation feedback`)
-    assert.equal(source.includes("clipboard.mode === 'cut' ? 'move' : 'copy'"), false, `${label} must not duplicate cut-to-move mapping`)
-    assert.equal(source.includes('nodes.map((node) => ({ id: node.id, revision: node.revision }))'), false, `${label} must not duplicate operation refs`)
+    assert.ok(source.includes('useXDriveFileExplorerOperationController<'), `${label} must consume the shared queued-operation controller`)
+    assert.ok(source.includes('onCopyItems={copyItems}'), `${label} must retain shared copy wiring`)
+    assert.ok(source.includes('onCutItems={cutItems}'), `${label} must retain shared cut wiring`)
+    assert.ok(source.includes('onPaste={() => { void pasteClipboard() }}'), `${label} must wire shared paste execution`)
+    assert.equal(source.includes('xDriveFileExplorerRunQueuedOperation({'), false, `${label} must not execute queued operations locally`)
+    assert.equal(source.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), false, `${label} must not plan internal folder drops locally`)
+    assert.equal(source.includes('xDriveFileExplorerDropItemsToParentPlan('), false, `${label} must not plan breadcrumb drops locally`)
+    assert.equal(source.includes("setActionBusy('paste')"), false, `${label} must not own paste busy state locally`)
+    assert.equal(source.includes("setActionBusy('drop-items')"), false, `${label} must not own internal-drop busy state locally`)
   }
-  assert.ok(web.includes('api.createFileOperation(plan.operation, plan.items, plan.parentID)'), 'Web must keep REST operation execution local')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep Agent operation execution local')
+  assert.ok(web.includes('submitOperation: (plan) => api.createFileOperation('), 'Web must keep REST operation transport local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep Agent operation transport local')
 })
 
 test('shared FileExplorer controller owns archive-aware planning across Web and capable Desktop', () => {
@@ -350,10 +338,15 @@ test('shared FileExplorer owns parent-target drop planning and edge autoscroll d
     assert.ok(shared.includes(token), `shared drag polish helper missing: ${token}`)
   }
 
+  assert.ok(
+    operationController.includes('xDriveFileExplorerDropItemsToParentPlan('),
+    'shared operation controller must own breadcrumb drop planning',
+  )
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(
+    assert.equal(
       source.includes('xDriveFileExplorerDropItemsToParentPlan('),
-      `${label} breadcrumb drop must use shared parent-target planning`,
+      false,
+      `${label} must not plan breadcrumb drops locally`,
     )
     assert.ok(
       source.includes('onDropItemsToCrumb={(selected, crumb, operation) =>'),
