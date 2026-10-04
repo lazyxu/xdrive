@@ -39,6 +39,7 @@ const diagnosticTitles: Record<string, string> = {
   'FUSE mount': 'Linux 文件系统挂载',
   'auto updater': '自动更新',
   'updater timer': '自动更新定时任务',
+  'mount agent': 'Linux 后台挂载服务',
   'platform checks': '平台检查',
   'agent process': '后台服务进程',
   'desktop IPC': '桌面通信',
@@ -47,10 +48,33 @@ const diagnosticTitles: Record<string, string> = {
   '桌面图形加速': '桌面图形加速',
 }
 
+type UserDiagnosticLevel = 'PASS' | 'INFO' | 'WARN' | 'FAIL'
+
 const statusPresentation = {
   PASS: { label: '正常', tone: 'good' as const },
+  INFO: { label: '提示', tone: 'neutral' as const },
   WARN: { label: '需注意', tone: 'warning' as const },
   FAIL: { label: '异常', tone: 'bad' as const },
+}
+
+function diagnosticUserLevel(check: AgentDiagnosticCheck): UserDiagnosticLevel {
+  if (check.status === 'PASS') return 'PASS'
+  if (check.status === 'FAIL') return 'FAIL'
+
+  const detail = check.detail.trim()
+  if (
+    check.name === 'update metadata' ||
+    check.name === 'update download' ||
+    check.name === 'update channel' ||
+    check.name === 'Windows 任务栏快捷操作' ||
+    check.name === '桌面图形加速' ||
+    /skipped because/i.test(detail) ||
+    (check.name === 'last client update' && /^(preparing|installing|verifying)\b/i.test(detail)) ||
+    (check.name === 'auto updater' && /disabled by XD_DISABLE_AUTO_UPDATE=1/i.test(detail))
+  ) {
+    return 'INFO'
+  }
+  return 'WARN'
 }
 
 const binaryUnitBytes: Record<string, number> = {
@@ -87,6 +111,13 @@ function diagnosticUserDetail(check: AgentDiagnosticCheck) {
   const warning = check.status !== 'PASS'
 
   switch (check.name) {
+    case 'client version':
+      return `当前客户端版本：${detail}`
+    case 'update source':
+      return `更新来源：${detail.toLowerCase() === 'github' ? 'GitHub' : detail.toLowerCase() === 'gitlab' ? 'GitLab' : detail}`
+    case 'update channel':
+      if (/development build; no automatic channel/i.test(detail)) return '当前是开发构建，没有自动更新通道。'
+      return `更新通道：${detail === 'master' ? '开发快照（master）' : detail === 'stable' ? '稳定版（stable）' : detail}`
     case 'update metadata':
       if (/context deadline exceeded|timeout|timed out/i.test(detail)) {
         return '暂时无法确认是否有新版本，可能是网络响应较慢；不影响当前同步使用。'
@@ -98,6 +129,12 @@ function diagnosticUserDetail(check: AgentDiagnosticCheck) {
       return warning ? '暂时无法检查更新信息；不影响当前同步使用。' : '更新检查正常。'
     case 'update download':
       return warning ? '更新文件的可用性检查失败，请稍后重试；不影响当前同步。' : '更新文件可正常获取。'
+    case 'local config':
+      return warning ? '本地配置不可用，部分功能可能无法正常工作。' : '本地配置已正常加载。'
+    case 'cache policy': {
+      const limit = detail.match(/^limit\s+(.+)$/i)?.[1]
+      return limit ? `缓存上限：${limit}` : /unlimited/i.test(detail) ? '缓存未设置容量上限。' : warning ? '缓存策略暂时无法读取。' : '缓存策略正常。'
+    }
     case 'disk space':
       return diskSpaceDetail(detail, warning)
     case 'CfAPI sync root':
@@ -106,26 +143,35 @@ function diagnosticUserDetail(check: AgentDiagnosticCheck) {
         : 'Windows 云文件集成状态正常。'
     case 'FUSE mount':
       return warning ? 'Linux 文件系统挂载状态异常，可能影响文件访问。' : 'Linux 文件系统挂载正常。'
+    case 'mount agent':
+      return warning ? 'Linux 后台挂载服务未正常运行，可能影响文件访问。' : 'Linux 后台挂载服务正常。'
     case 'sync root':
-      return warning ? '同步根目录状态异常，可能影响文件同步。' : '同步根目录正常。'
+      return warning ? '同步根目录状态异常，可能影响文件同步。' : `同步根目录：${detail}`
     case 'server URL':
-    case 'server health':
-      return warning ? '无法正常连接 xDrive Server，请检查网络或服务器状态。' : '服务器连接正常。'
+      return warning ? '服务器地址配置无效，请检查设置。' : `服务器地址：${detail}`
+    case 'server health': {
+      const httpCode = detail.match(/HTTP\s+(\d+)/i)?.[1]
+      return warning ? '无法正常连接 xDrive Server，请检查网络或服务器状态。' : httpCode ? `服务器连接正常（HTTP ${httpCode}）。` : '服务器连接正常。'
+    }
     case 'TLS': {
       const expires = detail.match(/certificate valid until\s+(\d{4}-\d{2}-\d{2})/i)?.[1]
       if (warning && expires) return `HTTPS 证书将在 ${expires} 到期，请尽快续期。`
-      return warning ? 'HTTPS 连接或证书状态异常，请检查服务器证书。' : 'HTTPS 证书状态正常。'
+      return warning ? 'HTTPS 连接或证书状态异常，请检查服务器证书。' : expires ? `HTTPS 证书有效至 ${expires}。` : 'HTTPS 证书状态正常。'
     }
     case 'login session':
-      return warning ? '登录状态异常，可能需要重新连接服务器。' : '登录状态正常。'
+      return warning ? '登录状态异常，可能需要重新连接服务器。' : '登录认证正常。'
     case 'credential store':
       return warning ? '系统凭据保护不可用，保存的登录凭据可能无法正常使用。' : '登录凭据已由系统安全保护。'
     case 'auto updater':
-    case 'updater timer':
+      if (/disabled by XD_DISABLE_AUTO_UPDATE=1/i.test(detail)) return '自动更新已由当前运行配置关闭；不影响手动更新。'
       return warning ? '自动更新未正常启用，可能无法自动检查或下载新版本。' : '自动更新状态正常。'
+    case 'updater timer':
+      return warning ? '自动更新定时任务未正常运行，可能无法后台检查更新。' : '自动更新定时任务正常。'
     case 'last client update':
       if (/rolled_back/i.test(detail)) return '最近一次客户端更新已回滚，当前仍可使用；建议查看日志确认原因。'
-      return check.status === 'FAIL' ? '最近一次客户端更新失败，建议查看日志。' : '最近一次客户端更新正常完成。'
+      if (/^(preparing|installing|verifying)\b/i.test(detail)) return '客户端更新正在进行中。'
+      if (/^success\b/i.test(detail)) return '最近一次客户端更新已成功完成。'
+      return check.status === 'FAIL' ? '最近一次客户端更新失败，建议查看日志。' : '最近一次客户端更新状态正常。'
     case 'agent process':
     case 'desktop IPC':
     case '桌面版 / Agent 兼容性':
@@ -144,7 +190,7 @@ function diagnosticUserDetail(check: AgentDiagnosticCheck) {
 function diagnosticCategory(name: string) {
   if (['server URL', 'server health', 'TLS', 'login session'].includes(name)) return '服务器连接'
   if (['sync root', 'disk space', 'CfAPI sync root', 'FUSE mount'].includes(name)) return '本地存储与同步'
-  if (['agent process', 'desktop IPC', '桌面版 / Agent 兼容性', 'Windows 任务栏快捷操作', '桌面图形加速'].includes(name)) return '桌面集成'
+  if (['mount agent', 'agent process', 'desktop IPC', '桌面版 / Agent 兼容性', 'Windows 任务栏快捷操作', '桌面图形加速'].includes(name)) return '桌面集成'
   return '客户端与更新'
 }
 
@@ -157,6 +203,8 @@ export function DesktopDiagnosticsPage({
   onReconnect,
   onRepairSyncRoot,
   onOpenStorage,
+  onOpenSettings,
+  onOpenUpdateSettings,
   onOpenLogs,
   onExport,
 }: {
@@ -168,6 +216,8 @@ export function DesktopDiagnosticsPage({
   onReconnect: () => void
   onRepairSyncRoot: () => void
   onOpenStorage: () => void
+  onOpenSettings: () => void
+  onOpenUpdateSettings: () => void
   onOpenLogs: () => void
   onExport: () => void
 }) {
@@ -226,40 +276,63 @@ export function DesktopDiagnosticsPage({
     )
   }
 
-  const issueChecks = diagnostics.checks.filter((check) => check.status !== 'PASS')
+  const presentedChecks = diagnostics.checks.map((check) => ({ check, level: diagnosticUserLevel(check) }))
+  const issueChecks = presentedChecks.filter(({ level }) => level !== 'PASS')
+  const infoCount = presentedChecks.filter(({ level }) => level === 'INFO').length
+  const warnCount = presentedChecks.filter(({ level }) => level === 'WARN').length
+  const failCount = presentedChecks.filter(({ level }) => level === 'FAIL').length
   const groupedChecks = diagnostics.checks.reduce<Record<string, AgentDiagnosticCheck[]>>((groups, check) => {
     const category = diagnosticCategory(check.name)
     ;(groups[category] ||= []).push(check)
     return groups
   }, {})
-  const summaryTone = diagnostics.summary.fail > 0 ? 'bad' : diagnostics.summary.warn > 0 ? 'warning' : 'good'
-  const summaryLabel = diagnostics.summary.fail > 0 ? '异常' : diagnostics.summary.warn > 0 ? '需注意' : '正常'
-  const summaryTitle = diagnostics.summary.fail > 0
+  const summaryTone = failCount > 0 ? 'bad' : warnCount > 0 ? 'warning' : 'good'
+  const summaryLabel = failCount > 0 ? '异常' : warnCount > 0 ? '需注意' : '正常'
+  const summaryTitle = failCount > 0
     ? '发现需要处理的问题'
-    : diagnostics.summary.warn > 0
+    : warnCount > 0
       ? '系统总体正常'
       : '系统状态正常'
-  const summaryText = diagnostics.summary.fail > 0
-    ? `发现 ${diagnostics.summary.fail} 项异常，${diagnostics.summary.warn} 项需要注意。建议优先处理异常项。`
-    : diagnostics.summary.warn > 0
-      ? `未发现故障，有 ${diagnostics.summary.warn} 项需要注意。`
-      : '未发现需要处理的问题。'
+  const summaryText = failCount > 0
+    ? `发现 ${failCount} 项异常${warnCount > 0 ? `，${warnCount} 项需要注意` : ''}${infoCount > 0 ? `，另有 ${infoCount} 项提示` : ''}。建议优先处理异常项。`
+    : warnCount > 0
+      ? `未发现故障，有 ${warnCount} 项需要注意${infoCount > 0 ? `，另有 ${infoCount} 项提示` : ''}。`
+      : infoCount > 0
+        ? `未发现需要处理的问题，有 ${infoCount} 项提示。`
+        : '未发现需要处理的问题。'
 
   const issueAction = (check: AgentDiagnosticCheck) => {
     switch (check.name) {
       case 'update metadata':
+        if (/update available:/i.test(check.detail)) {
+          return { label: '打开更新设置', loading: false, run: onOpenUpdateSettings }
+        }
+        return { label: '重新检查', loading: busy === 'diagnostics', run: onRun }
       case 'update download':
         return { label: '重新检查', loading: busy === 'diagnostics', run: onRun }
+      case 'update source':
+      case 'update channel':
+        return { label: '打开更新设置', loading: false, run: onOpenUpdateSettings }
       case 'disk space':
         return { label: '查看本地存储', loading: false, run: onOpenStorage }
       case 'CfAPI sync root':
       case 'sync root':
         return { label: '修复同步根目录', loading: busy === 'repair-sync-root', disabled: paused, run: onRepairSyncRoot }
+      case 'FUSE mount':
+      case 'mount agent':
+        return { label: '重启后台服务', loading: busy === 'restart-agent', run: onRestartAgent }
       case 'server URL':
+        return { label: '打开设置', loading: false, run: onOpenSettings }
       case 'server health':
-      case 'TLS':
       case 'login session':
         return { label: '重新连接', loading: busy === 'reconnect', disabled: paused, run: onReconnect }
+      case 'TLS':
+        return { label: '查看日志', loading: busy === 'open-logs', run: onOpenLogs }
+      case 'auto updater':
+      case 'updater timer':
+        return { label: '打开设置', loading: false, run: onOpenSettings }
+      case 'last client update':
+        return { label: '查看日志', loading: busy === 'open-logs', run: onOpenLogs }
       case 'agent process':
       case 'desktop IPC':
       case '桌面版 / Agent 兼容性':
@@ -275,7 +348,7 @@ export function DesktopDiagnosticsPage({
         <XDriveSectionHeader
           eyebrow="诊断与自修复"
           title="系统状态"
-          subtitle="优先显示需要处理的问题；完整检查结果和原始技术信息保留在下方详情中。"
+          subtitle="优先显示需要处理的问题；完整检查结果保留在下方详情中，原始技术信息可通过导出报告查看。"
           actions={headerActions}
         />
 
@@ -294,10 +367,10 @@ export function DesktopDiagnosticsPage({
 
         {issueChecks.length > 0 ? (
           <Stack spacing={1.25}>
-            <Typography variant="subtitle1" fontWeight={700}>需要注意</Typography>
-            {issueChecks.map((check, index) => {
+            <Typography variant="subtitle1" fontWeight={700}>提示与问题</Typography>
+            {issueChecks.map(({ check, level }, index) => {
               const action = issueAction(check)
-              const status = statusPresentation[check.status]
+              const status = statusPresentation[level]
               return (
                 <Paper
                   key={`${check.name}:${index}`}
@@ -366,18 +439,22 @@ export function DesktopDiagnosticsPage({
             <Box>
               <Typography variant="body2" fontWeight={700}>技术检查详情</Typography>
               <Typography variant="caption" color="text.secondary">
-                {diagnostics.summary.pass} 项正常 · {diagnostics.summary.warn} 项需注意 · {diagnostics.summary.fail} 项异常
+                {diagnostics.summary.pass} 项正常 · {infoCount} 项提示 · {warnCount} 项需注意 · {failCount} 项异常
               </Typography>
             </Box>
           </AccordionSummary>
           <AccordionDetails id="diagnostic-technical-details">
             <Stack spacing={2}>
+              <Typography variant="caption" color="text.secondary">
+                这里保留完整检查列表，但只显示中文可读说明；原始内部检查名和错误信息保留在导出诊断报告中。
+              </Typography>
               {Object.entries(groupedChecks).map(([category, checks]) => (
                 <Box key={category}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>{category}</Typography>
                   <Stack spacing={0.75}>
                     {checks.map((check, index) => {
-                      const status = statusPresentation[check.status]
+                      const level = diagnosticUserLevel(check)
+                      const status = statusPresentation[level]
                       const translatedTitle = diagnosticTitle(check.name)
                       return (
                         <Paper
@@ -395,17 +472,12 @@ export function DesktopDiagnosticsPage({
                           <XDriveStatusBadge tone={status.tone} label={status.label} />
                           <Box sx={{ minWidth: 0 }}>
                             <Typography variant="body2" fontWeight={700}>{translatedTitle}</Typography>
-                            {translatedTitle !== check.name ? (
-                              <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.25 }}>
-                                内部检查项：{check.name}
-                              </Typography>
-                            ) : null}
                             <Typography
                               variant="caption"
                               color="text.secondary"
                               sx={{ display: 'block', mt: 0.5, lineHeight: 1.5, overflowWrap: 'anywhere' }}
                             >
-                              技术信息：{check.detail}
+                              {diagnosticUserDetail(check)}
                             </Typography>
                           </Box>
                         </Paper>

@@ -2171,6 +2171,13 @@ export default function App({
               )
             }}
             onOpenStorage={() => setView('local-storage')}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenUpdateSettings={() => {
+              setSettingsOpen(true)
+              window.setTimeout(() => {
+                document.getElementById('client-update-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }, 120)
+            }}
             onOpenLogs={() => {
               void run(
                 'open-logs',

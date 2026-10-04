@@ -11,14 +11,15 @@ const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'st
 test('Desktop diagnostics defaults to a Chinese user summary and hides healthy technical checks', () => {
   for (const token of [
     '系统总体正常',
-    '需要注意',
+    '提示与问题',
     '重新诊断',
     '更多诊断操作',
     '打开日志',
     '导出诊断报告',
     '技术检查详情',
-    "diagnostics.checks.filter((check) => check.status !== 'PASS')",
+    "presentedChecks.filter(({ level }) => level !== 'PASS')",
     "PASS: { label: '正常'",
+    "INFO: { label: '提示'",
     "WARN: { label: '需注意'",
     "FAIL: { label: '异常'",
     "'update metadata': '更新检查'",
@@ -29,12 +30,18 @@ test('Desktop diagnostics defaults to a Chinese user summary and hides healthy t
     '查看本地存储',
     '修复同步根目录',
     '重启后台服务',
-    '技术信息：{check.detail}',
+    '打开更新设置',
+    '打开设置',
+    '原始内部检查名和错误信息保留在导出诊断报告中',
   ]) {
     assert.ok(page.includes(token), `Desktop diagnostics presentation missing: ${token}`)
   }
 
   assert.ok(app.includes("onOpenStorage={() => setView('local-storage')}"), 'disk-space warning must navigate to local storage')
+  assert.ok(app.includes('onOpenSettings={() => setSettingsOpen(true)}'), 'server configuration issues must open settings')
+  assert.ok(app.includes('onOpenUpdateSettings={() => {'), 'update notices must open update settings')
+  assert.equal(page.includes('内部检查项：{check.name}'), false, 'technical details must not expose internal English check names')
+  assert.equal(page.includes('技术信息：{check.detail}'), false, 'technical details must not expose raw English errors by default')
   assert.equal(page.includes('<XDriveMetricGrid>'), false, 'diagnostics must not lead with pass/warn/fail metric cards')
   assert.equal(page.includes('label={check.status}'), false, 'raw PASS/WARN/FAIL labels must not be shown')
 })

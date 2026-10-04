@@ -57,6 +57,33 @@ func TestReportSummaryAndFormat(t *testing.T) {
 	}
 }
 
+func TestDiskSpaceStatusRequiresLowPercentageAndLowAbsoluteCapacity(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	const tib = uint64(1024 * gib)
+
+	tests := []struct {
+		name  string
+		free  uint64
+		total uint64
+		want  string
+	}{
+		{name: "large disk with useful absolute headroom", free: 80 * gib, total: 1536 * gib, want: Pass},
+		{name: "low ratio and low absolute headroom", free: 10 * gib, total: 1536 * gib, want: Warn},
+		{name: "small disk below ten percent", free: 8 * gib, total: 100 * gib, want: Warn},
+		{name: "small disk above ten percent", free: 15 * gib, total: 100 * gib, want: Pass},
+		{name: "twenty GiB boundary remains usable", free: 20 * gib, total: tib, want: Pass},
+		{name: "unknown total does not warn", free: 0, total: 0, want: Pass},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := diskSpaceStatus(tt.free, tt.total); got != tt.want {
+				t.Fatalf("diskSpaceStatus(%d, %d)=%q want %q", tt.free, tt.total, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWithChecksRecalculatesSummary(t *testing.T) {
 	report := NewReport([]Check{{Name: "a", Status: Pass, Detail: "ok"}})
 	report = WithChecks(report, Check{Name: "b", Status: Fail, Detail: "bad"})
