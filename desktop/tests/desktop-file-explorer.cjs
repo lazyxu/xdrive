@@ -12,6 +12,7 @@ const workspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'sr
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
+const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'), 'utf8')
 const styles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 
@@ -42,24 +43,24 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
 
 test('Desktop FileExplorer provides system-style navigation, search, and persistent view mode', () => {
   for (const token of [
-    'useXDriveFileExplorerNavigation({',
+    'useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>({',
     'canGoBack={canGoBack}',
     'canGoForward={canGoForward}',
     'canGoUp={canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
-    'useXDriveFileExplorerSearch<AgentCloudSearchResult>',
+    'loadSearchPage: async (query, cursor) =>',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
-  assert.ok(explorer.includes('xDriveFileExplorerSubmitPath({'), 'Desktop Explorer should delegate typed-path submission to the shared controller')
+  assert.equal(explorer.includes('xDriveFileExplorerSubmitPath({'), false, 'Desktop Explorer should delegate typed-path submission to the shared workspace controller')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudRoot()'), 'Desktop typed-path submission should keep Agent root loading local')
   assert.equal(explorer.includes('xDriveResolveFileExplorerPath({'), false, 'Desktop must not orchestrate typed-path traversal locally')
-  assert.ok(explorer.includes('xDriveFileExplorerDispatchOpenItem({'), 'Desktop open-item behavior should use shared dispatch')
-  assert.ok(explorer.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?.crumbs'), 'Desktop shared open dispatch should preserve search crumbs')
-  assert.ok(explorer.includes('openFile: openLocalNode'), 'Desktop shared open dispatch should keep native open local')
-  assert.ok(explorer.includes('navigate: navigateTo'), 'Desktop search-directory navigation should inject shared navigation')
+  assert.equal(explorer.includes('xDriveFileExplorerDispatchOpenItem({'), false, 'Desktop open-item dispatch should stay inside the shared workspace controller')
+  assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Desktop shared workspace should preserve search crumbs')
+  assert.ok(explorer.includes('openWorkspaceItem(item, openLocalNode)'), 'Desktop shared workspace should keep native open local')
+  assert.ok(workspaceController.includes('navigate: navigation.navigateTo'), 'shared workspace should dispatch search-directory navigation through shared navigation')
   assert.ok(explorer.includes('viewModeStorageKey: DESKTOP_FILE_VIEW_KEY'), 'Desktop Explorer should pass its view-mode storage key to the shared controller')
   assert.ok(explorer.includes('pathValue={pathValue}'), 'Desktop Explorer path display must come from shared navigation')
   assert.ok(explorer.includes('navigateToCrumb(index)'), 'Desktop breadcrumb clicks must use shared navigation')
@@ -69,14 +70,14 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
 })
 
 test('Desktop FileExplorer paginates server search results through Agent cursors', () => {
-  assert.ok(explorer.includes('useXDriveFileExplorerSearch<AgentCloudSearchResult>'), 'Desktop search lifecycle must come from the shared React controller')
+  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>'), 'Desktop search lifecycle must come from the shared workspace controller')
   assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Desktop search draft must come from the shared React controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Desktop must not own search draft state')
   assert.equal(explorer.includes("setSearchValue('')"), false, 'Desktop navigation must not clear search draft separately')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop search controller must keep Agent cursor execution local')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
   assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
-  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Desktop search/directory load-more dispatch must use the shared pagination controller')
+  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own search/directory pagination dispatch')
   assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer load-more must use shared pagination dispatch')
   assert.equal(explorer.includes("explorerPagination.mode === 'search'"), false, 'Desktop must not branch search/directory pagination locally')
   assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own search request sequencing')
@@ -141,7 +142,7 @@ test('Desktop Files uses shared workspace content for full-bleed Explorer layout
 })
 
 test('Desktop FileExplorer queues copy/cut/paste through persistent Agent file operations', () => {
-  assert.ok(explorer.includes('useXDriveFileExplorerClipboard<AgentCloudNode>({'), 'Desktop must use the shared React clipboard controller')
+  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>'), 'Desktop must consume clipboard state through the shared workspace controller')
   assert.ok(explorer.includes('const plan = planPaste(current.id)'), 'Desktop paste must use the shared clipboard plan')
   assert.ok(explorer.includes('completePaste(plan)'), 'Desktop must clear completed cut state through the shared clipboard controller')
   assert.ok(explorer.includes('canPaste={canPaste(Boolean(actionBusy))}'), 'Desktop paste availability must use the shared clipboard controller')
@@ -237,10 +238,10 @@ test('Desktop FileExplorer uses cursor-paged server sorting for cloud directorie
   assert.ok(app.includes('window.xdriveDesktop.agent.cloudChildrenPage(\n        id,\n        xDriveFileExplorerPageRequestOptions(sort),'), 'Desktop directory browsing should use the paged Agent API with shared request options')
   assert.equal(app.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), false, 'Desktop must not duplicate page merge semantics')
   assert.equal(app.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate directory page-state derivation')
-  assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Desktop directory pages should preserve server ordering')
+  assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Desktop directory pages should consume shared workspace sorting state')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted pages')
-  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Desktop Explorer pagination dispatch must use the shared controller')
-  assert.ok(explorer.includes('loadMoreDirectory: onLoadMore'), 'Desktop Explorer must inject directory load-more into the shared controller')
+  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own Desktop Explorer pagination dispatch')
+  assert.ok(explorer.includes('onLoadMoreDirectory: onLoadMore'), 'Desktop Explorer must inject directory load-more into the shared workspace controller')
   assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer must wire shared pagination dispatch near the scroll boundary')
 })
 

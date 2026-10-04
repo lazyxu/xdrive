@@ -8,6 +8,7 @@ const app = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8'
 const explorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.tsx'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
+const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'), 'utf8')
 const api = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'api.ts'), 'utf8')
 const uploadConflicts = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'upload-conflicts.ts'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
@@ -23,7 +24,7 @@ test('Web files workspace consumes the shared FileExplorer instead of a bespoke 
 
 test('Web FileExplorer navigation matches system explorer behavior', () => {
   for (const token of [
-    'useXDriveFileExplorerNavigation({',
+    'useXDriveFileExplorerWorkspace<Node, SearchResult>({',
     'canGoBack={canGoBack}',
     'canGoForward={canGoForward}',
     'canGoUp={canGoUp}',
@@ -33,7 +34,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
     assert.ok(explorer.includes(token), `missing Web Explorer navigation contract: ${token}`)
   }
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows-style separators')
-  assert.ok(explorer.includes('xDriveFileExplorerSubmitPath({'), 'Web Explorer should delegate typed-path submission to the shared controller')
+  assert.equal(explorer.includes('xDriveFileExplorerSubmitPath({'), false, 'Web Explorer should delegate typed-path submission to the shared workspace controller')
   assert.ok(explorer.includes('loadRoot: () => api.root()'), 'Web typed-path submission should keep REST root loading local')
   assert.equal(explorer.includes('xDriveResolveFileExplorerPath({'), false, 'Web must not orchestrate typed-path traversal locally')
   assert.ok(explorer.includes('viewModeStorageKey: FILE_VIEW_KEY'), 'Web Explorer should pass its view-mode storage key to the shared controller')
@@ -46,7 +47,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
 
 test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
-  assert.ok(explorer.includes('loadPage: (query, cursor) => api.search('), 'Web Explorer must execute search through the shared React controller adapter')
+  assert.ok(explorer.includes('loadSearchPage: (query, cursor) => api.search('), 'Web Explorer must execute search through the shared workspace controller adapter')
   for (const token of [
     'api.download(node)',
     'onShare(node)',
@@ -64,17 +65,17 @@ test('Web FileExplorer uses real file operations and server search', () => {
 
 test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pagination', () => {
   assert.ok(projection.includes('secondaryLabel: result?.path || undefined'), 'shared Explorer projection should show search-result paths')
-  assert.ok(explorer.includes('xDriveFileExplorerDispatchOpenItem({'), 'opening a search result should use shared open-item dispatch')
-  assert.ok(explorer.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?.breadcrumbs'), 'Web shared open dispatch should preserve search breadcrumbs')
-  assert.ok(explorer.includes('navigate: navigateTo'), 'opening a search directory should inject shared navigation')
-  assert.ok(explorer.includes('openFile: async (node) => {'), 'opening a file should keep Web download execution local')
-  assert.ok(explorer.includes('useXDriveFileExplorerSearch<SearchResult>'), 'Web search lifecycle must come from the shared React controller')
+  assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'opening a search result should use shared workspace open-item dispatch')
+  assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.breadcrumbs'), 'Web shared workspace should preserve search breadcrumbs')
+  assert.ok(workspaceController.includes('navigate: navigation.navigateTo'), 'shared workspace should inject shared navigation for search directories')
+  assert.ok(explorer.includes('const openWebNode = async (node: Node) => {'), 'opening a file should keep Web download execution local')
+  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, SearchResult>'), 'Web search lifecycle must come from the shared workspace controller')
   assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Web search draft must come from the shared React controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Web must not own search draft state')
-  assert.ok(explorer.includes('loadPage: (query, cursor) => api.search('), 'Web search controller must keep REST execution local')
+  assert.ok(explorer.includes('loadSearchPage: (query, cursor) => api.search('), 'Web workspace controller must keep REST search execution local')
   assert.ok(explorer.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search controller must preserve the shared page size')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Web Explorer hasMore must use shared pagination presentation')
-  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Web search/directory load-more dispatch must use the shared pagination controller')
+  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own Web search/directory pagination dispatch')
   assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Web Explorer load-more must use shared pagination dispatch')
   assert.equal(explorer.includes("explorerPagination.mode === 'search'"), false, 'Web must not branch search/directory pagination locally')
   assert.equal(explorer.includes('searchRequestRef'), false, 'Web must not own search request sequencing')
@@ -85,7 +86,7 @@ test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pa
 test('Web FileExplorer queues copy/cut/paste as persistent file operations', () => {
   assert.ok(api.includes('copy(nodeID: number, parentID: number, name?: string)'), 'legacy Web copy API is missing')
   assert.ok(api.includes('move(nodeID: number, revision: number, parentID: number)'), 'legacy Web move API is missing')
-  assert.ok(explorer.includes('useXDriveFileExplorerClipboard<Node>({'), 'Web must use the shared React clipboard controller')
+  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, SearchResult>'), 'Web must consume clipboard state through the shared workspace controller')
   assert.ok(explorer.includes('const plan = planPaste(current.id)'), 'Web paste must use the shared clipboard plan')
   assert.ok(explorer.includes('completePaste(plan)'), 'Web must clear completed cut state through the shared clipboard controller')
   assert.ok(explorer.includes('canPaste={canPaste(clipboardBusy)}'), 'Web paste availability must use the shared clipboard controller')
@@ -166,10 +167,10 @@ test('Web FileExplorer uses the shared Cloud Files controller for cursor-paged s
   assert.ok(cloudFilesController.includes('xDriveFileExplorerDirectoryPageTransition('), 'shared Cloud Files controller must own directory page transitions')
   assert.equal(app.includes('xDriveFileExplorerMergePageItems(currentItems, page.items)'), false, 'Web must not duplicate page merge semantics')
   assert.equal(app.includes('xDriveFileExplorerPageStateFromResult('), false, 'Web must not duplicate directory page-state derivation')
-  assert.ok(explorer.includes('externallySorted={!searchResults}'), 'Web directory pages should preserve server ordering')
+  assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Web directory pages should consume shared workspace sorting state')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Web sort changes should reload server-sorted pages')
-  assert.ok(explorer.includes('xDriveFileExplorerPaginationController({'), 'Web Explorer pagination dispatch must use the shared controller')
-  assert.ok(explorer.includes('loadMoreDirectory: onLoadMore'), 'Web Explorer must inject directory load-more into the shared controller')
+  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own Web Explorer pagination dispatch')
+  assert.ok(explorer.includes('onLoadMoreDirectory: onLoadMore'), 'Web Explorer must inject directory load-more into the shared workspace controller')
   assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Web Explorer must wire shared pagination dispatch near the scroll boundary')
 })
 

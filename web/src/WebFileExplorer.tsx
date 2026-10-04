@@ -5,10 +5,7 @@ import {
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
-  useXDriveFileExplorerClipboard,
-  useXDriveFileExplorerNavigation,
-  useXDriveFileExplorerProjection,
-  useXDriveFileExplorerSearch,
+  useXDriveFileExplorerWorkspace,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb,
@@ -19,16 +16,13 @@ import type {
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerNodeForItem,
-  xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerDropItemsToParentPlan,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
-  xDriveFileExplorerPaginationController,
   xDriveFileExplorerRunQueuedOperation,
   xDriveFileExplorerWebDownloadFeedback,
-  xDriveFileExplorerSubmitPath,
 } from '../../ui/shared/src'
 import type {
   Node,
@@ -94,46 +88,58 @@ export default function WebFileExplorer({
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
-  const {
-    searchValue,
-    searchState,
-    searchResults,
-    searchCursor,
-    searchLoading,
-    searchLoadingMore,
-    changeSearchValue,
-    clearSearch,
-    submitSearch,
-    loadMoreSearch,
-  } = useXDriveFileExplorerSearch<SearchResult>({
-    loadPage: (query, cursor) => api.search(
-      query,
-      XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
-      cursor,
-    ),
-    onError,
-  })
   const [clipboardBusy, setClipboardBusy] = useState(false)
 
   const {
+    searchValue,
+    searchLoading,
+    changeSearchValue,
+    clearSearch,
+    submitSearch,
     nodeByID,
-    searchByID,
     explorerItems,
     explorerCrumbs,
-  } = useXDriveFileExplorerProjection({
-    items,
-    crumbs,
-    searchResults,
-  })
-
-  const {
     copyItems,
     cutItems,
     planPaste,
     completePaste,
     canPaste,
-  } = useXDriveFileExplorerClipboard<Node>({
-    nodeByID,
+    current,
+    pathValue,
+    viewMode,
+    setViewMode,
+    sort,
+    changeSort,
+    refresh,
+    navigateToCrumb,
+    goBack,
+    goForward,
+    goUp,
+    canGoBack,
+    canGoForward,
+    canGoUp,
+    submitPath,
+    openItem,
+    explorerPagination,
+    externallySorted,
+    searchStatusText,
+  } = useXDriveFileExplorerWorkspace<Node, SearchResult>({
+    items,
+    crumbs,
+    viewModeStorageKey: FILE_VIEW_KEY,
+    directoryHasMore: hasMore,
+    directoryLoadingMore: loadingMore,
+    onLoadDirectory,
+    onLoadMoreDirectory: onLoadMore,
+    loadSearchPage: (query, cursor) => api.search(
+      query,
+      XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+      cursor,
+    ),
+    loadRoot: () => api.root(),
+    listChildren: (parentID) => api.list(parentID),
+    searchCrumbsForResult: (result) => result.breadcrumbs,
+    onError,
   })
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
@@ -146,59 +152,12 @@ export default function WebFileExplorer({
     }
   }, [api])
 
-  const {
-    current,
-    pathValue,
-    viewMode,
-    setViewMode,
-    sort,
-    changeSort,
-    refresh,
-    navigateTo,
-    navigateToCrumb,
-    goBack,
-    goForward,
-    goUp,
-    canGoBack,
-    canGoForward,
-    canGoUp,
-  } = useXDriveFileExplorerNavigation({
-    crumbs,
-    viewModeStorageKey: FILE_VIEW_KEY,
-    searchActive: Boolean(searchResults),
-    onLoadDirectory,
-    onAfterNavigate: clearSearch,
-  })
-
-  const submitPath = async (rawPath: string) => {
+  const openWebNode = async (node: Node) => {
     try {
-      await xDriveFileExplorerSubmitPath({
-        rawPath,
-        currentCrumbs: crumbs,
-        loadRoot: () => api.root(),
-        listChildren: (parentID) => api.list(parentID),
-        navigate: navigateTo,
-      })
+      await api.download(node)
     } catch (error) {
       onError(error)
     }
-  }
-
-  const openItem = async (item: XDriveFileExplorerItem) => {
-    await xDriveFileExplorerDispatchOpenItem({
-      item,
-      nodeByID,
-      currentCrumbs: crumbs,
-      searchCrumbsForNode: (node) => searchByID.get(node.id)?.breadcrumbs,
-      openFile: async (node) => {
-        try {
-          await api.download(node)
-        } catch (error) {
-          onError(error)
-        }
-      },
-      navigate: navigateTo,
-    })
   }
 
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
@@ -224,7 +183,7 @@ export default function WebFileExplorer({
 
     return xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
-      onOpen: node.type === 'dir' ? () => { void openItem(item) } : undefined,
+      onOpen: node.type === 'dir' ? () => { void openItem(item, openWebNode) } : undefined,
       onDownload: () => { void downloadSelected([item]) },
       onShare: node.type === 'file' ? () => onShare(node) : undefined,
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
@@ -350,18 +309,6 @@ export default function WebFileExplorer({
     await dropExternalFolderEntriesToParent(payload, Number(crumb.id))
   }
 
-  const explorerPagination = xDriveFileExplorerPaginationController({
-    searchActive: searchResults !== null,
-    searchCursor,
-    searchLoadingMore,
-    directoryHasMore: hasMore,
-    directoryLoadingMore: loadingMore,
-    currentID: current?.id,
-    sort,
-    loadMoreSearch,
-    loadMoreDirectory: onLoadMore,
-  })
-
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder,
     onUpload: () => uploadInputRef.current?.click(),
@@ -426,12 +373,12 @@ export default function WebFileExplorer({
         onCreateFolder={onCreateFolder}
         onUpload={() => uploadInputRef.current?.click()}
         onUploadFolder={() => folderUploadInputRef.current?.click()}
-        onOpenItem={(item) => { void openItem(item) }}
+        onOpenItem={(item) => { void openItem(item, openWebNode) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={sort}
         onSortChange={changeSort}
-        externallySorted={!searchResults}
+        externallySorted={externallySorted}
         hasMore={explorerPagination.hasMore}
         loadingMore={explorerPagination.loadingMore}
         onLoadMore={explorerPagination.onLoadMore}
@@ -456,11 +403,11 @@ export default function WebFileExplorer({
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
-        statusText={searchResults
-          ? `搜索“${searchState.query}”`
-          : uploadProgress !== null
+        statusText={searchStatusText ?? (
+          uploadProgress !== null
             ? `上传中 ${Math.round(uploadProgress)}%`
-            : undefined}
+            : undefined
+        )}
       />
     </Box>
   )
