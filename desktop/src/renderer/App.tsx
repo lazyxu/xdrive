@@ -73,6 +73,7 @@ import {
   xDriveFileOperationActive,
   xDriveFileOperationPollIntervalMs,
   xDriveFileOperationTransitionSnapshot,
+  xDriveFileOperationUpsert,
 } from '@xdrive/shared'
 import { DesktopCloudPage } from './DesktopCloudPage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -977,10 +978,7 @@ export default function App({
 
   const rememberCloudFileOperation = (operation: AgentCloudFileOperation) => {
     cloudFileOperationStatusRef.current.set(operation.id, operation.status)
-    setCloudFileOperations((currentOperations) => [
-      operation,
-      ...currentOperations.filter((item) => item.id !== operation.id),
-    ])
+    setCloudFileOperations((currentOperations) => xDriveFileOperationUpsert(currentOperations, operation))
   }
 
   const refreshCloudFileOperations = async () => {

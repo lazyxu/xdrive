@@ -63,7 +63,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPageState,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_OPERATION_HISTORY_LIMIT, xDriveFileExplorerCanLoadMore, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerDirectoryPageTransition, xDriveFileExplorerPageRequestOptions, xDriveFileOperationActive, xDriveFileOperationPollIntervalMs, xDriveFileOperationTransitionSnapshot, xDriveFileOperationUpsert } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -842,10 +842,7 @@ function FileManager({
 
   const rememberFileOperation = (operation: XDriveFileOperation) => {
     fileOperationStatusRef.current.set(operation.id, operation.status)
-    setFileOperations((currentOperations) => [
-      operation,
-      ...currentOperations.filter((item) => item.id !== operation.id),
-    ])
+    setFileOperations((currentOperations) => xDriveFileOperationUpsert(currentOperations, operation))
   }
 
   const cancelFileOperation = async (id: string) => {
