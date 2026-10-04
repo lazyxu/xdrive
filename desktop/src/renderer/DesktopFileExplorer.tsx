@@ -5,30 +5,24 @@ import {
   xDriveFileExplorerDesktopArchiveDownloadFeedback,
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerNodeForItem,
-  xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerDropItemsToParentPlan,
   xDriveFileExplorerEnsureUploadDirectory,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
-  xDriveFileExplorerPaginationController,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerRunQueuedOperation,
-  xDriveFileExplorerSubmitPath,
   xDriveUploadBatchSummary,
   xDriveUploadConflictCanOverwrite,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
   XDriveFileNameDialog,
-  useXDriveFileExplorerClipboard,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
-  useXDriveFileExplorerNavigation,
-  useXDriveFileExplorerProjection,
-  useXDriveFileExplorerSearch,
+  useXDriveFileExplorerWorkspace,
   XDriveUploadConflictDialog,
   useXDriveUploadConflictResolver,
 } from '@xdrive/ui/mui'
@@ -86,25 +80,6 @@ export default function DesktopFileExplorer({
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
-  const {
-    searchValue,
-    searchState,
-    searchResults,
-    searchCursor,
-    searchLoading,
-    searchLoadingMore,
-    changeSearchValue,
-    clearSearch,
-    submitSearch,
-    loadMoreSearch,
-  } = useXDriveFileExplorerSearch<AgentCloudSearchResult>({
-    loadPage: async (query, cursor) => {
-      const result = await window.xdriveDesktop.agent.cloudSearch(query, cursor)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
-  })
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
@@ -112,24 +87,64 @@ export default function DesktopFileExplorer({
   const uploadConflicts = useXDriveUploadConflictResolver()
 
   const {
+    searchValue,
+    searchLoading,
+    changeSearchValue,
+    clearSearch,
+    submitSearch,
     nodeByID,
     searchByID,
     explorerItems,
     explorerCrumbs,
-  } = useXDriveFileExplorerProjection({
-    items,
-    crumbs,
-    searchResults,
-  })
-
-  const {
     copyItems,
     cutItems,
     planPaste,
     completePaste,
     canPaste,
-  } = useXDriveFileExplorerClipboard<AgentCloudNode>({
-    nodeByID,
+    current,
+    pathValue,
+    viewMode,
+    setViewMode,
+    sort,
+    changeSort,
+    refresh,
+    navigateToCrumb,
+    goBack,
+    goForward,
+    goUp,
+    canGoBack,
+    canGoForward,
+    canGoUp,
+    submitPath,
+    openItem: openWorkspaceItem,
+    explorerPagination,
+    externallySorted,
+    searchStatusText,
+  } = useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>({
+    items,
+    crumbs,
+    viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
+    directoryHasMore: hasMore,
+    directoryLoadingMore: loadingMore,
+    onLoadDirectory,
+    onLoadMoreDirectory: onLoadMore,
+    loadSearchPage: async (query, cursor) => {
+      const result = await window.xdriveDesktop.agent.cloudSearch(query, cursor)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadRoot: async () => {
+      const result = await window.xdriveDesktop.agent.cloudRoot()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    listChildren: async (parentID) => {
+      const result = await window.xdriveDesktop.agent.cloudChildren(parentID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    searchCrumbsForResult: (result) => result.crumbs,
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
@@ -139,52 +154,6 @@ export default function DesktopFileExplorer({
     const contentType = result.data.content_type || 'image/jpeg'
     return `data:${contentType};base64,${result.data.data_base64}`
   }, [])
-
-  const {
-    current,
-    pathValue,
-    viewMode,
-    setViewMode,
-    sort,
-    changeSort,
-    refresh,
-    navigateTo,
-    navigateToCrumb,
-    goBack,
-    goForward,
-    goUp,
-    canGoBack,
-    canGoForward,
-    canGoUp,
-  } = useXDriveFileExplorerNavigation({
-    crumbs,
-    viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
-    searchActive: Boolean(searchResults),
-    onLoadDirectory,
-    onAfterNavigate: clearSearch,
-  })
-
-  const submitPath = async (rawPath: string) => {
-    try {
-      await xDriveFileExplorerSubmitPath({
-        rawPath,
-        currentCrumbs: crumbs,
-        loadRoot: async () => {
-          const result = await window.xdriveDesktop.agent.cloudRoot()
-          if (!result.ok) throw new Error(result.error.message)
-          return result.data
-        },
-        listChildren: async (parentID) => {
-          const result = await window.xdriveDesktop.agent.cloudChildren(parentID)
-          if (!result.ok) throw new Error(result.error.message)
-          return result.data
-        },
-        navigate: navigateTo,
-      })
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error))
-    }
-  }
 
   const relativePathForNode = (node: AgentCloudNode) => {
     const searchResult = searchByID.get(node.id)
@@ -412,17 +381,6 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const openItem = async (item: XDriveFileExplorerItem) => {
-    await xDriveFileExplorerDispatchOpenItem({
-      item,
-      nodeByID,
-      currentCrumbs: crumbs,
-      searchCrumbsForNode: (node) => searchByID.get(node.id)?.crumbs,
-      openFile: openLocalNode,
-      navigate: navigateTo,
-    })
-  }
-
   const getItemMenuItems = (item: XDriveFileExplorerItem) => {
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node) return []
@@ -431,7 +389,7 @@ export default function DesktopFileExplorer({
       kind: node.type,
       primaryDisabled: Boolean(actionBusy),
       onOpen: node.type === 'dir'
-        ? () => { void openItem(item) }
+        ? () => { void openWorkspaceItem(item, openLocalNode) }
         : () => { void openLocalNode(node) },
       onDownload: node.type === 'file'
         ? () => { void downloadNode(node) }
@@ -641,18 +599,6 @@ export default function DesktopFileExplorer({
     await dropExternalFolderEntriesToParent(payload, Number(crumb.id))
   }
 
-  const explorerPagination = xDriveFileExplorerPaginationController({
-    searchActive: searchResults !== null,
-    searchCursor,
-    searchLoadingMore,
-    directoryHasMore: hasMore,
-    directoryLoadingMore: loadingMore,
-    currentID: current?.id,
-    sort,
-    loadMoreSearch,
-    loadMoreDirectory: onLoadMore,
-  })
-
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder: () => setCreateOpen(true),
     onUpload: () => { void uploadFiles() },
@@ -718,12 +664,12 @@ export default function DesktopFileExplorer({
         onUploadFolder={uploadConflictSupported
           ? () => folderUploadInputRef.current?.click()
           : undefined}
-        onOpenItem={(item) => { void openItem(item) }}
+        onOpenItem={(item) => { void openWorkspaceItem(item, openLocalNode) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={sort}
         onSortChange={changeSort}
-        externallySorted={!searchResults}
+        externallySorted={externallySorted}
         hasMore={explorerPagination.hasMore}
         loadingMore={explorerPagination.loadingMore}
         onLoadMore={explorerPagination.onLoadMore}
@@ -753,9 +699,8 @@ export default function DesktopFileExplorer({
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
-        statusText={searchResults
-          ? `搜索“${searchState.query}”`
-          : actionBusy === 'upload'
+        statusText={searchStatusText ?? (
+          actionBusy === 'upload'
             ? '正在上传…'
             : actionBusy === 'paste'
               ? '正在粘贴…'
@@ -777,7 +722,8 @@ export default function DesktopFileExplorer({
                 ? '正在打开…'
                 : actionBusy.startsWith('reveal-')
                   ? '正在定位…'
-                  : undefined}
+                  : undefined
+        )}
       />
 
       <XDriveUploadConflictDialog {...uploadConflicts.dialogProps} />

@@ -10,6 +10,7 @@ const shared = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const searchController = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
+const workspaceController = read('ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts')
 const clipboardController = read('ui', 'shared', 'src', 'mui', 'FileExplorerClipboard.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const webApp = read('web', 'src', 'App.tsx')
@@ -35,7 +36,7 @@ test('shared FileExplorer controller owns typed-path parsing and traversal rules
   }
   assert.ok(sharedIndex.includes("export * from './file-explorer-controller'"), 'shared FileExplorer controller must be exported')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('xDriveFileExplorerSubmitPath({'), `${label} must delegate typed-path submission to the shared controller`)
+    assert.equal(source.includes('xDriveFileExplorerSubmitPath({'), false, `${label} must not orchestrate typed-path submission outside the shared workspace controller`)
     assert.equal(source.includes('xDriveResolveFileExplorerPath({'), false, `${label} must not orchestrate typed-path traversal locally`)
     assert.equal(source.includes("const rootName = crumbs[0]?.name || '我的文件'"), false, `${label} must not duplicate root-name fallback`)
   }
@@ -60,13 +61,20 @@ test('shared FileExplorer controller owns search normalization and validation de
   }
   assert.ok(searchController.includes('xDriveFileExplorerSearchDecision(rawQuery)'), 'shared React search controller must consume the framework-neutral search decision')
   assert.ok(sharedMuiIndex.includes("export * from './FileExplorerSearch'"), 'shared React search controller must be exported')
+  assert.ok(workspaceController.includes('useXDriveFileExplorerSearch<TSearch>'), 'shared workspace must compose search lifecycle')
+  assert.ok(workspaceController.includes('useXDriveFileExplorerProjection<'), 'shared workspace must compose projection')
+  assert.ok(workspaceController.includes('useXDriveFileExplorerClipboard<TNode>'), 'shared workspace must compose clipboard state')
+  assert.ok(workspaceController.includes('useXDriveFileExplorerNavigation({'), 'shared workspace must compose navigation')
+  assert.ok(workspaceController.includes('xDriveFileExplorerSubmitPath({'), 'shared workspace must own typed-path submission')
+  assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'shared workspace must own open-item dispatch')
+  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own pagination dispatch')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('useXDriveFileExplorerSearch<'), `${label} must consume the shared search controller`)
+    assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must consume the shared workspace controller`)
     assert.equal(source.includes('xDriveFileExplorerSearchDecision(query)'), false, `${label} must not duplicate search-decision handling`)
     assert.equal(source.includes('const normalized = query.trim()'), false, `${label} must not normalize search locally`)
     assert.equal(source.includes('搜索关键字至少需要 2 个字符。'), false, `${label} must not duplicate the minimum-search message`)
   }
-  assert.ok(web.includes('loadPage: (query, cursor) => api.search('), 'Web must keep REST search execution local')
+  assert.ok(web.includes('loadSearchPage: (query, cursor) => api.search('), 'Web must keep REST search execution local')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop must keep Agent search execution local')
 })
 test('shared FileExplorer controller owns search pagination state', () => {
@@ -122,11 +130,11 @@ test('shared FileExplorer controller owns search pagination state', () => {
     assert.ok(searchController.includes(token), `shared React search controller missing: ${token}`)
   }
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('useXDriveFileExplorerSearch<'), `${label} must use the shared React search lifecycle controller`)
+    assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must use the shared workspace controller`)
     assert.ok(source.includes('onSearchValueChange={changeSearchValue}'), `${label} must use the shared search draft controller`)
     assert.equal(source.includes('const [searchValue, setSearchValue] = useState'), false, `${label} must not own search draft state`)
     assert.equal(source.includes("setSearchValue('')"), false, `${label} must not clear the search draft separately`)
-    assert.ok(source.includes('xDriveFileExplorerPaginationController({'), `${label} must use the shared pagination dispatcher`)
+    assert.equal(source.includes('xDriveFileExplorerPaginationController({'), false, `${label} must not compose pagination outside the shared workspace controller`)
     assert.ok(source.includes('onLoadMore={explorerPagination.onLoadMore}'), `${label} must wire shared pagination dispatch to Explorer loadMore`)
     assert.equal(source.includes("explorerPagination.mode === 'search'"), false, `${label} must not branch search/directory pagination locally`)
     assert.equal(source.includes('searchRequestRef'), false, `${label} must not own search request sequencing`)
@@ -141,7 +149,7 @@ test('shared FileExplorer controller owns search pagination state', () => {
 })
 test('Web and Desktop delegate typed-path submission while keeping transport adapters local', () => {
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.equal((source.match(/xDriveFileExplorerSubmitPath\(/g) || []).length, 1, `${label} must use shared typed-path submission`)
+    assert.equal((source.match(/xDriveFileExplorerSubmitPath\(/g) || []).length, 0, `${label} must delegate typed-path submission to the shared workspace controller`)
     assert.equal(source.includes('xDriveResolveFileExplorerPath({'), false, `${label} must not orchestrate typed-path resolution locally`)
     assert.equal(source.includes(".split('/')"), false, `${label} must not duplicate typed-path splitting`)
     assert.equal(source.includes("parts[0] === rootName"), false, `${label} must not duplicate root-prefix handling`)
@@ -203,7 +211,7 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
   assert.ok(sharedMuiIndex.includes("export * from './FileExplorerClipboard'"), 'shared React clipboard controller must be exported')
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('useXDriveFileExplorerClipboard<'), `${label} must use the shared clipboard controller`)
+    assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must consume clipboard state through the shared workspace controller`)
     assert.ok(source.includes('const plan = planPaste(current.id)'), `${label} paste must use the shared clipboard plan`)
     assert.ok(source.includes('completePaste(plan)'), `${label} must let the shared clipboard controller clear completed cuts`)
     assert.ok(source.includes('onCopyItems={copyItems}'), `${label} must delegate copy selection to the shared clipboard controller`)
@@ -290,25 +298,14 @@ test('shared FileExplorer controller owns item lookup and open-item planning', (
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('xDriveFileExplorerNodeForItem(item, nodeByID)'), `${label} menu adapter must keep shared item lookup`)
-    assert.ok(source.includes('xDriveFileExplorerDispatchOpenItem({'), `${label} must delegate open-item dispatch to shared controller`)
-    assert.ok(source.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?'), `${label} must inject platform search crumbs into shared dispatch`)
+    assert.equal(source.includes('xDriveFileExplorerDispatchOpenItem({'), false, `${label} must not orchestrate open-item dispatch outside the shared workspace controller`)
+    assert.ok(source.includes('searchCrumbsForResult:'), `${label} must adapt platform search crumbs into the shared workspace controller`)
     assert.equal(source.includes('xDriveFileExplorerOpenItemPlan('), false, `${label} must not branch open-item planning locally`)
-    const openStart = source.indexOf('const openItem = async (item: XDriveFileExplorerItem) => {')
-    const openEndCandidates = [
-      source.indexOf('\n  const getItemMenuItems =', openStart),
-      source.indexOf('\n  const downloadSelected =', openStart),
-      source.indexOf('\n  async function downloadSelected', openStart),
-    ].filter((index) => index > openStart)
-    const openEnd = openEndCandidates.length > 0 ? Math.min(...openEndCandidates) : -1
-    assert.ok(openStart >= 0 && openEnd > openStart, `${label} open-item handler boundaries are missing`)
-    const openBody = source.slice(openStart, openEnd)
-    assert.equal(openBody.includes("if (plan.kind === 'file')"), false, `${label} must not branch file/directory open locally`)
-    assert.equal(openBody.includes('await navigateTo(plan.crumbs)'), false, `${label} must not dispatch directory navigation locally`)
-    assert.equal(openBody.includes('const node = nodeByID.get(Number(item.id))'), false, `${label} must not duplicate item lookup in open/menu handlers`)
+    assert.ok(source.includes('openItem'), `${label} must consume the workspace open-item adapter`)
   }
-  assert.ok(web.includes('openFile: async (node) => {'), 'Web must keep download execution as the shared dispatch callback')
+  assert.ok(web.includes('const openWebNode = async (node: Node) => {'), 'Web must keep authenticated file open/download execution local')
   assert.ok(web.includes('await api.download(node)'), 'Web shared open callback must keep authenticated download local')
-  assert.ok(desktop.includes('openFile: openLocalNode'), 'Desktop must keep native open execution as the shared dispatch callback')
+  assert.ok(desktop.includes('openWorkspaceItem(item, openLocalNode)'), 'Desktop must keep native open execution local while shared workspace owns dispatch')
 
   assert.equal(web.includes('normalizedSearchCrumbs'), false, 'Web must not normalize search crumbs locally')
   assert.equal(desktop.includes('normalizeSearchCrumbs'), false, 'Desktop must not normalize search crumbs locally')
@@ -320,10 +317,10 @@ test('Web and Desktop keep search pagination bound to the submitted active query
   assert.ok(searchController.includes('loadPage(searchState.query, searchState.cursor)'), 'shared React search controller must paginate the submitted active query')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.equal(source.includes('xDriveFileExplorerSearchDecision(searchValue)'), false, `${label} load-more must not reinterpret the editable search draft`)
-    assert.ok(source.includes('搜索“${searchState.query}”'), `${label} status must describe the active result set rather than the editable draft`)
-    assert.ok(source.includes('useXDriveFileExplorerSearch<'), `${label} must get active-query lifecycle from the shared search controller`)
+    assert.ok(source.includes('searchStatusText'), `${label} status must consume the shared workspace search status`)
+    assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must get active-query lifecycle from the shared workspace controller`)
   }
-  assert.ok(web.includes('loadPage: (query, cursor) => api.search('), 'Web must inject REST search loading into the shared controller')
+  assert.ok(web.includes('loadSearchPage: (query, cursor) => api.search('), 'Web must inject REST search loading into the shared workspace controller')
   assert.ok(web.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search loader must preserve the shared page size')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop must inject Agent cursor search into the shared controller')
 })

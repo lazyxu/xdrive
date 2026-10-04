@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts')
+const workspace = read('ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts')
 const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
@@ -46,7 +47,7 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
     ['Web', web, 'FILE_VIEW_KEY'],
     ['Desktop', desktop, 'DESKTOP_FILE_VIEW_KEY'],
   ]) {
-    assert.equal((source.match(/useXDriveFileExplorerNavigation\(/g) || []).length, 1, `${label} must use one shared Explorer navigation controller`)
+    assert.equal((source.match(/useXDriveFileExplorerWorkspace</g) || []).length, 1, `${label} must use one shared Explorer workspace controller`)
     assert.ok(source.includes(`viewModeStorageKey: ${key}`), `${label} must keep its local storage namespace`)
     assert.equal(source.includes('setHistory('), false, `${label} must not duplicate Explorer history state`)
     assert.equal(source.includes('setHistoryIndex('), false, `${label} must not duplicate Explorer history index state`)
@@ -61,4 +62,5 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
     assert.equal(source.includes("crumbs.map((crumb) => crumb.name).join('/')"), false, `${label} must not derive the path display locally`)
     assert.equal(source.includes('navigateTo(crumbs.slice(0, index + 1))'), false, `${label} must not slice breadcrumb navigation locally`)
   }
+  assert.ok(workspace.includes('useXDriveFileExplorerNavigation({'), 'workspace controller must compose shared navigation')
 })
