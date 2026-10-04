@@ -6,13 +6,10 @@ import {
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerDownloadPlan,
-  xDriveFileExplorerDropItemsPlan,
-  xDriveFileExplorerDropItemsToParentPlan,
   xDriveFileExplorerEnsureUploadDirectory,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerResolveFolderUploadTargets,
-  xDriveFileExplorerRunQueuedOperation,
   xDriveUploadBatchSummary,
   xDriveUploadConflictCanOverwrite,
 } from '@xdrive/shared'
@@ -23,11 +20,11 @@ import {
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
+  useXDriveFileExplorerOperationController,
   XDriveUploadConflictDialog,
   useXDriveUploadConflictResolver,
 } from '@xdrive/ui/mui'
 import type {
-  XDriveFileExplorerQueuedOperationPlan,
   XDriveUploadConflictPolicy,
 } from '@xdrive/shared'
 import type {
@@ -147,6 +144,36 @@ export default function DesktopFileExplorer({
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
 
+  const {
+    busy: fileOperationBusy,
+    busyAction: fileOperationBusyAction,
+    canPaste: fileOperationCanPaste,
+    pasteClipboard,
+    dropItemsToFolder,
+    dropItemsToCrumb,
+  } = useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>({
+    nodeByID,
+    currentID: current?.id,
+    disabled: Boolean(actionBusy),
+    planPaste,
+    completePaste,
+    canPaste,
+    clearSearch,
+    submitOperation: async (plan) => {
+      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
+        plan.operation,
+        plan.items,
+        plan.parentID,
+      )
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    onQueued: onOperationQueued,
+    onFeedback,
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+  })
+  const explorerActionBusy = Boolean(actionBusy) || fileOperationBusy
+
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
     const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
@@ -199,7 +226,7 @@ export default function DesktopFileExplorer({
     busyState: 'upload' | 'drop-upload' | 'upload-folder',
     refreshEvenWithoutUploads = false,
   ) => {
-    if (actionBusy) return
+    if (explorerActionBusy) return
     if (!uploadConflicts.beginBatch()) return
     setActionBusy(busyState)
     let uploaded = 0
@@ -317,7 +344,7 @@ export default function DesktopFileExplorer({
   }
 
   const uploadFiles = async () => {
-    if (!current || actionBusy) return
+    if (!current || explorerActionBusy) return
     if (uploadConflictSupported) {
       uploadInputRef.current?.click()
       return
@@ -350,7 +377,7 @@ export default function DesktopFileExplorer({
   }
 
   const createFolder = async (name: string) => {
-    if (!current) return
+    if (!current || explorerActionBusy) return
     setActionBusy('create-folder')
     try {
       const result = await window.xdriveDesktop.agent.cloudCreateDirectory(current.id, name)
@@ -363,7 +390,7 @@ export default function DesktopFileExplorer({
   }
 
   const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
-    if (actionBusy) throw new Error('当前有文件操作正在进行，请稍后重试。')
+    if (explorerActionBusy) throw new Error('当前有文件操作正在进行，请稍后重试。')
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node || !current) return
     setActionBusy('rename-' + node.id)
@@ -387,7 +414,7 @@ export default function DesktopFileExplorer({
 
     return xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
-      primaryDisabled: Boolean(actionBusy),
+      primaryDisabled: explorerActionBusy,
       onOpen: node.type === 'dir'
         ? () => { void openWorkspaceItem(item, openLocalNode) }
         : () => { void openLocalNode(node) },
@@ -408,7 +435,7 @@ export default function DesktopFileExplorer({
 
   async function downloadSelected(selected: XDriveFileExplorerItem[]) {
     const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-    if (nodes.length === 0 || actionBusy) return
+    if (nodes.length === 0 || explorerActionBusy) return
 
     if (archiveDownloadSupported) {
       const archivePlan = xDriveFileExplorerArchiveDownloadPlan(nodes)
@@ -454,80 +481,8 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const runQueuedOperation = (
-    plan: XDriveFileExplorerQueuedOperationPlan,
-    onComplete: () => void,
-  ) => xDriveFileExplorerRunQueuedOperation({
-    plan,
-    submit: async () => {
-      const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
-        plan.operation,
-        plan.items,
-        plan.parentID,
-      )
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    onQueued: (queued) => onOperationQueued(queued),
-    onFeedback,
-    onComplete,
-    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
-  })
-
-  const pasteClipboard = async () => {
-    if (!current || actionBusy) return
-    const plan = planPaste(current.id)
-    if (!plan) return
-    setActionBusy('paste')
-    try {
-      await runQueuedOperation(plan, () => {
-        completePaste(plan)
-        clearSearch()
-      })
-    } finally {
-      setActionBusy('')
-    }
-  }
-
-  const dropItemsToFolder = async (
-    selected: XDriveFileExplorerItem[],
-    target: XDriveFileExplorerItem,
-    operation: 'move' | 'copy',
-  ) => {
-    if (actionBusy) return
-    const plan = xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)
-    if (!plan) return
-    setActionBusy('drop-items')
-    try {
-      await runQueuedOperation(plan, clearSearch)
-    } finally {
-      setActionBusy('')
-    }
-  }
-
-  const dropItemsToCrumb = async (
-    selected: XDriveFileExplorerItem[],
-    crumb: XDriveFileExplorerCrumb,
-    operation: 'move' | 'copy',
-  ) => {
-    if (actionBusy) return
-    const plan = xDriveFileExplorerDropItemsToParentPlan(
-      operation,
-      selected,
-      Number(crumb.id),
-      nodeByID,
-    )
-    if (!plan) return
-    setActionBusy('drop-items')
-    try {
-      await runQueuedOperation(plan, clearSearch)
-    } finally {
-      setActionBusy('')
-    }
-  }
-
   const dropExternalFilesToParent = async (files: File[], parentID: number) => {
-    if (files.length === 0 || actionBusy) return
+    if (files.length === 0 || explorerActionBusy) return
     if (uploadConflictSupported) {
       await uploadConflictAwareFiles(parentID, files, 'drop-upload')
       return
@@ -561,7 +516,7 @@ export default function DesktopFileExplorer({
     payload: XDriveFileExplorerExternalDropPayload,
     parentID: number,
   ) => {
-    if (!uploadConflictSupported || actionBusy) return
+    if (!uploadConflictSupported || explorerActionBusy) return
     await uploadConflictAwareTargets(
       async () => {
         const targets = await resolveFolderUploadTargets(
@@ -605,7 +560,7 @@ export default function DesktopFileExplorer({
     onUploadFolder: uploadConflictSupported
       ? () => folderUploadInputRef.current?.click()
       : undefined,
-    uploadDisabled: Boolean(actionBusy),
+    uploadDisabled: explorerActionBusy,
     onRefresh: refresh,
   })
 
@@ -644,7 +599,7 @@ export default function DesktopFileExplorer({
         presentation="workspace"
         items={explorerItems}
         crumbs={explorerCrumbs}
-        loading={loading || searchLoading || Boolean(actionBusy)}
+        loading={loading || searchLoading || explorerActionBusy}
         loadThumbnail={loadThumbnail}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
@@ -678,14 +633,14 @@ export default function DesktopFileExplorer({
         onCopyItems={copyItems}
         onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}
-        canPaste={canPaste(Boolean(actionBusy))}
+        canPaste={fileOperationCanPaste}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onDeleteMany(nodes)
         }}
         onRenameItem={renameItem}
-        renameDisabled={Boolean(actionBusy)}
+        renameDisabled={explorerActionBusy}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
         onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
@@ -702,13 +657,13 @@ export default function DesktopFileExplorer({
         statusText={searchStatusText ?? (
           actionBusy === 'upload'
             ? '正在上传…'
-            : actionBusy === 'paste'
+            : fileOperationBusyAction === 'paste'
               ? '正在粘贴…'
               : actionBusy === 'download-many'
                 ? '正在批量下载…'
                 : actionBusy === 'download-archive'
                   ? '正在下载文件夹…'
-                : actionBusy === 'drop-items'
+                : fileOperationBusyAction === 'drop-items'
                   ? '正在处理拖拽项目…'
                   : actionBusy === 'drop-upload'
                     ? '正在上传拖入文件…'
