@@ -138,9 +138,8 @@ func toMediaMetadataDTO(row meta.MediaMetadata) mediaMetadataDTO {
 }
 
 func (s *Server) listMediaItems(c *gin.Context) {
-	kind := strings.TrimSpace(c.Query("kind"))
-	if kind != "" && kind != meta.MediaKindImage && kind != meta.MediaKindVideo {
-		fail(c, http.StatusBadRequest, "kind must be image or video")
+	options, ok := mediaQueryFromRequest(c)
+	if !ok {
 		return
 	}
 	limit, offset, ok := mediaListWindow(c)
@@ -158,7 +157,7 @@ func (s *Server) listMediaItems(c *gin.Context) {
 	items, err := s.queryMediaItems(
 		c.Request.Context(),
 		userID(c),
-		kind,
+		options,
 		"",
 		0,
 		limit,
@@ -329,6 +328,10 @@ func (s *Server) listMediaAlbumItems(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid media album id")
 		return
 	}
+	options, ok := mediaQueryFromRequest(c)
+	if !ok {
+		return
+	}
 	limit, offset, ok := mediaListWindow(c)
 	if !ok {
 		return
@@ -336,7 +339,7 @@ func (s *Server) listMediaAlbumItems(c *gin.Context) {
 	items, err := s.queryMediaItems(
 		c.Request.Context(),
 		userID(c),
-		"",
+		options,
 		parts[0],
 		id,
 		limit,
@@ -379,7 +382,8 @@ func mediaListWindow(c *gin.Context) (int, int, bool) {
 func (s *Server) queryMediaItems(
 	ctx context.Context,
 	uid uint64,
-	kind, albumKind string,
+	options mediaQueryOptions,
+	albumKind string,
 	albumID uint64,
 	limit, offset int,
 ) ([]mediaItemDTO, error) {
@@ -397,9 +401,7 @@ func (s *Server) queryMediaItems(
 			uid,
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 		)
-	if kind != "" {
-		query = query.Where("xd_media_metadata.media_kind = ?", kind)
-	}
+	query = applyMediaQueryFilters(query, options)
 
 	if albumKind != "" {
 		if albumKind != meta.PhotoCollectionKindFolder && albumKind != meta.PhotoCollectionKindSource {

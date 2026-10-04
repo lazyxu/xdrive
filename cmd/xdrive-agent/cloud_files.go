@@ -637,12 +637,16 @@ func (c *agentController) CloudCancelSourceRun(ctx context.Context, sourceID uin
 	return cli.CancelSourceRun(ctx, sourceID, runID)
 }
 
-func (c *agentController) CloudMediaItems(ctx context.Context, kind string, limit, offset int) ([]client.MediaItem, error) {
+func (c *agentController) CloudMediaItems(
+	ctx context.Context,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return nil, err
 	}
-	return cli.MediaItems(ctx, kind, limit, offset)
+	return cli.MediaItemsQuery(ctx, query, limit, offset)
 }
 
 func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaAlbum, error) {
@@ -653,12 +657,17 @@ func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaA
 	return cli.MediaAlbums(ctx)
 }
 
-func (c *agentController) CloudMediaAlbumItems(ctx context.Context, albumID string, limit, offset int) ([]client.MediaItem, error) {
+func (c *agentController) CloudMediaAlbumItems(
+	ctx context.Context,
+	albumID string,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return nil, err
 	}
-	return cli.MediaAlbumItems(ctx, albumID, limit, offset)
+	return cli.MediaAlbumItemsQuery(ctx, albumID, query, limit, offset)
 }
 
 func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {

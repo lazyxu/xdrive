@@ -6,9 +6,31 @@ const agent = Object.freeze({
   getStorageTree: () => ipcRenderer.invoke('agent:get-storage-tree'),
   getCache: () => ipcRenderer.invoke('agent:get-cache'),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
-  getMediaItems: (kind = '', limit = 100, offset = 0) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset),
+  getMediaItems: (
+    kind = '',
+    limit = 100,
+    offset = 0,
+    query: {
+    search?: string
+    asset_kind?: string
+    captured_from?: string
+    captured_to?: string
+    has_location?: boolean
+  } = {},
+  ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
-  getMediaAlbumItems: (albumID: string, limit = 100, offset = 0) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset),
+  getMediaAlbumItems: (
+    albumID: string,
+    limit = 100,
+    offset = 0,
+    query: {
+    search?: string
+    asset_kind?: string
+    captured_from?: string
+    captured_to?: string
+    has_location?: boolean
+  } = {},
+  ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
   getMediaLivePhotoMotion: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID),
   getMediaVideoURL: (nodeID: number) => ipcRenderer.invoke('agent:get-media-video-url', nodeID),

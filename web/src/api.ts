@@ -20,6 +20,7 @@ import type {
   FileVersion,
   MeResult,
   MediaAlbum,
+  MediaGalleryQuery,
   MediaItem,
   Node,
   PublicShare,
@@ -152,6 +153,19 @@ export class ApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? ''
+
+function appendMediaGalleryQuery(
+  values: URLSearchParams,
+  query: MediaGalleryQuery = {},
+) {
+  if (query.search?.trim()) values.set('q', query.search.trim())
+  if (query.asset_kind) values.set('asset_kind', query.asset_kind)
+  if (query.captured_from) values.set('captured_from', query.captured_from)
+  if (query.captured_to) values.set('captured_to', query.captured_to)
+  if (query.has_location !== undefined) {
+    values.set('has_location', String(query.has_location))
+  }
+}
 
 export function sessionFromAuth(result: AuthResult): AuthSession {
   return {
@@ -418,12 +432,18 @@ export class XDriveApi {
     return this.request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' })
   }
 
-  mediaItems(kind = '', limit = 100, offset = 0) {
+  mediaItems(
+    kind = '',
+    limit = 100,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
     const query = new URLSearchParams({
       limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
       offset: String(Math.max(0, Math.trunc(offset))),
     })
     if (kind) query.set('kind', kind)
+    appendMediaGalleryQuery(query, filters)
     return this.request<MediaItem[]>(`/api/v1/media/items?${query.toString()}`)
   }
 
@@ -431,11 +451,17 @@ export class XDriveApi {
     return this.request<MediaAlbum[]>('/api/v1/media/albums')
   }
 
-  mediaAlbumItems(albumID: string, limit = 100, offset = 0) {
+  mediaAlbumItems(
+    albumID: string,
+    limit = 100,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
     const query = new URLSearchParams({
       limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
       offset: String(Math.max(0, Math.trunc(offset))),
     })
+    appendMediaGalleryQuery(query, filters)
     return this.request<MediaItem[]>(
       `/api/v1/media/albums/${encodeURIComponent(albumID)}/items?${query.toString()}`,
     )

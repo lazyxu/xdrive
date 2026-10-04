@@ -505,9 +505,14 @@ function FileManager({
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
 
   const gallerySource = useMemo<MediaGalleryDataSource>(() => ({
-    listItems: (limit, offset) => api.mediaItems('', limit, offset),
+    listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listAlbums: () => api.mediaAlbums(),
-    listAlbumItems: (albumID, limit, offset) => api.mediaAlbumItems(albumID, limit, offset),
+    listAlbumItems: (albumID, limit, offset, query) => api.mediaAlbumItems(
+      albumID,
+      limit,
+      offset,
+      query,
+    ),
     loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
     loadLivePhotoMotion: async (nodeID) => URL.createObjectURL(await api.mediaLivePhotoMotion(nodeID)),
     loadVideo: (nodeID) => api.mediaVideoURL(nodeID),

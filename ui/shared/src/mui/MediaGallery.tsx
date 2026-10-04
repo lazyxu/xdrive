@@ -15,12 +15,19 @@ import {
   CircularProgress,
   Dialog,
   IconButton,
+  MenuItem,
   Paper,
   Stack,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
-import type { MediaAlbum, MediaItem, MediaMetadata } from '../models'
+import type {
+  MediaAlbum,
+  MediaGalleryQuery,
+  MediaItem,
+  MediaMetadata,
+} from '../models'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveStatusAlert } from './StatusAlert'
@@ -30,9 +37,18 @@ export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
 export type MediaVideoLoader = (nodeID: number) => Promise<string | null>
 
 export interface MediaGalleryDataSource {
-  listItems: (limit: number, offset: number) => Promise<MediaItem[]>
+  listItems: (
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<MediaItem[]>
   listAlbums: () => Promise<MediaAlbum[]>
-  listAlbumItems: (albumID: string, limit: number, offset: number) => Promise<MediaItem[]>
+  listAlbumItems: (
+    albumID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<MediaItem[]>
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
@@ -44,10 +60,160 @@ export interface XDriveMediaGalleryPageProps {
   onError?: (error: unknown) => void
 }
 
+type MediaGalleryFilterDraft = {
+  search: string
+  assetKind: string
+  capturedFrom: string
+  capturedTo: string
+  location: 'any' | 'with' | 'without'
+}
+
+const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
+  search: '',
+  assetKind: '',
+  capturedFrom: '',
+  capturedTo: '',
+  location: 'any',
+}
+
 function errorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) return error.message.trim()
   const value = String(error ?? '').trim()
   return value && value !== '[object Object]' ? value : '图库加载失败'
+}
+
+function localDateBoundaryISO(value: string, exclusiveEnd = false) {
+  if (!value) return undefined
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return undefined
+  if (exclusiveEnd) date.setDate(date.getDate() + 1)
+  return date.toISOString()
+}
+
+function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): MediaGalleryQuery {
+  const search = draft.search.trim()
+  return {
+    ...(search ? { search } : {}),
+    ...(draft.assetKind ? { asset_kind: draft.assetKind } : {}),
+    ...(draft.capturedFrom
+      ? { captured_from: localDateBoundaryISO(draft.capturedFrom) }
+      : {}),
+    ...(draft.capturedTo
+      ? { captured_to: localDateBoundaryISO(draft.capturedTo, true) }
+      : {}),
+    ...(draft.location === 'with'
+      ? { has_location: true }
+      : draft.location === 'without'
+        ? { has_location: false }
+        : {}),
+  }
+}
+
+function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
+  return Boolean(
+    draft.search.trim() ||
+    draft.assetKind ||
+    draft.capturedFrom ||
+    draft.capturedTo ||
+    draft.location !== 'any',
+  )
+}
+
+function MediaGalleryFilterBar({
+  draft,
+  loading,
+  onChange,
+  onApply,
+  onClear,
+}: {
+  draft: MediaGalleryFilterDraft
+  loading: boolean
+  onChange: (next: MediaGalleryFilterDraft) => void
+  onApply: () => void
+  onClear: () => void
+}) {
+  return (
+    <Paper variant="outlined" sx={{ p: 1.25 }}>
+      <Stack
+        direction={{ xs: 'column', lg: 'row' }}
+        spacing={1}
+        alignItems={{ xs: 'stretch', lg: 'center' }}
+      >
+        <TextField
+          size="small"
+          label="搜索"
+          placeholder="文件名、相机或镜头"
+          value={draft.search}
+          onChange={(event) => onChange({ ...draft, search: event.target.value })}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onApply()
+          }}
+          sx={{ minWidth: { lg: 240 }, flex: { lg: 1 } }}
+        />
+        <TextField
+          select
+          size="small"
+          label="资产类型"
+          value={draft.assetKind}
+          onChange={(event) => onChange({ ...draft, assetKind: event.target.value })}
+          sx={{ minWidth: 132 }}
+        >
+          <MenuItem value="">全部</MenuItem>
+          <MenuItem value="image">图片</MenuItem>
+          <MenuItem value="video">视频</MenuItem>
+          <MenuItem value="live_photo">实况照片</MenuItem>
+          <MenuItem value="raw_pair">RAW 组合</MenuItem>
+          <MenuItem value="burst">连拍</MenuItem>
+          <MenuItem value="sidecar">编辑组合</MenuItem>
+        </TextField>
+        <TextField
+          size="small"
+          type="date"
+          label="拍摄自"
+          value={draft.capturedFrom}
+          onChange={(event) => onChange({ ...draft, capturedFrom: event.target.value })}
+          slotProps={{ inputLabel: { shrink: true } }}
+          sx={{ minWidth: 150 }}
+        />
+        <TextField
+          size="small"
+          type="date"
+          label="拍摄至"
+          value={draft.capturedTo}
+          onChange={(event) => onChange({ ...draft, capturedTo: event.target.value })}
+          slotProps={{ inputLabel: { shrink: true } }}
+          sx={{ minWidth: 150 }}
+        />
+        <TextField
+          select
+          size="small"
+          label="位置"
+          value={draft.location}
+          onChange={(event) => onChange({
+            ...draft,
+            location: event.target.value as MediaGalleryFilterDraft['location'],
+          })}
+          sx={{ minWidth: 116 }}
+        >
+          <MenuItem value="any">全部</MenuItem>
+          <MenuItem value="with">有 GPS</MenuItem>
+          <MenuItem value="without">无 GPS</MenuItem>
+        </TextField>
+        <Stack direction="row" spacing={1}>
+          <Button variant="contained" onClick={onApply} disabled={loading}>
+            应用
+          </Button>
+          <Button
+            variant="text"
+            onClick={onClear}
+            disabled={loading || !hasMediaGalleryFilters(draft)}
+          >
+            清除
+          </Button>
+        </Stack>
+      </Stack>
+    </Paper>
+  )
 }
 
 export function XDriveMediaGalleryPage({
@@ -58,18 +224,30 @@ export function XDriveMediaGalleryPage({
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [items, setItems] = useState<MediaItem[]>([])
   const [currentAlbum, setCurrentAlbum] = useState<MediaAlbum | null>(null)
+  const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
+    emptyMediaGalleryFilterDraft,
+  )
+  const [query, setQuery] = useState<MediaGalleryQuery>({})
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState('')
   const requestID = useRef(0)
 
-  const loadFirstPage = useCallback(async (album: MediaAlbum | null) => {
+  const loadFirstPage = useCallback(async (
+    album: MediaAlbum | null,
+    nextQuery: MediaGalleryQuery,
+  ) => {
     const request = ++requestID.current
     setLoading(true)
     setError('')
     try {
       if (album) {
-        const nextItems = await source.listAlbumItems(album.id, pageSize + 1, 0)
+        const nextItems = await source.listAlbumItems(
+          album.id,
+          pageSize + 1,
+          0,
+          nextQuery,
+        )
         if (request !== requestID.current) return
         setCurrentAlbum(album)
         setItems(nextItems.slice(0, pageSize))
@@ -77,7 +255,7 @@ export function XDriveMediaGalleryPage({
         return
       }
       const [nextItems, nextAlbums] = await Promise.all([
-        source.listItems(pageSize + 1, 0),
+        source.listItems(pageSize + 1, 0, nextQuery),
         source.listAlbums(),
       ])
       if (request !== requestID.current) return
@@ -102,8 +280,13 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const nextItems = currentAlbum
-        ? await source.listAlbumItems(currentAlbum.id, pageSize + 1, items.length)
-        : await source.listItems(pageSize + 1, items.length)
+        ? await source.listAlbumItems(
+            currentAlbum.id,
+            pageSize + 1,
+            items.length,
+            query,
+          )
+        : await source.listItems(pageSize + 1, items.length, query)
       if (request !== requestID.current) return
       setItems((current) => [...current, ...nextItems.slice(0, pageSize)])
       setHasMore(nextItems.length > pageSize)
@@ -115,10 +298,22 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (request === requestID.current) setLoading(false)
     }
-  }, [currentAlbum, hasMore, items.length, loading, onError, pageSize, source])
+  }, [currentAlbum, hasMore, items.length, loading, onError, pageSize, query, source])
+
+  const applyFilters = useCallback(() => {
+    const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
+    setQuery(nextQuery)
+    void loadFirstPage(currentAlbum, nextQuery)
+  }, [currentAlbum, draftFilters, loadFirstPage])
+
+  const clearFilters = useCallback(() => {
+    setDraftFilters(emptyMediaGalleryFilterDraft)
+    setQuery({})
+    void loadFirstPage(currentAlbum, {})
+  }, [currentAlbum, loadFirstPage])
 
   useEffect(() => {
-    void loadFirstPage(null)
+    void loadFirstPage(null, {})
     return () => {
       requestID.current += 1
     }
@@ -132,13 +327,22 @@ export function XDriveMediaGalleryPage({
       loading={loading}
       hasMore={hasMore}
       error={error}
+      filters={(
+        <MediaGalleryFilterBar
+          draft={draftFilters}
+          loading={loading}
+          onChange={setDraftFilters}
+          onApply={applyFilters}
+          onClear={clearFilters}
+        />
+      )}
       loadThumbnail={source.loadThumbnail}
       loadLivePhotoMotion={source.loadLivePhotoMotion}
       loadVideo={source.loadVideo}
-      onOpenAlbum={(album) => void loadFirstPage(album)}
-      onBack={() => void loadFirstPage(null)}
+      onOpenAlbum={(album) => void loadFirstPage(album, query)}
+      onBack={() => void loadFirstPage(null, query)}
       onLoadMore={() => void loadMore()}
-      onRefresh={() => void loadFirstPage(currentAlbum)}
+      onRefresh={() => void loadFirstPage(currentAlbum, query)}
     />
   )
 }
@@ -150,6 +354,7 @@ export interface XDriveMediaGalleryProps {
   loading?: boolean
   hasMore?: boolean
   error?: string
+  filters?: ReactNode
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadVideo?: MediaVideoLoader
@@ -623,6 +828,7 @@ export function XDriveMediaGallery({
   loading = false,
   hasMore = false,
   error = '',
+  filters,
   loadThumbnail,
   loadLivePhotoMotion,
   loadVideo,
@@ -667,6 +873,8 @@ export function XDriveMediaGallery({
           </Tooltip>
         ) : null}
       </Stack>
+
+      {filters}
 
       {error ? (
         <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>

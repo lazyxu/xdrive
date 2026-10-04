@@ -15,6 +15,7 @@ import type {
   FileShare,
   FileVersion,
   MediaAlbum,
+  MediaGalleryQuery,
   MediaItem,
   Node,
   QuotaUsage,
@@ -320,9 +321,19 @@ declare global {
         getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
         getCache: () => Promise<DesktopResult<AgentCacheStats>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
-        getMediaItems: (kind?: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaItems: (
+          kind?: string,
+          limit?: number,
+          offset?: number,
+          query?: MediaGalleryQuery,
+        ) => Promise<DesktopResult<AgentMediaItem[]>>
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
-        getMediaAlbumItems: (albumID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaAlbumItems: (
+          albumID: string,
+          limit?: number,
+          offset?: number,
+          query?: MediaGalleryQuery,
+        ) => Promise<DesktopResult<AgentMediaItem[]>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaLivePhotoMotion: (nodeID: number) => Promise<DesktopResult<AgentMediaMotion>>
         getMediaVideoURL: (nodeID: number) => Promise<DesktopResult<string>>

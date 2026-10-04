@@ -74,6 +74,7 @@ import {
   type AgentCloudSearchPage,
   type AgentMediaItem,
   type AgentMediaAlbum,
+  type AgentMediaQuery,
   type AgentMediaThumbnail,
   type AgentMediaMotion,
   type AgentSource,
@@ -1136,6 +1137,58 @@ function normalizeCloudFileOperationConflictPolicy(value: unknown): 'skip' | 'ke
   )
 }
 
+function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
+  if (value === undefined || value === null) return {}
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new AgentIPCError('invalid_input', 0, 'Media query must be an object.')
+  }
+
+  const input = value as Record<string, unknown>
+  const out: AgentMediaQuery = {}
+  if (input.search !== undefined) {
+    if (typeof input.search !== 'string' || [...input.search].length > 200) {
+      throw new AgentIPCError('invalid_input', 0, 'Media search must be at most 200 characters.')
+    }
+    const search = input.search.trim()
+    if (search) out.search = search
+  }
+  if (input.asset_kind !== undefined) {
+    if (
+      typeof input.asset_kind !== 'string' ||
+      !['image', 'video', 'live_photo', 'raw_pair', 'sidecar', 'burst'].includes(input.asset_kind)
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media asset kind is invalid.')
+    }
+    out.asset_kind = input.asset_kind
+  }
+  for (const key of ['captured_from', 'captured_to'] as const) {
+    const raw = input[key]
+    if (raw === undefined) continue
+    if (typeof raw !== 'string') {
+      throw new AgentIPCError('invalid_input', 0, 'Media capture time must be an ISO date.')
+    }
+    const date = new Date(raw)
+    if (Number.isNaN(date.getTime())) {
+      throw new AgentIPCError('invalid_input', 0, 'Media capture time must be an ISO date.')
+    }
+    out[key] = date.toISOString()
+  }
+  if (
+    out.captured_from &&
+    out.captured_to &&
+    new Date(out.captured_from).getTime() >= new Date(out.captured_to).getTime()
+  ) {
+    throw new AgentIPCError('invalid_input', 0, 'Media capture start must be before end.')
+  }
+  if (input.has_location !== undefined) {
+    if (typeof input.has_location !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Media location filter must be boolean.')
+    }
+    out.has_location = input.has_location
+  }
+  return out
+}
+
 function requireAgentCapability(hello: AgentHello, capability: string) {
   if (!hello.capabilities.includes(capability)) {
     throw new AgentIPCError(
@@ -1477,7 +1530,7 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cancelSourceRun(sourceID, runID.trim())
   }, false))
-  ipcMain.handle('agent:get-media-items', (_event, kind: unknown = '', limit: unknown = 100, offset: unknown = 0) => runAgentAction<AgentMediaItem[]>(async () => {
+  ipcMain.handle('agent:get-media-items', (_event, kind: unknown = '', limit: unknown = 100, offset: unknown = 0, query: unknown = undefined) => runAgentAction<AgentMediaItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
     if (
@@ -1503,7 +1556,12 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media offset must be zero or greater.')
     }
-    return requireAgentClient().mediaItems(kind.trim(), requestedLimit, requestedOffset)
+    return requireAgentClient().mediaItems(
+      kind.trim(),
+      requestedLimit,
+      requestedOffset,
+      normalizeMediaGalleryQuery(query),
+    )
   }, false))
 
   ipcMain.handle('agent:get-media-albums', () => runAgentAction<AgentMediaAlbum[]>(async () => {
@@ -1512,7 +1570,7 @@ function registerIPCHandlers() {
     return requireAgentClient().mediaAlbums()
   }, false))
 
-  ipcMain.handle('agent:get-media-album-items', (_event, albumID: unknown, limit: unknown = 100, offset: unknown = 0) => runAgentAction<AgentMediaItem[]>(async () => {
+  ipcMain.handle('agent:get-media-album-items', (_event, albumID: unknown, limit: unknown = 100, offset: unknown = 0, query: unknown = undefined) => runAgentAction<AgentMediaItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
     if (
@@ -1538,7 +1596,12 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media offset must be zero or greater.')
     }
-    return requireAgentClient().mediaAlbumItems(albumID, requestedLimit, requestedOffset)
+    return requireAgentClient().mediaAlbumItems(
+      albumID,
+      requestedLimit,
+      requestedOffset,
+      normalizeMediaGalleryQuery(query),
+    )
   }, false))
 
   ipcMain.handle('agent:get-media-thumbnail', (_event, nodeID: unknown) => runAgentAction<AgentMediaThumbnail>(async () => {

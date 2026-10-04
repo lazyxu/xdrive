@@ -339,3 +339,11 @@ export interface MediaAlbum {
   cover_node_id?: number
   updated_at?: string
 }
+
+export interface MediaGalleryQuery {
+  search?: string
+  asset_kind?: PhotoAssetKind
+  captured_from?: string
+  captured_to?: string
+  has_location?: boolean
+}
