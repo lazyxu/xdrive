@@ -139,8 +139,10 @@ test('shared FileExplorer supports clipboard keyboard, command-bar and context-m
 test('shared FileExplorer supports selection bulk actions', () => {
   for (const token of [
     'onDownloadItems?: (items: XDriveFileExplorerItem[]) => void',
+    'folderDownloadSupported?: boolean',
     'onDeleteItems?: (items: XDriveFileExplorerItem[]) => void',
-    "label: '下载所选文件'",
+    "label: folderDownloadSupported ? '下载所选项目' : '下载所选文件'",
+    "candidate.kind === 'file' || folderDownloadSupported",
     "label: '删除所选项目'",
     "event.key === 'Delete'",
     '<DownloadRoundedIcon',
@@ -295,4 +297,15 @@ test('shared FileExplorer recursively reads dropped folders before platform uplo
   ]) {
     assert.ok(explorer.includes(token), `missing shared folder-drop dispatch: ${token}`)
   }
+})
+
+
+test('folder downloads stay capability-aware across Web and Desktop', () => {
+  const webExplorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.tsx'), 'utf8')
+  const desktopExplorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
+  assert.ok(webExplorer.includes('folderDownloadSupported'), 'Web must enable archive downloads for selected folders')
+  assert.ok(
+    desktopExplorer.includes('folderDownloadSupported={archiveDownloadSupported}'),
+    'Desktop must gate selected-folder downloads on archive capability',
+  )
 })
