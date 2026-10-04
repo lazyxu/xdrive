@@ -11,6 +11,7 @@ export const XDRIVE_SIDEBAR_WIDTH = 184
 export const XDRIVE_SIDEBAR_COMPACT_WIDTH = 176
 
 export type XDriveSidebarAppearance = 'light' | 'dark'
+export type XDriveSidebarBadgeValue = string | number
 
 export function XDriveSidebarSurface({
   children,
@@ -35,9 +36,9 @@ export function XDriveSidebarSurface({
       sx={{
         minWidth: 0,
         minHeight: 0,
-        height: '100%',
-        display: responsive ? { xs: 'block', md: 'flex' } : 'flex',
-        flexDirection: 'column',
+        height: responsive ? { xs: 'auto', md: '100%' } : '100%',
+        display: 'flex',
+        flexDirection: responsive ? { xs: 'row', md: 'column' } : 'column',
         bgcolor: dark ? '#101827' : 'background.paper',
         color: dark ? '#e8eef9' : 'text.primary',
         borderRight: responsive ? { xs: 0, md: 1 } : 1,
@@ -47,7 +48,7 @@ export function XDriveSidebarSurface({
         pt: responsive ? { xs: 1, md: 1.25 } : 1.5,
         pb: responsive ? { xs: 1, md: 1.25 } : 1.25,
         overflowX: responsive ? { xs: 'auto', md: 'hidden' } : 'hidden',
-        overflowY: 'auto',
+        overflowY: responsive ? { xs: 'hidden', md: 'auto' } : 'auto',
       }}
     >
       {children}
@@ -73,6 +74,7 @@ export function XDriveSidebarSection({
   return (
     <Box
       sx={{
+        display: responsive ? { xs: 'contents', md: 'block' } : 'block',
         mt: pinnedBottom ? 'auto' : responsive ? { xs: 0, md: 2 } : 2,
         ml: responsive ? { xs: 0.75, md: 0 } : 0,
         pt: pinnedBottom ? 1.25 : responsive ? { xs: 0, md: 0.5 } : 0.5,
@@ -122,6 +124,7 @@ export function XDriveSidebarNavList({
         display: responsive ? { xs: 'flex', md: 'grid' } : 'grid',
         gap: 0.25,
         minWidth: responsive ? { xs: 'max-content', md: 0 } : 0,
+        flexShrink: 0,
       }}
     >
       {children}
@@ -139,7 +142,7 @@ export function XDriveCoreWorkspaceNavItems({
   onSelect,
 }: {
   selected?: string
-  transferBadge?: ReactNode
+  transferBadge?: XDriveSidebarBadgeValue
   appearance?: XDriveSidebarAppearance
   showLocalStorage?: boolean
   onSelect: (key: XDriveCoreWorkspaceKey) => void
@@ -195,6 +198,41 @@ export function XDriveCoreWorkspaceNavItems({
   )
 }
 
+export function XDriveSidebarBadge({
+  value,
+}: {
+  value?: XDriveSidebarBadgeValue
+}) {
+  let label: string | number | null = null
+
+  if (typeof value === 'number') {
+    if (Number.isFinite(value) && value > 0) {
+      label = value > 99 ? '99+' : Math.floor(value)
+    }
+  } else if (typeof value === 'string' && value.trim()) {
+    label = value
+  }
+
+  if (label === null) return null
+
+  return (
+    <Chip
+      size="small"
+      label={label}
+      sx={{
+        minWidth: 20,
+        height: 18,
+        borderRadius: 999,
+        bgcolor: '#d85c6a',
+        color: '#fff',
+        fontSize: 10.5,
+        fontWeight: 700,
+        '& .MuiChip-label': { px: 0.7 },
+      }}
+    />
+  )
+}
+
 export function XDriveSidebarNavItem({
   selected = false,
   icon,
@@ -209,7 +247,7 @@ export function XDriveSidebarNavItem({
   icon: ReactNode
   primary: ReactNode
   secondary?: ReactNode
-  badge?: ReactNode
+  badge?: XDriveSidebarBadgeValue
   appearance?: XDriveSidebarAppearance
   className?: string
   onClick?: () => void
@@ -229,6 +267,7 @@ export function XDriveSidebarNavItem({
         px: 1,
         color: dark ? '#9baac2' : 'text.secondary',
         transition: 'background-color 120ms ease, color 120ms ease',
+        whiteSpace: 'nowrap',
         '&:hover': dark
           ? { bgcolor: 'rgba(255,255,255,.045)', color: '#dfe8f7' }
           : { bgcolor: 'action.hover', color: 'text.primary' },
@@ -269,22 +308,7 @@ export function XDriveSidebarNavItem({
           },
         }}
       />
-      {badge !== undefined && badge !== null ? (
-        <Chip
-          size="small"
-          label={badge}
-          sx={{
-            minWidth: 20,
-            height: 18,
-            borderRadius: 999,
-            bgcolor: '#d85c6a',
-            color: '#fff',
-            fontSize: 10.5,
-            fontWeight: 700,
-            '& .MuiChip-label': { px: 0.7 },
-          }}
-        />
-      ) : null}
+      <XDriveSidebarBadge value={badge} />
     </ListItemButton>
   )
 }

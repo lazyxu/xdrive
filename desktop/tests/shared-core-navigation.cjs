@@ -33,20 +33,39 @@ test('shared core navigation owns common destinations and capability-gates local
   assert.ok(sharedNav.includes('badge={transferBadge}'), 'shared transfer destination must own the transfer badge slot')
 })
 
-test('shared WorkspaceSidebar owns the complete sidebar composition', () => {
+test('shared sidebar exposes one destination, section and badge contract', () => {
   for (const token of [
-    'export type XDriveSidebarDestination',
-    'export type XDriveWorkspaceSidebarSectionModel',
+    'export type XDriveSidebarBadgeValue = string | number',
+    'export function XDriveSidebarBadge',
+    "value > 99 ? '99+' : Math.floor(value)",
+    'export type XDriveSidebarDestinationModel',
+    "export type XDriveSidebarSectionPlacement = 'before-core' | 'after-core' | 'bottom'",
+    'export type XDriveSidebarSectionModel',
+    'placement?: XDriveSidebarSectionPlacement',
+    'items: XDriveSidebarDestinationModel[]',
+  ]) {
+    assert.ok((sharedNav + sharedSidebar).includes(token), `shared sidebar contract missing: ${token}`)
+  }
+  assert.equal(sharedSidebar.includes('leadingItems'), false, 'complete sidebar should not keep a second extension API')
+  assert.equal(sharedSidebar.includes('trailingItems'), false, 'complete sidebar should not keep a second extension API')
+})
+
+test('shared WorkspaceSidebar owns the complete sidebar composition and extension placement', () => {
+  for (const token of [
     'export function XDriveWorkspaceSidebar',
     '<XDriveSidebarSurface',
     '<XDriveSidebarNavList',
     '<XDriveCoreWorkspaceNavItems',
     '<XDriveSidebarSection',
     '<XDriveSidebarStorageSummary',
-    'leadingItems.map',
-    'trailingItems.map',
-    'sections.map',
+    "sectionPlacement(section) === 'before-core'",
+    "sectionPlacement(section) === 'after-core'",
+    "sectionPlacement(section) === 'bottom'",
+    'beforeCoreInlineItems.map',
+    'afterCoreInlineItems.map',
+    'bottomSections.map',
     'showLocalStorage={showLocalStorage}',
+    "mt: bottomSections.length > 0 ? 0 : 'auto'",
   ]) {
     assert.ok(sharedSidebar.includes(token), `shared WorkspaceSidebar missing: ${token}`)
   }
@@ -75,6 +94,24 @@ test('Web and Desktop consume the same shared WorkspaceSidebar', () => {
   ]) {
     assert.equal(web.includes(label), false, `Web must not duplicate shared core label: ${label}`)
     assert.equal(desktop.includes(label), false, `Desktop must not duplicate shared core label: ${label}`)
+  }
+})
+
+test('Desktop extension destinations all flow through section models', () => {
+  assert.ok(desktop.includes('const desktopSidebarSections: XDriveSidebarSectionModel[] = ['))
+  assert.ok(desktop.includes("key: 'overview',\n      placement: 'before-core'"), 'Overview should inject before the shared core')
+  assert.ok(desktop.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Conflicts should inject after the shared core')
+  assert.ok(desktop.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'bottom'"), 'Diagnostics should inject into the bottom extension slot')
+  assert.equal(desktop.includes('leadingItems='), false, 'Desktop should not use a parallel leading-items contract')
+  assert.equal(desktop.includes('trailingItems='), false, 'Desktop should not use a parallel trailing-items contract')
+  assert.ok(desktop.includes('sections={desktopSidebarSections}'), 'Desktop must pass its extension sections to shared sidebar')
+})
+
+test('Web admin destinations use the same section model contract', () => {
+  assert.ok(web.includes("const webSidebarSections: XDriveSidebarSectionModel[] = profile?.role === 'admin'"))
+  assert.ok(web.includes("ariaLabel: '管理员功能',\n          placement: 'after-core'"))
+  for (const label of ['用户管理', '审计日志', '全局存储']) {
+    assert.ok(web.includes(`label: '${label}'`), `missing Web admin destination: ${label}`)
   }
 })
 

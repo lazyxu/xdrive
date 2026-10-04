@@ -48,7 +48,7 @@ import type {
   MediaGalleryDataSource,
   XDriveCloudStorageDataSource,
   XDriveFileExplorerSort,
-  XDriveWorkspaceSidebarSectionModel,
+  XDriveSidebarSectionModel,
 } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
@@ -846,12 +846,13 @@ function FileManager({
 
   const openHistory = (node: Node) => setHistoryNode(node)
 
-  const webSidebarSections: XDriveWorkspaceSidebarSectionModel[] = profile?.role === 'admin'
+  const webSidebarSections: XDriveSidebarSectionModel[] = profile?.role === 'admin'
     ? [
         {
           key: 'admin',
           label: '管理',
           ariaLabel: '管理员功能',
+          placement: 'after-core',
           items: [
             {
               key: 'admin-users',

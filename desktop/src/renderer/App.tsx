@@ -61,8 +61,7 @@ import type {
   MediaGalleryDataSource,
   XDriveCloudStorageDataSource,
   XDriveFileExplorerSort,
-  XDriveSidebarDestination,
-  XDriveWorkspaceSidebarSectionModel,
+  XDriveSidebarSectionModel,
   XDriveStatusTone,
 } from '@xdrive/ui/mui'
 import {
@@ -1257,26 +1256,34 @@ export default function App({
     </DesktopFrame>
   )
 
-  const desktopSidebarLeadingItems: XDriveSidebarDestination[] = [
+  const desktopSidebarSections: XDriveSidebarSectionModel[] = [
     {
       key: 'overview',
-      label: '概览',
-      icon: <DashboardRoundedIcon fontSize="small" />,
+      placement: 'before-core',
+      items: [
+        {
+          key: 'overview',
+          label: '概览',
+          icon: <DashboardRoundedIcon fontSize="small" />,
+        },
+      ],
     },
-  ]
-  const desktopSidebarTrailingItems: XDriveSidebarDestination[] = [
     {
       key: 'conflicts',
-      label: '冲突',
-      icon: <WarningAmberRoundedIcon fontSize="small" />,
-      badge: status?.conflict_count || undefined,
+      placement: 'after-core',
+      items: [
+        {
+          key: 'conflicts',
+          label: '冲突',
+          icon: <WarningAmberRoundedIcon fontSize="small" />,
+          badge: status?.conflict_count,
+        },
+      ],
     },
-  ]
-  const desktopSidebarSections: XDriveWorkspaceSidebarSectionModel[] = [
     {
       key: 'diagnostics',
       ariaLabel: '桌面版辅助功能',
-      pinnedBottom: true,
+      placement: 'bottom',
       items: [
         {
           key: 'diagnostics',
@@ -1792,8 +1799,6 @@ export default function App({
         selected={view}
         transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}
         showLocalStorage
-        leadingItems={desktopSidebarLeadingItems}
-        trailingItems={desktopSidebarTrailingItems}
         sections={desktopSidebarSections}
         storageSummary={cloudQuota ? {
           usedBytes: cloudQuota.physical_used_bytes,
