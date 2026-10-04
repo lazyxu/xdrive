@@ -484,18 +484,18 @@ export function xDriveFileExplorerDownloadPlan<TNode extends XDriveFileExplorerD
   }
 }
 
-export type XDriveFileExplorerWebDownloadPlan<
+export type XDriveFileExplorerArchiveDownloadPlan<
   TNode extends XDriveFileExplorerDownloadNode,
 > =
   | { kind: 'none' }
   | { kind: 'file'; file: TNode }
   | { kind: 'archive'; ids: number[]; filename: string; selectedCount: number }
 
-export function xDriveFileExplorerWebDownloadPlan<
+export function xDriveFileExplorerArchiveDownloadPlan<
   TNode extends XDriveFileExplorerDownloadNode,
 >(
   nodes: TNode[],
-): XDriveFileExplorerWebDownloadPlan<TNode> {
+): XDriveFileExplorerArchiveDownloadPlan<TNode> {
   if (nodes.length === 0) return { kind: 'none' }
   if (nodes.length === 1 && nodes[0].type === 'file') {
     return { kind: 'file', file: nodes[0] }
@@ -508,6 +508,18 @@ export function xDriveFileExplorerWebDownloadPlan<
       : 'xDrive-download.zip',
     selectedCount: nodes.length,
   }
+}
+
+export type XDriveFileExplorerWebDownloadPlan<
+  TNode extends XDriveFileExplorerDownloadNode,
+> = XDriveFileExplorerArchiveDownloadPlan<TNode>
+
+export function xDriveFileExplorerWebDownloadPlan<
+  TNode extends XDriveFileExplorerDownloadNode,
+>(
+  nodes: TNode[],
+): XDriveFileExplorerWebDownloadPlan<TNode> {
+  return xDriveFileExplorerArchiveDownloadPlan(nodes)
 }
 
 export type XDriveFileExplorerFeedback = {
@@ -528,6 +540,15 @@ export function xDriveFileExplorerWebDownloadFeedback<
     default:
       return { tone: 'warning', message: '没有可下载的项目。' }
   }
+}
+
+export function xDriveFileExplorerDesktopArchiveDownloadFeedback(
+  downloaded: number,
+): XDriveFileExplorerFeedback {
+  if (downloaded <= 0) {
+    return { tone: 'warning', message: '没有下载任何项目。' }
+  }
+  return { tone: 'good', message: `已下载 ${downloaded} 个项目。` }
 }
 
 export function xDriveFileExplorerDesktopDownloadFeedback({

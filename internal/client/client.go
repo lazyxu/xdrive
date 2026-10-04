@@ -556,6 +556,48 @@ func (c *Client) DownloadToProgress(ctx context.Context, id uint64, w io.Writer,
 	if resp.StatusCode/100 != 2 {
 		return responseError(resp)
 	}
+	return copyDownloadResponse(resp, w, progress)
+}
+
+func (c *Client) DownloadArchiveTo(ctx context.Context, ids []uint64, w io.Writer) error {
+	return c.DownloadArchiveToProgress(ctx, ids, w, nil)
+}
+
+func (c *Client) DownloadArchiveToProgress(
+	ctx context.Context,
+	ids []uint64,
+	w io.Writer,
+	progress DownloadProgress,
+) error {
+	if len(ids) == 0 || len(ids) > 1000 {
+		return fmt.Errorf("archive download requires between 1 and 1000 node ids")
+	}
+	for _, id := range ids {
+		if id == 0 {
+			return fmt.Errorf("archive download node ids must be non-zero")
+		}
+	}
+	body, err := json.Marshal(map[string]any{"ids": ids})
+	if err != nil {
+		return err
+	}
+	req, err := c.request(ctx, http.MethodPost, "/api/v1/download/archive", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return responseError(resp)
+	}
+	return copyDownloadResponse(resp, w, progress)
+}
+
+func copyDownloadResponse(resp *http.Response, w io.Writer, progress DownloadProgress) error {
 	total := resp.ContentLength
 	if total < 0 {
 		total = 0
@@ -564,7 +606,7 @@ func (c *Client) DownloadToProgress(ctx context.Context, id uint64, w io.Writer,
 		progress(0, total)
 	}
 	writer := &progressWriter{writer: w, total: total, progress: progress}
-	_, err = io.Copy(writer, resp.Body)
+	_, err := io.Copy(writer, resp.Body)
 	return err
 }
 

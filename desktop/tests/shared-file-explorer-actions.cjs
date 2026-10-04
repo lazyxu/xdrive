@@ -56,7 +56,7 @@ test('Web and Desktop consume shared FileExplorer menu/action presentation', () 
   }
   assert.ok(web.includes('onDownload: () => { void downloadSelected([item]) }'), 'Web must keep its file/folder download adapter')
   assert.ok(web.includes("onShare: node.type === 'file'"), 'Web must keep its share adapter')
-  assert.ok(desktop.includes("downloadLabel: '另存为…'"), 'Desktop must preserve native save-as wording')
+  assert.ok(desktop.includes("downloadLabel: node.type === 'file' ? '另存为…' : '下载到…'"), 'Desktop must preserve Save As for files and destination download wording for folders')
   assert.ok(desktop.includes('onReveal: () => { void openLocalNode(node, true) }'), 'Desktop must preserve native reveal action')
   assert.ok(desktop.includes('primaryDisabled: Boolean(actionBusy)'), 'Desktop must preserve native-action busy gating')
 })

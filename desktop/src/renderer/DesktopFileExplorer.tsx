@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  xDriveFileExplorerArchiveDownloadPlan,
+  xDriveFileExplorerDesktopArchiveDownloadFeedback,
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerDispatchOpenItem,
@@ -59,6 +61,7 @@ export default function DesktopFileExplorer({
   onOperationQueued,
   onQuotaChanged,
   uploadConflictSupported = false,
+  archiveDownloadSupported = false,
   onError,
   onFeedback,
 }: {
@@ -77,6 +80,7 @@ export default function DesktopFileExplorer({
   onOperationQueued: (operation: AgentCloudFileOperation) => void
   onQuotaChanged: () => Promise<unknown>
   uploadConflictSupported?: boolean
+  archiveDownloadSupported?: boolean
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -425,8 +429,12 @@ export default function DesktopFileExplorer({
       onOpen: node.type === 'dir'
         ? () => { void openItem(item) }
         : () => { void openLocalNode(node) },
-      onDownload: node.type === 'file' ? () => { void downloadNode(node) } : undefined,
-      downloadLabel: '另存为…',
+      onDownload: node.type === 'file'
+        ? () => { void downloadNode(node) }
+        : archiveDownloadSupported
+          ? () => { void downloadSelected([item]) }
+          : undefined,
+      downloadLabel: node.type === 'file' ? '另存为…' : '下载到…',
       onReveal: () => { void openLocalNode(node, true) },
       onShare: node.type === 'file' ? () => onOpenShares(node) : undefined,
       onHistory: node.type === 'file'
@@ -436,10 +444,35 @@ export default function DesktopFileExplorer({
     })
   }
 
-  const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
+  async function downloadSelected(selected: XDriveFileExplorerItem[]) {
     const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+    if (nodes.length === 0 || actionBusy) return
+
+    if (archiveDownloadSupported) {
+      const archivePlan = xDriveFileExplorerArchiveDownloadPlan(nodes)
+      if (archivePlan.kind === 'none') return
+      if (archivePlan.kind === 'file') {
+        await downloadNode(archivePlan.file)
+        return
+      }
+      setActionBusy('download-archive')
+      try {
+        const result = await window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)
+        if (!result.ok) {
+          onError(result.error.message)
+          return
+        }
+        if (result.data.canceled) return
+        const feedback = xDriveFileExplorerDesktopArchiveDownloadFeedback(result.data.downloaded.length)
+        onFeedback(feedback.tone, feedback.message)
+      } finally {
+        setActionBusy('')
+      }
+      return
+    }
+
     const plan = xDriveFileExplorerDownloadPlan(nodes)
-    if (plan.files.length === 0 || actionBusy) return
+    if (plan.files.length === 0) return
     setActionBusy('download-many')
     try {
       const result = await window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)
@@ -723,6 +756,8 @@ export default function DesktopFileExplorer({
               ? '正在粘贴…'
               : actionBusy === 'download-many'
                 ? '正在批量下载…'
+                : actionBusy === 'download-archive'
+                  ? '正在下载文件夹…'
                 : actionBusy === 'drop-items'
                   ? '正在处理拖拽项目…'
                   : actionBusy === 'drop-upload'

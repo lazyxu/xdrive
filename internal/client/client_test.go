@@ -44,6 +44,46 @@ func TestDownloadToProgress(t *testing.T) {
 	}
 }
 
+func TestDownloadArchiveToProgress(t *testing.T) {
+	var seenIDs []uint64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/download/archive" {
+			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Fatalf("content-type=%q", got)
+		}
+		var body struct {
+			IDs []uint64 `json:"ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		seenIDs = append([]uint64(nil), body.IDs...)
+		w.Header().Set("Content-Length", "7")
+		_, _ = io.WriteString(w, "zipdata")
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	var progress [][2]int64
+	err := New(ts.URL, "").DownloadArchiveToProgress(
+		context.Background(),
+		[]uint64{2, 3},
+		&out,
+		func(done, total int64) { progress = append(progress, [2]int64{done, total}) },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "zipdata" || len(seenIDs) != 2 || seenIDs[0] != 2 || seenIDs[1] != 3 {
+		t.Fatalf("archive=%q ids=%v", out.String(), seenIDs)
+	}
+	if len(progress) < 2 || progress[len(progress)-1] != [2]int64{7, 7} {
+		t.Fatalf("progress=%v", progress)
+	}
+}
+
 func TestDownloadRangeSendsRangeAndAuth(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {

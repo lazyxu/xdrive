@@ -2453,6 +2453,38 @@ function registerIPCHandlers() {
     }
   })
 
+  ipcMain.handle('agent:cloud-download-archive', async (_event, input: unknown) => {
+    if (
+      !Array.isArray(input) ||
+      input.length === 0 ||
+      input.length > 1000 ||
+      input.some((id) => typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0)
+    ) {
+      return { ok: false, error: { code: 'invalid_input', message: 'A non-empty archive node id list is required.' } }
+    }
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      requireAgentCapability(hello, 'archive-download')
+      const options: OpenDialogOptions = {
+        properties: ['openDirectory', 'createDirectory'],
+        title: '选择下载目录',
+        defaultPath: app.getPath('downloads'),
+      }
+      const selected = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options)
+      const directory = selected.filePaths[0]
+      if (selected.canceled || !directory) {
+        return { ok: true, data: { canceled: true, downloaded: [] } }
+      }
+      const result = await requireAgentClient().cloudDownloadArchive(input as number[], directory)
+      return { ok: true, data: { canceled: false, downloaded: result.downloaded } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+
   ipcMain.handle('agent:open-path', (_event, pathValue: unknown, revealValue: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'open-path')

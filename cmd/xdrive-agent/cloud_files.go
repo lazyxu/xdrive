@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -8,10 +9,12 @@ import (
 	"io"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -19,6 +22,7 @@ import (
 
 const cloudSearchLimit = 200
 const maxAgentMediaMotionBytes int64 = 64 << 20
+const maxAgentArchiveEntries = 200000
 
 type agentCloudCrumb struct {
 	ID   uint64 `json:"id"`
@@ -40,6 +44,10 @@ type agentCloudUploadResult struct {
 	Node             client.Node `json:"node"`
 	Skipped          bool        `json:"skipped"`
 	TransferredBytes int64       `json:"transferred_bytes"`
+}
+
+type agentCloudArchiveDownloadResult struct {
+	Downloaded []string `json:"downloaded"`
 }
 
 type agentCreatedShare struct {
@@ -517,6 +525,329 @@ func replaceDownloadedFile(stagedPath, destination string) error {
 	}
 	_ = os.Remove(backupPath)
 	return nil
+}
+
+func (c *agentController) CloudDownloadArchive(
+	ctx context.Context,
+	ids []uint64,
+	destination string,
+) (agentCloudArchiveDownloadResult, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentCloudArchiveDownloadResult{}, err
+	}
+	if len(ids) == 0 || len(ids) > 1000 {
+		return agentCloudArchiveDownloadResult{}, fmt.Errorf("archive download requires between 1 and 1000 node ids")
+	}
+	for _, id := range ids {
+		if id == 0 {
+			return agentCloudArchiveDownloadResult{}, fmt.Errorf("archive download node ids must be non-zero")
+		}
+	}
+	destination = filepath.Clean(strings.TrimSpace(destination))
+	if destination == "." || !filepath.IsAbs(destination) {
+		return agentCloudArchiveDownloadResult{}, fmt.Errorf("absolute archive destination directory is required")
+	}
+	if info, err := os.Stat(destination); err != nil {
+		return agentCloudArchiveDownloadResult{}, err
+	} else if !info.IsDir() {
+		return agentCloudArchiveDownloadResult{}, fmt.Errorf("archive destination is not a directory")
+	}
+
+	handle, progress := startAgentCloudTransfer(
+		c.transfers,
+		transfer.KindDownload,
+		"download",
+		"xDrive-download.zip",
+		destination,
+		0,
+	)
+	tmp, err := os.CreateTemp(destination, ".xdrive-archive-*.zip")
+	if err != nil {
+		finishAgentCloudTransfer(handle, err)
+		return agentCloudArchiveDownloadResult{}, err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		finishAgentCloudTransfer(handle, err)
+		return agentCloudArchiveDownloadResult{}, err
+	}
+	if err := cli.DownloadArchiveToProgress(ctx, ids, tmp, progress); err != nil {
+		_ = tmp.Close()
+		finishAgentCloudTransfer(handle, err)
+		return agentCloudArchiveDownloadResult{}, err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		finishAgentCloudTransfer(handle, err)
+		return agentCloudArchiveDownloadResult{}, err
+	}
+	if err := tmp.Close(); err != nil {
+		finishAgentCloudTransfer(handle, err)
+		return agentCloudArchiveDownloadResult{}, err
+	}
+
+	downloaded, err := extractDownloadedArchive(tmpPath, destination)
+	finishAgentCloudTransfer(handle, err)
+	if err != nil {
+		return agentCloudArchiveDownloadResult{}, err
+	}
+	return agentCloudArchiveDownloadResult{Downloaded: downloaded}, nil
+}
+
+type validatedArchiveEntry struct {
+	file  *zip.File
+	path  string
+	isDir bool
+}
+
+func validateDownloadedArchive(reader *zip.ReadCloser) ([]validatedArchiveEntry, []string, error) {
+	if len(reader.File) > maxAgentArchiveEntries {
+		return nil, nil, fmt.Errorf("archive contains too many entries")
+	}
+	entries := make([]validatedArchiveEntry, 0, len(reader.File))
+	roots := make([]string, 0)
+	rootSeen := map[string]struct{}{}
+	pathSeen := map[string]struct{}{}
+	var total uint64
+	const maxInt64 = uint64(^uint64(0) >> 1)
+
+	for _, entry := range reader.File {
+		raw := entry.Name
+		if raw == "" || strings.ContainsRune(raw, '\x00') || strings.Contains(raw, "\\") || strings.HasPrefix(raw, "/") {
+			return nil, nil, fmt.Errorf("unsafe archive path %q", raw)
+		}
+		isDir := strings.HasSuffix(raw, "/") || entry.FileInfo().IsDir()
+		raw = strings.TrimSuffix(raw, "/")
+		clean := pathpkg.Clean(raw)
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || clean != raw {
+			return nil, nil, fmt.Errorf("unsafe archive path %q", entry.Name)
+		}
+		parts := strings.Split(clean, "/")
+		for _, part := range parts {
+			if err := meta.ValidateName(part); err != nil {
+				return nil, nil, fmt.Errorf("unsafe archive path %q: %w", entry.Name, err)
+			}
+		}
+		modeType := entry.Mode() & os.ModeType
+		if modeType == os.ModeSymlink || (!isDir && modeType != 0) || (isDir && modeType != 0 && modeType != os.ModeDir) {
+			return nil, nil, fmt.Errorf("unsupported archive entry type for %q", entry.Name)
+		}
+		key := strings.ToLower(clean)
+		if _, exists := pathSeen[key]; exists {
+			return nil, nil, fmt.Errorf("duplicate archive path %q", entry.Name)
+		}
+		pathSeen[key] = struct{}{}
+		if entry.UncompressedSize64 > maxInt64-total {
+			return nil, nil, fmt.Errorf("archive uncompressed size is too large")
+		}
+		total += entry.UncompressedSize64
+		rootKey := strings.ToLower(parts[0])
+		if _, exists := rootSeen[rootKey]; !exists {
+			rootSeen[rootKey] = struct{}{}
+			roots = append(roots, parts[0])
+		}
+		entries = append(entries, validatedArchiveEntry{file: entry, path: clean, isDir: isDir})
+	}
+	return entries, roots, nil
+}
+
+func extractDownloadedArchive(zipPath, destination string) ([]string, error) {
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	entries, roots, err := validateDownloadedArchive(reader)
+	if err != nil {
+		return nil, err
+	}
+	staging, err := os.MkdirTemp(destination, ".xdrive-extract-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(staging)
+
+	for _, entry := range entries {
+		target := filepath.Join(staging, filepath.FromSlash(entry.path))
+		rel, err := filepath.Rel(staging, target)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("archive path escapes staging root: %q", entry.file.Name)
+		}
+		if entry.isDir {
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return nil, err
+		}
+		input, err := entry.file.Open()
+		if err != nil {
+			return nil, err
+		}
+		output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			_ = input.Close()
+			return nil, err
+		}
+		written, copyErr := io.Copy(output, input)
+		syncErr := output.Sync()
+		closeOutErr := output.Close()
+		closeInErr := input.Close()
+		if copyErr != nil {
+			return nil, copyErr
+		}
+		if syncErr != nil {
+			return nil, syncErr
+		}
+		if closeOutErr != nil {
+			return nil, closeOutErr
+		}
+		if closeInErr != nil {
+			return nil, closeInErr
+		}
+		if written < 0 || uint64(written) != entry.file.UncompressedSize64 {
+			return nil, fmt.Errorf("archive entry size mismatch for %q", entry.file.Name)
+		}
+		if err := os.Chmod(target, 0o644); err != nil {
+			return nil, err
+		}
+	}
+
+	existing, err := os.ReadDir(destination)
+	if err != nil {
+		return nil, err
+	}
+	reserved := make(map[string]struct{}, len(existing)+len(roots))
+	for _, entry := range existing {
+		if strings.HasPrefix(entry.Name(), ".xdrive-extract-") || strings.HasPrefix(entry.Name(), ".xdrive-archive-") {
+			continue
+		}
+		reserved[strings.ToLower(entry.Name())] = struct{}{}
+	}
+
+	downloaded := make([]string, 0, len(roots))
+	promoted := make([]string, 0, len(roots))
+	for _, root := range roots {
+		source := filepath.Join(staging, root)
+		info, err := os.Lstat(source)
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+			return nil, fmt.Errorf("unsupported extracted root %q", root)
+		}
+		name, err := allocateDownloadedArchiveName(root, info.IsDir(), reserved)
+		if err != nil {
+			return nil, err
+		}
+		target := filepath.Join(destination, name)
+		if err := copyDownloadedArchiveRoot(source, target); err != nil {
+			for _, path := range promoted {
+				_ = os.RemoveAll(path)
+			}
+			return nil, err
+		}
+		promoted = append(promoted, target)
+		downloaded = append(downloaded, name)
+	}
+	return downloaded, nil
+}
+
+func allocateDownloadedArchiveName(
+	name string,
+	isDir bool,
+	reserved map[string]struct{},
+) (string, error) {
+	base, ext := name, ""
+	if !isDir {
+		if dot := strings.LastIndex(name, "."); dot > 0 {
+			base, ext = name[:dot], name[dot:]
+		}
+	}
+	for index := 0; index <= 9999; index++ {
+		candidate := name
+		if index > 0 {
+			suffix := " - 副本"
+			if index > 1 {
+				suffix = fmt.Sprintf(" - 副本 (%d)", index)
+			}
+			candidate = base + suffix + ext
+		}
+		if err := meta.ValidateName(candidate); err != nil {
+			return "", err
+		}
+		key := strings.ToLower(candidate)
+		if _, exists := reserved[key]; exists {
+			continue
+		}
+		reserved[key] = struct{}{}
+		return candidate, nil
+	}
+	return "", fmt.Errorf("cannot allocate archive destination name for %q", name)
+}
+
+func copyDownloadedArchiveRoot(source, destination string) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink extracted roots are not supported")
+	}
+	if info.IsDir() {
+		if err := os.Mkdir(destination, 0o755); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(source)
+		if err != nil {
+			_ = os.RemoveAll(destination)
+			return err
+		}
+		for _, entry := range entries {
+			if err := copyDownloadedArchiveRoot(
+				filepath.Join(source, entry.Name()),
+				filepath.Join(destination, entry.Name()),
+			); err != nil {
+				_ = os.RemoveAll(destination)
+				return err
+			}
+		}
+		return nil
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("unsupported extracted file type")
+	}
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(output, input)
+	syncErr := output.Sync()
+	closeErr := output.Close()
+	if copyErr != nil {
+		_ = os.Remove(destination)
+		return copyErr
+	}
+	if syncErr != nil {
+		_ = os.Remove(destination)
+		return syncErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(destination)
+		return closeErr
+	}
+	return os.Chmod(destination, 0o644)
 }
 
 func (c *agentController) CloudSearch(ctx context.Context, query, cursor string) (agentCloudSearchPage, error) {

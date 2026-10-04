@@ -223,29 +223,29 @@ test('shared FileExplorer controller owns copy/move operation planning', () => {
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep Agent operation execution local')
 })
 
-test('shared FileExplorer controller keeps Web archive planning separate from Desktop native downloads', () => {
+test('shared FileExplorer controller owns archive-aware planning across Web and capable Desktop', () => {
   for (const token of [
     'xDriveFileExplorerDownloadPlan',
     "node.type === 'file'",
     'skippedFolders: nodes.length - files.length',
-    'id: node.id, name: node.name',
-    'xDriveFileExplorerWebDownloadPlan',
+    'XDriveFileExplorerArchiveDownloadPlan',
+    'xDriveFileExplorerArchiveDownloadPlan',
     "kind: 'file'",
     "kind: 'archive'",
     "'xDrive-download.zip'",
+    'return xDriveFileExplorerArchiveDownloadPlan(nodes)',
+    'xDriveFileExplorerDesktopArchiveDownloadFeedback',
     'xDriveFileExplorerWebDownloadFeedback',
     'xDriveFileExplorerDesktopDownloadFeedback',
-    '个失败',
-    '跳过',
   ]) {
     assert.ok(shared.includes(token), `shared FileExplorer download planning missing: ${token}`)
   }
-  assert.ok(web.includes('xDriveFileExplorerWebDownloadPlan(nodes)'), 'Web must use the shared archive-aware download plan')
-  assert.equal(web.includes('xDriveFileExplorerDownloadPlan(nodes)'), false, 'Web must not use the Desktop file-only download plan')
+  assert.ok(web.includes('xDriveFileExplorerWebDownloadPlan(nodes)'), 'Web must retain its compatibility wrapper over shared archive planning')
   assert.ok(web.includes('api.downloadArchive(plan.ids, plan.filename)'), 'Web must keep archive transport local')
-  assert.ok(desktop.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop must keep the native file-only planner until recursive native download lands')
-  assert.ok(desktop.includes('cloudDownloadFiles(plan.items)'), 'Desktop must keep native batch download execution local')
-  assert.ok(desktop.includes('xDriveFileExplorerDesktopDownloadFeedback({'), 'Desktop must use shared download result feedback')
+  assert.ok(desktop.includes('xDriveFileExplorerArchiveDownloadPlan(nodes)'), 'capable Desktop must use the shared archive-aware plan')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)'), 'Desktop must keep native archive transport local')
+  assert.ok(desktop.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop must retain file-only fallback for older Agents')
+  assert.ok(desktop.includes('cloudDownloadFiles(plan.items)'), 'Desktop fallback must keep legacy native batch download execution')
 })
 
 test('shared FileExplorer controller owns external-drop target resolution', () => {
@@ -294,7 +294,12 @@ test('shared FileExplorer controller owns item lookup and open-item planning', (
     assert.ok(source.includes('searchCrumbsForNode: (node) => searchByID.get(node.id)?'), `${label} must inject platform search crumbs into shared dispatch`)
     assert.equal(source.includes('xDriveFileExplorerOpenItemPlan('), false, `${label} must not branch open-item planning locally`)
     const openStart = source.indexOf('const openItem = async (item: XDriveFileExplorerItem) => {')
-    const openEnd = source.indexOf('\n  const downloadSelected =', openStart)
+    const openEndCandidates = [
+      source.indexOf('\n  const getItemMenuItems =', openStart),
+      source.indexOf('\n  const downloadSelected =', openStart),
+      source.indexOf('\n  async function downloadSelected', openStart),
+    ].filter((index) => index > openStart)
+    const openEnd = openEndCandidates.length > 0 ? Math.min(...openEndCandidates) : -1
     assert.ok(openStart >= 0 && openEnd > openStart, `${label} open-item handler boundaries are missing`)
     const openBody = source.slice(openStart, openEnd)
     assert.equal(openBody.includes("if (plan.kind === 'file')"), false, `${label} must not branch file/directory open locally`)
