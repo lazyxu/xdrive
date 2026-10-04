@@ -118,6 +118,7 @@ type fakeDesktopIPCController struct {
 	cloudMediaThumbnail        agentMediaThumbnail
 	cloudMediaMotion           agentMediaMotion
 	cloudMediaKind             string
+	cloudMediaQuery            client.MediaQuery
 	cloudMediaLimit            int
 	cloudMediaOffset           int
 	cloudMediaAlbumID          string
@@ -430,8 +431,13 @@ func (f *fakeDesktopIPCController) CloudRevokeShare(_ context.Context, id uint64
 	return f.err
 }
 
-func (f *fakeDesktopIPCController) CloudMediaItems(_ context.Context, kind string, limit, offset int) ([]client.MediaItem, error) {
-	f.cloudMediaKind = kind
+func (f *fakeDesktopIPCController) CloudMediaItems(
+	_ context.Context,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
+	f.cloudMediaKind = query.MediaKind
+	f.cloudMediaQuery = query
 	f.cloudMediaLimit = limit
 	f.cloudMediaOffset = offset
 	return append([]client.MediaItem(nil), f.cloudMediaItems...), f.err
@@ -441,8 +447,14 @@ func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.M
 	return append([]client.MediaAlbum(nil), f.cloudMediaAlbums...), f.err
 }
 
-func (f *fakeDesktopIPCController) CloudMediaAlbumItems(_ context.Context, albumID string, limit, offset int) ([]client.MediaItem, error) {
+func (f *fakeDesktopIPCController) CloudMediaAlbumItems(
+	_ context.Context,
+	albumID string,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
 	f.cloudMediaAlbumID = albumID
+	f.cloudMediaQuery = query
 	f.cloudMediaLimit = limit
 	f.cloudMediaOffset = offset
 	return append([]client.MediaItem(nil), f.cloudMediaAlbumItems...), f.err
@@ -1108,13 +1120,32 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		func() {},
 	)
 
-	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/items?kind=image&limit=25&offset=5", "")
+	res := desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true",
+		"",
+	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
 		t.Fatalf("media items status=%d body=%s", res.Code, res.Body.String())
 	}
-	if ctrl.cloudMediaKind != "image" || ctrl.cloudMediaLimit != 25 || ctrl.cloudMediaOffset != 5 {
-		t.Fatalf("media item query not forwarded: kind=%q limit=%d offset=%d",
-			ctrl.cloudMediaKind, ctrl.cloudMediaLimit, ctrl.cloudMediaOffset)
+	if ctrl.cloudMediaKind != "image" ||
+		ctrl.cloudMediaLimit != 25 ||
+		ctrl.cloudMediaOffset != 5 ||
+		ctrl.cloudMediaQuery.Search != "iPhone" ||
+		ctrl.cloudMediaQuery.AssetKind != "live_photo" ||
+		ctrl.cloudMediaQuery.HasLocation == nil ||
+		!*ctrl.cloudMediaQuery.HasLocation ||
+		ctrl.cloudMediaQuery.CapturedFrom == nil ||
+		ctrl.cloudMediaQuery.CapturedTo == nil {
+		t.Fatalf(
+			"media item query not forwarded: kind=%q query=%+v limit=%d offset=%d",
+			ctrl.cloudMediaKind,
+			ctrl.cloudMediaQuery,
+			ctrl.cloudMediaLimit,
+			ctrl.cloudMediaOffset,
+		)
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/albums", "")
@@ -1122,13 +1153,29 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media albums status=%d body=%s", res.Code, res.Body.String())
 	}
 
-	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/albums/items?album_id=folder%3A8&limit=40&offset=0", "")
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/albums/items?album_id=folder%3A8&limit=40&offset=0&q=Sony&has_location=false",
+		"",
+	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
 		t.Fatalf("media album items status=%d body=%s", res.Code, res.Body.String())
 	}
-	if ctrl.cloudMediaAlbumID != "folder:8" || ctrl.cloudMediaLimit != 40 || ctrl.cloudMediaOffset != 0 {
-		t.Fatalf("media album query not forwarded: id=%q limit=%d offset=%d",
-			ctrl.cloudMediaAlbumID, ctrl.cloudMediaLimit, ctrl.cloudMediaOffset)
+	if ctrl.cloudMediaAlbumID != "folder:8" ||
+		ctrl.cloudMediaLimit != 40 ||
+		ctrl.cloudMediaOffset != 0 ||
+		ctrl.cloudMediaQuery.Search != "Sony" ||
+		ctrl.cloudMediaQuery.HasLocation == nil ||
+		*ctrl.cloudMediaQuery.HasLocation {
+		t.Fatalf(
+			"media album query not forwarded: id=%q query=%+v limit=%d offset=%d",
+			ctrl.cloudMediaAlbumID,
+			ctrl.cloudMediaQuery,
+			ctrl.cloudMediaLimit,
+			ctrl.cloudMediaOffset,
+		)
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/thumbnail?node_id=31", "")
@@ -1172,6 +1219,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 
 	for _, path := range []string{
 		"/v1/media/items?kind=audio",
+		"/v1/media/items?asset_kind=provider_magic",
+		"/v1/media/items?captured_from=not-a-date",
+		"/v1/media/items?has_location=maybe",
 		"/v1/media/items?limit=0",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",

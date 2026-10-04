@@ -182,9 +182,9 @@ type desktopIPCController interface {
 	CloudShares(context.Context, uint64) ([]client.FileShare, error)
 	CloudCreateShare(context.Context, uint64, client.CreateShareInput) (agentCreatedShare, error)
 	CloudRevokeShare(context.Context, uint64) error
-	CloudMediaItems(context.Context, string, int, int) ([]client.MediaItem, error)
+	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
-	CloudMediaAlbumItems(context.Context, string, int, int) ([]client.MediaItem, error)
+	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
 	CloudMediaVideo(context.Context, uint64, string) (client.MediaVideoStream, error)
@@ -1390,16 +1390,15 @@ func (h *desktopIPCHandler) cloudRevokeShare(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *desktopIPCHandler) mediaItems(w http.ResponseWriter, r *http.Request) {
-	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
-	if kind != "" && kind != meta.MediaKindImage && kind != meta.MediaKindVideo {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_kind", "kind must be image or video")
+	query, ok := desktopIPCMediaQuery(w, r)
+	if !ok {
 		return
 	}
 	limit, offset, ok := desktopIPCMediaWindow(w, r)
 	if !ok {
 		return
 	}
-	items, err := h.ctrl.CloudMediaItems(r.Context(), kind, limit, offset)
+	items, err := h.ctrl.CloudMediaItems(r.Context(), query, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -1422,11 +1421,15 @@ func (h *desktopIPCHandler) mediaAlbumItems(w http.ResponseWriter, r *http.Reque
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_id", "album_id must be a Gallery album id")
 		return
 	}
+	query, ok := desktopIPCMediaQuery(w, r)
+	if !ok {
+		return
+	}
 	limit, offset, ok := desktopIPCMediaWindow(w, r)
 	if !ok {
 		return
 	}
-	items, err := h.ctrl.CloudMediaAlbumItems(r.Context(), albumID, limit, offset)
+	items, err := h.ctrl.CloudMediaAlbumItems(r.Context(), albumID, query, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -1494,6 +1497,67 @@ func (h *desktopIPCHandler) mediaVideo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "inline")
 	w.WriteHeader(stream.StatusCode)
 	_, _ = io.Copy(w, stream.Body)
+}
+
+func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQuery, bool) {
+	var out client.MediaQuery
+	out.MediaKind = strings.TrimSpace(r.URL.Query().Get("kind"))
+	if out.MediaKind != "" &&
+		out.MediaKind != meta.MediaKindImage &&
+		out.MediaKind != meta.MediaKindVideo {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_kind", "kind must be image or video")
+		return client.MediaQuery{}, false
+	}
+	out.Search = strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(out.Search)) > 200 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_query", "q must be at most 200 characters")
+		return client.MediaQuery{}, false
+	}
+	out.AssetKind = strings.TrimSpace(r.URL.Query().Get("asset_kind"))
+	if out.AssetKind != "" && !meta.ValidPhotoAssetKind(out.AssetKind) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_asset_kind", "asset_kind is invalid")
+		return client.MediaQuery{}, false
+	}
+
+	var ok bool
+	if out.CapturedFrom, ok = desktopIPCMediaTime(w, r, "captured_from"); !ok {
+		return client.MediaQuery{}, false
+	}
+	if out.CapturedTo, ok = desktopIPCMediaTime(w, r, "captured_to"); !ok {
+		return client.MediaQuery{}, false
+	}
+	if out.CapturedFrom != nil && out.CapturedTo != nil &&
+		!out.CapturedFrom.Before(*out.CapturedTo) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_time", "captured_from must be before captured_to")
+		return client.MediaQuery{}, false
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("has_location")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_location", "has_location must be true or false")
+			return client.MediaQuery{}, false
+		}
+		out.HasLocation = &value
+	}
+	return out, true
+}
+
+func desktopIPCMediaTime(
+	w http.ResponseWriter,
+	r *http.Request,
+	name string,
+) (*time.Time, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return nil, true
+	}
+	value, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_time", name+" must be RFC3339")
+		return nil, false
+	}
+	value = value.UTC()
+	return &value, true
 }
 
 func desktopIPCMediaWindow(w http.ResponseWriter, r *http.Request) (int, int, bool) {

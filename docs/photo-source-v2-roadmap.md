@@ -218,6 +218,18 @@ Animated image playback reuses the same scoped media transport instead of adding
 
 This preserves native browser/Electron animation semantics while keeping large originals out of JSON/IPC memory.
 
+### Gallery filters and search
+
+Gallery filtering is server-side and operates only on xDrive-local canonical state. The same query contract is shared by Web and Desktop and remains valid while browsing a folder/imported album:
+
+- free-text search matches the local filename, camera make/model, and lens model;
+- logical asset kind filters use `PhotoAsset.kind` (`image`, `video`, `live_photo`, `raw_pair`, `burst`, or `sidecar`);
+- capture-date filters use local `MediaMetadata.captured_at` only; files without a parsed capture time do not masquerade as captured on their upload/create date;
+- location filters distinguish assets with both local latitude+longitude from assets without complete GPS coordinates;
+- filtering happens in the paginated SQL query, not only against the items already loaded by the renderer.
+
+No provider search, album semantics, EXIF endpoint, geocoder, tag service, or filename/time relationship heuristic is involved. People/tag/place-name facets remain future connector-neutral local media-analysis work.
+
 ### Live Photo
 
 Live Photo projection is entirely local. The provider is responsible only for syncing the original resources.
@@ -377,7 +389,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
-| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, and GIF/WebP animation playback are exposed in Gallery; next add video posters, then filters/search from capture time/GPS | Medium |
+| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, GIF/WebP animation playback, and server-side Gallery search/filters (filename/camera/lens, asset kind, capture date, GPS presence) are shared by Web/Desktop; next add video posters and richer local facets | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
 
 Provider semantic metadata import is deliberately removed from the roadmap. If xDrive later implements people/tag/place recognition, it belongs to a separate connector-neutral media-analysis subsystem operating on local originals, not to Yike/Synology/FileStation connectors.
@@ -399,7 +411,8 @@ Before calling this subsystem mature:
 - Mirror, if enabled, acts only on proven deletion and moves to trash rather than permanent delete;
 - relation-evidence version/JSON corruption is detectable locally and stale evidence is re-indexed without provider access;
 - integrity verification detects local binding/media corruption without mutating anything;
-- repair rebuilds local derived state without writing to the provider.
+- repair rebuilds local derived state without writing to the provider;
+- Gallery search/filter results are reproducible from local Node/PhotoAsset/MediaMetadata state with all providers offline.
 
 ## Explicit non-goals
 

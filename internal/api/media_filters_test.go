@@ -1,0 +1,75 @@
+package api
+
+import (
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+func TestMediaQueryFromRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(
+		"GET",
+		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true",
+		nil,
+	)
+	ctx.Request = req
+
+	query, ok := mediaQueryFromRequest(ctx)
+	if !ok {
+		t.Fatalf("query rejected: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if query.Search != "iPhone" ||
+		query.AssetKind != "live_photo" ||
+		query.HasLocation == nil || !*query.HasLocation {
+		t.Fatalf("query=%+v", query)
+	}
+	if query.CapturedFrom == nil ||
+		!query.CapturedFrom.Equal(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("captured_from=%v", query.CapturedFrom)
+	}
+	if query.CapturedTo == nil ||
+		!query.CapturedTo.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("captured_to=%v", query.CapturedTo)
+	}
+}
+
+func TestMediaQueryFromRequestRejectsInvalidRange(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(
+		"GET",
+		"/api/v1/media/items?captured_from=2026-10-02T00:00:00Z&captured_to=2026-10-01T00:00:00Z",
+		nil,
+	)
+
+	if _, ok := mediaQueryFromRequest(ctx); ok {
+		t.Fatal("invalid capture range was accepted")
+	}
+	if recorder.Code != 400 {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMediaQueryFromRequestRejectsInvalidAssetKind(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(
+		"GET",
+		"/api/v1/media/items?asset_kind=provider_magic",
+		nil,
+	)
+
+	if _, ok := mediaQueryFromRequest(ctx); ok {
+		t.Fatal("invalid asset kind was accepted")
+	}
+	if recorder.Code != 400 {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}

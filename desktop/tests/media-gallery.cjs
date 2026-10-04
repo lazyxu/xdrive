@@ -34,6 +34,13 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /动图预览/)
   assert.match(sharedGallery, /image\/gif/)
   assert.match(sharedGallery, /image\/webp/)
+  assert.match(sharedGallery, /搜索/)
+  assert.match(sharedGallery, /资产类型/)
+  assert.match(sharedGallery, /拍摄自/)
+  assert.match(sharedGallery, /拍摄至/)
+  assert.match(sharedGallery, /有 GPS/)
+  assert.match(sharedGallery, /无 GPS/)
+  assert.match(sharedGallery, /mediaGalleryQueryFromDraft/)
   assert.match(sharedGallery, /<video/)
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
@@ -55,6 +62,11 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /container_kind\?: string/)
   assert.match(sharedModels, /asset_kind\?: PhotoAssetKind/)
   assert.match(sharedModels, /resources\?: MediaResource\[\]/)
+  assert.match(sharedModels, /export interface MediaGalleryQuery/)
+  assert.match(sharedModels, /search\?: string/)
+  assert.match(sharedModels, /captured_from\?: string/)
+  assert.match(sharedModels, /captured_to\?: string/)
+  assert.match(sharedModels, /has_location\?: boolean/)
   assert.match(sharedModels, /live_photo\?: boolean/)
   assert.match(sharedModels, /derived_resources\?: MediaDerivedResource\[\]/)
   assert.match(sharedGallery, /RAW 组合/)
@@ -64,7 +76,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'playback-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -80,9 +92,9 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   }
 
   for (const token of [
-    "mediaItems(kind = ''",
+    'mediaItems(',
     'mediaAlbums()',
-    'mediaAlbumItems(albumID:',
+    'mediaAlbumItems(',
     'mediaThumbnail(nodeID:',
     'mediaLivePhotoMotion(nodeID:',
     'mediaVideoURL(nodeID:',
@@ -99,7 +111,11 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/video'))
   assert.ok(desktopIPC.includes('"media-video-stream"'))
   assert.match(desktopApp, /getMediaVideoURL/)
+  assert.match(desktopApp, /getMediaItems\('', limit, offset, query\)/)
+  assert.match(desktopApp, /getMediaAlbumItems\([\s\S]*query,[\s\S]*\)/)
   assert.match(desktopApp, /loadVideo/)
+  assert.match(preload, /agent:get-media-items', kind, limit, offset, query/)
+  assert.match(agentClient, /appendAgentMediaQuery\(query, filters\)/)
   assert.match(desktopIndexHTML, /media-src 'self' data: blob: http:\/\/127\.0\.0\.1:\*/)
 })
 

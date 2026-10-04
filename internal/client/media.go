@@ -78,15 +78,56 @@ type MediaAlbum struct {
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
+type MediaQuery struct {
+	MediaKind    string
+	Search       string
+	AssetKind    string
+	CapturedFrom *time.Time
+	CapturedTo   *time.Time
+	HasLocation  *bool
+}
+
+func (q MediaQuery) add(values url.Values) {
+	if value := strings.TrimSpace(q.MediaKind); value != "" {
+		values.Set("kind", value)
+	}
+	if value := strings.TrimSpace(q.Search); value != "" {
+		values.Set("q", value)
+	}
+	if value := strings.TrimSpace(q.AssetKind); value != "" {
+		values.Set("asset_kind", value)
+	}
+	if q.CapturedFrom != nil {
+		values.Set("captured_from", q.CapturedFrom.UTC().Format(time.RFC3339))
+	}
+	if q.CapturedTo != nil {
+		values.Set("captured_to", q.CapturedTo.UTC().Format(time.RFC3339))
+	}
+	if q.HasLocation != nil {
+		values.Set("has_location", strconv.FormatBool(*q.HasLocation))
+	}
+}
+
 func (c *Client) MediaItems(
 	ctx context.Context,
 	kind string,
 	limit, offset int,
 ) ([]MediaItem, error) {
+	return c.MediaItemsQuery(
+		ctx,
+		MediaQuery{MediaKind: kind},
+		limit,
+		offset,
+	)
+}
+
+func (c *Client) MediaItemsQuery(
+	ctx context.Context,
+	query MediaQuery,
+	limit, offset int,
+) ([]MediaItem, error) {
 	values := url.Values{}
-	if kind = strings.TrimSpace(kind); kind != "" {
-		values.Set("kind", kind)
-	}
+	query.add(values)
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
 	}
@@ -125,7 +166,23 @@ func (c *Client) MediaAlbumItems(
 	albumID string,
 	limit, offset int,
 ) ([]MediaItem, error) {
+	return c.MediaAlbumItemsQuery(
+		ctx,
+		albumID,
+		MediaQuery{},
+		limit,
+		offset,
+	)
+}
+
+func (c *Client) MediaAlbumItemsQuery(
+	ctx context.Context,
+	albumID string,
+	query MediaQuery,
+	limit, offset int,
+) ([]MediaItem, error) {
 	values := url.Values{}
+	query.add(values)
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
 	}

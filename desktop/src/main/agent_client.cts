@@ -441,6 +441,27 @@ export type AgentMediaItem = {
   live_photo?: boolean
 }
 
+export type AgentMediaQuery = {
+  search?: string
+  asset_kind?: string
+  captured_from?: string
+  captured_to?: string
+  has_location?: boolean
+}
+
+function appendAgentMediaQuery(
+  query: URLSearchParams,
+  filters: AgentMediaQuery = {},
+) {
+  if (filters.search?.trim()) query.set('q', filters.search.trim())
+  if (filters.asset_kind) query.set('asset_kind', filters.asset_kind)
+  if (filters.captured_from) query.set('captured_from', filters.captured_from)
+  if (filters.captured_to) query.set('captured_to', filters.captured_to)
+  if (filters.has_location !== undefined) {
+    query.set('has_location', String(filters.has_location))
+  }
+}
+
 export type AgentMediaAlbum = {
   id: string
   kind: string
@@ -731,12 +752,18 @@ export class AgentIPCClient {
     return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
   }
 
-  mediaItems(kind = '', limit = 100, offset = 0) {
+  mediaItems(
+    kind = '',
+    limit = 100,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
     const query = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     })
     if (kind) query.set('kind', kind)
+    appendAgentMediaQuery(query, filters)
     return this.request<AgentMediaItem[]>('GET', `/v1/media/items?${query.toString()}`)
   }
 
@@ -744,12 +771,18 @@ export class AgentIPCClient {
     return this.request<AgentMediaAlbum[]>('GET', '/v1/media/albums')
   }
 
-  mediaAlbumItems(albumID: string, limit = 100, offset = 0) {
+  mediaAlbumItems(
+    albumID: string,
+    limit = 100,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
     const query = new URLSearchParams({
       album_id: albumID,
       limit: String(limit),
       offset: String(offset),
     })
+    appendAgentMediaQuery(query, filters)
     return this.request<AgentMediaItem[]>('GET', `/v1/media/albums/items?${query.toString()}`)
   }
 

@@ -216,8 +216,8 @@ export default function App({
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
 
   const mediaGallerySource = useMemo<MediaGalleryDataSource>(() => ({
-    listItems: async (limit, offset) => {
-      const result = await window.xdriveDesktop.agent.getMediaItems('', limit, offset)
+    listItems: async (limit, offset, query) => {
+      const result = await window.xdriveDesktop.agent.getMediaItems('', limit, offset, query)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -226,8 +226,13 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    listAlbumItems: async (albumID, limit, offset) => {
-      const result = await window.xdriveDesktop.agent.getMediaAlbumItems(albumID, limit, offset)
+    listAlbumItems: async (albumID, limit, offset, query) => {
+      const result = await window.xdriveDesktop.agent.getMediaAlbumItems(
+        albumID,
+        limit,
+        offset,
+        query,
+      )
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

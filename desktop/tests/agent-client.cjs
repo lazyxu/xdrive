@@ -59,6 +59,34 @@ test('media video URL uses the scoped discovery token only', async (t) => {
   assert.notEqual(value.searchParams.get('access_token'), token)
 })
 
+test('media Gallery filters are serialized for items and album items', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, (req, res) => {
+    seen.push(req.url)
+    json(res, 200, [])
+  })
+  const filters = {
+    search: 'iPhone',
+    asset_kind: 'live_photo',
+    captured_from: '2026-09-01T00:00:00.000Z',
+    captured_to: '2026-10-01T00:00:00.000Z',
+    has_location: true,
+  }
+  await client.mediaItems('', 25, 10, filters)
+  await client.mediaAlbumItems('folder:9', 25, 5, filters)
+
+  for (const raw of seen) {
+    const url = new URL(raw, 'http://127.0.0.1')
+    assert.equal(url.searchParams.get('q'), 'iPhone')
+    assert.equal(url.searchParams.get('asset_kind'), 'live_photo')
+    assert.equal(url.searchParams.get('captured_from'), filters.captured_from)
+    assert.equal(url.searchParams.get('captured_to'), filters.captured_to)
+    assert.equal(url.searchParams.get('has_location'), 'true')
+  }
+  assert.equal(new URL(seen[0], 'http://127.0.0.1').searchParams.get('offset'), '10')
+  assert.equal(new URL(seen[1], 'http://127.0.0.1').searchParams.get('album_id'), 'folder:9')
+})
+
 test('client update endpoints keep check download and install separate', async (t) => {
   const seen = []
   const { client } = await fixture(t, async (req, res) => {
