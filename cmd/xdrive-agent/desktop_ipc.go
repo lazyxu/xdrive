@@ -40,10 +40,11 @@ const (
 )
 
 type desktopIPCDiscovery struct {
-	Version int    `json:"version"`
-	BaseURL string `json:"base_url"`
-	Token   string `json:"token"`
-	PID     int    `json:"pid"`
+	Version    int    `json:"version"`
+	BaseURL    string `json:"base_url"`
+	Token      string `json:"token"`
+	MediaToken string `json:"media_token,omitempty"`
+	PID        int    `json:"pid"`
 }
 
 type desktopIPCHello struct {
@@ -72,6 +73,7 @@ var desktopIPCCapabilities = []string{
 	"cloud-files",
 	"server-update",
 	"media-gallery",
+	"media-video-stream",
 	"external-sources",
 	"storage-intelligence",
 	"conflicts",
@@ -183,6 +185,7 @@ type desktopIPCController interface {
 	CloudMediaAlbumItems(context.Context, string, int, int) ([]client.MediaItem, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
+	CloudMediaVideo(context.Context, uint64, string) (client.MediaVideoStream, error)
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error)
 	CloudSourceRunFailures(context.Context, uint64, string, int, int) ([]client.SourceRunFailure, error)
@@ -233,6 +236,11 @@ func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown fu
 		return nil, err
 	}
 	token := hex.EncodeToString(tokenBytes[:])
+	var mediaTokenBytes [32]byte
+	if _, err := rand.Read(mediaTokenBytes[:]); err != nil {
+		return nil, err
+	}
+	mediaToken := hex.EncodeToString(mediaTokenBytes[:])
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -246,10 +254,11 @@ func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown fu
 		return nil, err
 	}
 	discoveryPath, err := writeDesktopIPCDiscovery(configDir, desktopIPCDiscovery{
-		Version: desktopIPCAPIVersion,
-		BaseURL: baseURL,
-		Token:   token,
-		PID:     os.Getpid(),
+		Version:    desktopIPCAPIVersion,
+		BaseURL:    baseURL,
+		Token:      token,
+		MediaToken: mediaToken,
+		PID:        os.Getpid(),
 	})
 	if err != nil {
 		_ = listener.Close()
@@ -258,7 +267,7 @@ func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown fu
 
 	s := &desktopIPCServer{
 		server: &http.Server{
-			Handler:           newDesktopIPCHandler(ctrl, token, shutdown),
+			Handler:           newDesktopIPCHandlerWithMediaToken(ctrl, token, mediaToken, shutdown),
 			ReadHeaderTimeout: 5 * time.Second,
 			IdleTimeout:       35 * time.Second,
 		},
@@ -363,6 +372,14 @@ func removeDesktopIPCDiscoveryIfOwned(path, token string) {
 }
 
 func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func()) http.Handler {
+	return newDesktopIPCHandlerWithMediaToken(ctrl, token, token, shutdown)
+}
+
+func newDesktopIPCHandlerWithMediaToken(
+	ctrl desktopIPCController,
+	token, mediaToken string,
+	shutdown func(),
+) http.Handler {
 	h := &desktopIPCHandler{ctrl: ctrl, shutdown: shutdown}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/hello", h.hello)
@@ -422,6 +439,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
+	mux.HandleFunc("GET /v1/media/video", h.mediaVideo)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
@@ -459,7 +477,7 @@ func newDesktopIPCHandler(ctrl desktopIPCController, token string, shutdown func
 	mux.HandleFunc("POST /v1/open-folder", h.openFolder)
 	mux.HandleFunc("POST /v1/open-path", h.openPath)
 	mux.HandleFunc("POST /v1/lifecycle/shutdown", h.shutdownAgent)
-	return desktopIPCAuth(token, mux)
+	return desktopIPCAuth(token, mediaToken, mux)
 }
 
 type desktopIPCHandler struct {
@@ -467,7 +485,7 @@ type desktopIPCHandler struct {
 	shutdown func()
 }
 
-func desktopIPCAuth(token string, next http.Handler) http.Handler {
+func desktopIPCAuth(token, mediaToken string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		ip := net.ParseIP(host)
@@ -476,8 +494,15 @@ func desktopIPCAuth(token string, next http.Handler) http.Handler {
 			return
 		}
 		parts := strings.Fields(r.Header.Get("Authorization"))
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") ||
-			subtle.ConstantTimeCompare([]byte(parts[1]), []byte(token)) != 1 {
+		authorized := len(parts) == 2 &&
+			strings.EqualFold(parts[0], "Bearer") &&
+			subtle.ConstantTimeCompare([]byte(parts[1]), []byte(token)) == 1
+		if !authorized && r.Method == http.MethodGet && r.URL.Path == "/v1/media/video" {
+			candidate := strings.TrimSpace(r.URL.Query().Get("access_token"))
+			authorized = candidate != "" &&
+				subtle.ConstantTimeCompare([]byte(candidate), []byte(mediaToken)) == 1
+		}
+		if !authorized {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeDesktopIPCError(w, http.StatusUnauthorized, "unauthorized", "invalid desktop IPC token")
 			return
@@ -1395,6 +1420,42 @@ func (h *desktopIPCHandler) mediaLivePhotoMotion(w http.ResponseWriter, r *http.
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, motion)
+}
+
+func (h *desktopIPCHandler) mediaVideo(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	stream, err := h.ctrl.CloudMediaVideo(
+		r.Context(),
+		nodeID,
+		strings.TrimSpace(r.Header.Get("Range")),
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	defer stream.Body.Close()
+
+	if stream.ContentType != "" {
+		w.Header().Set("Content-Type", stream.ContentType)
+	}
+	if stream.ContentRange != "" {
+		w.Header().Set("Content-Range", stream.ContentRange)
+	}
+	if stream.AcceptRanges != "" {
+		w.Header().Set("Accept-Ranges", stream.AcceptRanges)
+	}
+	if stream.ETag != "" {
+		w.Header().Set("ETag", stream.ETag)
+	}
+	if stream.ContentLength >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(stream.ContentLength, 10))
+	}
+	w.Header().Set("Content-Disposition", "inline")
+	w.WriteHeader(stream.StatusCode)
+	_, _ = io.Copy(w, stream.Body)
 }
 
 func desktopIPCMediaWindow(w http.ResponseWriter, r *http.Request) (int, int, bool) {

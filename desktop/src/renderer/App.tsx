@@ -238,6 +238,11 @@ export default function App({
       const contentType = result.data.content_type || 'video/quicktime'
       return `data:${contentType};base64,${result.data.data_base64}`
     },
+    loadVideo: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.getMediaVideoURL(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
   }), [])
 
 

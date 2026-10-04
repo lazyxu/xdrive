@@ -15,6 +15,7 @@ const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx') + read('desktop
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
 const desktopIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+const desktopIndexHTML = read('desktop', 'src', 'renderer', 'index.html')
 
 test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /export function XDriveMediaGalleryPage/)
@@ -28,6 +29,8 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /缩略图/)
   assert.match(sharedGallery, /实况/)
   assert.match(sharedGallery, /loadLivePhotoMotion/)
+  assert.match(sharedGallery, /loadVideo/)
+  assert.match(sharedGallery, /视频播放/)
   assert.match(sharedGallery, /<video/)
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
@@ -58,7 +61,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaAlbumItems(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -68,6 +71,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'getMediaAlbumItems:',
     'getMediaThumbnail:',
     'getMediaLivePhotoMotion:',
+    'getMediaVideoURL:',
   ]) {
     assert.ok(preload.includes(token), `Desktop preload missing ${token}`)
   }
@@ -78,15 +82,22 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'mediaAlbumItems(albumID:',
     'mediaThumbnail(nodeID:',
     'mediaLivePhotoMotion(nodeID:',
+    'mediaVideoURL(nodeID:',
   ]) {
     assert.ok(agentClient.includes(token), `Desktop Agent client missing ${token}`)
   }
 
   assert.ok(desktopIPC.includes('"media-gallery"'))
+  assert.ok(desktopIPC.includes('"media-video-stream"'))
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
+  assert.ok(desktopIPC.includes('GET /v1/media/video'))
+  assert.ok(desktopIPC.includes('"media-video-stream"'))
+  assert.match(desktopApp, /getMediaVideoURL/)
+  assert.match(desktopApp, /loadVideo/)
+  assert.match(desktopIndexHTML, /media-src 'self' data: blob: http:\/\/127\.0\.0\.1:\*/)
 })
 
 test('Desktop navigation exposes Gallery as a first-class view', () => {
