@@ -243,6 +243,9 @@ Gallery filtering, search, and favorites operate only on xDrive-local canonical 
 - smart album rules use the exact same connector-neutral query contract as the shared Gallery filters (search, asset kind, capture range, GPS presence, favorite state), and can be renamed or revised with optimistic concurrency;
 - empty manual/smart albums remain visible, while folder/imported collections continue to be rebuildable projections;
 - filtering happens in the paginated SQL query, not only against the items already loaded by the renderer.
+- the shared Gallery offers grid and timeline presentation modes without changing the underlying query contract;
+- timeline month groups use only local `MediaMetadata.captured_at`; assets without a parsed capture time are collected under “日期未知” rather than treating upload/create time as a camera capture date;
+- timeline grouping is presentation-only over the paginated result set, so Web/Desktop reuse the same media tiles, video posters, Live Photo playback, favorite state, filters, manual albums, and smart albums.
 
 Favorite changes are written only to local Photo-domain state. `PhotoAsset` reconciliation deliberately excludes `favorite` from its technical-metadata upsert columns, so EXIF re-indexing, RAW/Live Photo regrouping, or provider outages cannot erase a user's favorite choice. Provider favorite flags are neither imported nor written back.
 
@@ -410,7 +413,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
-| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, user-managed manual albums, and saved-query smart albums are shared by Web/Desktop; next add richer connector-neutral local facets such as people/tags/place-name analysis | Medium |
+| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, manual albums, saved-query smart albums, and shared grid/timeline month presentation are current; next add richer connector-neutral local facets such as people/tags/place-name analysis | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
 
 Provider semantic metadata import is deliberately removed from the roadmap. If xDrive later implements people/tag/place recognition, it belongs to a separate connector-neutral media-analysis subsystem operating on local originals, not to Yike/Synology/FileStation connectors.

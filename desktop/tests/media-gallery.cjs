@@ -57,6 +57,11 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /保存为智能相册/)
   assert.match(sharedGallery, /保存规则/)
   assert.match(sharedGallery, /智能相册/)
+  assert.match(sharedGallery, /时间轴/)
+  assert.match(sharedGallery, /日期未知/)
+  assert.match(sharedGallery, /mediaTimelineGroups/)
+  assert.match(sharedGallery, /captured_at/)
+  assert.match(sharedGallery, /MediaTileGrid/)
   assert.match(sharedGallery, /<video/)
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
