@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const theme = read('ui', 'shared', 'src', 'mui', 'theme.ts')
+const appearanceProvider = read('ui', 'shared', 'src', 'mui', 'AppearanceThemeProvider.tsx')
 const webMain = read('web', 'src', 'main.tsx')
 const desktopMain = read('desktop', 'src', 'renderer', 'main.tsx')
 const webStyles = read('web', 'src', 'styles.css')
@@ -55,11 +56,25 @@ test('Desktop keeps window constraints local but consumes shared root tokens', (
   assert.ok(desktopStyles.includes('background: var(--page-bg)'), 'Desktop business chrome should continue consuming shared CSS variables')
 })
 
-test('appearance roots keep semantic mode metadata without inline color-scheme ownership', () => {
+test('shared appearance provider owns resolved mode, semantic metadata and MUI root composition', () => {
+  for (const token of [
+    'export function xDriveResolveAppearanceMode',
+    'export function XDriveAppearanceThemeProvider',
+    "useMediaQuery('(prefers-color-scheme: dark)'",
+    'createXDriveMuiTheme(resolvedMode)',
+    'document.documentElement.dataset.xdriveTheme = resolvedMode',
+    '<ThemeProvider theme={theme}>',
+    '<CssBaseline />',
+  ]) {
+    assert.ok(appearanceProvider.includes(token), `shared appearance provider missing: ${token}`)
+  }
+
+  assert.ok(webMain.includes('<XDriveAppearanceThemeProvider appearance={appearance}>'), 'Web must use the shared appearance provider')
+  assert.ok(desktopMain.includes('<XDriveAppearanceThemeProvider appearance={appearance}>'), 'Desktop must use the shared appearance provider')
   for (const source of [webMain, desktopMain]) {
-    assert.ok(source.includes('document.documentElement.dataset.xdriveTheme = resolvedMode'))
-    assert.equal(source.includes('document.documentElement.style.colorScheme = resolvedMode'), false)
-    assert.ok(source.includes('<CssBaseline />'))
-    assert.ok(source.includes('createXDriveMuiTheme(resolvedMode)'))
+    assert.equal(source.includes("useMediaQuery('(prefers-color-scheme: dark)'"), false, 'platform roots must not duplicate system appearance resolution')
+    assert.equal(source.includes('document.documentElement.dataset.xdriveTheme = resolvedMode'), false, 'platform roots must not duplicate theme metadata synchronization')
+    assert.equal(source.includes('<CssBaseline />'), false, 'platform roots must not duplicate CssBaseline composition')
+    assert.equal(source.includes('createXDriveMuiTheme(resolvedMode)'), false, 'platform roots must not construct the shared theme directly')
   }
 })
