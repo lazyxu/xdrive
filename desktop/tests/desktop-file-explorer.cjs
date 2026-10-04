@@ -27,7 +27,8 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
   for (const token of [
     'cloudCreateDirectory(current.id, name)',
     'cloudUploadFiles(current.id)',
-    'cloudRename(renameNode.id, renameNode.revision, name)',
+    'cloudRename(node.id, node.revision, name)',
+    'onRenameItem={renameItem}',
     'cloudDownload(node.id, node.name)',
     'getItemMenuItems={getItemMenuItems}',
     'backgroundMenuItems={backgroundMenuItems}',

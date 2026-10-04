@@ -37,7 +37,7 @@ test('shared FileExplorer provides command bar, details/grid views, and status b
   assert.ok(explorer.includes('role="list"'), 'grid/icon view is missing')
   assert.ok(explorer.includes('repeat(auto-fill, minmax(112px, 1fr))'), 'grid view should adapt to available width')
   assert.ok(explorer.includes('{items.length} 个项目'), 'Explorer status bar needs item count')
-  assert.ok(explorer.includes('onDoubleClick={() => onOpenItem?.(item)}'), 'items need Explorer-style double-click opening')
+  assert.ok(explorer.includes("if (!renaming) onOpenItem?.(item)"), 'items need Explorer-style double-click opening outside inline rename')
   assert.ok(explorer.includes("event.key === 'Enter'"), 'items need keyboard open support')
 })
 
@@ -92,7 +92,7 @@ test('shared FileExplorer supports Explorer-style selection semantics', () => {
   assert.ok(explorer.includes('defaultSelectedIDs = []'), 'uncontrolled selection contract is missing')
   assert.ok(explorer.includes('event.ctrlKey || event.metaKey'), 'Ctrl/Cmd additive selection is missing')
   assert.ok(explorer.includes('event.shiftKey && selectionAnchorID !== null'), 'Shift range selection is missing')
-  assert.ok(explorer.includes("event.key.toLowerCase() === 'a'"), 'Ctrl/Cmd+A select-all is missing')
+  assert.ok(explorer.includes("modifier && key === 'a'"), 'Ctrl/Cmd+A select-all is missing')
   assert.ok(explorer.includes("event.key === 'Escape'"), 'Escape selection clearing is missing')
   assert.ok(explorer.includes("event.key === ' '"), 'keyboard Space selection is missing')
   assert.ok(explorer.includes('aria-selected={selected}'), 'selected rows/items need accessible selected state')
@@ -155,7 +155,7 @@ test('shared FileExplorer provides internal and external drag and drop contracts
     "event.dataTransfer.setData('application/x-xdrive-fileexplorer', '1')",
     "const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'",
     "event.dataTransfer.types.includes('Files')",
-    'draggable={Boolean(onDropItemsToFolder)}',
+    'draggable={Boolean(onDropItemsToFolder) && !renaming}',
     'onDrop={dropExternalFilesOnBackground}',
   ]) {
     assert.ok(explorer.includes(token), `missing FileExplorer drag/drop contract: ${token}`)

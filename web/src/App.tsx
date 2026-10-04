@@ -486,7 +486,6 @@ function FileManager({
   const [loadingMore, setLoadingMore] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
-  const [renameNode, setRenameNode] = useState<Node | null>(null)
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [trashOpen, setTrashOpen] = useState(false)
@@ -802,12 +801,6 @@ function FileManager({
     await loadDirectory(current.id)
   }
 
-  const rename = async (name: string) => {
-    if (!renameNode || !current) return
-    await api.rename(renameNode.id, renameNode.revision, name)
-    await loadDirectory(current.id)
-  }
-
   const remove = (node: Node) => {
     const plan = xDriveFileExplorerDeleteOperationPlan([node])
     if (plan.count === 0) return
@@ -961,7 +954,6 @@ function FileManager({
                 onUploadDroppedFiles={uploadFilesTo}
                 onCreateFolder={() => setFolderOpen(true)}
                 onOpenTrash={openTrash}
-                onRename={setRenameNode}
                 onRemove={remove}
                 onRemoveMany={removeMany}
                 onOperationQueued={rememberFileOperation}
@@ -1029,15 +1021,6 @@ function FileManager({
         mode="create-folder"
         onClose={() => setFolderOpen(false)}
         onSubmit={createFolder}
-        onError={handleError}
-      />
-
-      <XDriveFileNameDialog
-        open={Boolean(renameNode)}
-        mode="rename"
-        initialValue={renameNode?.name ?? ''}
-        onClose={() => setRenameNode(null)}
-        onSubmit={rename}
         onError={handleError}
       />
 

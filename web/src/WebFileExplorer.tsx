@@ -53,7 +53,6 @@ export default function WebFileExplorer({
   onUploadDroppedFiles,
   onCreateFolder,
   onOpenTrash,
-  onRename,
   onRemove,
   onRemoveMany,
   onOperationQueued,
@@ -75,7 +74,6 @@ export default function WebFileExplorer({
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onCreateFolder: () => void
   onOpenTrash: () => void
-  onRename: (node: Node) => void
   onRemove: (node: Node) => void
   onRemoveMany: (nodes: Node[]) => void
   onOperationQueued: (operation: XDriveFileOperation) => void
@@ -202,9 +200,22 @@ export default function WebFileExplorer({
       onDownload: node.type === 'file' ? () => { void api.download(node).catch(onError) } : undefined,
       onShare: node.type === 'file' ? () => onShare(node) : undefined,
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
-      onRename: () => onRename(node),
       onDelete: () => onRemove(node),
     })
+  }
+
+  const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
+    const node = xDriveFileExplorerNodeForItem(item, nodeByID)
+    if (!node || !current) return
+    try {
+      await api.rename(node.id, node.revision, name)
+      clearSearch()
+      await onLoadDirectory(current.id, crumbs, sort)
+      onFeedback('good', '已重命名。')
+    } catch (error) {
+      onError(error)
+      throw error
+    }
   }
 
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
@@ -347,6 +358,8 @@ export default function WebFileExplorer({
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onRemoveMany(nodes)
         }}
+        onRenameItem={renameItem}
+        renameDisabled={clipboardBusy}
         onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
         onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
         getItemMenuItems={getItemMenuItems}
