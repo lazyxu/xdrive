@@ -36,15 +36,17 @@ test('shared FileExplorer provides command bar, details/grid views, and status b
   }
   assert.ok(explorer.includes("viewMode === 'details'"), 'details view is missing')
   assert.ok(explorer.includes('role="list"'), 'grid/icon view is missing')
-  assert.ok(explorer.includes('repeat(auto-fill, minmax(112px, 1fr))'), 'grid view should adapt to available width')
+  assert.ok(explorer.includes('gridTemplateColumns: `repeat(auto-fill, minmax(${gridMetrics.minColumnWidth}px, 1fr))`'), 'grid view should adapt to available width through shared Grid metrics')
   assert.ok(explorer.includes('{items.length} 个项目'), 'Explorer status bar needs item count')
   assert.ok(explorer.includes("if (!renaming) onOpenItem?.(item)"), 'items need Explorer-style double-click opening outside inline rename')
   assert.ok(explorer.includes("event.key === 'Enter'"), 'items need keyboard open support')
 })
 
-test('shared FileExplorer uses compact system-style density without breaking virtualization math', () => {
-  assert.ok(explorer.includes('const detailsRowHeight = 38'), 'details virtualization row height should match the compact visual row')
-  assert.ok(explorer.includes('const detailsHeaderHeight = 32'), 'details virtualization header height should match the compact header')
+test('shared FileExplorer uses configurable system-style density without breaking virtualization math', () => {
+  assert.ok(explorer.includes('const detailsNormalRowHeight = 38'), 'normal details density token is missing')
+  assert.ok(explorer.includes('const detailsCompactRowHeight = 30'), 'compact details density token is missing')
+  assert.ok(explorer.includes("const detailsRowHeight = viewPreferences.detailsDensity === 'compact'"), 'details virtualization row height must follow the selected density')
+  assert.ok(explorer.includes('const detailsHeaderHeight = 32'), 'details virtualization header height should remain compact')
   assert.ok(explorer.includes('minHeight: detailsHeaderHeight'), 'details header should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: detailsRowHeight'), 'details rows should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: 44'), 'navigation/address row should use compact system height')
@@ -53,7 +55,7 @@ test('shared FileExplorer uses compact system-style density without breaking vir
   assert.ok(explorer.includes('minHeight: 40'), 'command bar should use compact 40px height')
   assert.ok(explorer.includes("'& .MuiToggleButton-root': { width: 32, height: 30"), 'view toggles should stay compact')
   assert.ok(explorer.includes('minHeight: 28'), 'status bar should use compact system height')
-  assert.equal(explorer.includes('const detailsRowHeight = 42'), false, 'legacy loose row density should be removed')
+  assert.equal(explorer.includes('const detailsNormalRowHeight = 42'), false, 'legacy loose row density should be removed')
   assert.equal(explorer.includes('const detailsHeaderHeight = 34'), false, 'legacy loose header density should be removed')
 })
 
@@ -74,7 +76,7 @@ test('shared FileExplorer details view avoids admin-table chrome', () => {
     false,
     'details rows should not be separated by admin-table grid lines',
   )
-  assert.ok(explorer.includes('borderRadius: 1,\n                  p: 1,'), 'grid tiles should use restrained system-style corners')
+  assert.ok(explorer.includes('borderRadius: 1,\n                  p: gridMetrics.itemPadding,'), 'grid tiles should keep restrained corners while using shared density metrics')
 })
 
 test('shared FileExplorer keeps folders first and owns common client-side sorting', () => {

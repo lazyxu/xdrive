@@ -39,6 +39,7 @@ import type { SearchResult, XDriveApi } from './api'
 
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
 const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
+const FILE_VIEW_PREFERENCES_KEY = 'xdrive.files.view_preferences'
 
 type Crumb = { id: number; name: string }
 
@@ -436,6 +437,7 @@ export default function WebFileExplorer({
         loadingMore={explorerPagination.loadingMore}
         onLoadMore={explorerPagination.onLoadMore}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
+        viewPreferencesKey={FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={copyItems}
         onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}

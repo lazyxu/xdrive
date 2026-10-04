@@ -45,6 +45,7 @@ import type {
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
+const DESKTOP_FILE_VIEW_PREFERENCES_KEY = 'xdrive.desktop.files.view_preferences'
 
 export default function DesktopFileExplorer({
   items,
@@ -727,6 +728,7 @@ export default function DesktopFileExplorer({
         loadingMore={explorerPagination.loadingMore}
         onLoadMore={explorerPagination.onLoadMore}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
+        viewPreferencesKey={DESKTOP_FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={copyItems}
         onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}

@@ -50,7 +50,7 @@ test('large Details directories use bounded rendering and Grid uses browser rend
   assert.ok(shared.includes('detailsWindow.after'), 'Details virtual list bottom spacer is missing')
   assert.ok(shared.includes('ResizeObserver'), 'virtual list does not track viewport height')
   assert.ok(shared.includes("contentVisibility: 'auto'"), 'Grid items should use content-visibility for large directories')
-  assert.ok(shared.includes("containIntrinsicSize: '132px 128px'"), 'Grid render containment needs a stable intrinsic size')
+  assert.ok(shared.includes('containIntrinsicSize: `${gridMetrics.maxItemWidth}px ${gridMetrics.estimatedRowHeight}px`'), 'Grid render containment needs dynamic stable intrinsic sizing')
 })
 
 test('type sorting uses the same labels users see', () => {
