@@ -66,6 +66,7 @@ func (s *Server) mediaAlbumDTOByKey(
 		Kind        string
 		Name        string
 		Revision    uint64
+		QueryJSON   string
 		ItemCount   int64
 		CoverNodeID *uint64
 		UpdatedAt   *time.Time
@@ -74,7 +75,7 @@ func (s *Server) mediaAlbumDTOByKey(
 	err := s.DB.WithContext(ctx).
 		Table("xd_photo_collections AS pc").
 		Select(
-			"pc.external_key, pc.kind, pc.name, pc.revision, "+
+			"pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, "+
 				"COUNT(DISTINCT pca.asset_id) AS item_count, "+
 				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
 				"MAX(COALESCE(pm.captured_at, pc.updated_at)) AS updated_at",
@@ -90,13 +91,33 @@ func (s *Server) mediaAlbumDTOByKey(
 			key,
 			meta.PhotoCollectionStateActive,
 		).
-		Group("pc.id, pc.external_key, pc.kind, pc.name, pc.revision").
+		Group("pc.id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json").
 		Scan(&result).Error
 	if err != nil {
 		return mediaAlbumDTO{}, err
 	}
 	if result.ExternalKey == "" {
 		return mediaAlbumDTO{}, gorm.ErrRecordNotFound
+	}
+	if result.Kind == meta.PhotoCollectionKindSmart {
+		query, err := decodeMediaSmartAlbumQuery(result.QueryJSON)
+		if err != nil {
+			return mediaAlbumDTO{}, err
+		}
+		count, coverNodeID, err := s.smartMediaAlbumStats(ctx, ownerID, query)
+		if err != nil {
+			return mediaAlbumDTO{}, err
+		}
+		return mediaAlbumDTO{
+			ID:          result.ExternalKey,
+			Kind:        result.Kind,
+			Name:        result.Name,
+			Revision:    result.Revision,
+			ItemCount:   count,
+			CoverNodeID: coverNodeID,
+			UpdatedAt:   result.UpdatedAt,
+			Query:       &query,
+		}, nil
 	}
 	return mediaAlbumDTO{
 		ID:          result.ExternalKey,

@@ -58,6 +58,13 @@ export interface MediaGalleryDataSource {
   loadVideo?: MediaVideoLoader
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
   createAlbum?: (name: string) => Promise<MediaAlbum>
+  createSmartAlbum?: (name: string, query: MediaGalleryQuery) => Promise<MediaAlbum>
+  updateSmartAlbum?: (
+    albumID: string,
+    revision: number,
+    input: { name?: string; query?: MediaGalleryQuery },
+  ) => Promise<MediaAlbum>
+  deleteSmartAlbum?: (albumID: string, revision: number) => Promise<void>
   renameAlbum?: (albumID: string, revision: number, name: string) => Promise<MediaAlbum>
   deleteAlbum?: (albumID: string, revision: number) => Promise<void>
   addToAlbum?: (albumID: string, revision: number, nodeIDs: number[]) => Promise<MediaAlbum>
@@ -126,6 +133,36 @@ function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): MediaGaller
   }
 }
 
+function mediaGalleryDateInput(value?: string, exclusiveEnd = false) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  if (exclusiveEnd) date.setDate(date.getDate() - 1)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): MediaGalleryFilterDraft {
+  return {
+    search: query.search || '',
+    assetKind: query.asset_kind || '',
+    capturedFrom: mediaGalleryDateInput(query.captured_from),
+    capturedTo: mediaGalleryDateInput(query.captured_to, true),
+    location: query.has_location === true
+      ? 'with'
+      : query.has_location === false
+        ? 'without'
+        : 'any',
+    favorite: query.favorite === true
+      ? 'favorite'
+      : query.favorite === false
+        ? 'not-favorite'
+        : 'any',
+  }
+}
+
 function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
   return Boolean(
     draft.search.trim() ||
@@ -140,15 +177,21 @@ function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
 function MediaGalleryFilterBar({
   draft,
   loading,
+  applyLabel = '应用',
+  clearLabel = '清除',
   onChange,
   onApply,
   onClear,
+  onSaveSmart,
 }: {
   draft: MediaGalleryFilterDraft
   loading: boolean
+  applyLabel?: string
+  clearLabel?: string
   onChange: (next: MediaGalleryFilterDraft) => void
   onApply: () => void
   onClear: () => void
+  onSaveSmart?: () => void
 }) {
   return (
     <Paper variant="outlined" sx={{ p: 1.25 }}>
@@ -234,15 +277,24 @@ function MediaGalleryFilterBar({
         </TextField>
         <Stack direction="row" spacing={1}>
           <Button variant="contained" onClick={onApply} disabled={loading}>
-            应用
+            {applyLabel}
           </Button>
           <Button
             variant="text"
             onClick={onClear}
             disabled={loading || !hasMediaGalleryFilters(draft)}
           >
-            清除
+            {clearLabel}
           </Button>
+          {onSaveSmart ? (
+            <Button
+              variant="outlined"
+              onClick={onSaveSmart}
+              disabled={loading || !hasMediaGalleryFilters(draft)}
+            >
+              保存为智能相册
+            </Button>
+          ) : null}
         </Stack>
       </Stack>
     </Paper>
@@ -264,6 +316,10 @@ export function XDriveMediaGalleryPage({
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState('')
+  const [smartDialogOpen, setSmartDialogOpen] = useState(false)
+  const [smartAlbumName, setSmartAlbumName] = useState('')
+  const [smartDialogBusy, setSmartDialogBusy] = useState(false)
+  const [smartDialogError, setSmartDialogError] = useState('')
   const requestID = useRef(0)
 
   const replaceAlbum = useCallback((next: MediaAlbum) => {
@@ -340,11 +396,50 @@ export function XDriveMediaGalleryPage({
 
   const applyFilters = useCallback(() => {
     const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
+    if (currentAlbum?.kind === 'smart') {
+      if (!source.updateSmartAlbum || !currentAlbum.revision) {
+        setError('当前客户端不支持编辑智能相册')
+        return
+      }
+      if (!hasMediaGalleryFilters(draftFilters)) {
+        setError('智能相册至少需要一个筛选条件')
+        return
+      }
+      setError('')
+      void source.updateSmartAlbum(
+        currentAlbum.id,
+        currentAlbum.revision,
+        { query: nextQuery },
+      ).then(async (updated) => {
+        replaceAlbum(updated)
+        setDraftFilters(mediaGalleryDraftFromQuery(updated.query))
+        setQuery({})
+        await loadFirstPage(updated, {})
+      }).catch((updateError) => {
+        const message = errorMessage(updateError)
+        setError(message)
+        onError?.(updateError)
+      })
+      return
+    }
     setQuery(nextQuery)
     void loadFirstPage(currentAlbum, nextQuery)
-  }, [currentAlbum, draftFilters, loadFirstPage])
+  }, [
+    currentAlbum,
+    draftFilters,
+    loadFirstPage,
+    onError,
+    replaceAlbum,
+    source,
+  ])
 
   const clearFilters = useCallback(() => {
+    if (currentAlbum?.kind === 'smart') {
+      setDraftFilters(mediaGalleryDraftFromQuery(currentAlbum.query))
+      setQuery({})
+      void loadFirstPage(currentAlbum, {})
+      return
+    }
     setDraftFilters(emptyMediaGalleryFilterDraft)
     setQuery({})
     void loadFirstPage(currentAlbum, {})
@@ -358,20 +453,34 @@ export function XDriveMediaGalleryPage({
   }, [source])
 
   const renameAlbum = useCallback(async (album: MediaAlbum, name: string) => {
-    if (!source.renameAlbum || !album.revision) throw new Error('当前相册不可重命名')
-    const updated = await source.renameAlbum(album.id, album.revision, name)
+    if (!album.revision) throw new Error('当前相册不可重命名')
+    const updated = album.kind === 'smart'
+      ? source.updateSmartAlbum
+        ? await source.updateSmartAlbum(album.id, album.revision, { name })
+        : (() => { throw new Error('当前客户端不支持编辑智能相册') })()
+      : source.renameAlbum
+        ? await source.renameAlbum(album.id, album.revision, name)
+        : (() => { throw new Error('当前相册不可重命名') })()
     replaceAlbum(updated)
     return updated
   }, [replaceAlbum, source])
 
   const deleteAlbum = useCallback(async (album: MediaAlbum) => {
-    if (!source.deleteAlbum || !album.revision) throw new Error('当前相册不可删除')
-    await source.deleteAlbum(album.id, album.revision)
+    if (!album.revision) throw new Error('当前相册不可删除')
+    if (album.kind === 'smart') {
+      if (!source.deleteSmartAlbum) throw new Error('当前客户端不支持删除智能相册')
+      await source.deleteSmartAlbum(album.id, album.revision)
+    } else {
+      if (!source.deleteAlbum) throw new Error('当前相册不可删除')
+      await source.deleteAlbum(album.id, album.revision)
+    }
     setAlbums((current) => current.filter((value) => value.id !== album.id))
     if (currentAlbum?.id === album.id) {
-      await loadFirstPage(null, query)
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      await loadFirstPage(null, {})
     }
-  }, [currentAlbum?.id, loadFirstPage, query, source])
+  }, [currentAlbum?.id, loadFirstPage, source])
 
   const addToAlbum = useCallback(async (album: MediaAlbum, item: MediaItem) => {
     if (!source.addToAlbum || !album.revision) throw new Error('当前相册不可编辑')
@@ -390,6 +499,42 @@ export function XDriveMediaGalleryPage({
     return updated
   }, [currentAlbum?.id, loadFirstPage, query, replaceAlbum, source])
 
+  const createSmartAlbum = useCallback(async (name: string) => {
+    if (!source.createSmartAlbum) throw new Error('当前客户端不支持智能相册')
+    if (!hasMediaGalleryFilters(draftFilters)) {
+      throw new Error('至少需要一个筛选条件才能创建智能相册')
+    }
+    const created = await source.createSmartAlbum(
+      name,
+      mediaGalleryQueryFromDraft(draftFilters),
+    )
+    setAlbums((current) => [
+      created,
+      ...current.filter((album) => album.id !== created.id),
+    ])
+    return created
+  }, [draftFilters, source])
+
+  const openAlbum = useCallback((album: MediaAlbum) => {
+    if (album.kind === 'smart') {
+      setDraftFilters(mediaGalleryDraftFromQuery(album.query))
+      setQuery({})
+      void loadFirstPage(album, {})
+      return
+    }
+    void loadFirstPage(album, query)
+  }, [loadFirstPage, query])
+
+  const leaveAlbum = useCallback(() => {
+    if (currentAlbum?.kind === 'smart') {
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      void loadFirstPage(null, {})
+      return
+    }
+    void loadFirstPage(null, query)
+  }, [currentAlbum?.kind, loadFirstPage, query])
+
   const setFavorite = useCallback(async (
     item: MediaItem,
     favorite: boolean,
@@ -403,8 +548,14 @@ export function XDriveMediaGalleryPage({
           ? { ...value, favorite }
           : value
       )))
-      if (query.favorite !== undefined) {
-        await loadFirstPage(currentAlbum, query)
+      if (
+        query.favorite !== undefined ||
+        (currentAlbum?.kind === 'smart' && currentAlbum.query?.favorite !== undefined)
+      ) {
+        await loadFirstPage(
+          currentAlbum,
+          currentAlbum?.kind === 'smart' ? {} : query,
+        )
       }
     } catch (favoriteError) {
       const message = errorMessage(favoriteError)
@@ -434,9 +585,20 @@ export function XDriveMediaGalleryPage({
           <MediaGalleryFilterBar
             draft={draftFilters}
             loading={loading}
+            applyLabel={currentAlbum?.kind === 'smart' ? '保存规则' : '应用'}
+            clearLabel={currentAlbum?.kind === 'smart' ? '还原规则' : '清除'}
             onChange={setDraftFilters}
             onApply={applyFilters}
             onClear={clearFilters}
+            onSaveSmart={
+              !currentAlbum && source.createSmartAlbum
+                ? () => {
+                    setSmartAlbumName('')
+                    setSmartDialogError('')
+                    setSmartDialogOpen(true)
+                  }
+                : undefined
+            }
           />
         )}
         loadThumbnail={source.loadThumbnail}
@@ -444,15 +606,80 @@ export function XDriveMediaGalleryPage({
         loadVideo={source.loadVideo}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
         onCreateAlbum={source.createAlbum ? createAlbum : undefined}
-        onRenameAlbum={source.renameAlbum ? renameAlbum : undefined}
-        onDeleteAlbum={source.deleteAlbum ? deleteAlbum : undefined}
+        onRenameAlbum={
+          source.renameAlbum || source.updateSmartAlbum
+            ? renameAlbum
+            : undefined
+        }
+        onDeleteAlbum={
+          source.deleteAlbum || source.deleteSmartAlbum
+            ? deleteAlbum
+            : undefined
+        }
         onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
-        onOpenAlbum={(album) => void loadFirstPage(album, query)}
-        onBack={() => void loadFirstPage(null, query)}
+        onOpenAlbum={openAlbum}
+        onBack={leaveAlbum}
         onLoadMore={() => void loadMore()}
         onRefresh={() => void loadFirstPage(currentAlbum, query)}
       />
+      <Dialog
+        open={smartDialogOpen}
+        onClose={() => !smartDialogBusy && setSmartDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title="保存为智能相册"
+          subtitle="保存当前筛选条件；内容会随图库变化自动更新。"
+          onClose={() => !smartDialogBusy && setSmartDialogOpen(false)}
+        />
+        <XDriveDialogContent dividers>
+          <Stack spacing={1.5}>
+            <TextField
+              autoFocus
+              label="智能相册名称"
+              value={smartAlbumName}
+              onChange={(event) => {
+                setSmartAlbumName(event.target.value)
+                setSmartDialogError('')
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || !smartAlbumName.trim() || smartDialogBusy) return
+                event.preventDefault()
+                setSmartDialogBusy(true)
+                void createSmartAlbum(smartAlbumName.trim())
+                  .then(() => setSmartDialogOpen(false))
+                  .catch((createError) => setSmartDialogError(errorMessage(createError)))
+                  .finally(() => setSmartDialogBusy(false))
+              }}
+            />
+            {smartDialogError ? (
+              <XDriveStatusAlert tone="bad">{smartDialogError}</XDriveStatusAlert>
+            ) : null}
+          </Stack>
+        </XDriveDialogContent>
+        <DialogActions>
+          <Button onClick={() => setSmartDialogOpen(false)} disabled={smartDialogBusy}>
+            取消
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!smartAlbumName.trim() || smartDialogBusy}
+            onClick={() => {
+              setSmartDialogBusy(true)
+              setSmartDialogError('')
+              void createSmartAlbum(smartAlbumName.trim())
+                .then(() => setSmartDialogOpen(false))
+                .catch((createError) => setSmartDialogError(errorMessage(createError)))
+                .finally(() => setSmartDialogBusy(false))
+            }}
+          >
+            保存
+          </Button>
+        </DialogActions>
+      </Dialog>
     </XDriveWorkspaceSurface>
   )
 }
@@ -1245,12 +1472,12 @@ export function XDriveMediaGallery({
             新建相册
           </Button>
         ) : null}
-        {currentAlbum?.kind === 'manual' && onRenameAlbum ? (
+        {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onRenameAlbum ? (
           <Button size="small" variant="text" onClick={() => openAlbumDialog('rename', currentAlbum)}>
             重命名
           </Button>
         ) : null}
-        {currentAlbum?.kind === 'manual' && onDeleteAlbum ? (
+        {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onDeleteAlbum ? (
           <Button size="small" color="error" variant="text" onClick={() => setDeleteAlbumOpen(true)}>
             删除相册
           </Button>
@@ -1343,7 +1570,9 @@ export function XDriveMediaGallery({
                       ? ' · 导入相册'
                       : album.kind === 'manual'
                         ? ' · 手动相册'
-                        : ''}
+                        : album.kind === 'smart'
+                          ? ' · 智能相册'
+                          : ''}
                   </Typography>
                 </Box>
               </Paper>
@@ -1591,7 +1820,9 @@ export function XDriveMediaGallery({
         />
         <XDriveDialogContent dividers>
           <Typography variant="body2">
-            删除手动相册“{currentAlbum?.name || ''}”只会删除相册关系，不会删除其中的照片或视频。
+            {currentAlbum?.kind === 'smart'
+              ? `删除智能相册“${currentAlbum?.name || ''}”只会删除保存的筛选规则，不会删除照片或视频。`
+              : `删除手动相册“${currentAlbum?.name || ''}”只会删除相册关系，不会删除其中的照片或视频。`}
           </Typography>
         </XDriveDialogContent>
         <DialogActions>

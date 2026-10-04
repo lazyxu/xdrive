@@ -515,6 +515,11 @@ function FileManager({
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listAlbums: () => api.mediaAlbums(),
     createAlbum: (name) => api.createMediaAlbum(name),
+    createSmartAlbum: (name, query) => api.createSmartMediaAlbum(name, query),
+    updateSmartAlbum: (albumID, revision, input) =>
+      api.updateSmartMediaAlbum(albumID, revision, input),
+    deleteSmartAlbum: (albumID, revision) =>
+      api.deleteSmartMediaAlbum(albumID, revision),
     renameAlbum: (albumID, revision, name) => api.renameMediaAlbum(albumID, revision, name),
     deleteAlbum: (albumID, revision) => api.deleteMediaAlbum(albumID, revision),
     addToAlbum: (albumID, revision, nodeIDs) => api.addMediaAlbumItems(albumID, revision, nodeIDs),

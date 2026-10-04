@@ -241,6 +241,24 @@ export default function App({
       const result = await window.xdriveDesktop.agent.deleteMediaAlbum(albumID, revision)
       if (!result.ok) throw new Error(result.error.message)
     },
+    createSmartAlbum: async (name, query) => {
+      const result = await window.xdriveDesktop.agent.createSmartMediaAlbum(name, query)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    updateSmartAlbum: async (albumID, revision, input) => {
+      const result = await window.xdriveDesktop.agent.updateSmartMediaAlbum(
+        albumID,
+        revision,
+        input,
+      )
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    deleteSmartAlbum: async (albumID, revision) => {
+      const result = await window.xdriveDesktop.agent.deleteSmartMediaAlbum(albumID, revision)
+      if (!result.ok) throw new Error(result.error.message)
+    },
     addToAlbum: async (albumID, revision, nodeIDs) => {
       const result = await window.xdriveDesktop.agent.addMediaAlbumItems(albumID, revision, nodeIDs)
       if (!result.ok) throw new Error(result.error.message)

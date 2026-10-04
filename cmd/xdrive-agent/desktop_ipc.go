@@ -191,6 +191,9 @@ type desktopIPCController interface {
 	CloudCreateMediaAlbum(context.Context, string) (client.MediaAlbum, error)
 	CloudRenameMediaAlbum(context.Context, string, uint64, string) (client.MediaAlbum, error)
 	CloudDeleteMediaAlbum(context.Context, string, uint64) error
+	CloudCreateSmartMediaAlbum(context.Context, string, client.MediaSmartAlbumQuery) (client.MediaAlbum, error)
+	CloudUpdateSmartMediaAlbum(context.Context, string, uint64, *string, *client.MediaSmartAlbumQuery) (client.MediaAlbum, error)
+	CloudDeleteSmartMediaAlbum(context.Context, string, uint64) error
 	CloudAddMediaAlbumItems(context.Context, string, uint64, []uint64) (client.MediaAlbum, error)
 	CloudRemoveMediaAlbumItem(context.Context, string, uint64, uint64) (client.MediaAlbum, error)
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
@@ -454,6 +457,9 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("POST /v1/media/albums", h.createMediaAlbum)
 	mux.HandleFunc("PATCH /v1/media/album", h.renameMediaAlbum)
 	mux.HandleFunc("DELETE /v1/media/album", h.deleteMediaAlbum)
+	mux.HandleFunc("POST /v1/media/smart-albums", h.createSmartMediaAlbum)
+	mux.HandleFunc("PATCH /v1/media/smart-album", h.updateSmartMediaAlbum)
+	mux.HandleFunc("DELETE /v1/media/smart-album", h.deleteSmartMediaAlbum)
 	mux.HandleFunc("POST /v1/media/album/items", h.addMediaAlbumItems)
 	mux.HandleFunc("DELETE /v1/media/album/item", h.removeMediaAlbumItem)
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
@@ -1509,7 +1515,8 @@ func desktopIPCValidMediaAlbumID(value string, manualOnly bool) bool {
 		return false
 	}
 	return (strings.HasPrefix(value, "folder:") && len(value) > len("folder:")) ||
-		(strings.HasPrefix(value, "source:") && len(value) > len("source:"))
+		(strings.HasPrefix(value, "source:") && len(value) > len("source:")) ||
+		(strings.HasPrefix(value, "smart:") && len(value) > len("smart:"))
 }
 
 func (h *desktopIPCHandler) createMediaAlbum(w http.ResponseWriter, r *http.Request) {
@@ -1568,6 +1575,91 @@ func (h *desktopIPCHandler) deleteMediaAlbum(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := h.ctrl.CloudDeleteMediaAlbum(r.Context(), input.AlbumID, input.Revision); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *desktopIPCHandler) createSmartMediaAlbum(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name  string                      `json:"name"`
+		Query client.MediaSmartAlbumQuery `json:"query"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_smart_media_album", "name is required")
+		return
+	}
+	album, err := h.ctrl.CloudCreateSmartMediaAlbum(
+		r.Context(),
+		input.Name,
+		input.Query,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, album)
+}
+
+func (h *desktopIPCHandler) updateSmartMediaAlbum(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string                       `json:"album_id"`
+		Revision uint64                       `json:"revision"`
+		Name     *string                      `json:"name,omitempty"`
+		Query    *client.MediaSmartAlbumQuery `json:"query,omitempty"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !strings.HasPrefix(strings.TrimSpace(input.AlbumID), "smart:") ||
+		len(strings.TrimSpace(input.AlbumID)) <= len("smart:") ||
+		input.Revision == 0 ||
+		(input.Name == nil && input.Query == nil) {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_smart_media_album",
+			"smart album id, revision, and name or query are required",
+		)
+		return
+	}
+	if input.Name != nil && strings.TrimSpace(*input.Name) == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_smart_media_album", "name cannot be empty")
+		return
+	}
+	album, err := h.ctrl.CloudUpdateSmartMediaAlbum(
+		r.Context(),
+		input.AlbumID,
+		input.Revision,
+		input.Name,
+		input.Query,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, album)
+}
+
+func (h *desktopIPCHandler) deleteSmartMediaAlbum(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string `json:"album_id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !strings.HasPrefix(strings.TrimSpace(input.AlbumID), "smart:") ||
+		len(strings.TrimSpace(input.AlbumID)) <= len("smart:") ||
+		input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_smart_media_album", "smart album id and revision are required")
+		return
+	}
+	if err := h.ctrl.CloudDeleteSmartMediaAlbum(r.Context(), input.AlbumID, input.Revision); err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}

@@ -70,14 +70,25 @@ type MediaItem struct {
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
 }
 
+type MediaSmartAlbumQuery struct {
+	MediaKind    string     `json:"media_kind,omitempty"`
+	Search       string     `json:"search,omitempty"`
+	AssetKind    string     `json:"asset_kind,omitempty"`
+	CapturedFrom *time.Time `json:"captured_from,omitempty"`
+	CapturedTo   *time.Time `json:"captured_to,omitempty"`
+	HasLocation  *bool      `json:"has_location,omitempty"`
+	Favorite     *bool      `json:"favorite,omitempty"`
+}
+
 type MediaAlbum struct {
-	ID          string     `json:"id"`
-	Kind        string     `json:"kind"`
-	Name        string     `json:"name"`
-	Revision    uint64     `json:"revision,omitempty"`
-	ItemCount   int64      `json:"item_count"`
-	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
-	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+	ID          string                `json:"id"`
+	Kind        string                `json:"kind"`
+	Name        string                `json:"name"`
+	Revision    uint64                `json:"revision,omitempty"`
+	ItemCount   int64                 `json:"item_count"`
+	CoverNodeID *uint64               `json:"cover_node_id,omitempty"`
+	UpdatedAt   *time.Time            `json:"updated_at,omitempty"`
+	Query       *MediaSmartAlbumQuery `json:"query,omitempty"`
 }
 
 type MediaQuery struct {
@@ -252,6 +263,63 @@ func (c *Client) RemoveMediaAlbumItem(
 		&out,
 	)
 	return out, err
+}
+
+func (c *Client) CreateSmartMediaAlbum(
+	ctx context.Context,
+	name string,
+	query MediaSmartAlbumQuery,
+) (MediaAlbum, error) {
+	var out MediaAlbum
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/smart-albums",
+		map[string]any{"name": name, "query": query},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) UpdateSmartMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+	name *string,
+	query *MediaSmartAlbumQuery,
+) (MediaAlbum, error) {
+	input := map[string]any{}
+	if name != nil {
+		input["name"] = *name
+	}
+	if query != nil {
+		input["query"] = *query
+	}
+	var out MediaAlbum
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPatch,
+		"/api/v1/media/smart-albums/"+url.PathEscape(albumID),
+		revision,
+		input,
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) DeleteSmartMediaAlbum(
+	ctx context.Context,
+	albumID string,
+	revision uint64,
+) error {
+	return c.jsonRevision(
+		ctx,
+		http.MethodDelete,
+		"/api/v1/media/smart-albums/"+url.PathEscape(albumID),
+		revision,
+		nil,
+		nil,
+	)
 }
 
 func (c *Client) MediaAlbumItems(
