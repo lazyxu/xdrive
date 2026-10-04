@@ -62,6 +62,7 @@ export function xDriveTransferEtaMs(task: XDriveTransferTask) {
 }
 
 export function xDriveTransferPercent(task: XDriveTransferTask) {
+  if (task.state === 'completed') return 100
   if (task.bytes_total > 0) {
     return Math.max(0, Math.min(100, (task.bytes_done / task.bytes_total) * 100))
   }

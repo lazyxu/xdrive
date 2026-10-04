@@ -191,3 +191,34 @@ test('Web multi-select mutations use persistent operations while retaining legac
   assert.ok(explorer.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), 'Web drag/drop must use one shared drop-item plan')
   assert.equal(app.includes('for (const node of nodes) await api.remove(node.id, node.revision)'), false, 'Web bulk delete must not regress to N requests')
 })
+
+
+test('Web upload API exposes conflict-aware skip/keep-both without changing legacy upload return type', () => {
+  for (const token of [
+    "export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both'",
+    'export interface XDriveUploadResult',
+    "status: 'active' | 'finalized' | 'skipped'",
+    'uploadWithConflictPolicy(',
+    'conflict_policy: conflictPolicy',
+    "session.status === 'skipped'",
+    'webTransferStore.completeSkipped(transferID, file.size)',
+    "skipped: finalized.status === 'skipped'",
+    'transferred_bytes: transferredBytes',
+  ]) {
+    assert.ok(api.includes(token), `missing Web upload conflict contract: ${token}`)
+  }
+  assert.ok(
+    api.includes("async upload(parentID: number, file: File, onProgress?: (percent: number) => void): Promise<Node>"),
+    'legacy Web upload API must keep returning Node',
+  )
+  assert.ok(api.includes("this.uploadWithConflictPolicy(parentID, file, 'fail', onProgress)"), 'legacy upload must delegate to fail policy')
+})
+
+
+test('Web skipped uploads finish without pretending bytes were transferred', () => {
+  const transfers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'transfers.ts'), 'utf8')
+  const sharedTransfers = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'transfers.ts'), 'utf8')
+  assert.ok(transfers.includes('completeSkipped(id: string, bytesTotal?: number)'), 'Web transfer store missing skipped completion')
+  assert.ok(transfers.includes('bytes_done: 0'), 'skipped upload must preserve zero transferred bytes')
+  assert.ok(sharedTransfers.includes("if (task.state === 'completed') return 100"), 'completed skipped transfer should render terminal progress')
+})

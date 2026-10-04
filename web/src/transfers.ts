@@ -126,6 +126,26 @@ class WebTransferStore {
     })
   }
 
+  completeSkipped(id: string, bytesTotal?: number) {
+    const now = Date.now()
+    this.patch(id, (item) => {
+      const total = Math.max(0, bytesTotal ?? item.bytes_total)
+      return {
+        ...item,
+        state: 'completed',
+        bytes_done: 0,
+        bytes_total: total,
+        percent: 100,
+        instant_bytes_per_second: 0,
+        average_bytes_per_second: 0,
+        elapsed_ms: Math.max(0, now - new Date(item.started_at).getTime()),
+        updated_at: nowISO(now),
+        completed_at: nowISO(now),
+        error: '',
+      }
+    })
+  }
+
   fail(id: string, error: unknown) {
     const now = Date.now()
     this.patch(id, (item) => ({

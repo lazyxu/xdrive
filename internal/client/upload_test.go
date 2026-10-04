@@ -487,3 +487,82 @@ func TestUploadFileResumableConflictSkipStopsBeforeChunks(t *testing.T) {
 		t.Fatalf("requests=%v", requests)
 	}
 }
+
+func TestUploadFileResumableConflictSkipAtFinalize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "race.bin")
+	data := []byte("new-content")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var puts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads":
+			var init UploadInit
+			if err := json.NewDecoder(r.Body).Decode(&init); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID:             "race-skip",
+				ParentID:       init.ParentID,
+				Name:           init.Name,
+				RequestedName:  init.Name,
+				ConflictPolicy: UploadConflictPolicySkip,
+				Size:           init.Size,
+				ChunkSize:      DefaultUploadChunkSize,
+				ChunkCount:     1,
+				Status:         "active",
+				ExpiresAt:      time.Now().Add(time.Hour),
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/uploads/race-skip/chunks/0":
+			puts++
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(body)
+			_ = json.NewEncoder(w).Encode(UploadPart{
+				Index:  0,
+				Size:   int64(len(body)),
+				SHA256: hex.EncodeToString(sum[:]),
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/uploads/race-skip/finalize":
+			_ = json.NewEncoder(w).Encode(UploadSession{
+				ID:     "race-skip",
+				Status: "skipped",
+				Result: &Node{
+					ID:       99,
+					ParentID: uint64Ptr(1),
+					Name:     "race.bin",
+					Type:     "file",
+					Revision: 4,
+					SHA256:   strings.Repeat("f", 64),
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	result, err := cli.UploadFileResumableWithConflictPolicyResult(
+		context.Background(),
+		1,
+		path,
+		"race.bin",
+		UploadConflictPolicySkip,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Skipped || result.Node.ID != 99 || result.TransferredBytes != int64(len(data)) {
+		t.Fatalf("raced skip result=%+v", result)
+	}
+	if puts != 1 {
+		t.Fatalf("raced skip puts=%d want=1", puts)
+	}
+}

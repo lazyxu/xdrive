@@ -465,6 +465,12 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 	if final.Result == nil {
 		return UploadResult{}, fmt.Errorf("finalize upload returned no file")
 	}
+	if final.Status == "skipped" {
+		result.Node = *final.Result
+		result.TransferredBytes = transferredBytes
+		result.Skipped = true
+		return result, nil
+	}
 	if init.SHA256 != "" && final.Result.SHA256 != "" && final.Result.SHA256 != init.SHA256 {
 		return UploadResult{}, fmt.Errorf("server content hash mismatch: got %s want %s", final.Result.SHA256, init.SHA256)
 	}

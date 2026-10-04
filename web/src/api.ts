@@ -124,18 +124,28 @@ export interface UploadChunkState {
   reused?: boolean
 }
 
+export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both'
+
+export interface XDriveUploadResult {
+  node: Node
+  skipped: boolean
+  transferred_bytes: number
+}
+
 export interface UploadSessionState {
   id: string
   parent_id?: number
   node_id?: number
   name?: string
+  requested_name?: string
+  conflict_policy?: XDriveUploadConflictPolicy
   size: number
   chunk_size: number
   chunk_count: number
   sha256?: string
   resume_key?: string
   expected_revision?: number
-  status: 'active' | 'finalized'
+  status: 'active' | 'finalized' | 'skipped'
   expires_at: string
   received_chunks: UploadChunkState[]
   result?: Node
@@ -711,6 +721,16 @@ export class XDriveApi {
   }
 
   async upload(parentID: number, file: File, onProgress?: (percent: number) => void): Promise<Node> {
+    const result = await this.uploadWithConflictPolicy(parentID, file, 'fail', onProgress)
+    return result.node
+  }
+
+  async uploadWithConflictPolicy(
+    parentID: number,
+    file: File,
+    conflictPolicy: XDriveUploadConflictPolicy,
+    onProgress?: (percent: number) => void,
+  ): Promise<XDriveUploadResult> {
     const transferID = webTransferStore.create({
       fileName: file.name,
       path: file.name,
@@ -732,8 +752,11 @@ export class XDriveApi {
         chunkHashes.push(await sha256Buffer(await file.slice(start, end).arrayBuffer()))
       }
 
+      const resumeIdentity = conflictPolicy === 'fail'
+        ? `${file.name}\n${file.size}\n${file.lastModified}`
+        : `xdrive-upload-conflict-v1\n${parentID}\n${file.name}\n${conflictPolicy}\n${file.size}\n${file.lastModified}`
       const resumeKey = await sha256Buffer(
-        new TextEncoder().encode(`${file.name}\n${file.size}\n${file.lastModified}`).buffer,
+        new TextEncoder().encode(resumeIdentity).buffer,
       )
       const session = await this.request<UploadSessionState>('/api/v1/uploads', {
         method: 'POST',
@@ -744,16 +767,22 @@ export class XDriveApi {
           chunk_size: chunkSize,
           chunk_sha256: chunkHashes,
           resume_key: resumeKey,
+          conflict_policy: conflictPolicy,
         }),
       })
+      if (session.status === 'skipped' && session.result) {
+        webTransferStore.completeSkipped(transferID, file.size)
+        return { node: session.result, skipped: true, transferred_bytes: 0 }
+      }
       if (session.status === 'finalized' && session.result) {
         reportProgress(file.size)
         webTransferStore.complete(transferID, file.size, file.size)
-        return session.result
+        return { node: session.result, skipped: false, transferred_bytes: 0 }
       }
 
       const received = new Map(session.received_chunks.map((part) => [part.index, part]))
       let completed = 0
+      let transferredBytes = 0
 
       for (let index = 0; index < session.chunk_count; index += 1) {
         const start = index * session.chunk_size
@@ -772,6 +801,7 @@ export class XDriveApi {
         if (actualHash !== hash) throw new Error(`File changed while uploading chunk ${index}`)
         await this.putUploadChunk(session.id, index, hash, data)
         completed += data.byteLength
+        transferredBytes += data.byteLength
         reportProgress(completed)
       }
 
@@ -782,7 +812,11 @@ export class XDriveApi {
       if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
       reportProgress(file.size)
       webTransferStore.complete(transferID, file.size, file.size)
-      return finalized.result
+      return {
+        node: finalized.result,
+        skipped: finalized.status === 'skipped',
+        transferred_bytes: transferredBytes,
+      }
     } catch (error) {
       webTransferStore.fail(transferID, error)
       throw error
