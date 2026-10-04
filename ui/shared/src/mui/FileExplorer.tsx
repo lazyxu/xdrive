@@ -68,6 +68,7 @@ export type XDriveFileExplorerDetailsColumnKey = XDriveFileExplorerSortKey
 
 export type XDriveFileExplorerDetailsLayout = {
   visible: XDriveFileExplorerDetailsColumnKey[]
+  order: XDriveFileExplorerDetailsColumnKey[]
   widths: Record<XDriveFileExplorerDetailsColumnKey, number>
 }
 
@@ -90,6 +91,7 @@ const detailsColumnMeta: Record<XDriveFileExplorerDetailsColumnKey, { label: str
 export function xDriveDefaultFileExplorerDetailsLayout(): XDriveFileExplorerDetailsLayout {
   return {
     visible: [...detailsColumnKeys],
+    order: [...detailsColumnKeys],
     widths: Object.fromEntries(detailsColumnKeys.map((key) => [key, detailsColumnMeta[key].defaultWidth])) as Record<XDriveFileExplorerDetailsColumnKey, number>,
   }
 }
@@ -97,12 +99,20 @@ export function xDriveDefaultFileExplorerDetailsLayout(): XDriveFileExplorerDeta
 export function xDriveNormalizeFileExplorerDetailsLayout(value: unknown): XDriveFileExplorerDetailsLayout {
   const fallback = xDriveDefaultFileExplorerDetailsLayout()
   if (!value || typeof value !== 'object') return fallback
-  const input = value as { visible?: unknown; widths?: unknown }
+  const input = value as { visible?: unknown; order?: unknown; widths?: unknown }
   const visibleInput = Array.isArray(input.visible) ? input.visible : fallback.visible
   const visible = ['name', ...visibleInput.filter((key): key is XDriveFileExplorerDetailsColumnKey => (
     typeof key === 'string' && key !== 'name' && detailsColumnKeys.includes(key as XDriveFileExplorerDetailsColumnKey)
   ))] as XDriveFileExplorerDetailsColumnKey[]
   const dedupedVisible = [...new Set(visible)]
+  const orderInput = Array.isArray(input.order) ? input.order : fallback.order
+  const ordered = orderInput.filter((key): key is XDriveFileExplorerDetailsColumnKey => (
+    typeof key === 'string' && detailsColumnKeys.includes(key as XDriveFileExplorerDetailsColumnKey)
+  ))
+  const order = [...new Set([
+    ...ordered,
+    ...detailsColumnKeys.filter((key) => !ordered.includes(key)),
+  ])] as XDriveFileExplorerDetailsColumnKey[]
   const widthInput = input.widths && typeof input.widths === 'object' ? input.widths as Record<string, unknown> : {}
   const widths = {} as Record<XDriveFileExplorerDetailsColumnKey, number>
   for (const key of detailsColumnKeys) {
@@ -110,7 +120,7 @@ export function xDriveNormalizeFileExplorerDetailsLayout(value: unknown): XDrive
     const raw = typeof widthInput[key] === 'number' && Number.isFinite(widthInput[key]) ? widthInput[key] as number : meta.defaultWidth
     widths[key] = Math.round(Math.max(meta.minWidth, Math.min(meta.maxWidth, raw)))
   }
-  return { visible: dedupedVisible, widths }
+  return { visible: dedupedVisible, order, widths }
 }
 
 function loadFileExplorerDetailsLayout(storageKey?: string) {
@@ -611,6 +621,8 @@ export function XDriveFileExplorer({
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [detailsColumnsAnchor, setDetailsColumnsAnchor] = useState<HTMLElement | null>(null)
   const [viewPreferencesAnchor, setViewPreferencesAnchor] = useState<HTMLElement | null>(null)
+  const [draggedDetailsColumn, setDraggedDetailsColumn] = useState<XDriveFileExplorerDetailsColumnKey | null>(null)
+  const [detailsColumnDropTarget, setDetailsColumnDropTarget] = useState<XDriveFileExplorerDetailsColumnKey | null>(null)
   const [detailsLayout, setDetailsLayout] = useState<XDriveFileExplorerDetailsLayout>(() => loadFileExplorerDetailsLayout(detailsPreferencesKey))
   const [viewPreferences, setViewPreferences] = useState<XDriveFileExplorerViewPreferences>(() => loadFileExplorerViewPreferences(viewPreferencesKey))
   const detailsResizeRef = useRef<{ key: XDriveFileExplorerDetailsColumnKey; startX: number; startWidth: number } | null>(null)
@@ -649,8 +661,8 @@ export function XDriveFileExplorer({
     : detailsNormalRowHeight
   const gridMetrics = fileExplorerGridMetrics[viewPreferences.gridSize]
   const visibleDetailsColumns = useMemo(
-    () => detailsColumnKeys.filter((key) => detailsLayout.visible.includes(key)),
-    [detailsLayout.visible],
+    () => detailsLayout.order.filter((key) => detailsLayout.visible.includes(key)),
+    [detailsLayout.order, detailsLayout.visible],
   )
   const detailsGridTemplate = useMemo(
     () => visibleDetailsColumns.map((key) => `${detailsLayout.widths[key]}px`).join(' '),
@@ -1408,8 +1420,57 @@ export function XDriveFileExplorer({
     if (key === 'name') return
     const visible = detailsLayout.visible.includes(key)
       ? detailsLayout.visible.filter((candidate) => candidate !== key)
-      : detailsColumnKeys.filter((candidate) => candidate === 'name' || detailsLayout.visible.includes(candidate) || candidate === key)
+      : detailsLayout.order.filter((candidate) => candidate === 'name' || detailsLayout.visible.includes(candidate) || candidate === key)
     commitDetailsLayout({ ...detailsLayout, visible })
+  }
+
+  const reorderDetailsColumn = (
+    source: XDriveFileExplorerDetailsColumnKey,
+    target: XDriveFileExplorerDetailsColumnKey,
+  ) => {
+    if (source === target) return
+    const next = detailsLayout.order.filter((key) => key !== source)
+    const targetIndex = next.indexOf(target)
+    if (targetIndex < 0) return
+    next.splice(targetIndex, 0, source)
+    commitDetailsLayout({ ...detailsLayout, order: next })
+  }
+
+  const startDetailsColumnDrag = (
+    event: ReactDragEvent<HTMLElement>,
+    key: XDriveFileExplorerDetailsColumnKey,
+  ) => {
+    setDraggedDetailsColumn(key)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-xdrive-details-column', key)
+  }
+
+  const dragOverDetailsColumn = (
+    event: ReactDragEvent<HTMLElement>,
+    key: XDriveFileExplorerDetailsColumnKey,
+  ) => {
+    if (!draggedDetailsColumn || draggedDetailsColumn === key) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    setDetailsColumnDropTarget(key)
+  }
+
+  const dropDetailsColumn = (
+    event: ReactDragEvent<HTMLElement>,
+    key: XDriveFileExplorerDetailsColumnKey,
+  ) => {
+    if (!draggedDetailsColumn) return
+    event.preventDefault()
+    event.stopPropagation()
+    reorderDetailsColumn(draggedDetailsColumn, key)
+    setDraggedDetailsColumn(null)
+    setDetailsColumnDropTarget(null)
+  }
+
+  const endDetailsColumnDrag = () => {
+    setDraggedDetailsColumn(null)
+    setDetailsColumnDropTarget(null)
   }
 
   const startDetailsColumnResize = (event: ReactPointerEvent<HTMLElement>, key: XDriveFileExplorerDetailsColumnKey) => {
@@ -1456,6 +1517,48 @@ export function XDriveFileExplorer({
   const defaultTypeLabel = (item: XDriveFileExplorerItem) => (
     item.typeLabel || xDriveFileTypeLabel(item.name, item.kind)
   )
+
+  const detailsColumnText = (
+    item: XDriveFileExplorerItem,
+    key: XDriveFileExplorerDetailsColumnKey,
+  ) => {
+    if (key === 'name') return item.name
+    if (key === 'updated') return item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—'
+    if (key === 'type') return defaultTypeLabel(item)
+    return item.kind === 'dir' ? '—' : formatSize(item.size ?? 0)
+  }
+
+  const estimatedTextWidth = (value: string) => {
+    let units = 0
+    for (const character of value) {
+      units += character.codePointAt(0)! > 0xff ? 2 : 1
+    }
+    return units * 7
+  }
+
+  const autoFitDetailsColumnWidth = (key: XDriveFileExplorerDetailsColumnKey) => {
+    const meta = detailsColumnMeta[key]
+    let contentWidth = estimatedTextWidth(meta.label) + 34
+    for (const item of visibleItems.slice(0, 2000)) {
+      const allowance = key === 'name' ? 52 : 28
+      contentWidth = Math.max(contentWidth, estimatedTextWidth(detailsColumnText(item, key)) + allowance)
+    }
+    return Math.round(Math.max(meta.minWidth, Math.min(meta.maxWidth, contentWidth)))
+  }
+
+  const autoFitDetailsColumn = (key: XDriveFileExplorerDetailsColumnKey) => {
+    commitDetailsLayout({
+      ...detailsLayout,
+      widths: { ...detailsLayout.widths, [key]: autoFitDetailsColumnWidth(key) },
+    })
+  }
+
+  const autoFitAllDetailsColumns = () => {
+    const widths = { ...detailsLayout.widths }
+    for (const key of detailsLayout.order) widths[key] = autoFitDetailsColumnWidth(key)
+    commitDetailsLayout({ ...detailsLayout, widths })
+    setDetailsColumnsAnchor(null)
+  }
 
   const defaultItemIcon = (item: XDriveFileExplorerItem, large = false) => {
     if (item.icon) return item.icon
@@ -2132,7 +2235,7 @@ export function XDriveFileExplorer({
           </XDriveFileExplorerCommandButton>
         ) : null}
         <Menu anchorEl={detailsColumnsAnchor} open={Boolean(detailsColumnsAnchor)} onClose={() => setDetailsColumnsAnchor(null)}>
-          {detailsColumnKeys.map((key) => (
+          {detailsLayout.order.map((key) => (
             <MenuItem key={key} disabled={key === 'name'} onClick={() => toggleDetailsColumn(key)}>
               <Box component="span" sx={{ width: 20, color: 'text.secondary' }}>
                 {detailsLayout.visible.includes(key) ? '✓' : ''}
@@ -2141,6 +2244,7 @@ export function XDriveFileExplorer({
             </MenuItem>
           ))}
           <Divider />
+          <MenuItem onClick={autoFitAllDetailsColumns}>自动调整列宽</MenuItem>
           <MenuItem onClick={() => commitDetailsLayout(xDriveDefaultFileExplorerDetailsLayout())}>重置列</MenuItem>
         </Menu>
 
@@ -2268,9 +2372,28 @@ export function XDriveFileExplorer({
                 <Box
                   key={key}
                   role="columnheader"
-                  sx={{ position: 'relative', minWidth: 0, height: '100%', display: 'flex', alignItems: 'center' }}
+                  onDragOver={(event) => dragOverDetailsColumn(event, key)}
+                  onDragLeave={(event) => {
+                    const related = event.relatedTarget
+                    if (!(related instanceof HTMLElement) || !event.currentTarget.contains(related)) {
+                      if (detailsColumnDropTarget === key) setDetailsColumnDropTarget(null)
+                    }
+                  }}
+                  onDrop={(event) => dropDetailsColumn(event, key)}
+                  sx={{
+                    position: 'relative',
+                    minWidth: 0,
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    bgcolor: detailsColumnDropTarget === key ? 'action.hover' : 'transparent',
+                  }}
                 >
                   <ButtonBase
+                    draggable
+                    aria-grabbed={draggedDetailsColumn === key}
+                    onDragStart={(event) => startDetailsColumnDrag(event, key)}
+                    onDragEnd={endDetailsColumnDrag}
                     aria-label={`按${detailsColumnMeta[key].label}排序`}
                     onClick={() => setSort({
                       key,
@@ -2286,6 +2409,11 @@ export function XDriveFileExplorer({
                     role="separator"
                     aria-orientation="vertical"
                     aria-label={`调整${detailsColumnMeta[key].label}列宽`}
+                    onDoubleClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      autoFitDetailsColumn(key)
+                    }}
                     onPointerDown={(event) => startDetailsColumnResize(event, key)}
                     onPointerMove={(event) => moveDetailsColumnResize(event, key)}
                     onPointerUp={endDetailsColumnResize}
@@ -2389,11 +2517,7 @@ export function XDriveFileExplorer({
                       </Stack>
                     ) : (
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {key === 'updated'
-                          ? (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—')
-                          : key === 'type'
-                            ? defaultTypeLabel(item)
-                            : item.kind === 'dir' ? '—' : formatSize(item.size ?? 0)}
+                        {detailsColumnText(item, key)}
                       </Typography>
                     )}
                   </Box>
