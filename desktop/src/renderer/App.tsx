@@ -2169,6 +2169,7 @@ export default function App({
                 '同步根目录已修复并重新连接。',
               )
             }}
+            onOpenStorage={() => setView('local-storage')}
             onOpenLogs={() => {
               void run(
                 'open-logs',
