@@ -204,13 +204,16 @@ test('desktop keeps global sync, settings and account actions in the window titl
 test('desktop sidebar uses the shared complete sidebar renderer with Desktop-only extensions', () => {
   assert.ok(rendererApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must render the shared complete sidebar')
   assert.ok(rendererApp.includes('showLocalStorage'), 'Desktop must opt into Local Storage')
-  assert.ok(rendererApp.includes('leadingItems={desktopSidebarLeadingItems}'), 'Desktop overview should be supplied through the shared sidebar model')
-  assert.ok(rendererApp.includes('trailingItems={desktopSidebarTrailingItems}'), 'Desktop conflicts should be supplied through the shared sidebar model')
-  assert.ok(rendererApp.includes('sections={desktopSidebarSections}'), 'Desktop diagnostics should be supplied through the shared sidebar model')
+  assert.ok(rendererApp.includes('sections={desktopSidebarSections}'), 'Desktop extensions should use the shared section model')
+  assert.equal(rendererApp.includes('leadingItems='), false, 'Desktop must not keep the legacy leading-items extension contract')
+  assert.equal(rendererApp.includes('trailingItems='), false, 'Desktop must not keep the legacy trailing-items extension contract')
+  assert.ok(rendererApp.includes("key: 'overview',\n      placement: 'before-core'"), 'Desktop overview should be injected before shared core navigation')
+  assert.ok(rendererApp.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Desktop conflicts should be injected after shared core navigation')
+  assert.ok(rendererApp.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'bottom'"), 'Desktop diagnostics should use the bottom extension slot')
   assert.ok(rendererApp.includes("label: '概览'"), 'Desktop overview extension is missing')
   assert.ok(rendererApp.includes("label: '冲突'"), 'Desktop conflict extension is missing')
   assert.ok(rendererApp.includes("label: '诊断'"), 'Desktop diagnostics extension is missing')
-  assert.ok(rendererApp.includes('badge: status?.conflict_count || undefined'), 'Desktop conflict badge is missing')
+  assert.ok(rendererApp.includes('badge: status?.conflict_count'), 'Desktop conflict badge is missing')
 
   for (const icon of [
     'DashboardRoundedIcon',

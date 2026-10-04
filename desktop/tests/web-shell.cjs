@@ -37,7 +37,7 @@ test('Web AppBar keeps global chrome compact while admin tools live in the share
   }
 
   assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must use the shared complete sidebar renderer')
-  assert.ok(webApp.includes("const webSidebarSections: XDriveWorkspaceSidebarSectionModel[] = profile?.role === 'admin'"), 'admin sidebar model must remain role-gated')
+  assert.ok(webApp.includes("const webSidebarSections: XDriveSidebarSectionModel[] = profile?.role === 'admin'"), 'admin sidebar model must remain role-gated')
   assert.ok(webApp.includes("label: '管理'"), 'missing admin section label')
   assert.ok(webApp.includes("ariaLabel: '管理员功能'"), 'missing admin navigation landmark')
   for (const label of ['用户管理', '审计日志', '全局存储']) {
@@ -177,6 +177,10 @@ test('Shared sidebar uses compact system navigation chrome', () => {
   assert.ok(sharedSidebar.includes("fontSize: 11"), 'sidebar section labels should stay visually quiet')
   assert.equal(sharedSidebar.includes('borderTop:'), false, 'sidebar sections should not use long horizontal dividers')
   assert.equal(sharedSidebar.includes('borderLeft:'), false, 'responsive sidebar sections should separate by spacing rather than rules')
+  assert.ok(sharedSidebar.includes("height: responsive ? { xs: 'auto', md: '100%' } : '100%'"), 'responsive sidebar should not force full-height mobile chrome')
+  assert.ok(sharedSidebar.includes("flexDirection: responsive ? { xs: 'row', md: 'column' } : 'column'"), 'responsive sidebar should collapse into one horizontal mobile rail')
+  assert.ok(sharedSidebar.includes("display: responsive ? { xs: 'contents', md: 'block' } : 'block'"), 'responsive extension sections should join the same mobile rail')
+  assert.ok(sharedSidebar.includes('export function XDriveSidebarBadge'), 'badge rendering must stay centralized')
 })
 
 test('Web and Desktop pass account quota into the shared sidebar footer', () => {
