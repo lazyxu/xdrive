@@ -271,3 +271,22 @@ test('Desktop upload conflicts use shared dialog and capability-gated policy upl
   assert.ok(app.includes("capabilities.includes('upload-conflict-policy')"), 'Desktop must gate policy-aware uploads by Agent capability')
   assert.ok(app.includes("capabilities.includes('upload-conflict-preflight')"), 'Desktop must gate conflict preflight by Agent capability')
 })
+
+
+test('Desktop FileExplorer uploads selected folders through the shared hierarchy planner', () => {
+  for (const token of [
+    'folderUploadInputRef',
+    "element.setAttribute('webkitdirectory', '')",
+    "element.setAttribute('directory', '')",
+    'xDriveFileExplorerResolveFolderUploadTargets({',
+    'xDriveFileExplorerEnsureUploadDirectory({',
+    'relativePath: file.webkitRelativePath || file.name',
+    'window.xdriveDesktop.agent.cloudCreateDirectory(id, directoryName)',
+    'window.xdriveDesktop.agent.cloudChildren(id)',
+    "'upload-folder'",
+    'onUploadFolder={uploadConflictSupported',
+    '正在上传文件夹…',
+  ]) {
+    assert.ok(explorer.includes(token), `missing Desktop folder-upload support: ${token}`)
+  }
+})

@@ -7,9 +7,11 @@ import {
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerDropItemsToParentPlan,
+  xDriveFileExplorerEnsureUploadDirectory,
   xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerPaginationController,
+  xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerRunQueuedOperation,
   xDriveFileExplorerSubmitPath,
   xDriveUploadBatchSummary,
@@ -99,6 +101,7 @@ export default function DesktopFileExplorer({
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
+  const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadConflicts = useXDriveUploadConflictResolver()
 
   const {
@@ -213,12 +216,14 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const uploadConflictAwareFiles = async (
-    parentID: number,
-    files: File[],
-    busyState: 'upload' | 'drop-upload',
+  type DesktopUploadTarget = { parentID: number; file: File }
+
+  const uploadConflictAwareTargets = async (
+    resolveTargets: () => Promise<readonly DesktopUploadTarget[]>,
+    busyState: 'upload' | 'drop-upload' | 'upload-folder',
+    refreshEvenWithoutUploads = false,
   ) => {
-    if (files.length === 0 || actionBusy) return
+    if (actionBusy) return
     if (!uploadConflicts.beginBatch()) return
     setActionBusy(busyState)
     let uploaded = 0
@@ -227,7 +232,9 @@ export default function DesktopFileExplorer({
     let cancelled = false
     let fatalError = ''
     try {
-      for (const file of files) {
+      const targets = await resolveTargets()
+      for (const target of targets) {
+        const { parentID, file } = target
         let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
         const preflight = await window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)
         if (!preflight.ok) {
@@ -259,20 +266,66 @@ export default function DesktopFileExplorer({
         else uploaded += 1
       }
 
-      if (uploaded > 0 && current) {
+      if ((uploaded > 0 || refreshEvenWithoutUploads) && current) {
         await onLoadDirectory(current.id, crumbs, sort)
-        await onQuotaChanged()
       }
+      if (uploaded > 0) await onQuotaChanged()
       if (fatalError) {
         onError(fatalError)
         return
       }
       const summary = xDriveUploadBatchSummary({ uploaded, skipped, failed, cancelled })
       if (summary) onFeedback(summary.tone, summary.message)
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
     } finally {
       uploadConflicts.endBatch()
       setActionBusy('')
     }
+  }
+
+  const uploadConflictAwareFiles = async (
+    parentID: number,
+    files: File[],
+    busyState: 'upload' | 'drop-upload',
+  ) => {
+    if (files.length === 0) return
+    await uploadConflictAwareTargets(
+      async () => files.map((file) => ({ parentID, file })),
+      busyState,
+    )
+  }
+
+  const uploadFolderFiles = async (files: File[]) => {
+    if (!current || files.length === 0 || !uploadConflictSupported) return
+    await uploadConflictAwareTargets(
+      async () => {
+        const targets = await xDriveFileExplorerResolveFolderUploadTargets({
+          rootParentID: current.id,
+          entries: files.map((file) => ({
+            file,
+            relativePath: file.webkitRelativePath || file.name,
+          })),
+          ensureDirectory: (parentID, name) => xDriveFileExplorerEnsureUploadDirectory({
+            parentID,
+            name,
+            createDirectory: async (id, directoryName) => {
+              const result = await window.xdriveDesktop.agent.cloudCreateDirectory(id, directoryName)
+              if (!result.ok) throw new Error(result.error.message)
+              return result.data
+            },
+            listChildren: async (id) => {
+              const result = await window.xdriveDesktop.agent.cloudChildren(id)
+              if (!result.ok) throw new Error(result.error.message)
+              return result.data
+            },
+          }),
+        })
+        return targets.map(({ parentID, file }) => ({ parentID, file }))
+      },
+      'upload-folder',
+      true,
+    )
   }
 
   const uploadFiles = async () => {
@@ -517,6 +570,9 @@ export default function DesktopFileExplorer({
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder: () => setCreateOpen(true),
     onUpload: () => { void uploadFiles() },
+    onUploadFolder: uploadConflictSupported
+      ? () => folderUploadInputRef.current?.click()
+      : undefined,
     uploadDisabled: Boolean(actionBusy),
     onRefresh: refresh,
   })
@@ -532,6 +588,23 @@ export default function DesktopFileExplorer({
           const files = Array.from(event.target.files ?? [])
           event.target.value = ''
           if (current) void uploadConflictAwareFiles(current.id, files, 'upload')
+        }}
+      />
+      <input
+        ref={(element) => {
+          folderUploadInputRef.current = element
+          if (element) {
+            element.setAttribute('webkitdirectory', '')
+            element.setAttribute('directory', '')
+          }
+        }}
+        hidden
+        type="file"
+        multiple
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ''
+          void uploadFolderFiles(files)
         }}
       />
 
@@ -556,6 +629,9 @@ export default function DesktopFileExplorer({
         onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
         onCreateFolder={() => setCreateOpen(true)}
         onUpload={() => { void uploadFiles() }}
+        onUploadFolder={uploadConflictSupported
+          ? () => folderUploadInputRef.current?.click()
+          : undefined}
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -596,6 +672,8 @@ export default function DesktopFileExplorer({
                   ? '正在处理拖拽项目…'
                   : actionBusy === 'drop-upload'
                     ? '正在上传拖入文件…'
+                  : actionBusy === 'upload-folder'
+                    ? '正在上传文件夹…'
                   : actionBusy.startsWith('rename-')
                     ? '正在重命名…'
               : actionBusy.startsWith('download-')

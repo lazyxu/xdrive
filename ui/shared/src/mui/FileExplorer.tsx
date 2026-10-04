@@ -10,6 +10,7 @@ import ContentPasteRoundedIcon from '@mui/icons-material/ContentPasteRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
@@ -397,6 +398,7 @@ export function XDriveFileExplorer({
   onCrumbClick,
   onCreateFolder,
   onUpload,
+  onUploadFolder,
   onItemClick,
   onOpenItem,
   selectedIDs: controlledSelectedIDs,
@@ -450,6 +452,7 @@ export function XDriveFileExplorer({
   onCrumbClick?: (crumb: XDriveFileExplorerCrumb, index: number) => void
   onCreateFolder?: () => void
   onUpload?: () => void
+  onUploadFolder?: () => void
   onItemClick?: (item: XDriveFileExplorerItem) => void
   onOpenItem?: (item: XDriveFileExplorerItem) => void
   selectedIDs?: readonly XDriveFileExplorerID[]
@@ -1860,7 +1863,12 @@ export function XDriveFileExplorer({
             ) : null}
             {onUpload ? (
               <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>
-                上传
+                上传文件
+              </XDriveFileExplorerCommandButton>
+            ) : null}
+            {onUploadFolder ? (
+              <XDriveFileExplorerCommandButton startIcon={<DriveFolderUploadRoundedIcon />} onClick={onUploadFolder}>
+                上传文件夹
               </XDriveFileExplorerCommandButton>
             ) : null}
             {commandBarStart}

@@ -12,6 +12,7 @@ const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const searchController = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
 const clipboardController = read('ui', 'shared', 'src', 'mui', 'FileExplorerClipboard.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
+const webApp = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 
 test('shared FileExplorer controller owns typed-path parsing and traversal rules', () => {
@@ -360,5 +361,30 @@ test('shared FileExplorer owns parent-target drop planning and edge autoscroll d
       source.includes('onExternalFilesDropToCrumb={(files, crumb) =>'),
       `${label} must wire external breadcrumb drops`,
     )
+  }
+})
+
+
+test('shared FileExplorer controller owns folder-upload path planning and directory reuse', () => {
+  for (const token of [
+    'XDriveFileExplorerFolderUploadEntry',
+    'xDriveFileExplorerFolderUploadPlan',
+    "relativePath.replace(/\\\\/g, '/')",
+    "part === '.' || part === '..'",
+    'directories: [...directories.values()].sort',
+    'xDriveFileExplorerEnsureUploadDirectory',
+    "node.type === 'dir'",
+    "sensitivity: 'accent'",
+    'xDriveFileExplorerResolveFolderUploadTargets',
+    "new Map<string, number>([['', rootParentID]])",
+    'await ensureDirectory(parentID, directory.name)',
+    'return { ...file, parentID }',
+  ]) {
+    assert.ok(shared.includes(token), `missing shared folder-upload controller: ${token}`)
+  }
+  for (const [label, source] of [['Web', webApp], ['Desktop', desktop]]) {
+    assert.ok(source.includes('xDriveFileExplorerResolveFolderUploadTargets({'), `${label} must use shared folder tree resolution`)
+    assert.ok(source.includes('xDriveFileExplorerEnsureUploadDirectory({'), `${label} must use shared idempotent directory reuse`)
+    assert.equal(source.includes(".split('/').slice(0, -1)"), false, `${label} must not duplicate relative-path tree planning`)
   }
 })

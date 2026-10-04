@@ -1,6 +1,7 @@
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
@@ -126,11 +127,13 @@ export function xDriveFileExplorerStandardItemMenuItems({
 export function xDriveFileExplorerBackgroundMenuItems({
   onCreateFolder,
   onUpload,
+  onUploadFolder,
   uploadDisabled = false,
   onRefresh,
 }: {
   onCreateFolder: () => void
   onUpload: () => void
+  onUploadFolder?: () => void
   uploadDisabled?: boolean
   onRefresh: () => void
 }): XDriveFileExplorerMenuItem[] {
@@ -148,6 +151,13 @@ export function xDriveFileExplorerBackgroundMenuItems({
       disabled: uploadDisabled,
       onSelect: onUpload,
     },
+    ...(onUploadFolder ? [{
+      id: 'upload-folder',
+      label: '上传文件夹',
+      icon: <DriveFolderUploadRoundedIcon fontSize="small" />,
+      disabled: uploadDisabled,
+      onSelect: onUploadFolder,
+    }] : []),
     {
       id: 'refresh',
       label: '刷新',

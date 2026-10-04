@@ -52,6 +52,7 @@ export default function WebFileExplorer({
   onLoadDirectory,
   onLoadMore,
   onUploadFiles,
+  onUploadFolderFiles,
   onUploadDroppedFiles,
   onCreateFolder,
   onOpenTrash,
@@ -73,6 +74,7 @@ export default function WebFileExplorer({
   onLoadDirectory: (id: number, crumbs: Crumb[], sort: XDriveFileExplorerSort) => Promise<void>
   onLoadMore: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
   onUploadFiles: (files: FileList | null) => Promise<void>
+  onUploadFolderFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onCreateFolder: () => void
   onOpenTrash: () => void
@@ -85,6 +87,7 @@ export default function WebFileExplorer({
   onError: (error: unknown) => void
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
+  const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const {
     searchValue,
     searchState,
@@ -332,6 +335,7 @@ export default function WebFileExplorer({
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder,
     onUpload: () => uploadInputRef.current?.click(),
+    onUploadFolder: () => folderUploadInputRef.current?.click(),
     onRefresh: refresh,
   })
 
@@ -344,6 +348,22 @@ export default function WebFileExplorer({
         multiple
         onChange={(event) => {
           void onUploadFiles(event.target.files)
+          event.target.value = ''
+        }}
+      />
+      <input
+        ref={(element) => {
+          folderUploadInputRef.current = element
+          if (element) {
+            element.setAttribute('webkitdirectory', '')
+            element.setAttribute('directory', '')
+          }
+        }}
+        hidden
+        type="file"
+        multiple
+        onChange={(event) => {
+          void onUploadFolderFiles(event.target.files)
           event.target.value = ''
         }}
       />
@@ -375,6 +395,7 @@ export default function WebFileExplorer({
         onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
         onCreateFolder={onCreateFolder}
         onUpload={() => uploadInputRef.current?.click()}
+        onUploadFolder={() => folderUploadInputRef.current?.click()}
         onOpenItem={(item) => { void openItem(item) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
