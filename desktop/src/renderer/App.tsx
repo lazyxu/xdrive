@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   Autocomplete,
@@ -60,20 +60,17 @@ import {
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceManager,
+  useXDriveFileOperationLifecycle,
 } from '@xdrive/ui/mui'
 import type { MediaGalleryDataSource, XDriveCloudStorageDataSource, XDriveLocalStorageDataSource, XDriveFileExplorerSort, XDriveStatusTone } from '@xdrive/ui/mui'
 import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
-  XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileExplorerCanLoadMore,
   xDriveFileExplorerDeleteOperationPlan,
   xDriveFileExplorerDirectoryPageTransition,
   xDriveFileExplorerPageRequestOptions,
   xDriveFileOperationActive,
-  xDriveFileOperationPollIntervalMs,
-  xDriveFileOperationTransitionSnapshot,
-  xDriveFileOperationUpsert,
 } from '@xdrive/shared'
 import { DesktopCloudPage } from './DesktopCloudPage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -201,9 +198,7 @@ export default function App({
   const [serverUpdateError, setServerUpdateError] = useState('')
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
-  const [cloudFileOperations, setCloudFileOperations] = useState<AgentCloudFileOperation[]>([])
   const [fileOperationAction, setFileOperationAction] = useState('')
-  const cloudFileOperationStatusRef = useRef(new Map<string, string>())
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
   const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -314,6 +309,34 @@ export default function App({
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = Boolean(server.trim() && username.trim() && (password || savedPasswordAvailable))
+  const loadCloudFileOperations = useCallback(async (limit: number) => {
+    const result = await window.xdriveDesktop.agent.cloudFileOperations(limit)
+    if (!result.ok) throw new Error(result.error.message)
+    return result.data
+  }, [])
+
+  const {
+    operations: cloudFileOperations,
+    rememberOperation: rememberCloudFileOperation,
+    refreshOperations: refreshCloudFileOperations,
+  } = useXDriveFileOperationLifecycle<AgentCloudFileOperation>({
+    enabled: agent.connected && configured,
+    taskCenterVisible: view === 'transfers',
+    loadOperations: loadCloudFileOperations,
+    onRefreshError: (operationError) => setError(
+      operationError instanceof Error ? operationError.message : String(operationError),
+    ),
+    onTerminalTransition: () => {
+      if (cloudCrumbs.length === 0) return
+      void refreshCloudQuota()
+      void loadCloudDirectory(
+        cloudCrumbs.at(-1)!.id,
+        cloudCrumbs,
+        cloudPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+      )
+    },
+  })
+
   const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
   const activeFileOperations = cloudFileOperations.filter((item) => xDriveFileOperationActive(item.status))
   const hasTaskHistory =
@@ -464,30 +487,6 @@ export default function App({
       unsubscribeNavigate()
     }
   }, [])
-
-  const fileOperationPollIntervalMs = xDriveFileOperationPollIntervalMs(
-    cloudFileOperations,
-    view === 'transfers',
-  )
-
-  useEffect(() => {
-    if (!agent.connected || !configured) {
-      setCloudFileOperations([])
-      cloudFileOperationStatusRef.current = new Map()
-      return
-    }
-    let active = true
-    const refresh = async () => {
-      const result = await window.xdriveDesktop.agent.cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
-      if (active && result.ok) setCloudFileOperations(result.data)
-    }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), fileOperationPollIntervalMs)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [agent.connected, agent.hello?.agent_version, configured, fileOperationPollIntervalMs])
 
   useEffect(() => {
     if (configured || !status) return
@@ -976,21 +975,6 @@ export default function App({
     }
   }
 
-  const rememberCloudFileOperation = (operation: AgentCloudFileOperation) => {
-    cloudFileOperationStatusRef.current.set(operation.id, operation.status)
-    setCloudFileOperations((currentOperations) => xDriveFileOperationUpsert(currentOperations, operation))
-  }
-
-  const refreshCloudFileOperations = async () => {
-    const result = await window.xdriveDesktop.agent.cloudFileOperations(XDRIVE_FILE_OPERATION_HISTORY_LIMIT)
-    if (!result.ok) {
-      setError(result.error.message)
-      return null
-    }
-    setCloudFileOperations(result.data)
-    return result.data
-  }
-
   const cancelCloudFileOperation = async (id: string) => {
     setFileOperationAction(`cancel:${id}`)
     try {
@@ -1086,23 +1070,6 @@ export default function App({
       setBusy('')
     }
   }
-
-  useEffect(() => {
-    const transition = xDriveFileOperationTransitionSnapshot(
-      cloudFileOperationStatusRef.current,
-      cloudFileOperations,
-    )
-    cloudFileOperationStatusRef.current = transition.statuses
-    if (!transition.hasTerminalTransition || cloudCrumbs.length === 0) return
-    void refreshCloudQuota()
-    void loadCloudDirectory(
-      cloudCrumbs.at(-1)!.id,
-      cloudCrumbs,
-      cloudPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
-    )
-    // File refreshes are intentionally keyed only by operation snapshot transitions.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloudFileOperations])
 
   const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {
     const pageState = cloudPage
