@@ -1,25 +1,2 @@
 body { min-width: 320px; min-height: 100vh; }
 a { user-select: none; }
-
-.app-shell { min-height: 100vh; }
-.topbar {
-  min-height: 48px !important;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-inline: 16px;
-}
-@media (min-width: 900px) {
-  .file-manager-shell {
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  .files-workspace-surface {
-    height: 100%;
-    min-height: 0;
-  }
-
-}
-

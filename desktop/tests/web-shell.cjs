@@ -24,7 +24,7 @@ const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 
 test('Web AppBar keeps global chrome compact while admin tools live in the shared sidebar', () => {
-  const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"', webApp.indexOf('className="app-shell"'))
+  const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"')
   const appEnd = webApp.indexOf('</AppBar>', appStart)
   assert.notEqual(appStart, -1, 'missing Web AppBar')
   assert.notEqual(appEnd, -1, 'missing Web AppBar end')
@@ -33,7 +33,7 @@ test('Web AppBar keeps global chrome compact while admin tools live in the share
   assert.ok(appBar.includes('WebAccountMenu'), 'Web AppBar must retain the account menu')
   assert.ok(appBar.includes('variant="titlebar"'), 'Web AppBar should reuse the Desktop-scale brand lockup')
   assert.ok(appBar.includes("borderBottom: 1"), 'Web AppBar should separate chrome with a divider instead of elevation')
-  assert.ok(webStyles.includes('min-height: 48px !important'), 'Web AppBar should stay at the compact 48px height')
+  assert.ok(appBar.includes("minHeight: '48px !important'"), 'Web AppBar should stay at the compact 48px height')
   assert.equal(webStyles.includes('box-shadow: 0 2px 12px'), false, 'Web AppBar should not keep the old elevated shadow')
   for (const label of ['用户管理', '审计日志', '全局存储']) {
     assert.equal(appBar.includes(label), false, `${label} should not remain in the AppBar`)
@@ -51,7 +51,7 @@ test('Web AppBar keeps global chrome compact while admin tools live in the share
 })
 test('Web first-class workspaces use page chrome except the full-bleed Files workspace', () => {
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not render a duplicate page header')
-  assert.ok(webApp.includes('className="files-workspace-surface"'), 'Files should render as the application workspace itself')
+  assert.ok(webApp.includes("height: { xs: 560, md: '100%' }"), 'Files should render as the application workspace itself')
   assert.ok(webApp.includes('<XDriveMediaGalleryPage'), 'Gallery should mount the shared page directly')
   assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'shared Gallery page must own workspace page chrome')
   assert.ok(webApp.includes('<XDriveSourceManager'), 'Sync Folders should mount the shared manager directly')
@@ -241,8 +241,12 @@ test('shared workspace content owns page spacing and Files full-bleed behavior',
   ]) {
     assert.ok(sharedWorkspaceContent.includes(token), `shared workspace content missing: ${token}`)
   }
-  assert.ok(webStyles.includes('.file-manager-shell {\n    height: 100vh;\n    overflow: hidden;'), 'wide Web shell should own the viewport without page scrolling')
-  assert.ok(webStyles.includes('.files-workspace-surface {\n    height: 100%;\n    min-height: 0;'), 'Web Files surface should fill the shared content area')
+  assert.ok(webApp.includes("height: { md: '100vh' }"), 'wide Web shell should own the viewport without page scrolling')
+  assert.ok(webApp.includes("overflow: { md: 'hidden' }"), 'wide Web shell should clip page scrolling')
+  assert.ok(webApp.includes("height: { xs: 560, md: '100%' }"), 'Web Files surface should fill the shared content area')
+  for (const legacy of ['.app-shell', '.topbar', '.file-manager-shell', '.files-workspace-surface']) {
+    assert.equal(webStyles.includes(legacy), false, `Web shell layout must not stay in CSS: ${legacy}`)
+  }
   assert.equal(webStyles.includes('.content-wrap'), false, 'Web must not retain local workspace-content layout CSS')
   assert.ok(webApp.includes('<XDriveWorkspaceContent\n          responsive\n          presentation={appView === \'files\' ? \'files\' : \'page\'}'), 'Web workspace must use shared content presentation')
   assert.ok(desktopApp.includes("presentation={view === 'files' ? 'files' : 'page'}"), 'Desktop workspace must use shared content presentation')

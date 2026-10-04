@@ -753,7 +753,7 @@ function FileManager({
     }
 
     return (
-      <Box className="app-shell" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+      <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
         <AppBar
           position="static"
           elevation={0}
@@ -761,7 +761,16 @@ function FileManager({
           className="web-appbar"
           sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
         >
-          <Toolbar className="topbar">
+          <Toolbar
+            sx={{
+              minHeight: '48px !important',
+              height: 48,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              px: 2,
+            }}
+          >
             <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
             <WebAccountMenu
               username={username}
@@ -936,9 +945,10 @@ function FileManager({
 
   return (
     <Box
-      className="app-shell file-manager-shell"
       sx={{
         minHeight: '100vh',
+        height: { md: '100vh' },
+        overflow: { md: 'hidden' },
         bgcolor: 'background.default',
         display: { xs: 'block', md: 'flex' },
         flexDirection: { md: 'column' },
@@ -951,7 +961,16 @@ function FileManager({
           className="web-appbar"
           sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
         >
-        <Toolbar className="topbar">
+        <Toolbar
+            sx={{
+              minHeight: '48px !important',
+              height: 48,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              px: 2,
+            }}
+          >
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
           <WebAccountMenu
               username={username}
@@ -992,7 +1011,7 @@ function FileManager({
         >
         {appView === 'files' ? (
           <Box
-            className="files-workspace-surface"
+           
             sx={{
               height: { xs: 560, md: '100%' },
               minHeight: { xs: 480, md: 0 },
@@ -1071,7 +1090,7 @@ function FileManager({
             scope="global"
           />
         ) : (
-          <Box className="files-workspace-surface" sx={{ height: { xs: 560, md: '100%' }, minHeight: { xs: 480, md: 0 } }}>
+          <Box sx={{ height: { xs: 560, md: '100%' }, minHeight: { xs: 480, md: 0 } }}>
             <XDriveStatePanel variant="plain" loading message="正在切换工作区…" />
           </Box>
         )}
