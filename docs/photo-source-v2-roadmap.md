@@ -178,8 +178,8 @@ Support is tracked by capability rather than file extension alone. "Gallery" mea
 | CR3 / NEF / ARW / other RAW | Original file preserved | Not yet | Not yet native Gallery media | Parser work remains P6 |
 | `.livp` | Strict local container validation | Complete from embedded still resource | Complete as one `live_photo` asset | Original container remains one Node/CAS object |
 | Apple still + MOV Live Photo | Exact embedded Apple identifiers | Still thumbnail complete | Complete as one `live_photo` asset | No filename/time fallback |
-| MP4 / MOV / M4V / 3GP / 3G2 | ISO-BMFF duration/dimensions/rotation/frame-rate/codec where present | No ordinary video poster yet | Indexed as video | Ordinary Gallery playback needs authenticated Range streaming; Live Photo motion playback is already supported |
-| MKV / WebM / AVI / MTS / M2TS / MPEG / MPG | File type classification only | No | Indexed with fallback tile | Native technical metadata, poster and playback remain TODO |
+| MP4 / MOV / M4V / 3GP / 3G2 | ISO-BMFF duration/dimensions/rotation/frame-rate/codec where present | No ordinary video poster yet | Indexed and stream-playable in Gallery when the browser/Electron codec supports the file | Playback uses authenticated HTTP Range streaming; poster generation remains TODO |
+| MKV / WebM / AVI / MTS / M2TS / MPEG / MPG | File type classification only | No | Indexed with fallback tile; stream transport is available | Native technical metadata/poster remain TODO; playback succeeds only when the browser/Electron runtime supports that container/codec |
 | XMP | Local relation evidence such as `DocumentID` / `DerivedFrom` | N/A | Not shown as standalone Gallery media | Can join a validated RAW/image asset as sidecar |
 | AAE | Original file preserved | N/A | Not shown as standalone Gallery media | No pairing without a deterministic embedded target identity |
 
@@ -188,7 +188,22 @@ Phone-oriented status:
 - iPhone common still formats (JPEG/HEIC), common video containers (MOV/MP4), Apple Live Photo, and preserved `.livp` are supported by the shared local pipeline.
 - Manufacturer-specific Huawei/Xiaomi/OPPO/vivo/Samsung moving-photo protocols are intentionally deferred; do not infer them from filename or timestamp proximity.
 - Animated GIF/WebP files remain preserved originals and are indexed as images, but Gallery animation playback is a separate feature from thumbnail support.
-- Ordinary phone-video playback is intentionally not implemented through Desktop base64 IPC. It should use authenticated HTTP Range streaming so large 4K files do not have to be buffered in memory.
+- Ordinary phone-video playback uses HTTP Range streaming rather than Desktop base64 IPC, so large 4K files do not have to be buffered in renderer/main/Agent memory.
+- Web playback uses a short-lived signed media ticket scoped to the current user session, Node and Node revision. Desktop uses the loopback-only Agent IPC as a Range proxy with a separate media-only token; the general Desktop IPC bearer is never exposed to the renderer.
+- Video playback still depends on codecs supported by the browser/Electron runtime. The streaming transport does not imply that every classified container/codec is decodable.
+
+### Gallery video streaming
+
+Ordinary videos are never marshalled through JSON/base64 for playback.
+
+- the Server's authenticated media-video endpoint delegates byte serving to `http.ServeContent`, preserving HTTP Range/206 behavior;
+- Web requests a short-lived signed playback ticket and gives the resulting scoped URL directly to the shared Gallery `<video>` element;
+- the ticket is bound to user ID, current session version, Node ID and Node revision, and becomes invalid after logout/session revocation, account disable/password-change enforcement, expiry, or file revision change;
+- Desktop exposes a loopback-only Agent Range proxy. The discovery file carries a dedicated random `media_token` separate from the general Desktop IPC bearer; only `GET /v1/media/video` accepts that token in the query string;
+- the Agent forwards Range to the Server with its normal authenticated client and streams the body through without whole-file buffering;
+- Electron CSP permits media only from self/data/blob and ephemeral `127.0.0.1` HTTP endpoints.
+
+This completes the transport needed for large phone videos. Container/codec decoding still depends on the browser/Electron media stack, and poster extraction remains separate work.
 
 ### Live Photo
 
@@ -322,7 +337,7 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | GPS/geolocation | By design: local | By design: local | By design: local |
 | Video technical metadata | By design: local | By design: local | By design: local |
 | Canonical thumbnail | By design: local | By design: local | By design: local |
-| Live Photo pairing/projection | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending | Current local foundation; Gallery presentation pending |
+| Live Photo pairing/projection | Current local pairing + PhotoAsset/Gallery playback | Same shared local pipeline | Same shared local pipeline |
 | `.livp` parsing | Current local parser + zero-copy resources | Same common local parser | Same common local parser |
 | RAW metadata/preview | DNG metadata + embedded-JPEG preview current; other RAW TODO local | DNG metadata + embedded-JPEG preview current; other RAW TODO local | DNG metadata + embedded-JPEG preview current; other RAW TODO local |
 | RAW/JPEG/XMP/AAE/burst grouping | Current local subset: DNG/rendered exact ImageUniqueID, XMP explicit DerivedFrom, Apple BurstUUID; AAE/other RAW TODO | Same shared local pipeline | Same shared local pipeline |
@@ -342,14 +357,14 @@ The ordering keeps file synchronization independent from media enrichment:
 | P0 | Complete: scheduler, retries, cancellation, account coordination, SourceItemAlias, FileStation Pull | Complete |
 | P1 | Complete: basic read-only Source binding verifier | Complete |
 | P2 | Formalize this Source-vs-Media boundary in code contracts/tests; prevent new provider semantic projections | Highest |
-| P3 | In progress: common phone still formats are indexed; JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails are local; AVIF preview, ordinary video poster/playback, and non-ISO video metadata remain | Highest |
+| P3 | In progress: common phone still formats are indexed; JPEG/PNG/GIF/HEIC/HEIF/WebP/TIFF/BMP/DNG-preview thumbnails are local; ordinary ISO-BMFF videos use Range playback; AVIF preview, video posters, and non-ISO video metadata remain | Highest |
 | P4 | Complete: connector-neutral `MediaGroup` evidence plus `PhotoAsset` / `PhotoResource` / `PhotoMetadata` / `PhotoCollection` logical projection | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata/preview plus exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are local; AAE without embedded target identity and other RAW formats remain ungrouped/TODO | High |
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
 | P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
-| P10 | In progress: expose logical PhotoAsset kinds/resources in Gallery; next add authenticated Range video playback/posters, animation playback, then filters/search from capture time/GPS | Medium |
+| P10 | In progress: logical PhotoAsset kinds/resources and authenticated Range video playback are exposed in Gallery; next add video posters, animation playback, then filters/search from capture time/GPS | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
 
 Provider semantic metadata import is deliberately removed from the roadmap. If xDrive later implements people/tag/place recognition, it belongs to a separate connector-neutral media-analysis subsystem operating on local originals, not to Yike/Synology/FileStation connectors.

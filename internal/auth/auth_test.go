@@ -36,3 +36,35 @@ func TestPasswordMinimumLength(t *testing.T) {
 		t.Fatal("short password accepted")
 	}
 }
+
+func TestMediaStreamJWT(t *testing.T) {
+	manager := New("test-secret-that-is-long-enough", time.Hour)
+	token, expiresAt, err := manager.IssueMediaStream(42, 7, 99, 3, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !expiresAt.After(time.Now()) {
+		t.Fatalf("expiresAt=%v", expiresAt)
+	}
+	claims, err := manager.ParseMediaStream(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.UserID != 42 || claims.SessionVersion != 7 ||
+		claims.NodeID != 99 || claims.NodeRevision != 3 {
+		t.Fatalf("claims=%+v", claims)
+	}
+	if _, _, err := manager.Parse(token); err == nil {
+		t.Fatal("media stream ticket was accepted as an access token")
+	}
+	if _, err := New("different-secret", time.Hour).ParseMediaStream(token); err == nil {
+		t.Fatal("media stream ticket signed by another secret was accepted")
+	}
+}
+
+func TestMediaStreamJWTRejectsInvalidTTL(t *testing.T) {
+	manager := New("test-secret-that-is-long-enough", time.Hour)
+	if _, _, err := manager.IssueMediaStream(1, 1, 2, 3, 3*time.Hour); err == nil {
+		t.Fatal("oversized media stream ttl was accepted")
+	}
+}

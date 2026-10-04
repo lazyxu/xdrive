@@ -509,6 +509,7 @@ function FileManager({
     listAlbumItems: (albumID, limit, offset) => api.mediaAlbumItems(albumID, limit, offset),
     loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
     loadLivePhotoMotion: async (nodeID) => URL.createObjectURL(await api.mediaLivePhotoMotion(nodeID)),
+    loadVideo: (nodeID) => api.mediaVideoURL(nodeID),
   }), [api])
 
   const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>(() => ({

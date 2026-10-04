@@ -325,6 +325,7 @@ declare global {
         getMediaAlbumItems: (albumID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentMediaItem[]>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaLivePhotoMotion: (nodeID: number) => Promise<DesktopResult<AgentMediaMotion>>
+        getMediaVideoURL: (nodeID: number) => Promise<DesktopResult<string>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>

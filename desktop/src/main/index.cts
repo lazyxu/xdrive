@@ -1558,6 +1558,19 @@ function registerIPCHandlers() {
     return requireAgentClient().mediaLivePhotoMotion(nodeID)
   }, false))
 
+  ipcMain.handle('agent:get-media-video-url', (_event, nodeID: unknown) => runAgentAction<string>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-video-stream')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
+    }
+    return requireAgentClient().mediaVideoURL(nodeID)
+  }, false))
+
   ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')

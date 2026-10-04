@@ -487,6 +487,17 @@ export class XDriveApi {
     return response.blob()
   }
 
+  async mediaVideoURL(nodeID: number): Promise<string> {
+    const ticket = await this.request<{ url: string; expires_at: string }>(
+      `/api/v1/media/items/${nodeID}/video-ticket`,
+      { method: 'POST' },
+    )
+    if (!ticket.url.startsWith('/')) {
+      throw new ApiError(500, 'Invalid media playback URL')
+    }
+    return `${API_BASE}${ticket.url}`
+  }
+
   sources() {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }

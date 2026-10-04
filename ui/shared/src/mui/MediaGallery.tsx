@@ -27,6 +27,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
+export type MediaVideoLoader = (nodeID: number) => Promise<string | null>
 
 export interface MediaGalleryDataSource {
   listItems: (limit: number, offset: number) => Promise<MediaItem[]>
@@ -34,6 +35,7 @@ export interface MediaGalleryDataSource {
   listAlbumItems: (albumID: string, limit: number, offset: number) => Promise<MediaItem[]>
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
+  loadVideo?: MediaVideoLoader
 }
 
 export interface XDriveMediaGalleryPageProps {
@@ -132,6 +134,7 @@ export function XDriveMediaGalleryPage({
       error={error}
       loadThumbnail={source.loadThumbnail}
       loadLivePhotoMotion={source.loadLivePhotoMotion}
+      loadVideo={source.loadVideo}
       onOpenAlbum={(album) => void loadFirstPage(album)}
       onBack={() => void loadFirstPage(null)}
       onLoadMore={() => void loadMore()}
@@ -149,6 +152,7 @@ export interface XDriveMediaGalleryProps {
   error?: string
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
+  loadVideo?: MediaVideoLoader
   onOpenAlbum?: (album: MediaAlbum) => void
   onBack?: () => void
   onLoadMore?: () => void
@@ -349,48 +353,62 @@ function MediaDetails({
   item,
   loadThumbnail,
   loadLivePhotoMotion,
+  loadVideo,
   onClose,
 }: {
   item: MediaItem | null
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
+  loadVideo?: MediaVideoLoader
   onClose: () => void
 }) {
-  const [motionURL, setMotionURL] = useState('')
-  const [motionLoading, setMotionLoading] = useState(false)
-  const [motionError, setMotionError] = useState('')
+  const [playbackURL, setPlaybackURL] = useState('')
+  const [playbackLoading, setPlaybackLoading] = useState(false)
+  const [playbackError, setPlaybackError] = useState('')
+  const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
+  const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
 
   useEffect(() => {
     let active = true
     let resolved = ''
-    setMotionURL('')
-    setMotionError('')
-    setMotionLoading(false)
-    if (!item?.live_photo || !loadLivePhotoMotion) return () => undefined
+    setPlaybackURL('')
+    setPlaybackError('')
+    setPlaybackLoading(false)
 
-    setMotionLoading(true)
-    void loadLivePhotoMotion(item.node.id)
+    const loader = livePhoto ? loadLivePhotoMotion : ordinaryVideo ? loadVideo : undefined
+    if (!item || !loader) return () => undefined
+
+    setPlaybackLoading(true)
+    void loader(item.node.id)
       .then((value) => {
         if (!value) {
-          if (active) setMotionError('实况视频暂不可用。')
+          if (active) {
+            setPlaybackError(livePhoto ? '实况视频暂不可用。' : '视频暂不可播放。')
+          }
           return
         }
         resolved = value
-        if (active) setMotionURL(value)
+        if (active) setPlaybackURL(value)
         else revokeIfBlob(value)
       })
       .catch((loadError) => {
-        if (active) setMotionError(errorMessage(loadError))
+        if (active) setPlaybackError(errorMessage(loadError))
       })
       .finally(() => {
-        if (active) setMotionLoading(false)
+        if (active) setPlaybackLoading(false)
       })
 
     return () => {
       active = false
       if (resolved) revokeIfBlob(resolved)
     }
-  }, [item?.live_photo, item?.node.id, loadLivePhotoMotion])
+  }, [
+    item,
+    livePhoto,
+    ordinaryVideo,
+    loadLivePhotoMotion,
+    loadVideo,
+  ])
 
   const rows = useMemo(() => {
     if (!item) return []
@@ -484,30 +502,32 @@ function MediaDetails({
                 fallback={mediaFallback(item.metadata.media_kind)}
               />
             </Box>
-            {item.live_photo && loadLivePhotoMotion ? (
+            {(livePhoto && loadLivePhotoMotion) || (ordinaryVideo && loadVideo) ? (
               <Box>
-                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>实况视频</Typography>
-                {motionLoading ? (
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
+                  {livePhoto ? '实况视频' : '视频播放'}
+                </Typography>
+                {playbackLoading ? (
                   <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
                     <CircularProgress size={28} />
                   </Box>
-                ) : motionURL ? (
+                ) : playbackURL ? (
                   <video
-                    src={motionURL}
+                    src={playbackURL}
                     controls
-                    loop
+                    loop={livePhoto}
                     playsInline
                     preload="metadata"
                     style={{
                       width: '100%',
-                      maxHeight: 360,
+                      maxHeight: 420,
                       display: 'block',
                       borderRadius: 8,
                       background: '#000',
                     }}
                   />
-                ) : motionError ? (
-                  <XDriveStatusAlert tone="warning">{motionError}</XDriveStatusAlert>
+                ) : playbackError ? (
+                  <XDriveStatusAlert tone="warning">{playbackError}</XDriveStatusAlert>
                 ) : null}
               </Box>
             ) : null}
@@ -573,6 +593,7 @@ export function XDriveMediaGallery({
   error = '',
   loadThumbnail,
   loadLivePhotoMotion,
+  loadVideo,
   onOpenAlbum,
   onBack,
   onLoadMore,
@@ -806,6 +827,7 @@ export function XDriveMediaGallery({
         item={selected}
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={loadLivePhotoMotion}
+        loadVideo={loadVideo}
         onClose={() => setSelected(null)}
       />
     </Stack>
