@@ -10,11 +10,13 @@ const sharedGalleryMain = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDetails.tsx')
 const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx')
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
+const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGallery = [
   sharedGalleryMain,
   sharedGalleryDetails,
   sharedGalleryPreview,
   sharedGalleryUtils,
+  sharedGalleryFilters,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
@@ -364,4 +366,27 @@ test('Gallery delegates MediaDetails and preview-media helpers to internal modul
   }
   assert.ok(sharedGalleryUtils.includes('export function xDriveMediaGalleryErrorMessage'), 'shared Gallery error helper is missing')
   assert.ok(sharedGalleryUtils.includes('export function xDriveMediaFormatDuration'), 'shared Gallery duration helper is missing')
+})
+
+
+test('Gallery delegates filter draft/query mapping and filter-bar presentation to an internal module', () => {
+  assert.ok(sharedGalleryMain.includes('<XDriveMediaGalleryFilterBar'), 'Gallery page must render the internal filter bar')
+  assert.ok(sharedGalleryFilters.includes('export function XDriveMediaGalleryFilterBar'), 'missing Gallery filter-bar module')
+  for (const token of [
+    'export type MediaGalleryFilterDraft',
+    'emptyMediaGalleryFilterDraft',
+    'mediaGalleryQueryFromDraft',
+    'mediaGalleryDraftFromQuery',
+    'hasMediaGalleryFilters',
+    '精确标签',
+    '精确人物标签',
+    '保存为智能相册',
+    '有 GPS',
+    '未收藏',
+  ]) {
+    assert.ok(sharedGalleryFilters.includes(token), `MediaGalleryFilters missing: ${token}`)
+  }
+  assert.equal(/use(?:State|Effect)\(/.test(sharedGalleryFilters), false, 'Gallery filter module must stay stateless/effect-free')
+  assert.equal(sharedGalleryMain.includes('type MediaGalleryFilterDraft ='), false, 'filter draft definition must not remain inline')
+  assert.equal(sharedGalleryMain.includes('function MediaGalleryFilterBar('), false, 'filter-bar implementation must not remain inline')
 })

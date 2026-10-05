@@ -26,6 +26,7 @@ const sharedMediaGalleryPage = [
   'MediaGalleryDetails.tsx',
   'MediaGalleryPreviewMedia.tsx',
   'MediaGalleryUtils.ts',
+  'MediaGalleryFilters.tsx',
 ].map((name) => fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', name), 'utf8')).join('\n')
 const sharedPasswordChangeForm = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PasswordChangeForm.tsx'), 'utf8')
 const desktopFileExplorer = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
