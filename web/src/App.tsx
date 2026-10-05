@@ -72,7 +72,7 @@ import type {
   XDriveFileOperation,
   XDriveCloudFilesPort,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -190,7 +190,12 @@ function WebAccountMenu({
       <XDriveConfirmDialog
         open={serverUpdateConfirmOpen}
         title="确认更新服务端？"
-        description={`来源：${serverUpdate.source === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdate.channel} · 文件数据备份：${serverUpdate.backupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间 Web/API 可能短暂不可用。`}
+        description={xDriveServerUpdateConfirmationDescription({
+          source: serverUpdate.source,
+          channel: serverUpdate.channel,
+          backupFileData: serverUpdate.backupFileData,
+          unavailableLabel: 'Web/API',
+        })}
         confirmLabel="开始更新"
         confirmIntent="warning"
         loading={serverUpdate.busy}

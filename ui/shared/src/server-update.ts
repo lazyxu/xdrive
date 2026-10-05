@@ -54,3 +54,18 @@ export function xDriveServerUpdateStateLabel(state: XDriveServerUpdateState | nu
     default: return '不可用'
   }
 }
+
+export function xDriveServerUpdateConfirmationDescription({
+  source,
+  channel,
+  backupFileData,
+  unavailableLabel = '服务',
+}: {
+  source: XDriveServerUpdateSource
+  channel: XDriveServerUpdateChannel
+  backupFileData: boolean
+  unavailableLabel?: string
+}) {
+  const sourceLabel = source === 'gitlab' ? 'GitLab' : 'GitHub'
+  return `来源：${sourceLabel} · 通道：${channel} · 文件数据备份：${backupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间${unavailableLabel}可能短暂不可用。`
+}
