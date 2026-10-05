@@ -279,3 +279,21 @@ func TestVerifyThumbnailStorageChecksPresenceAndJPEGMagic(t *testing.T) {
 		t.Fatalf("valid thumbnail issues=%+v", issues)
 	}
 }
+
+func TestVerifyMediaStateRejectsLegacyLivePhotoEvidenceKey(t *testing.T) {
+	nodes, files, metadata, groups, items, resources := healthyMediaFixture()
+	groups[0].EvidenceKey = "legacy-provider-pair:ABC"
+
+	report := verifyMediaState(metadata, groups, items, resources, nodes, files)
+	found := false
+	for _, issue := range report.Issues {
+		if issue.GroupID == groups[0].ID &&
+			issue.Reason == "live_photo_evidence_key_invalid" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("legacy live photo evidence key was not rejected: %+v", report.Issues)
+	}
+}

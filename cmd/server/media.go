@@ -119,9 +119,10 @@ func runMediaRepair(args []string) error {
 		}
 	} else {
 		fmt.Printf(
-			"media repair: dry_run=%t actions=%d skipped=%d before_issues=%d after_issues=%d\n",
+			"media repair: dry_run=%t thumbnail_actions=%d relation_actions=%d skipped=%d before_issues=%d after_issues=%d\n",
 			report.DryRun,
 			len(report.Actions),
+			len(report.RelationActions),
 			len(report.Skipped),
 			len(report.Before.Issues),
 			len(report.After.Issues),
@@ -132,6 +133,15 @@ func runMediaRepair(args []string) error {
 				action.OwnerID,
 				action.NodeID,
 				action.StorageKey,
+				strings.Join(action.Reasons, ","),
+				action.Applied,
+			)
+		}
+		for _, action := range report.RelationActions {
+			fmt.Printf(
+				"REPAIR_MEDIA_RELATIONS owner=%d groups=%v reasons=%q applied=%t\n",
+				action.OwnerID,
+				action.GroupIDs,
 				strings.Join(action.Reasons, ","),
 				action.Applied,
 			)

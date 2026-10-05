@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/mediagroup"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photoasset"
 	"gorm.io/gorm"
 )
 
@@ -19,12 +21,20 @@ type MediaRepairAction struct {
 	Applied    bool     `json:"applied"`
 }
 
+type MediaRelationRepairAction struct {
+	OwnerID  uint64   `json:"owner_id"`
+	GroupIDs []uint64 `json:"group_ids,omitempty"`
+	Reasons  []string `json:"reasons"`
+	Applied  bool     `json:"applied"`
+}
+
 type MediaRepairReport struct {
-	DryRun  bool                  `json:"dry_run"`
-	Before  MediaVerifyReport     `json:"before"`
-	After   MediaVerifyReport     `json:"after"`
-	Actions []MediaRepairAction   `json:"actions"`
-	Skipped []MediaIntegrityIssue `json:"skipped,omitempty"`
+	DryRun          bool                        `json:"dry_run"`
+	Before          MediaVerifyReport           `json:"before"`
+	After           MediaVerifyReport           `json:"after"`
+	Actions         []MediaRepairAction         `json:"actions"`
+	RelationActions []MediaRelationRepairAction `json:"relation_actions,omitempty"`
+	Skipped         []MediaIntegrityIssue       `json:"skipped,omitempty"`
 }
 
 const mediaRepairBatchSize = 1000
@@ -41,11 +51,38 @@ var repairableThumbnailReasons = map[string]struct{}{
 	"thumbnail_storage_format_invalid": {},
 }
 
-// RepairMedia resets only deterministic, locally-derived thumbnail metadata.
-// It never changes original files, CAS metadata, media relationships, Source
-// state, or remote providers. Existing cache objects are deliberately retained:
-// thumbnail keys can be shared by identical content and the next thumbnail
-// request will atomically overwrite/rebuild the derived cache as needed.
+var repairableMediaRelationReasons = map[string]struct{}{
+	"group_empty":                            {},
+	"group_evidence_missing":                 {},
+	"group_kind_invalid":                     {},
+	"group_item_node_deleted":                {},
+	"group_item_node_missing":                {},
+	"group_item_node_type_mismatch":          {},
+	"group_item_ordinal_invalid":             {},
+	"group_item_owner_mismatch":              {},
+	"group_item_role_missing":                {},
+	"local_relation_projection_stale":        {},
+	"live_photo_asset_identifier_mismatch":   {},
+	"live_photo_evidence_key_invalid":        {},
+	"live_photo_container_count_invalid":     {},
+	"live_photo_duplicate_ordinal":           {},
+	"live_photo_evidence_identifier_missing": {},
+	"live_photo_metadata_missing":            {},
+	"live_photo_motion_count_invalid":        {},
+	"live_photo_motion_kind_mismatch":        {},
+	"live_photo_role_invalid":                {},
+	"live_photo_still_count_invalid":         {},
+	"live_photo_still_kind_mismatch":         {},
+}
+
+// RepairMedia repairs only deterministic xDrive-local derived state.
+//
+// Thumbnail repair clears invalid thumbnail metadata so the cache can be rebuilt
+// on demand. Relationship repair re-runs the connector-neutral local-evidence
+// MediaGroup projection and then re-projects PhotoAsset state for affected
+// owners. Neither path changes original Node/File/CAS content, Source state, or
+// any remote provider. User-managed PhotoMetadata fields remain owned by the
+// Photo domain reconciler and are not overwritten by technical re-projection.
 func RepairMedia(
 	ctx context.Context,
 	db *gorm.DB,
@@ -66,41 +103,54 @@ func RepairMedia(
 		return report, err
 	}
 	report.Before = before
-	report.Actions, report.Skipped = planMediaRepair(before)
-	if dryRun || len(report.Actions) == 0 {
+	report.Actions, report.RelationActions, report.Skipped = planMediaRepair(before)
+	if dryRun || (len(report.Actions) == 0 && len(report.RelationActions) == 0) {
 		report.After = before
 		return report, nil
 	}
 
-	nodeIDs := make([]uint64, 0, len(report.Actions))
-	for _, action := range report.Actions {
-		nodeIDs = append(nodeIDs, action.NodeID)
-	}
-	now := time.Now().UTC()
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for start := 0; start < len(nodeIDs); start += mediaRepairBatchSize {
-			end := start + mediaRepairBatchSize
-			if end > len(nodeIDs) {
-				end = len(nodeIDs)
-			}
-			if err := tx.Model(&meta.MediaMetadata{}).
-				Where("node_id IN ?", nodeIDs[start:end]).
-				Updates(map[string]any{
-					"thumbnail_key":       "",
-					"thumbnail_mime_type": "",
-					"thumbnail_width":     0,
-					"thumbnail_height":    0,
-					"updated_at":          now,
-				}).Error; err != nil {
-				return fmt.Errorf("reset thumbnail metadata: %w", err)
-			}
+	if len(report.Actions) != 0 {
+		nodeIDs := make([]uint64, 0, len(report.Actions))
+		for _, action := range report.Actions {
+			nodeIDs = append(nodeIDs, action.NodeID)
 		}
-		return nil
-	}); err != nil {
-		return report, err
+		now := time.Now().UTC()
+		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			for start := 0; start < len(nodeIDs); start += mediaRepairBatchSize {
+				end := start + mediaRepairBatchSize
+				if end > len(nodeIDs) {
+					end = len(nodeIDs)
+				}
+				if err := tx.Model(&meta.MediaMetadata{}).
+					Where("node_id IN ?", nodeIDs[start:end]).
+					Updates(map[string]any{
+						"thumbnail_key":       "",
+						"thumbnail_mime_type": "",
+						"thumbnail_width":     0,
+						"thumbnail_height":    0,
+						"updated_at":          now,
+					}).Error; err != nil {
+					return fmt.Errorf("reset thumbnail metadata: %w", err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return report, err
+		}
+		for index := range report.Actions {
+			report.Actions[index].Applied = true
+		}
 	}
-	for index := range report.Actions {
-		report.Actions[index].Applied = true
+
+	for index := range report.RelationActions {
+		action := &report.RelationActions[index]
+		if err := mediagroup.ReconcileOwnerLocalGroups(ctx, db, action.OwnerID); err != nil {
+			return report, fmt.Errorf("rebuild media relations for owner %d: %w", action.OwnerID, err)
+		}
+		if _, err := photoasset.ReconcileOwner(ctx, db, action.OwnerID); err != nil {
+			return report, fmt.Errorf("rebuild photo assets for owner %d: %w", action.OwnerID, err)
+		}
+		action.Applied = true
 	}
 
 	after, err := VerifyMediaWithStorageRoot(db.WithContext(ctx), storageRoot)
@@ -113,36 +163,62 @@ func RepairMedia(
 
 func planMediaRepair(
 	report MediaVerifyReport,
-) ([]MediaRepairAction, []MediaIntegrityIssue) {
-	type pendingAction struct {
+) ([]MediaRepairAction, []MediaRelationRepairAction, []MediaIntegrityIssue) {
+	type pendingThumbnail struct {
 		action  MediaRepairAction
 		reasons map[string]struct{}
 	}
-	byNode := make(map[uint64]*pendingAction)
+	type pendingRelation struct {
+		action   MediaRelationRepairAction
+		reasons  map[string]struct{}
+		groupIDs map[uint64]struct{}
+	}
+
+	byNode := make(map[uint64]*pendingThumbnail)
+	byOwner := make(map[uint64]*pendingRelation)
 	var skipped []MediaIntegrityIssue
+
 	for _, issue := range report.Issues {
-		if _, repairable := repairableThumbnailReasons[issue.Reason]; !repairable || issue.NodeID == 0 {
-			skipped = append(skipped, issue)
+		if _, repairable := repairableThumbnailReasons[issue.Reason]; repairable && issue.NodeID != 0 {
+			pending := byNode[issue.NodeID]
+			if pending == nil {
+				pending = &pendingThumbnail{
+					action: MediaRepairAction{
+						OwnerID: issue.OwnerID, NodeID: issue.NodeID,
+						StorageKey: strings.TrimSpace(issue.StorageKey),
+					},
+					reasons: make(map[string]struct{}),
+				}
+				byNode[issue.NodeID] = pending
+			}
+			if pending.action.OwnerID == 0 {
+				pending.action.OwnerID = issue.OwnerID
+			}
+			if pending.action.StorageKey == "" {
+				pending.action.StorageKey = strings.TrimSpace(issue.StorageKey)
+			}
+			pending.reasons[issue.Reason] = struct{}{}
 			continue
 		}
-		pending := byNode[issue.NodeID]
-		if pending == nil {
-			pending = &pendingAction{
-				action: MediaRepairAction{
-					OwnerID: issue.OwnerID, NodeID: issue.NodeID,
-					StorageKey: strings.TrimSpace(issue.StorageKey),
-				},
-				reasons: make(map[string]struct{}),
+
+		if _, repairable := repairableMediaRelationReasons[issue.Reason]; repairable && issue.OwnerID != 0 {
+			pending := byOwner[issue.OwnerID]
+			if pending == nil {
+				pending = &pendingRelation{
+					action:   MediaRelationRepairAction{OwnerID: issue.OwnerID},
+					reasons:  make(map[string]struct{}),
+					groupIDs: make(map[uint64]struct{}),
+				}
+				byOwner[issue.OwnerID] = pending
 			}
-			byNode[issue.NodeID] = pending
+			pending.reasons[issue.Reason] = struct{}{}
+			if issue.GroupID != 0 {
+				pending.groupIDs[issue.GroupID] = struct{}{}
+			}
+			continue
 		}
-		if pending.action.OwnerID == 0 {
-			pending.action.OwnerID = issue.OwnerID
-		}
-		if pending.action.StorageKey == "" {
-			pending.action.StorageKey = strings.TrimSpace(issue.StorageKey)
-		}
-		pending.reasons[issue.Reason] = struct{}{}
+
+		skipped = append(skipped, issue)
 	}
 
 	actions := make([]MediaRepairAction, 0, len(byNode))
@@ -160,6 +236,27 @@ func planMediaRepair(
 		}
 		return actions[i].NodeID < actions[j].NodeID
 	})
+
+	relationActions := make([]MediaRelationRepairAction, 0, len(byOwner))
+	for _, pending := range byOwner {
+		pending.action.Reasons = make([]string, 0, len(pending.reasons))
+		for reason := range pending.reasons {
+			pending.action.Reasons = append(pending.action.Reasons, reason)
+		}
+		sort.Strings(pending.action.Reasons)
+		pending.action.GroupIDs = make([]uint64, 0, len(pending.groupIDs))
+		for groupID := range pending.groupIDs {
+			pending.action.GroupIDs = append(pending.action.GroupIDs, groupID)
+		}
+		sort.Slice(pending.action.GroupIDs, func(i, j int) bool {
+			return pending.action.GroupIDs[i] < pending.action.GroupIDs[j]
+		})
+		relationActions = append(relationActions, pending.action)
+	}
+	sort.Slice(relationActions, func(i, j int) bool {
+		return relationActions[i].OwnerID < relationActions[j].OwnerID
+	})
+
 	sortMediaIntegrityIssues(skipped)
-	return actions, skipped
+	return actions, relationActions, skipped
 }
