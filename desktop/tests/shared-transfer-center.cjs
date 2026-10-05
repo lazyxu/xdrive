@@ -77,7 +77,7 @@ test('Web upload and download operations feed persistent transfer history', () =
   assert.ok(webStore.includes("xdrive.web.transfer_history"), 'Web transfer history must survive navigation/reload')
   assert.ok(webStore.includes('MAX_HISTORY = 200'), 'Web transfer history must be bounded')
   assert.ok(webStore.includes('页面刷新后无法继续跟踪该传输'), 'stale active Web transfers must fail closed after reload')
-  assert.ok(webStore.includes('xDriveTransferActive(item)'), 'Web stale-transfer recovery must use the shared active selector')
+  assert.ok(webStore.includes('xDriveTransferActive(normalized)'), 'Web stale-transfer recovery must normalize legacy records before using the shared active selector')
   assert.ok(webStore.includes('this.items.filter(xDriveTransferActive)'), 'Web history clearing must preserve active work through the shared selector')
 })
 
@@ -102,7 +102,7 @@ test('unified Task Center history clearing preserves active work on Web and Desk
   assert.ok(web.includes('operationActions: fileOperationActions'), 'Web must delegate Task Center action presentation to the shared controller')
 
   assert.ok(transferModel.includes('func (m *Manager) ClearHistory()'), 'Desktop transfer manager must have history-only clearing')
-  assert.ok(transferModel.includes('StateCompleted || e.task.State == StateFailed'), 'Desktop transfer history clearing must target only terminal transfers')
+  assert.ok(transferModel.includes('terminalState(e.task.State)'), 'Desktop transfer history clearing must use the shared terminal-state classifier')
   assert.ok(agentController.includes('c.transfers.ClearHistory()'), 'Desktop controller must use history-only transfer clearing')
   assert.ok(agentIPC.includes('DELETE /v1/transfers'), 'Desktop Agent IPC must expose transfer history clearing')
   assert.ok(agentIPC.includes('DELETE /v1/cloud/file-operations'), 'Desktop Agent IPC must expose file-operation history clearing')
