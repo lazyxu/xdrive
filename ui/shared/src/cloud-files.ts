@@ -38,6 +38,13 @@ export type XDriveCloudFilesSearchPage<TNode extends { id: number }> = {
   next_cursor?: string
 }
 
+export type XDriveFileQuickAccessItem<TNode extends { id: number }> = {
+  node: TNode
+  path: string
+  crumbs: XDriveCloudFilesCrumb[]
+  pinned_at: string
+}
+
 export interface XDriveCloudFilesPort<
   TNode extends { id: number },
   TQuota extends QuotaUsage = QuotaUsage,
