@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -45,6 +46,7 @@ func TestMediaPlacesFacetAndFilterShareOneGridContract(t *testing.T) {
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoPlaceLabel{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -130,6 +132,21 @@ func TestMediaPlacesFacetAndFilterShareOneGridContract(t *testing.T) {
 		}
 	}
 
+	if err := db.Create(&meta.PhotoPlaceLabel{
+		AssetID:         assets[0].ID,
+		Resolver:        photointelligence.GeoNamesResolverName,
+		ResolverVersion: "test-v1",
+		Latitude:        latOne,
+		Longitude:       lonOne,
+		CountryCode:     "SG",
+		Country:         "Singapore",
+		City:            "Singapore",
+		Locality:        "Singapore",
+		Formatted:       "Singapore",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	places, err := queryMediaPlaces(context.Background(), db, owner.ID, 24)
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +163,10 @@ func TestMediaPlacesFacetAndFilterShareOneGridContract(t *testing.T) {
 		}
 	}
 	if singapore.ID == "" || singapore.ItemCount != 2 ||
-		singapore.CoverNodeID == nil || *singapore.CoverNodeID != nodes[0].ID {
+		singapore.CoverNodeID == nil || *singapore.CoverNodeID != nodes[0].ID ||
+		singapore.Name != "Singapore" ||
+		singapore.Attribution != photointelligence.GeoNamesAttribution ||
+		singapore.AttributionURL != "https://www.geonames.org/" {
 		t.Fatalf("singapore facet=%+v", singapore)
 	}
 

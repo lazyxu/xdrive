@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 )
 
@@ -26,13 +27,15 @@ type mediaPlaceCell struct {
 }
 
 type mediaPlaceDTO struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Latitude    float64    `json:"latitude"`
-	Longitude   float64    `json:"longitude"`
-	ItemCount   int64      `json:"item_count"`
-	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
-	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Latitude       float64    `json:"latitude"`
+	Longitude      float64    `json:"longitude"`
+	ItemCount      int64      `json:"item_count"`
+	CoverNodeID    *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+	Attribution    string     `json:"attribution,omitempty"`
+	AttributionURL string     `json:"attribution_url,omitempty"`
 }
 
 func mediaPlaceKey(cell mediaPlaceCell) string {
@@ -140,6 +143,8 @@ func queryMediaPlaces(
 		ItemCount     int64
 		CoverNodeID   *uint64
 		UpdatedAt     *time.Time
+		ResolvedName  string
+		Resolver      string
 	}
 	var rows []row
 	if err := db.WithContext(ctx).
@@ -149,7 +154,9 @@ func queryMediaPlaces(
 				lonExpr+" AS longitude_cell, "+
 				"COUNT(DISTINCT pa.id) AS item_count, "+
 				"MIN(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
-				"MAX(COALESCE(xd_media_metadata.captured_at, n.created_at)) AS updated_at",
+				"MAX(COALESCE(xd_media_metadata.captured_at, n.created_at)) AS updated_at, "+
+				"MIN(NULLIF(ppl.formatted, '')) AS resolved_name, "+
+				"MIN(NULLIF(ppl.resolver, '')) AS resolver",
 			thumbnailMIMEs,
 		).
 		Joins(
@@ -157,6 +164,11 @@ func queryMediaPlaces(
 			ownerID,
 		).
 		Joins("JOIN xd_nodes AS n ON n.id = xd_media_metadata.node_id AND n.deleted_at IS NULL").
+		Joins(
+			"LEFT JOIN xd_photo_place_labels AS ppl ON ppl.asset_id = pa.id "+
+				"AND ppl.latitude = xd_media_metadata.latitude "+
+				"AND ppl.longitude = xd_media_metadata.longitude",
+		).
 		Where(
 			"xd_media_metadata.owner_id = ? AND xd_media_metadata.index_state = ? AND "+
 				"xd_media_metadata.media_kind IN ? AND "+
@@ -181,15 +193,25 @@ func queryMediaPlaces(
 			Longitude: row.LongitudeCell,
 		}
 		latitude, longitude := mediaPlaceCenter(cell)
-		out = append(out, mediaPlaceDTO{
+		name := strings.TrimSpace(row.ResolvedName)
+		if name == "" {
+			name = mediaPlaceName(cell)
+		}
+		item := mediaPlaceDTO{
 			ID:          mediaPlaceKey(cell),
-			Name:        mediaPlaceName(cell),
+			Name:        name,
 			Latitude:    latitude,
 			Longitude:   longitude,
 			ItemCount:   row.ItemCount,
 			CoverNodeID: row.CoverNodeID,
 			UpdatedAt:   row.UpdatedAt,
-		})
+		}
+		if strings.TrimSpace(row.ResolvedName) != "" &&
+			strings.TrimSpace(row.Resolver) == photointelligence.GeoNamesResolverName {
+			item.Attribution = photointelligence.GeoNamesAttribution
+			item.AttributionURL = "https://www.geonames.org/"
+		}
+		out = append(out, item)
 	}
 	return out, nil
 }

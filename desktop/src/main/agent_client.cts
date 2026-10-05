@@ -524,6 +524,8 @@ export type AgentMediaPlaceFacet = {
   item_count: number
   cover_node_id?: number
   updated_at?: string
+  attribution?: string
+  attribution_url?: string
 }
 
 export type AgentMediaFavorite = {

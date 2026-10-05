@@ -11,6 +11,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
 	"gorm.io/gorm"
@@ -25,6 +26,7 @@ type Server struct {
 	MaxUploadBytes            int64
 	SourceRunFailureRetention time.Duration
 	ConnectorSecrets          *connectorsecret.Keyring
+	PhotoPlaceResolver        photointelligence.PlaceResolver
 	HostControlDir            string
 	credentialTest            sourceCredentialTester
 	fileStationBrowse         sourceFileStationBrowser

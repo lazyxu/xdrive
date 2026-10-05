@@ -2124,7 +2124,9 @@ export function XDriveMediaGallery({
               地点
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              按本地 GPS 坐标近似聚合，不使用在线地理服务
+              {places.some((place) => place.attribution)
+                ? '按本地 GPS 聚合；地点名称来自本地 GeoNames 数据'
+                : '按本地 GPS 坐标近似聚合，不使用在线地理服务'}
             </Typography>
           </Stack>
           <Box
@@ -2173,6 +2175,7 @@ export function XDriveMediaGallery({
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {place.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS
+                    {place.attribution ? ` · ${place.attribution}` : ''}
                   </Typography>
                 </Box>
               </Paper>

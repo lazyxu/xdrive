@@ -98,13 +98,15 @@ type MediaAlbum struct {
 }
 
 type MediaPlaceFacet struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Latitude    float64    `json:"latitude"`
-	Longitude   float64    `json:"longitude"`
-	ItemCount   int64      `json:"item_count"`
-	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
-	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Latitude       float64    `json:"latitude"`
+	Longitude      float64    `json:"longitude"`
+	ItemCount      int64      `json:"item_count"`
+	CoverNodeID    *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+	Attribution    string     `json:"attribution,omitempty"`
+	AttributionURL string     `json:"attribution_url,omitempty"`
 }
 
 type MediaQuery struct {
