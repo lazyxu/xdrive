@@ -354,15 +354,24 @@ provider disappearance
   -> xDrive Node preserved
 ```
 
-### Mirror — TODO
+### Mirror — current opt-in
 
-Mirror may be added only with:
+Mirror is implemented as a local xDrive trash policy and does not write deletes back to the provider.
 
-- explicit reliable tombstones, or repeated completed inventories before inferred deletion is accepted;
-- configurable grace/confirmation policy;
-- no deletion advancement from partial, failed, or cancelled inventories;
-- move to xDrive trash only;
-- opt-in configuration clearly distinct from Backup.
+Deletion inferred from full inventories is accepted only when all safety conditions hold:
+
+- the SourceItem is missing from at least 2 completed full inventories;
+- at least 24 hours have elapsed since the first reliable missing confirmation;
+- partial, failed, and cancelled runs never advance confirmation;
+- scan-only runs may accumulate reliable evidence but cannot trash;
+- Source/run configuration snapshots still match;
+- the local Node revision/type/path still matches the last Source binding;
+- a directory is never swept up when its subtree contains unmanaged local content;
+- restored or locally modified tracked parents protect their descendants;
+- reappearance clears accumulated missing evidence immediately;
+- the result is xDrive trash only, never direct permanent deletion.
+
+Web/Desktop expose one shared opt-in selector with Backup as the default and explicit warning text for the confirmation/grace behavior.
 
 ### Source-side writes
 
@@ -378,16 +387,16 @@ Remote delete/rename/album mutation and general two-way synchronization are not 
 
 `xdrive-server media repair [--dry-run] [--json]` resets deterministic thumbnail metadata failures, rebuilds stale local media relationships owner-by-owner, and repairs `.livp` `MediaDerivedResource` projection. Valid current `.livp` metadata rebuilds the canonical still/motion byte-range rows from the validated local container descriptor; rows whose parent is no longer a valid LIVP projection are deleted because derived rows own no bytes. Relationship repair reruns Apple Live Photo, RAW/rendered, XMP sidecar, and burst projection, then reprojects `PhotoAsset` state while preserving local favorite/tag/people-label/description fields.
 
-### Still TODO
+### Remaining integrity work
 
-Extend read-only verification to cover:
+The current durable repair model is complete for Source bindings/runs and media-derived state, including explicit orphan-thumbnail-file GC. Remaining integrity work is verification-oriented:
 
 - Node -> File -> CAS presence and storage SHA integrity through the existing storage verifier boundary;
-- verified digest-alias consistency;
-- unreferenced thumbnail cache file GC beyond metadata-referenced entries;
-- incomplete migrations and any future stale maintenance state not covered by the shared SyncRun heartbeat contract.
+- verified digest-alias consistency and any future repair only after a deterministic ownership/provenance contract exists.
 
-Deterministic thumbnail-cache issues support explicit idempotent metadata reset via `xdrive-server media repair [--dry-run]`; cache bytes are left in place because identical content may share one cache key, and the next thumbnail request rebuilds/overwrites the derived cache as needed. Stale MediaGroup relationships use the same command to rerun deterministic local-evidence reconciliation and `PhotoAsset` projection without changing originals or user metadata. `.livp` derived byte-range rows use the persisted, validated local `ContainerJSON` contract and current Node/File revision+SHA to rebuild safely; non-LIVP orphan rows are removed as metadata projections only. Additional repairs should follow the same rule: prove the issue read-only first, mutate only local derived state, and never modify the remote provider.
+There is currently no durable migration journal/state machine to repair. Schema migration is idempotent and the root-to-user migration rolls back before writing its completion marker, so xDrive must not invent a fake “stale migration” state. If a future migration subsystem adds a durable journal, that journal must define explicit verifier and deterministic recovery semantics first.
+
+Deterministic thumbnail-cache issues support explicit idempotent metadata reset via `xdrive-server media repair [--dry-run]`; explicit `--gc-thumbnails` removes only old unreferenced cache files with reference, age, path, type, size and mtime rechecks. Stale MediaGroup relationships use the same repair command to rerun deterministic local-evidence reconciliation and `PhotoAsset` projection without changing originals or user metadata. `.livp` derived byte-range rows use the persisted, validated local `ContainerJSON` contract and current Node/File revision+SHA to rebuild safely; non-LIVP orphan rows are removed as metadata projections only. Additional repairs must follow the same rule: prove the issue read-only first, mutate only local derived state, and never modify the remote provider.
 
 ## Capability matrix
 
