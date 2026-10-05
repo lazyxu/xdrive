@@ -203,17 +203,63 @@ func inspectStoredLIVPEntry(
 	return out, offset, nil
 }
 
-type livpContainerMetadata struct {
-	AssetIdentifier string                `json:"asset_identifier"`
-	Still           livpContainerResource `json:"still"`
-	Motion          livpContainerResource `json:"motion"`
+type LIVPContainerDescriptor struct {
+	AssetIdentifier string                          `json:"asset_identifier"`
+	Still           LIVPContainerResourceDescriptor `json:"still"`
+	Motion          LIVPContainerResourceDescriptor `json:"motion"`
 }
 
-type livpContainerResource struct {
+type LIVPContainerResourceDescriptor struct {
 	Name     string `json:"name"`
 	Offset   int64  `json:"offset"`
 	Size     int64  `json:"size"`
 	MIMEType string `json:"mime_type,omitempty"`
+}
+
+// ParseLIVPContainerDescriptor validates the persisted connector-neutral
+// descriptor produced by extractLIVP. The descriptor references byte ranges
+// inside the original .livp Node; it never owns or duplicates those bytes.
+func ParseLIVPContainerDescriptor(raw string) (LIVPContainerDescriptor, error) {
+	var out LIVPContainerDescriptor
+	if strings.TrimSpace(raw) == "" {
+		return out, errors.New("livp container metadata is empty")
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return out, err
+	}
+	out.AssetIdentifier = strings.TrimSpace(out.AssetIdentifier)
+	if out.AssetIdentifier == "" {
+		return LIVPContainerDescriptor{}, errors.New("livp asset identifier is missing")
+	}
+	if !validLIVPContainerResourceDescriptor(out.Still, "image/") ||
+		!validLIVPContainerResourceDescriptor(out.Motion, "video/") {
+		return LIVPContainerDescriptor{}, errors.New("livp resource descriptor is invalid")
+	}
+	return out, nil
+}
+
+func validLIVPContainerResourceDescriptor(
+	resource LIVPContainerResourceDescriptor,
+	mimePrefix string,
+) bool {
+	name := strings.TrimSpace(resource.Name)
+	if name == "" ||
+		strings.Contains(name, "/") ||
+		strings.Contains(name, "\\") ||
+		name == "." ||
+		name == ".." ||
+		filepath.Base(name) != name {
+		return false
+	}
+	for _, ch := range name {
+		if ch < 32 || ch == 127 {
+			return false
+		}
+	}
+	mimeType := strings.ToLower(strings.TrimSpace(resource.MIMEType))
+	return strings.HasPrefix(mimeType, mimePrefix) &&
+		resource.Offset >= 0 &&
+		resource.Size > 0
 }
 
 // extractLIVP projects a validated .livp container as one logical image media
@@ -255,13 +301,13 @@ func extractLIVP(r io.ReaderAt, size int64) (Result, error) {
 	out.AudioCodec = info.Motion.AudioCodec
 	out.VideoJSON = info.Motion.VideoJSON
 
-	container := livpContainerMetadata{
+	container := LIVPContainerDescriptor{
 		AssetIdentifier: info.AssetIdentifier,
-		Still: livpContainerResource{
+		Still: LIVPContainerResourceDescriptor{
 			Name: info.StillName, Offset: info.StillOffset, Size: info.StillSize,
 			MIMEType: info.Still.MIMEType,
 		},
-		Motion: livpContainerResource{
+		Motion: LIVPContainerResourceDescriptor{
 			Name: info.MotionName, Offset: info.MotionOffset, Size: info.MotionSize,
 			MIMEType: info.Motion.MIMEType,
 		},

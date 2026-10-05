@@ -34,6 +34,7 @@ type MediaRepairReport struct {
 	After           MediaVerifyReport           `json:"after"`
 	Actions         []MediaRepairAction         `json:"actions"`
 	RelationActions []MediaRelationRepairAction `json:"relation_actions,omitempty"`
+	DerivedActions  []MediaDerivedRepairAction  `json:"derived_actions,omitempty"`
 	Skipped         []MediaIntegrityIssue       `json:"skipped,omitempty"`
 }
 
@@ -104,7 +105,18 @@ func RepairMedia(
 	}
 	report.Before = before
 	report.Actions, report.RelationActions, report.Skipped = planMediaRepair(before)
-	if dryRun || (len(report.Actions) == 0 && len(report.RelationActions) == 0) {
+	report.DerivedActions, report.Skipped, err = planMediaDerivedRepairs(
+		ctx,
+		db,
+		report.Skipped,
+	)
+	if err != nil {
+		return report, err
+	}
+	if dryRun ||
+		(len(report.Actions) == 0 &&
+			len(report.RelationActions) == 0 &&
+			len(report.DerivedActions) == 0) {
 		report.After = before
 		return report, nil
 	}
@@ -151,6 +163,39 @@ func RepairMedia(
 			return report, fmt.Errorf("rebuild photo assets for owner %d: %w", action.OwnerID, err)
 		}
 		action.Applied = true
+	}
+
+	derivedOwners := make(map[uint64]struct{})
+	for index := range report.DerivedActions {
+		action := &report.DerivedActions[index]
+		if err := applyMediaDerivedRepair(ctx, db, *action); err != nil {
+			return report, fmt.Errorf(
+				"%s media derived resources for node %d: %w",
+				action.Mode,
+				action.NodeID,
+				err,
+			)
+		}
+		action.Applied = true
+		if action.OwnerID != 0 {
+			derivedOwners[action.OwnerID] = struct{}{}
+		}
+	}
+	orderedDerivedOwners := make([]uint64, 0, len(derivedOwners))
+	for ownerID := range derivedOwners {
+		orderedDerivedOwners = append(orderedDerivedOwners, ownerID)
+	}
+	sort.Slice(orderedDerivedOwners, func(i, j int) bool {
+		return orderedDerivedOwners[i] < orderedDerivedOwners[j]
+	})
+	for _, ownerID := range orderedDerivedOwners {
+		if _, err := photoasset.ReconcileOwner(ctx, db, ownerID); err != nil {
+			return report, fmt.Errorf(
+				"rebuild photo assets after derived-resource repair for owner %d: %w",
+				ownerID,
+				err,
+			)
+		}
 	}
 
 	after, err := VerifyMediaWithStorageRoot(db.WithContext(ctx), storageRoot)

@@ -127,7 +127,7 @@ func TestRepairMediaResetsThumbnailMetadataIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dry.Actions) != 1 || dry.Actions[0].Applied || len(dry.RelationActions) != 0 {
+	if len(dry.Actions) != 1 || dry.Actions[0].Applied || len(dry.RelationActions) != 0 || len(dry.DerivedActions) != 0 {
 		t.Fatalf("dry-run actions=%+v relations=%+v", dry.Actions, dry.RelationActions)
 	}
 	var unchanged meta.MediaMetadata
@@ -161,7 +161,7 @@ func TestRepairMediaResetsThumbnailMetadataIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Actions) != 0 || len(second.RelationActions) != 0 || !second.After.OK() {
+	if len(second.Actions) != 0 || len(second.RelationActions) != 0 || len(second.DerivedActions) != 0 || !second.After.OK() {
 		t.Fatalf("second repair=%+v", second)
 	}
 }
@@ -370,7 +370,264 @@ func TestRepairMediaRebuildsRelationsAndPreservesUserMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Actions) != 0 || len(second.RelationActions) != 0 || !second.After.OK() {
+	if len(second.Actions) != 0 || len(second.RelationActions) != 0 || len(second.DerivedActions) != 0 || !second.After.OK() {
 		t.Fatalf("second relation repair=%+v", second)
+	}
+}
+
+func TestRepairMediaRebuildsAndDeletesDerivedResourceProjection(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "media_derived_repair_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error }()
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.User{}, &meta.Node{}, &meta.File{},
+		&meta.Source{}, &meta.SourceItem{},
+		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
+		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
+		&meta.MediaGroup{}, &meta.MediaGroupItem{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	user := meta.User{
+		Username: "media-derived-repair-owner", PasswordHash: "unused",
+		Role: meta.UserRoleUser, SessionVersion: 1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	nodes := []meta.Node{
+		{
+			ParentID: &root.ID, Name: "capture.livp",
+			Type: meta.NodeTypeFile, OwnerID: user.ID, Revision: 3,
+		},
+		{
+			ParentID: &root.ID, Name: "ordinary.jpg",
+			Type: meta.NodeTypeFile, OwnerID: user.ID, Revision: 1,
+		},
+	}
+	if err := db.Create(&nodes).Error; err != nil {
+		t.Fatal(err)
+	}
+	livpSHA := strings.Repeat("c", 64)
+	ordinarySHA := strings.Repeat("d", 64)
+	files := []meta.File{
+		{
+			NodeID: nodes[0].ID, Size: 1000, SHA256: livpSHA,
+			StorageKey: ".xdrive-blobs/sha256/cc/" + livpSHA,
+		},
+		{
+			NodeID: nodes[1].ID, Size: 200, SHA256: ordinarySHA,
+			StorageKey: ".xdrive-blobs/sha256/dd/" + ordinarySHA,
+		},
+	}
+	if err := db.Create(&files).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	containerJSON := `{
+		"asset_identifier":"asset-livp",
+		"still":{"name":"still.jpg","offset":100,"size":200,"mime_type":"image/jpeg"},
+		"motion":{"name":"motion.mov","offset":300,"size":500,"mime_type":"video/quicktime"}
+	}`
+	metadata := []meta.MediaMetadata{
+		{
+			NodeID: nodes[0].ID, OwnerID: user.ID, NodeRevision: nodes[0].Revision,
+			SHA256: livpSHA, MediaKind: meta.MediaKindImage,
+			MIMEType: mediapkg.LIVPMIMEType, ContainerKind: mediapkg.ContainerKindLIVP,
+			ContainerJSON: containerJSON, LivePhotoAssetIdentifier: "asset-livp",
+			DerivedResourceVersion:  1,
+			RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
+			IndexState:              meta.MediaIndexStateReady,
+		},
+		{
+			NodeID: nodes[1].ID, OwnerID: user.ID, NodeRevision: nodes[1].Revision,
+			SHA256: ordinarySHA, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
+			RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
+			IndexState:              meta.MediaIndexStateReady,
+		},
+	}
+	if err := db.Create(&metadata).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	stale := []meta.MediaDerivedResource{
+		{
+			NodeID: nodes[0].ID, Role: meta.MediaDerivedResourceRoleStill,
+			OwnerID: user.ID, NodeRevision: 1, SHA256: strings.Repeat("e", 64),
+			Name: "wrong-still.jpg", MediaKind: meta.MediaKindVideo,
+			MIMEType: "video/quicktime", ByteOffset: 950, ByteSize: 100,
+			AssetIdentifier: "wrong-asset",
+		},
+		{
+			NodeID: nodes[0].ID, Role: meta.MediaDerivedResourceRoleMotion,
+			OwnerID: user.ID, NodeRevision: nodes[0].Revision, SHA256: livpSHA,
+			Name: "wrong-motion.mov", MediaKind: meta.MediaKindVideo,
+			MIMEType: "video/quicktime", ByteOffset: 300, ByteSize: 500,
+			AssetIdentifier: "wrong-asset",
+		},
+		{
+			NodeID: nodes[1].ID, Role: meta.MediaDerivedResourceRoleStill,
+			OwnerID: user.ID, NodeRevision: nodes[1].Revision, SHA256: ordinarySHA,
+			Name: "rogue.jpg", MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
+			ByteOffset: 0, ByteSize: 100, AssetIdentifier: "rogue",
+		},
+	}
+	if err := db.Create(&stale).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	storageRoot := t.TempDir()
+	dry, err := RepairMedia(context.Background(), db, storageRoot, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dry.DerivedActions) != 2 {
+		t.Fatalf("dry derived actions=%+v", dry.DerivedActions)
+	}
+	modes := map[uint64]string{}
+	for _, action := range dry.DerivedActions {
+		if action.Applied {
+			t.Fatalf("dry derived action applied: %+v", action)
+		}
+		modes[action.NodeID] = action.Mode
+	}
+	if modes[nodes[0].ID] != MediaDerivedRepairModeRebuild ||
+		modes[nodes[1].ID] != MediaDerivedRepairModeDelete {
+		t.Fatalf("dry derived modes=%v", modes)
+	}
+	var dryCount int64
+	if err := db.Model(&meta.MediaDerivedResource{}).Count(&dryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if dryCount != 3 {
+		t.Fatalf("dry-run changed derived rows: count=%d", dryCount)
+	}
+
+	applied, err := RepairMedia(context.Background(), db, storageRoot, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.DerivedActions) != 2 {
+		t.Fatalf("applied derived actions=%+v", applied.DerivedActions)
+	}
+	for _, action := range applied.DerivedActions {
+		if !action.Applied {
+			t.Fatalf("derived action not applied: %+v", action)
+		}
+	}
+	if !applied.After.OK() {
+		t.Fatalf("after issues=%+v", applied.After.Issues)
+	}
+
+	var livpResources []meta.MediaDerivedResource
+	if err := db.Where("node_id = ?", nodes[0].ID).
+		Order("role ASC").
+		Find(&livpResources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(livpResources) != 2 {
+		t.Fatalf("LIVP resources=%+v", livpResources)
+	}
+	byRole := map[string]meta.MediaDerivedResource{}
+	for _, resource := range livpResources {
+		byRole[resource.Role] = resource
+		if resource.OwnerID != user.ID ||
+			resource.NodeRevision != nodes[0].Revision ||
+			resource.SHA256 != livpSHA ||
+			resource.AssetIdentifier != "asset-livp" {
+			t.Fatalf("rebuilt resource stale=%+v", resource)
+		}
+	}
+	still := byRole[meta.MediaDerivedResourceRoleStill]
+	if still.Name != "still.jpg" ||
+		still.MediaKind != meta.MediaKindImage ||
+		still.MIMEType != "image/jpeg" ||
+		still.ByteOffset != 100 ||
+		still.ByteSize != 200 {
+		t.Fatalf("rebuilt still=%+v", still)
+	}
+	motion := byRole[meta.MediaDerivedResourceRoleMotion]
+	if motion.Name != "motion.mov" ||
+		motion.MediaKind != meta.MediaKindVideo ||
+		motion.MIMEType != "video/quicktime" ||
+		motion.ByteOffset != 300 ||
+		motion.ByteSize != 500 {
+		t.Fatalf("rebuilt motion=%+v", motion)
+	}
+
+	var rogueCount int64
+	if err := db.Model(&meta.MediaDerivedResource{}).
+		Where("node_id = ?", nodes[1].ID).
+		Count(&rogueCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rogueCount != 0 {
+		t.Fatalf("rogue derived projection remains: count=%d", rogueCount)
+	}
+
+	second, err := RepairMedia(context.Background(), db, storageRoot, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Actions) != 0 ||
+		len(second.RelationActions) != 0 ||
+		len(second.DerivedActions) != 0 ||
+		!second.After.OK() {
+		t.Fatalf("second derived repair=%+v", second)
+	}
+}
+
+func TestValidLIVPDescriptorRangesRejectsOverlapAndOverflow(t *testing.T) {
+	valid := mediapkg.LIVPContainerDescriptor{
+		AssetIdentifier: "asset",
+		Still: mediapkg.LIVPContainerResourceDescriptor{
+			Name: "still.jpg", Offset: 100, Size: 100, MIMEType: "image/jpeg",
+		},
+		Motion: mediapkg.LIVPContainerResourceDescriptor{
+			Name: "motion.mov", Offset: 300, Size: 200, MIMEType: "video/quicktime",
+		},
+	}
+	if !validLIVPDescriptorRanges(valid, 1000) {
+		t.Fatal("valid non-overlapping LIVP ranges were rejected")
+	}
+	overlap := valid
+	overlap.Motion.Offset = 150
+	if validLIVPDescriptorRanges(overlap, 1000) {
+		t.Fatal("overlapping LIVP ranges were accepted")
+	}
+	overflow := valid
+	overflow.Motion.Offset = 900
+	overflow.Motion.Size = 200
+	if validLIVPDescriptorRanges(overflow, 1000) {
+		t.Fatal("out-of-bounds LIVP range was accepted")
 	}
 }
