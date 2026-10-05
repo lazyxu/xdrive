@@ -21,7 +21,12 @@ const sharedTrashDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedVersionHistoryDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'VersionHistoryDialog.tsx'), 'utf8')
 const sharedFileNameDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'FileNameDialog.tsx'), 'utf8')
 const sharedTaskCenterPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx'), 'utf8')
-const sharedMediaGalleryPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
+const sharedMediaGalleryPage = [
+  'MediaGallery.tsx',
+  'MediaGalleryDetails.tsx',
+  'MediaGalleryPreviewMedia.tsx',
+  'MediaGalleryUtils.ts',
+].map((name) => fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', name), 'utf8')).join('\n')
 const sharedPasswordChangeForm = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'PasswordChangeForm.tsx'), 'utf8')
 const desktopFileExplorer = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const desktopSourceAdapter = fs.readFileSync(path.join(root, 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
