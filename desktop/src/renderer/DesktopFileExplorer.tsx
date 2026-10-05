@@ -14,6 +14,7 @@ import {
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
+  XDriveFileExplorerTabs,
   XDriveFileNameDialog,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
@@ -117,6 +118,15 @@ export default function DesktopFileExplorer({
     explorerPagination,
     externallySorted,
     searchStatusText,
+    tabs,
+    activeTabID,
+    newTab,
+    activateTab,
+    closeTab,
+    nextTab,
+    previousTab,
+    canNewTab,
+    canCloseTab,
   } = useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>({
     items,
     crumbs,
@@ -655,6 +665,21 @@ export default function DesktopFileExplorer({
           : undefined}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
+        tabBar={(
+          <XDriveFileExplorerTabs
+            tabs={tabs}
+            activeTabID={activeTabID}
+            canNewTab={canNewTab}
+            canCloseTab={canCloseTab}
+            onActivate={(id) => { void activateTab(id) }}
+            onNewTab={() => { void newTab() }}
+            onCloseTab={(id) => { void closeTab(id) }}
+          />
+        )}
+        onNewTab={canNewTab ? () => { void newTab() } : undefined}
+        onCloseTab={canCloseTab ? () => { void closeTab() } : undefined}
+        onNextTab={tabs.length > 1 ? () => { void nextTab() } : undefined}
+        onPreviousTab={tabs.length > 1 ? () => { void previousTab() } : undefined}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         navigationPane={(
           <XDriveFileExplorerNavigationPane

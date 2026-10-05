@@ -501,6 +501,11 @@ export function XDriveFileExplorer({
   loading = false,
   presentation = 'card',
   emptyMessage = '此文件夹为空',
+  tabBar,
+  onNewTab,
+  onCloseTab,
+  onNextTab,
+  onPreviousTab,
   pathValue,
   onPathSubmit,
   searchValue = '',
@@ -562,6 +567,11 @@ export function XDriveFileExplorer({
   loading?: boolean
   presentation?: XDriveFileExplorerPresentation
   emptyMessage?: string
+  tabBar?: ReactNode
+  onNewTab?: () => void
+  onCloseTab?: () => void
+  onNextTab?: () => void
+  onPreviousTab?: () => void
   pathValue?: string
   onPathSubmit?: (path: string) => void
   searchValue?: string
@@ -1806,6 +1816,22 @@ export function XDriveFileExplorer({
     const modifier = event.ctrlKey || event.metaKey
     const key = event.key.toLowerCase()
 
+    if (modifier && key === 't' && onNewTab) {
+      event.preventDefault()
+      onNewTab()
+      return
+    }
+    if (modifier && key === 'w' && onCloseTab) {
+      event.preventDefault()
+      onCloseTab()
+      return
+    }
+    if (modifier && event.key === 'Tab' && (onNextTab || onPreviousTab)) {
+      event.preventDefault()
+      if (event.shiftKey) onPreviousTab?.()
+      else onNextTab?.()
+      return
+    }
     if (event.altKey && event.key === 'ArrowLeft' && canGoBack && onBack) {
       event.preventDefault()
       onBack()
@@ -2021,6 +2047,11 @@ export function XDriveFileExplorer({
         bgcolor: 'background.paper',
       }}
     >
+      {tabBar ? (
+        <Box data-xdrive-file-explorer-tab-bar sx={{ minWidth: 0, flexShrink: 0 }}>
+          {tabBar}
+        </Box>
+      ) : null}
       <Stack
         direction="row"
         alignItems="center"

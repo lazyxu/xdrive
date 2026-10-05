@@ -13,11 +13,16 @@ const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 
-test('shared FileExplorer navigation controller owns cross-client view and history state', () => {
+test('shared FileExplorer navigation controller owns cross-client per-tab view and history state', () => {
   for (const token of [
     'useXDriveFileExplorerNavigation',
-    'useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)',
-    'useState<TCrumb[][]>([])',
+    'export type XDriveFileExplorerNavigationTab',
+    'history: TCrumb[][]',
+    'historyIndex: number',
+    'sort: XDriveFileExplorerSort',
+    'viewMode: XDriveFileExplorerViewMode',
+    'const [tabs, setTabs]',
+    'const [activeTabID, setActiveTabID]',
     'window.localStorage.setItem(viewModeStorageKey, viewMode)',
     "const pathValue = crumbs.map((crumb) => crumb.name).join('/')",
     'const refresh = () =>',
@@ -32,8 +37,11 @@ test('shared FileExplorer navigation controller owns cross-client view and histo
     'canGoBack: historyIndex > 0',
     'canGoForward: historyIndex >= 0 && historyIndex < history.length - 1',
     'canGoUp: crumbs.length > 1',
-    'if (searchActive) return',
+    'if (isSearchActive()) return',
     'onAfterNavigate?.()',
+    'const newTab = async () =>',
+    'const activateTab = async (id: string) =>',
+    'const closeTab = async (id = activeTabID) =>',
   ]) {
     assert.ok(shared.includes(token), `shared Explorer navigation missing: ${token}`)
   }
