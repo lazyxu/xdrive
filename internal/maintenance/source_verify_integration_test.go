@@ -42,7 +42,7 @@ func TestVerifySourcesLoadsAliasCollectionAndMetadataRelations(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{}, &meta.SourceItemAlias{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.SourceItemMetadata{},
 	); err != nil {

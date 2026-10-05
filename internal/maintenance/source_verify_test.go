@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
+	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 )
 
 func TestVerifySourceBindingsAcceptsHealthyBinding(t *testing.T) {
@@ -198,5 +199,46 @@ func TestVerifySourceRelationsReportsDeterministicBreakage(t *testing.T) {
 		if !reasons[want] {
 			t.Fatalf("missing issue reason %q: %+v", want, report.Issues)
 		}
+	}
+}
+
+func TestVerifySourceRunsReportsOnlyStaleRunningRuns(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-sourcepkg.SyncRunStaleAfter / 2)
+	stale := now.Add(-sourcepkg.SyncRunStaleAfter - time.Second)
+	cancelledAt := now.Add(-time.Hour)
+
+	runs := []meta.SyncRun{
+		{
+			ID:       "00000000-0000-0000-0000-000000000001",
+			SourceID: 1, Status: meta.SyncRunStatusRunning,
+			StartedAt: recent, UpdatedAt: recent,
+		},
+		{
+			ID:       "00000000-0000-0000-0000-000000000002",
+			SourceID: 1, Status: meta.SyncRunStatusRunning,
+			StartedAt: stale, UpdatedAt: stale,
+		},
+		{
+			ID:       "00000000-0000-0000-0000-000000000003",
+			SourceID: 2, Status: meta.SyncRunStatusRunning,
+			StartedAt: stale, UpdatedAt: stale, CancelRequestedAt: &cancelledAt,
+		},
+	}
+	report := SourceVerifyReport{}
+	verifySourceRuns(&report, runs, now)
+	if report.RunningRuns != 3 {
+		t.Fatalf("running runs=%d want=3", report.RunningRuns)
+	}
+	if len(report.Issues) != 2 {
+		t.Fatalf("issues=%+v", report.Issues)
+	}
+	if report.Issues[0].RunID != runs[1].ID ||
+		report.Issues[0].Reason != "stale_running_run" {
+		t.Fatalf("first stale issue=%+v", report.Issues[0])
+	}
+	if report.Issues[1].RunID != runs[2].ID ||
+		report.Issues[1].Reason != "stale_running_run" {
+		t.Fatalf("second stale issue=%+v", report.Issues[1])
 	}
 }

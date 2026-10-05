@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/maintenance"
@@ -59,10 +60,11 @@ func runSourceVerify(args []string) error {
 		fmt.Printf("sources:     %d\n", report.Sources)
 		fmt.Printf("source items:%d\n", report.Items)
 		fmt.Printf("bound items: %d\n", report.BoundItems)
+		fmt.Printf("running runs:%d\n", report.RunningRuns)
 		fmt.Printf("issues:      %d\n", len(report.Issues))
 		for _, issue := range report.Issues {
-			fmt.Printf("SOURCE_BINDING source=%d item=%d external=%q node=%d reason=%s",
-				issue.SourceID, issue.SourceItemID, issue.ExternalID, issue.NodeID, issue.Reason)
+			fmt.Printf("SOURCE_BINDING source=%d item=%d run=%q external=%q node=%d reason=%s",
+				issue.SourceID, issue.SourceItemID, issue.RunID, issue.ExternalID, issue.NodeID, issue.Reason)
 			if issue.Expected != "" || issue.Actual != "" {
 				fmt.Printf(" expected=%q actual=%q", issue.Expected, issue.Actual)
 			}
@@ -105,9 +107,10 @@ func runSourceRepair(args []string) error {
 		}
 	} else {
 		fmt.Printf(
-			"source repair: dry_run=%t actions=%d skipped=%d before_issues=%d after_issues=%d\n",
+			"source repair: dry_run=%t binding_actions=%d run_actions=%d skipped=%d before_issues=%d after_issues=%d\n",
 			report.DryRun,
 			len(report.Actions),
+			len(report.RunActions),
 			len(report.Skipped),
 			len(report.Before.Issues),
 			len(report.After.Issues),
@@ -123,11 +126,22 @@ func runSourceRepair(args []string) error {
 				action.Applied,
 			)
 		}
+		for _, action := range report.RunActions {
+			fmt.Printf(
+				"REPAIR_SOURCE_RUN source=%d run=%q heartbeat=%s target_status=%s applied=%t\n",
+				action.SourceID,
+				action.RunID,
+				action.HeartbeatAt.UTC().Format(time.RFC3339Nano),
+				action.TargetStatus,
+				action.Applied,
+			)
+		}
 		for _, issue := range report.Skipped {
 			fmt.Printf(
-				"SKIP_SOURCE_REPAIR source=%d item=%d external=%q node=%d reason=%s\n",
+				"SKIP_SOURCE_REPAIR source=%d item=%d run=%q external=%q node=%d reason=%s\n",
 				issue.SourceID,
 				issue.SourceItemID,
+				issue.RunID,
 				issue.ExternalID,
 				issue.NodeID,
 				issue.Reason,
