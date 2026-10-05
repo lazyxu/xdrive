@@ -80,6 +80,7 @@ import {
   xDriveFileExplorerDeleteOperationPlan,
   xDriveFileExplorerDirectoryPageTransition,
   xDriveFileExplorerPageRequestOptions,
+  xDriveLoginCredentialsReady,
 } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import { DesktopLocalStoragePage } from './DesktopLocalStoragePage'
@@ -285,7 +286,13 @@ export default function App({
   )
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
-  const loginReady = Boolean(server.trim() && username.trim() && (password || savedPasswordAvailable))
+  const loginReady = xDriveLoginCredentialsReady({
+    server,
+    username,
+    password,
+    passwordAvailable: savedPasswordAvailable,
+    requireServer: true,
+  })
   const serverUpdateSupported =
     agent.hello?.capabilities.includes('server-update') ?? false
   const serverUpdatePort = useMemo(() => ({
