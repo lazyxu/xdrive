@@ -4,6 +4,17 @@ export type XDriveFileTextPreview = {
   size: number
 }
 
+export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf'
+
+export type XDriveFilePreviewTarget = {
+  id: string | number
+  name: string
+  kind: 'dir' | 'file'
+  mimeType?: string
+  size?: number
+  revision?: string | number
+}
+
 const xDriveTextPreviewExtensions = new Set([
   'bash', 'bat', 'c', 'cc', 'cfg', 'cmd', 'conf', 'cpp', 'cs', 'css', 'csv', 'fish',
   'go', 'gql', 'gradle', 'graphql', 'h', 'hpp', 'ini', 'java', 'js', 'json', 'jsonl',
@@ -17,11 +28,44 @@ const xDriveTextPreviewBasenames = new Set([
   '.editorconfig', '.gitattributes', '.gitignore',
 ])
 
+const xDriveImagePreviewExtensions = new Set([
+  'avif', 'bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'tif', 'tiff', 'webp',
+])
+
+const xDriveVideoPreviewExtensions = new Set([
+  'avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'webm',
+])
+
+const xDriveAudioPreviewExtensions = new Set([
+  'aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'wma',
+])
+
+function xDrivePreviewExtension(name: string) {
+  const base = name.trim().toLowerCase()
+  const dot = base.lastIndexOf('.')
+  if (dot <= 0 || dot === base.length - 1) return ''
+  return base.slice(dot + 1)
+}
+
 export function xDriveFileSupportsTextPreview(name: string, kind: 'dir' | 'file') {
   if (kind !== 'file') return false
   const base = name.trim().toLowerCase()
   if (xDriveTextPreviewBasenames.has(base)) return true
-  const dot = base.lastIndexOf('.')
-  if (dot <= 0 || dot === base.length - 1) return false
-  return xDriveTextPreviewExtensions.has(base.slice(dot + 1))
+  return xDriveTextPreviewExtensions.has(xDrivePreviewExtension(base))
+}
+
+export function xDriveClassifyFilePreview(
+  target: Pick<XDriveFilePreviewTarget, 'name' | 'kind' | 'mimeType'>,
+): XDriveFilePreviewKind {
+  if (target.kind !== 'file') return 'none'
+  if (xDriveFileSupportsTextPreview(target.name, target.kind)) return 'text'
+
+  const mimeType = target.mimeType?.trim().toLowerCase() || ''
+  const extension = xDrivePreviewExtension(target.name)
+
+  if (mimeType === 'application/pdf' || extension === 'pdf') return 'pdf'
+  if (mimeType.startsWith('image/') || xDriveImagePreviewExtensions.has(extension)) return 'image'
+  if (mimeType.startsWith('video/') || xDriveVideoPreviewExtensions.has(extension)) return 'video'
+  if (mimeType.startsWith('audio/') || xDriveAudioPreviewExtensions.has(extension)) return 'audio'
+  return 'none'
 }

@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const preview = read('ui', 'shared', 'src', 'file-preview.ts')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const previewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webExplorer = read('web', 'src', 'WebFileExplorer.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -37,17 +38,45 @@ test('safe text-preview contract excludes active and secret-prone content', () =
   }
 })
 
-test('shared Inspector renders preview as inert plain text', () => {
+test('shared Preview Engine owns classification and renderer surface', () => {
   for (const token of [
-    'loadTextPreview?:',
-    'XDriveLazyFileTextPreview',
-    'xDriveFileSupportsTextPreview(inspectorItem.name, inspectorItem.kind)',
+    "export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf'",
+    'export type XDriveFilePreviewTarget',
+    'xDriveClassifyFilePreview',
+    "mimeType.startsWith('image/')",
+    "mimeType.startsWith('video/')",
+    "mimeType.startsWith('audio/')",
+    "extension === 'pdf'",
+  ]) {
+    assert.ok(preview.includes(token), 'missing shared Preview Model token: ' + token)
+  }
+  for (const token of [
+    'export function XDriveFilePreviewSurface',
+    'data-xdrive-file-preview-kind',
     'component="pre"',
+    'component="img"',
+    'component="video"',
+    'component="audio"',
+    'component="iframe"',
     '仅显示前 64 KiB',
   ]) {
-    assert.ok(explorer.includes(token), 'missing shared Inspector text preview: ' + token)
+    assert.ok(previewSurface.includes(token), 'missing shared Preview Surface token: ' + token)
   }
-  assert.equal(explorer.includes('dangerouslySetInnerHTML'), false, 'Inspector text preview must never inject active markup')
+  assert.equal(previewSurface.includes('dangerouslySetInnerHTML'), false, 'Preview Surface must never inject active markup')
+})
+
+test('shared Inspector delegates preview rendering to FilePreviewSurface', () => {
+  for (const token of [
+    'loadTextPreview?:',
+    '<XDriveFilePreviewSurface',
+    'target={inspectorItem}',
+    'loadTextPreview={loadTextPreview}',
+    'loadImagePreview={',
+    'fallback={defaultItemIcon(inspectorItem, true)}',
+  ]) {
+    assert.ok(explorer.includes(token), 'missing shared Inspector Preview Engine wiring: ' + token)
+  }
+  assert.equal(explorer.includes('XDriveLazyFileTextPreview'), false, 'Inspector must not keep a second text preview renderer')
 })
 
 test('Web and Desktop load preview through authenticated platform adapters', () => {
