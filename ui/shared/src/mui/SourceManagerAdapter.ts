@@ -15,18 +15,20 @@ import type {
   ExternalSourceRunFailure,
   UpdateExternalSourceInput,
 } from '../external-sources'
+import {
+  resolveOptionalXDriveTransport,
+  resolveXDriveTransport,
+} from '../transport-result'
+import type {
+  XDriveTransportError,
+  XDriveTransportResult,
+} from '../transport-result'
 import type { XDriveSourceManagerAdapter } from './SourceManager'
 
-export type XDriveSourceManagerTransportError = {
-  message: string
-  code?: string
-  detail?: string
-}
+export type XDriveSourceManagerTransportError = XDriveTransportError
 
 export type XDriveSourceManagerTransportResult<T> =
-  | T
-  | { ok: true; data: T }
-  | { ok: false; error: XDriveSourceManagerTransportError }
+  XDriveTransportResult<T, XDriveSourceManagerTransportError>
 
 export interface XDriveSourceManagerPort {
   me?: () => Promise<XDriveSourceManagerTransportResult<{ username: string }>>
@@ -114,44 +116,10 @@ export interface XDriveSourceManagerPort {
   ) => Promise<XDriveSourceManagerTransportResult<ExternalSourceConnectorConfig>>
 }
 
-function isWrappedTransportResult<T>(
-  value: XDriveSourceManagerTransportResult<T>,
-): value is
-  | { ok: true; data: T }
-  | { ok: false; error: XDriveSourceManagerTransportError } {
-  return Boolean(
-    value &&
-    typeof value === 'object' &&
-    'ok' in value &&
-    ('data' in value || 'error' in value),
-  )
-}
-
-function transportError(error: XDriveSourceManagerTransportError) {
-  const result = new Error(error.message) as Error & {
-    code?: string
-    detail?: string
-  }
-  result.code = error.code
-  result.detail = error.detail
-  return result
-}
-
-export async function resolveXDriveSourceManagerTransport<T>(
+export function resolveXDriveSourceManagerTransport<T>(
   value: Promise<XDriveSourceManagerTransportResult<T>>,
 ): Promise<T> {
-  const result = await value
-  if (!isWrappedTransportResult(result)) return result
-  if (!result.ok) throw transportError(result.error)
-  return result.data
-}
-
-async function resolveOptionalTransport<T>(
-  value: Promise<XDriveSourceManagerTransportResult<T>>,
-): Promise<T | undefined> {
-  const result = await value
-  if (!isWrappedTransportResult(result)) return result
-  return result.ok ? result.data : undefined
+  return resolveXDriveTransport(value)
 }
 
 async function synthesizedSourceOverview(
@@ -163,10 +131,10 @@ async function synthesizedSourceOverview(
   const sources = await resolveXDriveSourceManagerTransport(port.sources())
   return Promise.all(sources.map(async (source) => {
     const [runs, credential] = await Promise.all([
-      resolveOptionalTransport(port.sourceRuns(source.id, 1)),
+      resolveOptionalXDriveTransport(port.sourceRuns(source.id, 1)),
       externalSourceConnectorProfile(source.kind, source.direction).credential &&
       port.sourceCredentialStatus
-        ? resolveOptionalTransport(port.sourceCredentialStatus(source.id))
+        ? resolveOptionalXDriveTransport(port.sourceCredentialStatus(source.id))
         : Promise.resolve(undefined),
     ])
     return {

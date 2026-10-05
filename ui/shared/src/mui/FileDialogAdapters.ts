@@ -3,47 +3,24 @@ import type {
   FileVersion,
   Node,
 } from '../models'
+import { resolveXDriveTransport } from '../transport-result'
+import type {
+  XDriveTransportError,
+  XDriveTransportResult,
+} from '../transport-result'
 import type { XDriveShareCreateInput, XDriveShareDialogAdapter } from './ShareDialog'
 import type { XDriveTrashDialogAdapter } from './TrashDialog'
 import type { XDriveVersionHistoryDialogAdapter } from './VersionHistoryDialog'
 
-export type XDriveFileDialogTransportError = {
-  message: string
-  code?: string
-  detail?: string
-}
+export type XDriveFileDialogTransportError = XDriveTransportError
 
 export type XDriveFileDialogTransportResult<T> =
-  | T
-  | { ok: true; data: T }
-  | { ok: false; error: XDriveFileDialogTransportError }
+  XDriveTransportResult<T, XDriveFileDialogTransportError>
 
-function isWrappedTransportResult<T>(
-  value: XDriveFileDialogTransportResult<T>,
-): value is
-  | { ok: true; data: T }
-  | { ok: false; error: XDriveFileDialogTransportError } {
-  return Boolean(
-    value &&
-    typeof value === 'object' &&
-    'ok' in value &&
-    ('data' in value || 'error' in value),
-  )
-}
-
-export async function resolveXDriveFileDialogTransport<T>(
+export function resolveXDriveFileDialogTransport<T>(
   value: Promise<XDriveFileDialogTransportResult<T>>,
 ): Promise<T> {
-  const result = await value
-  if (!isWrappedTransportResult(result)) return result
-  if (result.ok) return result.data
-  const error = new Error(result.error.message) as Error & {
-    code?: string
-    detail?: string
-  }
-  error.code = result.error.code
-  error.detail = result.error.detail
-  throw error
+  return resolveXDriveTransport(value)
 }
 
 export interface XDriveTrashDialogPort {

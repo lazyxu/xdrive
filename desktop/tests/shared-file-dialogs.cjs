@@ -97,8 +97,7 @@ test('shared file-dialog adapter factories own transport normalization', () => {
   for (const token of [
     'XDriveFileDialogTransportResult',
     'resolveXDriveFileDialogTransport',
-    'error.code = result.error.code',
-    'error.detail = result.error.detail',
+    'return resolveXDriveTransport(value)',
     'createXDriveTrashDialogAdapter',
     'port.restoreTrash(node.id, node.revision)',
     'port.deleteTrash(node.id, node.revision)',

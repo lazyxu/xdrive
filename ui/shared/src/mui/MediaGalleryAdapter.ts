@@ -4,16 +4,17 @@ import type {
   MediaItem,
   MediaPlaceFacet,
 } from '../models'
+import { resolveXDriveTransport } from '../transport-result'
+import type {
+  XDriveTransportError,
+  XDriveTransportResult,
+} from '../transport-result'
 import type { MediaGalleryDataSource } from './MediaGallery'
 
-export type XDriveMediaGalleryTransportError = {
-  message: string
-}
+export type XDriveMediaGalleryTransportError = XDriveTransportError
 
 export type XDriveMediaGalleryTransportResult<T> =
-  | T
-  | { ok: true; data: T }
-  | { ok: false; error: XDriveMediaGalleryTransportError }
+  XDriveTransportResult<T, XDriveMediaGalleryTransportError>
 
 export type XDriveMediaGalleryBinaryResource =
   | string
@@ -102,26 +103,6 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
 }
 
-function isWrappedTransportResult<T>(
-  value: XDriveMediaGalleryTransportResult<T>,
-): value is { ok: true; data: T } | { ok: false; error: XDriveMediaGalleryTransportError } {
-  return Boolean(
-    value &&
-    typeof value === 'object' &&
-    'ok' in value &&
-    ('data' in value || 'error' in value),
-  )
-}
-
-async function resolveTransport<T>(
-  value: Promise<XDriveMediaGalleryTransportResult<T>>,
-): Promise<T> {
-  const result = await value
-  if (!isWrappedTransportResult(result)) return result
-  if (!result.ok) throw new Error(result.error.message)
-  return result.data
-}
-
 function mediaResourceURL(
   resource: XDriveMediaGalleryBinaryResource,
   fallbackContentType: string,
@@ -137,85 +118,85 @@ export function createXDriveMediaGalleryDataSource(
   port: XDriveMediaGalleryPort,
 ): MediaGalleryDataSource {
   return {
-    listItems: (limit, offset, query) => resolveTransport(
+    listItems: (limit, offset, query) => resolveXDriveTransport(
       port.listItems(limit, offset, query),
     ),
-    listAlbums: () => resolveTransport(port.listAlbums()),
+    listAlbums: () => resolveXDriveTransport(port.listAlbums()),
     listPlaces: port.listPlaces
-      ? (limit) => resolveTransport(port.listPlaces!(limit))
+      ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
       : undefined,
-    listAlbumItems: (albumID, limit, offset, query) => resolveTransport(
+    listAlbumItems: (albumID, limit, offset, query) => resolveXDriveTransport(
       port.listAlbumItems(albumID, limit, offset, query),
     ),
     loadThumbnail: async (nodeID) => mediaResourceURL(
-      await resolveTransport(port.loadThumbnail(nodeID)),
+      await resolveXDriveTransport(port.loadThumbnail(nodeID)),
       'image/jpeg',
     ),
     loadLivePhotoMotion: port.loadLivePhotoMotion
       ? async (nodeID) => mediaResourceURL(
-          await resolveTransport(port.loadLivePhotoMotion!(nodeID)),
+          await resolveXDriveTransport(port.loadLivePhotoMotion!(nodeID)),
           'video/quicktime',
         )
       : undefined,
     loadPreviewURL: port.loadPreviewURL
-      ? (nodeID, kind) => resolveTransport(port.loadPreviewURL!(nodeID, kind))
+      ? (nodeID, kind) => resolveXDriveTransport(port.loadPreviewURL!(nodeID, kind))
       : undefined,
     setFavorite: port.setFavorite
       ? async (nodeID, favorite) => {
-          await resolveTransport(port.setFavorite!(nodeID, favorite))
+          await resolveXDriveTransport(port.setFavorite!(nodeID, favorite))
         }
       : undefined,
     setTags: port.setTags
       ? async (nodeID, tags) => {
-          const result = await resolveTransport(port.setTags!(nodeID, tags))
+          const result = await resolveXDriveTransport(port.setTags!(nodeID, tags))
           return Array.isArray(result) ? result : result.tags
         }
       : undefined,
     setPeople: port.setPeople
       ? async (nodeID, people) => {
-          const result = await resolveTransport(port.setPeople!(nodeID, people))
+          const result = await resolveXDriveTransport(port.setPeople!(nodeID, people))
           return Array.isArray(result) ? result : result.people
         }
       : undefined,
     setDescription: port.setDescription
       ? async (nodeID, description) => {
-          const result = await resolveTransport(port.setDescription!(nodeID, description))
+          const result = await resolveXDriveTransport(port.setDescription!(nodeID, description))
           return typeof result === 'string' ? result : result.description
         }
       : undefined,
     createAlbum: port.createAlbum
-      ? (name) => resolveTransport(port.createAlbum!(name))
+      ? (name) => resolveXDriveTransport(port.createAlbum!(name))
       : undefined,
     createSmartAlbum: port.createSmartAlbum
-      ? (name, query) => resolveTransport(port.createSmartAlbum!(name, query))
+      ? (name, query) => resolveXDriveTransport(port.createSmartAlbum!(name, query))
       : undefined,
     updateSmartAlbum: port.updateSmartAlbum
-      ? (albumID, revision, input) => resolveTransport(
+      ? (albumID, revision, input) => resolveXDriveTransport(
           port.updateSmartAlbum!(albumID, revision, input),
         )
       : undefined,
     deleteSmartAlbum: port.deleteSmartAlbum
       ? async (albumID, revision) => {
-          await resolveTransport(port.deleteSmartAlbum!(albumID, revision))
+          await resolveXDriveTransport(port.deleteSmartAlbum!(albumID, revision))
         }
       : undefined,
     renameAlbum: port.renameAlbum
-      ? (albumID, revision, name) => resolveTransport(
+      ? (albumID, revision, name) => resolveXDriveTransport(
           port.renameAlbum!(albumID, revision, name),
         )
       : undefined,
     deleteAlbum: port.deleteAlbum
       ? async (albumID, revision) => {
-          await resolveTransport(port.deleteAlbum!(albumID, revision))
+          await resolveXDriveTransport(port.deleteAlbum!(albumID, revision))
         }
       : undefined,
     addToAlbum: port.addToAlbum
-      ? (albumID, revision, nodeIDs) => resolveTransport(
+      ? (albumID, revision, nodeIDs) => resolveXDriveTransport(
           port.addToAlbum!(albumID, revision, nodeIDs),
         )
       : undefined,
     removeFromAlbum: port.removeFromAlbum
-      ? (albumID, revision, nodeID) => resolveTransport(
+      ? (albumID, revision, nodeID) => resolveXDriveTransport(
           port.removeFromAlbum!(albumID, revision, nodeID),
         )
       : undefined,

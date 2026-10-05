@@ -64,7 +64,7 @@ test('shared Server Update controller owns polling, transport normalization and 
     'useXDriveServerUpdateController',
     'XDriveServerUpdatePort',
     'XDriveServerUpdateTransportResult',
-    'resolveTransport',
+    'resolveXDriveTransport',
     'pollIntervalMs = 2_000',
     'globalThis.setInterval(() => void poll(), pollIntervalMs)',
     "state?.state === 'queued' || state?.state === 'running'",

@@ -4,18 +4,16 @@ import type {
   XDriveServerUpdateSource,
   XDriveServerUpdateState,
 } from '../server-update'
+import { resolveXDriveTransport } from '../transport-result'
+import type {
+  XDriveTransportError,
+  XDriveTransportResult,
+} from '../transport-result'
 
-export type XDriveServerUpdateTransportError = {
-  message: string
-  status?: number
-  code?: string
-  detail?: string
-}
+export type XDriveServerUpdateTransportError = XDriveTransportError
 
 export type XDriveServerUpdateTransportResult<T> =
-  | T
-  | { ok: true; data: T }
-  | { ok: false; error: XDriveServerUpdateTransportError }
+  XDriveTransportResult<T, XDriveServerUpdateTransportError>
 
 export interface XDriveServerUpdatePort {
   getState: () => Promise<XDriveServerUpdateTransportResult<XDriveServerUpdateState>>
@@ -24,40 +22,6 @@ export interface XDriveServerUpdatePort {
     channel: XDriveServerUpdateChannel,
     backupFileData: boolean,
   ) => Promise<XDriveServerUpdateTransportResult<XDriveServerUpdateState>>
-}
-
-function isWrappedTransportResult<T>(
-  value: XDriveServerUpdateTransportResult<T>,
-): value is
-  | { ok: true; data: T }
-  | { ok: false; error: XDriveServerUpdateTransportError } {
-  return Boolean(
-    value &&
-    typeof value === 'object' &&
-    'ok' in value &&
-    ('data' in value || 'error' in value),
-  )
-}
-
-function transportError(error: XDriveServerUpdateTransportError) {
-  const result = new Error(error.message) as Error & {
-    status?: number
-    code?: string
-    detail?: string
-  }
-  result.status = error.status
-  result.code = error.code
-  result.detail = error.detail
-  return result
-}
-
-async function resolveTransport<T>(
-  value: Promise<XDriveServerUpdateTransportResult<T>>,
-): Promise<T> {
-  const result = await value
-  if (!isWrappedTransportResult(result)) return result
-  if (result.ok) return result.data
-  throw transportError(result.error)
 }
 
 function errorStatus(error: unknown) {
@@ -135,7 +99,7 @@ export function useXDriveServerUpdateController({
   const refresh = useCallback(async () => {
     if (!enabled || !supported) return null
     try {
-      const next = await resolveTransport(port.getState())
+      const next = await resolveXDriveTransport(port.getState())
       applyState(next)
       return next
     } catch (refreshError) {
@@ -212,7 +176,7 @@ export function useXDriveServerUpdateController({
     onBusyChange?.(true)
     setError('')
     try {
-      const next = await resolveTransport(
+      const next = await resolveXDriveTransport(
         port.startUpdate(source, channel, backupFileData),
       )
       applyState(next)

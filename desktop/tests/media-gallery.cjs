@@ -125,7 +125,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
     'XDriveMediaGalleryBinaryResource',
     'createXDriveMediaGalleryDataSource',
     'loadPreviewURL',
-    'resolveTransport',
+    'resolveXDriveTransport',
     "'data_base64' in resource",
     'URL.createObjectURL(resource)',
     'data_base64',
