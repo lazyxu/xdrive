@@ -16,6 +16,7 @@ const desktopLocalStorage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src'
 const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx'), 'utf8')
 const sharedWorkspaceShell = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
 const sharedWorkspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
+const sharedWorkspaceRoute = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 const sharedGallery = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
@@ -186,6 +187,14 @@ test('shared account trigger is informative on Web and compact on Desktop', () =
   assert.ok(sharedAccount.includes('minHeight: 36'), 'full account trigger should align with compact application chrome')
   assert.ok(webApp.includes('<XDriveAccountAvatarButton username={username}'), 'Web should use the full shared account trigger')
   assert.ok(desktopApp.includes('compact\n        className="desktop-titlebar-account-button"'), 'Desktop titlebar should retain compact avatar-only account chrome')
+  assert.ok(sharedAccount.includes('export function XDriveAccountMenuActions'), 'shared account chrome must own common account actions')
+  assert.ok(sharedAccount.includes('SettingsRoundedIcon'), 'shared account actions must own Settings presentation')
+  assert.ok(sharedAccount.includes('InfoOutlinedIcon'), 'shared account actions must own About presentation')
+  assert.ok(sharedAccount.includes('LogoutRoundedIcon'), 'shared account actions must own Logout presentation')
+  assert.ok(webApp.includes('<XDriveAccountMenuActions'), 'Web must consume shared account menu actions')
+  assert.ok(desktopApp.includes('<XDriveAccountMenuActions'), 'Desktop must consume shared account menu actions')
+  assert.equal(webApp.includes('<ListItemText>退出登录</ListItemText>'), false, 'Web must not duplicate logout menu presentation')
+  assert.equal(desktopApp.includes('<ListItemText>退出登录</ListItemText>'), false, 'Desktop must not duplicate logout menu presentation')
 })
 
 test('Shared sidebar uses compact system navigation chrome', () => {
@@ -212,21 +221,16 @@ test('Web and Desktop pass account quota into the shared sidebar footer', () => 
   assert.ok(sharedWorkspaceSidebar.includes("display: responsive ? { xs: 'none', md: 'block' } : 'block'"), 'shared sidebar must own responsive footer visibility')
 
   for (const token of [
+    'export function xDriveWorkspaceStorageSummary',
     'usedBytes: quota.physical_used_bytes',
     'totalBytes: quota.quota_bytes',
     'diskTotalBytes: quota.disk_total_bytes',
     'diskAvailableBytes: quota.disk_available_bytes',
   ]) {
-    assert.ok(webApp.includes(token), `Web sidebar quota adapter missing: ${token}`)
+    assert.ok(sharedWorkspaceSidebar.includes(token), `shared sidebar quota adapter missing: ${token}`)
   }
-  for (const token of [
-    'usedBytes: cloudQuota.physical_used_bytes',
-    'totalBytes: cloudQuota.quota_bytes',
-    'diskTotalBytes: cloudQuota.disk_total_bytes',
-    'diskAvailableBytes: cloudQuota.disk_available_bytes',
-  ]) {
-    assert.ok(desktopApp.includes(token), `Desktop sidebar quota adapter missing: ${token}`)
-  }
+  assert.ok(webApp.includes('storageSummary={xDriveWorkspaceStorageSummary(quota)}'), 'Web must consume the shared sidebar quota adapter')
+  assert.ok(desktopApp.includes('storageSummary={xDriveWorkspaceStorageSummary(cloudQuota)}'), 'Desktop must consume the shared sidebar quota adapter')
   assert.ok(sharedCloudFilesController.includes('quotaRefreshIntervalMs = 60_000'), 'shared Cloud Files controller should keep Web sidebar quota reasonably fresh')
   assert.ok(sharedCloudFilesController.includes('globalThis.setInterval(() => {'), 'shared Cloud Files controller should own periodic quota refresh')
   assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
@@ -250,7 +254,8 @@ test('shared workspace content owns page spacing and Files full-bleed behavior',
     assert.equal(webStyles.includes(legacy), false, `Web shell layout must not stay in CSS: ${legacy}`)
   }
   assert.equal(webStyles.includes('.content-wrap'), false, 'Web must not retain local workspace-content layout CSS')
-  assert.ok(webApp.includes('<XDriveWorkspaceContent\n          responsive\n          presentation={appView === \'files\' ? \'files\' : \'page\'}'), 'Web workspace must use shared content presentation')
-  assert.ok(desktopApp.includes("presentation={view === 'files' ? 'files' : 'page'}"), 'Desktop workspace must use shared content presentation')
+  assert.ok(sharedWorkspaceRoute.includes('export function xDriveWorkspacePresentation'), 'shared route model must own workspace presentation')
+  assert.ok(webApp.includes('presentation={xDriveWorkspacePresentation(appView)}'), 'Web workspace must use shared route presentation')
+  assert.ok(desktopApp.includes('presentation={xDriveWorkspacePresentation(view)}'), 'Desktop workspace must use shared route presentation')
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
 })

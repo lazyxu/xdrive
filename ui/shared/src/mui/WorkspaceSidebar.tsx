@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { QuotaUsage } from '../models'
 import { Box } from '@mui/material'
 import {
   XDriveCoreWorkspaceNavItems,
@@ -33,6 +34,21 @@ export type XDriveWorkspaceSidebarStorageSummary = {
   totalBytes: number
   diskTotalBytes?: number
   diskAvailableBytes?: number
+}
+
+export function xDriveWorkspaceStorageSummary(
+  quota: Pick<
+    QuotaUsage,
+    'physical_used_bytes' | 'quota_bytes' | 'disk_total_bytes' | 'disk_available_bytes'
+  > | null | undefined,
+): XDriveWorkspaceSidebarStorageSummary | null {
+  if (!quota) return null
+  return {
+    usedBytes: quota.physical_used_bytes,
+    totalBytes: quota.quota_bytes,
+    diskTotalBytes: quota.disk_total_bytes,
+    diskAvailableBytes: quota.disk_available_bytes,
+  }
 }
 
 function sectionPlacement(section: XDriveSidebarSectionModel): XDriveSidebarSectionPlacement {

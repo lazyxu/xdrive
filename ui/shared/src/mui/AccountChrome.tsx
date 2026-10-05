@@ -1,6 +1,9 @@
 import type { MouseEventHandler, ReactNode } from 'react'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
-import { Avatar, Box, ButtonBase, Divider, IconButton, Menu, Tooltip, Typography } from '@mui/material'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
+import { Avatar, Box, ButtonBase, Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
 
 export function XDriveAccountAvatarButton({
   username,
@@ -124,5 +127,58 @@ export function XDriveAccountMenu({
       <Divider />
       {children}
     </Menu>
+  )
+}
+
+
+export function XDriveAccountMenuActions({
+  onClose,
+  onSettings,
+  onAbout,
+  onLogout,
+  settingsLabel = '设置',
+  aboutLabel = '关于 xDrive',
+  aboutSecondary,
+  logoutLabel = '退出登录',
+}: {
+  onClose: () => void
+  onSettings?: () => void
+  onAbout?: () => void
+  onLogout?: () => void
+  settingsLabel?: string
+  aboutLabel?: string
+  aboutSecondary?: string
+  logoutLabel?: string
+}) {
+  const run = (action?: () => void) => {
+    onClose()
+    action?.()
+  }
+  const hasPrimaryActions = Boolean(onSettings || onAbout)
+
+  return (
+    <>
+      {onSettings ? (
+        <MenuItem onClick={() => run(onSettings)}>
+          <ListItemIcon><SettingsRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>{settingsLabel}</ListItemText>
+        </MenuItem>
+      ) : null}
+      {onAbout ? (
+        <MenuItem onClick={() => run(onAbout)}>
+          <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary={aboutLabel} secondary={aboutSecondary} />
+        </MenuItem>
+      ) : null}
+      {hasPrimaryActions && onLogout ? <Divider /> : null}
+      {onLogout ? (
+        <MenuItem sx={{ color: 'error.main' }} onClick={() => run(onLogout)}>
+          <ListItemIcon sx={{ color: 'inherit' }}>
+            <LogoutRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{logoutLabel}</ListItemText>
+        </MenuItem>
+      ) : null}
+    </>
   )
 }

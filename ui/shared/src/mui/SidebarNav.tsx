@@ -6,6 +6,7 @@ import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import { Box, Chip, List, ListItemButton, ListItemIcon, ListItemText, Typography } from '@mui/material'
+import type { XDriveCoreWorkspaceKey } from './WorkspaceRoute'
 
 export const XDRIVE_SIDEBAR_WIDTH = 184
 export const XDRIVE_SIDEBAR_COMPACT_WIDTH = 176
@@ -132,7 +133,6 @@ export function XDriveSidebarNavList({
   )
 }
 
-export type XDriveCoreWorkspaceKey = 'files' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage'
 
 export function XDriveCoreWorkspaceNavItems({
   selected,

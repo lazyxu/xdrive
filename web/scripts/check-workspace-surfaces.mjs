@@ -132,7 +132,7 @@ requireText(app, [
   'XDriveWorkspaceContent',
   'className="web-workspace-shell"',
   "sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}",
-  "presentation={appView === 'files' ? 'files' : 'page'}",
+  'presentation={xDriveWorkspacePresentation(appView)}',
   "height: { md: '100vh' }",
   "overflow: { md: 'hidden' }",
   "height: { xs: 560, md: '100%' }",

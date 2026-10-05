@@ -9,6 +9,7 @@ const filesPage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'rendere
 const localStoragePage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
 const cloudStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const workspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
+const workspaceRoute = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
@@ -115,7 +116,8 @@ test('Desktop Files home load does not fetch CAS storage intelligence', () => {
 
 test('Desktop Files uses shared workspace content for full-bleed Explorer layout', () => {
   assert.ok(app.includes('<XDriveWorkspaceContent'), 'Desktop App must use shared workspace content')
-  assert.ok(app.includes("presentation={view === 'files' ? 'files' : 'page'}"), 'Desktop Files should select the shared full-bleed presentation')
+  assert.ok(app.includes('presentation={xDriveWorkspacePresentation(view)}'), 'Desktop Files should select the shared full-bleed presentation through the route model')
+  assert.ok(workspaceRoute.includes("return view === 'files' ? 'files' : 'page'"), 'shared route model must own full-bleed Files presentation')
   assert.equal(app.includes('<XDrivePageHeader'), false, 'Desktop App should not own duplicate generic page chrome')
   assert.ok(app.includes('<DesktopFilesPage'), 'Desktop Files should render through the extracted full-bleed page')
   assert.ok(workspaceContent.includes("export type XDriveWorkspaceContentPresentation = 'page' | 'files'"), 'shared content presentation contract is missing')

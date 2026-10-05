@@ -189,8 +189,9 @@ test('desktop keeps global sync, settings and account actions in the window titl
   assert.ok(sharedAccountChrome.includes('aria-label="账户菜单"'), 'shared account trigger must expose the account aria label')
   assert.ok(sharedAccountChrome.includes('XDriveAccountMenu'), 'shared account menu container is missing')
   assert.ok(sharedAccountChrome.includes('<XDriveAccountSummary'), 'shared account menu must own the account summary')
-  assert.ok(titlebarActions.includes('关于 xDrive'), 'account menu is missing About')
-  assert.ok(titlebarActions.includes('退出登录'), 'account menu is missing logout')
+  assert.ok(titlebarActions.includes('XDriveAccountMenuActions'), 'Desktop must consume shared account menu actions')
+  assert.ok(sharedAccountChrome.includes("aboutLabel = '关于 xDrive'"), 'shared account actions are missing About')
+  assert.ok(sharedAccountChrome.includes("logoutLabel = '退出登录'"), 'shared account actions are missing logout')
   assert.equal(titlebarActions.includes('aria-label="更多同步操作"'), false, 'redundant sync overflow button should not remain')
   assert.ok(renderer.includes('打开同步文件夹'), 'missing global open-folder action')
 
