@@ -20,7 +20,7 @@ test('shared password-change form owns the common MUI fields and validation cont
     '请填写当前密码',
     '新密码至少需要 8 个字符',
     '两次输入的新密码不一致',
-    'minLength: 8',
+    'minLength={8}',
     'XDriveActionButton',
   ]) {
     assert.ok(shared.includes(token), `shared password-change form missing: ${token}`)

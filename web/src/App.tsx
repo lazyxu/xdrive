@@ -18,8 +18,11 @@ import {
   XDriveAccountMenu,
   XDriveAccountMenuActions,
   XDriveActionButton,
+  XDriveAuthField,
   XDriveAuthPanel,
+  XDriveAuthPasswordField,
   XDriveAuthShell,
+  XDriveAuthSubmitRow,
   XDriveBrandLockup,
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
@@ -352,43 +355,48 @@ function AuthView({
         {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
 
         <Stack component="form" spacing={2} onSubmit={(event) => void submit(event)}>
-          <TextField
-            autoFocus
-            fullWidth
-            size="small"
+          <XDriveAuthField
             label="用户名"
-            autoComplete="username"
-            value={loginUsername}
+            htmlFor="web-login-username"
+            required
             error={Boolean(usernameError)}
-            helperText={usernameError || ' '}
-            onChange={(event) => {
-              setLoginUsername(event.target.value)
-              if (usernameError) setUsernameError('')
-            }}
-          />
-          <TextField
-            fullWidth
-            size="small"
-            type="password"
-            label="密码"
-            autoComplete="current-password"
+            helper={usernameError || ' '}
+          >
+            <TextField
+              id="web-login-username"
+              autoFocus
+              fullWidth
+              size="small"
+              autoComplete="username"
+              value={loginUsername}
+              error={Boolean(usernameError)}
+              onChange={(event) => {
+                setLoginUsername(event.target.value)
+                if (usernameError) setUsernameError('')
+              }}
+            />
+          </XDriveAuthField>
+          <XDriveAuthPasswordField
+            id="web-login-password"
             value={password}
             error={Boolean(passwordError)}
-            helperText={passwordError || ' '}
-            onChange={(event) => {
-              setPassword(event.target.value)
+            helper={passwordError || ' '}
+            onChange={(value) => {
+              setPassword(value)
               if (passwordError) setPasswordError('')
             }}
           />
-          <XDriveActionButton
-            intent="primary"
-            type="submit"
-            fullWidth
-            loading={busy}
-            loadingLabel="正在登录…"
-          >
-            登录
-          </XDriveActionButton>
+          <XDriveAuthSubmitRow fullWidth>
+            <XDriveActionButton
+              intent="primary"
+              type="submit"
+              fullWidth
+              loading={busy}
+              loadingLabel="正在登录…"
+            >
+              登录
+            </XDriveActionButton>
+          </XDriveAuthSubmitRow>
         </Stack>
 
         <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 2 }}>
