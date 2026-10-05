@@ -1,8 +1,15 @@
-import { xDriveFileOperationActive } from '../file-operations'
+import {
+  xDriveActiveFileOperationCount,
+  xDriveFileOperationHasHistory,
+} from '../file-operations'
 import type {
   XDriveFileOperation,
   XDriveFileOperationConflictResolution,
 } from '../file-operations'
+import {
+  xDriveActiveTransferCount,
+  xDriveTransferHasHistory,
+} from '../transfers'
 import type { XDriveTransferTask } from '../transfers'
 import type { XDriveTaskCenterPageProps } from './TaskCenterPage'
 
@@ -41,15 +48,11 @@ export function useXDriveTaskCenterController({
   onRetryTransfer?: (id: string) => void | Promise<void>
   conflictResolutionEnabled?: boolean
 }) {
-  const activeTransferCount = transfers.filter(
-    (item) => item.state === 'running' || item.state === 'retrying',
-  ).length
-  const activeOperationCount = operations.filter(
-    (item) => xDriveFileOperationActive(item.status),
-  ).length
+  const activeTransferCount = xDriveActiveTransferCount(transfers)
+  const activeOperationCount = xDriveActiveFileOperationCount(operations)
   const hasHistory = (
-    transfers.some((item) => item.state === 'completed' || item.state === 'failed') ||
-    operations.some((item) => !xDriveFileOperationActive(item.status))
+    xDriveTransferHasHistory(transfers) ||
+    xDriveFileOperationHasHistory(operations)
   )
   const badgeCount = activeTransferCount + activeOperationCount
 

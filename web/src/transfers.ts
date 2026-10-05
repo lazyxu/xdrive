@@ -1,3 +1,4 @@
+import { xDriveTransferActive } from '../../ui/shared/src'
 import type { XDriveTransferTask } from '../../ui/shared/src'
 
 const STORAGE_KEY = 'xdrive.web.transfer_history'
@@ -15,7 +16,7 @@ function loadTransferHistory(): XDriveTransferTask[] {
     return parsed
       .filter((item): item is XDriveTransferTask => Boolean(item && typeof item.id === 'string'))
       .map((item) => {
-        if (item.state !== 'running' && item.state !== 'retrying') return item
+        if (!xDriveTransferActive(item)) return item
         return {
           ...item,
           state: 'failed',
@@ -161,7 +162,7 @@ class WebTransferStore {
   }
 
   clearHistory() {
-    this.items = this.items.filter((item) => item.state === 'running' || item.state === 'retrying')
+    this.items = this.items.filter(xDriveTransferActive)
     this.emit()
   }
 
