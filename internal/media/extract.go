@@ -967,6 +967,11 @@ func extractVideo(r io.ReadSeeker, size int64, out *Result) error {
 			return nil
 		}
 		return nil
+	case "video/mpeg":
+		if err := extractMPEGPSVideo(r, size, out); err == nil {
+			return nil
+		}
+		return nil
 	}
 
 	info, err := parseMP4(r)
