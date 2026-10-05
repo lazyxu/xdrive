@@ -36,6 +36,7 @@ const (
 	ActionSourceCredentialUpdate = "source.credential.update"
 	ActionSourceCredentialDelete = "source.credential.delete"
 	ActionSourceCredentialReveal = "source.credential.reveal"
+	ActionSourceMirrorTrash      = "source.mirror.trash"
 )
 
 type Event struct {

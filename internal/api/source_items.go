@@ -18,53 +18,59 @@ type sourceItemMetadataDTO struct {
 }
 
 type sourceItemDTO struct {
-	SourceItemID   uint64                 `json:"source_item_id"`
-	ExternalID     string                 `json:"external_id"`
-	NodeID         *uint64                `json:"node_id,omitempty"`
-	Kind           string                 `json:"kind"`
-	Path           string                 `json:"path"`
-	Size           int64                  `json:"size"`
-	ModifiedAt     *time.Time             `json:"modified_at,omitempty"`
-	SHA256         string                 `json:"sha256,omitempty"`
-	RemoteRevision string                 `json:"remote_revision,omitempty"`
-	State          string                 `json:"state"`
-	LastError      string                 `json:"last_error,omitempty"`
-	Metadata       *sourceItemMetadataDTO `json:"metadata,omitempty"`
+	SourceItemID           uint64                 `json:"source_item_id"`
+	ExternalID             string                 `json:"external_id"`
+	NodeID                 *uint64                `json:"node_id,omitempty"`
+	Kind                   string                 `json:"kind"`
+	Path                   string                 `json:"path"`
+	Size                   int64                  `json:"size"`
+	ModifiedAt             *time.Time             `json:"modified_at,omitempty"`
+	SHA256                 string                 `json:"sha256,omitempty"`
+	RemoteRevision         string                 `json:"remote_revision,omitempty"`
+	State                  string                 `json:"state"`
+	MirrorMissingFullScans int                    `json:"mirror_missing_full_scans,omitempty"`
+	MirrorMissingSince     *time.Time             `json:"mirror_missing_since,omitempty"`
+	LastError              string                 `json:"last_error,omitempty"`
+	Metadata               *sourceItemMetadataDTO `json:"metadata,omitempty"`
 }
 
 type sourceItemRow struct {
-	Position             int64
-	SourceItemID         uint64
-	ExternalID           string
-	NodeID               *uint64
-	Kind                 string
-	Path                 string
-	Size                 int64
-	ModifiedAt           *time.Time
-	SHA256               string
-	RemoteRevision       string
-	State                string
-	LastError            string
-	MetadataSourceItemID *uint64
-	OriginalPath         string
-	OwnerExternalID      string
-	RemoteCreatedAt      *time.Time
-	ContentMD5           string
+	Position               int64
+	SourceItemID           uint64
+	ExternalID             string
+	NodeID                 *uint64
+	Kind                   string
+	Path                   string
+	Size                   int64
+	ModifiedAt             *time.Time
+	SHA256                 string
+	RemoteRevision         string
+	State                  string
+	MirrorMissingFullScans int
+	MirrorMissingSince     *time.Time
+	LastError              string
+	MetadataSourceItemID   *uint64
+	OriginalPath           string
+	OwnerExternalID        string
+	RemoteCreatedAt        *time.Time
+	ContentMD5             string
 }
 
 func (r sourceItemRow) dto() sourceItemDTO {
 	out := sourceItemDTO{
-		SourceItemID:   r.SourceItemID,
-		ExternalID:     r.ExternalID,
-		NodeID:         r.NodeID,
-		Kind:           r.Kind,
-		Path:           r.Path,
-		Size:           r.Size,
-		ModifiedAt:     r.ModifiedAt,
-		SHA256:         r.SHA256,
-		RemoteRevision: r.RemoteRevision,
-		State:          r.State,
-		LastError:      r.LastError,
+		SourceItemID:           r.SourceItemID,
+		ExternalID:             r.ExternalID,
+		NodeID:                 r.NodeID,
+		Kind:                   r.Kind,
+		Path:                   r.Path,
+		Size:                   r.Size,
+		ModifiedAt:             r.ModifiedAt,
+		SHA256:                 r.SHA256,
+		RemoteRevision:         r.RemoteRevision,
+		State:                  r.State,
+		MirrorMissingFullScans: r.MirrorMissingFullScans,
+		MirrorMissingSince:     r.MirrorMissingSince,
+		LastError:              r.LastError,
 	}
 	if r.MetadataSourceItemID != nil {
 		out.Metadata = &sourceItemMetadataDTO{
@@ -145,7 +151,8 @@ func sourceListWindow(c *gin.Context) (int, int, bool) {
 
 const sourceItemSelect = `si.id AS source_item_id,
 	si.external_id, si.node_id, si.kind, si.path, si.size, si.modified_at,
-	si.sha256, si.remote_revision, si.state, si.last_error,
+	si.sha256, si.remote_revision, si.state,
+	si.mirror_missing_full_scans, si.mirror_missing_since, si.last_error,
 	sm.source_item_id AS metadata_source_item_id,
 	COALESCE(sm.original_path, '') AS original_path,
 	COALESCE(sm.owner_external_id, '') AS owner_external_id,

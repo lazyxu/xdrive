@@ -209,9 +209,11 @@ A future connector may execute `ScanChanges(checkpoint)` only after proving stab
 ## Deletion and recovery
 
 - Backup: remote disappearance marks SourceItem missing while xDrive content remains.
-- Mirror: TODO; only confirmed deletion may move a Node to xDrive trash after safety/grace checks.
-- Partial, failed, or cancelled inventories never infer deletion.
-- Remote providers remain read-only by default.
+- Mirror-to-trash is a local xDrive policy, never a provider delete. The Server persists per-SourceItem confirmation state and requires at least 2 completed full inventories reporting the item missing plus at least 24 hours from the first confirmation before a sync run may move the unchanged Node to trash.
+- Deletion evidence is valid only under the Source/run configuration snapshot that produced it. Source sync-mode/target/ignore changes reset the relevant evidence, and a run whose Source revision no longer matches cannot advance it.
+- Reappearance resets evidence. Local Node revision/path/type drift blocks automatic trash. A directory is used as a trash root only when its active subtree is fully attributable to independently eligible items from the same Source; unmanaged local content is never swept up. A restored or locally modified tracked parent protects its descendants.
+- Partial, failed, or cancelled runs never advance Mirror confirmation. Scan mode may gather complete-inventory evidence but cannot trash.
+- Mirror only uses xDrive trash (`deleted_at` / `trash_root_id`); permanent deletion remains a separate user action. Each automatic trash root records a `source.mirror.trash` system audit. Remote providers remain read-only.
 
 ## Synchronization-folder management contract
 

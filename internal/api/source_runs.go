@@ -176,7 +176,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 		if source.Status != meta.SourceStatusActive {
 			return errSourcePaused
 		}
-		if source.SyncMode != meta.SourceSyncModeBackup || !meta.ValidSourceRunMode(source.RunMode) {
+		if !meta.ValidSourceSyncMode(source.SyncMode) || !meta.ValidSourceRunMode(source.RunMode) {
 			return errInvalidSourceConfig
 		}
 		if source.TargetNodeID == nil {
@@ -230,7 +230,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 		targetID := target.ID
 		out = meta.SyncRun{
 			ID: runID, SourceID: source.ID, RunNumber: maxRunNumber + 1, SourceRevision: source.Revision,
-			TargetNodeID: &targetID, IgnoreRules: source.IgnoreRules,
+			SyncMode: source.SyncMode, TargetNodeID: &targetID, IgnoreRules: source.IgnoreRules,
 			Mode: source.RunMode, Trigger: req.Trigger, Status: meta.SyncRunStatusRunning,
 			CheckpointBefore: source.Checkpoint, StartedAt: now,
 		}
@@ -598,6 +598,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 				"modified_at": item.ModifiedAt, "sha256": effectiveSHA,
 				"remote_revision": item.RemoteRevision, "state": meta.SourceItemStateSynced,
 				"last_seen_run_id": runID, "last_seen_at": now,
+				"mirror_missing_full_scans": 0, "mirror_missing_since": nil,
 				"last_synced_run_id": runID, "last_synced_at": now,
 				"last_error": "", "updated_at": now,
 			}).Error; err != nil {
@@ -979,6 +980,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		summary.MissingBytes = 0
 		inventoryComplete := req.CompleteInventory &&
 			(status == meta.SyncRunStatusCompleted || status == meta.SyncRunStatusPartial)
+		missingItems := make([]meta.SourceItem, 0)
 		if inventoryComplete {
 			matcher, err := sourcepkg.CompileIgnoreRules(run.IgnoreRules)
 			if err != nil {
@@ -991,19 +993,28 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			}
 			for _, item := range unseen {
 				if matcher.Ignored(item.Path, item.Kind == meta.SourceItemKindDirectory) {
-					if item.State != meta.SourceItemStateIgnored {
-						if err := tx.Model(&meta.SourceItem{}).Where("id = ?", item.ID).
-							Updates(map[string]any{"state": meta.SourceItemStateIgnored, "last_error": "", "updated_at": now}).Error; err != nil {
-							return err
-						}
+					if err := tx.Model(&meta.SourceItem{}).Where("id = ?", item.ID).
+						Updates(map[string]any{
+							"state":                     meta.SourceItemStateIgnored,
+							"mirror_missing_full_scans": 0,
+							"mirror_missing_since":      nil,
+							"last_error":                "",
+							"updated_at":                now,
+						}).Error; err != nil {
+						return err
 					}
 					continue
 				}
 				summary.AddMissing(item)
 				if err := tx.Model(&meta.SourceItem{}).Where("id = ?", item.ID).
-					Updates(map[string]any{"state": meta.SourceItemStateMissing, "last_error": "", "updated_at": now}).Error; err != nil {
+					Updates(map[string]any{
+						"state":      meta.SourceItemStateMissing,
+						"last_error": "",
+						"updated_at": now,
+					}).Error; err != nil {
 					return err
 				}
+				missingItems = append(missingItems, item)
 			}
 		}
 
@@ -1051,7 +1062,24 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		if status == meta.SyncRunStatusCompleted && summary.FailedItems > 0 {
 			status = meta.SyncRunStatusPartial
 		}
+
+		var deletedItems int64
+		if req.CompleteInventory && status == meta.SyncRunStatusCompleted {
+			var mirrorErr error
+			deletedItems, mirrorErr = advanceMirrorMissingEvidenceTx(
+				tx,
+				source,
+				run,
+				missingItems,
+				now,
+			)
+			if mirrorErr != nil {
+				return mirrorErr
+			}
+		}
+
 		summary.ApplyToSyncRun(&run)
+		run.DeletedItems = deletedItems
 		finished := now
 		run.Status = status
 		run.CheckpointAfter = req.Checkpoint
@@ -1115,6 +1143,7 @@ func persistObservedSourceItem(
 		}
 		return tx.Model(&meta.SourceItem{}).Where("id = ?", current.ID).Updates(map[string]any{
 			"state": meta.SourceItemStateIgnored, "last_seen_run_id": runID,
+			"mirror_missing_full_scans": 0, "mirror_missing_since": nil,
 			"last_seen_at": now, "last_error": "", "updated_at": now,
 		}).Error
 
@@ -1131,6 +1160,7 @@ func persistObservedSourceItem(
 			"kind": item.Kind, "path": item.Path, "size": item.Size, "modified_at": item.ModifiedAt,
 			"sha256": item.SHA256, "remote_revision": item.RemoteRevision, "node_revision": 0,
 			"state": meta.SourceItemStatePending, "last_seen_run_id": runID,
+			"mirror_missing_full_scans": 0, "mirror_missing_since": nil,
 			"last_seen_at": now, "last_error": "", "updated_at": now,
 		}).Error
 
@@ -1144,12 +1174,14 @@ func persistObservedSourceItem(
 			"sha256": observedSHA, "remote_revision": item.RemoteRevision,
 			"node_revision": nodeRevision,
 			"state":         meta.SourceItemStateSynced, "last_seen_run_id": runID,
+			"mirror_missing_full_scans": 0, "mirror_missing_since": nil,
 			"last_seen_at": now, "last_error": "", "updated_at": now,
 		}).Error
 
 	case sourcepkg.ActionUpdate, sourcepkg.ActionMove, sourcepkg.ActionMoveUpdate:
 		return tx.Model(&meta.SourceItem{}).Where("id = ?", current.ID).Updates(map[string]any{
 			"state": meta.SourceItemStatePending, "last_seen_run_id": runID,
+			"mirror_missing_full_scans": 0, "mirror_missing_since": nil,
 			"last_seen_at": now, "last_error": "", "updated_at": now,
 		}).Error
 

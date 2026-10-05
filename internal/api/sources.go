@@ -51,6 +51,7 @@ type syncRunDTO struct {
 	SourceID               uint64     `json:"source_id"`
 	RunNumber              int64      `json:"run_number"`
 	SourceRevision         uint64     `json:"source_revision"`
+	SyncMode               string     `json:"sync_mode"`
 	TargetNodeID           *uint64    `json:"target_node_id,omitempty"`
 	IgnoreRules            string     `json:"ignore_rules,omitempty"`
 	Mode                   string     `json:"mode"`
@@ -78,6 +79,7 @@ type syncRunDTO struct {
 	CreatedItems           int64      `json:"created_items"`
 	UpdatedItems           int64      `json:"updated_items"`
 	SkippedItems           int64      `json:"skipped_items"`
+	DeletedItems           int64      `json:"deleted_items"`
 	TransferredItems       int64      `json:"transferred_items"`
 	TransferredBytes       int64      `json:"transferred_bytes"`
 	FailedItems            int64      `json:"failed_items"`
@@ -122,7 +124,7 @@ func (s *Server) sourceDTO(source meta.Source) sourceDTO {
 func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 	return syncRunDTO{
 		ID: run.ID, SourceID: run.SourceID, RunNumber: run.RunNumber, SourceRevision: run.SourceRevision,
-		TargetNodeID: run.TargetNodeID, IgnoreRules: run.IgnoreRules,
+		SyncMode: run.SyncMode, TargetNodeID: run.TargetNodeID, IgnoreRules: run.IgnoreRules,
 		Mode: run.Mode, Trigger: run.Trigger, Status: run.Status,
 		CheckpointBefore: run.CheckpointBefore, CheckpointAfter: run.CheckpointAfter,
 		ScannedItems: run.ScannedItems, ScannedBytes: run.ScannedBytes,
@@ -133,6 +135,7 @@ func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 		PlannedTransferItems: run.PlannedTransferItems, PlannedTransferBytes: run.PlannedTransferBytes,
 		ProcessedTransferItems: run.ProcessedTransferItems, ProcessedTransferBytes: run.ProcessedTransferBytes,
 		CreatedItems: run.CreatedItems, UpdatedItems: run.UpdatedItems, SkippedItems: run.SkippedItems,
+		DeletedItems:     run.DeletedItems,
 		TransferredItems: run.TransferredItems, TransferredBytes: run.TransferredBytes,
 		FailedItems:        run.FailedItems,
 		ActiveTransferPath: run.ActiveTransferPath, ActiveTransferBytes: run.ActiveTransferBytes,
@@ -256,8 +259,8 @@ func (s *Server) createSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid source name, kind, or direction")
 		return
 	}
-	if req.SyncMode != meta.SourceSyncModeBackup {
-		fail(c, http.StatusBadRequest, "only backup sync_mode is currently supported")
+	if !meta.ValidSourceSyncMode(req.SyncMode) {
+		fail(c, http.StatusBadRequest, "invalid sync_mode")
 		return
 	}
 	if !meta.ValidSourceRunMode(req.RunMode) {
@@ -320,7 +323,7 @@ func (s *Server) createSource(c *gin.Context) {
 	}
 	source := meta.Source{
 		OwnerID: userID(c), Name: req.Name, Kind: req.Kind, Direction: req.Direction,
-		SyncMode: meta.SourceSyncModeBackup, RunMode: req.RunMode, Status: status,
+		SyncMode: req.SyncMode, RunMode: req.RunMode, Status: status,
 		ScheduleType: schedule.Type, ScheduleExpression: schedule.Expression, ScheduleTimezone: schedule.Timezone,
 		Revision: 1, TargetNodeID: target, IgnoreRules: req.IgnoreRules,
 	}
@@ -363,6 +366,7 @@ func (s *Server) updateSource(c *gin.Context) {
 	}
 	var req struct {
 		Name               *string `json:"name"`
+		SyncMode           *string `json:"sync_mode"`
 		RunMode            *string `json:"run_mode"`
 		Status             *string `json:"status"`
 		ScheduleType       *string `json:"schedule_type"`
@@ -389,6 +393,7 @@ func (s *Server) updateSource(c *gin.Context) {
 			return errRevisionConflict
 		}
 		updates := map[string]any{}
+		resetMirrorEvidence := false
 		if req.Name != nil {
 			name := strings.TrimSpace(*req.Name)
 			if !meta.ValidSourceName(name) {
@@ -404,6 +409,16 @@ func (s *Server) updateSource(c *gin.Context) {
 				return errSourceNameTaken
 			}
 			updates["name"] = name
+		}
+		if req.SyncMode != nil {
+			mode := strings.TrimSpace(*req.SyncMode)
+			if !meta.ValidSourceSyncMode(mode) {
+				return errInvalidSourceConfig
+			}
+			if mode != current.SyncMode {
+				resetMirrorEvidence = true
+			}
+			updates["sync_mode"] = mode
 		}
 		if req.RunMode != nil {
 			mode := strings.TrimSpace(*req.RunMode)
@@ -460,11 +475,17 @@ func (s *Server) updateSource(c *gin.Context) {
 				}
 				return err
 			}
+			if current.TargetNodeID == nil || *current.TargetNodeID != target.ID {
+				resetMirrorEvidence = true
+			}
 			updates["target_node_id"] = target.ID
 		}
 		if req.IgnoreRules != nil {
 			if _, err := sourcepkg.CompileIgnoreRules(*req.IgnoreRules); err != nil {
 				return errInvalidSourceConfig
+			}
+			if *req.IgnoreRules != current.IgnoreRules {
+				resetMirrorEvidence = true
 			}
 			updates["ignore_rules"] = *req.IgnoreRules
 		}
@@ -478,6 +499,16 @@ func (s *Server) updateSource(c *gin.Context) {
 			Where("id = ? AND owner_id = ? AND revision = ?", id, userID(c), expected).
 			Updates(updates).Error; err != nil {
 			return err
+		}
+		if resetMirrorEvidence {
+			if err := tx.Model(&meta.SourceItem{}).
+				Where("source_id = ?", id).
+				Updates(map[string]any{
+					"mirror_missing_full_scans": 0,
+					"mirror_missing_since":      nil,
+				}).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Where("id = ? AND owner_id = ?", id, userID(c)).First(&updated).Error
 	})

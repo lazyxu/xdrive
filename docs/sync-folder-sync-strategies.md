@@ -319,27 +319,53 @@ Push executor 在传输前会读取本地文件计算 SHA-256 和 chunk hashes�
 
 这里的本地 hashing 不是 provider API 扫描成本，因为 source-agent 本来就在 NAS 本地直接读取文件。
 
-## 删除与 missing
+## 删除、missing 与 Mirror-to-trash
 
-当前 Pull 和 Push 的 deletion safety 都依赖**完整成功 inventory**。
+当前 Pull 和 Push 的 deletion safety 都依赖**完整 inventory**，但 Backup 与 Mirror 的本地结果不同。
 
-Backup 语义：
+Backup 语义保持不变：
 
 ```text
-完整成功扫描中未再次观察到 SourceItem
+完整 inventory 中未再次观察到 SourceItem
   -> SourceItem missing
   -> xDrive Node/File/CAS 保留
 ```
 
-以下运行永远不能推进 missing/deletion inference：
+Mirror 是显式 opt-in 的本地回收站语义，不会写回远端。Server 为每个 SourceItem 持久化删除确认：
 
-- partial；
-- failed；
-- cancelled；
-- inventory 尚未完成；
-- 未来的 delta/change run 中没有显式 tombstone 的“未出现”。
+```text
+第一次完整成功 inventory missing
+  -> mirror_missing_full_scans = 1
+  -> mirror_missing_since = now
+  -> 不删除
 
-Mirror-to-trash 未来仍按单独策略实现，不改变当前 Backup 行为。
+后续完整成功 inventory 仍 missing
+  -> mirror_missing_full_scans = min(2, count + 1)
+
+count >= 2
+AND now - mirror_missing_since >= 24h
+AND run 是 sync
+AND Source 配置仍与 run snapshot 一致
+AND Node/path/revision 仍与最后同步状态一致
+  -> 移入 xDrive 回收站
+  -> 不做永久删除
+```
+
+安全规则：
+
+- **只有最终状态为 completed 且 complete_inventory=true 的运行才推进 Mirror 删除确认**；
+- partial、failed、cancelled 永远不能推进 Mirror 删除确认；
+- scan-only 运行可形成完整 inventory 证据，但不会执行回收；真正 trash 只发生在 sync run；
+- Source 的 sync mode、target 或 ignore 规则变化会使旧删除证据失效/复位；活动 run 也必须匹配其启动时的 Source revision；
+- SourceItem 一旦重新被观察到，missing 次数与 grace 起点立即清零；
+- Node revision、Node 类型或实际相对路径与 SourceItem 最后绑定不一致时，视为存在本地改动，自动回收 fail closed；
+- 若一个远端目录下混有未归属该 Source 的本地内容，则不会把整个目录作为 trash root；只处理能够独立证明安全的 Source 子项；
+- 用户恢复/修改一个 Source 目录后，该目录 revision 变化会同时保护其仍然 missing 的后代，避免恢复后下一轮被拆散再次回收；
+- Mirror 只设置 xDrive `deleted_at / trash_root_id`，CAS/文件版本不永久删除；用户仍可从回收站恢复；
+- 每个实际自动 trash root 记录一条 `source.mirror.trash` system audit，并关联 source/run/remote path；
+- provider 仍保持只读，Mirror 不调用远端 delete。
+
+未来若实现真正 `ScanChanges(checkpoint)`，只有 provider 明确返回可靠 delete tombstone 时，delta run 才能参与删除证据；“这一轮没出现”永远不能替代 tombstone。
 
 ## 当前增量能力矩阵
 
