@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
+	"github.com/lazyxu/xdrive/internal/mediagroup"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
@@ -121,12 +123,48 @@ func verifyMedia(db *gorm.DB, storageRoot string) (MediaVerifyReport, error) {
 	}
 
 	report = verifyMediaState(metadata, groups, items, resources, nodes, files)
+
+	ctx := context.Background()
+	if db.Statement != nil && db.Statement.Context != nil {
+		ctx = db.Statement.Context
+	}
+	ownerIDs := make(map[uint64]struct{})
+	for _, row := range metadata {
+		if row.OwnerID != 0 {
+			ownerIDs[row.OwnerID] = struct{}{}
+		}
+	}
+	for _, group := range groups {
+		if group.OwnerID != 0 {
+			ownerIDs[group.OwnerID] = struct{}{}
+		}
+	}
+	orderedOwners := make([]uint64, 0, len(ownerIDs))
+	for ownerID := range ownerIDs {
+		orderedOwners = append(orderedOwners, ownerID)
+	}
+	sort.Slice(orderedOwners, func(i, j int) bool {
+		return orderedOwners[i] < orderedOwners[j]
+	})
+	for _, ownerID := range orderedOwners {
+		stale, staleErr := mediagroup.LocalEvidenceGroupsStale(ctx, db, ownerID)
+		if staleErr != nil {
+			return report, fmt.Errorf("verify local media relation projection for owner %d: %w", ownerID, staleErr)
+		}
+		if stale {
+			report.Issues = append(report.Issues, MediaIntegrityIssue{
+				OwnerID: ownerID,
+				Reason:  "local_relation_projection_stale",
+			})
+		}
+	}
+
 	if storageRoot != "" {
 		verifyThumbnailStorage(storageRoot, metadata, func(issue MediaIntegrityIssue) {
 			report.Issues = append(report.Issues, issue)
 		})
-		sortMediaIntegrityIssues(report.Issues)
 	}
+	sortMediaIntegrityIssues(report.Issues)
 	return report, nil
 }
 
@@ -380,6 +418,12 @@ func verifyLivePhotoGroup(
 				Reason: "live_photo_evidence_identifier_missing",
 			})
 		}
+	} else {
+		add(MediaIntegrityIssue{
+			OwnerID: group.OwnerID, GroupID: group.ID,
+			Reason: "live_photo_evidence_key_invalid",
+			Actual: group.EvidenceKey,
+		})
 	}
 	for _, item := range items {
 		counts[item.Role]++

@@ -376,7 +376,7 @@ Remote delete/rename/album mutation and general two-way synchronization are not 
 
 `xdrive-server source repair [--dry-run] [--json]` now repairs only provably invalid SourceItem -> Node bindings by detaching the bad local binding and returning an actively synced/error item to `pending`. It preserves the stable ExternalID and remote synchronization facts, does not infer a replacement Node, does not alter File/CAS data, and never writes to the provider. Target problems, File/CAS mismatches and ambiguous identity/alias issues remain verifier-only.
 
-`xdrive-server media repair [--dry-run]` currently resets only deterministic thumbnail metadata failures so the local thumbnail can be rebuilt.
+`xdrive-server media repair [--dry-run] [--json]` resets deterministic thumbnail metadata failures and rebuilds stale local media relationships owner-by-owner from existing xDrive metadata. Relationship repair reruns Apple Live Photo, RAW/rendered, XMP sidecar, and burst projection, then reprojects `PhotoAsset` state while preserving local favorite/tag/people-label/description fields.
 
 ### Still TODO
 
@@ -387,7 +387,7 @@ Extend read-only verification to cover:
 - derived thumbnail cache orphan cleanup beyond metadata-referenced entries;
 - stale running Source runs and incomplete migrations.
 
-Deterministic thumbnail-cache issues now support explicit idempotent metadata reset via `xdrive-server media repair [--dry-run]`; cache bytes are left in place because identical content may share one cache key, and the next thumbnail request rebuilds/overwrites the derived cache as needed. Additional repairs should follow the same rule: prove the issue read-only first, mutate only local derived state, and never modify the remote provider.
+Deterministic thumbnail-cache issues support explicit idempotent metadata reset via `xdrive-server media repair [--dry-run]`; cache bytes are left in place because identical content may share one cache key, and the next thumbnail request rebuilds/overwrites the derived cache as needed. Stale MediaGroup relationships now use the same command to rerun deterministic local-evidence reconciliation and `PhotoAsset` projection without changing originals or user metadata. Additional repairs should follow the same rule: prove the issue read-only first, mutate only local derived state, and never modify the remote provider.
 
 ## Capability matrix
 
@@ -421,7 +421,7 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | Backup deletion safety | Current | Current | Current |
 | Mirror-to-trash | TODO | TODO | TODO |
 | Basic Source binding verifier | Current shared verifier | Current shared verifier | Current shared verifier |
-| Extended integrity/repair | Source invalid-binding detach + media thumbnail reset current; broader local repair partial | Same shared repair contract | Same shared repair contract |
+| Extended integrity/repair | Source invalid-binding detach + media thumbnail reset + deterministic relation/PhotoAsset rebuild current; orphan derived/run/migration repair still partial | Same shared repair contract | Same shared repair contract |
 
 ## Implementation roadmap
 
@@ -436,7 +436,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P4 | Complete: connector-neutral `MediaGroup` evidence plus `PhotoAsset` / `PhotoResource` / `PhotoMetadata` / `PhotoCollection` logical projection | Complete |
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG, TIFF-based NEF/ARW, and Canon CR3 metadata/previews are local; exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are current; AAE without embedded target identity and additional RAW formats remain TODO | High |
-| P7 | In progress: Source binding/alias/collection/item-metadata verify, deterministic invalid SourceItem binding detach, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; stale relation rebuild, orphan derived cleanup, stale runs/migrations and other deterministic local repairs remain | High |
+| P7 | In progress: Source binding/alias/collection/item-metadata verify, deterministic invalid SourceItem binding detach, media relationship/thumbnail verify, idempotent thumbnail reset, and deterministic MediaGroup/PhotoAsset relation rebuild are current; orphan derived cleanup, stale runs/migrations and other deterministic local repairs remain | High |
 | P8 | Incremental transfer current on full inventories; shared `ScanFull` / `ScanChanges` capability/decision foundation complete. Keep current Pull connectors full-scan until a proven provider change+tombstone contract exists, then add real delta execution plus periodic full reconciliation | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
 | P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, user-managed local tags/people labels/descriptions, manual albums, saved-query smart albums, shared grid/timeline month presentation, and offline local-GPS place facets are current; next add optional connector-neutral automatic face/person and place-name analysis facets | Medium |
