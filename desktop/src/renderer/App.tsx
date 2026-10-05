@@ -1894,6 +1894,7 @@ export default function App({
               ),
               archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
               textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
+              previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}

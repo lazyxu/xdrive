@@ -96,7 +96,6 @@ declare global {
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
     source: 'github' | 'gitlab'
     channel: 'stable' | 'master'
-    backup_file_data?: boolean
     request_id?: string
     stage?: string
     stage_current?: number
@@ -420,6 +419,7 @@ declare global {
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudTextPreview: (id: number) => Promise<DesktopResult<AgentCloudFileTextPreview>>
+        cloudFilePreviewURL: (id: number) => Promise<DesktopResult<string>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>
         cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => Promise<DesktopResult<AgentCloudDownloadBatchResult>>
         cloudDownloadArchive: (ids: number[]) => Promise<DesktopResult<AgentCloudArchiveDownloadResult>>

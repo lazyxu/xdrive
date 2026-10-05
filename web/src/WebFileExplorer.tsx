@@ -180,6 +180,18 @@ export default function WebFileExplorer({
     }
   }, [api])
 
+  const loadPreviewURL = useCallback(async (
+    item: XDriveFileExplorerItem,
+    kind: 'image' | 'video' | 'audio' | 'pdf',
+  ) => {
+    if (item.kind !== 'file' || kind !== 'pdf') return null
+    try {
+      return await api.filePreviewURL(Number(item.id))
+    } catch {
+      return null
+    }
+  }, [api])
+
   const openWebNode = async (node: Node) => {
     try {
       await api.download(node)
@@ -322,6 +334,7 @@ export default function WebFileExplorer({
         loading={loading || searchLoading || fileOperationBusy}
         loadThumbnail={loadThumbnail}
         loadTextPreview={loadTextPreview}
+        loadPreviewURL={loadPreviewURL}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}

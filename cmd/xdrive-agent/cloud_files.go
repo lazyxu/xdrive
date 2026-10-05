@@ -432,6 +432,17 @@ func (c *agentController) CloudFileTextPreview(ctx context.Context, id uint64) (
 	return cli.FileTextPreview(ctx, id)
 }
 
+func (c *agentController) CloudFilePreviewTicket(
+	ctx context.Context,
+	id uint64,
+) (client.FilePreviewTicket, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FilePreviewTicket{}, err
+	}
+	return cli.FilePreviewTicket(ctx, id)
+}
+
 func (c *agentController) CloudDownload(ctx context.Context, id uint64, destination string) error {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -68,3 +68,41 @@ func TestMediaStreamJWTRejectsInvalidTTL(t *testing.T) {
 		t.Fatal("oversized media stream ttl was accepted")
 	}
 }
+
+func TestPreviewStreamJWT(t *testing.T) {
+	manager := New("test-secret-that-is-long-enough", time.Hour)
+	token, expiresAt, err := manager.IssuePreviewStream(42, 7, 99, 3, "pdf", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !expiresAt.After(time.Now()) {
+		t.Fatalf("expiresAt=%v", expiresAt)
+	}
+	claims, err := manager.ParsePreviewStream(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.UserID != 42 || claims.SessionVersion != 7 ||
+		claims.NodeID != 99 || claims.NodeRevision != 3 || claims.PreviewKind != "pdf" {
+		t.Fatalf("claims=%+v", claims)
+	}
+	if _, _, err := manager.Parse(token); err == nil {
+		t.Fatal("preview stream ticket was accepted as an access token")
+	}
+	if _, err := manager.ParseMediaStream(token); err == nil {
+		t.Fatal("preview stream ticket was accepted as a media stream ticket")
+	}
+	if _, err := New("different-secret", time.Hour).ParsePreviewStream(token); err == nil {
+		t.Fatal("preview stream ticket signed by another secret was accepted")
+	}
+}
+
+func TestPreviewStreamJWTRejectsInvalidClaims(t *testing.T) {
+	manager := New("test-secret-that-is-long-enough", time.Hour)
+	if _, _, err := manager.IssuePreviewStream(1, 1, 2, 3, "", time.Minute); err == nil {
+		t.Fatal("empty preview kind was accepted")
+	}
+	if _, _, err := manager.IssuePreviewStream(1, 1, 2, 3, "pdf", 3*time.Hour); err == nil {
+		t.Fatal("oversized preview stream ttl was accepted")
+	}
+}

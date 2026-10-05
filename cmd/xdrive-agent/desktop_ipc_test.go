@@ -96,6 +96,7 @@ type fakeDesktopIPCController struct {
 	cloudUploadPath            string
 	cloudUploadName            string
 	cloudUploadPolicy          string
+	cloudFilePreviewID         uint64
 	cloudDownloadID            uint64
 	cloudDownloadDestination   string
 	cloudArchiveIDs            []uint64
@@ -401,6 +402,19 @@ func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint6
 
 func (f *fakeDesktopIPCController) CloudFileTextPreview(_ context.Context, _ uint64) (client.FileTextPreview, error) {
 	return client.FileTextPreview{Text: "preview", Truncated: true, Size: 70000}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFilePreviewTicket(
+	_ context.Context,
+	id uint64,
+) (client.FilePreviewTicket, error) {
+	f.cloudFilePreviewID = id
+	return client.FilePreviewTicket{
+		URL:       "https://drive.example/api/v1/file-preview/3?ticket=preview",
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+		Kind:      "pdf",
+		MIMEType:  "application/pdf",
+	}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudDownload(_ context.Context, id uint64, destination string) error {
@@ -892,6 +906,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-text-preview") {
 		t.Fatalf("hello missing file text preview capability: %+v", hello.Capabilities)
 	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-preview-stream") {
+		t.Fatalf("hello missing file preview stream capability: %+v", hello.Capabilities)
+	}
 
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/lifecycle/shutdown", "")
 	if res.Code != http.StatusOK {
@@ -1196,6 +1213,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/upload/conflict", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt","conflict_policy":"keep_both"}`, "\"transferred_bytes\":12"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodGet, "/v1/cloud/text-preview?id=3", "", "\"text\":\"preview\""},
+		{http.MethodGet, "/v1/cloud/file-preview-ticket?node_id=3", "", "\"kind\":\"pdf\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodPost, "/v1/cloud/download/archive", fmt.Sprintf(`{"ids":[2,3],"destination":%q}`, archiveDestination), "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},
@@ -1218,6 +1236,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)
+	}
+	if ctrl.cloudFilePreviewID != 3 {
+		t.Fatalf("file preview ticket node id=%d want=3", ctrl.cloudFilePreviewID)
 	}
 	if ctrl.cloudCreateParent != 1 || ctrl.cloudCreateName != "New Folder" {
 		t.Fatalf("cloud create not forwarded: parent=%d name=%q", ctrl.cloudCreateParent, ctrl.cloudCreateName)
