@@ -209,7 +209,11 @@ export default function DesktopFileExplorer({
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
   ) => {
-    if (!previewStreamSupported || item.kind !== 'file' || kind !== 'pdf') return null
+    if (
+      !previewStreamSupported ||
+      item.kind !== 'file' ||
+      (kind !== 'pdf' && kind !== 'video')
+    ) return null
     const result = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
     return result.ok ? result.data : null
   }, [previewStreamSupported])
