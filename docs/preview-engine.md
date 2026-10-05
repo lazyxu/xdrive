@@ -215,6 +215,23 @@ The following remain Gallery responsibilities:
 Live Photo motion is intentionally separate from ordinary video preview because it is a
 semantic resource associated with a logical photo asset.
 
+### Live Photo interaction
+
+Gallery should present a Live Photo as one visual surface rather than a still image plus
+a second standalone video player.
+
+The interaction contract is:
+
+- show the still image by default;
+- preload the associated motion resource without autoplay;
+- press-and-hold on mouse or touch starts motion in the same frame;
+- releasing, cancelling, leaving the pressed surface, or losing focus stops playback
+  and returns to the still image;
+- keyboard Enter/Space provides the same hold/release behavior;
+- ordinary video controls are not shown;
+- audio capability is preserved instead of forcing the motion resource muted;
+- the still image remains visible when motion loading or decoding fails.
+
 Do not migrate those concerns into FileExplorer or `FilePreviewSurface`.
 
 ## FileExplorer boundary

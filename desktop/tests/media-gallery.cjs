@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedGallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
 const sharedModels = read('ui', 'shared', 'src', 'models.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
@@ -33,6 +34,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /缩略图/)
   assert.match(sharedGallery, /实况/)
   assert.match(sharedGallery, /loadLivePhotoMotion/)
+  assert.match(sharedGallery, /XDriveLivePhotoSurface/)
   assert.match(sharedGallery, /loadPreviewURL/)
   assert.match(sharedGallery, /XDriveFilePreviewSurface/)
   assert.match(sharedGallery, /AsyncVideoPoster/)
@@ -71,7 +73,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /mediaTimelineGroups/)
   assert.match(sharedGallery, /captured_at/)
   assert.match(sharedGallery, /MediaTileGrid/)
-  assert.match(sharedGallery, /<video/)
+  assert.equal(sharedGallery.includes('<video'), false, 'Gallery MediaDetails must not keep a second standalone Live Photo video player')
   assert.equal(sharedGallery.includes('loadVideo'), false, 'Gallery must not retain a video-specific ordinary-media source contract')
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
@@ -81,6 +83,32 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.equal(webApp.includes('<Paper variant="outlined"'), false, 'Web Gallery must not add a platform-only Paper shell around shared content')
   assert.equal(webApp.includes('function MediaGallery'), false)
   assert.equal(desktopApp.includes('function MediaGallery'), false)
+})
+
+test('Live Photo is one press-and-hold Gallery surface', () => {
+  for (const token of [
+    'export function XDriveLivePhotoSurface',
+    'onPointerDown={handlePointerDown}',
+    'onPointerUp={handlePointerRelease}',
+    'onPointerCancel={handlePointerRelease}',
+    'onPointerLeave={stopPlayback}',
+    'onKeyDown={handleKeyDown}',
+    'onKeyUp={handleKeyUp}',
+    'video.play()',
+    'video.pause()',
+    'video.currentTime = 0',
+    'controls={false}',
+    'playsInline',
+    'preload="auto"',
+    '按住播放',
+    'aria-pressed={playing}',
+  ]) {
+    assert.ok(sharedLivePhotoSurface.includes(token), 'Live Photo surface missing: ' + token)
+  }
+  assert.equal(sharedLivePhotoSurface.includes('muted'), false, 'Live Photo motion must preserve audio capability')
+  assert.equal(sharedGallery.includes('实况视频'), false, 'Gallery must not render Live Photo as a separate video section')
+  assert.ok(sharedGallery.includes('loadMotion={loadSelectedLivePhotoMotion}'), 'Gallery must delegate Live Photo motion loading to the shared surface')
+  assert.match(sharedGallery, /still=\{\([\s\S]*?<XDriveFilePreviewSurface/, 'Live Photo still image should reuse the Preview Engine before thumbnail fallback')
 })
 
 test('Gallery contracts are node-level and connector-neutral', () => {

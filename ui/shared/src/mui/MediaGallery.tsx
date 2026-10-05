@@ -36,6 +36,7 @@ import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type { XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
+import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
@@ -1304,9 +1305,6 @@ function MediaDetails({
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onClose: () => void
 }) {
-  const [playbackURL, setPlaybackURL] = useState('')
-  const [playbackLoading, setPlaybackLoading] = useState(false)
-  const [playbackError, setPlaybackError] = useState('')
   const [targetAlbumID, setTargetAlbumID] = useState('')
   const [albumBusy, setAlbumBusy] = useState(false)
   const [albumError, setAlbumError] = useState('')
@@ -1326,7 +1324,7 @@ function MediaDetails({
   const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
   const ordinaryPreview = ordinaryImage || ordinaryVideo
   const previewTarget = useMemo(() => (
-    item && ordinaryPreview
+    item && (ordinaryPreview || livePhoto)
       ? {
           id: item.node.id,
           name: item.node.name,
@@ -1342,6 +1340,7 @@ function MediaDetails({
     item?.node.revision,
     item?.node.size,
     item?.metadata.mime_type,
+    livePhoto,
     ordinaryPreview,
   ])
   const loadSelectedPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
@@ -1352,6 +1351,11 @@ function MediaDetails({
     if (!item?.metadata.has_thumbnail) return null
     return loadThumbnail(item.node.id)
   }, [item?.metadata.has_thumbnail, item?.node.id, loadThumbnail])
+
+  const loadSelectedLivePhotoMotion = useCallback(async () => {
+    if (!item || !loadLivePhotoMotion) return null
+    return loadLivePhotoMotion(item.node.id)
+  }, [item?.node.id, loadLivePhotoMotion])
 
   useEffect(() => {
     setTagsInput((item?.tags || []).join(', '))
@@ -1370,43 +1374,6 @@ function MediaDetails({
     setDescriptionBusy(false)
     setDescriptionError('')
   }, [item?.node.id, item?.description])
-
-  useEffect(() => {
-    let active = true
-    let resolved = ''
-    setPlaybackURL('')
-    setPlaybackError('')
-    setPlaybackLoading(false)
-
-    if (!item || !livePhoto || !loadLivePhotoMotion) return () => undefined
-
-    setPlaybackLoading(true)
-    void loadLivePhotoMotion(item.node.id)
-      .then((value) => {
-        if (!value) {
-          if (active) setPlaybackError('实况视频暂不可用。')
-          return
-        }
-        resolved = value
-        if (active) setPlaybackURL(value)
-        else revokeIfBlob(value)
-      })
-      .catch((loadError) => {
-        if (active) setPlaybackError(errorMessage(loadError))
-      })
-      .finally(() => {
-        if (active) setPlaybackLoading(false)
-      })
-
-    return () => {
-      active = false
-      if (resolved) revokeIfBlob(resolved)
-    }
-  }, [
-    item?.node.id,
-    livePhoto,
-    loadLivePhotoMotion,
-  ])
 
   const rows = useMemo(() => {
     if (!item) return []
@@ -1496,7 +1463,23 @@ function MediaDetails({
                 overflow: 'hidden',
               }}
             >
-              {ordinaryPreview && loadPreviewURL ? (
+              {livePhoto && loadLivePhotoMotion ? (
+                <XDriveLivePhotoSurface
+                  key={item.node.id}
+                  label={item.node.name}
+                  loadMotion={loadSelectedLivePhotoMotion}
+                  still={(
+                    <XDriveFilePreviewSurface
+                      target={previewTarget}
+                      loadPreviewURL={loadSelectedPreview}
+                      loadImagePreview={loadSelectedThumbnail}
+                      fallback={mediaFallback(item.metadata.media_kind)}
+                      minHeight={220}
+                      maxHeight={420}
+                    />
+                  )}
+                />
+              ) : ordinaryPreview && loadPreviewURL ? (
                 <XDriveFilePreviewSurface
                   target={previewTarget}
                   loadPreviewURL={loadSelectedPreview}
@@ -1514,35 +1497,6 @@ function MediaDetails({
                 />
               )}
             </Box>
-            {livePhoto && loadLivePhotoMotion ? (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
-                  实况视频
-                </Typography>
-                {playbackLoading ? (
-                  <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
-                    <CircularProgress size={28} />
-                  </Box>
-                ) : playbackURL ? (
-                  <video
-                    src={playbackURL}
-                    controls
-                    loop
-                    playsInline
-                    preload="metadata"
-                    style={{
-                      width: '100%',
-                      maxHeight: 420,
-                      display: 'block',
-                      borderRadius: 8,
-                      background: '#000',
-                    }}
-                  />
-                ) : playbackError ? (
-                  <XDriveStatusAlert tone="warning">{playbackError}</XDriveStatusAlert>
-                ) : null}
-              </Box>
-            ) : null}
             {onSetFavorite ? (
               <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button
