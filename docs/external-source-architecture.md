@@ -186,11 +186,15 @@ Legacy `captured_at`, `thumbnail_url`, `pair_group_id` and `pair_role` columns a
 
 Live Photo evidence must come from local originals such as a validated `.livp` container or matching embedded Apple content identifiers. Do not use provider `live_type`, provider pair IDs, filename matching, or timestamp proximity as the canonical relation.
 
-## Integrity verification
+## Integrity verification and repair
 
 `xdrive-server source verify [--json]` is the read-only Source integrity verifier. It checks core Source/SourceItem -> Node/File bindings, canonical/alias identity collisions and cross-Source aliases, SourceCollection membership ownership/state, and SourceItemMetadata Source/provenance/MD5 invariants.
 
-Media verification covers MediaMetadata freshness, MediaGroup/Live Photo evidence, LIVP derived resources, and metadata-referenced thumbnail cache presence/format. Deterministic thumbnail-cache issues support explicit local metadata reset through `xdrive-server media repair [--dry-run]`; repair never changes original files, CAS content, Source state, or remote providers. Remaining verifier/repair work includes storage/digest cross-checks, orphan derived-cache cleanup, stale runs, migrations, and other issue types only after their repair semantics are deterministic.
+`xdrive-server source repair [--dry-run] [--json]` has a deliberately narrow first repair contract: when a SourceItem binding is provably unusable from local state (`synced_without_node`, `bound_node_missing`, owner mismatch, deleted Node, or Node type mismatch), repair detaches only that SourceItem -> Node binding, resets its current binding revision, and returns the item to `pending` where appropriate. Stable `ExternalID`, remote path/revision/digest facts, and historical sync timestamps are preserved so the next complete inventory can create/rebind normally. Repair never searches for a replacement Node by path/name/size/hash similarity and never writes to the provider.
+
+Target-directory failures, File/CAS corruption, size/SHA disagreements, alias conflicts, collection inconsistencies, and ambiguous identity problems remain verifier-only findings until each has a separate deterministic repair contract.
+
+Media verification covers MediaMetadata freshness, MediaGroup/Live Photo evidence, LIVP derived resources, and metadata-referenced thumbnail cache presence/format. Deterministic thumbnail-cache issues support explicit local metadata reset through `xdrive-server media repair [--dry-run]`; repair never changes original files, CAS content, Source state, or remote providers. Remaining verifier/repair work includes stale media-relation rebuild, orphan derived-resource/cache cleanup, storage/digest cross-checks, stale runs/migrations, and other issue types only after their repair semantics are deterministic.
 
 Storage/CAS byte verification remains the separate `xdrive-server storage verify` responsibility.
 
