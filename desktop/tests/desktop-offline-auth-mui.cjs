@@ -35,5 +35,5 @@ test('Desktop disconnected Agent state uses MUI layout instead of offline legacy
   }
 
   assert.ok(app.includes('<XDriveAuthShell>'), 'Desktop disconnected state must keep shared auth shell')
-  assert.ok(app.includes('<XDriveAuthPanel className="auth-panel">'), 'Desktop disconnected state must keep shared auth panel')
+  assert.ok(app.includes('<XDriveAuthPanel>'), 'Desktop disconnected state must keep shared auth panel')
 })

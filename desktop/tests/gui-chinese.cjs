@@ -584,7 +584,7 @@ test('desktop GUI does not regress to key English labels', () => {
 
 
 test('desktop login keeps self-hosted server configuration visible while simplifying the auth flow', () => {
-  assert.ok(renderer.includes('className="auth-panel auth-panel-form"'), 'auth forms must use the dedicated MUI form surface')
+  assert.ok(rendererApp.includes('<XDriveAuthPanel\n          form\n          onSubmit={login}'), 'login must use the shared MUI form surface directly')
   assert.ok(renderer.includes('id="desktop-login-server"'), 'server address must stay directly editable for self-hosted deployments')
   assert.ok(renderer.includes('支持自建 xDrive 服务器；连接会在登录时再次验证。'), 'self-hosted server purpose should be explicit')
   assert.ok(renderer.includes('window.xdriveDesktop.probeServer(candidate)'), 'server field should expose reachability feedback before login')
@@ -592,6 +592,7 @@ test('desktop login keeps self-hosted server configuration visible while simplif
   assert.ok(main.includes("normalized + '/api/v1/version'"), 'server probe should use the public version endpoint')
   assert.equal(renderer.includes('label="同步文件夹（可选）"'), false, 'sync-folder configuration should not remain in the login form')
   assert.equal(renderer.includes('className="auth-folder-row"'), false, 'login folder browse row should be removed')
+  assert.equal(/className="auth-[A-Za-z0-9_-]+/.test(rendererApp), false, 'Desktop App must not retain stale auth styling hooks')
   assert.ok(renderer.includes('登录后可在“设置”中修改'), 'login must explain where sync-folder configuration moved')
 })
 

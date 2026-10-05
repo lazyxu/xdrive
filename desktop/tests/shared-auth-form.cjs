@@ -42,8 +42,11 @@ test('password-change surfaces reuse shared password fields', () => {
   assert.ok(passwordForm.includes('sx?: SxProps<Theme>'), 'shared password form should support MUI spacing without local CSS')
 })
 
-test('Desktop auth presentation no longer depends on local auth CSS', () => {
+test('Desktop auth presentation no longer depends on local auth CSS or stale class hooks', () => {
   assert.equal(/\.auth-[A-Za-z0-9_-]+/.test(desktopStyles), false, 'Desktop must not keep auth-specific CSS selectors')
+  assert.equal(/className="auth-[A-Za-z0-9_-]+/.test(desktopApp), false, 'Desktop must not keep stale auth class hooks')
+  assert.equal(passwordForm.includes('buttonClassName'), false, 'shared password form must not expose a stale button class hook')
+  assert.equal(passwordForm.includes('className={className}'), false, 'shared password form must not expose a stale form class hook')
   assert.equal(desktopApp.includes("import VisibilityOffRoundedIcon"), false, 'password visibility presentation belongs in shared MUI')
   assert.equal(desktopApp.includes("import VisibilityRoundedIcon"), false, 'password visibility presentation belongs in shared MUI')
   assert.equal(desktopApp.includes('<InputAdornment'), false, 'password adornment presentation belongs in shared MUI')

@@ -1085,7 +1085,7 @@ export default function App({
   if (!agent.connected) {
     return renderDesktopFrame(
       <XDriveAuthShell>
-        <XDriveAuthPanel className="auth-panel">
+        <XDriveAuthPanel>
           <Typography
             variant="overline"
             color="primary.main"
@@ -1163,7 +1163,6 @@ export default function App({
       <XDriveAuthShell>
         <XDriveAuthPanel
           form
-          className="auth-panel auth-panel-form"
           onSubmit={login}
         >
           <MuiBox sx={{ mb: 2.25 }}>
@@ -1487,7 +1486,7 @@ export default function App({
   if (status?.must_change_password) {
     return renderDesktopFrame(
       <XDriveAuthShell>
-        <XDriveAuthPanel className="auth-panel auth-panel-form">
+        <XDriveAuthPanel>
           <Typography
             variant="overline"
             color="primary.main"
@@ -1508,8 +1507,6 @@ export default function App({
             管理员要求先修改密码，之后才能开始同步。
           </Typography>
           <XDrivePasswordChangeForm
-            className="auth-form"
-            buttonClassName="auth-submit"
             sx={{ mt: 2.75 }}
             submitFullWidth
             values={{
