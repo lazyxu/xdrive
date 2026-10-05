@@ -69,6 +69,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "PATCH", path: "/api/v1/media/items/:id/people", suite: "media"},
 		{method: "PATCH", path: "/api/v1/media/items/:id/description", suite: "media"},
 		{method: "GET", path: "/api/v1/media/items/:id/thumbnail", suite: "media"},
+		{method: "GET", path: "/api/v1/media/items/:id/analysis-preview", suite: "media"},
 		{method: "GET", path: "/api/v1/media/items/:id/live-photo-motion", suite: "media"},
 		{method: "GET", path: "/api/v1/media/items/:id/resources/:role", suite: "media"},
 		{method: "GET", path: "/api/v1/media/albums", suite: "media"},

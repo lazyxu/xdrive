@@ -14,6 +14,8 @@ import (
 const (
 	MaxThumbnailPixels     = 100_000_000
 	DefaultThumbnailEdge   = 512
+	AnalysisPreviewEdge    = 1280
+	AnalysisPreviewVersion = 1
 	ThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
 )
 

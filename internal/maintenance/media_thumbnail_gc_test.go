@@ -55,6 +55,9 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 	potentialKey := mediapkg.ThumbnailStorageKey(
 		nodes[1].ID, nodes[1].Revision, shaB, mediapkg.DefaultThumbnailEdge,
 	)
+	analysisKey := mediapkg.ThumbnailStorageKey(
+		nodes[1].ID, nodes[1].Revision, shaB, mediapkg.AnalysisPreviewEdge,
+	)
 	videoKey := mediapkg.ThumbnailStorageKey(
 		nodes[2].ID, nodes[2].Revision, shaC, mediapkg.DefaultThumbnailEdge,
 	)
@@ -91,6 +94,7 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 	}{
 		{key: referencedKey, modified: old},
 		{key: potentialKey, modified: old},
+		{key: analysisKey, modified: old},
 		{key: videoKey, modified: old},
 		{key: orphanKey, modified: old},
 		{key: youngKey, modified: young},
@@ -104,7 +108,7 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dry.ScannedFiles != 5 ||
+	if dry.ScannedFiles != 6 ||
 		dry.CandidateFiles != 2 ||
 		dry.DeletedFiles != 0 ||
 		len(dry.Actions) != 2 {
@@ -117,7 +121,7 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 	if !candidateKeys[videoKey] || !candidateKeys[orphanKey] {
 		t.Fatalf("unexpected dry-run candidates=%v", candidateKeys)
 	}
-	for _, key := range []string{referencedKey, potentialKey, youngKey} {
+	for _, key := range []string{referencedKey, potentialKey, analysisKey, youngKey} {
 		if candidateKeys[key] {
 			t.Fatalf("protected thumbnail %q became a GC candidate", key)
 		}
@@ -139,7 +143,7 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 			t.Fatalf("orphan thumbnail %q still exists: %v", key, err)
 		}
 	}
-	for _, key := range []string{referencedKey, potentialKey, youngKey} {
+	for _, key := range []string{referencedKey, potentialKey, analysisKey, youngKey} {
 		if _, err := os.Stat(thumbnailGCTestPath(storageRoot, key)); err != nil {
 			t.Fatalf("protected thumbnail %q missing: %v", key, err)
 		}

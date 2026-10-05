@@ -71,3 +71,38 @@ func TestThumbnailJPEGAdditionalImageFormats(t *testing.T) {
 		})
 	}
 }
+
+func TestThumbnailJPEGAnalysisPreviewEdge(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 1600, 800))
+	for y := 0; y < 800; y++ {
+		for x := 0; x < 1600; x++ {
+			img.Set(x, y, color.NRGBA{
+				R: uint8((x / 8) % 255),
+				G: uint8((y / 4) % 255),
+				B: 160,
+				A: 255,
+			})
+		}
+	}
+	var source bytes.Buffer
+	if err := jpeg.Encode(&source, img, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := ThumbnailJPEG(
+		bytes.NewReader(source.Bytes()),
+		1,
+		AnalysisPreviewEdge,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.MaxEdge != AnalysisPreviewEdge ||
+		preview.Width != AnalysisPreviewEdge ||
+		preview.Height != AnalysisPreviewEdge/2 {
+		t.Fatalf("analysis preview=%+v", preview)
+	}
+	if preview.MIMEType != "image/jpeg" || len(preview.Data) == 0 {
+		t.Fatalf("analysis preview JPEG=%+v", preview)
+	}
+}
