@@ -975,6 +975,22 @@ export class XDriveApi {
     return this.request<XDriveFileTextPreview>(`/api/v1/files/${id}/preview/text`)
   }
 
+  async filePreviewURL(nodeID: number): Promise<string> {
+    const ticket = await this.request<{
+      url: string
+      expires_at: string
+      kind: 'image' | 'video' | 'audio' | 'pdf'
+      mime_type: string
+    }>(`/api/v1/files/${nodeID}/preview-ticket`, { method: 'POST' })
+    if (
+      !ticket.url.startsWith('/api/v1/file-preview/') ||
+      ticket.url.startsWith('//')
+    ) {
+      throw new ApiError(500, 'Invalid file preview URL')
+    }
+    return `${API_BASE}${ticket.url}`
+  }
+
   copy(nodeID: number, parentID: number, name?: string) {
     return this.request<Node>(`/api/v1/nodes/${nodeID}/copy`, {
       method: 'POST',

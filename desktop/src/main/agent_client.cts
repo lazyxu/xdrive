@@ -51,7 +51,6 @@ export type AgentServerUpdateState = {
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
   source: 'github' | 'gitlab'
   channel: 'stable' | 'master'
-  backup_file_data?: boolean
   request_id?: string
   stage?: string
   stage_current?: number
@@ -362,6 +361,13 @@ export type AgentCloudFileTextPreview = {
   text: string
   truncated: boolean
   size: number
+}
+
+export type AgentFilePreviewTicket = {
+  url: string
+  expires_at: string
+  kind: 'image' | 'video' | 'audio' | 'pdf'
+  mime_type: string
 }
 
 export type AgentCloudUploadResult = {
@@ -1235,6 +1241,16 @@ export class AgentIPCClient {
 
   cloudFileTextPreview(id: number) {
     return this.request<AgentCloudFileTextPreview>('GET', `/v1/cloud/text-preview?id=${encodeURIComponent(String(id))}`)
+  }
+
+  cloudFilePreviewTicket(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentFilePreviewTicket>(
+      'GET',
+      `/v1/cloud/file-preview-ticket?${query.toString()}`,
+      undefined,
+      45_000,
+    )
   }
 
   cloudDownload(id: number, destination: string) {

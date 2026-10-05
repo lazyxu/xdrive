@@ -51,6 +51,7 @@ export default function DesktopFileExplorer({
   uploadConflictSupported = false,
   archiveDownloadSupported = false,
   textPreviewSupported = false,
+  previewStreamSupported = false,
   onError,
   onFeedback,
 }: {
@@ -71,6 +72,7 @@ export default function DesktopFileExplorer({
   uploadConflictSupported?: boolean
   archiveDownloadSupported?: boolean
   textPreviewSupported?: boolean
+  previewStreamSupported?: boolean
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -202,6 +204,15 @@ export default function DesktopFileExplorer({
     const result = await window.xdriveDesktop.agent.cloudTextPreview(Number(item.id))
     return result.ok ? result.data : null
   }, [textPreviewSupported])
+
+  const loadPreviewURL = useCallback(async (
+    item: XDriveFileExplorerItem,
+    kind: 'image' | 'video' | 'audio' | 'pdf',
+  ) => {
+    if (!previewStreamSupported || item.kind !== 'file' || kind !== 'pdf') return null
+    const result = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
+    return result.ok ? result.data : null
+  }, [previewStreamSupported])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
@@ -581,6 +592,7 @@ export default function DesktopFileExplorer({
         loading={loading || searchLoading || explorerActionBusy}
         loadThumbnail={loadThumbnail}
         loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
+        loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}

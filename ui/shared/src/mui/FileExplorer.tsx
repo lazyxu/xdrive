@@ -549,6 +549,7 @@ export function XDriveFileExplorer({
   statusText,
   loadThumbnail,
   loadTextPreview,
+  loadPreviewURL,
   hasMore = false,
   loadingMore = false,
   onLoadMore,
@@ -608,6 +609,10 @@ export function XDriveFileExplorer({
   statusText?: ReactNode
   loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
   loadTextPreview?: (item: XDriveFileExplorerItem) => Promise<XDriveFileTextPreview | null | undefined>
+  loadPreviewURL?: (
+    item: XDriveFileExplorerItem,
+    kind: 'image' | 'video' | 'audio' | 'pdf',
+  ) => Promise<string | null | undefined>
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
@@ -2769,6 +2774,7 @@ export function XDriveFileExplorer({
                   <XDriveFilePreviewSurface
                     target={inspectorItem}
                     loadTextPreview={loadTextPreview}
+                    loadPreviewURL={loadPreviewURL}
                     loadImagePreview={
                       (inspectorItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(inspectorItem.name, inspectorItem.kind))
                         ? loadThumbnail

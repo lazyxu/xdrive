@@ -9,6 +9,7 @@ import {
   Menu,
   nativeImage,
   nativeTheme,
+  net,
   Notification,
   powerMonitor,
   screen,
@@ -35,6 +36,7 @@ import {
 } from './desktop_shortcuts.cjs'
 import { trayStatusIconFile, trayStatusKind, type TrayStatusKind } from './tray_status.cjs'
 import { DesktopLifecycleLog, formatLifecycleError } from './lifecycle_log.cjs'
+import { DesktopFilePreviewProxy } from './file_preview_proxy.cjs'
 import {
   defaultDesktopPreferences,
   normalizeDesktopPreferences,
@@ -136,6 +138,7 @@ let quitReason = 'system-or-application'
 let lifecycleLog: DesktopLifecycleLog | null = null
 let agentClient: AgentIPCClient | null = null
 let agentLifecycle: AgentLifecycle | null = null
+let filePreviewProxy: DesktopFilePreviewProxy | null = null
 let agentState: AgentConnectionState = { connected: false, error: 'Connecting to xdrive-agent…' }
 let agentTransfers: AgentTransfers = { revision: 0, transfers: [] }
 let agentUpdateState: AgentUpdateState | null = null
@@ -2409,6 +2412,19 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudFileTextPreview(id)
   }, false))
 
+  ipcMain.handle('agent:cloud-file-preview-url', (_event, id: unknown) => runAgentAction<string>(async () => {
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'File id is required.')
+    }
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    requireAgentCapability(hello, 'file-preview-stream')
+    if (!filePreviewProxy) {
+      throw new AgentIPCError('file_preview_unavailable', 0, 'File preview proxy is not initialized.')
+    }
+    return filePreviewProxy.createURL(id)
+  }, false))
+
   ipcMain.handle('agent:cloud-download', async (_event, id: unknown, name: unknown) => {
     if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
         typeof name !== 'string' || !name.trim()) {
@@ -3032,6 +3048,7 @@ if (!primaryInstance) {
     agentMonitor?.abort()
     transferMonitor?.abort()
     updateMonitor?.abort()
+    void filePreviewProxy?.close()
   })
   app.on('quit', (_event, exitCode) => lifecycleLog?.cleanExit(quitReason, exitCode))
   void app.whenReady().then(async () => {
@@ -3054,6 +3071,10 @@ if (!primaryInstance) {
 
     agentClient = new AgentIPCClient(path.join(app.getPath('appData'), 'xdrive', 'desktop-ipc.json'))
     agentLifecycle = new AgentLifecycle(agentClient)
+    filePreviewProxy = new DesktopFilePreviewProxy(
+      (nodeID) => requireAgentClient().cloudFilePreviewTicket(nodeID),
+      (input, init) => net.fetch(input, init),
+    )
     registerIPCHandlers()
     startupCheckpoint('ipc_ready')
     createMainWindow(!backgroundLaunch)

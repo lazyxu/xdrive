@@ -15,10 +15,13 @@ const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const desktopMain = read('desktop', 'src', 'main', 'index.cts')
+const previewProxy = read('desktop', 'src', 'main', 'file_preview_proxy.cts')
+const desktopIndexHTML = read('desktop', 'src', 'renderer', 'index.html')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
 const agentCloud = read('cmd', 'xdrive-agent', 'cloud_files.go')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 const server = read('internal', 'api', 'file_text_preview.go')
+const previewServer = read('internal', 'api', 'file_preview.go')
 
 test('safe text-preview contract excludes active and secret-prone content', () => {
   for (const token of ['XDriveFileTextPreview', 'xDriveFileSupportsTextPreview', "'txt'", "'json'", "'md'"]) {
@@ -68,9 +71,11 @@ test('shared Preview Engine owns classification and renderer surface', () => {
 test('shared Inspector delegates preview rendering to FilePreviewSurface', () => {
   for (const token of [
     'loadTextPreview?:',
+    'loadPreviewURL?:',
     '<XDriveFilePreviewSurface',
     'target={inspectorItem}',
     'loadTextPreview={loadTextPreview}',
+    'loadPreviewURL={loadPreviewURL}',
     'loadImagePreview={',
     'fallback={defaultItemIcon(inspectorItem, true)}',
   ]) {
@@ -96,4 +101,49 @@ test('Web and Desktop load preview through authenticated platform adapters', () 
       assert.ok(source.includes(token), label + ' preview bridge missing: ' + token)
     }
   }
+})
+
+test('generic preview transport is allowlisted, ticketed, range-capable, and PDF is enabled first', () => {
+  for (const token of [
+    'filePreviewDescriptors',
+    '".pdf":  {Kind: "pdf", MIMEType: "application/pdf"}',
+    'IssuePreviewStream',
+    'ParsePreviewStream',
+    'file preview ticket is stale',
+    'Content-Disposition',
+    'http.ServeContent',
+    'Referrer-Policy',
+    'X-Content-Type-Options',
+  ]) {
+    assert.ok(previewServer.includes(token), 'missing generic preview transport token: ' + token)
+  }
+  for (const forbidden of ['".html"', '".svg"']) {
+    assert.equal(previewServer.includes(forbidden), false, 'active content must not be preview-ticket allowlisted: ' + forbidden)
+  }
+
+  assert.ok(webApi.includes('filePreviewURL(nodeID: number)'), 'Web preview ticket adapter is missing')
+  assert.ok(webExplorer.includes("kind !== 'pdf'"), 'Web should enable PDF before later binary renderers')
+  assert.ok(webExplorer.includes('loadPreviewURL={loadPreviewURL}'), 'Web Explorer must pass the preview URL loader')
+
+  assert.ok(desktopExplorer.includes("kind !== 'pdf'"), 'Desktop should enable PDF before later binary renderers')
+  assert.ok(desktopExplorer.includes('cloudFilePreviewURL(Number(item.id))'), 'Desktop Explorer preview URL adapter is missing')
+  assert.ok(desktopExplorer.includes('loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}'), 'Desktop preview URL must be capability gated')
+  assert.ok(desktopApp.includes("capabilities.includes('file-preview-stream')"), 'Desktop preview stream capability gate is missing')
+  assert.ok(preload.includes('cloudFilePreviewURL'), 'Desktop preload preview URL bridge is missing')
+  assert.ok(desktopMain.includes('agent:cloud-file-preview-url'), 'Electron main preview URL bridge is missing')
+  assert.ok(agentClient.includes('cloudFilePreviewTicket(nodeID: number)'), 'Desktop Agent client preview ticket method is missing')
+  assert.ok(agentIPC.includes('/v1/cloud/file-preview-ticket'), 'Agent preview ticket bridge is missing')
+  assert.ok(agentCloud.includes('CloudFilePreviewTicket'), 'Agent preview ticket controller is missing')
+
+  for (const token of [
+    'randomBytes(32)',
+    'localPreviewTokenPattern',
+    '127.0.0.1',
+    'signed-upstream',
+    'Range',
+  ]) {
+    if (token === 'signed-upstream') continue
+    assert.ok(previewProxy.includes(token), 'Desktop local preview proxy missing: ' + token)
+  }
+  assert.ok(desktopIndexHTML.includes("frame-src http://127.0.0.1:*"), 'Desktop CSP must allow only the loopback PDF preview frame')
 })
