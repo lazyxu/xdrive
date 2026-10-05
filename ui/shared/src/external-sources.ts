@@ -42,6 +42,7 @@ export interface ExternalSourceRun {
   source_id: number
   run_number: number
   source_revision: number
+  sync_mode?: 'backup' | 'mirror'
   target_node_id?: number
   mode: ExternalSourceRunMode
   trigger: string
@@ -66,6 +67,7 @@ export interface ExternalSourceRun {
   created_items: number
   updated_items: number
   skipped_items: number
+  deleted_items?: number
   transferred_items: number
   transferred_bytes: number
   failed_items: number
@@ -111,6 +113,8 @@ export interface ExternalSourceItem {
   sha256?: string
   remote_revision?: string
   state: 'pending' | 'synced' | 'missing' | 'ignored' | 'error' | string
+  mirror_missing_full_scans?: number
+  mirror_missing_since?: string
   last_error?: string
   metadata?: ExternalSourceItemMetadata
 }
@@ -198,7 +202,7 @@ export interface CreateExternalSourceInput {
   name: string
   kind: string
   direction: ExternalSourceDirection
-  sync_mode: 'backup'
+  sync_mode: 'backup' | 'mirror'
   run_mode: ExternalSourceRunMode
   schedule_type?: ExternalSourceScheduleType
   schedule_expression?: string
@@ -209,6 +213,7 @@ export interface CreateExternalSourceInput {
 
 export interface UpdateExternalSourceInput {
   name?: string
+  sync_mode?: 'backup' | 'mirror'
   run_mode?: ExternalSourceRunMode
   status?: ExternalSourceStatus
   schedule_type?: ExternalSourceScheduleType
@@ -413,6 +418,7 @@ export interface ExternalSourceRunMetric {
     | 'created'
     | 'updated'
     | 'skipped'
+    | 'deleted'
     | 'transferred'
     | 'failed'
   label: string
@@ -761,6 +767,9 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
       { key: 'created', label: '创建', items: run.created_items },
       { key: 'updated', label: '更新', items: run.updated_items },
       { key: 'skipped', label: '跳过', items: run.skipped_items },
+      ...(run.sync_mode === 'mirror' || (run.deleted_items ?? 0) > 0
+        ? [{ key: 'deleted' as const, label: '移入回收站', items: run.deleted_items ?? 0 }]
+        : []),
       { key: 'transferred', label: '实际传输', items: run.transferred_items, bytes: run.transferred_bytes },
       { key: 'failed', label: '失败', items: run.failed_items },
     ],

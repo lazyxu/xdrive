@@ -57,6 +57,7 @@ type CreateSourceInput struct {
 
 type UpdateSourceInput struct {
 	Name               *string `json:"name,omitempty"`
+	SyncMode           *string `json:"sync_mode,omitempty"`
 	RunMode            *string `json:"run_mode,omitempty"`
 	Status             *string `json:"status,omitempty"`
 	ScheduleType       *string `json:"schedule_type,omitempty"`
@@ -82,6 +83,7 @@ type SyncRun struct {
 	SourceID               uint64     `json:"source_id"`
 	RunNumber              int64      `json:"run_number"`
 	SourceRevision         uint64     `json:"source_revision"`
+	SyncMode               string     `json:"sync_mode"`
 	TargetNodeID           *uint64    `json:"target_node_id,omitempty"`
 	IgnoreRules            string     `json:"ignore_rules,omitempty"`
 	Mode                   string     `json:"mode"`
@@ -109,6 +111,7 @@ type SyncRun struct {
 	CreatedItems           int64      `json:"created_items"`
 	UpdatedItems           int64      `json:"updated_items"`
 	SkippedItems           int64      `json:"skipped_items"`
+	DeletedItems           int64      `json:"deleted_items"`
 	TransferredItems       int64      `json:"transferred_items"`
 	TransferredBytes       int64      `json:"transferred_bytes"`
 	FailedItems            int64      `json:"failed_items"`
@@ -182,34 +185,38 @@ type SourceItemMetadata struct {
 }
 
 type SourceItem struct {
-	SourceItemID   uint64              `json:"source_item_id"`
-	ExternalID     string              `json:"external_id"`
-	NodeID         *uint64             `json:"node_id,omitempty"`
-	Kind           string              `json:"kind"`
-	Path           string              `json:"path"`
-	Size           int64               `json:"size"`
-	ModifiedAt     *time.Time          `json:"modified_at,omitempty"`
-	SHA256         string              `json:"sha256,omitempty"`
-	RemoteRevision string              `json:"remote_revision,omitempty"`
-	State          string              `json:"state"`
-	LastError      string              `json:"last_error,omitempty"`
-	Metadata       *SourceItemMetadata `json:"metadata,omitempty"`
+	SourceItemID           uint64              `json:"source_item_id"`
+	ExternalID             string              `json:"external_id"`
+	NodeID                 *uint64             `json:"node_id,omitempty"`
+	Kind                   string              `json:"kind"`
+	Path                   string              `json:"path"`
+	Size                   int64               `json:"size"`
+	ModifiedAt             *time.Time          `json:"modified_at,omitempty"`
+	SHA256                 string              `json:"sha256,omitempty"`
+	RemoteRevision         string              `json:"remote_revision,omitempty"`
+	State                  string              `json:"state"`
+	MirrorMissingFullScans int                 `json:"mirror_missing_full_scans,omitempty"`
+	MirrorMissingSince     *time.Time          `json:"mirror_missing_since,omitempty"`
+	LastError              string              `json:"last_error,omitempty"`
+	Metadata               *SourceItemMetadata `json:"metadata,omitempty"`
 }
 
 type SourceCollectionItem struct {
-	Position       int64               `json:"position"`
-	SourceItemID   uint64              `json:"source_item_id"`
-	ExternalID     string              `json:"external_id"`
-	NodeID         *uint64             `json:"node_id,omitempty"`
-	Kind           string              `json:"kind"`
-	Path           string              `json:"path"`
-	Size           int64               `json:"size"`
-	ModifiedAt     *time.Time          `json:"modified_at,omitempty"`
-	SHA256         string              `json:"sha256,omitempty"`
-	RemoteRevision string              `json:"remote_revision,omitempty"`
-	State          string              `json:"state"`
-	LastError      string              `json:"last_error,omitempty"`
-	Metadata       *SourceItemMetadata `json:"metadata,omitempty"`
+	Position               int64               `json:"position"`
+	SourceItemID           uint64              `json:"source_item_id"`
+	ExternalID             string              `json:"external_id"`
+	NodeID                 *uint64             `json:"node_id,omitempty"`
+	Kind                   string              `json:"kind"`
+	Path                   string              `json:"path"`
+	Size                   int64               `json:"size"`
+	ModifiedAt             *time.Time          `json:"modified_at,omitempty"`
+	SHA256                 string              `json:"sha256,omitempty"`
+	RemoteRevision         string              `json:"remote_revision,omitempty"`
+	State                  string              `json:"state"`
+	MirrorMissingFullScans int                 `json:"mirror_missing_full_scans,omitempty"`
+	MirrorMissingSince     *time.Time          `json:"mirror_missing_since,omitempty"`
+	LastError              string              `json:"last_error,omitempty"`
+	Metadata               *SourceItemMetadata `json:"metadata,omitempty"`
 }
 
 func (c *Client) SourceItems(ctx context.Context, id uint64, state string, limit, offset int) ([]SourceItem, error) {

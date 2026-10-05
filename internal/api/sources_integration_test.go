@@ -157,9 +157,20 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatalf("unexpected created source: %+v", created)
 	}
 
-	// Mirror is deliberately not exposed while source-side deletion is unsupported.
+	// Mirror is an explicit local trash policy; provider-side deletion remains unsupported.
 	mirrorBody := fmt.Sprintf(`{"name":"Mirror","kind":"test","direction":"push","sync_mode":"mirror","target_node_id":%d}`, targetA.ID)
-	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(mirrorBody), http.StatusBadRequest)
+	mirrorRes := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(mirrorBody), http.StatusCreated)
+	var mirrorSource sourceDTO
+	if err := json.Unmarshal(mirrorRes.Body.Bytes(), &mirrorSource); err != nil {
+		t.Fatal(err)
+	}
+	if mirrorSource.SyncMode != meta.SourceSyncModeMirror || mirrorSource.Revision != 1 {
+		t.Fatalf("unexpected mirror source: %+v", mirrorSource)
+	}
+	requestWithHeaders(
+		t, router, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", mirrorSource.ID), tokenA,
+		nil, http.StatusNoContent, map[string]string{"If-Match": `"1"`},
+	)
 
 	// A source cannot target another user's directory.
 	foreignBody := fmt.Sprintf(`{"name":"Foreign","kind":"test","direction":"pull","target_node_id":%d}`, rootB.ID)
