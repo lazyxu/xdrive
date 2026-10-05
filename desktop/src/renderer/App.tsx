@@ -62,6 +62,7 @@ import {
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   useXDriveTaskCenterController,
+  useXDriveServerUpdateController,
 } from '@xdrive/ui/mui'
 import type {
   XDriveCloudStorageDataSource,
@@ -89,9 +90,6 @@ import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from '.
 import type {
   XDriveAppearance,
   XDriveFileExplorerPageState,
-  XDriveServerUpdateChannel,
-  XDriveServerUpdateSource,
-  XDriveServerUpdateState,
 } from '@xdrive/shared'
 
 type View = 'overview' | 'files' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage' | 'conflicts' | 'diagnostics'
@@ -198,11 +196,6 @@ export default function App({
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [clientUpdate, setClientUpdate] = useState<AgentUpdateState | null>(null)
   const [updateCancelling, setUpdateCancelling] = useState(false)
-  const [serverUpdate, setServerUpdate] = useState<XDriveServerUpdateState | null>(null)
-  const [serverUpdateSource, setServerUpdateSource] = useState<XDriveServerUpdateSource>('github')
-  const [serverUpdateChannel, setServerUpdateChannel] = useState<XDriveServerUpdateChannel>('stable')
-  const [serverUpdateBackupFileData, setServerUpdateBackupFileData] = useState(false)
-  const [serverUpdateError, setServerUpdateError] = useState('')
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
@@ -290,6 +283,25 @@ export default function App({
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = Boolean(server.trim() && username.trim() && (password || savedPasswordAvailable))
+  const serverUpdateSupported =
+    agent.hello?.capabilities.includes('server-update') ?? false
+  const serverUpdatePort = useMemo(() => ({
+    getState: () => window.xdriveDesktop.agent.getServerUpdate(),
+    startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+      window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
+  }), [])
+  const serverUpdate = useXDriveServerUpdateController({
+    open: settingsOpen,
+    enabled: agent.connected && configured,
+    supported: serverUpdateSupported,
+    port: serverUpdatePort,
+    unsupportedMessage: '当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。',
+    onBusyChange: (active) => {
+      setBusy((current) => active
+        ? 'server-update'
+        : current === 'server-update' ? '' : current)
+    },
+  })
   const loadCloudFileOperations = useCallback(async (limit: number) => {
     const result = await window.xdriveDesktop.agent.cloudFileOperations(limit)
     if (!result.ok) throw new Error(result.error.message)
@@ -586,65 +598,6 @@ export default function App({
   }, [agent.connected, agent.hello?.agent_version])
 
   useEffect(() => {
-    const supported = agent.hello?.capabilities.includes('server-update') ?? false
-    if (!settingsOpen || !agent.connected || !configured) return
-    if (!supported) {
-      setServerUpdate({
-        supported: false,
-        state: 'unavailable',
-        source: serverUpdateSource,
-        channel: serverUpdateChannel,
-        message: '当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。',
-      })
-      return
-    }
-    let active = true
-    const refresh = async () => {
-      const result = await window.xdriveDesktop.agent.getServerUpdate()
-      if (!active) return
-      if (result.ok) {
-        if (serverUpdate === null) {
-          setServerUpdateSource(result.data.source)
-          setServerUpdateChannel(result.data.channel)
-        }
-        setServerUpdate(result.data)
-        setServerUpdateError('')
-        return
-      }
-      if (result.error.status === 403) {
-        setServerUpdate({
-          supported: false,
-          state: 'unavailable',
-          source: serverUpdateSource,
-          channel: serverUpdateChannel,
-          message: '仅管理员可以更新服务端。',
-        })
-        setServerUpdateError('')
-        return
-      }
-      if (serverUpdate?.state === 'queued' || serverUpdate?.state === 'running') {
-        setServerUpdateError('服务端更新期间连接可能暂时中断，正在等待服务恢复…')
-      } else {
-        setServerUpdateError(result.error.message)
-      }
-    }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 2_000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [
-    agent.connected,
-    agent.hello?.agent_version,
-    configured,
-    settingsOpen,
-    serverUpdate?.state,
-    serverUpdateChannel,
-    serverUpdateSource,
-  ])
-
-  useEffect(() => {
     if (!agent.connected || !configured) {
       setSettings(null)
       setConflicts([])
@@ -764,21 +717,6 @@ export default function App({
       setNotice(next === 'system' ? '外观已改为跟随系统。' : next === 'dark' ? '已切换到黑夜模式。' : '已切换到白天模式。')
     } catch (error) {
       setError(error instanceof Error ? error.message : '切换外观失败。')
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const startServerUpdate = async () => {
-    setBusy('server-update')
-    setServerUpdateError('')
-    try {
-      const result = await window.xdriveDesktop.agent.startServerUpdate(serverUpdateSource, serverUpdateChannel, serverUpdateBackupFileData)
-      if (!result.ok) {
-        setServerUpdateError(result.error.message)
-        return
-      }
-      setServerUpdate(result.data)
     } finally {
       setBusy('')
     }
@@ -2091,22 +2029,22 @@ export default function App({
             { title: 'Server 构建信息', info: status?.server_build },
           ]}
           serverUpdate={{
-            state: serverUpdate,
-            source: serverUpdateSource,
-            channel: serverUpdateChannel,
-            backupFileData: serverUpdateBackupFileData,
-            loading: busy === 'server-update',
-            disabled: serverUpdate === null || (!!busy && busy !== 'server-update'),
-            error: serverUpdateError,
-            onSourceChange: setServerUpdateSource,
-            onChannelChange: setServerUpdateChannel,
-            onBackupFileDataChange: setServerUpdateBackupFileData,
+            state: serverUpdate.state,
+            source: serverUpdate.source,
+            channel: serverUpdate.channel,
+            backupFileData: serverUpdate.backupFileData,
+            loading: serverUpdate.busy,
+            disabled: serverUpdate.state === null || (!!busy && busy !== 'server-update'),
+            error: serverUpdate.error,
+            onSourceChange: serverUpdate.setSource,
+            onChannelChange: serverUpdate.setChannel,
+            onBackupFileDataChange: serverUpdate.setBackupFileData,
             onStart: () => setConfirmDialog({
               title: '确认更新服务端？',
-              message: `来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel} · 文件数据备份：${serverUpdateBackupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间服务可能短暂不可用。`,
+              message: `来源：${serverUpdate.source === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdate.channel} · 文件数据备份：${serverUpdate.backupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间服务可能短暂不可用。`,
               confirmLabel: '开始更新',
               tone: 'warning',
-              onConfirm: startServerUpdate,
+              onConfirm: serverUpdate.start,
             }),
           }}
         >
