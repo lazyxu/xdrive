@@ -9,6 +9,7 @@ type XDriveFileOperationAction =
   | `cancel:${string}`
   | `retry:${string}`
   | `undo:${string}`
+  | `redo:${string}`
   | `resolve:${XDriveFileOperationConflictResolution}:${string}`
 
 export function useXDriveFileOperationActions<
@@ -18,6 +19,7 @@ export function useXDriveFileOperationActions<
   cancelOperation,
   retryOperation,
   undoOperation,
+  redoOperation,
   resolveConflict,
   clearOperationHistory,
   clearTransferHistory,
@@ -30,6 +32,7 @@ export function useXDriveFileOperationActions<
   cancelOperation: (id: string) => Promise<TOperation>
   retryOperation: (id: string) => Promise<TOperation>
   undoOperation?: (id: string) => Promise<TOperation>
+  redoOperation?: (id: string) => Promise<TOperation>
   resolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => Promise<TOperation>
   clearOperationHistory: () => Promise<void>
   clearTransferHistory: () => Promise<TTransferHistory>
@@ -99,6 +102,22 @@ export function useXDriveFileOperationActions<
       finishAction()
     }
   }, [beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, undoOperation])
+
+  const redo = useCallback(async (id: string) => {
+    if (!redoOperation || !beginAction(`redo:${id}`)) return false
+    try {
+      const operation = await redoOperation(id)
+      rememberOperation(operation)
+      onFeedback?.('重做操作已加入队列。')
+      await refreshOperations()
+      return true
+    } catch (error) {
+      onError(error)
+      return false
+    } finally {
+      finishAction()
+    }
+  }, [beginAction, finishAction, onError, onFeedback, redoOperation, refreshOperations, rememberOperation])
 
   const resolve = useCallback(async (
     id: string,
@@ -172,12 +191,14 @@ export function useXDriveFileOperationActions<
     cancellingID: action.startsWith('cancel:') ? action.slice('cancel:'.length) : '',
     retryingID: action.startsWith('retry:') ? action.slice('retry:'.length) : '',
     undoingID: action.startsWith('undo:') ? action.slice('undo:'.length) : '',
+    redoingID: action.startsWith('redo:') ? action.slice('redo:'.length) : '',
     resolvingID,
     resolvingPolicy,
     clearHistoryLoading: action === 'clear-history',
     cancelOperation: cancel,
     retryOperation: retry,
     undoOperation: undo,
+    redoOperation: redo,
     resolveConflict: resolve,
     clearHistory,
   }

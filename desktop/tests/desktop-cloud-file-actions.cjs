@@ -151,6 +151,8 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     'CloudFileOperation(context.Context, string)',
     'CloudCancelFileOperation(context.Context, string)',
     'CloudRetryFileOperation(context.Context, string)',
+    'CloudUndoFileOperation(context.Context, string)',
+    'CloudRedoFileOperation(context.Context, string)',
     'CloudClearFileOperationHistory(context.Context)',
     'POST /v1/cloud/file-operations',
     'GET /v1/cloud/file-operations',
@@ -158,6 +160,8 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     'GET /v1/cloud/file-operation',
     'POST /v1/cloud/file-operation/cancel',
     'POST /v1/cloud/file-operation/retry',
+    'POST /v1/cloud/file-operation/undo',
+    'POST /v1/cloud/file-operation/redo',
   ]) {
     assert.ok(agentIPC.includes(token), `missing Agent file-operation IPC contract: ${token}`)
   }
@@ -168,6 +172,8 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     'cli.GetFileOperation(ctx, strings.TrimSpace(id))',
     'cli.CancelFileOperation(ctx, strings.TrimSpace(id))',
     'cli.RetryFileOperation(ctx, strings.TrimSpace(id))',
+    'cli.UndoFileOperation(ctx, strings.TrimSpace(id))',
+    'cli.RedoFileOperation(ctx, strings.TrimSpace(id))',
     'cli.ClearFileOperationHistory(ctx)',
   ]) {
     assert.ok(cloudFiles.includes(token), `Agent controller is not using the Go file-operation client: ${token}`)
@@ -179,6 +185,8 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     'cloudFileOperation(id: string)',
     'cloudCancelFileOperation(id: string)',
     'cloudRetryFileOperation(id: string)',
+    'cloudUndoFileOperation(id: string)',
+    'cloudRedoFileOperation(id: string)',
     'cloudClearFileOperationHistory()',
   ]) {
     assert.ok(agentClient.includes(token), `missing Electron Agent file-operation client: ${token}`)
@@ -190,6 +198,8 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
     "ipcMain.handle('agent:cloud-file-operation'",
     "ipcMain.handle('agent:cloud-file-operation-cancel'",
     "ipcMain.handle('agent:cloud-file-operation-retry'",
+    "ipcMain.handle('agent:cloud-file-operation-undo'",
+    "ipcMain.handle('agent:cloud-file-operation-redo'",
     "ipcMain.handle('agent:cloud-file-operations-clear'",
     'normalizeCloudBatchItems(items)',
     'normalizeCloudFileOperationType(type)',

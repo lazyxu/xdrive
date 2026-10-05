@@ -133,6 +133,28 @@ func TestFileOperationUndoMoveDeleteAndCopy(t *testing.T) {
 	if move.UndoneByID == nil || *move.UndoneByID != undoMove.ID || fileOperationUndoable(move) {
 		t.Fatalf("original move must retain undo lineage: %+v", move)
 	}
+	undoMove, err = srv.loadOwnedFileOperation(context.Background(), user.ID, undoMove.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fileOperationRedoable(undoMove) || !toFileOperationDTO(undoMove).Redoable {
+		t.Fatalf("completed undo move should be redoable: %+v", undoMove)
+	}
+	redoMove, err := srv.enqueueFileOperationRedo(context.Background(), user.ID, undoMove.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if redoMove.Type != meta.FileOperationTypeRedo || redoMove.RedoOfID == nil || *redoMove.RedoOfID != undoMove.ID {
+		t.Fatalf("unexpected redo move: %+v", redoMove)
+	}
+	redoMove = processUndoTestOperation(t, srv, user.ID, redoMove)
+	if redoMove.Status != meta.FileOperationStatusCompleted || !fileOperationUndoable(redoMove) {
+		t.Fatalf("redo move should complete and be undoable: %+v", redoMove)
+	}
+	movedAgain := assertUndoTestNodeActive(t, db, user.ID, moveNode.ID)
+	if movedAgain.ParentID == nil || *movedAgain.ParentID != target.ID || movedAgain.Name != "move-me" || movedAgain.Revision != 4 {
+		t.Fatalf("move was not redone safely: %+v", movedAgain)
+	}
 
 	deleteNode := createUndoTestDirectory(t, db, user.ID, source.ID, "delete-me")
 	deleteChild := createUndoTestDirectory(t, db, user.ID, deleteNode.ID, "child")
@@ -167,6 +189,23 @@ func TestFileOperationUndoMoveDeleteAndCopy(t *testing.T) {
 	if restoredDelete.Revision != 3 {
 		t.Fatalf("restored delete revision=%d want 3", restoredDelete.Revision)
 	}
+	undoDelete, err = srv.loadOwnedFileOperation(context.Background(), user.ID, undoDelete.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fileOperationRedoable(undoDelete) {
+		t.Fatalf("completed undo delete should be redoable: %+v", undoDelete)
+	}
+	redoDelete, err := srv.enqueueFileOperationRedo(context.Background(), user.ID, undoDelete.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redoDelete = processUndoTestOperation(t, srv, user.ID, redoDelete)
+	if redoDelete.Status != meta.FileOperationStatusCompleted || !fileOperationUndoable(redoDelete) {
+		t.Fatalf("redo delete should complete and be undoable: %+v", redoDelete)
+	}
+	assertBatchNodeDeleted(t, db, deleteNode.ID)
+	assertBatchNodeDeleted(t, db, deleteChild.ID)
 
 	copySource := createUndoTestDirectory(t, db, user.ID, source.ID, "copy-me")
 	createUndoTestDirectory(t, db, user.ID, copySource.ID, "nested")
@@ -202,6 +241,37 @@ func TestFileOperationUndoMoveDeleteAndCopy(t *testing.T) {
 	}
 	assertBatchNodeDeleted(t, db, copiedRootID)
 	assertUndoTestNodeActive(t, db, user.ID, copySource.ID)
+
+	undoCopy, err = srv.loadOwnedFileOperation(context.Background(), user.ID, undoCopy.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fileOperationRedoable(undoCopy) {
+		t.Fatalf("completed undo copy should be redoable: %+v", undoCopy)
+	}
+	redoCopy, err := srv.enqueueFileOperationRedo(context.Background(), user.ID, undoCopy.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redoCopy = processUndoTestOperation(t, srv, user.ID, redoCopy)
+	if redoCopy.Status != meta.FileOperationStatusCompleted || !fileOperationUndoable(redoCopy) {
+		t.Fatalf("redo copy should complete and be undoable: %+v", redoCopy)
+	}
+	restoredCopy := assertUndoTestNodeActive(t, db, user.ID, copiedRootID)
+	if restoredCopy.Revision != 3 {
+		t.Fatalf("redone copy revision=%d want 3", restoredCopy.Revision)
+	}
+	assertUndoTestNodeActive(t, db, user.ID, copySource.ID)
+
+	undoRedoCopy, err := srv.enqueueFileOperationUndo(context.Background(), user.ID, redoCopy.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	undoRedoCopy = processUndoTestOperation(t, srv, user.ID, undoRedoCopy)
+	if undoRedoCopy.Status != meta.FileOperationStatusCompleted || !fileOperationRedoable(undoRedoCopy) {
+		t.Fatalf("undo of redo copy should complete and be redoable: %+v", undoRedoCopy)
+	}
+	assertBatchNodeDeleted(t, db, copiedRootID)
 }
 
 func TestFileOperationUndoCopyRejectsModifiedSubtreeAndReleasesReservation(t *testing.T) {
@@ -306,5 +376,108 @@ func TestFileOperationUndoRecoveryReleasesCancelledReservation(t *testing.T) {
 	}
 	if move.UndoneByID != nil || !fileOperationUndoable(move) {
 		t.Fatalf("cancelled recovered undo must release reservation: %+v", move)
+	}
+}
+
+func TestFileOperationRedoDeleteRejectsModifiedRestoredSubtreeAndReleasesReservation(t *testing.T) {
+	db, srv, user, root := setupFileOperationUndoTestDB(t)
+	source := createUndoTestDirectory(t, db, user.ID, root.ID, "source")
+	deleteNode := createUndoTestDirectory(t, db, user.ID, source.ID, "delete-me")
+	deleteChild := createUndoTestDirectory(t, db, user.ID, deleteNode.ID, "child")
+
+	deleteOp, err := srv.enqueueFileOperation(
+		context.Background(),
+		user.ID,
+		meta.FileOperationTypeDelete,
+		[]batchNodeRef{{ID: deleteNode.ID, Revision: deleteNode.Revision}},
+		0,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteOp = processUndoTestOperation(t, srv, user.ID, deleteOp)
+	undo, err := srv.enqueueFileOperationUndo(context.Background(), user.ID, deleteOp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	undo = processUndoTestOperation(t, srv, user.ID, undo)
+	if !fileOperationRedoable(undo) {
+		t.Fatalf("undo delete should be redoable: %+v", undo)
+	}
+	if err := db.Model(&meta.Node{}).Where("id = ?", deleteChild.ID).
+		Update("revision", gorm.Expr("revision + 1")).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	redo, err := srv.enqueueFileOperationRedo(context.Background(), user.ID, undo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redo = processUndoTestOperation(t, srv, user.ID, redo)
+	if redo.Status != meta.FileOperationStatusFailed || redo.FailureCode != "redo_conflict" {
+		t.Fatalf("modified restored subtree must block redo: %+v", redo)
+	}
+	assertUndoTestNodeActive(t, db, user.ID, deleteNode.ID)
+	assertUndoTestNodeActive(t, db, user.ID, deleteChild.ID)
+
+	undo, err = srv.loadOwnedFileOperation(context.Background(), user.ID, undo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if undo.RedoneByID != nil || !fileOperationRedoable(undo) {
+		t.Fatalf("failed redo must release undo reservation: %+v", undo)
+	}
+}
+
+func TestFileOperationRedoRecoveryReleasesCancelledReservation(t *testing.T) {
+	db, srv, user, root := setupFileOperationUndoTestDB(t)
+	source := createUndoTestDirectory(t, db, user.ID, root.ID, "source")
+	target := createUndoTestDirectory(t, db, user.ID, root.ID, "target")
+	node := createUndoTestDirectory(t, db, user.ID, source.ID, "move-me")
+
+	move, err := srv.enqueueFileOperation(
+		context.Background(),
+		user.ID,
+		meta.FileOperationTypeMove,
+		[]batchNodeRef{{ID: node.ID, Revision: node.Revision}},
+		target.ID,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	move = processUndoTestOperation(t, srv, user.ID, move)
+	undo, err := srv.enqueueFileOperationUndo(context.Background(), user.ID, move.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	undo = processUndoTestOperation(t, srv, user.ID, undo)
+	redo, err := srv.enqueueFileOperationRedo(context.Background(), user.ID, undo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.FileOperation{}).
+		Where("id = ?", redo.ID).
+		Update("status", meta.FileOperationStatusCancelRequested).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.recoverFileOperations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	redo, err = srv.loadOwnedFileOperation(context.Background(), user.ID, redo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if redo.Status != meta.FileOperationStatusCancelled {
+		t.Fatalf("recovered redo status=%s want cancelled", redo.Status)
+	}
+	undo, err = srv.loadOwnedFileOperation(context.Background(), user.ID, undo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if undo.RedoneByID != nil || !fileOperationRedoable(undo) {
+		t.Fatalf("cancelled recovered redo must release reservation: %+v", undo)
 	}
 }

@@ -362,6 +362,11 @@ func (f *fakeDesktopIPCController) CloudUndoFileOperation(_ context.Context, id 
 	return client.FileOperation{ID: "file-op-undo", Type: "undo", Status: "queued", UndoOfID: &undoOf, TotalItems: 1}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudRedoFileOperation(_ context.Context, id string) (client.FileOperation, error) {
+	redoOf := id
+	return client.FileOperation{ID: "file-op-redo", Type: "redo", Status: "queued", RedoOfID: &redoOf, TotalItems: 1}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudResolveFileOperationConflict(_ context.Context, id, policy string) (client.FileOperation, error) {
 	f.cloudResolveID = id
 	f.cloudResolvePolicy = policy
@@ -878,6 +883,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-operation-conflict-resolution") {
 		t.Fatalf("hello missing file-operation conflict resolution capability: %+v", hello.Capabilities)
+	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-operation-redo") {
+		t.Fatalf("hello missing file-operation redo capability: %+v", hello.Capabilities)
 	}
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "upload-conflict-preflight") {
 		t.Fatalf("hello missing upload conflict preflight capability: %+v", hello.Capabilities)

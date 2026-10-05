@@ -72,7 +72,7 @@ import type {
   XDriveFileOperation,
   XDriveCloudFilesPort,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -556,6 +556,7 @@ function FileManager({
     cancelOperation: (id) => api.cancelFileOperation(id),
     retryOperation: (id) => api.retryFileOperation(id),
     undoOperation: (id) => api.undoFileOperation(id),
+    redoOperation: (id) => api.redoFileOperation(id),
     resolveConflict: (id, policy) => api.resolveFileOperationConflict(id, policy),
     clearOperationHistory: () => api.clearFileOperationHistory(),
     clearTransferHistory: async () => { api.clearTransferHistory() },
@@ -566,6 +567,7 @@ function FileManager({
   })
 
   const latestUndoableFileOperation = xDriveLatestUndoableFileOperation(fileOperations)
+  const latestRedoableFileOperation = xDriveLatestRedoableFileOperation(fileOperations)
 
   const {
     remove,
@@ -897,6 +899,10 @@ function FileManager({
                 canUndo={Boolean(latestUndoableFileOperation) && !fileOperationActions.busy}
                 onUndo={() => {
                   if (latestUndoableFileOperation) void fileOperationActions.undoOperation(latestUndoableFileOperation.id)
+                }}
+                canRedo={Boolean(latestRedoableFileOperation) && !fileOperationActions.busy}
+                onRedo={() => {
+                  if (latestRedoableFileOperation) void fileOperationActions.redoOperation(latestRedoableFileOperation.id)
                 }}
                 onFeedback={(tone, message) => setFeedback({ tone, message })}
                 onShare={setShareNode}

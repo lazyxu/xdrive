@@ -221,21 +221,25 @@ func (s *Server) executeQueuedUndo(
 		return err
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		redoPlan := fileOperationRedoPlan{Kind: plan.Kind}
 		switch plan.Kind {
 		case fileOperationUndoKindCopy:
-			if err := s.executeUndoCopyTx(ctx, tx, operation, plan.CopyRoots); err != nil {
+			if err := s.executeUndoCopyTx(ctx, tx, operation, plan.CopyRoots, &redoPlan); err != nil {
 				return err
 			}
 		case fileOperationUndoKindMove:
-			if err := s.executeUndoMoveTx(ctx, tx, operation, plan.Moves); err != nil {
+			if err := s.executeUndoMoveTx(ctx, tx, operation, plan.Moves, &redoPlan); err != nil {
 				return err
 			}
 		case fileOperationUndoKindDelete:
-			if err := s.executeUndoDeleteTx(ctx, tx, operation, plan.Deletes); err != nil {
+			if err := s.executeUndoDeleteTx(ctx, tx, operation, plan.Deletes, &redoPlan); err != nil {
 				return err
 			}
 		default:
 			return errFileOperationUndoUnavailable
+		}
+		if err := storeFileOperationRedoPlanTx(tx, operation.ID, redoPlan); err != nil {
+			return err
 		}
 		return s.completeFileOperationTx(tx, operation)
 	})
@@ -246,6 +250,7 @@ func (s *Server) executeUndoCopyTx(
 	tx *gorm.DB,
 	operation meta.FileOperation,
 	roots []fileOperationUndoCopyRoot,
+	redoPlan *fileOperationRedoPlan,
 ) error {
 	uid := operation.OwnerID
 	for index, snapshot := range roots {
@@ -261,6 +266,10 @@ func (s *Server) executeUndoCopyTx(
 		if root.Revision != snapshot.Root.Revision {
 			return undoConflict(index, root.ID, "copied item changed after the copy operation")
 		}
+		if root.ParentID == nil {
+			return undoConflict(index, root.ID, "copied item has no restorable parent")
+		}
+		parentID := *root.ParentID
 
 		ids, err := activeSubtreeIDsDB(tx, uid, root.ID)
 		if err != nil {
@@ -310,6 +319,15 @@ func (s *Server) executeUndoCopyTx(
 		if result.RowsAffected != 1 {
 			return undoConflict(index, root.ID, "copied item changed after the copy operation")
 		}
+		if redoPlan != nil {
+			redoRevision := snapshot.Root.Revision + 1
+			redoPlan.CopyRoots = append(redoPlan.CopyRoots, fileOperationRedoTree{
+				Root:     fileOperationUndoNodeRef{ID: root.ID, Revision: redoRevision},
+				ParentID: parentID,
+				Name:     root.Name,
+				Nodes:    fileOperationNodeRefsWithRevision(snapshot.Nodes, root.ID, redoRevision),
+			})
+		}
 		if err := s.recordFileOperationProgress(ctx, operation.ID, 0); err != nil {
 			return err
 		}
@@ -322,6 +340,7 @@ func (s *Server) executeUndoMoveTx(
 	tx *gorm.DB,
 	operation meta.FileOperation,
 	moves []fileOperationUndoMove,
+	redoPlan *fileOperationRedoPlan,
 ) error {
 	uid := operation.OwnerID
 	for index, snapshot := range moves {
@@ -337,6 +356,11 @@ func (s *Server) executeUndoMoveTx(
 		if node.Revision != snapshot.Revision {
 			return undoConflict(index, node.ID, "moved item changed after the move operation")
 		}
+		if node.ParentID == nil {
+			return undoConflict(index, node.ID, "moved item has no redo target parent")
+		}
+		redoParentID := *node.ParentID
+		redoName := node.Name
 		if _, err := batchTargetDirectoryTx(tx, uid, snapshot.ParentID); err != nil {
 			return undoConflict(index, node.ID, "original parent folder is unavailable")
 		}
@@ -375,6 +399,14 @@ func (s *Server) executeUndoMoveTx(
 		if result.RowsAffected != 1 {
 			return undoConflict(index, node.ID, "moved item changed after the move operation")
 		}
+		if redoPlan != nil {
+			redoPlan.Moves = append(redoPlan.Moves, fileOperationRedoMove{
+				ID:       node.ID,
+				Revision: snapshot.Revision + 1,
+				ParentID: redoParentID,
+				Name:     redoName,
+			})
+		}
 		if err := s.recordFileOperationProgress(ctx, operation.ID, 0); err != nil {
 			return err
 		}
@@ -387,6 +419,7 @@ func (s *Server) executeUndoDeleteTx(
 	tx *gorm.DB,
 	operation meta.FileOperation,
 	deletes []fileOperationUndoDelete,
+	redoPlan *fileOperationRedoPlan,
 ) error {
 	uid := operation.OwnerID
 	for index, snapshot := range deletes {
@@ -434,6 +467,14 @@ func (s *Server) executeUndoDeleteTx(
 			return undoConflict(index, root.ID, "original location now contains an item with the same name")
 		}
 
+		trashNodes, err := fileOperationTrashNodeRefsTx(tx, uid, root.ID)
+		if err != nil {
+			return err
+		}
+		if len(trashNodes) == 0 {
+			return undoConflict(index, root.ID, "deleted item subtree is no longer available")
+		}
+
 		if err := tx.Model(&meta.Node{}).
 			Where("owner_id = ? AND trash_root_id = ?", uid, root.ID).
 			Updates(map[string]any{"deleted_at": nil, "trash_root_id": nil}).Error; err != nil {
@@ -448,6 +489,15 @@ func (s *Server) executeUndoDeleteTx(
 		}
 		if result.RowsAffected != 1 {
 			return undoConflict(index, root.ID, "deleted item changed after the delete operation")
+		}
+		if redoPlan != nil {
+			redoRevision := snapshot.Revision + 1
+			redoPlan.Deletes = append(redoPlan.Deletes, fileOperationRedoTree{
+				Root:     fileOperationUndoNodeRef{ID: root.ID, Revision: redoRevision},
+				ParentID: *root.ParentID,
+				Name:     root.Name,
+				Nodes:    fileOperationNodeRefsWithRevision(trashNodes, root.ID, redoRevision),
+			})
 		}
 		if err := s.recordFileOperationProgress(ctx, operation.ID, 0); err != nil {
 			return err

@@ -57,6 +57,8 @@ export default function WebFileExplorer({
   onOperationQueued,
   canUndo = false,
   onUndo,
+  canRedo = false,
+  onRedo,
   onFeedback,
   onShare,
   onHistory,
@@ -85,6 +87,8 @@ export default function WebFileExplorer({
   onOperationQueued: (operation: XDriveFileOperation) => void
   canUndo?: boolean
   onUndo?: () => void
+  canRedo?: boolean
+  onRedo?: () => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
   onShare: (node: Node) => void
   onHistory: (node: Node) => void
@@ -370,6 +374,8 @@ export default function WebFileExplorer({
         canPaste={fileOperationCanPaste}
         canUndo={canUndo}
         onUndo={onUndo}
+        canRedo={canRedo}
+        onRedo={onRedo}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         folderDownloadSupported
         onDeleteItems={(selected) => {

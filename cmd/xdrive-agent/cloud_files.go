@@ -320,6 +320,14 @@ func (c *agentController) CloudUndoFileOperation(ctx context.Context, id string)
 	return cli.UndoFileOperation(ctx, strings.TrimSpace(id))
 }
 
+func (c *agentController) CloudRedoFileOperation(ctx context.Context, id string) (client.FileOperation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileOperation{}, err
+	}
+	return cli.RedoFileOperation(ctx, strings.TrimSpace(id))
+}
+
 func (c *agentController) CloudResolveFileOperationConflict(ctx context.Context, id, policy string) (client.FileOperation, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

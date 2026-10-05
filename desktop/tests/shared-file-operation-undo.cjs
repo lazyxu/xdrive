@@ -31,7 +31,7 @@ const meta = read('internal', 'meta', 'file_operations.go')
 
 test('persistent file-operation model exposes safe undo lineage and selection', () => {
   for (const token of [
-    "XDriveFileOperationType = 'copy' | 'move' | 'delete' | 'undo'",
+    "XDriveFileOperationType = 'copy' | 'move' | 'delete' | 'undo' | 'redo'",
     'undo_of_id?: string',
     'undone_by_id?: string',
     'undoable?: boolean',
@@ -135,11 +135,11 @@ test('FileExplorer exposes visible Undo and Ctrl/Cmd+Z without stealing text edi
     'canUndo?: boolean',
     '<UndoRoundedIcon',
     '撤销',
-    "modifier && key === 'z' && canUndo && onUndo",
+    "modifier && !event.shiftKey && key === 'z' && canUndo && onUndo",
   ]) assert.ok(explorer.includes(token), 'FileExplorer undo affordance missing: ' + token)
 
   const editable = explorer.indexOf('if (isEditableTarget(event.target)) return')
-  const shortcut = explorer.indexOf("modifier && key === 'z' && canUndo && onUndo")
+  const shortcut = explorer.indexOf("modifier && !event.shiftKey && key === 'z' && canUndo && onUndo")
   assert.ok(editable >= 0 && shortcut > editable, 'Ctrl/Cmd+Z must not override native text-input undo')
 
   for (const [label, app, adapter] of [

@@ -28,7 +28,7 @@ const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 
 test('shared file-operation model covers the persistent server lifecycle', () => {
   for (const token of [
-    "XDriveFileOperationType = 'copy' | 'move' | 'delete' | 'undo'",
+    "XDriveFileOperationType = 'copy' | 'move' | 'delete' | 'undo' | 'redo'",
     "'queued'",
     "'running'",
     "'cancel_requested'",

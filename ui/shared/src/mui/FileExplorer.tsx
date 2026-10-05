@@ -29,6 +29,7 @@ import SortRoundedIcon from '@mui/icons-material/SortRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
+import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
 import ViewCarouselRoundedIcon from '@mui/icons-material/ViewCarouselRounded'
 import ViewColumnRoundedIcon from '@mui/icons-material/ViewColumnRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
@@ -534,6 +535,8 @@ export function XDriveFileExplorer({
   canPaste = false,
   onUndo,
   canUndo = false,
+  onRedo,
+  canRedo = false,
   onDownloadItems,
   folderDownloadSupported = false,
   onDeleteItems,
@@ -602,6 +605,8 @@ export function XDriveFileExplorer({
   canPaste?: boolean
   onUndo?: () => void
   canUndo?: boolean
+  onRedo?: () => void
+  canRedo?: boolean
   onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
   folderDownloadSupported?: boolean
   onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
@@ -1882,7 +1887,17 @@ export function XDriveFileExplorer({
     }
 
     if (isEditableTarget(event.target)) return
-    if (modifier && key === 'z' && canUndo && onUndo) {
+    if (
+      modifier &&
+      (key === 'y' || (event.shiftKey && key === 'z')) &&
+      canRedo &&
+      onRedo
+    ) {
+      event.preventDefault()
+      onRedo()
+      return
+    }
+    if (modifier && !event.shiftKey && key === 'z' && canUndo && onUndo) {
       event.preventDefault()
       onUndo()
       return
@@ -2334,6 +2349,15 @@ export function XDriveFileExplorer({
             onClick={onUndo}
           >
             撤销
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onRedo ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<RedoRoundedIcon />}
+            disabled={!canRedo}
+            onClick={onRedo}
+          >
+            重做
           </XDriveFileExplorerCommandButton>
         ) : null}
 

@@ -401,6 +401,7 @@ declare global {
         cloudCancelFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudRetryFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudUndoFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudRedoFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudResolveFileOperationConflict: (id: string, policy: 'skip' | 'keep_both') => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudUploadPreflight: (parentID: number, name: string) => Promise<DesktopResult<XDriveUploadConflictPreflight>>
         cloudUploadFile: (
