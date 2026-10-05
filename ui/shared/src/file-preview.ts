@@ -60,12 +60,14 @@ export function xDriveClassifyFilePreview(
   if (target.kind !== 'file') return 'none'
   if (xDriveFileSupportsTextPreview(target.name, target.kind)) return 'text'
 
-  const mimeType = target.mimeType?.trim().toLowerCase() || ''
   const extension = xDrivePreviewExtension(target.name)
 
-  if (mimeType === 'application/pdf' || extension === 'pdf') return 'pdf'
-  if (mimeType.startsWith('image/') || xDriveImagePreviewExtensions.has(extension)) return 'image'
-  if (mimeType.startsWith('video/') || xDriveVideoPreviewExtensions.has(extension)) return 'video'
-  if (mimeType.startsWith('audio/') || xDriveAudioPreviewExtensions.has(extension)) return 'audio'
+  // Binary previewability must stay aligned with the Server's strict extension
+  // allowlist. MIME metadata may describe a file, but must never broaden the
+  // set of originals that can receive a signed preview ticket.
+  if (extension === 'pdf') return 'pdf'
+  if (xDriveImagePreviewExtensions.has(extension)) return 'image'
+  if (xDriveVideoPreviewExtensions.has(extension)) return 'video'
+  if (xDriveAudioPreviewExtensions.has(extension)) return 'audio'
   return 'none'
 }
