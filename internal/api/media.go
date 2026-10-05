@@ -718,6 +718,13 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 			resource.ByteOffset,
 			resource.ByteSize,
 		)
+	} else if strings.EqualFold(strings.TrimSpace(metadata.MIMEType), "image/x-canon-cr3") {
+		preview, previewErr := mediapkg.CR3EmbeddedJPEGPreview(file)
+		if previewErr != nil {
+			fail(c, http.StatusUnsupportedMediaType, "cr3 embedded preview is unavailable")
+			return
+		}
+		thumbnailSource = bytes.NewReader(preview)
 	} else if mediaUsesTIFFEmbeddedPreview(metadata.MIMEType) {
 		preview, previewErr := mediapkg.TIFFEmbeddedJPEGPreview(file)
 		if previewErr != nil {
@@ -778,7 +785,7 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 		return true
 	}
 	mimeType := strings.ToLower(strings.TrimSpace(row.MIMEType))
-	if mediaUsesTIFFEmbeddedPreview(mimeType) {
+	if mimeType == "image/x-canon-cr3" || mediaUsesTIFFEmbeddedPreview(mimeType) {
 		return true
 	}
 	if row.ContainerKind == mediapkg.ContainerKindLIVP {
