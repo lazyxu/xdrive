@@ -62,3 +62,59 @@ test('tray transfer summary reports idle and failed-only states', () => {
     '传输 · 1 个失败',
   )
 })
+
+
+test('tray counts a hierarchical folder transfer once and summarizes parent progress', () => {
+  const parent = {
+    ...transfer('Photos', 'running', 50, 200, 1024 * 1024, 'upload'),
+    scope: 'group',
+    root_id: 'Photos',
+    phase: 'transferring',
+    scan_complete: true,
+    items_total: 4,
+    items_completed: 1,
+    items_failed: 1,
+    items_running: 1,
+    items_queued: 1,
+  }
+  const childA = {
+    ...transfer('a.jpg', 'completed', 100, 100, 0, 'upload'),
+    parent_id: 'Photos',
+    root_id: 'Photos',
+    scope: 'item',
+    relative_path: 'a.jpg',
+  }
+  const childB = {
+    ...transfer('b.mov', 'running', 50, 100, 1024 * 1024, 'upload'),
+    parent_id: 'Photos',
+    root_id: 'Photos',
+    scope: 'item',
+    relative_path: 'sub/b.mov',
+  }
+  const view = trayTransferPresentation({
+    revision: 2,
+    transfers: [parent, childA, childB],
+  })
+  assert.equal(view.label, '传输 · 1 进行中 · 1.00 MiB/s')
+  assert.equal(view.items.length, 1)
+  assert.match(view.items[0].label, /上传 · Photos · 25.0% · 2\/4 文件/)
+  assert.equal(view.extraActive, 0)
+})
+
+test('tray shows folder scanning as discovery rather than a fake final percentage', () => {
+  const parent = {
+    ...transfer('Camera Roll', 'running', 0, 0, 0, 'upload'),
+    scope: 'group',
+    root_id: 'Camera Roll',
+    phase: 'scanning',
+    scan_complete: false,
+    items_total: 128,
+    items_completed: 0,
+    items_failed: 0,
+    items_running: 0,
+    items_queued: 128,
+  }
+  const view = trayTransferPresentation({ revision: 3, transfers: [parent] })
+  assert.match(view.items[0].label, /扫描中 · 已发现 128 个文件/)
+  assert.doesNotMatch(view.items[0].label, /%/)
+})

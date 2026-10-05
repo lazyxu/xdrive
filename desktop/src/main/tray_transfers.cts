@@ -36,15 +36,36 @@ function transferDirection(item: AgentTransfer) {
   return '下载'
 }
 
+function rootTransfers(items: AgentTransfer[]) {
+  const ids = new Set(items.map((item) => item.id))
+  return items.filter((item) => !item.parent_id || !ids.has(item.parent_id))
+}
+
+function transferItemProgress(item: AgentTransfer) {
+  const total = Math.max(0, item.items_total || 0)
+  const completed = Math.max(0, item.items_completed || 0)
+  const failed = Math.max(0, item.items_failed || 0)
+  return { total, processed: Math.min(total, completed + failed) }
+}
+
 function transferLine(item: AgentTransfer) {
   const parts = [transferDirection(item), compactName(item.file_name || item.path || item.id)]
-  if (item.state === 'retrying') {
+  const group = item.scope === 'group'
+  const progress = transferItemProgress(item)
+  if (group && item.scan_complete === false) {
+    parts.push(`扫描中 · 已发现 ${progress.total} 个文件`)
+  } else if (item.state === 'retrying') {
     parts.push('正在重试')
+  } else if (item.state === 'cancelling') {
+    parts.push('正在取消')
   } else if (item.bytes_total > 0) {
     const percent = Math.max(0, Math.min(100, item.bytes_done * 100 / item.bytes_total))
     parts.push(`${percent.toFixed(1)}%`)
   } else {
     parts.push('处理中')
+  }
+  if (group && progress.total > 0 && item.scan_complete !== false) {
+    parts.push(`${progress.processed}/${progress.total} 文件`)
   }
   const speed = formatBinaryRate(item.instant_bytes_per_second)
   if (speed) parts.push(speed)
@@ -52,8 +73,14 @@ function transferLine(item: AgentTransfer) {
 }
 
 export function trayTransferPresentation(transfers: AgentTransfers, maxItems = 3): TrayTransferPresentation {
-  const active = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
-  const failed = transfers.transfers.filter((item) => item.state === 'failed').length
+  const roots = rootTransfers(transfers.transfers)
+  const active = roots.filter((item) => (
+    item.state === 'queued' ||
+    item.state === 'running' ||
+    item.state === 'retrying' ||
+    item.state === 'cancelling'
+  ))
+  const failed = roots.filter((item) => item.state === 'failed').length
   const totalSpeed = active.reduce((sum, item) => sum + Math.max(0, item.instant_bytes_per_second || 0), 0)
 
   let label = '传输 · 空闲'
