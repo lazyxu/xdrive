@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { Node } from '../models'
 import {
   xDriveFileExplorerDispatchOpenItem,
@@ -73,10 +74,24 @@ export function useXDriveFileExplorerWorkspace<
   ) => readonly XDriveFileExplorerWorkspaceCrumb[] | undefined
   onError: (error: unknown) => void
 }) {
+  const searchActiveRef = useRef(false)
+  const clearSearchRef = useRef<() => void>(() => {})
+
+  const navigation = useXDriveFileExplorerNavigation({
+    crumbs,
+    viewModeStorageKey,
+    searchActive: () => searchActiveRef.current,
+    onLoadDirectory,
+    onAfterNavigate: () => clearSearchRef.current(),
+  })
+
   const search = useXDriveFileExplorerSearch<TSearch>({
     loadPage: loadSearchPage,
     onError,
+    workspaceKey: navigation.activeTabID,
   })
+  searchActiveRef.current = search.searchResults !== null
+  clearSearchRef.current = search.clearSearch
 
   const projection = useXDriveFileExplorerProjection<
     TNode,
@@ -90,14 +105,6 @@ export function useXDriveFileExplorerWorkspace<
 
   const clipboard = useXDriveFileExplorerClipboard<TNode>({
     nodeByID: projection.nodeByID,
-  })
-
-  const navigation = useXDriveFileExplorerNavigation({
-    crumbs,
-    viewModeStorageKey,
-    searchActive: search.searchResults !== null,
-    onLoadDirectory,
-    onAfterNavigate: search.clearSearch,
   })
 
   const submitPath = async (rawPath: string) => {

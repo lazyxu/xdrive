@@ -3,6 +3,7 @@ import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
+  XDriveFileExplorerTabs,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
@@ -121,6 +122,15 @@ export default function WebFileExplorer({
     explorerPagination,
     externallySorted,
     searchStatusText,
+    tabs,
+    activeTabID,
+    newTab,
+    activateTab,
+    closeTab,
+    nextTab,
+    previousTab,
+    canNewTab,
+    canCloseTab,
   } = useXDriveFileExplorerWorkspace<Node, SearchResult>({
     items,
     crumbs,
@@ -370,6 +380,21 @@ export default function WebFileExplorer({
         onExternalFolderDropToCrumb={(payload, crumb) => { void dropExternalFolderEntriesToCrumb(payload, crumb) }}
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
+        tabBar={(
+          <XDriveFileExplorerTabs
+            tabs={tabs}
+            activeTabID={activeTabID}
+            canNewTab={canNewTab}
+            canCloseTab={canCloseTab}
+            onActivate={(id) => { void activateTab(id) }}
+            onNewTab={() => { void newTab() }}
+            onCloseTab={(id) => { void closeTab(id) }}
+          />
+        )}
+        onNewTab={canNewTab ? () => { void newTab() } : undefined}
+        onCloseTab={canCloseTab ? () => { void closeTab() } : undefined}
+        onNextTab={tabs.length > 1 ? () => { void nextTab() } : undefined}
+        onPreviousTab={tabs.length > 1 ? () => { void previousTab() } : undefined}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
         navigationPane={(
           <XDriveFileExplorerNavigationPane
