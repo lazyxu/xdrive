@@ -108,25 +108,6 @@ func (s *Server) filePreviewTicket(c *gin.Context) {
 	})
 }
 
-func (s *Server) filePreview(c *gin.Context) {
-	id, ok := parseID(c.Param("id"))
-	if !ok {
-		fail(c, http.StatusBadRequest, "invalid file id")
-		return
-	}
-	node, err := s.ownedNode(userID(c), id, true)
-	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
-		fail(c, http.StatusNotFound, "file not found")
-		return
-	}
-	descriptor, ok := filePreviewDescriptorForName(node.Name)
-	if !ok {
-		fail(c, http.StatusUnsupportedMediaType, "file preview is not supported for this file")
-		return
-	}
-	s.serveFilePreview(c, node, descriptor)
-}
-
 func (s *Server) filePreviewTicketStream(c *gin.Context) {
 	id, ok := parseID(c.Param("id"))
 	if !ok {
