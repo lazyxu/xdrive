@@ -188,7 +188,14 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (previewKind === 'audio') {
       return (
         <Box sx={{ width: '100%', px: 1.5, display: 'flex', alignItems: 'center' }}>
-          <Box component="audio" src={previewURL} controls preload="metadata" sx={{ width: '100%' }} />
+          <Box
+            component="audio"
+            src={previewURL}
+            controls
+            preload="metadata"
+            onError={() => setFailed(true)}
+            sx={{ width: '100%' }}
+          />
         </Box>
       )
     }
