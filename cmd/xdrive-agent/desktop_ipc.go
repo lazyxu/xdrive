@@ -77,6 +77,7 @@ var desktopIPCCapabilities = []string{
 	"file-operation-undo",
 	"file-operation-redo",
 	"file-quick-access",
+	"file-recent",
 	"upload-conflict-preflight",
 	"upload-conflict-policy",
 	"server-update",
@@ -161,6 +162,9 @@ type desktopIPCController interface {
 	CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error)
 	CloudPinFileQuickAccess(context.Context, uint64) (client.FileQuickAccessItem, error)
 	CloudUnpinFileQuickAccess(context.Context, uint64) error
+	CloudFileRecent(context.Context, int) ([]client.FileRecentItem, error)
+	CloudTouchFileRecent(context.Context, uint64) (client.FileRecentItem, error)
+	CloudClearFileRecent(context.Context) error
 	CloudCreateDir(context.Context, uint64, string) (client.Node, error)
 	CloudRename(context.Context, uint64, uint64, string) (client.Node, error)
 	CloudCopy(context.Context, uint64, uint64) (client.Node, error)
@@ -427,6 +431,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quick-access", h.cloudFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/pin", h.cloudPinFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/unpin", h.cloudUnpinFileQuickAccess)
+	mux.HandleFunc("GET /v1/cloud/recent", h.cloudFileRecent)
+	mux.HandleFunc("POST /v1/cloud/recent/touch", h.cloudTouchFileRecent)
+	mux.HandleFunc("DELETE /v1/cloud/recent", h.cloudClearFileRecent)
 	mux.HandleFunc("POST /v1/cloud/directories", h.cloudCreateDir)
 	mux.HandleFunc("PATCH /v1/cloud/nodes", h.cloudRename)
 	mux.HandleFunc("POST /v1/cloud/copy", h.cloudCopy)
@@ -919,6 +926,51 @@ func (h *desktopIPCHandler) cloudUnpinFileQuickAccess(w http.ResponseWriter, r *
 		return
 	}
 	if err := h.ctrl.CloudUnpinFileQuickAccess(r.Context(), input.ID); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudFileRecent(w http.ResponseWriter, r *http.Request) {
+	limit := 16
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 50 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_recent_limit", "limit must be between 1 and 50")
+			return
+		}
+		limit = value
+	}
+	items, err := h.ctrl.CloudFileRecent(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudTouchFileRecent(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID uint64 `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_recent", "id is required")
+		return
+	}
+	item, err := h.ctrl.CloudTouchFileRecent(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudClearFileRecent(w http.ResponseWriter, r *http.Request) {
+	if err := h.ctrl.CloudClearFileRecent(r.Context()); err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}

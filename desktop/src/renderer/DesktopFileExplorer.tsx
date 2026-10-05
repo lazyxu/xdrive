@@ -21,6 +21,7 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerQuickAccess,
+  useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
@@ -60,6 +61,7 @@ export default function DesktopFileExplorer({
   textPreviewSupported = false,
   previewStreamSupported = false,
   quickAccessSupported = false,
+  recentSupported = false,
   onError,
   onFeedback,
 }: {
@@ -86,6 +88,7 @@ export default function DesktopFileExplorer({
   textPreviewSupported?: boolean
   previewStreamSupported?: boolean
   quickAccessSupported?: boolean
+  recentSupported?: boolean
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -93,6 +96,24 @@ export default function DesktopFileExplorer({
   const [actionBusy, setActionBusy] = useState('')
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const recent = useXDriveFileExplorerRecent<AgentCloudNode>({
+    enabled: recentSupported,
+    loadItems: async () => {
+      const result = await window.xdriveDesktop.agent.cloudFileRecent(16)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    touchItem: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.cloudTouchFileRecent(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    clearItems: async () => {
+      const result = await window.xdriveDesktop.agent.cloudClearFileRecent()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+  })
 
   const {
     searchValue,
@@ -162,6 +183,8 @@ export default function DesktopFileExplorer({
       return result.data
     },
     searchCrumbsForResult: (result) => result.crumbs,
+    onDirectoryAccess: (nodeID) => { void recent.record(nodeID) },
+    onFileAccess: (nodeID) => { void recent.record(nodeID) },
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
 
@@ -662,6 +685,7 @@ export default function DesktopFileExplorer({
           ? () => folderUploadInputRef.current?.click()
           : undefined}
         onOpenItem={(item) => { void openWorkspaceItem(item, openLocalNode) }}
+        onPreviewItem={(item) => { void recent.record(Number(item.id)) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={sort}
@@ -733,6 +757,16 @@ export default function DesktopFileExplorer({
               if (current) void quickAccess.toggle(current.id)
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
+            recentEnabled={recentSupported}
+            recentItems={recent.items}
+            recentLoading={recent.loading}
+            onActivateRecent={(nodeID) => {
+              void recent.activate(nodeID, {
+                onDirectory: (nextCrumbs) => navigateTo(nextCrumbs),
+                onFile: (item) => openLocalNode(item.node),
+              })
+            }}
+            onClearRecent={() => { void recent.clear() }}
             onError={(error) => onError(error instanceof Error ? error.message : String(error))}
           />
         )}

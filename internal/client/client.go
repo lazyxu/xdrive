@@ -76,6 +76,13 @@ type FileQuickAccessItem struct {
 	PinnedAt time.Time          `json:"pinned_at"`
 }
 
+type FileRecentItem struct {
+	Node       Node               `json:"node"`
+	Path       string             `json:"path"`
+	Crumbs     []SearchBreadcrumb `json:"crumbs"`
+	AccessedAt time.Time          `json:"accessed_at"`
+}
+
 type SearchOptions struct {
 	Query  string
 	Type   string
@@ -372,6 +379,37 @@ func (c *Client) PinFileQuickAccess(ctx context.Context, nodeID uint64) (FileQui
 
 func (c *Client) UnpinFileQuickAccess(ctx context.Context, nodeID uint64) error {
 	req, err := c.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/file-quick-access/%d", nodeID), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return responseError(resp)
+	}
+	return nil
+}
+
+func (c *Client) FileRecent(ctx context.Context, limit int) ([]FileRecentItem, error) {
+	if limit <= 0 {
+		limit = 16
+	}
+	var out []FileRecentItem
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/file-recent?limit=%d", limit), nil, &out)
+	return out, err
+}
+
+func (c *Client) TouchFileRecent(ctx context.Context, nodeID uint64) (FileRecentItem, error) {
+	var out FileRecentItem
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/file-recent/%d", nodeID), map[string]any{}, &out)
+	return out, err
+}
+
+func (c *Client) ClearFileRecent(ctx context.Context) error {
+	req, err := c.request(ctx, http.MethodDelete, "/api/v1/file-recent", nil)
 	if err != nil {
 		return err
 	}

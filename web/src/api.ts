@@ -44,6 +44,7 @@ import type {
   XDriveCloudFilesPageOptions,
   XDriveFileOperationType,
   XDriveFileQuickAccessItem,
+  XDriveFileRecentItem,
   XDriveUploadConflictPolicy,
   XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
@@ -819,6 +820,23 @@ export class XDriveApi {
 
   unpinFileQuickAccess(nodeID: number) {
     return this.request<void>(`/api/v1/file-quick-access/${nodeID}`, {
+      method: 'DELETE',
+    })
+  }
+
+  fileRecent(limit = 16) {
+    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`)
+  }
+
+  touchFileRecent(nodeID: number) {
+    return this.request<XDriveFileRecentItem<Node>>(`/api/v1/file-recent/${nodeID}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
+  clearFileRecent() {
+    return this.request<void>('/api/v1/file-recent', {
       method: 'DELETE',
     })
   }

@@ -176,6 +176,33 @@ func (c *agentController) CloudUnpinFileQuickAccess(ctx context.Context, nodeID 
 	return cli.UnpinFileQuickAccess(ctx, nodeID)
 }
 
+func (c *agentController) CloudFileRecent(ctx context.Context, limit int) ([]client.FileRecentItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.FileRecent(ctx, limit)
+}
+
+func (c *agentController) CloudTouchFileRecent(ctx context.Context, nodeID uint64) (client.FileRecentItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileRecentItem{}, err
+	}
+	if nodeID == 0 {
+		return client.FileRecentItem{}, fmt.Errorf("node id is required")
+	}
+	return cli.TouchFileRecent(ctx, nodeID)
+}
+
+func (c *agentController) CloudClearFileRecent(ctx context.Context) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.ClearFileRecent(ctx)
+}
+
 func (c *agentController) CloudCreateDir(ctx context.Context, parentID uint64, name string) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

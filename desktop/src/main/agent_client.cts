@@ -641,6 +641,13 @@ export type AgentCloudQuickAccessItem = {
   pinned_at: string
 }
 
+export type AgentCloudRecentItem = {
+  node: AgentCloudNode
+  path: string
+  crumbs: AgentCloudCrumb[]
+  accessed_at: string
+}
+
 export type AgentDiagnosticCheck = {
   name: string
   status: 'PASS' | 'WARN' | 'FAIL'
@@ -1150,6 +1157,19 @@ export class AgentIPCClient {
 
   cloudUnpinFileQuickAccess(nodeID: number) {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/quick-access/unpin', { id: nodeID })
+  }
+
+  cloudFileRecent(limit = 16) {
+    const query = new URLSearchParams({ limit: String(Math.min(50, Math.max(1, Math.trunc(limit)))) })
+    return this.request<AgentCloudRecentItem[]>('GET', `/v1/cloud/recent?${query.toString()}`)
+  }
+
+  cloudTouchFileRecent(nodeID: number) {
+    return this.request<AgentCloudRecentItem>('POST', '/v1/cloud/recent/touch', { id: nodeID })
+  }
+
+  cloudClearFileRecent() {
+    return this.request<{ ok: boolean }>('DELETE', '/v1/cloud/recent')
   }
 
   cloudCreateDirectory(parentID: number, name: string) {

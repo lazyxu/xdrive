@@ -45,6 +45,13 @@ export type XDriveFileQuickAccessItem<TNode extends { id: number }> = {
   pinned_at: string
 }
 
+export type XDriveFileRecentItem<TNode extends { id: number }> = {
+  node: TNode
+  path: string
+  crumbs: XDriveCloudFilesCrumb[]
+  accessed_at: string
+}
+
 export interface XDriveCloudFilesPort<
   TNode extends { id: number },
   TQuota extends QuotaUsage = QuotaUsage,

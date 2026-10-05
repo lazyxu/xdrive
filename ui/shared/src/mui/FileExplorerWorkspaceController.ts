@@ -53,6 +53,8 @@ export function useXDriveFileExplorerWorkspace<
   loadRoot,
   listChildren,
   searchCrumbsForResult,
+  onDirectoryAccess,
+  onFileAccess,
   onError,
 }: {
   items: TNode[]
@@ -72,6 +74,8 @@ export function useXDriveFileExplorerWorkspace<
   searchCrumbsForResult?: (
     result: TSearch,
   ) => readonly XDriveFileExplorerWorkspaceCrumb[] | undefined
+  onDirectoryAccess?: (nodeID: number) => void | Promise<void>
+  onFileAccess?: (nodeID: number) => void | Promise<void>
   onError: (error: unknown) => void
 }) {
   const searchActiveRef = useRef(false)
@@ -82,7 +86,11 @@ export function useXDriveFileExplorerWorkspace<
     viewModeStorageKey,
     searchActive: () => searchActiveRef.current,
     onLoadDirectory,
-    onAfterNavigate: () => clearSearchRef.current(),
+    onAfterNavigate: (nextCrumbs) => {
+      clearSearchRef.current()
+      const target = nextCrumbs.at(-1)
+      if (target && nextCrumbs.length > 1) void onDirectoryAccess?.(target.id)
+    },
   })
 
   const search = useXDriveFileExplorerSearch<TSearch>({
@@ -138,6 +146,7 @@ export function useXDriveFileExplorerWorkspace<
       openFile,
       navigate: navigation.navigateTo,
     })
+    if (item.kind === 'file') void onFileAccess?.(Number(item.id))
   }
 
   const explorerPagination = xDriveFileExplorerPaginationController({

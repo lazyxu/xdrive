@@ -3,6 +3,8 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
 import {
   Box,
@@ -16,6 +18,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { XDriveFileExplorerQuickAccessEntry } from './FileExplorerQuickAccessController'
+import type { XDriveFileExplorerRecentEntry } from './FileExplorerRecentController'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
   id: number
@@ -46,6 +49,11 @@ export function XDriveFileExplorerNavigationPane({
   onNavigateQuickAccess,
   onToggleCurrentQuickAccess,
   onUnpinQuickAccess,
+  recentEnabled = false,
+  recentItems = [],
+  recentLoading = false,
+  onActivateRecent,
+  onClearRecent,
   onError,
 }: {
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
@@ -61,6 +69,11 @@ export function XDriveFileExplorerNavigationPane({
   onNavigateQuickAccess?: (nodeID: number) => void | Promise<void>
   onToggleCurrentQuickAccess?: () => void | Promise<void>
   onUnpinQuickAccess?: (nodeID: number) => void | Promise<void>
+  recentEnabled?: boolean
+  recentItems?: readonly XDriveFileExplorerRecentEntry[]
+  recentLoading?: boolean
+  onActivateRecent?: (nodeID: number) => void | Promise<void>
+  onClearRecent?: () => void | Promise<void>
   onError?: (error: unknown) => void
 }) {
   const [childrenByParent, setChildrenByParent] = useState<Record<string, XDriveFileExplorerNavigationTreeNode[]>>({})
@@ -328,6 +341,65 @@ export function XDriveFileExplorerNavigationPane({
       ) : null}
 
       {quickAccessEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
+
+      {recentEnabled ? (
+        <Box component="nav" aria-label="最近使用" sx={{ px: 0.75, pb: 0.75 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30, pl: 0.75 }}>
+            <Stack direction="row" alignItems="center" spacing={0.5}>
+              <HistoryRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+              <Typography variant="caption" fontWeight={700} color="text.secondary">
+                最近使用
+              </Typography>
+            </Stack>
+            {recentItems.length > 0 && onClearRecent ? (
+              <Tooltip title="清空最近使用">
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="清空最近使用"
+                    disabled={recentLoading}
+                    onClick={() => { void onClearRecent() }}
+                    sx={{ width: 26, height: 26, borderRadius: 1 }}
+                  >
+                    <CloseRoundedIcon sx={{ fontSize: 15 }} />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            ) : null}
+          </Stack>
+
+          {recentLoading && recentItems.length === 0 ? (
+            <Box sx={{ minHeight: 32, display: 'grid', placeItems: 'center' }}>
+              <CircularProgress size={14} />
+            </Box>
+          ) : recentItems.length === 0 ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+              暂无最近访问
+            </Typography>
+          ) : (
+            <Stack spacing={0.25}>
+              {recentItems.slice(0, 8).map((item) => (
+                <ListItemButton
+                  key={item.id}
+                  selected={item.kind === 'dir' && currentID === item.id}
+                  title={item.path || item.name}
+                  onClick={() => { void onActivateRecent?.(item.id) }}
+                  sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+                >
+                  {item.kind === 'dir'
+                    ? <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d', flexShrink: 0 }} />
+                    : <InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />}
+                  <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                    {item.name}
+                  </Typography>
+                </ListItemButton>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      ) : null}
+
+      {recentEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
 
       <Box role="tree" aria-label="文件夹树">
         {rootNode ? renderNode(rootNode, 0) : null}
