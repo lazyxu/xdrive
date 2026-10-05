@@ -309,6 +309,26 @@ server-image:
     paths:
       - dist/server-image/
 
+photo-face-image:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .ci-tools-cache
+  stage: test
+  needs: []
+  resource_group: xdrive-photo-face-image
+  tags:
+    - linux
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_docker_cli_only
+  script:
+    - bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+  artifacts:
+    name: "xdrive-photo-face-image-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - dist/photo-face-image/
+
 caddy-image:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .ci-tools-cache
@@ -490,6 +510,8 @@ final-gate:
     - job: server-validation
       artifacts: false
     - job: server-image
+      artifacts: false
+    - job: photo-face-image
       artifacts: false
     - job: caddy-image
       artifacts: false

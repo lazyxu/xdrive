@@ -68,6 +68,8 @@ publish-server-images:
       artifacts: true
     - job: caddy-image
       artifacts: true
+    - job: photo-face-image
+      artifacts: true
   script:
     - bash scripts/ci/gitlab-server-images.sh
 

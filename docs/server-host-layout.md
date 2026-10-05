@@ -38,6 +38,7 @@ The default xDrive server home is:
     ├── scheduled-backup.lock
     ├── upgrade-transaction/
     ├── control/
+    ├── photo-face/
     ├── layout-version
     └── legacy-volumes-retained
 ```
@@ -120,10 +121,11 @@ Contains short-lived or transactional host-management state.
 - `scheduled-backup.lock`: scheduled backup overlap protection.
 - `upgrade-transaction/`: rollback state retained only while an upgrade is armed or when rollback itself fails.
 - `control/`: narrowly scoped host-update bridge containing request/status/heartbeat files. It never contains a Docker socket or deployment secrets.
+- `photo-face/`: optional runtime directory for the Photo Intelligence Unix socket. It is transient IPC state and may be recreated empty.
 - `layout-version`: host-layout schema marker.
 - `legacy-volumes-retained`: exact legacy named-volume IDs retained after a successful migration until explicit cleanup.
 
-No user content is stored under `state/`.
+No user content is stored under `state/`. The `state/photo-face` runtime directory is not included in backup or migration data.
 
 ## Host update control bridge
 

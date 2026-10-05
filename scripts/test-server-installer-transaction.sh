@@ -314,6 +314,7 @@ test ! -d "$TMP/config/state/upgrade-transaction"
 [[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
 [[ "$(cat "$TMP/state/pull-count-server")" == "1" ]]
 test ! -f "$TMP/state/pull-count-web"
+test ! -f "$TMP/state/pull-count-photo-face"
 [[ "$(cat "$TMP/state/pull-count-caddy")" == "1" ]]
 grep -q 'pull postgres attempt 3/3' "$TMP/upgrade.out"
 grep -q 'pull postgres failed; retrying' "$TMP/upgrade.err"
@@ -418,6 +419,7 @@ set -e
 [[ "$(cat "$TMP/state/pull-count-postgres")" == "3" ]]
 test ! -f "$TMP/state/pull-count-server"
 test ! -f "$TMP/state/pull-count-web"
+test ! -f "$TMP/state/pull-count-photo-face"
 grep -q 'pull postgres failed after 3 attempts' "$TMP/pull-fail.err"
 grep -q 'database restore not required for this failure point' "$TMP/pull-fail.err"
 grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/pull-fail.err"
