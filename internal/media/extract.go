@@ -67,6 +67,12 @@ var imageExtensions = map[string]bool{
 	".bmp":  true,
 }
 
+var tiffRawMIMETypes = map[string]string{
+	".dng": "image/x-adobe-dng",
+	".nef": "image/x-nikon-nef",
+	".arw": "image/x-sony-arw",
+}
+
 var videoExtensions = map[string]bool{
 	".mp4":  true,
 	".mov":  true,
@@ -137,11 +143,11 @@ func detectMIME(name string, header []byte) string {
 	}
 
 	ext := strings.ToLower(filepath.Ext(name))
-	if ext == ".dng" {
+	if rawMIME := tiffRawMIMETypes[ext]; rawMIME != "" {
 		if isTIFF(header) {
-			return "image/x-adobe-dng"
+			return rawMIME
 		}
-		// Do not trust the .dng suffix by itself. A malformed or renamed file
+		// Do not trust a RAW suffix by itself. A malformed or renamed file
 		// stays classified from its bytes instead of being promoted to RAW.
 		return detected
 	}

@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	maxDNGPreviewBytes = 64 << 20
-	maxDNGPreviewIFDs  = 64
+	maxTIFFPreviewBytes = 64 << 20
+	maxTIFFPreviewIFDs  = 64
 )
 
-type dngPreviewCandidate struct {
+type tiffPreviewCandidate struct {
 	offset int64
 	length int64
 	width  uint64
@@ -27,8 +27,16 @@ type seekTIFF struct {
 }
 
 func DNGEmbeddedJPEGPreview(r io.ReadSeeker) ([]byte, error) {
+	return TIFFEmbeddedJPEGPreview(r)
+}
+
+// TIFFEmbeddedJPEGPreview extracts a bounded, explicitly reduced-resolution
+// JPEG preview from a TIFF-based RAW container. It intentionally ignores
+// vendor-private MakerNote offsets and never treats the full RAW strip as a
+// display preview.
+func TIFFEmbeddedJPEGPreview(r io.ReadSeeker) ([]byte, error) {
 	if r == nil {
-		return nil, errors.New("dng preview reader is nil")
+		return nil, errors.New("tiff preview reader is nil")
 	}
 	tiff, root, err := openSeekTIFF(r)
 	if err != nil {
@@ -37,8 +45,8 @@ func DNGEmbeddedJPEGPreview(r io.ReadSeeker) ([]byte, error) {
 
 	queue := []uint32{root}
 	seen := map[uint32]struct{}{}
-	var best dngPreviewCandidate
-	for len(queue) != 0 && len(seen) < maxDNGPreviewIFDs {
+	var best tiffPreviewCandidate
+	for len(queue) != 0 && len(seen) < maxTIFFPreviewIFDs {
 		offset := queue[0]
 		queue = queue[1:]
 		if offset == 0 {
@@ -64,13 +72,13 @@ func DNGEmbeddedJPEGPreview(r io.ReadSeeker) ([]byte, error) {
 		}
 	}
 	if best.length <= 0 {
-		return nil, errors.New("dng embedded jpeg preview not found")
+		return nil, errors.New("tiff embedded jpeg preview not found")
 	}
-	if best.length > maxDNGPreviewBytes {
-		return nil, errors.New("dng embedded jpeg preview exceeds safety limit")
+	if best.length > maxTIFFPreviewBytes {
+		return nil, errors.New("tiff embedded jpeg preview exceeds safety limit")
 	}
 	if best.offset < 0 || best.offset+best.length > tiff.size {
-		return nil, errors.New("dng embedded jpeg preview is out of bounds")
+		return nil, errors.New("tiff embedded jpeg preview is out of bounds")
 	}
 
 	if _, err := r.Seek(best.offset, io.SeekStart); err != nil {
@@ -81,15 +89,15 @@ func DNGEmbeddedJPEGPreview(r io.ReadSeeker) ([]byte, error) {
 		return nil, err
 	}
 	if len(out) < 4 || out[0] != 0xff || out[1] != 0xd8 {
-		return nil, errors.New("dng embedded preview is not jpeg")
+		return nil, errors.New("tiff embedded preview is not jpeg")
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(out))
 	if err != nil || format != "jpeg" {
-		return nil, errors.New("dng embedded preview is not decodable jpeg")
+		return nil, errors.New("tiff embedded preview is not decodable jpeg")
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 ||
 		int64(cfg.Width)*int64(cfg.Height) > MaxThumbnailPixels {
-		return nil, errors.New("dng embedded preview dimensions exceed safety limit")
+		return nil, errors.New("tiff embedded preview dimensions exceed safety limit")
 	}
 	return out, nil
 }
@@ -101,7 +109,7 @@ func openSeekTIFF(r io.ReadSeeker) (seekTIFF, uint32, error) {
 		return out, 0, err
 	}
 	if end < 8 {
-		return out, 0, errors.New("short dng tiff")
+		return out, 0, errors.New("short tiff")
 	}
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return out, 0, err
@@ -116,24 +124,24 @@ func openSeekTIFF(r io.ReadSeeker) (seekTIFF, uint32, error) {
 	case "MM":
 		out.order = binary.BigEndian
 	default:
-		return out, 0, errors.New("invalid dng tiff byte order")
+		return out, 0, errors.New("invalid tiff byte order")
 	}
 	if out.order.Uint16(header[2:4]) != 42 {
-		return out, 0, errors.New("unsupported dng tiff format")
+		return out, 0, errors.New("unsupported tiff format")
 	}
 	out.r = r
 	out.size = end
 	root := out.order.Uint32(header[4:8])
 	if root < 8 || int64(root) >= end {
-		return out, 0, errors.New("invalid dng root ifd")
+		return out, 0, errors.New("invalid tiff root ifd")
 	}
 	return out, root, nil
 }
 
-func (t seekTIFF) previewIFD(offset uint32) (dngPreviewCandidate, []uint32, uint32, error) {
-	var out dngPreviewCandidate
+func (t seekTIFF) previewIFD(offset uint32) (tiffPreviewCandidate, []uint32, uint32, error) {
+	var out tiffPreviewCandidate
 	if int64(offset)+2 > t.size {
-		return out, nil, 0, errors.New("dng ifd out of bounds")
+		return out, nil, 0, errors.New("tiff ifd out of bounds")
 	}
 	if _, err := t.r.Seek(int64(offset), io.SeekStart); err != nil {
 		return out, nil, 0, err
@@ -144,10 +152,10 @@ func (t seekTIFF) previewIFD(offset uint32) (dngPreviewCandidate, []uint32, uint
 	}
 	count := int(t.order.Uint16(countBytes[:]))
 	if count < 0 || count > 4096 {
-		return out, nil, 0, errors.New("invalid dng ifd entry count")
+		return out, nil, 0, errors.New("invalid tiff ifd entry count")
 	}
 	if int64(offset)+2+int64(count)*12+4 > t.size {
-		return out, nil, 0, errors.New("dng ifd exceeds file")
+		return out, nil, 0, errors.New("tiff ifd exceeds file")
 	}
 
 	var (
@@ -215,10 +223,10 @@ func (t seekTIFF) previewIFD(offset uint32) (dngPreviewCandidate, []uint32, uint
 	}
 	next := t.order.Uint32(nextBytes[:])
 
-	// DNG previews must be explicitly marked reduced-resolution. This avoids
+	// TIFF-based RAW previews must be explicitly marked reduced-resolution. This avoids
 	// mistaking compressed RAW image data for a display preview.
 	if newSubfileType&1 == 0 {
-		return dngPreviewCandidate{}, subIFDs, next, nil
+		return tiffPreviewCandidate{}, subIFDs, next, nil
 	}
 	if jpegOffset > 0 && jpegLength > 0 {
 		out.offset = int64(jpegOffset)
@@ -232,7 +240,7 @@ func (t seekTIFF) previewIFD(offset uint32) (dngPreviewCandidate, []uint32, uint
 		out.length = int64(stripCounts[0])
 		return out, subIFDs, next, nil
 	}
-	return dngPreviewCandidate{}, subIFDs, next, nil
+	return tiffPreviewCandidate{}, subIFDs, next, nil
 }
 
 func (t seekTIFF) entryUnsignedValues(
@@ -255,7 +263,7 @@ func (t seekTIFF) entryUnsignedValues(
 		return nil, false
 	}
 	total64 := uint64(unit) * uint64(count)
-	if total64 > maxDNGPreviewBytes {
+	if total64 > maxTIFFPreviewBytes {
 		return nil, false
 	}
 	total := int(total64)

@@ -9,11 +9,11 @@ import (
 	"testing"
 )
 
-func TestDNGEmbeddedJPEGPreviewFromReducedIFD(t *testing.T) {
+func TestTIFFEmbeddedJPEGPreviewFromReducedIFD(t *testing.T) {
 	preview := encodeDNGPreviewJPEG(t, 8, 4)
 	data := buildDNGWithJPEGPreview(preview, true)
 
-	got, err := DNGEmbeddedJPEGPreview(bytes.NewReader(data))
+	got, err := TIFFEmbeddedJPEGPreview(bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,6 +31,21 @@ func TestDNGEmbeddedJPEGPreviewFromReducedIFD(t *testing.T) {
 	}
 	if thumbnail.Width != 4 || thumbnail.Height != 2 {
 		t.Fatalf("thumbnail=%dx%d", thumbnail.Width, thumbnail.Height)
+	}
+}
+
+func TestDNGEmbeddedJPEGPreviewCompatibilityWrapper(t *testing.T) {
+	data := buildDNGWithJPEGPreview(encodeDNGPreviewJPEG(t, 8, 4), true)
+	generic, err := TIFFEmbeddedJPEGPreview(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dng, err := DNGEmbeddedJPEGPreview(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(generic, dng) {
+		t.Fatal("DNG compatibility wrapper returned different preview bytes")
 	}
 }
 
