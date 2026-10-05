@@ -8,10 +8,10 @@ import {
 } from '@xdrive/ui/mui'
 import DesktopFileExplorer from './DesktopFileExplorer'
 import {
+  desktopShareDialogAdapter,
   desktopTrashDialogAdapter,
   desktopVersionHistoryDialogAdapter,
 } from './fileDialogAdapters'
-import { desktopShareDialogAdapter } from './shareDialogAdapter'
 
 type ExplorerProps = ComponentProps<typeof DesktopFileExplorer>
 

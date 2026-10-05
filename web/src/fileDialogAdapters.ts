@@ -1,33 +1,36 @@
-import type {
-  XDriveShareDialogAdapter,
-  XDriveTrashDialogAdapter,
-  XDriveVersionHistoryDialogAdapter,
+import {
+  createXDriveShareDialogAdapter,
+  createXDriveTrashDialogAdapter,
+  createXDriveVersionHistoryDialogAdapter,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 
-export function createWebTrashDialogAdapter(api: XDriveApi): XDriveTrashDialogAdapter {
-  return {
+export function createWebTrashDialogAdapter(api: XDriveApi) {
+  return createXDriveTrashDialogAdapter({
     listTrash: () => api.trash(),
-    restoreTrash: (node) => api.restoreTrash(node.id, node.revision),
-    deleteTrash: (node) => api.permanentlyDeleteTrash(node.id, node.revision),
-  }
+    restoreTrash: (nodeID, revision) => api.restoreTrash(nodeID, revision),
+    deleteTrash: (nodeID, revision) => api.permanentlyDeleteTrash(nodeID, revision),
+  })
 }
 
-export function createWebVersionHistoryDialogAdapter(api: XDriveApi): XDriveVersionHistoryDialogAdapter {
-  return {
+export function createWebVersionHistoryDialogAdapter(api: XDriveApi) {
+  return createXDriveVersionHistoryDialogAdapter({
     listVersions: (nodeID) => api.versions(nodeID),
-    restoreVersion: (node, version) => api.restoreVersion(node.id, node.revision, version.id),
+    restoreVersion: (nodeID, revision, versionID) =>
+      api.restoreVersion(nodeID, revision, versionID),
     downloadVersion: (node, version) => api.downloadVersion(node, version),
-  }
+  })
 }
 
-export function createWebShareDialogAdapter(api: XDriveApi): XDriveShareDialogAdapter {
-  return {
+export function createWebShareDialogAdapter(api: XDriveApi) {
+  return createXDriveShareDialogAdapter({
     listShares: (nodeID) => api.shares(nodeID),
-    createShare: async (nodeID, input) => {
-      const created = await api.createShare(nodeID, input)
-      return { url: `${window.location.origin}/#/s/${created.token}` }
-    },
+    createShare: (nodeID, input) => api.createShare(nodeID, input),
     revokeShare: (shareID) => api.revokeShare(shareID),
-  }
+  }, {
+    shareURL: (created) => {
+      if (!created.token) throw new Error('Share token missing from Web response.')
+      return `${window.location.origin}/#/s/${created.token}`
+    },
+  })
 }
