@@ -7,9 +7,9 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerOperationController,
+  useXDriveFileExplorerExternalDropController,
 } from '@xdrive/ui/mui'
 import type {
-  XDriveFileExplorerCrumb,
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
@@ -18,7 +18,6 @@ import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerWebDownloadPlan,
-  xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerWebDownloadFeedback,
 } from '../../ui/shared/src'
@@ -248,45 +247,20 @@ export default function WebFileExplorer({
     }
   }
 
-  const dropExternalFilesToParent = async (files: File[], parentID: number) => {
-    if (files.length === 0) return
-    await onUploadDroppedFiles(parentID, files)
-    if (current) await onLoadDirectory(current.id, crumbs, sort)
-  }
-
-  const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
-    if (!current || files.length === 0) return
-    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
-    await dropExternalFilesToParent(files, parentID)
-  }
-
-  const dropExternalFolderEntriesToParent = async (
-    payload: XDriveFileExplorerExternalDropPayload,
-    parentID: number,
-  ) => {
-    await onUploadDroppedFolderEntries(parentID, payload)
-    if (current) await onLoadDirectory(current.id, crumbs, sort)
-  }
-
-  const dropExternalFolderEntries = async (
-    payload: XDriveFileExplorerExternalDropPayload,
-    target?: XDriveFileExplorerItem,
-  ) => {
-    if (!current) return
-    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
-    await dropExternalFolderEntriesToParent(payload, parentID)
-  }
-
-  const dropExternalFilesToCrumb = async (files: File[], crumb: XDriveFileExplorerCrumb) => {
-    await dropExternalFilesToParent(files, Number(crumb.id))
-  }
-
-  const dropExternalFolderEntriesToCrumb = async (
-    payload: XDriveFileExplorerExternalDropPayload,
-    crumb: XDriveFileExplorerCrumb,
-  ) => {
-    await dropExternalFolderEntriesToParent(payload, Number(crumb.id))
-  }
+  const {
+    dropFiles: dropExternalFiles,
+    dropFilesToCrumb: dropExternalFilesToCrumb,
+    dropFolderEntries: dropExternalFolderEntries,
+    dropFolderEntriesToCrumb: dropExternalFolderEntriesToCrumb,
+  } = useXDriveFileExplorerExternalDropController<Node, Crumb, XDriveFileExplorerSort>({
+    currentID: current?.id,
+    currentCrumbs: crumbs,
+    sort,
+    nodeByID,
+    uploadFilesToParent: onUploadDroppedFiles,
+    uploadFolderEntriesToParent: onUploadDroppedFolderEntries,
+    refreshDirectory: onLoadDirectory,
+  })
 
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder,

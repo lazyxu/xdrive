@@ -134,9 +134,9 @@ test('Web FileExplorer uses shared internal drag operations and local external u
   assert.ok(operationController.includes('xDriveFileExplorerDropItemsToParentPlan('), 'shared operation controller must own Web breadcrumb-drop planning')
   assert.equal(explorer.includes('xDriveFileExplorerDropItemsPlan('), false, 'Web must not plan internal drag/drop locally')
   assert.equal(explorer.includes('const targetNode = nodeByID.get(Number(target.id))'), false, 'Web internal drag must not resolve drop targets locally')
-  assert.ok(explorer.includes('const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {'), 'Web external drop helper is missing')
-  assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Web external drop should resolve the target through shared controller logic')
-  assert.ok(explorer.includes('onUploadDroppedFiles(parentID, files)'), 'Web external drop should use the target-aware upload adapter')
+  assert.ok(explorer.includes('useXDriveFileExplorerExternalDropController<Node, Crumb, XDriveFileExplorerSort>'), 'Web external drop must use the shared controller')
+  assert.ok(explorer.includes('uploadFilesToParent: onUploadDroppedFiles'), 'Web external drop should keep the target-aware upload adapter local')
+  assert.ok(explorer.includes('uploadFilesToParent: onUploadDroppedFiles'), 'Web external drop should use the target-aware upload adapter')
   assert.ok(app.includes('const uploadFilesTo = async ('), 'Web target-aware upload helper is missing')
   assert.ok(app.includes("action: 'upload' | 'drop-upload' = 'upload'"), 'Web target-aware upload helper must distinguish dropped uploads')
   assert.ok(app.includes("onUploadDroppedFiles={(parentID, files) => uploadFilesTo(parentID, files, 'drop-upload')}"), 'Web dropped-file upload adapter is not wired')
@@ -300,8 +300,8 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
 test('Web FileExplorer recursively uploads dropped folders and empty directories', () => {
   for (const token of [
     'XDriveFileExplorerExternalDropPayload',
-    'dropExternalFolderEntriesToParent',
-    'onUploadDroppedFolderEntries(parentID, payload)',
+    'useXDriveFileExplorerExternalDropController<Node, Crumb, XDriveFileExplorerSort>',
+    'uploadFolderEntriesToParent: onUploadDroppedFolderEntries',
     'onExternalFolderDrop={(payload, target) =>',
     'onExternalFolderDropToCrumb={(payload, crumb) =>',
   ]) {

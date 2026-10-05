@@ -7,7 +7,6 @@ import {
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerEnsureUploadDirectory,
-  xDriveFileExplorerExternalDropParentID,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerResolveFolderUploadTargets,
 } from '@xdrive/shared'
@@ -19,11 +18,11 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerOperationController,
+  useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
   XDriveUploadConflictDialog,
 } from '@xdrive/ui/mui'
 import type {
-  XDriveFileExplorerCrumb,
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
@@ -269,17 +268,21 @@ export default function DesktopFileExplorer({
     resolveTargets: () => Promise<readonly DesktopUploadTarget[]>,
     busyState: 'upload' | 'drop-upload' | 'upload-folder',
     refreshEvenWithoutUploads = false,
+    refreshCurrentDirectory = true,
   ) => {
-    if (explorerActionBusy) return
+    if (explorerActionBusy) return false
     try {
       const targets = await resolveTargets()
       const result = await runUploadTargets(targets, busyState)
-      if ((result.uploaded > 0 || refreshEvenWithoutUploads) && current) {
+      const shouldRefresh = result.uploaded > 0 || refreshEvenWithoutUploads
+      if (refreshCurrentDirectory && shouldRefresh && current) {
         await onLoadDirectory(current.id, crumbs, sort)
       }
       if (result.uploaded > 0) await onQuotaChanged()
+      return shouldRefresh
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))
+      return false
     }
   }
 
@@ -287,11 +290,14 @@ export default function DesktopFileExplorer({
     parentID: number,
     files: File[],
     busyState: 'upload' | 'drop-upload',
+    refreshCurrentDirectory = true,
   ) => {
-    if (files.length === 0) return
-    await uploadConflictAwareTargets(
+    if (files.length === 0) return false
+    return uploadConflictAwareTargets(
       async () => files.map((file) => ({ parentID, file })),
       busyState,
+      false,
+      refreshCurrentDirectory,
     )
   }
 
@@ -475,43 +481,45 @@ export default function DesktopFileExplorer({
     }
   }
 
-  const dropExternalFilesToParent = async (files: File[], parentID: number) => {
-    if (files.length === 0 || explorerActionBusy) return
-    if (uploadConflictSupported) {
-      await uploadConflictAwareFiles(parentID, files, 'drop-upload')
-      return
-    }
-    setActionBusy('drop-upload')
-    try {
-      const result = await window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)
-      if (!result.ok) {
-        onError(result.error.message)
-        return
+  const {
+    dropFiles: dropExternalFiles,
+    dropFilesToCrumb: dropExternalFilesToCrumb,
+    dropFolderEntries: dropExternalFolderEntries,
+    dropFolderEntriesToCrumb: dropExternalFolderEntriesToCrumb,
+  } = useXDriveFileExplorerExternalDropController<
+    AgentCloudNode,
+    AgentCloudCrumb,
+    XDriveFileExplorerSort
+  >({
+    currentID: current?.id,
+    currentCrumbs: crumbs,
+    sort,
+    nodeByID,
+    disabled: explorerActionBusy,
+    folderDropEnabled: uploadConflictSupported,
+    uploadFilesToParent: async (parentID, files) => {
+      if (uploadConflictSupported) {
+        return uploadConflictAwareFiles(parentID, files, 'drop-upload', false)
       }
-      if (result.data.failures.length > 0) {
-        onFeedback('warning', `已上传 ${result.data.uploaded.length} 个文件，${result.data.failures.length} 个失败。`)
-      } else {
-        onFeedback('good', `已上传 ${result.data.uploaded.length} 个文件。`)
+      setActionBusy('drop-upload')
+      try {
+        const result = await window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)
+        if (!result.ok) {
+          onError(result.error.message)
+          return false
+        }
+        if (result.data.failures.length > 0) {
+          onFeedback('warning', `已上传 ${result.data.uploaded.length} 个文件，${result.data.failures.length} 个失败。`)
+        } else {
+          onFeedback('good', `已上传 ${result.data.uploaded.length} 个文件。`)
+        }
+        await onQuotaChanged()
+        return true
+      } finally {
+        setActionBusy('')
       }
-      if (current) await onLoadDirectory(current.id, crumbs, sort)
-      await onQuotaChanged()
-    } finally {
-      setActionBusy('')
-    }
-  }
-
-  const dropExternalFiles = async (files: File[], target?: XDriveFileExplorerItem) => {
-    if (!current || files.length === 0) return
-    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
-    await dropExternalFilesToParent(files, parentID)
-  }
-
-  const dropExternalFolderEntriesToParent = async (
-    payload: XDriveFileExplorerExternalDropPayload,
-    parentID: number,
-  ) => {
-    if (!uploadConflictSupported || explorerActionBusy) return
-    await uploadConflictAwareTargets(
+    },
+    uploadFolderEntriesToParent: (parentID, payload) => uploadConflictAwareTargets(
       async () => {
         const targets = await resolveFolderUploadTargets(
           parentID,
@@ -525,28 +533,10 @@ export default function DesktopFileExplorer({
       },
       'drop-upload',
       true,
-    )
-  }
-
-  const dropExternalFolderEntries = async (
-    payload: XDriveFileExplorerExternalDropPayload,
-    target?: XDriveFileExplorerItem,
-  ) => {
-    if (!current) return
-    const parentID = xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)
-    await dropExternalFolderEntriesToParent(payload, parentID)
-  }
-
-  const dropExternalFilesToCrumb = async (files: File[], crumb: XDriveFileExplorerCrumb) => {
-    await dropExternalFilesToParent(files, Number(crumb.id))
-  }
-
-  const dropExternalFolderEntriesToCrumb = async (
-    payload: XDriveFileExplorerExternalDropPayload,
-    crumb: XDriveFileExplorerCrumb,
-  ) => {
-    await dropExternalFolderEntriesToParent(payload, Number(crumb.id))
-  }
+      false,
+    ),
+    refreshDirectory: onLoadDirectory,
+  })
 
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder: () => setCreateOpen(true),

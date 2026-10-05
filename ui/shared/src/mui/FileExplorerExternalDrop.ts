@@ -1,8 +1,122 @@
-import type { XDriveFileExplorerFolderUploadEntry } from '../file-explorer-controller'
+import { useCallback } from 'react'
+import type { Node } from '../models'
+import { xDriveFileExplorerExternalDropParentID } from '../file-explorer-controller'
+import type {
+  XDriveFileExplorerFolderUploadEntry,
+  XDriveFileExplorerSelectionItem,
+} from '../file-explorer-controller'
 
 export type XDriveFileExplorerExternalDropPayload = {
   files: XDriveFileExplorerFolderUploadEntry<File>[]
   directories: string[]
+}
+
+export type XDriveFileExplorerExternalDropControllerOptions<
+  TNode extends Pick<Node, 'id' | 'type'>,
+  TCrumb extends { id: string | number; name: string },
+  TSort,
+> = {
+  currentID?: number
+  currentCrumbs: readonly TCrumb[]
+  sort: TSort
+  nodeByID: ReadonlyMap<number, TNode>
+  disabled?: boolean
+  folderDropEnabled?: boolean
+  uploadFilesToParent: (parentID: number, files: File[]) => Promise<boolean | void>
+  uploadFolderEntriesToParent: (
+    parentID: number,
+    payload: XDriveFileExplorerExternalDropPayload,
+  ) => Promise<boolean | void>
+  refreshDirectory: (id: number, crumbs: TCrumb[], sort: TSort) => Promise<void>
+}
+
+export function useXDriveFileExplorerExternalDropController<
+  TNode extends Pick<Node, 'id' | 'type'>,
+  TCrumb extends { id: string | number; name: string },
+  TSort,
+>({
+  currentID,
+  currentCrumbs,
+  sort,
+  nodeByID,
+  disabled = false,
+  folderDropEnabled = true,
+  uploadFilesToParent,
+  uploadFolderEntriesToParent,
+  refreshDirectory,
+}: XDriveFileExplorerExternalDropControllerOptions<TNode, TCrumb, TSort>) {
+  const refreshCurrentDirectory = useCallback(async () => {
+    if (currentID === undefined) return
+    await refreshDirectory(currentID, [...currentCrumbs], sort)
+  }, [currentCrumbs, currentID, refreshDirectory, sort])
+
+  const dropFilesToParent = useCallback(async (files: File[], parentID: number) => {
+    if (disabled || files.length === 0) return
+    const shouldRefresh = await uploadFilesToParent(parentID, files)
+    if (shouldRefresh !== false) await refreshCurrentDirectory()
+  }, [disabled, refreshCurrentDirectory, uploadFilesToParent])
+
+  const dropFiles = useCallback(async (
+    files: File[],
+    target?: XDriveFileExplorerSelectionItem,
+  ) => {
+    if (currentID === undefined || disabled || files.length === 0) return
+    const parentID = xDriveFileExplorerExternalDropParentID(currentID, target, nodeByID)
+    await dropFilesToParent(files, parentID)
+  }, [currentID, disabled, dropFilesToParent, nodeByID])
+
+  const dropFolderEntriesToParent = useCallback(async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    parentID: number,
+  ) => {
+    if (
+      disabled ||
+      !folderDropEnabled ||
+      (payload.files.length === 0 && payload.directories.length === 0)
+    ) return
+    const shouldRefresh = await uploadFolderEntriesToParent(parentID, payload)
+    if (shouldRefresh !== false) await refreshCurrentDirectory()
+  }, [
+    disabled,
+    folderDropEnabled,
+    refreshCurrentDirectory,
+    uploadFolderEntriesToParent,
+  ])
+
+  const dropFolderEntries = useCallback(async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    target?: XDriveFileExplorerSelectionItem,
+  ) => {
+    if (currentID === undefined || disabled || !folderDropEnabled) return
+    const parentID = xDriveFileExplorerExternalDropParentID(currentID, target, nodeByID)
+    await dropFolderEntriesToParent(payload, parentID)
+  }, [
+    currentID,
+    disabled,
+    dropFolderEntriesToParent,
+    folderDropEnabled,
+    nodeByID,
+  ])
+
+  const dropFilesToCrumb = useCallback(async (files: File[], crumb: { id: string | number }) => {
+    if (currentID === undefined) return
+    await dropFilesToParent(files, Number(crumb.id))
+  }, [currentID, dropFilesToParent])
+
+  const dropFolderEntriesToCrumb = useCallback(async (
+    payload: XDriveFileExplorerExternalDropPayload,
+    crumb: { id: string | number },
+  ) => {
+    if (currentID === undefined) return
+    await dropFolderEntriesToParent(payload, Number(crumb.id))
+  }, [currentID, dropFolderEntriesToParent])
+
+  return {
+    dropFiles,
+    dropFilesToCrumb,
+    dropFolderEntries,
+    dropFolderEntriesToCrumb,
+  }
 }
 
 type XDriveLegacyFileSystemEntry = {
