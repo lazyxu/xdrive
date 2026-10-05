@@ -70,6 +70,18 @@ unknown future formats
 
 All use the same base pipeline. Media indexing is an optional derived layer; failure to parse media metadata must never fail, hide, delete, rename, or prevent backup of the original file.
 
+## Synchronization strategy reference
+
+The concrete scan/transfer behavior for every current synchronization-folder connector is documented in [`sync-folder-sync-strategies.md`](./sync-folder-sync-strategies.md).
+
+The important terminology is strict:
+
+- **full inventory scan** means enumerating the complete provider/filesystem inventory;
+- **incremental transfer** means the shared Source planner avoids transferring bytes for `unchanged` items and pure `move` actions;
+- **incremental change scan** means a persisted provider checkpoint plus explicit change/delete semantics.
+
+Current Yike Photos Pull, Synology Photos Pull, and Synology FileStation Pull use **full inventory scan + incremental transfer**. Synology NAS Push similarly performs a full filesystem walk while avoiding unchanged uploads. None currently enables provider-backed `ScanChanges(checkpoint)`.
+
 ## Connector families
 
 ### Yike Photos Pull — `yike_photos`

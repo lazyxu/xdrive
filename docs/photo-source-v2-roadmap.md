@@ -4,6 +4,8 @@
 
 This document is the implementation roadmap for Yike Photos Pull, Synology Photos Pull, and Synology FileStation Pull. Synology Push follows the same architectural boundary, but is not required for the three-connector milestone described here.
 
+Detailed per-connector inventory, revision, identity, zero-byte move, digest/CAS, deletion, and incremental-transfer behavior is defined in [`sync-folder-sync-strategies.md`](./sync-folder-sync-strategies.md).
+
 ## Hard architecture boundary
 
 ### Source / synchronization-folder layer
@@ -319,6 +321,8 @@ Current deterministic relation projection is intentionally narrow:
 
 ## Incremental synchronization contract
 
+Do not conflate **incremental transfer** with **incremental scan**. Incremental transfer is already current: after a full inventory, the shared Source planner leaves `unchanged` items at zero bytes and executes pure stable-identity path changes as zero-byte `move` operations. Provider-specific revision/digest rules are documented in [`sync-folder-sync-strategies.md`](./sync-folder-sync-strategies.md).
+
 The Source core persists opaque checkpoints on `Source` / `SyncRun`. The Pull layer now formalizes the execution boundary with `FullScanner[T]`, `ChangeScanner[T]`, `ChangeScanCapabilities`, and `ResolveChangeScan`.
 
 All three current Pull adapters explicitly declare `FullReconciliationOnly()`. Their scanners expose `ScanFull`; the existing `Scan` entry point remains as a compatibility wrapper. This is intentional: a provider pagination cursor/offset, mtime, indexed timestamp, or similar listing hint is not a change checkpoint.
@@ -424,7 +428,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata/preview plus exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are local; AAE without embedded target identity and other RAW formats remain ungrouped/TODO | High |
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
-| P8 | Foundation complete: shared `ScanFull` / `ScanChanges` capability/decision contract; current connectors remain full-only until a proven provider change+tombstone contract exists, then add real delta execution plus periodic full reconciliation | Medium-high |
+| P8 | Incremental transfer current on full inventories; shared `ScanFull` / `ScanChanges` capability/decision foundation complete. Keep current Pull connectors full-scan until a proven provider change+tombstone contract exists, then add real delta execution plus periodic full reconciliation | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
 | P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, user-managed local tags/people labels/descriptions, manual albums, saved-query smart albums, shared grid/timeline month presentation, and offline local-GPS place facets are current; next add optional connector-neutral automatic face/person and place-name analysis facets | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |

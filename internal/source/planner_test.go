@@ -122,3 +122,54 @@ func assertAction(t *testing.T, current *meta.SourceItem, item DiscoveredItem, m
 		t.Fatalf("action=%q want=%q result=%+v", got.Action, want, got)
 	}
 }
+
+func TestPlannerRemoteRevisionDrivesIncrementalTransfer(t *testing.T) {
+	base := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	later := base.Add(2 * time.Hour)
+	nodeID := uint64(21)
+	current := meta.SourceItem{
+		ExternalID:     "provider:item:21",
+		NodeID:         &nodeID,
+		Kind:           meta.SourceItemKindFile,
+		Path:           "DCIM/a.jpg",
+		Size:           100,
+		ModifiedAt:     &base,
+		RemoteRevision: "md5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		State:          meta.SourceItemStateSynced,
+	}
+
+	sameContent := DiscoveredItem{
+		ExternalID:     current.ExternalID,
+		Kind:           meta.SourceItemKindFile,
+		Path:           current.Path,
+		Size:           current.Size,
+		ModifiedAt:     &later,
+		RemoteRevision: current.RemoteRevision,
+	}
+	assertAction(t, &current, sameContent, nil, ActionUnchanged)
+
+	moved := sameContent
+	moved.Path = "Trips/a.jpg"
+	assertAction(t, &current, moved, nil, ActionMove)
+
+	changed := sameContent
+	changed.RemoteRevision = "md5:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	assertAction(t, &current, changed, nil, ActionUpdate)
+
+	movedChanged := changed
+	movedChanged.Path = "Trips/a.jpg"
+	assertAction(t, &current, movedChanged, nil, ActionMoveUpdate)
+
+	var summary Summary
+	for _, result := range []PlanResult{
+		{Action: ActionUnchanged, Item: sameContent},
+		{Action: ActionMove, Item: moved},
+		{Action: ActionUpdate, Item: changed},
+		{Action: ActionMoveUpdate, Item: movedChanged},
+	} {
+		summary.Add(result)
+	}
+	if summary.PlannedTransferItems != 2 || summary.PlannedTransferBytes != 200 {
+		t.Fatalf("planned transfer summary=%+v want only update + move_update", summary)
+	}
+}
