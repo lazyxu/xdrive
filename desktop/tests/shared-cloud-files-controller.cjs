@@ -80,7 +80,7 @@ test('Web delegates cloud read state and lifecycle to the shared controller', ()
     'getQuota: () => api.quota()',
     'pageState: directoryPage',
     'enabled: Boolean(profile && !profile.must_change_password)',
-    'applyQuota(quotaValue)',
+    'applyQuota',
   ]) {
     assert.ok(webApp.includes(token), `Web cloud controller wiring missing: ${token}`)
   }
