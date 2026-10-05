@@ -2375,6 +2375,16 @@ function registerIPCHandlers() {
     }
   })
 
+  ipcMain.handle('agent:cloud-text-preview', (_event, id: unknown) => runAgentAction<{ text: string; truncated: boolean; size: number }>(async () => {
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'File id is required.')
+    }
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    requireAgentCapability(hello, 'file-text-preview')
+    return requireAgentClient().cloudFileTextPreview(id)
+  }, false))
+
   ipcMain.handle('agent:cloud-download', async (_event, id: unknown, name: unknown) => {
     if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
         typeof name !== 'string' || !name.trim()) {

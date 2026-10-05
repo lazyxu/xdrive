@@ -161,6 +161,15 @@ export default function WebFileExplorer({
     onError,
   })
 
+  const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file') return null
+    try {
+      return await api.fileTextPreview(Number(item.id))
+    } catch {
+      return null
+    }
+  }, [api])
+
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
     try {
@@ -312,6 +321,7 @@ export default function WebFileExplorer({
         crumbs={explorerCrumbs}
         loading={loading || searchLoading || fileOperationBusy}
         loadThumbnail={loadThumbnail}
+        loadTextPreview={loadTextPreview}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}

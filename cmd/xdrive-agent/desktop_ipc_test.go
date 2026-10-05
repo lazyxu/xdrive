@@ -399,6 +399,10 @@ func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint6
 	return f.cloudUploaded, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudFileTextPreview(_ context.Context, _ uint64) (client.FileTextPreview, error) {
+	return client.FileTextPreview{Text: "preview", Truncated: true, Size: 70000}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudDownload(_ context.Context, id uint64, destination string) error {
 	f.cloudDownloadID, f.cloudDownloadDestination = id, destination
 	return f.err
@@ -877,6 +881,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "archive-download") {
 		t.Fatalf("hello missing archive download capability: %+v", hello.Capabilities)
 	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-text-preview") {
+		t.Fatalf("hello missing file text preview capability: %+v", hello.Capabilities)
+	}
 
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/lifecycle/shutdown", "")
 	if res.Code != http.StatusOK {
@@ -1180,6 +1187,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/upload/preflight", `{"parent_id":2,"name":"upload.txt"}`, "\"conflict\":true"},
 		{http.MethodPost, "/v1/cloud/upload/conflict", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt","conflict_policy":"keep_both"}`, "\"transferred_bytes\":12"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
+		{http.MethodGet, "/v1/cloud/text-preview?id=3", "", "\"text\":\"preview\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodPost, "/v1/cloud/download/archive", fmt.Sprintf(`{"ids":[2,3],"destination":%q}`, archiveDestination), "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},

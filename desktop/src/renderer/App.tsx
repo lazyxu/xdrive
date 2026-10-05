@@ -2051,6 +2051,7 @@ export default function App({
                 agent.hello?.capabilities.includes('upload-conflict-policy')
               ),
               archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
+              textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}

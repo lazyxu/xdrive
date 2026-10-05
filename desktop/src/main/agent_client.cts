@@ -357,6 +357,12 @@ export type AgentCloudUploadConflictPreflight = {
   can_overwrite?: boolean
 }
 
+export type AgentCloudFileTextPreview = {
+  text: string
+  truncated: boolean
+  size: number
+}
+
 export type AgentCloudUploadResult = {
   node: AgentCloudNode
   skipped: boolean
@@ -1209,6 +1215,10 @@ export class AgentIPCClient {
       local_path: localPath,
       name,
     }, 6 * 60 * 60 * 1000)
+  }
+
+  cloudFileTextPreview(id: number) {
+    return this.request<AgentCloudFileTextPreview>('GET', `/v1/cloud/text-preview?id=${encodeURIComponent(String(id))}`)
   }
 
   cloudDownload(id: number, destination: string) {

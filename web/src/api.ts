@@ -39,6 +39,7 @@ import type {
   XDriveServerUpdateState,
   XDriveTransferTask,
   XDriveFileOperation,
+  XDriveFileTextPreview,
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
   XDriveFileOperationType,
@@ -957,6 +958,10 @@ export class XDriveApi {
       }
       throw new ApiError(response.status, error)
     }
+  }
+
+  fileTextPreview(id: number) {
+    return this.request<XDriveFileTextPreview>(`/api/v1/files/${id}/preview/text`)
   }
 
   copy(nodeID: number, parentID: number, name?: string) {

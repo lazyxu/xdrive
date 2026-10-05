@@ -51,6 +51,8 @@ import {
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import { formatSize } from '../format'
+import { xDriveFileSupportsTextPreview } from '../file-preview'
+import type { XDriveFileTextPreview } from '../file-preview'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import { XDriveStatePanel } from './StatePanel'
@@ -454,6 +456,69 @@ function XDriveLazyFileThumbnail({
 
 const xDriveWindowsFolderYellow = '#ffcb3d'
 
+function XDriveLazyFileTextPreview({
+  item,
+  loadTextPreview,
+  fallback,
+}: {
+  item: XDriveFileExplorerItem
+  loadTextPreview: (item: XDriveFileExplorerItem) => Promise<XDriveFileTextPreview | null | undefined>
+  fallback: ReactNode
+}) {
+  const [preview, setPreview] = useState<XDriveFileTextPreview | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setPreview(null)
+    setFailed(false)
+    setLoading(true)
+    void loadTextPreview(item)
+      .then((value) => {
+        if (!active) return
+        if (value) setPreview(value)
+        else setFailed(true)
+      })
+      .catch(() => {
+        if (active) setFailed(true)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [item.id, item.updatedAt, loadTextPreview])
+
+  if (loading) return <Typography variant="caption" color="text.secondary">正在加载文本预览…</Typography>
+  if (failed || !preview) return <>{fallback}</>
+
+  return (
+    <Stack spacing={0.5} sx={{ width: '100%', minWidth: 0, minHeight: 176, maxHeight: 220, p: 1, alignSelf: 'stretch' }}>
+      <Box
+        component="pre"
+        sx={{
+          m: 0,
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere',
+          fontFamily: 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace',
+          fontSize: 11,
+          lineHeight: 1.45,
+          color: 'text.primary',
+          userSelect: 'text',
+        }}
+      >
+        {preview.text || '（空文件）'}
+      </Box>
+      {preview.truncated ? <Typography variant="caption" color="text.secondary">仅显示前 64 KiB</Typography> : null}
+    </Stack>
+  )
+}
+
 export function XDriveFileExplorerCommandButton({ sx, ...props }: ButtonProps) {
   return (
     <Button
@@ -546,6 +611,7 @@ export function XDriveFileExplorer({
   commandBarEnd,
   statusText,
   loadThumbnail,
+  loadTextPreview,
   hasMore = false,
   loadingMore = false,
   onLoadMore,
@@ -604,6 +670,7 @@ export function XDriveFileExplorer({
   commandBarEnd?: ReactNode
   statusText?: ReactNode
   loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
+  loadTextPreview?: (item: XDriveFileExplorerItem) => Promise<XDriveFileTextPreview | null | undefined>
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
@@ -2762,15 +2829,23 @@ export function XDriveFileExplorer({
                     overflow: 'hidden',
                   }}
                 >
-                  {(inspectorItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(inspectorItem.name, inspectorItem.kind)) && loadThumbnail
+                  {xDriveFileSupportsTextPreview(inspectorItem.name, inspectorItem.kind) && loadTextPreview
                     ? (
-                      <XDriveLazyFileThumbnail
+                      <XDriveLazyFileTextPreview
                         item={inspectorItem}
-                        loadThumbnail={loadThumbnail}
+                        loadTextPreview={loadTextPreview}
                         fallback={defaultItemIcon(inspectorItem, true)}
                       />
                     )
-                    : defaultItemIcon(inspectorItem, true)}
+                    : (inspectorItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(inspectorItem.name, inspectorItem.kind)) && loadThumbnail
+                      ? (
+                        <XDriveLazyFileThumbnail
+                          item={inspectorItem}
+                          loadThumbnail={loadThumbnail}
+                          fallback={defaultItemIcon(inspectorItem, true)}
+                        />
+                      )
+                      : defaultItemIcon(inspectorItem, true)}
                 </Box>
                 <Typography variant="subtitle2" sx={{ overflowWrap: 'anywhere' }}>{inspectorItem.name}</Typography>
                 <Divider />

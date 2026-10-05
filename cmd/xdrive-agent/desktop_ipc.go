@@ -71,6 +71,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"file-text-preview",
 	"archive-download",
 	"file-operation-conflict-resolution",
 	"upload-conflict-preflight",
@@ -173,6 +174,7 @@ type desktopIPCController interface {
 	CloudUploadConflictPreflight(context.Context, uint64, string) (client.UploadConflictPreflight, error)
 	CloudUploadWithConflictPolicy(context.Context, uint64, string, string, string) (agentCloudUploadResult, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
+	CloudFileTextPreview(context.Context, uint64) (client.FileTextPreview, error)
 	CloudDownload(context.Context, uint64, string) error
 	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
 	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
@@ -443,6 +445,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("POST /v1/cloud/upload/preflight", h.cloudUploadConflictPreflight)
 	mux.HandleFunc("POST /v1/cloud/upload/conflict", h.cloudUploadWithConflictPolicy)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
+	mux.HandleFunc("GET /v1/cloud/text-preview", h.cloudFileTextPreview)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
 	mux.HandleFunc("POST /v1/cloud/download/archive", h.cloudDownloadArchive)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
@@ -1255,6 +1258,20 @@ func (h *desktopIPCHandler) cloudUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, node)
+}
+
+func (h *desktopIPCHandler) cloudFileTextPreview(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_id", "id must be a positive integer")
+		return
+	}
+	preview, err := h.ctrl.CloudFileTextPreview(r.Context(), id)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, preview)
 }
 
 func (h *desktopIPCHandler) cloudDownload(w http.ResponseWriter, r *http.Request) {

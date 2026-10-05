@@ -424,6 +424,14 @@ func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, loca
 	return node, err
 }
 
+func (c *agentController) CloudFileTextPreview(ctx context.Context, id uint64) (client.FileTextPreview, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileTextPreview{}, err
+	}
+	return cli.FileTextPreview(ctx, id)
+}
+
 func (c *agentController) CloudDownload(ctx context.Context, id uint64, destination string) error {
 	cli, _, err := c.cloudClient()
 	if err != nil {
