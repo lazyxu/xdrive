@@ -155,3 +155,138 @@ func TestManagerCompleteSkippedKeepsZeroTransferredBytes(t *testing.T) {
 		t.Fatalf("skipped transfer must have zero rate and completed timestamp: %+v", task)
 	}
 }
+
+func TestHierarchicalTransferContract(t *testing.T) {
+	m := NewManager(20)
+	group := m.StartGroup(Spec{
+		FileName:  "Photos",
+		Path:      "Photos",
+		Kind:      KindUpload,
+		Direction: "upload",
+	})
+	if group == nil {
+		t.Fatal("group handle is nil")
+	}
+
+	_, tasks := m.Snapshot()
+	if len(tasks) != 1 {
+		t.Fatalf("tasks=%+v", tasks)
+	}
+	root := tasks[0]
+	if root.Scope != ScopeGroup || root.RootID != root.ID || root.ParentID != "" {
+		t.Fatalf("unexpected root identity: %+v", root)
+	}
+	if root.Phase != PhaseScanning || root.ScanComplete {
+		t.Fatalf("new group must start scanning: %+v", root)
+	}
+	if root.ItemsTotal != 0 || root.BytesTotal != 0 {
+		t.Fatalf("new group should not invent totals before scan: %+v", root)
+	}
+
+	group.UpdateGroup(GroupProgress{
+		Phase:          PhaseTransferring,
+		ScanComplete:   true,
+		BytesDone:      25,
+		BytesTotal:     300,
+		TotalItems:     3,
+		CompletedItems: 1,
+		FailedItems:    0,
+		RunningItems:   1,
+		QueuedItems:    1,
+	})
+
+	childA := m.StartChild(group, Spec{
+		FileName:     "a.jpg",
+		Path:         "Photos/a.jpg",
+		RelativePath: "a.jpg",
+		Kind:         KindUpload,
+		Direction:    "upload",
+		TotalBytes:   100,
+	})
+	childB := m.StartChild(group, Spec{
+		FileName:     "nested.mov",
+		Path:         "Photos/sub/nested.mov",
+		RelativePath: "sub/nested.mov",
+		Kind:         KindUpload,
+		Direction:    "upload",
+		TotalBytes:   200,
+	})
+	if childA == nil || childB == nil {
+		t.Fatal("child handle is nil")
+	}
+
+	_, tasks = m.Snapshot()
+	byID := map[string]Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	root = byID[group.ID()]
+	if root.State != StateRunning || root.Phase != PhaseTransferring || !root.ScanComplete {
+		t.Fatalf("unexpected group execution state: %+v", root)
+	}
+	if root.BytesDone != 25 || root.BytesTotal != 300 || root.ItemsTotal != 3 ||
+		root.ItemsCompleted != 1 || root.ItemsRunning != 1 || root.ItemsQueued != 1 {
+		t.Fatalf("unexpected group counters: %+v", root)
+	}
+
+	for _, childID := range []string{childA.ID(), childB.ID()} {
+		child := byID[childID]
+		if child.Scope != ScopeItem || child.ParentID != group.ID() || child.RootID != group.ID() {
+			t.Fatalf("unexpected child hierarchy: %+v", child)
+		}
+		if !child.ScanComplete || child.ItemsTotal != 1 || child.ItemsRunning != 1 {
+			t.Fatalf("unexpected child counters: %+v", child)
+		}
+	}
+	if byID[childB.ID()].RelativePath != "sub/nested.mov" {
+		t.Fatalf("relative path lost: %+v", byID[childB.ID()])
+	}
+
+	childA.Complete()
+	childB.Fail(errors.New("network down"))
+	_, tasks = m.Snapshot()
+	byID = map[string]Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	if byID[childA.ID()].ItemsCompleted != 1 || byID[childA.ID()].ItemsRunning != 0 {
+		t.Fatalf("completed child counters wrong: %+v", byID[childA.ID()])
+	}
+	if byID[childB.ID()].ItemsFailed != 1 || byID[childB.ID()].ItemsRunning != 0 {
+		t.Fatalf("failed child counters wrong: %+v", byID[childB.ID()])
+	}
+}
+
+func TestHierarchicalTransferHistoryTreatsQueuedAndCancellingAsActive(t *testing.T) {
+	m := NewManager(2)
+	queued := m.StartGroup(Spec{
+		FileName:  "queued-folder",
+		Kind:      KindDownload,
+		Direction: "download",
+		Phase:     PhaseQueued,
+	})
+	if queued == nil {
+		t.Fatal("queued group is nil")
+	}
+
+	running := m.Start(Spec{FileName: "running", Kind: KindUpload, Direction: "upload"})
+	completed := m.Start(Spec{FileName: "completed", Kind: KindUpload, Direction: "upload"})
+	completed.Complete()
+
+	_, tasks := m.Snapshot()
+	ids := map[string]bool{}
+	for _, task := range tasks {
+		ids[task.ID] = true
+	}
+	if !ids[queued.ID()] || !ids[running.ID()] {
+		t.Fatalf("active queued/running transfers were trimmed: %+v", tasks)
+	}
+
+	m.ClearHistory()
+	_, tasks = m.Snapshot()
+	for _, task := range tasks {
+		if terminalState(task.State) {
+			t.Fatalf("terminal transfer survived history clear: %+v", task)
+		}
+	}
+}

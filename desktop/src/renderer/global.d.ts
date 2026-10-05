@@ -32,6 +32,7 @@ import type {
   XDriveFileQuickAccessItem,
   XDriveFileRecentItem,
   XDriveFileTextPreview,
+  XDriveTransferTask,
   XDriveUploadConflictPreflight,
 } from '@xdrive/shared'
 
@@ -150,26 +151,7 @@ declare global {
     Syncing: boolean
   }
 
-  type AgentTransfer = {
-    id: string
-    file_name: string
-    path?: string
-    kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
-    direction: 'upload' | 'download' | 'local' | string
-    state: 'running' | 'completed' | 'failed' | 'retrying' | string
-    bytes_done: number
-    bytes_total: number
-    percent: number
-    instant_bytes_per_second: number
-    average_bytes_per_second: number
-    elapsed_ms: number
-    error?: string
-    retry_count: number
-    retryable: boolean
-    started_at: string
-    updated_at: string
-    completed_at?: string
-  }
+  type AgentTransfer = XDriveTransferTask
 
   type AgentTransfers = {
     revision: number

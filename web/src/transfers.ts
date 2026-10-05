@@ -1,4 +1,4 @@
-import { xDriveTransferActive } from '../../ui/shared/src'
+import { xDriveNormalizeTransferTask, xDriveTransferActive } from '../../ui/shared/src'
 import type { XDriveTransferTask } from '../../ui/shared/src'
 
 const STORAGE_KEY = 'xdrive.web.transfer_history'
@@ -16,13 +16,18 @@ function loadTransferHistory(): XDriveTransferTask[] {
     return parsed
       .filter((item): item is XDriveTransferTask => Boolean(item && typeof item.id === 'string'))
       .map((item) => {
-        if (!xDriveTransferActive(item)) return item
+        const normalized = xDriveNormalizeTransferTask(item)
+        if (!xDriveTransferActive(normalized)) return normalized
         return {
-          ...item,
+          ...normalized,
           state: 'failed',
-          error: item.error || '页面刷新后无法继续跟踪该传输，请重新发起。',
+          items_running: 0,
+          items_failed: normalized.scope === 'group'
+            ? normalized.items_failed
+            : 1,
+          error: normalized.error || '页面刷新后无法继续跟踪该传输，请重新发起。',
           retryable: false,
-          elapsed_ms: Math.max(item.elapsed_ms || 0, now - new Date(item.started_at).getTime()),
+          elapsed_ms: Math.max(normalized.elapsed_ms || 0, now - new Date(normalized.started_at).getTime()),
           updated_at: nowISO(now),
           completed_at: nowISO(now),
         }
@@ -58,6 +63,10 @@ class WebTransferStore {
     const id = `web-${now}-${++this.sequence}`
     const item: XDriveTransferTask = {
       id,
+      root_id: id,
+      scope: 'item',
+      phase: 'transferring',
+      scan_complete: true,
       file_name: input.fileName,
       path: input.path || input.fileName,
       kind: input.kind,
@@ -66,6 +75,11 @@ class WebTransferStore {
       bytes_done: 0,
       bytes_total: Math.max(0, input.bytesTotal || 0),
       percent: 0,
+      items_total: 1,
+      items_completed: 0,
+      items_failed: 0,
+      items_running: 1,
+      items_queued: 0,
       instant_bytes_per_second: 0,
       average_bytes_per_second: 0,
       elapsed_ms: 0,
@@ -114,6 +128,11 @@ class WebTransferStore {
       return {
         ...item,
         state: 'completed',
+        phase: 'finalizing',
+        items_completed: 1,
+        items_failed: 0,
+        items_running: 0,
+        items_queued: 0,
         bytes_done: finalDone,
         bytes_total: total,
         percent: total > 0 ? 100 : item.percent,
@@ -134,6 +153,11 @@ class WebTransferStore {
       return {
         ...item,
         state: 'completed',
+        phase: 'finalizing',
+        items_completed: 1,
+        items_failed: 0,
+        items_running: 0,
+        items_queued: 0,
         bytes_done: 0,
         bytes_total: total,
         percent: 100,
@@ -152,6 +176,10 @@ class WebTransferStore {
     this.patch(id, (item) => ({
       ...item,
       state: 'failed',
+      items_completed: 0,
+      items_failed: 1,
+      items_running: 0,
+      items_queued: 0,
       instant_bytes_per_second: 0,
       elapsed_ms: Math.max(0, now - new Date(item.started_at).getTime()),
       error: error instanceof Error ? error.message : String(error || '传输失败'),

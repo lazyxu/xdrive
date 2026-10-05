@@ -117,14 +117,25 @@ export type AgentStatusEvent = {
 
 export type AgentTransfer = {
   id: string
+  parent_id?: string
+  root_id?: string
+  scope?: 'item' | 'group'
+  phase?: 'scanning' | 'queued' | 'transferring' | 'finalizing' | string
+  scan_complete?: boolean
   file_name: string
   path?: string
+  relative_path?: string
   kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
   direction: 'upload' | 'download' | 'local' | string
-  state: 'running' | 'completed' | 'failed' | 'retrying' | string
+  state: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'retrying' | 'cancelling' | 'cancelled' | string
   bytes_done: number
   bytes_total: number
   percent: number
+  items_total?: number
+  items_completed?: number
+  items_failed?: number
+  items_running?: number
+  items_queued?: number
   instant_bytes_per_second: number
   average_bytes_per_second: number
   elapsed_ms: number
