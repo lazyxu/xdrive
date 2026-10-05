@@ -3,6 +3,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaPlaceFacet,
+  MediaSuggestedPerson,
 } from '../models'
 import { resolveXDriveTransport } from '../transport-result'
 import type {
@@ -34,6 +35,15 @@ export interface XDriveMediaGalleryPort {
   listPlaces?: (
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceFacet[]>>
+  listSuggestedPeople?: (
+    limit?: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaSuggestedPerson[]>>
+  listSuggestedPersonItems?: (
+    personID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItem[]>>
   listAlbumItems: (
     albumID: string,
     limit: number,
@@ -124,6 +134,14 @@ export function createXDriveMediaGalleryDataSource(
     listAlbums: () => resolveXDriveTransport(port.listAlbums()),
     listPlaces: port.listPlaces
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
+      : undefined,
+    listSuggestedPeople: port.listSuggestedPeople
+      ? (limit) => resolveXDriveTransport(port.listSuggestedPeople!(limit))
+      : undefined,
+    listSuggestedPersonItems: port.listSuggestedPersonItems
+      ? (personID, limit, offset, query) => resolveXDriveTransport(
+          port.listSuggestedPersonItems!(personID, limit, offset, query),
+        )
       : undefined,
     listAlbumItems: (albumID, limit, offset, query) => resolveXDriveTransport(
       port.listAlbumItems(albumID, limit, offset, query),

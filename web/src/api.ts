@@ -23,6 +23,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaPlaceFacet,
+  MediaSuggestedPerson,
   Node,
   PublicShare,
   QuotaUsage,
@@ -465,6 +466,31 @@ export class XDriveApi {
       limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
     })
     return this.request<MediaPlaceFacet[]>(`/api/v1/media/places?${query.toString()}`)
+  }
+
+  mediaSuggestedPeople(limit = 24) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+    })
+    return this.request<MediaSuggestedPerson[]>(
+      `/api/v1/media/people/suggestions?${query.toString()}`,
+    )
+  }
+
+  mediaSuggestedPersonItems(
+    personID: string,
+    limit = 100,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    appendMediaGalleryQuery(query, filters)
+    return this.request<MediaItem[]>(
+      `/api/v1/media/people/suggestions/${encodeURIComponent(personID)}/items?${query.toString()}`,
+    )
   }
 
   createMediaAlbum(name: string) {

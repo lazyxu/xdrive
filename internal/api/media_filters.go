@@ -14,16 +14,17 @@ import (
 const mediaSearchMaxRunes = 200
 
 type mediaQueryOptions struct {
-	MediaKind    string
-	Search       string
-	AssetKind    string
-	CapturedFrom *time.Time
-	CapturedTo   *time.Time
-	HasLocation  *bool
-	Favorite     *bool
-	Tag          string
-	Person       string
-	Place        *mediaPlaceCell
+	MediaKind     string
+	Search        string
+	AssetKind     string
+	CapturedFrom  *time.Time
+	CapturedTo    *time.Time
+	HasLocation   *bool
+	Favorite      *bool
+	Tag           string
+	Person        string
+	Place         *mediaPlaceCell
+	PersonCluster string
 }
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
@@ -162,6 +163,27 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 			latMax,
 			lonMin,
 			lonMax,
+		)
+	}
+	if options.PersonCluster != "" {
+		query = query.Where(
+			"EXISTS ("+
+				"SELECT 1 FROM xd_photo_person_clusters AS person_pc "+
+				"JOIN xd_photo_person_cluster_states AS person_pcs "+
+				"ON person_pcs.owner_id = person_pc.owner_id "+
+				"AND person_pcs.state = ? "+
+				"AND person_pcs.analyzer_version = person_pc.analyzer_version "+
+				"AND person_pcs.embedding_version = person_pc.embedding_version "+
+				"JOIN xd_photo_person_cluster_faces AS person_pcf "+
+				"ON person_pcf.cluster_id = person_pc.id "+
+				"JOIN xd_photo_faces AS person_pf "+
+				"ON person_pf.id = person_pcf.face_id "+
+				"WHERE person_pc.owner_id = pa.owner_id "+
+				"AND person_pc.cluster_key = ? "+
+				"AND person_pf.asset_id = pa.id"+
+				")",
+			meta.PhotoAnalysisStateReady,
+			options.PersonCluster,
 		)
 	}
 	return query

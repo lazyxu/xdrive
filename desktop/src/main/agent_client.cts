@@ -534,6 +534,14 @@ export type AgentMediaPlaceFacet = {
   attribution_url?: string
 }
 
+export type AgentMediaSuggestedPerson = {
+  id: string
+  face_count: number
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
 export type AgentMediaFavorite = {
   favorite: boolean
 }
@@ -866,6 +874,32 @@ export class AgentIPCClient {
   mediaPlaces(limit = 24) {
     const query = new URLSearchParams({ limit: String(limit) })
     return this.request<AgentMediaPlaceFacet[]>('GET', `/v1/media/places?${query.toString()}`)
+  }
+
+  mediaSuggestedPeople(limit = 24) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    return this.request<AgentMediaSuggestedPerson[]>(
+      'GET',
+      `/v1/media/people/suggestions?${query.toString()}`,
+    )
+  }
+
+  mediaSuggestedPersonItems(
+    personID: string,
+    limit = 100,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      person_id: personID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    appendAgentMediaQuery(query, filters)
+    return this.request<AgentMediaItem[]>(
+      'GET',
+      `/v1/media/people/suggestion-items?${query.toString()}`,
+    )
   }
 
   createMediaAlbum(name: string) {

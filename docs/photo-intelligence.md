@@ -245,6 +245,8 @@ Cluster keys are derived only from sorted stable asset/detection evidence member
 
 The complete owner projection is replaced in one database transaction. A clustering transaction failure cannot expose a half-written replacement; the owner state becomes failed. Because upstream face analysis may independently replace face rows and cascade old memberships, automatic cluster rows are product-visible only while `PhotoPersonClusterState.State == ready`. Deleting a face/asset cascades its membership and the face-count/source-update state makes the owner eligible for a new rebuild. Disabled users and users forced to change password are not scheduled.
 
+Gallery consumes the automatic projection through separate Suggested People APIs. Only `ready` clusters are listed or filterable. The API exposes cluster id, face/item counts, cover node, and update time; embeddings and cohesion internals remain server-side. Opening a suggestion is a transient view over the current automatic cluster plus ordinary temporary Gallery filters. The cluster id is never serialized into `MediaGalleryQuery`, a smart album, or `PhotoMetadata.PeopleJSON`.
+
 ## Place-name analysis policy
 
 The current Gallery GPS facet keeps its stable `place:<latitude-cell>:<longitude-cell>` identity and filter contract. Human-readable names are an optional derived label layered on top; canonical GPS remains `PhotoMetadata.Latitude/Longitude`.
@@ -339,12 +341,14 @@ When automatic facets are exposed later:
    - separate opt-in `xdrive-photo-face` image using pinned YuNet + SFace with exact model SHA/license provenance;
    - exact-image CI self-test/benchmark and GitHub/GitLab publish-without-rebuild path;
    - CPU is the supported reference target; GPU/NPU backends remain a future optional runtime optimization and must use a distinct `pipeline_version`.
-5. **Person clustering — current**
+5. **Person clustering + Suggested People — current**
    - owner-scoped clustering state and deterministic full-projection rebuilds;
    - conservative centroid/representative cosine policy with same-photo exclusion and minimum cluster size 2;
-   - never mix embedding versions; model transition marks the owner projection non-ready until vectors converge and a complete rebuild succeeds;
+   - never mix embedding versions; model transition keeps automatic suggestions hidden until vectors converge and a complete rebuild succeeds;
    - derived cluster centroid/membership confidence persisted transactionally;
-   - next: expose automatic People suggestions and design explicit durable user actions for naming, merge/split, hide, and cover selection.
+   - shared Web/Desktop Gallery exposes ready automatic clusters as read-only **人物建议** cards and a transient cluster-items view;
+   - rebuildable cluster ids never enter manual `PeopleJSON` or smart-album query contracts;
+   - next: design explicit durable user actions for naming, adopt/merge/split, hide, and cover selection.
 6. **Gallery integration**
    - shared Web/Desktop People/Places facets;
    - smart-album filters;

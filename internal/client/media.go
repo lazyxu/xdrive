@@ -109,6 +109,14 @@ type MediaPlaceFacet struct {
 	AttributionURL string     `json:"attribution_url,omitempty"`
 }
 
+type MediaSuggestedPerson struct {
+	ID          string     `json:"id"`
+	FaceCount   int64      `json:"face_count"`
+	ItemCount   int64      `json:"item_count"`
+	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
 type MediaQuery struct {
 	MediaKind    string
 	Search       string
@@ -218,6 +226,47 @@ func (c *Client) MediaPlaces(ctx context.Context, limit int) ([]MediaPlaceFacet,
 		path += "?" + encoded
 	}
 	var out []MediaPlaceFacet
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSuggestedPeople(
+	ctx context.Context,
+	limit int,
+) ([]MediaSuggestedPerson, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/api/v1/media/people/suggestions"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out []MediaSuggestedPerson
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSuggestedPersonItemsQuery(
+	ctx context.Context,
+	personID string,
+	query MediaQuery,
+	limit, offset int,
+) ([]MediaItem, error) {
+	values := url.Values{}
+	query.add(values)
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	path := "/api/v1/media/people/suggestions/" +
+		url.PathEscape(strings.TrimSpace(personID)) + "/items"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out []MediaItem
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }

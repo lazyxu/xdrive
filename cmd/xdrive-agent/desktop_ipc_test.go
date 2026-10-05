@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -120,6 +121,9 @@ type fakeDesktopIPCController struct {
 	cloudMediaItems            []client.MediaItem
 	cloudMediaAlbums           []client.MediaAlbum
 	cloudMediaPlaces           []client.MediaPlaceFacet
+	cloudSuggestedPeople       []client.MediaSuggestedPerson
+	cloudSuggestedItems        []client.MediaItem
+	cloudSuggestedID           string
 	cloudMediaAlbumItems       []client.MediaItem
 	cloudMediaThumbnail        agentMediaThumbnail
 	cloudMediaMotion           agentMediaMotion
@@ -555,6 +559,32 @@ func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.M
 
 func (f *fakeDesktopIPCController) CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error) {
 	return append([]client.MediaPlaceFacet(nil), f.cloudMediaPlaces...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaSuggestedPeople(
+	context.Context,
+	int,
+) ([]client.MediaSuggestedPerson, error) {
+	return append(
+		[]client.MediaSuggestedPerson(nil),
+		f.cloudSuggestedPeople...,
+	), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaSuggestedPersonItems(
+	_ context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
+	f.cloudSuggestedID = personID
+	f.cloudMediaQuery = query
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return append(
+		[]client.MediaItem(nil),
+		f.cloudSuggestedItems...,
+	), f.err
 }
 
 func (f *fakeDesktopIPCController) CloudCreateMediaAlbum(
@@ -1320,6 +1350,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			Latitude: 1.355, Longitude: 103.815, ItemCount: 2,
 			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
 		}},
+		cloudSuggestedPeople: []client.MediaSuggestedPerson{{
+			ID:        "auto:v1:" + strings.Repeat("a", 64),
+			FaceCount: 3, ItemCount: 2,
+			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
+		}},
+		cloudSuggestedItems: []client.MediaItem{{
+			Node: client.Node{ID: 31, Name: "photo.jpg", Type: "file", Revision: 1, Size: 123},
+			Metadata: client.MediaMetadata{
+				MediaKind: "image", MIMEType: "image/jpeg", Width: 1920, Height: 1080,
+				IndexState: "ready", HasThumbnail: true,
+			},
+		}},
 		cloudMediaAlbumItems: []client.MediaItem{{
 			Node: client.Node{ID: 31, Name: "photo.jpg", Type: "file", Revision: 1, Size: 123},
 			Metadata: client.MediaMetadata{
@@ -1379,6 +1421,44 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		!strings.Contains(res.Body.String(), "\"place:135:10381\"") ||
 		!strings.Contains(res.Body.String(), "\"item_count\":2") {
 		t.Fatalf("media places status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	personID := "auto:v1:" + strings.Repeat("a", 64)
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/people/suggestions?limit=12",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), personID) ||
+		!strings.Contains(res.Body.String(), "\"face_count\":3") {
+		t.Fatalf("suggested people status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/people/suggestion-items?person_id="+url.QueryEscape(personID)+
+			"&limit=20&offset=4&q=portrait",
+		"",
+	)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("suggested person items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudSuggestedID != personID ||
+		ctrl.cloudMediaLimit != 20 ||
+		ctrl.cloudMediaOffset != 4 ||
+		ctrl.cloudMediaQuery.Search != "portrait" {
+		t.Fatalf(
+			"suggested person query not forwarded: id=%q query=%+v limit=%d offset=%d",
+			ctrl.cloudSuggestedID,
+			ctrl.cloudMediaQuery,
+			ctrl.cloudMediaLimit,
+			ctrl.cloudMediaOffset,
+		)
 	}
 
 	res = desktopIPCRequest(
@@ -1458,6 +1538,8 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?tag=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 		"/v1/media/items?place=invalid",
 		"/v1/media/places?limit=0",
+		"/v1/media/people/suggestions?limit=0",
+		"/v1/media/people/suggestion-items?person_id=invalid",
 		"/v1/media/items?limit=0",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",

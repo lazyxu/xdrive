@@ -82,6 +82,7 @@ import {
   type AgentMediaItem,
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
+  type AgentMediaSuggestedPerson,
   type AgentMediaQuery,
   type AgentMediaFavorite,
   type AgentMediaTags,
@@ -1656,6 +1657,64 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().mediaPlaces(requestedLimit)
   }, false))
+
+  ipcMain.handle('agent:get-media-suggested-people', (_event, limit: unknown = 24) => runAgentAction<AgentMediaSuggestedPerson[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    const requestedLimit = limit === undefined ? 24 : limit
+    if (
+      typeof requestedLimit !== 'number' ||
+      !Number.isSafeInteger(requestedLimit) ||
+      requestedLimit < 1 ||
+      requestedLimit > 100
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Suggested people limit must be between 1 and 100.')
+    }
+    return requireAgentClient().mediaSuggestedPeople(requestedLimit)
+  }, false))
+
+  ipcMain.handle(
+    'agent:get-media-suggested-person-items',
+    (
+      _event,
+      personID: unknown,
+      limit: unknown = 100,
+      offset: unknown = 0,
+      query: unknown = undefined,
+    ) => runAgentAction<AgentMediaItem[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof personID !== 'string' ||
+        !/^auto:v1:[0-9a-f]{64}$/.test(personID.trim())
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Suggested person id is invalid.')
+      }
+      const requestedLimit = limit === undefined ? 100 : limit
+      const requestedOffset = offset === undefined ? 0 : offset
+      if (
+        typeof requestedLimit !== 'number' ||
+        !Number.isSafeInteger(requestedLimit) ||
+        requestedLimit < 1 ||
+        requestedLimit > 500
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Media limit must be between 1 and 500.')
+      }
+      if (
+        typeof requestedOffset !== 'number' ||
+        !Number.isSafeInteger(requestedOffset) ||
+        requestedOffset < 0
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Media offset must be zero or greater.')
+      }
+      return requireAgentClient().mediaSuggestedPersonItems(
+        personID.trim(),
+        requestedLimit,
+        requestedOffset,
+        normalizeMediaGalleryQuery(query),
+      )
+    }, false),
+  )
 
   ipcMain.handle('agent:create-media-album', (_event, name: unknown) => runAgentAction<AgentMediaAlbum>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
