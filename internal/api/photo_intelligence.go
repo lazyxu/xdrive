@@ -22,6 +22,11 @@ const (
 	photoFaceIdleInterval     = 30 * time.Second
 	photoFaceErrorInterval    = time.Minute
 	photoFacePreviewTicketTTL = 5 * time.Minute
+
+	photoPersonClusterBatchSize     = 1
+	photoPersonClusterBusyInterval  = time.Second
+	photoPersonClusterIdleInterval  = time.Minute
+	photoPersonClusterErrorInterval = 5 * time.Minute
 )
 
 func (s *Server) StartPhotoIntelligence(ctx context.Context) {
@@ -35,6 +40,7 @@ func (s *Server) StartPhotoIntelligence(ctx context.Context) {
 		strings.TrimSpace(s.PhotoFacePreviewBaseURL) != "" {
 		s.startPhotoFaceIntelligence(ctx)
 	}
+	s.startPhotoPersonClustering(ctx)
 }
 
 func (s *Server) startPhotoPlaceIntelligence(ctx context.Context) {
@@ -133,6 +139,36 @@ func (s *Server) photoFacePreviewURL(
 		nodeID,
 		url.QueryEscape(ticket),
 	), nil
+}
+
+func (s *Server) startPhotoPersonClustering(ctx context.Context) {
+	runner := &photointelligence.PersonClusterRunner{DB: s.DB}
+	slog.Info(
+		"photo_person_clustering_started",
+		"analyzer_version", photointelligence.PersonClusterAnalyzerVersion(),
+	)
+	go func() {
+		delay := time.Duration(0)
+		for {
+			if !waitPhotoIntelligence(ctx, delay) {
+				return
+			}
+			count, err := runner.RunBatch(ctx, photoPersonClusterBatchSize)
+			switch {
+			case err != nil:
+				slog.Warn(
+					"photo_person_cluster_batch_failed",
+					"error", err,
+					"processed", count,
+				)
+				delay = photoPersonClusterErrorInterval
+			case count > 0:
+				delay = photoPersonClusterBusyInterval
+			default:
+				delay = photoPersonClusterIdleInterval
+			}
+		}
+	}()
 }
 
 func waitPhotoIntelligence(
