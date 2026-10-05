@@ -214,6 +214,7 @@ A future connector may execute `ScanChanges(checkpoint)` only after proving stab
 - Reappearance resets evidence. Local Node revision/path/type drift blocks automatic trash. A directory is used as a trash root only when its active subtree is fully attributable to independently eligible items from the same Source; unmanaged local content is never swept up. A restored or locally modified tracked parent protects its descendants.
 - Partial, failed, or cancelled runs never advance Mirror confirmation. Scan mode may gather complete-inventory evidence but cannot trash.
 - Mirror only uses xDrive trash (`deleted_at` / `trash_root_id`); permanent deletion remains a separate user action. Each automatic trash root records a `source.mirror.trash` system audit. Remote providers remain read-only.
+- Web/Desktop expose the policy through one shared `ui/shared` selector. Backup is the default. Mirror is an explicit opt-in and the UI always surfaces its deletion-confirmation/grace semantics; scan-only Mirror also warns that evidence may mature before a later sync run.
 
 ## Synchronization-folder management contract
 

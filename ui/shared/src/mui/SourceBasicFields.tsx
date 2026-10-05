@@ -4,6 +4,7 @@ import type {
   ExternalSourceCreatePreset,
   ExternalSourceRunMode,
   ExternalSourceStatus,
+  ExternalSourceSyncMode,
 } from '../external-sources'
 import {
   externalSourceCreateOption,
@@ -102,6 +103,34 @@ export function XDriveSourceRunModeField({
     >
       <MenuItem value="scan">{scanLabel}</MenuItem>
       <MenuItem value="sync">同步</MenuItem>
+    </TextField>
+  )
+}
+
+export function XDriveSourceSyncModeField({
+  value,
+  onChange,
+  label = '同步策略',
+}: {
+  value: ExternalSourceSyncMode
+  onChange: (value: ExternalSourceSyncMode) => void
+  label?: ReactNode
+}) {
+  return (
+    <TextField
+      select
+      fullWidth
+      size="small"
+      label={label}
+      value={value}
+      helperText={value === 'mirror'
+        ? '镜像会在满足删除确认与 24 小时保护期后，把远端已删除内容移入 xDrive 回收站。'
+        : '备份会保留 xDrive 中已经同步的内容，即使远端后来删除。'}
+      onChange={(event) => onChange(event.target.value as ExternalSourceSyncMode)}
+      sx={{ minWidth: 0 }}
+    >
+      <MenuItem value="backup">备份（保留远端已删除内容）</MenuItem>
+      <MenuItem value="mirror">镜像到回收站（确认远端删除后回收）</MenuItem>
     </TextField>
   )
 }
