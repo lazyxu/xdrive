@@ -8,6 +8,7 @@ const sourceManager = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mu
 const sourceDialogs = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8')
 const sourceDetails = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerDetailsDialog.tsx'), 'utf8')
 const sourceCreate = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerCreateDialog.tsx'), 'utf8')
+const sourceSettings = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerSettingsDialog.tsx'), 'utf8')
 const webStyles = fs.readFileSync(path.join(repo, 'web', 'src', 'styles.css'), 'utf8')
 
 test('shared SourceManager owns list spacing without Web-only legacy CSS', () => {
@@ -132,4 +133,37 @@ test('SourceManager delegates the create dialog to an internal presentation modu
   assert.equal(sourceManager.includes('title="添加同步文件夹"'), false, 'create Dialog title must not remain inline')
   assert.equal(sourceManager.includes('<XDriveSourcePresetField'), false, 'create preset field must not remain inline')
   assert.equal(sourceManager.includes('固定逻辑目录：{yikeManagedTargetLabel}'), false, 'create target presentation must not remain inline')
+})
+
+
+test('SourceManager delegates the settings dialog to an internal presentation module', () => {
+  assert.ok(sourceManager.includes('<XDriveSourceSettingsDialog'), 'SourceManager must delegate the settings dialog')
+  for (const token of [
+    'export function XDriveSourceSettingsDialog',
+    'XDriveSourceNameField',
+    'XDriveSourceRunModeField',
+    'XDriveSourceSyncModeField',
+    'XDriveSourceStatusField',
+    'XDriveSourceTargetField',
+    'XDriveSourceScheduleFields',
+    'XDriveSourceIgnoreRulesField',
+    'XDriveStoredCredentialField',
+    'XDriveSourceCookieField',
+    'XDriveSynologyDsmCredentialFields',
+    'XDriveSynologyPhotoSpacesField',
+    'XDriveSynologyFileRootsField',
+    'XDriveYikeCookieHelp',
+    '一刻相册凭据',
+    'Synology DSM 凭据',
+    '保存设置',
+  ]) {
+    assert.ok(sourceSettings.includes(token), `SourceManagerSettingsDialog missing: ${token}`)
+  }
+
+  assert.equal(/adapter\./.test(sourceSettings), false, 'settings dialog presentation must not call the Source adapter')
+  assert.equal(/use(?:State|Effect)\(/.test(sourceSettings), false, 'settings dialog presentation must not own async/state orchestration')
+  assert.equal(sourceManager.includes('<Dialog\n        open={!!setting}'), false, 'raw settings Dialog shell must not remain inline')
+  assert.equal(sourceManager.includes('<XDriveSourceStatusField'), false, 'settings status field must not remain inline')
+  assert.equal(sourceManager.includes('title="一刻相册凭据"'), false, 'settings credential presentation must not remain inline')
+  assert.ok(sourceManager.includes('adapter.sourceBrowseDirectories(settingsSourceID'), 'File Station browse transport must remain in the parent controller')
 })

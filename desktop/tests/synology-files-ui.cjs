@@ -6,8 +6,11 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const shared = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
 const sourceManager = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
-const web = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8') + sourceManager
-const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceManager
+const sourceCreate = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerCreateDialog.tsx'), 'utf8')
+const sourceSettings = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerSettingsDialog.tsx'), 'utf8')
+const sourceModule = sourceManager + sourceCreate + sourceSettings
+const web = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8') + sourceModule
+const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceModule
 const sharedFields = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceConnectorConfigFields.tsx'), 'utf8')
 
 test('Synology File Station is a distinct generic Pull preset', () => {

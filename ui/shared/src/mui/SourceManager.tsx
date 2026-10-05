@@ -3,45 +3,20 @@ import type { FormEvent, ReactNode } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import {
-  Box as MuiBox,
   Button as MuiButton,
-  Dialog,
-  MenuItem,
   Stack,
   Tooltip,
-  Typography as MuiTypography,
 } from '@mui/material'
 import { XDriveActionButton } from './ActionButton'
-import { XDriveDialogActionSpacer, XDriveDialogActions } from './DialogActions'
-import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
-import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatePanel } from './StatePanel'
-import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
-import { XDriveSourceIgnoreRulesField } from './SourceIgnoreRulesField'
-import {
-  XDriveSourceNameField,
-  XDriveSourceRunModeField,
-  XDriveSourceStatusField,
-  XDriveSourceSyncModeField,
-} from './SourceBasicFields'
-import {
-  XDriveSourceCookieField,
-  XDriveSourceTargetField,
-  XDriveStoredCredentialField,
-  XDriveSynologyDsmCredentialFields,
-} from './SourceCredentialFields'
-import {
-  XDriveSynologyFileRootsField,
-  XDriveSynologyPhotoSpacesField,
-} from './SourceConnectorConfigFields'
-import { XDriveSourceScheduleFields } from './SourceScheduleFields'
 import { XDriveSourceKindIcon } from './SourceKindIcon'
 import { XDriveSourceSummaryCard } from './SourceSummaryCard'
 import { XDriveSourceCreateDialog } from './SourceManagerCreateDialog'
 import type { XDriveSourceCreateValues } from './SourceManagerCreateDialog'
+import { XDriveSourceSettingsDialog } from './SourceManagerSettingsDialog'
+import type { XDriveSourceSettingsValues } from './SourceManagerSettingsDialog'
 import {
   XDriveSourceClearCredentialDialog,
   XDriveSourceDeleteConfirmDialog,
@@ -55,23 +30,18 @@ import type {
   XDriveSourceRunFailurePage,
 } from './SourceManagerDetailsDialog'
 import { XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from './SynologyDsmGuideDialog'
-import { XDriveYikeCookieHelp } from './YikeCookieHelp'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
   externalSourceCreateOption,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
-  externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
-  externalSourceMirrorSafetyNotice,
-  externalSourceMirrorScanNotice,
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
-  yikeRateLimitNotice,
 } from '../external-sources'
 import { formatSize } from '../format'
 import type {
@@ -90,8 +60,6 @@ import type {
   ExternalSourceRow,
   ExternalSourceRun,
   ExternalSourceRunFailure,
-  ExternalSourceScheduleType,
-  ExternalSourceSyncMode,
   SynologyPhotoSpace,
   SupportedExternalSourceKind,
   UpdateExternalSourceInput,
@@ -147,23 +115,6 @@ function sourceErrorDetail(error: unknown) {
   return typeof detail === 'string' ? detail : ''
 }
 
-type SourceSettingsValues = {
-  name: string
-  sync_mode: ExternalSourceSyncMode
-  run_mode: 'scan' | 'sync'
-  status: 'active' | 'paused'
-  schedule_type: ExternalSourceScheduleType
-  schedule_expression: string
-  schedule_timezone: string
-  ignore_rules?: string
-  cookie?: string
-  base_url?: string
-  username?: string
-  password?: string
-  spaces?: SynologyPhotoSpace[]
-  roots?: string[]
-}
-
 const SOURCE_HISTORY_PAGE_SIZE = 20
 const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
 const SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50
@@ -215,7 +166,7 @@ function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synolog
   }
 }
 
-function emptySourceSettingsValues(): SourceSettingsValues {
+function emptySourceSettingsValues(): XDriveSourceSettingsValues {
   return {
     name: '',
     sync_mode: 'backup',
@@ -260,13 +211,10 @@ export function XDriveSourceManager({
   const [collectionItemPages, setCollectionItemPages] = useState<Record<number, XDriveSourceCollectionItemPage>>({})
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
-  const [settingsValues, setSettingsValues] = useState<SourceSettingsValues>(emptySourceSettingsValues)
+  const [settingsValues, setSettingsValues] = useState<XDriveSourceSettingsValues>(emptySourceSettingsValues)
   const [settingsNameError, setSettingsNameError] = useState('')
   const [settingsSpacesError, setSettingsSpacesError] = useState('')
   const [settingsRootsError, setSettingsRootsError] = useState('')
-  const settingsScheduleType = settingsValues.schedule_type
-  const settingsScheduleExpression = settingsValues.schedule_expression
-  const settingsScheduleTimezone = settingsValues.schedule_timezone
   const [createOpen, setCreateOpen] = useState(false)
   const [createTargetCrumbs, setCreateTargetCrumbs] = useState<XDriveSourceTargetNode[]>([])
   const [createTargetDirectories, setCreateTargetDirectories] = useState<XDriveSourceTargetNode[]>([])
@@ -300,6 +248,11 @@ export function XDriveSourceManager({
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
   const createTarget = createTargetCrumbs.at(-1)
   const selectedCreateTargetNodeID = targetBrowser ? createTarget?.id : defaultTargetNodeID
+
+  const settingsSourceID = setting?.source.id
+  const settingsBrowseDirectories = setting?.credential?.configured && settingsSourceID !== undefined
+    ? (path: string, limit?: number, offset?: number) => adapter.sourceBrowseDirectories(settingsSourceID, path, limit, offset)
+    : undefined
 
   const showActionError = (title: string, error: unknown, fallback: string, detail?: string) => {
     setErrorDialog({
@@ -1302,9 +1255,23 @@ export function XDriveSourceManager({
         }}
       />
 
-      <Dialog
-        open={!!setting}
-        onClose={() => {
+      <XDriveSourceSettingsDialog
+        setting={setting}
+        saving={savingSettings}
+        values={settingsValues}
+        nameError={settingsNameError}
+        spacesError={settingsSpacesError}
+        rootsError={settingsRootsError}
+        cookieHelpVariant={cookieHelpVariant}
+        revealingCredential={revealingSettingsCredential}
+        testingCredential={testingSettingsCredential}
+        credentialReveal={settingsCredentialReveal}
+        credentialTest={settingsCredentialTest}
+        credentialTestError={settingsCredentialTestError}
+        connectorConfigLoaded={Boolean(settingsConnectorConfig)}
+        clearingCredential={clearingCookie}
+        browseDirectories={settingsBrowseDirectories}
+        onRequestClose={() => {
           if (savingSettings) return
           setClearCookieConfirmOpen(false)
           setSettingsCredentialReveal(null)
@@ -1312,292 +1279,41 @@ export function XDriveSourceManager({
           setSettingsValues(emptySourceSettingsValues())
           setSettingsRootsError('')
         }}
-        maxWidth="sm"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title={setting ? `${setting.source.name} · 设置` : '同步文件夹设置'}
-          onClose={() => {
-            if (savingSettings) return
-            setClearCookieConfirmOpen(false)
-            setSettingsCredentialReveal(null)
-            setSetting(null)
-            setSettingsValues(emptySourceSettingsValues())
-            setSettingsRootsError('')
-          }}
-          closeDisabled={savingSettings}
-        />
-        <XDriveDialogContent dividers>
-        {setting && (
-          <MuiBox id="external-source-settings-form" component="form" onSubmit={(event) => void saveSettings(event)}>
-            <Stack spacing={2}>
-              <XDriveSourceNameField
-                autoFocus
-                value={settingsValues.name}
-                error={Boolean(settingsNameError)}
-                helperText={settingsNameError || ' '}
-                onChange={(value) => {
-                  setSettingsValues((current) => ({ ...current, name: value }))
-                  if (settingsNameError) setSettingsNameError('')
-                }}
-              />
-              <XDriveSourceRunModeField
-                value={settingsValues.run_mode}
-                onChange={(value) => setSettingsValues((current) => ({ ...current, run_mode: value }))}
-              />
-              <XDriveSourceSyncModeField
-                value={settingsValues.sync_mode}
-                onChange={(value) => setSettingsValues((current) => ({ ...current, sync_mode: value }))}
-              />
-              {settingsValues.sync_mode === 'mirror' && (
-                <XDriveStatusAlert tone="warning">
-                  <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>镜像到回收站</MuiTypography>
-                  <MuiTypography variant="body2">{externalSourceMirrorSafetyNotice}</MuiTypography>
-                  {settingsValues.run_mode === 'scan' && (
-                    <MuiTypography variant="body2" sx={{ mt: 0.5 }}>{externalSourceMirrorScanNotice}</MuiTypography>
-                  )}
-                </XDriveStatusAlert>
-              )}
-              <XDriveSourceStatusField
-                label="同步状态"
-                value={settingsValues.status}
-                onChange={(value) => setSettingsValues((current) => ({ ...current, status: value }))}
-              />
-              <XDriveSourceTargetField
-                value={setting.source.target_path}
-                managed={setting.source.kind === 'yike_photos'}
-              />
-              <XDriveSourceScheduleFields
-                wideAt="md"
-                scheduleType={settingsScheduleType}
-                expression={settingsScheduleExpression}
-                timezone={settingsScheduleTimezone}
-                onScheduleTypeChange={(value) => setSettingsValues((current) => ({ ...current, schedule_type: value }))}
-                onExpressionChange={(value) => setSettingsValues((current) => ({ ...current, schedule_expression: value }))}
-                onTimezoneChange={(value) => setSettingsValues((current) => ({ ...current, schedule_timezone: value }))}
-              />
-              <XDriveSourceIgnoreRulesField
-                rows={6}
-                placeholder={'每行一条规则，例如：\n@eaDir/\n*.tmp\n!important.jpg'}
-                value={settingsValues.ignore_rules ?? ''}
-                onChange={(value) => setSettingsValues((current) => ({ ...current, ignore_rules: value }))}
-                monospace
-              />
-
-              {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'cookie' && (
-                <>
-                  <XDriveSectionHeader level="h3" title="一刻相册凭据" />
-                  <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
-                    <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      {setting.credential?.configured ? 'Cookie 已配置' : 'Cookie 未配置'}
-                    </MuiTypography>
-                    <MuiTypography variant="body2">
-                      Cookie 默认仅显示遮罩；点击“显示”后临时读取明文，30 秒后自动重新隐藏。
-                    </MuiTypography>
-                  </XDriveStatusAlert>
-                  <XDriveStoredCredentialField
-                    label="已保存 Cookie"
-                    configured={Boolean(setting.credential?.configured)}
-                    revealedValue={settingsCredentialReveal?.field === 'cookie' ? settingsCredentialReveal.value : ''}
-                    loading={revealingSettingsCredential}
-                    expiresInSeconds={settingsCredentialReveal?.expires_in_seconds ?? 30}
-                    updatedAtLabel={setting.credential?.updated_at ? new Date(setting.credential.updated_at).toLocaleString('zh-CN') : undefined}
-                    onReveal={() => void revealSettingsCredential()}
-                    onHide={hideSettingsCredential}
-                  />
-                  <XDriveStatusAlert tone="neutral" sx={{ mb: 0.5 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                  <XDriveSourceCookieField
-                    label="替换 Cookie"
-                    value={settingsValues.cookie ?? ''}
-                    placeholder={setting.credential?.configured ? '留空则保持当前 Cookie 不变' : '粘贴一刻相册 Cookie'}
-                    helperText={setting.credential?.configured
-                      ? '只在需要更换 Cookie 时填写；已显示的 Cookie 不会自动带入此输入框。'
-                      : '当前未配置 Cookie，请粘贴新的 Cookie。'}
-                    onChange={(value) => {
-                      setSettingsValues((current) => ({ ...current, cookie: value }))
-                      setSettingsCredentialTest(null)
-                      setSettingsCredentialTestError('')
-                    }}
-                  />
-                  <MuiBox>
-                    <XDriveYikeCookieHelp variant={cookieHelpVariant} />
-                    <MuiBox sx={{ mt: 1 }}>
-                      <XDriveActionButton
-                        compact
-                        disabled={testingSettingsCredential}
-                        loading={testingSettingsCredential}
-                        loadingLabel="正在测试…"
-                        onClick={() => void testSettingsCredential()}
-                      >
-                        测试连接
-                      </XDriveActionButton>
-                    </MuiBox>
-                    {settingsCredentialTest && (
-                      <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
-                        {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
-                      </XDriveStatusAlert>
-                    )}
-                    {settingsCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{settingsCredentialTestError}</XDriveStatusAlert>}
-                  </MuiBox>
-                  {setting.credential?.configured && (
-                    <MuiBox>
-                      <XDriveActionButton
-                        intent="danger"
-                        disabled={clearingCookie}
-                        onClick={() => setClearCookieConfirmOpen(true)}
-                      >
-                        清除 Cookie
-                      </XDriveActionButton>
-                    </MuiBox>
-                  )}
-                </>
-              )}
-
-              {externalSourceConnectorProfile(setting.source.kind, setting.source.direction).credential === 'synology_dsm' && (
-                <>
-                  <XDriveSectionHeader level="h3" title="Synology DSM 凭据" />
-                  <XDriveStatusAlert tone={setting.credential?.configured ? 'good' : 'warning'} sx={{ mb: 0.5 }}>
-                    <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      {setting.credential?.configured ? 'DSM 凭据已配置' : 'DSM 凭据未配置'}
-                    </MuiTypography>
-                    <MuiTypography variant="body2">
-                      DSM 密码默认仅显示遮罩，可按需临时显示 30 秒；如需更新连接，请重新完整填写地址、用户名和密码。
-                    </MuiTypography>
-                  </XDriveStatusAlert>
-                  <XDriveStoredCredentialField
-                    label="已保存 DSM 密码"
-                    configured={Boolean(setting.credential?.configured)}
-                    revealedValue={settingsCredentialReveal?.field === 'password' ? settingsCredentialReveal.value : ''}
-                    loading={revealingSettingsCredential}
-                    expiresInSeconds={settingsCredentialReveal?.expires_in_seconds ?? 30}
-                    updatedAtLabel={setting.credential?.updated_at ? new Date(setting.credential.updated_at).toLocaleString('zh-CN') : undefined}
-                    onReveal={() => void revealSettingsCredential()}
-                    onHide={hideSettingsCredential}
-                  />
-                  <XDriveSynologyDsmCredentialFields
-                    mode="update"
-                    baseURL={settingsValues.base_url ?? ''}
-                    username={settingsValues.username ?? ''}
-                    password={settingsValues.password ?? ''}
-                    onBaseURLChange={(value) => {
-                      setSettingsValues((current) => ({ ...current, base_url: value }))
-                      setSettingsCredentialTest(null)
-                      setSettingsCredentialTestError('')
-                    }}
-                    onUsernameChange={(value) => {
-                      setSettingsValues((current) => ({ ...current, username: value }))
-                      setSettingsCredentialTest(null)
-                      setSettingsCredentialTestError('')
-                    }}
-                    onPasswordChange={(value) => {
-                      setSettingsValues((current) => ({ ...current, password: value }))
-                      setSettingsCredentialTest(null)
-                      setSettingsCredentialTestError('')
-                    }}
-                  />
-                  {setting.source.kind === 'synology_photos' ? (
-                    <>
-                      <XDriveSynologyPhotoSpacesField
-                        value={settingsValues.spaces ?? []}
-                        error={Boolean(settingsSpacesError)}
-                        helperText={settingsSpacesError || '至少选择一个照片空间'}
-                        onChange={(value) => {
-                          setSettingsValues((current) => ({ ...current, spaces: value }))
-                          if (settingsSpacesError) setSettingsSpacesError('')
-                        }}
-                      />
-                      {!settingsConnectorConfig && (
-                        <MuiTypography variant="caption" color="text.secondary">
-                          正在读取当前空间配置；未配置时默认同步个人空间和共享空间。
-                        </MuiTypography>
-                      )}
-                    </>
-                  ) : (
-                    <XDriveSynologyFileRootsField
-                      value={settingsValues.roots ?? []}
-                      error={Boolean(settingsRootsError)}
-                      helperText={settingsRootsError || '每行一个 DSM 绝对目录；修改根目录不会删除已备份到 xDrive 的文件。'}
-                      browse={setting.credential?.configured
-                        ? (path, limit, offset) => adapter.sourceBrowseDirectories(setting.source.id, path, limit, offset)
-                        : undefined}
-                      onChange={(value) => {
-                        setSettingsValues((current) => ({ ...current, roots: value }))
-                        if (settingsRootsError) setSettingsRootsError('')
-                      }}
-                    />
-                  )}
-                  <MuiBox>
-                    <XDriveActionButton
-                      compact
-                      disabled={testingSettingsCredential}
-                      loading={testingSettingsCredential}
-                      loadingLabel="正在测试…"
-                      onClick={() => void testSettingsCredential()}
-                    >
-                      测试连接
-                    </XDriveActionButton>
-                  </MuiBox>
-                  {settingsCredentialTest && (
-                    <XDriveStatusAlert tone="good">
-                      {externalSourceCredentialTestSuccessLabel(settingsCredentialTest)}
-                    </XDriveStatusAlert>
-                  )}
-                  {settingsCredentialTestError && <XDriveStatusAlert tone="bad">{settingsCredentialTestError}</XDriveStatusAlert>}
-                  {setting.credential?.configured && (
-                    <MuiBox>
-                      <XDriveActionButton
-                        intent="danger"
-                        disabled={clearingCookie}
-                        onClick={() => setClearCookieConfirmOpen(true)}
-                      >
-                        清除 DSM 凭据
-                      </XDriveActionButton>
-                    </MuiBox>
-                  )}
-                </>
-              )}
-
-            </Stack>
-          </MuiBox>
-        )}
-        </XDriveDialogContent>
-        {setting && (
-          <XDriveDialogActions>
-            <XDriveActionButton
-              intent="danger"
-              disabled={savingSettings || setting.latestRun?.status === 'running'}
-              onClick={() => setDeleteTarget(setting)}
-            >
-              删除同步文件夹
-            </XDriveActionButton>
-            <XDriveDialogActionSpacer />
-            <XDriveActionButton
-              onClick={() => {
-                setClearCookieConfirmOpen(false)
-                setSettingsCredentialReveal(null)
-                setSetting(null)
-                setSettingsValues(emptySourceSettingsValues())
-                setSettingsRootsError('')
-                setSettingsNameError('')
-                setSettingsSpacesError('')
-              }}
-            >
-              取消
-            </XDriveActionButton>
-            <XDriveActionButton
-              intent="primary"
-              type="submit"
-              form="external-source-settings-form"
-              loading={savingSettings}
-              loadingLabel="正在保存…"
-            >
-              保存设置
-            </XDriveActionButton>
-          </XDriveDialogActions>
-        )}
-      </Dialog>
+        onCancel={() => {
+          setClearCookieConfirmOpen(false)
+          setSettingsCredentialReveal(null)
+          setSetting(null)
+          setSettingsValues(emptySourceSettingsValues())
+          setSettingsRootsError('')
+          setSettingsNameError('')
+          setSettingsSpacesError('')
+        }}
+        onSubmit={(event) => {
+          void saveSettings(event)
+        }}
+        onChange={(patch) => {
+          setSettingsValues((current) => ({ ...current, ...patch }))
+        }}
+        onCredentialChange={(patch) => {
+          setSettingsValues((current) => ({ ...current, ...patch }))
+          setSettingsCredentialTest(null)
+          setSettingsCredentialTestError('')
+        }}
+        onClearNameError={() => setSettingsNameError('')}
+        onClearSpacesError={() => setSettingsSpacesError('')}
+        onClearRootsError={() => setSettingsRootsError('')}
+        onRevealCredential={() => {
+          void revealSettingsCredential()
+        }}
+        onHideCredential={hideSettingsCredential}
+        onTestCredential={() => {
+          void testSettingsCredential()
+        }}
+        onRequestClearCredential={() => setClearCookieConfirmOpen(true)}
+        onDelete={() => {
+          if (setting) setDeleteTarget(setting)
+        }}
+      />
 
       <XDriveSourceDeleteConfirmDialog
         open={Boolean(deleteTarget)}
