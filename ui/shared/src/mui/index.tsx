@@ -68,6 +68,7 @@ export * from './DescriptionGrid'
 export * from './TableSurface'
 
 export * from './SourceManager'
+export * from './SourceManagerAdapter'
 export * from './SettingsDialog'
 export * from './ShareDialog'
 export * from './TrashDialog'

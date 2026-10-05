@@ -34,6 +34,7 @@ import {
   XDriveMediaGalleryPage,
   XDriveShareDialog,
   XDriveSourceManager,
+  createXDriveSourceManagerAdapter,
   XDriveStatePanel,
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
@@ -503,6 +504,7 @@ function FileManager({
   const shareDialogAdapter = useMemo(() => createWebShareDialogAdapter(api), [api])
 
   const gallerySource = useMemo(() => createWebMediaGalleryDataSource(api), [api])
+  const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
@@ -990,7 +992,7 @@ function FileManager({
           <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
         ) : appView === 'sources' ? (
           <XDriveSourceManager
-            adapter={api}
+            adapter={sourceManagerAdapter}
             defaultTargetNodeID={current?.id}
             defaultTargetLabel={current?.name ?? '我的文件'}
             defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}

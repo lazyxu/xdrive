@@ -259,7 +259,7 @@ test('desktop external sources expose safe source deletion', () => {
   assert.ok(renderer.includes('删除同步文件夹'), 'missing source delete action')
   assert.ok(renderer.includes('已同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
   assert.ok(renderer.includes('文件会保留，不会删除'), 'missing non-destructive delete confirmation result')
-  assert.ok(renderer.includes('window.xdriveDesktop.agent.deleteSource'), 'missing renderer delete bridge call')
+  assert.ok(desktopSourceAdapter.includes('agent.deleteSource(sourceID, revision)'), 'missing Desktop SourceManager delete transport mapping')
 })
 
 test('desktop settings use a dialog instead of a workspace page', () => {
