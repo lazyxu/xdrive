@@ -33,15 +33,12 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /缩略图/)
   assert.match(sharedGallery, /实况/)
   assert.match(sharedGallery, /loadLivePhotoMotion/)
-  assert.match(sharedGallery, /loadVideo/)
+  assert.match(sharedGallery, /loadPreviewURL/)
+  assert.match(sharedGallery, /XDriveFilePreviewSurface/)
   assert.match(sharedGallery, /AsyncVideoPoster/)
   assert.match(sharedGallery, /IntersectionObserver/)
   assert.match(sharedGallery, /drawImage/)
   assert.match(sharedGallery, /toDataURL\('image\/jpeg'/)
-  assert.match(sharedGallery, /视频播放/)
-  assert.match(sharedGallery, /动图预览/)
-  assert.match(sharedGallery, /image\/gif/)
-  assert.match(sharedGallery, /image\/webp/)
   assert.match(sharedGallery, /搜索/)
   assert.match(sharedGallery, /资产类型/)
   assert.match(sharedGallery, /拍摄自/)
@@ -75,6 +72,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /captured_at/)
   assert.match(sharedGallery, /MediaTileGrid/)
   assert.match(sharedGallery, /<video/)
+  assert.equal(sharedGallery.includes('loadVideo'), false, 'Gallery must not retain a video-specific ordinary-media source contract')
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
   assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
@@ -126,6 +124,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
     'XDriveMediaGalleryTransportResult',
     'XDriveMediaGalleryBinaryResource',
     'createXDriveMediaGalleryDataSource',
+    'loadPreviewURL',
     'resolveTransport',
     "'data_base64' in resource",
     'URL.createObjectURL(resource)',
@@ -146,7 +145,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -169,7 +168,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'api.setMediaDescription(',
     'api.mediaThumbnail(',
     'api.mediaLivePhotoMotion(',
-    'api.mediaVideoURL(',
+    'api.filePreviewURL(',
   ]) {
     assert.ok(webAdapter.includes(token), `Web Gallery adapter missing ${token}`)
   }
@@ -193,7 +192,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'setMediaDescription:',
     'getMediaThumbnail:',
     'getMediaLivePhotoMotion:',
-    'getMediaVideoURL:',
+    'cloudFilePreviewURL:',
   ]) {
     assert.ok(preload.includes(token), `Desktop preload missing ${token}`)
   }
@@ -217,13 +216,12 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'setMediaDescription(nodeID:',
     'mediaThumbnail(nodeID:',
     'mediaLivePhotoMotion(nodeID:',
-    'mediaVideoURL(nodeID:',
+    'cloudFilePreviewTicket(nodeID:',
   ]) {
     assert.ok(agentClient.includes(token), `Desktop Agent client missing ${token}`)
   }
 
   assert.ok(desktopIPC.includes('"media-gallery"'))
-  assert.ok(desktopIPC.includes('"media-video-stream"'))
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
   assert.ok(desktopIPC.includes('GET /v1/media/places'))
@@ -239,16 +237,18 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('PATCH /v1/media/tags'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/people'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/description'))
+  assert.ok(desktopIPC.includes('"file-preview-stream"'))
+  assert.ok(desktopIPC.includes('GET /v1/cloud/file-preview-ticket'))
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
-  assert.ok(desktopIPC.includes('GET /v1/media/video'))
-  assert.ok(desktopIPC.includes('"media-video-stream"'))
-  assert.match(desktopAdapter, /getMediaVideoURL/)
+  assert.match(desktopAdapter, /cloudFilePreviewURL/)
   assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
   assert.match(desktopAdapter, /getMediaAlbumItems\([\s\S]*query\)/)
   assert.match(desktopAdapter, /setPeople/)
   assert.match(desktopAdapter, /setDescription/)
-  assert.match(desktopAdapter, /loadVideo/)
+  assert.match(desktopAdapter, /loadPreviewURL/)
+  assert.equal(webAdapter.includes('mediaVideoURL'), false, 'Web Gallery adapter must use generic file preview URLs')
+  assert.equal(desktopAdapter.includes('getMediaVideoURL'), false, 'Desktop Gallery adapter must use generic file preview URLs')
   assert.match(preload, /agent:get-media-items', kind, limit, offset, query/)
   assert.match(agentClient, /appendAgentMediaQuery\(query, filters\)/)
   assert.match(agentClient, /query\.set\('tag', filters\.tag\.trim\(\)\)/)

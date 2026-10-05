@@ -11,7 +11,7 @@ export function createDesktopMediaGalleryDataSource(
       agent.getMediaAlbumItems(albumID, limit, offset, query),
     loadThumbnail: (nodeID) => agent.getMediaThumbnail(nodeID),
     loadLivePhotoMotion: (nodeID) => agent.getMediaLivePhotoMotion(nodeID),
-    loadVideo: (nodeID) => agent.getMediaVideoURL(nodeID),
+    loadPreviewURL: (nodeID, _kind) => agent.cloudFilePreviewURL(nodeID),
     setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
     setTags: (nodeID, tags) => agent.setMediaTags(nodeID, tags),
     setPeople: (nodeID, people) => agent.setMediaPeople(nodeID, people),

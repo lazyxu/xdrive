@@ -56,6 +56,7 @@ test('file preview proxy hides upstream ticket and preserves Range responses', a
   assert.equal(response.headers.get('content-range'), `bytes 0-3/${payload.length}`)
   assert.equal(response.headers.get('cache-control'), 'private, no-store')
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
+  assert.equal(response.headers.get('access-control-allow-origin'), '*')
   assert.equal(response.headers.get('cross-origin-resource-policy'), 'cross-origin')
   assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '%PDF')
   assert.equal(seenRange, 'bytes=0-3')
