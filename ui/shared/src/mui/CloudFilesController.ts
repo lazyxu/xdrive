@@ -48,6 +48,15 @@ export function useXDriveCloudFilesController<
 
   const current = crumbs.at(-1)
 
+  const reset = useCallback(() => {
+    setQuota(null)
+    setItems([])
+    setCrumbs([])
+    setPageState(null)
+    setLoading(false)
+    setLoadingMore(false)
+  }, [])
+
   const applyQuota = useCallback((value: TQuota) => {
     setQuota(value)
   }, [])
@@ -142,9 +151,12 @@ export function useXDriveCloudFilesController<
   }, [defaultSort, onError, port, rootLabel])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      reset()
+      return
+    }
     void loadInitial()
-  }, [enabled, loadInitial])
+  }, [enabled, loadInitial, reset])
 
   useEffect(() => {
     if (!enabled || quotaRefreshIntervalMs <= 0) return
@@ -162,6 +174,7 @@ export function useXDriveCloudFilesController<
     pageState,
     loading,
     loadingMore,
+    reset,
     applyQuota,
     refreshQuota,
     loadInitial,

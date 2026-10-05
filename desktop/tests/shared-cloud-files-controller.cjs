@@ -12,12 +12,16 @@ const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webApp = read('web', 'src', 'App.tsx')
+const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktopTypes = read('desktop', 'src', 'renderer', 'global.d.ts')
 
 test('shared cloud files port owns the transport-neutral read contract', () => {
   for (const token of [
     'XDriveCloudFilesPageOptions',
     'XDriveCloudFilesPage<TNode',
     'XDriveCloudFilesCrumb',
+    'XDriveCloudFilesSearchResult<TNode',
+    'XDriveCloudFilesSearchPage<TNode',
     'XDriveCloudFilesPort<',
     'getRoot: () => Promise<TNode>',
     'getPage: (',
@@ -43,6 +47,7 @@ test('shared cloud files controller owns directory paging, quota and initial loa
     'port.getPage(',
     'port.getQuota()',
     'quotaRefreshIntervalMs = 60_000',
+    'reset',
     'applyQuota',
     'refreshQuota',
     'loadDirectory',
@@ -86,5 +91,61 @@ test('Web delegates cloud read state and lifecycle to the shared controller', ()
     'const current = crumbs.at(-1)',
   ]) {
     assert.equal(webApp.includes(token), false, `Web must not own shared cloud controller logic: ${token}`)
+  }
+})
+
+
+test('Desktop delegates cloud read state and lifecycle to the shared controller', () => {
+  for (const token of [
+    'useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>',
+    'XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>',
+    'window.xdriveDesktop.agent.cloudRoot()',
+    'window.xdriveDesktop.agent.cloudChildrenPage(parentID, options)',
+    'window.xdriveDesktop.agent.cloudQuota()',
+    'quota: cloudQuota',
+    'items: cloudItems',
+    'crumbs: cloudCrumbs',
+    'pageState: cloudPage',
+    'loading: cloudLoading',
+    'loadingMore: cloudLoadingMore',
+    'applyQuota: applyCloudQuota',
+    'refreshQuota: refreshCloudQuota',
+    'loadDirectory: loadCloudDirectory',
+    'loadMoreDirectory: loadMoreCloudDirectory',
+    'onError: handleCloudFilesError',
+  ]) {
+    assert.ok(desktopApp.includes(token), `Desktop cloud controller wiring missing: ${token}`)
+  }
+
+  for (const token of [
+    'useState<AgentCloudNode[]>([])',
+    'useState<AgentCloudCrumb[]>([])',
+    'useState<XDriveFileExplorerPageState',
+    'const refreshCloudQuota = async () => {',
+    'const loadCloudDirectory = async (',
+    'const loadMoreCloudDirectory = async (',
+    'const loadCloudHome = async () => {',
+    'xDriveFileExplorerCanLoadMore',
+    'xDriveFileExplorerDirectoryPageTransition',
+    'xDriveFileExplorerPageRequestOptions',
+    'setCloudItems(',
+    'setCloudCrumbs(',
+    'setCloudPage(',
+    'setCloudLoadingMore(',
+    'setCloudQuota(',
+  ]) {
+    assert.equal(desktopApp.includes(token), false, `Desktop must not own shared cloud controller logic: ${token}`)
+  }
+})
+
+test('Desktop renderer aliases shared cloud page and search contracts', () => {
+  for (const token of [
+    'type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>',
+    'type AgentCloudCrumb = XDriveCloudFilesCrumb',
+    'type AgentCloudSearchResult = XDriveCloudFilesSearchResult<AgentCloudNode>',
+    'type AgentCloudSearchPage = XDriveCloudFilesSearchPage<AgentCloudNode>',
+    'options?: XDriveCloudFilesPageOptions',
+  ]) {
+    assert.ok(desktopTypes.includes(token), `Desktop shared cloud type alias missing: ${token}`)
   }
 })

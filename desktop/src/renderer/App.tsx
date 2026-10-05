@@ -61,6 +61,7 @@ import {
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceManager,
+  useXDriveCloudFilesController,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   useXDriveTaskCenterController,
@@ -76,10 +77,7 @@ import type {
 import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
-  xDriveFileExplorerCanLoadMore,
   xDriveFileExplorerDeleteOperationPlan,
-  xDriveFileExplorerDirectoryPageTransition,
-  xDriveFileExplorerPageRequestOptions,
   xDriveLoginCredentialsReady,
 } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
@@ -93,7 +91,7 @@ import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
   XDriveAppearance,
-  XDriveFileExplorerPageState,
+  XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
 type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>
@@ -203,11 +201,6 @@ export default function App({
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
-  const [cloudItems, setCloudItems] = useState<AgentCloudNode[]>([])
-  const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])
-  const [cloudPage, setCloudPage] = useState<XDriveFileExplorerPageState<XDriveFileExplorerSort> | null>(null)
-  const [cloudLoadingMore, setCloudLoadingMore] = useState(false)
-  const [cloudQuota, setCloudQuota] = useState<AgentCloudQuota | null>(null)
   const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
@@ -312,6 +305,45 @@ export default function App({
         : current === 'server-update' ? '' : current)
     },
   })
+  const handleCloudFilesError = useCallback((cloudError: unknown) => {
+    setError(cloudError instanceof Error ? cloudError.message : String(cloudError))
+  }, [])
+
+  const cloudFilesPort = useMemo<XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>>(() => ({
+    getRoot: async () => {
+      const result = await window.xdriveDesktop.agent.cloudRoot()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    getPage: async (parentID, options) => {
+      const result = await window.xdriveDesktop.agent.cloudChildrenPage(parentID, options)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    getQuota: async () => {
+      const result = await window.xdriveDesktop.agent.cloudQuota()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+  }), [])
+
+  const {
+    quota: cloudQuota,
+    items: cloudItems,
+    crumbs: cloudCrumbs,
+    pageState: cloudPage,
+    loading: cloudLoading,
+    loadingMore: cloudLoadingMore,
+    applyQuota: applyCloudQuota,
+    refreshQuota: refreshCloudQuota,
+    loadDirectory: loadCloudDirectory,
+    loadMoreDirectory: loadMoreCloudDirectory,
+  } = useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>({
+    port: cloudFilesPort,
+    enabled: agent.connected && configured,
+    defaultSort: XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+    onError: handleCloudFilesError,
+  })
   const loadCloudFileOperations = useCallback(async (limit: number) => {
     const result = await window.xdriveDesktop.agent.cloudFileOperations(limit)
     if (!result.ok) throw new Error(result.error.message)
@@ -401,7 +433,7 @@ export default function App({
           : Promise.resolve(null),
       ])
       if (!quotaResult.ok) throw new Error(quotaResult.error.message)
-      setCloudQuota(quotaResult.data)
+      applyCloudQuota(quotaResult.data)
       if (statsResult && !statsResult.ok) throw new Error(statsResult.error.message)
       return {
         quota: quotaResult.data,
@@ -411,7 +443,7 @@ export default function App({
           : '当前 xdrive-agent 不支持云端存储情报，请更新客户端核心组件。',
       }
     },
-  }), [storageStatsSupported])
+  }), [applyCloudQuota, storageStatsSupported])
   const localStorageSource = useMemo<DesktopLocalStorageDataSource>(() => ({
     load: async () => {
       const [treeResult, cacheResult] = await Promise.all([
@@ -612,9 +644,6 @@ export default function App({
       setSettings(null)
       setConflicts([])
       setDiagnostics(null)
-      setCloudItems([])
-      setCloudCrumbs([])
-      setCloudQuota(null)
       setCloudHistoryNode(null)
       setCloudHistoryCrumbs([])
       setCloudShareNode(null)
@@ -633,29 +662,6 @@ export default function App({
     // Diagnostics run once when entering the page or reconnecting, not on every status revision.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, agent.connected, configured])
-
-  useEffect(() => {
-    if (view !== 'files' || !agent.connected || !configured) return
-    void loadCloudHome()
-    // Cloud browser loads once when entering the page or reconnecting.
-    // Navigation, search, mutations and Refresh perform explicit reloads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, agent.connected, configured])
-
-  useEffect(() => {
-    if (!agent.connected || !configured) return
-    let active = true
-    const refresh = async () => {
-      const result = await window.xdriveDesktop.agent.cloudQuota()
-      if (active && result.ok) setCloudQuota(result.data)
-    }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 60_000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [agent.connected, configured, status?.server, status?.username])
 
   const headline = useMemo(() => {
     if (!agent.connected) return 'xdrive-agent 未连接'
@@ -954,102 +960,6 @@ export default function App({
   const retryTransfer = async (id: string) => {
     const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), '传输重试已完成。')
     if (data) setTransfers(data)
-  }
-
-  const refreshCloudQuota = async () => {
-    const result = await window.xdriveDesktop.agent.cloudQuota()
-    if (!result.ok) {
-      setError(result.error.message)
-      return null
-    }
-    setCloudQuota(result.data)
-    return result.data
-  }
-
-  const loadCloudDirectory = async (
-    id: number,
-    crumbs: AgentCloudCrumb[],
-    sort: XDriveFileExplorerSort = cloudPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
-  ) => {
-    setBusy('cloud-directory')
-    setError('')
-    try {
-      const result = await window.xdriveDesktop.agent.cloudChildrenPage(
-        id,
-        xDriveFileExplorerPageRequestOptions(sort),
-      )
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      const transition = xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, false)
-      setCloudItems(transition.applyItems)
-      setCloudCrumbs(crumbs)
-      setCloudPage(transition.pageState)
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {
-    const pageState = cloudPage
-    if (!xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)) return
-
-    setCloudLoadingMore(true)
-    try {
-      const result = await window.xdriveDesktop.agent.cloudChildrenPage(
-        id,
-        xDriveFileExplorerPageRequestOptions(sort, pageState.cursor),
-      )
-      if (!result.ok) {
-        setError(result.error.message)
-        return
-      }
-      const transition = xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, true)
-      setCloudItems(transition.applyItems)
-      setCloudPage(transition.pageState)
-    } finally {
-      setCloudLoadingMore(false)
-    }
-  }
-
-  const loadCloudHome = async () => {
-    setBusy('cloud-load')
-    setError('')
-    try {
-      const [rootResult, quotaResult] = await Promise.all([
-        window.xdriveDesktop.agent.cloudRoot(),
-        window.xdriveDesktop.agent.cloudQuota(),
-      ])
-      if (!rootResult.ok) {
-        setError(rootResult.error.message)
-        return
-      }
-      if (!quotaResult.ok) {
-        setError(quotaResult.error.message)
-        return
-      }
-      const childrenResult = await window.xdriveDesktop.agent.cloudChildrenPage(
-        rootResult.data.id,
-        xDriveFileExplorerPageRequestOptions(XDRIVE_FILE_EXPLORER_DEFAULT_SORT),
-      )
-      if (!childrenResult.ok) {
-        setError(childrenResult.error.message)
-        return
-      }
-      const transition = xDriveFileExplorerDirectoryPageTransition(
-        rootResult.data.id,
-        childrenResult.data,
-        XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
-        false,
-      )
-      setCloudItems(transition.applyItems)
-      setCloudCrumbs([{ id: rootResult.data.id, name: '我的文件' }])
-      setCloudPage(transition.pageState)
-      setCloudQuota(quotaResult.data)
-    } finally {
-      setBusy('')
-    }
   }
 
   const openCloudTrash = () => setCloudTrashOpen(true)
@@ -1874,7 +1784,7 @@ export default function App({
             explorer={{
               items: cloudItems,
               crumbs: cloudCrumbs,
-              loading: busy === 'cloud-load' || busy === 'cloud-directory',
+              loading: cloudLoading,
               loadingMore: cloudLoadingMore,
               hasMore: cloudPage?.hasMore ?? false,
               onLoadDirectory: loadCloudDirectory,
