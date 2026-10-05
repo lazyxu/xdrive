@@ -182,3 +182,34 @@ func TestExtractLIVPRejectsInvalidContainer(t *testing.T) {
 		t.Fatalf("invalid livp result=%+v", result)
 	}
 }
+
+func TestParseLIVPContainerDescriptorValidatesPersistedRanges(t *testing.T) {
+	raw := `{
+		"asset_identifier":"asset-1",
+		"still":{"name":"still.jpg","offset":32,"size":100,"mime_type":"image/jpeg"},
+		"motion":{"name":"motion.mov","offset":132,"size":400,"mime_type":"video/quicktime"}
+	}`
+	descriptor, err := ParseLIVPContainerDescriptor(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if descriptor.AssetIdentifier != "asset-1" ||
+		descriptor.Still.Offset != 32 ||
+		descriptor.Motion.Size != 400 {
+		t.Fatalf("descriptor=%+v", descriptor)
+	}
+
+	for _, invalid := range []string{
+		"",
+		`{"asset_identifier":"","still":{},"motion":{}}`,
+		`{"asset_identifier":"asset-1","still":{"name":"still.jpg","offset":-1,"size":1,"mime_type":"image/jpeg"},"motion":{"name":"motion.mov","offset":1,"size":1,"mime_type":"video/quicktime"}}`,
+		`{"asset_identifier":"asset-1","still":{"name":"still.jpg","offset":0,"size":0,"mime_type":"image/jpeg"},"motion":{"name":"motion.mov","offset":1,"size":1,"mime_type":"video/quicktime"}}`,
+		`{"asset_identifier":"asset-1","still":{"name":"../still.jpg","offset":0,"size":1,"mime_type":"image/jpeg"},"motion":{"name":"motion.mov","offset":1,"size":1,"mime_type":"video/quicktime"}}`,
+		`{"asset_identifier":"asset-1","still":{"name":"still.jpg","offset":0,"size":1,"mime_type":"video/quicktime"},"motion":{"name":"motion.mov","offset":1,"size":1,"mime_type":"video/quicktime"}}`,
+		`{"asset_identifier":"asset-1","still":{"name":"still.jpg","offset":0,"size":1,"mime_type":"image/jpeg"},"motion":{"name":"motion.mov","offset":1,"size":1,"mime_type":"image/jpeg"}}`,
+	} {
+		if _, err := ParseLIVPContainerDescriptor(invalid); err == nil {
+			t.Fatalf("invalid descriptor accepted: %q", invalid)
+		}
+	}
+}

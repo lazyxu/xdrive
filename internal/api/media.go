@@ -789,7 +789,7 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 		return true
 	}
 	if row.ContainerKind == mediapkg.ContainerKindLIVP {
-		if descriptor, err := parseLIVPContainerDescriptor(row.ContainerJSON); err == nil {
+		if descriptor, err := mediapkg.ParseLIVPContainerDescriptor(row.ContainerJSON); err == nil {
 			mimeType = strings.ToLower(strings.TrimSpace(descriptor.Still.MIMEType))
 		}
 	}
@@ -1144,46 +1144,10 @@ func (s *Server) staleMediaNodes(
 	return nodes, err
 }
 
-type livpContainerDescriptor struct {
-	AssetIdentifier string                          `json:"asset_identifier"`
-	Still           livpContainerResourceDescriptor `json:"still"`
-	Motion          livpContainerResourceDescriptor `json:"motion"`
-}
-
-type livpContainerResourceDescriptor struct {
-	Name     string `json:"name"`
-	Offset   int64  `json:"offset"`
-	Size     int64  `json:"size"`
-	MIMEType string `json:"mime_type"`
-}
-
-func parseLIVPContainerDescriptor(raw string) (livpContainerDescriptor, error) {
-	var out livpContainerDescriptor
-	if strings.TrimSpace(raw) == "" {
-		return out, errors.New("livp container metadata is empty")
-	}
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		return out, err
-	}
-	out.AssetIdentifier = strings.TrimSpace(out.AssetIdentifier)
-	if out.AssetIdentifier == "" {
-		return livpContainerDescriptor{}, errors.New("livp asset identifier is missing")
-	}
-	for _, resource := range []livpContainerResourceDescriptor{out.Still, out.Motion} {
-		if strings.TrimSpace(resource.Name) == "" ||
-			strings.TrimSpace(resource.MIMEType) == "" ||
-			resource.Offset < 0 ||
-			resource.Size <= 0 {
-			return livpContainerDescriptor{}, errors.New("livp resource descriptor is invalid")
-		}
-	}
-	return out, nil
-}
-
 func mediaDerivedResourcesFromLIVPContainer(
 	raw string,
 ) ([]meta.MediaDerivedResource, error) {
-	descriptor, err := parseLIVPContainerDescriptor(raw)
+	descriptor, err := mediapkg.ParseLIVPContainerDescriptor(raw)
 	if err != nil {
 		return nil, err
 	}
