@@ -182,6 +182,14 @@ Media verification covers MediaMetadata freshness, MediaGroup/Live Photo evidenc
 
 Storage/CAS byte verification remains the separate `xdrive-server storage verify` responsibility.
 
+## Incremental/change scanning
+
+`Source.Checkpoint` and `SyncRun.CheckpointBefore/After` are opaque Source-core storage for a future provider change cursor. The Pull layer defines a common `FullScanner[T]` / `ChangeScanner[T]` boundary and requires a connector-owned `ChangeScanCapabilities` declaration.
+
+Yike Photos Pull, Synology Photos Pull, and Synology FileStation Pull currently declare `FullReconciliationOnly()` and execute `ScanFull`. Pagination cursors/offsets and timestamps are inventory mechanics, not proof of a reliable change feed.
+
+A future connector may execute `ScanChanges(checkpoint)` only after proving stable identity, a reliable checkpoint contract, explicit deletion tombstones, and safe fallback to a complete inventory. Delta runs are never treated as complete inventories, so absent unchanged items cannot trigger missing inference. Periodic full reconciliation remains mandatory even after reliable incremental support is enabled.
+
 ## Deletion and recovery
 
 - Backup: remote disappearance marks SourceItem missing while xDrive content remains.
@@ -222,7 +230,7 @@ New synchronization-folder connectors must follow both this management contract 
 6. Add local connector-neutral MediaGroup and Live Photo projection.
 7. In progress: local DNG/rendered exact-ID pairing, explicit XMP sidecars, and Apple BurstUUID grouping are implemented; add other RAW formats and only evidence-bearing AAE/auxiliary formats.
 8. Extend integrity verification and explicit local repair.
-9. Add incremental scanners only where a reliable provider change contract exists.
+9. Incremental-scan foundation complete: shared full/change capability contract; enable real `ScanChanges` only where a reliable provider change+tombstone contract exists.
 10. Add Mirror-to-trash only after deletion evidence/grace semantics are proven.
 
 ## Photo asset domain

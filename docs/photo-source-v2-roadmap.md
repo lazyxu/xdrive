@@ -319,15 +319,19 @@ Current deterministic relation projection is intentionally narrow:
 
 ## Incremental synchronization contract
 
-The Source core already has opaque checkpoints, but the three connectors currently use full reconciliation as the deletion-safety baseline.
+The Source core persists opaque checkpoints on `Source` / `SyncRun`. The Pull layer now formalizes the execution boundary with `FullScanner[T]`, `ChangeScanner[T]`, `ChangeScanCapabilities`, and `ResolveChangeScan`.
 
-A connector may add `ScanChanges(checkpoint)` only when it can prove:
+All three current Pull adapters explicitly declare `FullReconciliationOnly()`. Their scanners expose `ScanFull`; the existing `Scan` entry point remains as a compatibility wrapper. This is intentional: a provider pagination cursor/offset, mtime, indexed timestamp, or similar listing hint is not a change checkpoint.
 
-- checkpoint monotonicity or a documented reset condition;
+A connector may advertise `IncrementalChanges` and implement `ScanChanges(checkpoint)` only when it can prove all of:
+
 - stable file identity;
-- explicit enough create/update/move/delete semantics;
+- a reliable opaque checkpoint contract with documented resume/reset behavior;
+- explicit deletion tombstones in addition to create/update/move changes;
 - safe fallback to `ScanFull`;
 - periodic full reconciliation to heal drift.
+
+The shared decision contract fails closed to `ScanFull` when the checkpoint is empty, any safety capability is absent, or reconciliation forces a full pass. A `ScanChanges` run is never marked as a complete inventory: deletions must be applied from explicit tombstones, and unseen unchanged items must never be inferred missing from a delta.
 
 Until such a provider contract is tested, keep full paginated scans rather than approximating changes from timestamps.
 
@@ -400,7 +404,7 @@ Legend: **Current** = implemented in master; **Foundation** = common local model
 | Local user description / search | Current shared PhotoMetadata state; no provider import/writeback | Same local Photo-domain feature | Same local Photo-domain feature |
 | Local manual albums | Current shared PhotoCollection membership; no provider writeback | Same local Photo-domain feature | Same local Photo-domain feature |
 | Local smart albums / saved filters | Current shared PhotoCollection query-only state; no persisted membership/provider writeback | Same local Photo-domain feature | Same local Photo-domain feature |
-| Reliable incremental cursor | TODO only if proven | TODO only if proven | TODO only if proven |
+| Reliable incremental cursor | Shared contract current; provider support TODO only if proven | Shared contract current; provider support TODO only if proven | Shared contract current; provider support TODO only if proven |
 | Backup deletion safety | Current | Current | Current |
 | Mirror-to-trash | TODO | TODO | TODO |
 | Basic Source binding verifier | Current shared verifier | Current shared verifier | Current shared verifier |
@@ -420,7 +424,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P5 | Complete: local Apple identifiers, fail-closed MediaGroup projection, validated `.livp` zero-copy resources, logical Gallery semantics, shared Web/Desktop playback, and local HEIC/HEIF thumbnail decoding | Complete |
 | P6 | In progress: DNG metadata/preview plus exact-ID DNG-rendered pairing, explicit XMP DerivedFrom sidecars, and Apple BurstUUID grouping are local; AAE without embedded target identity and other RAW formats remain ungrouped/TODO | High |
 | P7 | In progress: Source binding/alias/collection/item-metadata verify, media relationship/thumbnail verify, and idempotent thumbnail-metadata repair are current; broader deterministic local repair actions remain | High |
-| P8 | Add `ScanFull` / `ScanChanges` only for connectors with a proven provider change contract | Medium-high |
+| P8 | Foundation complete: shared `ScanFull` / `ScanChanges` capability/decision contract; current connectors remain full-only until a proven provider change+tombstone contract exists, then add real delta execution plus periodic full reconciliation | Medium-high |
 | P9 | Add Mirror-to-trash with reliable deletion evidence and grace policy | Medium |
 | P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, user-managed local tags/people labels/descriptions, manual albums, saved-query smart albums, shared grid/timeline month presentation, and offline local-GPS place facets are current; next add optional connector-neutral automatic face/person and place-name analysis facets | Medium |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
