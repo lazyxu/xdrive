@@ -7,11 +7,14 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedGallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
 const sharedModels = read('ui', 'shared', 'src', 'models.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const webAPI = read('web', 'src', 'api.ts')
+const webAdapter = read('web', 'src', 'mediaGalleryAdapter.ts')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktopAdapter = read('desktop', 'src', 'renderer', 'mediaGalleryAdapter.ts')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
 const desktopIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -116,9 +119,58 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.equal(sharedModels.includes('source_item_id: number\n  metadata: MediaMetadata'), false)
 })
 
+test('shared Gallery adapter factory normalizes Web and Desktop transports', () => {
+  for (const token of [
+    'export interface XDriveMediaGalleryPort',
+    'XDriveMediaGalleryTransportResult',
+    'XDriveMediaGalleryBinaryResource',
+    'createXDriveMediaGalleryDataSource',
+    'resolveTransport',
+    "'data_base64' in resource",
+    'URL.createObjectURL(resource)',
+    'data_base64',
+    'result.tags',
+    'result.people',
+    'result.description',
+  ]) {
+    assert.ok(sharedGalleryAdapter.includes(token), `shared Gallery adapter missing: ${token}`)
+  }
+
+  assert.ok(webAdapter.includes('createXDriveMediaGalleryDataSource({'), 'Web must consume the shared Gallery adapter factory')
+  assert.ok(desktopAdapter.includes('createXDriveMediaGalleryDataSource({'), 'Desktop must consume the shared Gallery adapter factory')
+  assert.ok(webApp.includes('createWebMediaGalleryDataSource(api)'), 'Web App must consume its thin Gallery transport adapter')
+  assert.ok(desktopApp.includes('createDesktopMediaGalleryDataSource(window.xdriveDesktop.agent)'), 'Desktop App must consume its thin Gallery transport adapter')
+  assert.equal(webApp.includes('listItems: (limit, offset, query)'), false, 'Web App must not compose Gallery data source methods inline')
+  assert.equal(desktopApp.includes('listItems: async (limit, offset, query)'), false, 'Desktop App must not compose Gallery data source methods inline')
+})
+
 test('Web and Desktop expose the same Gallery data operations', () => {
   for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'mediaVideoURL(', 'appendMediaGalleryQuery(', 'playback-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
+  }
+
+  for (const token of [
+    'api.mediaItems(',
+    'api.mediaAlbums()',
+    'api.mediaPlaces(',
+    'api.mediaAlbumItems(',
+    'api.createMediaAlbum(',
+    'api.createSmartMediaAlbum(',
+    'api.updateSmartMediaAlbum(',
+    'api.deleteSmartMediaAlbum(',
+    'api.renameMediaAlbum(',
+    'api.deleteMediaAlbum(',
+    'api.addMediaAlbumItems(',
+    'api.removeMediaAlbumItem(',
+    'api.setMediaFavorite(',
+    'api.setMediaTags(',
+    'api.setMediaPeople(',
+    'api.setMediaDescription(',
+    'api.mediaThumbnail(',
+    'api.mediaLivePhotoMotion(',
+    'api.mediaVideoURL(',
+  ]) {
+    assert.ok(webAdapter.includes(token), `Web Gallery adapter missing ${token}`)
   }
 
   for (const token of [
@@ -190,12 +242,12 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
   assert.ok(desktopIPC.includes('GET /v1/media/video'))
   assert.ok(desktopIPC.includes('"media-video-stream"'))
-  assert.match(desktopApp, /getMediaVideoURL/)
-  assert.match(desktopApp, /getMediaItems\('', limit, offset, query\)/)
-  assert.match(desktopApp, /getMediaAlbumItems\([\s\S]*query,[\s\S]*\)/)
-  assert.match(desktopApp, /setPeople/)
-  assert.match(desktopApp, /setDescription/)
-  assert.match(desktopApp, /loadVideo/)
+  assert.match(desktopAdapter, /getMediaVideoURL/)
+  assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
+  assert.match(desktopAdapter, /getMediaAlbumItems\([\s\S]*query\)/)
+  assert.match(desktopAdapter, /setPeople/)
+  assert.match(desktopAdapter, /setDescription/)
+  assert.match(desktopAdapter, /loadVideo/)
   assert.match(preload, /agent:get-media-items', kind, limit, offset, query/)
   assert.match(agentClient, /appendAgentMediaQuery\(query, filters\)/)
   assert.match(agentClient, /query\.set\('tag', filters\.tag\.trim\(\)\)/)

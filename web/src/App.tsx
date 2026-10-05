@@ -52,7 +52,6 @@ import {
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
 import type {
-  MediaGalleryDataSource,
   XDriveCloudStorageDataSource,
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerSort,
@@ -78,6 +77,7 @@ import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import StorageStatsPanel from './StorageStatsPanel'
 import WebFileExplorer from './WebFileExplorer'
+import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
@@ -502,45 +502,7 @@ function FileManager({
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
   const shareDialogAdapter = useMemo(() => createWebShareDialogAdapter(api), [api])
 
-  const gallerySource = useMemo<MediaGalleryDataSource>(() => ({
-    listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
-    listAlbums: () => api.mediaAlbums(),
-    listPlaces: (limit = 24) => api.mediaPlaces(limit),
-    createAlbum: (name) => api.createMediaAlbum(name),
-    createSmartAlbum: (name, query) => api.createSmartMediaAlbum(name, query),
-    updateSmartAlbum: (albumID, revision, input) =>
-      api.updateSmartMediaAlbum(albumID, revision, input),
-    deleteSmartAlbum: (albumID, revision) =>
-      api.deleteSmartMediaAlbum(albumID, revision),
-    renameAlbum: (albumID, revision, name) => api.renameMediaAlbum(albumID, revision, name),
-    deleteAlbum: (albumID, revision) => api.deleteMediaAlbum(albumID, revision),
-    addToAlbum: (albumID, revision, nodeIDs) => api.addMediaAlbumItems(albumID, revision, nodeIDs),
-    removeFromAlbum: (albumID, revision, nodeID) => api.removeMediaAlbumItem(albumID, revision, nodeID),
-    listAlbumItems: (albumID, limit, offset, query) => api.mediaAlbumItems(
-      albumID,
-      limit,
-      offset,
-      query,
-    ),
-    setFavorite: async (nodeID, favorite) => {
-      await api.setMediaFavorite(nodeID, favorite)
-    },
-    setTags: async (nodeID, tags) => {
-      const result = await api.setMediaTags(nodeID, tags)
-      return result.tags
-    },
-    setPeople: async (nodeID, people) => {
-      const result = await api.setMediaPeople(nodeID, people)
-      return result.people
-    },
-    setDescription: async (nodeID, description) => {
-      const result = await api.setMediaDescription(nodeID, description)
-      return result.description
-    },
-    loadThumbnail: async (nodeID) => URL.createObjectURL(await api.mediaThumbnail(nodeID)),
-    loadLivePhotoMotion: async (nodeID) => URL.createObjectURL(await api.mediaLivePhotoMotion(nodeID)),
-    loadVideo: (nodeID) => api.mediaVideoURL(nodeID),
-  }), [api])
+  const gallerySource = useMemo(() => createWebMediaGalleryDataSource(api), [api])
 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
