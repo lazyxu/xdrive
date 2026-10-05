@@ -15,6 +15,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"github.com/lazyxu/xdrive/internal/version"
 	"gorm.io/driver/postgres"
@@ -96,6 +97,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("invalid connector credential keyring: %v", err)
 	}
+	var photoPlaceResolver photointelligence.PlaceResolver
+	if cfg.PhotoPlaceGeoNamesDir != "" {
+		resolver, err := photointelligence.LoadGeoNamesResolver(
+			cfg.PhotoPlaceGeoNamesDir,
+			cfg.PhotoPlaceMaxDistanceKM,
+		)
+		if err != nil {
+			log.Fatalf("load GeoNames photo place resolver: %v", err)
+		}
+		photoPlaceResolver = resolver
+		slog.Info(
+			"photo_place_resolver_loaded",
+			"resolver", resolver.Name(),
+			"resolver_version", resolver.Version(),
+			"attribution", photointelligence.GeoNamesAttribution,
+		)
+	}
 	srv := &api.Server{
 		DB: db, Store: store,
 		Auth:                      auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
@@ -104,6 +122,7 @@ func main() {
 		MaxUploadBytes:            cfg.MaxUploadBytes,
 		SourceRunFailureRetention: cfg.SourceRunFailureRetention,
 		ConnectorSecrets:          connectorSecrets,
+		PhotoPlaceResolver:        photoPlaceResolver,
 		HostControlDir:            strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
 	}
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())
@@ -111,6 +130,7 @@ func main() {
 	srv.StartUploadJanitor(janitorCtx)
 	srv.StartStorageSampler(janitorCtx)
 	srv.StartMediaIndexer(janitorCtx)
+	srv.StartPhotoIntelligence(janitorCtx)
 	srv.StartFileOperationWorker(janitorCtx)
 	slog.Info("server_listening", "address", cfg.ListenAddr)
 	if err := srv.Router().Run(cfg.ListenAddr); err != nil {

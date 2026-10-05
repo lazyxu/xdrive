@@ -112,15 +112,35 @@ Requirements for any future analyzer:
 
 ## Place-name analysis policy
 
-The current Gallery GPS facet groups coordinates locally into cells and intentionally shows approximate coordinates. Human-readable naming is a separate optional resolver stage.
+The current Gallery GPS facet keeps its stable `place:<latitude-cell>:<longitude-cell>` identity and filter contract. Human-readable names are an optional derived label layered on top; canonical GPS remains `PhotoMetadata.Latitude/Longitude`.
 
-Requirements for a future resolver:
+The first resolver is **offline GeoNames**. xDrive does not call the GeoNames web service. An administrator may provide a local directory with the official free-data files:
+
+- `cities500.txt`;
+- `admin1CodesASCII.txt`;
+- `countryInfo.txt`.
+
+Configure the server with:
+
+```text
+XD_PHOTO_PLACE_GEONAMES_DIR=/path/visible/to/xdrive-server/geonames
+XD_PHOTO_PLACE_MAX_DISTANCE_KM=100
+```
+
+The directory is optional. When it is absent, the place-analysis worker is disabled. Assets that have never been resolved continue to use the existing approximate-coordinate labels; previously derived labels remain available as local cached state until they are superseded or explicitly cleaned. When the directory is configured, xDrive validates all three files at startup, builds an in-memory spatial index, and never downloads data at runtime.
+
+Resolver rules:
 
 1. Use only GPS already parsed by xDrive from local originals.
-2. Prefer an offline dataset/resolver so Gallery works with providers offline and no photo location leaves the server.
-3. Persist resolver and dataset version so labels can be invalidated/rebuilt after data upgrades.
-4. Never replace canonical GPS with the resolver result.
-5. If a network resolver is ever supported, it must be explicitly configured/opted in, must not upload image bytes, and must define caching/rate/privacy behavior in this document before implementation.
+2. Resolve to the nearest `cities500` populated place only within the configured maximum distance; no match is a valid cached result and must not be replaced by a misleading distant city.
+3. Persist the resolver name, exact coordinates, and a resolver version derived from the analysis algorithm version plus SHA-256 fingerprints of the three local GeoNames files.
+4. A GPS metadata update or resolver/data version change invalidates the derived label and schedules it for bounded background re-analysis.
+5. Place analysis is lower priority than native media indexing. Failed rows retry with backoff; abandoned `running` rows become eligible again after a timeout.
+6. Never replace canonical GPS with the resolver result and never use a place label as media or Source identity.
+7. Preserve the existing Gallery place-cell IDs so saved smart albums and place filters remain compatible while their display names improve.
+8. If a network resolver is ever supported, it must be explicitly configured/opted in, must not upload image bytes, and must define caching/rate/privacy behavior here before implementation.
+
+GeoNames free gazetteer data is licensed under **Creative Commons Attribution 4.0**. xDrive must retain attribution to GeoNames whenever this resolver/data is used. See https://www.geonames.org/export/.
 
 ## Scheduling and lifecycle
 
@@ -166,10 +186,11 @@ When automatic facets are exposed later:
    - derived place-label row;
    - migration and model-contract tests;
    - no analyzer, API, or UI behavior change.
-2. **Place names**
-   - choose/validate an offline resolver/data source;
-   - add bounded background resolver worker;
-   - expose structured place facets while keeping raw GPS canonical.
+2. **Place names — current**
+   - optional local GeoNames `cities500` resolver with no runtime network calls;
+   - dataset-hash/analyzer-version invalidation and durable negative-result caching;
+   - bounded low-priority background worker with retry/running timeout;
+   - existing Gallery place-cell/filter IDs preserved while labels become human-readable when available.
 3. **Face detection + embeddings**
    - benchmark candidate local models on server target platforms;
    - define model packaging/update policy and CPU/GPU fallback;

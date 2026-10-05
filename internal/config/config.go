@@ -18,6 +18,8 @@ type Config struct {
 	AllowedOrigin                string
 	MaxUploadBytes               int64
 	SourceRunFailureRetention    time.Duration
+	PhotoPlaceGeoNamesDir        string
+	PhotoPlaceMaxDistanceKM      float64
 	ConnectorSecretActiveVersion string
 	ConnectorSecretKeys          string
 	ConnectorSecretLegacyKey     string
@@ -42,6 +44,8 @@ func Load() (Config, error) {
 		AllowedOrigin:                env("XD_ALLOWED_ORIGIN", "http://localhost:5173"),
 		MaxUploadBytes:               20 << 30,
 		SourceRunFailureRetention:    180 * 24 * time.Hour,
+		PhotoPlaceGeoNamesDir:        strings.TrimSpace(os.Getenv("XD_PHOTO_PLACE_GEONAMES_DIR")),
+		PhotoPlaceMaxDistanceKM:      100,
 		ConnectorSecretActiveVersion: strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_ACTIVE_VERSION")),
 		ConnectorSecretKeys:          strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEYS")),
 		ConnectorSecretLegacyKey:     strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEY")),
@@ -76,6 +80,13 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid XD_SOURCE_RUN_FAILURE_RETENTION_DAYS %q", v)
 		}
 		cfg.SourceRunFailureRetention = time.Duration(days) * 24 * time.Hour
+	}
+	if v := strings.TrimSpace(os.Getenv("XD_PHOTO_PLACE_MAX_DISTANCE_KM")); v != "" {
+		distance, err := strconv.ParseFloat(v, 64)
+		if err != nil || distance <= 0 || distance > 500 {
+			return Config{}, fmt.Errorf("invalid XD_PHOTO_PLACE_MAX_DISTANCE_KM %q; expected >0 and <=500", v)
+		}
+		cfg.PhotoPlaceMaxDistanceKM = distance
 	}
 	return cfg, nil
 }
