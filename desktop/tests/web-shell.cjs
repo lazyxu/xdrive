@@ -233,7 +233,7 @@ test('Web and Desktop pass account quota into the shared sidebar footer', () => 
   assert.ok(desktopApp.includes('storageSummary={xDriveWorkspaceStorageSummary(cloudQuota)}'), 'Desktop must consume the shared sidebar quota adapter')
   assert.ok(sharedCloudFilesController.includes('quotaRefreshIntervalMs = 60_000'), 'shared Cloud Files controller should keep Web sidebar quota reasonably fresh')
   assert.ok(sharedCloudFilesController.includes('globalThis.setInterval(() => {'), 'shared Cloud Files controller should own periodic quota refresh')
-  assert.ok(desktopApp.includes('window.setInterval(() => void refresh(), 60_000)'), 'Desktop should keep sidebar quota reasonably fresh')
+  assert.ok(desktopApp.includes('useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>'), 'Desktop should use the shared quota refresh lifecycle')
 })
 test('shared workspace content owns page spacing and Files full-bleed behavior', () => {
   for (const token of [

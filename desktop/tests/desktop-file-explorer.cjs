@@ -103,14 +103,15 @@ test('Desktop Cloud Storage adapter owns cloud quota and storage intelligence re
   assert.ok(app.includes('window.xdriveDesktop.agent.cloudStorageStats()'), 'Cloud Storage adapter should retrieve CAS storage intelligence when supported')
 })
 
-test('Desktop Files home load does not fetch CAS storage intelligence', () => {
-  const start = app.indexOf('const loadCloudHome = async () => {')
-  const end = app.indexOf('const openCloudTrash = () =>', start)
-  assert.ok(start >= 0 && end > start, 'loadCloudHome boundaries are missing')
+test('Desktop Files cloud lifecycle uses the shared controller without storage intelligence coupling', () => {
+  const start = app.indexOf('const cloudFilesPort = useMemo')
+  const end = app.indexOf('const loadCloudFileOperations', start)
+  assert.ok(start >= 0 && end > start, 'Desktop cloud-files controller boundaries are missing')
   const body = app.slice(start, end)
-  assert.ok(body.includes('cloudRoot()'), 'Files home should still load the cloud root')
-  assert.ok(body.includes('cloudQuota()'), 'Files home should still load quota for sidebar/over-quota status')
-  assert.equal(body.includes('cloudStorageStats()'), false, 'Files home must not fetch storage intelligence')
+  assert.ok(body.includes('cloudRoot()'), 'Desktop Cloud Files port should load the cloud root')
+  assert.ok(body.includes('cloudQuota()'), 'Desktop Cloud Files port should load quota for sidebar/over-quota status')
+  assert.ok(body.includes('useXDriveCloudFilesController'), 'Desktop Files must delegate lifecycle to the shared controller')
+  assert.equal(body.includes('cloudStorageStats()'), false, 'Cloud Files lifecycle must not fetch storage intelligence')
 })
 
 
@@ -231,17 +232,16 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
   }
 })
 
-test('Desktop FileExplorer uses cursor-paged server sorting for cloud directories', () => {
+test('Desktop FileExplorer uses the shared Cloud Files controller for cursor-paged directory sorting', () => {
   assert.equal(app.includes('DEFAULT_DESKTOP_FILE_SORT'), false, 'Desktop must not own a local default file sort')
-  assert.ok(app.includes('XDRIVE_FILE_EXPLORER_DEFAULT_SORT'), 'Desktop initial directory loads must use the shared default sort')
+  assert.ok(app.includes('XDRIVE_FILE_EXPLORER_DEFAULT_SORT'), 'Desktop cloud controller must use the shared default sort')
   assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'Desktop page-size contract must remain in the shared controller')
-  assert.equal((app.match(/xDriveFileExplorerPageRequestOptions\(/g) || []).length, 3, 'Desktop must use shared request-option construction for all directory page requests')
-  assert.ok(app.includes('const loadMoreCloudDirectory = async (id: number, sort: XDriveFileExplorerSort) => {'), 'Desktop incremental directory loader is missing')
-  assert.ok(app.includes('xDriveFileExplorerCanLoadMore(pageState, id, sort, cloudLoadingMore)'), 'Desktop pagination eligibility must use the shared controller')
+  assert.ok(app.includes('useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>'), 'Desktop directory lifecycle must use the shared Cloud Files controller')
+  assert.ok(app.includes('cloudChildrenPage(parentID, options)'), 'Desktop Cloud Files port must forward shared page options to Agent IPC')
+  assert.equal(app.includes('xDriveFileExplorerPageRequestOptions('), false, 'Desktop App must not construct directory page requests locally')
+  assert.equal(app.includes('xDriveFileExplorerCanLoadMore('), false, 'Desktop App must not own pagination eligibility')
+  assert.equal(app.includes('xDriveFileExplorerDirectoryPageTransition('), false, 'Desktop App must not own page transitions')
   assert.ok(controller.includes('xDriveFileExplorerDirectoryPageTransition'), 'shared controller must own directory page transitions')
-  assert.ok(app.includes('xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, false)'), 'Desktop first directory page must use the shared transition')
-  assert.ok(app.includes('xDriveFileExplorerDirectoryPageTransition(id, result.data, sort, true)'), 'Desktop incremental directory page must use the shared transition')
-  assert.ok(app.includes('window.xdriveDesktop.agent.cloudChildrenPage(\n        id,\n        xDriveFileExplorerPageRequestOptions(sort),'), 'Desktop directory browsing should use the paged Agent API with shared request options')
   assert.equal(app.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), false, 'Desktop must not duplicate page merge semantics')
   assert.equal(app.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate directory page-state derivation')
   assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Desktop directory pages should consume shared workspace sorting state')
@@ -250,7 +250,6 @@ test('Desktop FileExplorer uses cursor-paged server sorting for cloud directorie
   assert.ok(explorer.includes('onLoadMoreDirectory: onLoadMore'), 'Desktop Explorer must inject directory load-more into the shared workspace controller')
   assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer must wire shared pagination dispatch near the scroll boundary')
 })
-
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
   assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must queue one shared delete plan')
   assert.ok(explorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop paste/drop must use one shared queued-operation controller')

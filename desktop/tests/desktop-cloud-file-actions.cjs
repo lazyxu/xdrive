@@ -100,7 +100,7 @@ test('Desktop Agent bridge exposes cursor-paged cloud children without changing 
   assert.ok(agentClient.includes("return this.request<AgentCloudChildrenPage>('GET'"), 'Desktop AgentClient should return a page contract')
   assert.ok(main.includes("ipcMain.handle('agent:cloud-children-page'"), 'Electron main paged children bridge is missing')
   assert.ok(preload.includes('cloudChildrenPage: ('), 'preload paged children bridge is missing')
-  assert.ok(types.includes('type AgentCloudChildrenPage = {'), 'renderer paged children type is missing')
+  assert.ok(types.includes('type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>'), 'renderer paged children type must alias the shared contract')
   assert.ok(types.includes('cloudChildren: (parentID: number)'), 'legacy cloudChildren contract should remain available')
 })
 
@@ -112,7 +112,7 @@ test('Desktop search preserves cursor pages through Agent and Electron bridges',
   assert.ok(agentClient.includes("query.set('cursor', cursor.trim())"), 'Electron AgentClient must forward the search cursor')
   assert.ok(main.includes("runAgentAction<AgentCloudSearchPage>"), 'Electron main must preserve the search page result')
   assert.ok(preload.includes("cloudSearch: (query: string, cursor = '')"), 'preload search cursor bridge is missing')
-  assert.ok(types.includes('type AgentCloudSearchPage = {'), 'renderer search page type is missing')
+  assert.ok(types.includes('type AgentCloudSearchPage = XDriveCloudFilesSearchPage<AgentCloudNode>'), 'renderer search page type must alias the shared contract')
   assert.ok(types.includes('cloudSearch: (query: string, cursor?: string) => Promise<DesktopResult<AgentCloudSearchPage>>'), 'renderer search page method type is missing')
 })
 
