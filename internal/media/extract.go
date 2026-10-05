@@ -935,10 +935,24 @@ type mp4Box struct {
 }
 
 func extractVideo(r io.ReadSeeker, size int64, out *Result) error {
+	switch strings.ToLower(strings.TrimSpace(out.MIMEType)) {
+	case "video/x-matroska", "video/webm":
+		if err := extractMatroskaVideo(r, size, out); err == nil {
+			return nil
+		}
+		return nil
+	case "video/x-msvideo", "video/avi", "video/msvideo":
+		if err := extractAVIVideo(r, size, out); err == nil {
+			return nil
+		}
+		return nil
+	}
+
 	info, err := parseMP4(r)
 	if err != nil {
-		// Non-ISO containers still participate in Gallery by type. The built-in
-		// parser leaves codec-specific fields empty instead of requiring ffprobe.
+		// Unsupported containers still participate in Gallery by type. Native
+		// parsers fail closed and leave codec-specific fields empty instead of
+		// requiring ffprobe or treating a classification suffix as metadata.
 		return nil
 	}
 	out.DurationMS = int64(info.Duration*1000 + 0.5)
