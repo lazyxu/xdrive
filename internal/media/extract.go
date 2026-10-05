@@ -143,6 +143,9 @@ func detectMIME(name string, header []byte) string {
 	}
 
 	ext := strings.ToLower(filepath.Ext(name))
+	if ext == ".mts" || ext == ".m2ts" {
+		return "video/mp2t"
+	}
 	if rawMIME := tiffRawMIMETypes[ext]; rawMIME != "" {
 		if isTIFF(header) {
 			return rawMIME
@@ -943,6 +946,11 @@ func extractVideo(r io.ReadSeeker, size int64, out *Result) error {
 		return nil
 	case "video/x-msvideo", "video/avi", "video/msvideo":
 		if err := extractAVIVideo(r, size, out); err == nil {
+			return nil
+		}
+		return nil
+	case "video/mp2t":
+		if err := extractMPEGTSVideo(r, size, out); err == nil {
 			return nil
 		}
 		return nil
