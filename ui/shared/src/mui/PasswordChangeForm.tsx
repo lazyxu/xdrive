@@ -25,8 +25,6 @@ export function XDrivePasswordChangeForm({
   disabled = false,
   loadingLabel = '正在更新…',
   submitFullWidth = false,
-  className,
-  buttonClassName,
   sx,
   onChange,
   onSubmit,
@@ -37,14 +35,12 @@ export function XDrivePasswordChangeForm({
   disabled?: boolean
   loadingLabel?: string
   submitFullWidth?: boolean
-  className?: string
-  buttonClassName?: string
   sx?: SxProps<Theme>
   onChange: (field: keyof XDrivePasswordChangeValues, value: string) => void
   onSubmit: FormEventHandler<HTMLFormElement>
 }) {
   return (
-    <Stack component="form" className={className} spacing={2} sx={sx} onSubmit={onSubmit}>
+    <Stack component="form" spacing={2} sx={sx} onSubmit={onSubmit}>
       {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
       <XDriveAuthPasswordField
         id="xdrive-current-password"
@@ -73,7 +69,6 @@ export function XDrivePasswordChangeForm({
         onChange={(value) => onChange('confirm', value)}
       />
       <XDriveActionButton
-        className={buttonClassName}
         fullWidth={submitFullWidth}
         intent="primary"
         type="submit"
