@@ -169,6 +169,7 @@ function appendMediaGalleryQuery(
     values.set('favorite', String(query.favorite))
   }
   if (query.tag?.trim()) values.set('tag', query.tag.trim())
+  if (query.person?.trim()) values.set('person', query.person.trim())
   if (query.place?.trim()) values.set('place', query.place.trim())
 }
 
@@ -576,6 +577,16 @@ export class XDriveApi {
       {
         method: 'PATCH',
         body: JSON.stringify({ tags }),
+      },
+    )
+  }
+
+  setMediaPeople(nodeID: number, people: string[]) {
+    return this.request<{ people: string[] }>(
+      `/api/v1/media/items/${nodeID}/people`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ people }),
       },
     )
   }

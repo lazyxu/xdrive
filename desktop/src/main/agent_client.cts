@@ -454,6 +454,7 @@ export type AgentMediaItem = {
   asset_kind?: string
   favorite: boolean
   tags?: string[]
+  people?: string[]
   description?: string
   resources?: AgentMediaResource[]
   derived_resources?: AgentMediaDerivedResource[]
@@ -468,6 +469,7 @@ export type AgentMediaQuery = {
   has_location?: boolean
   favorite?: boolean
   tag?: string
+  person?: string
   place?: string
 }
 
@@ -486,6 +488,7 @@ function appendAgentMediaQuery(
     query.set('favorite', String(filters.favorite))
   }
   if (filters.tag?.trim()) query.set('tag', filters.tag.trim())
+  if (filters.person?.trim()) query.set('person', filters.person.trim())
   if (filters.place?.trim()) query.set('place', filters.place.trim())
 }
 
@@ -516,6 +519,10 @@ export type AgentMediaFavorite = {
 
 export type AgentMediaTags = {
   tags: string[]
+}
+
+export type AgentMediaPeople = {
+  people: string[]
 }
 
 export type AgentMediaDescription = {
@@ -913,6 +920,14 @@ export class AgentIPCClient {
       'PATCH',
       '/v1/media/tags',
       { node_id: nodeID, tags },
+    )
+  }
+
+  setMediaPeople(nodeID: number, people: string[]) {
+    return this.request<AgentMediaPeople>(
+      'PATCH',
+      '/v1/media/people',
+      { node_id: nodeID, people },
     )
   }
 

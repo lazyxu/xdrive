@@ -60,6 +60,7 @@ export interface MediaGalleryDataSource {
   loadVideo?: MediaVideoLoader
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
+  setPeople?: (nodeID: number, people: string[]) => Promise<string[]>
   setDescription?: (nodeID: number, description: string) => Promise<string>
   createAlbum?: (name: string) => Promise<MediaAlbum>
   createSmartAlbum?: (name: string, query: MediaGalleryQuery) => Promise<MediaAlbum>
@@ -89,6 +90,7 @@ type MediaGalleryFilterDraft = {
   location: 'any' | 'with' | 'without'
   favorite: 'any' | 'favorite' | 'not-favorite'
   tag: string
+  person: string
   place: string
 }
 
@@ -100,6 +102,7 @@ const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
   location: 'any',
   favorite: 'any',
   tag: '',
+  person: '',
   place: '',
 }
 
@@ -139,6 +142,7 @@ function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): MediaGaller
         ? { favorite: false }
         : {}),
     ...(draft.tag.trim() ? { tag: draft.tag.trim() } : {}),
+    ...(draft.person.trim() ? { person: draft.person.trim() } : {}),
     ...(draft.place.trim() ? { place: draft.place.trim() } : {}),
   }
 }
@@ -171,6 +175,7 @@ function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): MediaGallery
         ? 'not-favorite'
         : 'any',
     tag: query.tag || '',
+    person: query.person || '',
     place: query.place || '',
   }
 }
@@ -184,6 +189,7 @@ function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
     draft.location !== 'any' ||
     draft.favorite !== 'any' ||
     draft.tag.trim() ||
+    draft.person.trim() ||
     draft.place.trim(),
   )
 }
@@ -233,6 +239,17 @@ function MediaGalleryFilterBar({
           placeholder="精确标签"
           value={draft.tag}
           onChange={(event) => onChange({ ...draft, tag: event.target.value })}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onApply()
+          }}
+          sx={{ minWidth: 140 }}
+        />
+        <TextField
+          size="small"
+          label="人物"
+          placeholder="精确人物标签"
+          value={draft.person}
+          onChange={(event) => onChange({ ...draft, person: event.target.value })}
           onKeyDown={(event) => {
             if (event.key === 'Enter') onApply()
           }}
@@ -651,6 +668,37 @@ export function XDriveMediaGalleryPage({
     }
   }, [currentAlbum, loadFirstPage, onError, query, source])
 
+  const setPeople = useCallback(async (
+    item: MediaItem,
+    people: string[],
+  ) => {
+    if (!source.setPeople) return item.people || []
+    setError('')
+    try {
+      const normalized = await source.setPeople(item.node.id, people)
+      setItems((current) => current.map((value) => (
+        value.node.id === item.node.id
+          ? { ...value, people: normalized }
+          : value
+      )))
+      if (
+        query.person ||
+        (currentAlbum?.kind === 'smart' && currentAlbum.query?.person)
+      ) {
+        await loadFirstPage(
+          currentAlbum,
+          currentAlbum?.kind === 'smart' ? {} : query,
+        )
+      }
+      return normalized
+    } catch (peopleError) {
+      const message = errorMessage(peopleError)
+      setError(message)
+      onError?.(peopleError)
+      throw peopleError
+    }
+  }, [currentAlbum, loadFirstPage, onError, query, source])
+
   const setDescription = useCallback(async (
     item: MediaItem,
     description: string,
@@ -726,6 +774,7 @@ export function XDriveMediaGalleryPage({
         loadVideo={source.loadVideo}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
         onSetTags={source.setTags ? setTags : undefined}
+        onSetPeople={source.setPeople ? setPeople : undefined}
         onSetDescription={source.setDescription ? setDescription : undefined}
         onCreateAlbum={source.createAlbum ? createAlbum : undefined}
         onRenameAlbum={
@@ -822,6 +871,7 @@ export interface XDriveMediaGalleryProps {
   loadVideo?: MediaVideoLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
+  onSetPeople?: (item: MediaItem, people: string[]) => Promise<string[]>
   onSetDescription?: (item: MediaItem, description: string) => Promise<string>
   onCreateAlbum?: (name: string) => Promise<MediaAlbum>
   onRenameAlbum?: (album: MediaAlbum, name: string) => Promise<MediaAlbum>
@@ -1229,6 +1279,7 @@ function MediaDetails({
   currentAlbum,
   onSetFavorite,
   onSetTags,
+  onSetPeople,
   onSetDescription,
   onAddToAlbum,
   onRemoveFromAlbum,
@@ -1242,6 +1293,7 @@ function MediaDetails({
   currentAlbum?: MediaAlbum | null
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
+  onSetPeople?: (item: MediaItem, people: string[]) => Promise<string[]>
   onSetDescription?: (item: MediaItem, description: string) => Promise<string>
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
@@ -1256,10 +1308,14 @@ function MediaDetails({
   const [tagsInput, setTagsInput] = useState('')
   const [tagsBusy, setTagsBusy] = useState(false)
   const [tagsError, setTagsError] = useState('')
+  const [peopleInput, setPeopleInput] = useState('')
+  const [peopleBusy, setPeopleBusy] = useState(false)
+  const [peopleError, setPeopleError] = useState('')
   const [descriptionInput, setDescriptionInput] = useState('')
   const [descriptionBusy, setDescriptionBusy] = useState(false)
   const [descriptionError, setDescriptionError] = useState('')
   const tagsKey = (item?.tags || []).join('\u0000')
+  const peopleKey = (item?.people || []).join('\u0000')
   const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
   const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
   const animatedImage = Boolean(
@@ -1272,6 +1328,12 @@ function MediaDetails({
     setTagsBusy(false)
     setTagsError('')
   }, [item?.node.id, tagsKey])
+
+  useEffect(() => {
+    setPeopleInput((item?.people || []).join(', '))
+    setPeopleBusy(false)
+    setPeopleError('')
+  }, [item?.node.id, peopleKey])
 
   useEffect(() => {
     setDescriptionInput(item?.description || '')
@@ -1339,6 +1401,7 @@ function MediaDetails({
       ['类型', mediaAssetLabel(item)],
       ['收藏', item.favorite ? '已收藏' : '未收藏'],
       ['标签', item.tags?.length ? item.tags.join('、') : '—'],
+      ['人物', item.people?.length ? item.people.join('、') : '—'],
       ['文件名', item.node.name],
       ['大小', formatBytes(item.node.size)],
       ['格式', metadata.mime_type || '—'],
@@ -1521,6 +1584,45 @@ function MediaDetails({
                 {tagsError ? (
                   <Box sx={{ mt: 1 }}>
                     <XDriveStatusAlert tone="bad">{tagsError}</XDriveStatusAlert>
+                  </Box>
+                ) : null}
+              </Box>
+            ) : null}
+            {onSetPeople ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>人物标签</Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    label="人物"
+                    placeholder="Alice, Bob, 张三"
+                    value={peopleInput}
+                    disabled={peopleBusy}
+                    onChange={(event) => {
+                      setPeopleInput(event.target.value)
+                      setPeopleError('')
+                    }}
+                    helperText="用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。"
+                  />
+                  <Button
+                    variant="outlined"
+                    disabled={peopleBusy}
+                    onClick={() => {
+                      setPeopleBusy(true)
+                      setPeopleError('')
+                      void onSetPeople(item, parseMediaTagsInput(peopleInput))
+                        .then((people) => setPeopleInput(people.join(', ')))
+                        .catch((saveError) => setPeopleError(errorMessage(saveError)))
+                        .finally(() => setPeopleBusy(false))
+                    }}
+                  >
+                    保存人物
+                  </Button>
+                </Stack>
+                {peopleError ? (
+                  <Box sx={{ mt: 1 }}>
+                    <XDriveStatusAlert tone="bad">{peopleError}</XDriveStatusAlert>
                   </Box>
                 ) : null}
               </Box>
@@ -1852,6 +1954,7 @@ export function XDriveMediaGallery({
   loadVideo,
   onSetFavorite,
   onSetTags,
+  onSetPeople,
   onSetDescription,
   onCreateAlbum,
   onRenameAlbum,
@@ -2208,6 +2311,15 @@ export function XDriveMediaGallery({
           setSelected((current) => (
             current?.node.id === item.node.id
               ? { ...current, tags: normalized }
+              : current
+          ))
+          return normalized
+        } : undefined}
+        onSetPeople={onSetPeople ? async (item, people) => {
+          const normalized = await onSetPeople(item, people)
+          setSelected((current) => (
+            current?.node.id === item.node.id
+              ? { ...current, people: normalized }
               : current
           ))
           return normalized

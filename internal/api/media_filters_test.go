@@ -15,7 +15,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(
 		"GET",
-		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel",
+		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
 		nil,
 	)
 	ctx.Request = req
@@ -28,7 +28,8 @@ func TestMediaQueryFromRequest(t *testing.T) {
 		query.AssetKind != "live_photo" ||
 		query.HasLocation == nil || !*query.HasLocation ||
 		query.Favorite == nil || !*query.Favorite ||
-		query.Tag != "Travel" {
+		query.Tag != "Travel" ||
+		query.Person != "Alice" {
 		t.Fatalf("query=%+v", query)
 	}
 	if query.CapturedFrom == nil ||
@@ -107,6 +108,24 @@ func TestMediaQueryFromRequestRejectsInvalidTag(t *testing.T) {
 
 	if _, ok := mediaQueryFromRequest(ctx); ok {
 		t.Fatal("oversized tag filter was accepted")
+	}
+	if recorder.Code != 400 {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMediaQueryFromRequestRejectsInvalidPerson(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(
+		"GET",
+		"/api/v1/media/items?person="+strings.Repeat("x", mediaPersonMaxRunes+1),
+		nil,
+	)
+
+	if _, ok := mediaQueryFromRequest(ctx); ok {
+		t.Fatal("oversized person filter was accepted")
 	}
 	if recorder.Code != 400 {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())

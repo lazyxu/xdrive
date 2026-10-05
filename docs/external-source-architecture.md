@@ -263,3 +263,19 @@ no exact / unique evidence
 ```
 
 AAE adjustment payloads are not paired merely because an `.AAE` filename resembles an image filename. Until an explicit target identifier is parsed and validated, AAE remains an ordinary preserved file.
+
+
+## Local people labels
+
+`PhotoMetadata.people_json` is user-managed local Gallery metadata. It is not provider people/person/face data and it is not automatic face recognition.
+
+Current contract:
+
+- people labels are edited explicitly by the xDrive user;
+- labels are normalized, case-insensitively deduplicated, deterministically ordered, and limited to 32 labels per logical asset / 64 characters per label;
+- exact person filtering and saved smart-album queries use the same connector-neutral local Gallery query contract;
+- free-text Gallery search may match these local labels;
+- `PhotoAsset` reconciliation must preserve `people_json` just like local favorite/tag/description state;
+- Synology/Yike/FileStation people, face, or person APIs are not imported or written back.
+
+If xDrive later adds face detection/recognition, it must be a separate connector-neutral local media-analysis subsystem whose generated suggestions are distinguishable from explicit user labels.

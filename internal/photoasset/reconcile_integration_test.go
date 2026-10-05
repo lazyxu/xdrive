@@ -294,6 +294,7 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 		Updates(map[string]any{
 			"favorite":    true,
 			"tags_json":   `["Family","Travel"]`,
+			"people_json": `["Alice","Bob"]`,
 			"description": "Local note survives rebuild",
 		}).Error; err != nil {
 		t.Fatal(err)
@@ -319,6 +320,9 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 	}
 	if favoriteMetadata.TagsJSON != `["Family","Travel"]` {
 		t.Fatalf("tags were overwritten by PhotoAsset reconciliation: %q", favoriteMetadata.TagsJSON)
+	}
+	if favoriteMetadata.PeopleJSON != `["Alice","Bob"]` {
+		t.Fatalf("people were overwritten by PhotoAsset reconciliation: %q", favoriteMetadata.PeopleJSON)
 	}
 	if favoriteMetadata.Description != "Local note survives rebuild" {
 		t.Fatalf("description was overwritten by PhotoAsset reconciliation: %q", favoriteMetadata.Description)

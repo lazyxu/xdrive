@@ -1206,6 +1206,18 @@ func (c *agentController) CloudSetMediaTags(
 	return cli.SetMediaTags(ctx, nodeID, tags)
 }
 
+func (c *agentController) CloudSetMediaPeople(
+	ctx context.Context,
+	nodeID uint64,
+	people []string,
+) (client.MediaPeople, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPeople{}, err
+	}
+	return cli.SetMediaPeople(ctx, nodeID, people)
+}
+
 func (c *agentController) CloudSetMediaDescription(
 	ctx context.Context,
 	nodeID uint64,
