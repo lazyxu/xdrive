@@ -43,6 +43,7 @@ import {
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   useXDriveTaskCenterController,
+  useXDriveServerUpdateController,
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
@@ -65,9 +66,6 @@ import type {
   Node,
   QuotaUsage,
   XDriveAppearance,
-  XDriveServerUpdateChannel,
-  XDriveServerUpdateSource,
-  XDriveServerUpdateState,
   XDriveTransferTask,
   XDriveFileOperation,
   XDriveCloudFilesPort,
@@ -140,59 +138,18 @@ function WebAccountMenu({
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [serverUpdate, setServerUpdate] = useState<XDriveServerUpdateState | null>(null)
-  const [serverUpdateSource, setServerUpdateSource] = useState<XDriveServerUpdateSource>('github')
-  const [serverUpdateChannel, setServerUpdateChannel] = useState<XDriveServerUpdateChannel>(
-    serverBuild?.channel === 'master' ? 'master' : 'stable',
-  )
-  const [serverUpdateBackupFileData, setServerUpdateBackupFileData] = useState(false)
-  const [serverUpdateBusy, setServerUpdateBusy] = useState(false)
-  const [serverUpdateError, setServerUpdateError] = useState('')
   const [serverUpdateConfirmOpen, setServerUpdateConfirmOpen] = useState(false)
-
-  useEffect(() => {
-    if (!settingsOpen || !canUpdateServer) return
-    let active = true
-    const refresh = async () => {
-      try {
-        const state = await api.adminServerUpdate()
-        if (!active) return
-        if (serverUpdate === null) {
-          setServerUpdateSource(state.source)
-          setServerUpdateChannel(state.channel)
-        }
-        setServerUpdate(state)
-        setServerUpdateError('')
-      } catch (error) {
-        if (!active) return
-        setServerUpdateError(
-          serverUpdate?.state === 'queued' || serverUpdate?.state === 'running'
-            ? '服务端更新期间连接可能暂时中断，正在等待服务恢复…'
-            : error instanceof Error ? error.message : '无法读取服务端更新状态。',
-        )
-      }
-    }
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 2_000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [api, canUpdateServer, settingsOpen, serverUpdate?.state])
-
-  const startServerUpdate = async () => {
-    setServerUpdateConfirmOpen(false)
-    setServerUpdateBusy(true)
-    setServerUpdateError('')
-    try {
-      const state = await api.adminStartServerUpdate(serverUpdateSource, serverUpdateChannel, serverUpdateBackupFileData)
-      setServerUpdate(state)
-    } catch (error) {
-      setServerUpdateError(error instanceof Error ? error.message : '提交服务端更新失败。')
-    } finally {
-      setServerUpdateBusy(false)
-    }
-  }
+  const serverUpdatePort = useMemo(() => ({
+    getState: () => api.adminServerUpdate(),
+    startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+      api.adminStartServerUpdate(source, channel, backupFileData),
+  }), [api])
+  const serverUpdate = useXDriveServerUpdateController({
+    open: settingsOpen,
+    enabled: canUpdateServer,
+    initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
+    port: serverUpdatePort,
+  })
 
   return (
     <>
@@ -236,31 +193,34 @@ function WebAccountMenu({
         onAppearanceChange={onAppearanceChange}
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
         serverUpdate={{
-          state: serverUpdate,
-          source: serverUpdateSource,
-          channel: serverUpdateChannel,
-          backupFileData: serverUpdateBackupFileData,
-          loading: serverUpdateBusy,
-          disabled: serverUpdate === null,
+          state: serverUpdate.state,
+          source: serverUpdate.source,
+          channel: serverUpdate.channel,
+          backupFileData: serverUpdate.backupFileData,
+          loading: serverUpdate.busy,
+          disabled: serverUpdate.state === null,
           canUpdate: canUpdateServer,
           unavailableMessage: '仅管理员可以更新服务端。',
-          error: serverUpdateError,
-          onSourceChange: setServerUpdateSource,
-          onChannelChange: setServerUpdateChannel,
-          onBackupFileDataChange: setServerUpdateBackupFileData,
+          error: serverUpdate.error,
+          onSourceChange: serverUpdate.setSource,
+          onChannelChange: serverUpdate.setChannel,
+          onBackupFileDataChange: serverUpdate.setBackupFileData,
           onStart: () => setServerUpdateConfirmOpen(true),
         }}
       />
       <XDriveConfirmDialog
         open={serverUpdateConfirmOpen}
         title="确认更新服务端？"
-        description={`来源：${serverUpdateSource === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdateChannel} · 文件数据备份：${serverUpdateBackupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间 Web/API 可能短暂不可用。`}
+        description={`来源：${serverUpdate.source === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdate.channel} · 文件数据备份：${serverUpdate.backupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间 Web/API 可能短暂不可用。`}
         confirmLabel="开始更新"
         confirmIntent="warning"
-        loading={serverUpdateBusy}
+        loading={serverUpdate.busy}
         loadingLabel="正在提交…"
         onCancel={() => setServerUpdateConfirmOpen(false)}
-        onConfirm={() => void startServerUpdate()}
+        onConfirm={() => {
+          setServerUpdateConfirmOpen(false)
+          void serverUpdate.start()
+        }}
       />
     </>
   )

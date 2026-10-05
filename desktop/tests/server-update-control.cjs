@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedCard = read('ui', 'shared', 'src', 'mui', 'ServerUpdateCard.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'server-update.ts')
+const sharedController = read('ui', 'shared', 'src', 'mui', 'ServerUpdateController.ts')
 const sharedSettings = read('ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx')
 const web = read('web', 'src', 'App.tsx') + sharedSettings
 const webApi = read('web', 'src', 'api.ts')
@@ -56,6 +57,42 @@ test('Web and Desktop use the same server update card', () => {
   assert.ok(agentIPC.includes('"server-update"'), 'Agent IPC server-update capability missing')
   assert.ok(web.includes('确认更新服务端？'), 'Web server update must require confirmation')
   assert.ok(desktop.includes('确认更新服务端？'), 'Desktop server update must require confirmation')
+})
+
+test('shared Server Update controller owns polling, transport normalization and submit state', () => {
+  for (const token of [
+    'useXDriveServerUpdateController',
+    'XDriveServerUpdatePort',
+    'XDriveServerUpdateTransportResult',
+    'resolveTransport',
+    'pollIntervalMs = 2_000',
+    'globalThis.setInterval(() => void poll(), pollIntervalMs)',
+    "state?.state === 'queued' || state?.state === 'running'",
+    'updateActive(stateRef.current)',
+    'activeReconnectMessage',
+    'errorStatus(refreshError) === 403',
+    'setSource(next.source)',
+    'setChannel(next.channel)',
+    'port.startUpdate(source, channel, backupFileData)',
+    'onBusyChange?.(true)',
+    'onBusyChange?.(false)',
+  ]) {
+    assert.ok(sharedController.includes(token), `shared Server Update controller missing: ${token}`)
+  }
+
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('useXDriveServerUpdateController({'), `${label} must consume shared Server Update controller`)
+    assert.equal(source.includes('setServerUpdateSource'), false, `${label} must not own update-source state`)
+    assert.equal(source.includes('setServerUpdateChannel'), false, `${label} must not own update-channel state`)
+    assert.equal(source.includes('setServerUpdateBackupFileData'), false, `${label} must not own update backup state`)
+    assert.equal(source.includes('setServerUpdateError'), false, `${label} must not own update error state`)
+  }
+
+  assert.ok(web.includes('getState: () => api.adminServerUpdate()'), 'Web must keep REST update transport local')
+  assert.ok(web.includes('api.adminStartServerUpdate(source, channel, backupFileData)'), 'Web must keep REST update start transport local')
+  assert.ok(desktop.includes('getState: () => window.xdriveDesktop.agent.getServerUpdate()'), 'Desktop must keep Agent update transport local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData)'), 'Desktop must keep Agent update start transport local')
+  assert.ok(desktop.includes("current === 'server-update' ? '' : current"), 'Desktop must preserve global busy cleanup semantics')
 })
 
 test('server update command boundary never mounts Docker socket into the API container', () => {
