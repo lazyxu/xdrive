@@ -718,10 +718,10 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 			resource.ByteOffset,
 			resource.ByteSize,
 		)
-	} else if strings.EqualFold(strings.TrimSpace(metadata.MIMEType), "image/x-adobe-dng") {
-		preview, previewErr := mediapkg.DNGEmbeddedJPEGPreview(file)
+	} else if mediaUsesTIFFEmbeddedPreview(metadata.MIMEType) {
+		preview, previewErr := mediapkg.TIFFEmbeddedJPEGPreview(file)
 		if previewErr != nil {
-			fail(c, http.StatusUnsupportedMediaType, "dng embedded preview is unavailable")
+			fail(c, http.StatusUnsupportedMediaType, "raw embedded preview is unavailable")
 			return
 		}
 		thumbnailSource = bytes.NewReader(preview)
@@ -764,11 +764,23 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	_, _ = c.Writer.Write(thumbnail.Data)
 }
 
+func mediaUsesTIFFEmbeddedPreview(mimeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/x-adobe-dng", "image/x-nikon-nef", "image/x-sony-arw":
+		return true
+	default:
+		return false
+	}
+}
+
 func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 	if row.ThumbnailKey != "" {
 		return true
 	}
 	mimeType := strings.ToLower(strings.TrimSpace(row.MIMEType))
+	if mediaUsesTIFFEmbeddedPreview(mimeType) {
+		return true
+	}
 	if row.ContainerKind == mediapkg.ContainerKindLIVP {
 		if descriptor, err := parseLIVPContainerDescriptor(row.ContainerJSON); err == nil {
 			mimeType = strings.ToLower(strings.TrimSpace(descriptor.Still.MIMEType))
@@ -776,8 +788,7 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 	}
 	switch mimeType {
 	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
-		"image/tiff", "image/bmp", "image/heic", "image/heif",
-		"image/x-adobe-dng":
+		"image/tiff", "image/bmp", "image/heic", "image/heif":
 		return true
 	default:
 		return false

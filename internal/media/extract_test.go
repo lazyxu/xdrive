@@ -318,6 +318,54 @@ func TestExtractDNGDoesNotTrustSuffixWithoutTIFFBytes(t *testing.T) {
 	}
 }
 
+func TestExtractTIFFBasedRAWUsesLocalMetadata(t *testing.T) {
+	data := buildTIFFFixture()
+	for _, test := range []struct {
+		name     string
+		mimeType string
+	}{
+		{name: "capture.nef", mimeType: "image/x-nikon-nef"},
+		{name: "capture.arw", mimeType: "image/x-sony-arw"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Extract(test.name, bytes.NewReader(data), int64(len(data)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Kind != KindImage || result.MIMEType != test.mimeType {
+				t.Fatalf("classification kind=%q mime=%q", result.Kind, result.MIMEType)
+			}
+			if result.Width != 1920 || result.Height != 1080 || result.Orientation != 6 {
+				t.Fatalf("dimensions/orientation=%dx%d/%d", result.Width, result.Height, result.Orientation)
+			}
+			if result.CameraMake != "Canon" || result.CameraModel != "EOS R5" || result.LensModel != "RF35mm F1" {
+				t.Fatalf("camera metadata=%q/%q/%q", result.CameraMake, result.CameraModel, result.LensModel)
+			}
+			if result.Latitude == nil || result.Longitude == nil || result.CapturedAt == nil {
+				t.Fatalf("missing local RAW EXIF/GPS metadata: %+v", result)
+			}
+			if strings.TrimSpace(result.EXIFJSON) == "" {
+				t.Fatal("local RAW EXIF JSON is empty")
+			}
+		})
+	}
+}
+
+func TestExtractTIFFBasedRAWDoesNotTrustSuffixWithoutTIFFBytes(t *testing.T) {
+	for _, name := range []string{"renamed.nef", "renamed.arw"} {
+		t.Run(name, func(t *testing.T) {
+			data := []byte("not a TIFF-based RAW file")
+			result, err := Extract(name, bytes.NewReader(data), int64(len(data)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Kind != KindOther {
+				t.Fatalf("renamed non-RAW was classified as %q with mime %q", result.Kind, result.MIMEType)
+			}
+		})
+	}
+}
+
 func TestDNGVersionRequiresFourBytes(t *testing.T) {
 	if got := dngVersion([]byte{1, 6, 0, 0}); got != "1.6.0.0" {
 		t.Fatalf("version=%q", got)
