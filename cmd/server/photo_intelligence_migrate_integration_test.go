@@ -50,6 +50,7 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		"xd_photo_faces",
 		"xd_photo_person_clusters",
 		"xd_photo_person_cluster_faces",
+		"xd_photo_person_cluster_states",
 		"xd_photo_place_labels",
 	} {
 		if !db.Migrator().HasTable(table) {
@@ -144,6 +145,23 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		ClusterID: otherCluster.ID, FaceID: face.ID, Confidence: 0.50,
 	}).Error; err == nil {
 		t.Fatal("face was accepted into multiple automatic person clusters")
+	}
+
+	clusterState := meta.PhotoPersonClusterState{
+		OwnerID:          user.ID,
+		AnalyzerVersion:  "test-person-cluster-v1",
+		EmbeddingVersion: "test-embed-v1",
+		InputFingerprint: "person-input:test",
+		FaceCount:        1,
+		State:            meta.PhotoAnalysisStateReady,
+		Attempt:          1,
+	}
+	if err := db.Create(&clusterState).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicateClusterState := clusterState
+	if err := db.Create(&duplicateClusterState).Error; err == nil {
+		t.Fatal("multiple person cluster states were accepted for one owner")
 	}
 
 	place := meta.PhotoPlaceLabel{

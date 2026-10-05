@@ -83,6 +83,27 @@ type PhotoPersonClusterFace struct {
 
 func (PhotoPersonClusterFace) TableName() string { return "xd_photo_person_cluster_faces" }
 
+type PhotoPersonClusterState struct {
+	OwnerID          uint64     `gorm:"primaryKey;autoIncrement:false"`
+	AnalyzerVersion  string     `gorm:"size:128;not null"`
+	EmbeddingVersion string     `gorm:"size:128"`
+	InputFingerprint string     `gorm:"size:128;not null;index"`
+	FaceCount        uint64     `gorm:"not null;default:0"`
+	SourceUpdatedAt  *time.Time `gorm:"index"`
+	State            string     `gorm:"size:16;not null;default:pending;index"`
+	Attempt          uint       `gorm:"not null;default:0"`
+	LastError        string     `gorm:"type:text"`
+	CompletedAt      *time.Time `gorm:"index"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+
+	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoPersonClusterState) TableName() string {
+	return "xd_photo_person_cluster_states"
+}
+
 type PhotoPlaceLabel struct {
 	AssetID         uint64  `gorm:"primaryKey;autoIncrement:false"`
 	Resolver        string  `gorm:"size:64;not null;index"`

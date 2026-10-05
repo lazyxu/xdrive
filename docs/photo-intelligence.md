@@ -90,6 +90,12 @@ An automatic person cluster belongs to one xDrive owner and contains detected fa
 
 A face can belong to at most one current automatic cluster. Cluster keys and embeddings are analyzer-versioned derived state and may be rebuilt when the clustering algorithm changes.
 
+### `PhotoPersonClusterState`
+
+Person clustering is owner-scoped rather than asset-scoped. One state row per owner records the clustering algorithm version, current embedding version, deterministic face-input fingerprint, participating face count, latest source-face update time, retry state, and completion time. This lets xDrive detect additions, deletions, face-row replacement, embedding-model upgrades, and algorithm changes without pretending clustering belongs to one photo.
+
+When an owner temporarily has more than one ready embedding version during a model migration, clustering enters `pending`. xDrive does not compare or merge vectors from incompatible embedding spaces. Existing cluster rows may remain as internal derived leftovers while upstream face rows are being replaced, but they are **not authoritative unless the owner cluster state is `ready`**. Any future API/UI must gate automatic People suggestions on that ready state. Once the owner's ready faces converge on one embedding version, the next rebuild atomically replaces all automatic clusters for that owner.
+
 ### `PhotoPlaceLabel`
 
 A photo asset may have one current derived human-readable place label. The row records the exact GPS coordinates used plus resolver/dataset version and structured country/region/city/district/locality fields.
@@ -213,6 +219,32 @@ CI builds a dedicated image target that runs Python protocol tests, real YuNet/S
 InsightFace remains a valid bring-your-own/licensed backend, but xDrive must not silently redistribute or select its public pretrained model packages as defaults: InsightFace documents those supplied pretrained models as non-commercial research by default even though the library code itself is MIT licensed.
 
 
+## Person clustering policy
+
+Automatic person clustering is a conservative, owner-local derived projection over ready `PhotoFace` embeddings.
+
+The current algorithm is versioned as a deterministic greedy-centroid policy:
+
+- all input embeddings are decoded from `f32le` and L2-normalized again before comparison;
+- only faces whose asset-level `face_embedding` state is `ready` and whose state analyzer version exactly matches `PhotoFace.EmbeddingVersion` participate;
+- all participating faces for an owner must share exactly one embedding version;
+- candidate faces are ordered deterministically by detection quality, stable asset evidence, detection key, and face id;
+- a face may join an existing cluster only when cosine similarity to the cluster centroid is at least **0.55** and similarity to the cluster representative is at least **0.40**;
+- a second conservative merge pass requires centroid similarity at least **0.60** and representative similarity at least **0.50**;
+- two faces from the same `PhotoAsset` are never automatically placed in the same cluster;
+- two singleton clusters are never merged in the second pass;
+- only clusters with at least **2** faces are persisted; unmatched single faces remain unclustered.
+
+OpenCV's SFace documentation gives `0.363` cosine similarity as the LFW verification threshold for "same identity". xDrive intentionally uses higher centroid/merge thresholds for automatic clustering because verification is a pairwise decision while clustering can amplify one false-positive edge into a much larger identity error. The current thresholds therefore prefer duplicate/split automatic clusters over false merges:
+
+- https://docs.opencv.org/4.12.0/d0/dd4/tutorial_dnn_face.html
+
+The persisted cluster embedding is the L2-normalized centroid serialized as `f32le`. Membership confidence is cosine similarity to that final centroid; it is a cohesion score, **not a calibrated identity probability**.
+
+Cluster keys are derived only from sorted stable asset/detection evidence membership. Adding/removing a face can therefore change the derived cluster key. A future user-named person identity must be a separate durable user-intent model that can explicitly adopt/merge/split automatic suggestions; it must not treat the rebuildable cluster key as a permanent person id.
+
+The complete owner projection is replaced in one database transaction. A clustering transaction failure cannot expose a half-written replacement; the owner state becomes failed. Because upstream face analysis may independently replace face rows and cascade old memberships, automatic cluster rows are product-visible only while `PhotoPersonClusterState.State == ready`. Deleting a face/asset cascades its membership and the face-count/source-update state makes the owner eligible for a new rebuild. Disabled users and users forced to change password are not scheduled.
+
 ## Place-name analysis policy
 
 The current Gallery GPS facet keeps its stable `place:<latitude-cell>:<longitude-cell>` identity and filter contract. Human-readable names are an optional derived label layered on top; canonical GPS remains `PhotoMetadata.Latitude/Longitude`.
@@ -307,10 +339,12 @@ When automatic facets are exposed later:
    - separate opt-in `xdrive-photo-face` image using pinned YuNet + SFace with exact model SHA/license provenance;
    - exact-image CI self-test/benchmark and GitHub/GitLab publish-without-rebuild path;
    - CPU is the supported reference target; GPU/NPU backends remain a future optional runtime optimization and must use a distinct `pipeline_version`.
-5. **Person clustering**
-   - cluster only within one owner;
-   - support rebuilds across model versions;
-   - then design explicit user actions for naming, merge/split, hide, and cover selection.
+5. **Person clustering — current**
+   - owner-scoped clustering state and deterministic full-projection rebuilds;
+   - conservative centroid/representative cosine policy with same-photo exclusion and minimum cluster size 2;
+   - never mix embedding versions; model transition marks the owner projection non-ready until vectors converge and a complete rebuild succeeds;
+   - derived cluster centroid/membership confidence persisted transactionally;
+   - next: expose automatic People suggestions and design explicit durable user actions for naming, merge/split, hide, and cover selection.
 6. **Gallery integration**
    - shared Web/Desktop People/Places facets;
    - smart-album filters;
