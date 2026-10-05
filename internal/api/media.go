@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -702,36 +703,15 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	}
 	defer file.Close()
 
-	var thumbnailSource io.ReadSeeker = file
-	if metadata.ContainerKind == mediapkg.ContainerKindLIVP {
-		resource, resourceErr := s.currentMediaDerivedResource(
-			c.Request.Context(),
-			node,
-			meta.MediaDerivedResourceRoleStill,
-		)
-		if resourceErr != nil {
-			fail(c, http.StatusUnsupportedMediaType, "live photo still resource is unavailable")
-			return
-		}
-		thumbnailSource = io.NewSectionReader(
-			file,
-			resource.ByteOffset,
-			resource.ByteSize,
-		)
-	} else if strings.EqualFold(strings.TrimSpace(metadata.MIMEType), "image/x-canon-cr3") {
-		preview, previewErr := mediapkg.CR3EmbeddedJPEGPreview(file)
-		if previewErr != nil {
-			fail(c, http.StatusUnsupportedMediaType, "cr3 embedded preview is unavailable")
-			return
-		}
-		thumbnailSource = bytes.NewReader(preview)
-	} else if mediaUsesTIFFEmbeddedPreview(metadata.MIMEType) {
-		preview, previewErr := mediapkg.TIFFEmbeddedJPEGPreview(file)
-		if previewErr != nil {
-			fail(c, http.StatusUnsupportedMediaType, "raw embedded preview is unavailable")
-			return
-		}
-		thumbnailSource = bytes.NewReader(preview)
+	thumbnailSource, err := s.mediaImagePreviewSource(
+		c.Request.Context(),
+		node,
+		metadata,
+		file,
+	)
+	if err != nil {
+		fail(c, http.StatusUnsupportedMediaType, err.Error())
+		return
 	}
 	thumbnail, err := mediapkg.ThumbnailJPEG(
 		thumbnailSource,
@@ -769,6 +749,172 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	c.Header("Content-Type", thumbnail.MIMEType)
 	c.Status(http.StatusOK)
 	_, _ = c.Writer.Write(thumbnail.Data)
+}
+
+func (s *Server) mediaAnalysisPreview(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	node, err := s.ownedNode(userID(c), id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "media indexing failed")
+		return
+	}
+	if metadata.MediaKind != meta.MediaKindImage ||
+		!mediaThumbnailSupported(metadata) {
+		fail(c, http.StatusUnsupportedMediaType, "analysis preview format is not supported")
+		return
+	}
+
+	key := mediaAnalysisPreviewStorageKey(node, metadata)
+	c.Header("ETag", mediaAnalysisPreviewETag(node, metadata))
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header(
+		"X-XDrive-Analysis-Preview-Version",
+		strconv.Itoa(mediapkg.AnalysisPreviewVersion),
+	)
+	c.Header(
+		"X-XDrive-Analysis-Preview-Edge",
+		strconv.Itoa(mediapkg.AnalysisPreviewEdge),
+	)
+
+	if cached, openErr := s.Store.Open(c.Request.Context(), key); openErr == nil {
+		defer cached.Close()
+		c.Header("Content-Type", "image/jpeg")
+		http.ServeContent(
+			c.Writer,
+			c.Request,
+			node.Name+".analysis.jpg",
+			metadata.UpdatedAt,
+			cached,
+		)
+		return
+	}
+
+	file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
+	if err != nil {
+		fail(c, http.StatusNotFound, "stored content not found")
+		return
+	}
+	defer file.Close()
+
+	previewSource, err := s.mediaImagePreviewSource(
+		c.Request.Context(),
+		node,
+		metadata,
+		file,
+	)
+	if err != nil {
+		fail(c, http.StatusUnsupportedMediaType, err.Error())
+		return
+	}
+	preview, err := mediapkg.ThumbnailJPEG(
+		previewSource,
+		metadata.Orientation,
+		mediapkg.AnalysisPreviewEdge,
+	)
+	if err != nil {
+		fail(c, http.StatusUnsupportedMediaType, "analysis preview format is not supported")
+		return
+	}
+	_, _ = s.Store.Put(
+		c.Request.Context(),
+		key,
+		bytes.NewReader(preview.Data),
+	)
+
+	c.Header("Content-Type", preview.MIMEType)
+	http.ServeContent(
+		c.Writer,
+		c.Request,
+		node.Name+".analysis.jpg",
+		metadata.UpdatedAt,
+		bytes.NewReader(preview.Data),
+	)
+}
+
+func (s *Server) mediaImagePreviewSource(
+	ctx context.Context,
+	node meta.Node,
+	metadata meta.MediaMetadata,
+	file *os.File,
+) (io.ReadSeeker, error) {
+	if file == nil {
+		return nil, errors.New("stored content is unavailable")
+	}
+	if metadata.ContainerKind == mediapkg.ContainerKindLIVP {
+		resource, err := s.currentMediaDerivedResource(
+			ctx,
+			node,
+			meta.MediaDerivedResourceRoleStill,
+		)
+		if err != nil {
+			return nil, errors.New("live photo still resource is unavailable")
+		}
+		return io.NewSectionReader(
+			file,
+			resource.ByteOffset,
+			resource.ByteSize,
+		), nil
+	}
+	if strings.EqualFold(
+		strings.TrimSpace(metadata.MIMEType),
+		"image/x-canon-cr3",
+	) {
+		preview, err := mediapkg.CR3EmbeddedJPEGPreview(file)
+		if err != nil {
+			return nil, errors.New("cr3 embedded preview is unavailable")
+		}
+		return bytes.NewReader(preview), nil
+	}
+	if mediaUsesTIFFEmbeddedPreview(metadata.MIMEType) {
+		preview, err := mediapkg.TIFFEmbeddedJPEGPreview(file)
+		if err != nil {
+			return nil, errors.New("raw embedded preview is unavailable")
+		}
+		return bytes.NewReader(preview), nil
+	}
+	return file, nil
+}
+
+func mediaAnalysisPreviewStorageKey(
+	node meta.Node,
+	row meta.MediaMetadata,
+) string {
+	return mediapkg.ThumbnailStorageKey(
+		node.ID,
+		node.Revision,
+		row.SHA256,
+		mediapkg.AnalysisPreviewEdge,
+	)
+}
+
+func mediaAnalysisPreviewETag(
+	node meta.Node,
+	row meta.MediaMetadata,
+) string {
+	if sha := strings.ToLower(strings.TrimSpace(row.SHA256)); sha != "" {
+		return fmt.Sprintf(
+			"\"media-analysis-%s-v%d-%d\"",
+			sha,
+			mediapkg.AnalysisPreviewVersion,
+			mediapkg.AnalysisPreviewEdge,
+		)
+	}
+	return fmt.Sprintf(
+		"\"media-analysis-node-%d-%d-v%d-%d\"",
+		node.ID,
+		node.Revision,
+		mediapkg.AnalysisPreviewVersion,
+		mediapkg.AnalysisPreviewEdge,
+	)
 }
 
 func mediaUsesTIFFEmbeddedPreview(mimeType string) bool {

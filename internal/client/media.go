@@ -511,6 +511,34 @@ func (c *Client) MediaThumbnail(
 	return data, resp.Header.Get("Content-Type"), nil
 }
 
+func (c *Client) MediaAnalysisPreview(
+	ctx context.Context,
+	nodeID uint64,
+) ([]byte, string, error) {
+	req, err := c.request(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview", nodeID),
+		nil,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return nil, "", responseError(resp)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if err != nil {
+		return nil, "", err
+	}
+	return data, resp.Header.Get("Content-Type"), nil
+}
+
 func (c *Client) MediaLivePhotoMotion(
 	ctx context.Context,
 	nodeID uint64,

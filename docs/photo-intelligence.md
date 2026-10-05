@@ -100,15 +100,40 @@ The canonical coordinates remain `PhotoMetadata.Latitude/Longitude`; a place lab
 
 Face analysis is optional and disabled unless an implementation is explicitly enabled by the product configuration.
 
+### Canonical analysis input
+
+Face analyzers must not independently decode HEIC/HEIF, RAW, LIVP, orientation, or other xDrive media formats. xDrive Server owns that normalization and exposes one owner-scoped analysis input:
+
+```text
+GET /api/v1/media/items/:id/analysis-preview
+```
+
+The contract is:
+
+- JPEG output with orientation already applied;
+- longest edge bounded to `1280` pixels; smaller originals are not upscaled;
+- the same native source selection as Gallery thumbnails, including validated LIVP still resources, Canon CR3 embedded previews, TIFF-based DNG/NEF/ARW embedded previews, and locally decoded ordinary image formats;
+- deterministic cache key derived from the exact local node revision/content SHA plus the analysis-preview edge;
+- `X-XDrive-Analysis-Preview-Version` and `X-XDrive-Analysis-Preview-Edge` response headers plus a content-bound `ETag`;
+- no `Node`, `File`, Source item, or user-visible Gallery asset is created for the preview;
+- the existing 512px Gallery thumbnail remains a separate presentation cache and is not replaced by the analysis preview.
+
+The analysis preview is a derived cache only. Current image rows protect both the 512px Gallery key and 1280px analysis key from thumbnail GC; after the underlying media row disappears, either cache becomes eligible for the existing conservative GC window.
+
+A future local inference worker should authenticate as the asset owner through the existing short-lived owner-JWT pattern and consume this HTTP contract instead of mounting the server storage root or reimplementing media decoding. Its analyzer input fingerprint must include at least the preview `ETag`/contract version and the detector/embedding model versions.
+
+### Analyzer/runtime requirements
+
 Requirements for any future analyzer:
 
-1. Read only local xDrive originals/derived previews needed for analysis.
+1. Read only local xDrive-derived analysis previews or other explicitly versioned local analysis inputs.
 2. Version detector, embedding model, preprocessing, and clustering behavior.
 3. Keep normalized face geometry and embedding provenance so results can be invalidated safely.
 4. Rebuild derived rows transactionally for the affected asset/model version.
 5. Never merge PhotoAssets or files because faces appear similar.
 6. Never treat an automatic cluster as a confirmed person name without explicit user intent.
 7. Prefer local inference. A future remote inference backend would require a separate privacy/security design and explicit opt-in; it is not part of this foundation.
+8. Do not make the main `xdrive-server` binary depend on a particular ML runtime, cgo, GPU stack, or model package. Native inference dependencies belong behind an optional worker/process/container boundary so the current static server build contract remains intact.
 
 ## Place-name analysis policy
 
@@ -191,15 +216,20 @@ When automatic facets are exposed later:
    - dataset-hash/analyzer-version invalidation and durable negative-result caching;
    - bounded low-priority background worker with retry/running timeout;
    - existing Gallery place-cell/filter IDs preserved while labels become human-readable when available.
-3. **Face detection + embeddings**
-   - benchmark candidate local models on server target platforms;
+3. **Face analysis input — current**
+   - owner-scoped, versioned 1280px JPEG analysis-preview endpoint;
+   - one native decode path for ordinary images, HEIC/HEIF, CR3, DNG/NEF/ARW, and LIVP still resources;
+   - deterministic derived cache with existing thumbnail GC lifecycle;
+   - Gallery 512px thumbnail semantics remain unchanged.
+4. **Face detection + embeddings**
+   - benchmark candidate local detector/embedding runtimes behind the worker boundary;
    - define model packaging/update policy and CPU/GPU fallback;
-   - add bounded worker and deterministic invalidation.
-4. **Person clustering**
+   - add bounded worker and deterministic invalidation without changing the static main Server build.
+5. **Person clustering**
    - cluster only within one owner;
    - support rebuilds across model versions;
    - then design explicit user actions for naming, merge/split, hide, and cover selection.
-5. **Gallery integration**
+6. **Gallery integration**
    - shared Web/Desktop People/Places facets;
    - smart-album filters;
    - integrity verify/repair and derived-state GC.

@@ -96,6 +96,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.PATCH("/media/items/:id/people", s.setMediaPeople)
 	authed.PATCH("/media/items/:id/description", s.setMediaDescription)
 	authed.GET("/media/items/:id/thumbnail", s.mediaThumbnail)
+	authed.GET("/media/items/:id/analysis-preview", s.mediaAnalysisPreview)
 	authed.GET("/media/items/:id/live-photo-motion", s.mediaLivePhotoMotion)
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)

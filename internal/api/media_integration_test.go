@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
@@ -321,6 +322,55 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		)
 	}
 
+	analysisPreviewResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview", file.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if contentType := analysisPreviewResponse.Header().Get("Content-Type"); contentType != "image/jpeg" {
+		t.Fatalf("analysis preview content-type=%q", contentType)
+	}
+	if got := analysisPreviewResponse.Header().Get("X-XDrive-Analysis-Preview-Version"); got != fmt.Sprint(mediapkg.AnalysisPreviewVersion) {
+		t.Fatalf("analysis preview version=%q", got)
+	}
+	if got := analysisPreviewResponse.Header().Get("X-XDrive-Analysis-Preview-Edge"); got != fmt.Sprint(mediapkg.AnalysisPreviewEdge) {
+		t.Fatalf("analysis preview edge=%q", got)
+	}
+	analysisETag := analysisPreviewResponse.Header().Get("ETag")
+	if analysisETag == "" {
+		t.Fatal("analysis preview ETag is empty")
+	}
+	analysisConfig, err := jpeg.DecodeConfig(
+		bytes.NewReader(analysisPreviewResponse.Body.Bytes()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysisConfig.Width != 3 || analysisConfig.Height != 2 {
+		t.Fatalf(
+			"analysis preview dimensions=%dx%d",
+			analysisConfig.Width,
+			analysisConfig.Height,
+		)
+	}
+	cachedAnalysisPreview := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview", file.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if cachedAnalysisPreview.Header().Get("ETag") != analysisETag ||
+		!bytes.Equal(cachedAnalysisPreview.Body.Bytes(), analysisPreviewResponse.Body.Bytes()) {
+		t.Fatal("analysis preview cache response changed")
+	}
+
 	var nodeCount, fileCount int64
 	if err := db.Model(&meta.Node{}).Count(&nodeCount).Error; err != nil {
 		t.Fatal(err)
@@ -330,7 +380,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	}
 	if nodeCount != 3 || fileCount != 1 {
 		t.Fatalf(
-			"thumbnail duplicated entity file: nodes=%d files=%d",
+			"media preview duplicated entity file: nodes=%d files=%d",
 			nodeCount,
 			fileCount,
 		)
@@ -378,6 +428,32 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	}
 	if !detail.Favorite {
 		t.Fatalf("favorite was lost after media re-index: %+v", detail)
+	}
+
+	updatedAnalysisPreview := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview", file.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if updatedAnalysisPreview.Header().Get("ETag") == analysisETag {
+		t.Fatal("analysis preview ETag did not change after file overwrite")
+	}
+	updatedAnalysisConfig, err := jpeg.DecodeConfig(
+		bytes.NewReader(updatedAnalysisPreview.Body.Bytes()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedAnalysisConfig.Width != 5 || updatedAnalysisConfig.Height != 4 {
+		t.Fatalf(
+			"updated analysis preview dimensions=%dx%d",
+			updatedAnalysisConfig.Width,
+			updatedAnalysisConfig.Height,
+		)
 	}
 
 	var persisted meta.MediaMetadata
@@ -473,6 +549,29 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("livp thumbnail dimensions=%dx%d", cfg.Width, cfg.Height)
 	}
 
+	liveAnalysisPreview := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview", liveNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	liveAnalysisConfig, err := jpeg.DecodeConfig(
+		bytes.NewReader(liveAnalysisPreview.Body.Bytes()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if liveAnalysisConfig.Width != 2 || liveAnalysisConfig.Height != 2 {
+		t.Fatalf(
+			"livp analysis preview dimensions=%dx%d",
+			liveAnalysisConfig.Width,
+			liveAnalysisConfig.Height,
+		)
+	}
+
 	var resourceCount int64
 	if err := db.Model(&meta.MediaDerivedResource{}).
 		Where("node_id = ?", liveNode.ID).
@@ -513,6 +612,15 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	)
 	pairMotion := uploadTestFile(
 		t, router, token, pairFolder.ID, "IMG_1000.mov", string(pairMotionBytes),
+	)
+	request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview", pairMotion.ID),
+		token,
+		nil,
+		http.StatusUnsupportedMediaType,
 	)
 
 	pairItemsResponse := request(

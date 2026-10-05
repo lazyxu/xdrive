@@ -53,8 +53,9 @@ type thumbnailGCMetadataRow struct {
 //   - only .xdrive-media/thumbnails is scanned;
 //   - symlinked cache roots/subdirectories are never followed;
 //   - current thumbnail_key references are protected;
-//   - the deterministic key that every current image MediaMetadata row could
-//     generate is also protected, even when thumbnail_key is currently empty;
+//   - the deterministic Gallery-thumbnail and Photo-Intelligence analysis-preview
+//     keys that every current image MediaMetadata row could generate are also
+//     protected, even when thumbnail_key is currently empty;
 //   - files younger than 24 hours are protected from Put -> DB-update races;
 //   - immediately before deletion, normalized references are refreshed and the
 //     exact DB reference, file type, size, mtime and path containment are checked.
@@ -209,12 +210,17 @@ func loadProtectedThumbnailKeys(
 			protected[key] = struct{}{}
 		}
 		if row.MediaKind == meta.MediaKindImage {
-			protected[mediapkg.ThumbnailStorageKey(
-				row.NodeID,
-				row.NodeRevision,
-				row.SHA256,
+			for _, edge := range []int{
 				mediapkg.DefaultThumbnailEdge,
-			)] = struct{}{}
+				mediapkg.AnalysisPreviewEdge,
+			} {
+				protected[mediapkg.ThumbnailStorageKey(
+					row.NodeID,
+					row.NodeRevision,
+					row.SHA256,
+					edge,
+				)] = struct{}{}
+			}
 		}
 	}
 	return protected, nil
