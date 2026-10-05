@@ -242,6 +242,23 @@ timestamps, size, operations, and properties.
 It may embed `FilePreviewSurface`, but must not acquire Gallery-only media semantics
 to make preview work.
 
+### Quick Look
+
+FileExplorer may expose a Finder-style Quick Look overlay, but the overlay is only
+another presentation of the shared Preview Engine. It must reuse `FilePreviewSurface`
+and the same text/thumbnail/signed-preview loaders already used by Inspector.
+
+The shared interaction contract is:
+
+- `Space` opens Quick Look for the active file;
+- `Space` or `Escape` closes the overlay;
+- `Left` / `Right` move between file entries in the current result set;
+- `Ctrl/Cmd + Space` preserves the existing keyboard selection-toggle behavior;
+- directories keep Space selection behavior rather than acquiring a fake media preview.
+
+Quick Look must not add a second preview endpoint, app-local renderer, Gallery media
+semantics, or provider-specific media behavior.
+
 ## Format-extension rule
 
 When adding a new ordinary preview format:

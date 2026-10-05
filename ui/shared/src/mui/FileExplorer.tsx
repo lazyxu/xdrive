@@ -56,6 +56,7 @@ import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIM
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
+import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
 import { xDriveFileExplorerReadExternalDrop } from './FileExplorerExternalDrop'
@@ -661,6 +662,7 @@ export function XDriveFileExplorer({
   const [viewportHeight, setViewportHeight] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])
+  const [quickLookItemID, setQuickLookItemID] = useState<XDriveFileExplorerID | null>(null)
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
   const [dropTargetCrumbID, setDropTargetCrumbID] = useState<XDriveFileExplorerID | null>(null)
@@ -756,6 +758,21 @@ export function XDriveFileExplorer({
     [activeItemID, visibleItems],
   )
   const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : visibleItems[0]
+  const quickLookFiles = useMemo(
+    () => visibleItems.filter((item) => item.kind === 'file'),
+    [visibleItems],
+  )
+  const quickLookIndex = useMemo(
+    () => quickLookItemID === null
+      ? -1
+      : quickLookFiles.findIndex((item) => explorerIDKey(item.id) === explorerIDKey(quickLookItemID)),
+    [quickLookFiles, quickLookItemID],
+  )
+  const quickLookItem = quickLookIndex >= 0 ? quickLookFiles[quickLookIndex] : null
+
+  useEffect(() => {
+    if (quickLookItemID !== null && quickLookIndex < 0) setQuickLookItemID(null)
+  }, [quickLookIndex, quickLookItemID])
 
   useEffect(() => {
     if (visibleItems.length === 0) {
@@ -1118,6 +1135,34 @@ export function XDriveFileExplorer({
       commitSelection([...selectedIDs, item.id])
     }
     setSelectionAnchorID(item.id)
+  }
+
+  const openQuickLook = (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file') return
+    resetTypeSelect()
+    setActiveItemID(item.id)
+    if (!selectedKeySet.has(explorerIDKey(item.id))) {
+      commitSelection([item.id])
+      setSelectionAnchorID(item.id)
+    }
+    setQuickLookItemID(item.id)
+  }
+
+  const closeQuickLook = () => {
+    const item = quickLookItem
+    setQuickLookItemID(null)
+    if (item) scheduleItemFocus(item.id)
+  }
+
+  const moveQuickLook = (delta: -1 | 1) => {
+    if (quickLookIndex < 0) return
+    const target = quickLookFiles[quickLookIndex + delta]
+    if (!target) return
+    setQuickLookItemID(target.id)
+    setActiveItemID(target.id)
+    commitSelection([target.id])
+    setSelectionAnchorID(target.id)
+    onItemClick?.(target)
   }
 
   const openItemContextMenuAt = (
@@ -1702,7 +1747,9 @@ export function XDriveFileExplorer({
     if (event.key === ' ') {
       event.preventDefault()
       event.stopPropagation()
-      toggleKeyboardSelection(item)
+      if (event.ctrlKey || event.metaKey || item.kind === 'dir') toggleKeyboardSelection(item)
+      else openQuickLook(item)
+      return
     }
   }
 
@@ -1810,6 +1857,13 @@ export function XDriveFileExplorer({
     ]
     if (activeItem && navigationKeys.includes(event.key as XDriveFileExplorerKeyboardNavigationKey)) {
       if (moveKeyboardFocus(event, activeItem)) return
+    }
+
+    if (event.key === ' ' && activeItem) {
+      event.preventDefault()
+      if (modifier || activeItem.kind === 'dir') toggleKeyboardSelection(activeItem)
+      else openQuickLook(activeItem)
+      return
     }
 
     if (event.key === 'Backspace' && canGoBack && onBack) {
@@ -2818,6 +2872,25 @@ export function XDriveFileExplorer({
         preview={propertiesDialogPreview}
         properties={propertiesDialogProperties}
         onClose={() => setPropertiesItems([])}
+      />
+
+      <XDriveFileQuickLookDialog
+        open={quickLookItem !== null}
+        item={quickLookItem}
+        positionLabel={quickLookItem ? `${quickLookIndex + 1} / ${quickLookFiles.length}` : undefined}
+        loadTextPreview={loadTextPreview}
+        loadPreviewURL={loadPreviewURL}
+        loadImagePreview={
+          quickLookItem &&
+          (quickLookItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(quickLookItem.name, quickLookItem.kind))
+            ? loadThumbnail
+            : undefined
+        }
+        canPrevious={quickLookIndex > 0}
+        canNext={quickLookIndex >= 0 && quickLookIndex < quickLookFiles.length - 1}
+        onPrevious={() => moveQuickLook(-1)}
+        onNext={() => moveQuickLook(1)}
+        onClose={closeQuickLook}
       />
 
       <Menu
