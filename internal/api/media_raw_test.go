@@ -25,3 +25,13 @@ func TestMediaThumbnailSupportForTIFFBasedRAW(t *testing.T) {
 		t.Fatal("ordinary TIFF should use the normal image decoder, not RAW preview extraction")
 	}
 }
+
+func TestMediaThumbnailSupportForCR3(t *testing.T) {
+	const mimeType = "image/x-canon-cr3"
+	if mediaUsesTIFFEmbeddedPreview(mimeType) {
+		t.Fatal("CR3 must not use the TIFF RAW preview path")
+	}
+	if !mediaThumbnailSupported(meta.MediaMetadata{MIMEType: mimeType}) {
+		t.Fatal("CR3 embedded preview MIME is not supported")
+	}
+}

@@ -146,6 +146,13 @@ func detectMIME(name string, header []byte) string {
 	if ext == ".mts" || ext == ".m2ts" {
 		return "video/mp2t"
 	}
+	if ext == ".cr3" {
+		if isCR3(header) {
+			return "image/x-canon-cr3"
+		}
+		// A CR3 suffix is not enough. Require the Canon CRX ISO-BMFF brand.
+		return detected
+	}
 	if rawMIME := tiffRawMIMETypes[ext]; rawMIME != "" {
 		if isTIFF(header) {
 			return rawMIME
@@ -238,6 +245,10 @@ func extractImage(r io.ReadSeeker, header []byte, out *Result) error {
 			if width, height, ok := bmpDimensions(r); ok {
 				out.Width, out.Height = width, height
 			}
+		case strings.EqualFold(out.MIMEType, "image/x-canon-cr3"):
+			if width, height, ok := cr3Dimensions(r); ok {
+				out.Width, out.Height = width, height
+			}
 		default:
 			if width, height, ok := isoImageDimensions(r); ok {
 				out.Width, out.Height = width, height
@@ -255,6 +266,8 @@ func extractImage(r io.ReadSeeker, header []byte, out *Result) error {
 			data, _ := io.ReadAll(io.LimitReader(r, maxEmbeddedMetadataBytes))
 			exif, _ = parseTIFF(data)
 		}
+	case strings.EqualFold(out.MIMEType, "image/x-canon-cr3"):
+		exif, _ = readCR3EXIF(r)
 	default:
 		exif, _ = readEmbeddedEXIF(r)
 	}
