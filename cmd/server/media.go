@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/maintenance"
@@ -88,11 +89,16 @@ func runMediaRepair(args []string) error {
 	fs := flag.NewFlagSet("media repair", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "write machine-readable JSON")
 	dryRun := fs.Bool("dry-run", false, "show deterministic repairs without changing metadata")
+	gcThumbnails := fs.Bool(
+		"gc-thumbnails",
+		false,
+		"remove unreferenced thumbnail-cache files older than 24 hours",
+	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: xdrive-server media repair [--json] [--dry-run]")
+		return fmt.Errorf("usage: xdrive-server media repair [--json] [--dry-run] [--gc-thumbnails]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -111,6 +117,18 @@ func runMediaRepair(args []string) error {
 	if err != nil {
 		return err
 	}
+	if *gcThumbnails {
+		gcReport, gcErr := maintenance.GarbageCollectMediaThumbnails(
+			context.Background(),
+			db,
+			cfg.StorageRoot,
+			*dryRun,
+		)
+		if gcErr != nil {
+			return gcErr
+		}
+		report.ThumbnailGC = &gcReport
+	}
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -128,6 +146,28 @@ func runMediaRepair(args []string) error {
 			len(report.Before.Issues),
 			len(report.After.Issues),
 		)
+		if report.ThumbnailGC != nil {
+			fmt.Printf(
+				"thumbnail gc: min_age=%ds scanned=%d/%dB candidates=%d/%dB deleted=%d/%dB\n",
+				report.ThumbnailGC.MinAgeSeconds,
+				report.ThumbnailGC.ScannedFiles,
+				report.ThumbnailGC.ScannedBytes,
+				report.ThumbnailGC.CandidateFiles,
+				report.ThumbnailGC.CandidateBytes,
+				report.ThumbnailGC.DeletedFiles,
+				report.ThumbnailGC.DeletedBytes,
+			)
+			for _, action := range report.ThumbnailGC.Actions {
+				fmt.Printf(
+					"GC_MEDIA_THUMBNAIL storage_key=%q size=%d modified_at=%s applied=%t skipped=%q\n",
+					action.StorageKey,
+					action.Size,
+					action.ModifiedAt.UTC().Format(time.RFC3339),
+					action.Applied,
+					action.SkippedReason,
+				)
+			}
+		}
 		for _, action := range report.Actions {
 			fmt.Printf(
 				"REPAIR_MEDIA_THUMBNAIL owner=%d node=%d storage_key=%q reasons=%q applied=%t\n",
