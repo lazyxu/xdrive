@@ -382,13 +382,16 @@ export type AgentCloudArchiveExtractResult = {
 
 export type AgentCloudFileOperation = {
   id: string
-  type: 'copy' | 'move' | 'delete' | 'undo'
+  type: 'copy' | 'move' | 'delete' | 'undo' | 'redo'
   status: 'queued' | 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed'
   parent_id?: number
   retry_of_id?: string
   undo_of_id?: string
   undone_by_id?: string
+  redo_of_id?: string
+  redone_by_id?: string
   undoable?: boolean
+  redoable?: boolean
   conflict_policy?: 'fail' | 'skip' | 'keep_both'
   total_items: number
   processed_items: number
@@ -1194,6 +1197,10 @@ export class AgentIPCClient {
 
   cloudUndoFileOperation(id: string) {
     return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/undo', { id }, 45_000)
+  }
+
+  cloudRedoFileOperation(id: string) {
+    return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/redo', { id }, 45_000)
   }
 
   cloudResolveFileOperationConflict(id: string, conflictPolicy: 'skip' | 'keep_both') {

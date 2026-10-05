@@ -75,7 +75,10 @@ type fileOperationDTO struct {
 	RetryOfID         *string    `json:"retry_of_id,omitempty"`
 	UndoOfID          *string    `json:"undo_of_id,omitempty"`
 	UndoneByID        *string    `json:"undone_by_id,omitempty"`
+	RedoOfID          *string    `json:"redo_of_id,omitempty"`
+	RedoneByID        *string    `json:"redone_by_id,omitempty"`
 	Undoable          bool       `json:"undoable"`
+	Redoable          bool       `json:"redoable"`
 	ConflictPolicy    string     `json:"conflict_policy,omitempty"`
 	TotalItems        int64      `json:"total_items"`
 	ProcessedItems    int64      `json:"processed_items"`
@@ -129,7 +132,10 @@ func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
 		RetryOfID:         operation.RetryOfID,
 		UndoOfID:          operation.UndoOfID,
 		UndoneByID:        operation.UndoneByID,
+		RedoOfID:          operation.RedoOfID,
+		RedoneByID:        operation.RedoneByID,
 		Undoable:          fileOperationUndoable(operation),
+		Redoable:          fileOperationRedoable(operation),
 		ConflictPolicy:    operation.ConflictPolicy,
 		TotalItems:        operation.TotalItems,
 		ProcessedItems:    operation.ProcessedItems,
@@ -150,7 +156,7 @@ func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
 }
 
 func fileOperationRetryable(operation meta.FileOperation) bool {
-	if operation.Type == meta.FileOperationTypeUndo {
+	if operation.Type == meta.FileOperationTypeUndo || operation.Type == meta.FileOperationTypeRedo {
 		return false
 	}
 	if operation.Status == meta.FileOperationStatusCancelled {
@@ -293,7 +299,7 @@ func (s *Server) requestFileOperationCancel(ctx context.Context, uid uint64, id 
 			}).Error; err != nil {
 				return err
 			}
-			if err := releaseFileOperationUndoReservationTx(tx, operation); err != nil {
+			if err := releaseFileOperationLineageReservationTx(tx, operation); err != nil {
 				return err
 			}
 			return pruneFileOperationHistoryTx(tx, uid)
@@ -440,7 +446,7 @@ func writeFileOperationError(c *gin.Context, operationType string, err error) {
 		switch err.Error() {
 		case "invalid file operation type",
 			"invalid file operation conflict policy",
-			"undo operations must be created from a completed file operation":
+			"undo and redo operations must be created from completed lineage operations":
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -484,8 +490,8 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 	if !meta.ValidFileOperationType(operationType) {
 		return meta.FileOperation{}, errors.New("invalid file operation type")
 	}
-	if operationType == meta.FileOperationTypeUndo {
-		return meta.FileOperation{}, errors.New("undo operations must be created from a completed file operation")
+	if operationType == meta.FileOperationTypeUndo || operationType == meta.FileOperationTypeRedo {
+		return meta.FileOperation{}, errors.New("undo and redo operations must be created from completed lineage operations")
 	}
 	resolvedConflictPolicy, ok := meta.NormalizeFileOperationConflictPolicy(operationType, conflictPolicy)
 	if !ok {
@@ -651,14 +657,14 @@ func (s *Server) recoverFileOperations(ctx context.Context) error {
 			Pluck("owner_id", &cancellingOwners).Error; err != nil {
 			return err
 		}
-		var cancellingUndoOperations []meta.FileOperation
-		if err := tx.Select("id", "owner_id", "type", "undo_of_id").
+		var cancellingLineageOperations []meta.FileOperation
+		if err := tx.Select("id", "owner_id", "type", "undo_of_id", "redo_of_id").
 			Where(
-				"status = ? AND type = ?",
+				"status = ? AND type IN ?",
 				meta.FileOperationStatusCancelRequested,
-				meta.FileOperationTypeUndo,
+				[]string{meta.FileOperationTypeUndo, meta.FileOperationTypeRedo},
 			).
-			Find(&cancellingUndoOperations).Error; err != nil {
+			Find(&cancellingLineageOperations).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&meta.FileOperation{}).
@@ -676,8 +682,8 @@ func (s *Server) recoverFileOperations(ctx context.Context) error {
 			}).Error; err != nil {
 			return err
 		}
-		for _, operation := range cancellingUndoOperations {
-			if err := releaseFileOperationUndoReservationTx(tx, operation); err != nil {
+		for _, operation := range cancellingLineageOperations {
+			if err := releaseFileOperationLineageReservationTx(tx, operation); err != nil {
 				return err
 			}
 		}
@@ -704,7 +710,7 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 	}()
 
 	var refs []batchNodeRef
-	if operation.Type != meta.FileOperationTypeUndo {
+	if operation.Type != meta.FileOperationTypeUndo && operation.Type != meta.FileOperationTypeRedo {
 		refs, err = decodeFileOperationRefs(operation.ItemsJSON)
 		if err != nil {
 			if errors.Is(context.Cause(operationCtx), errFileOperationCancelled) {
@@ -723,6 +729,8 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 		err = s.executeQueuedBatchDelete(operationCtx, operation, refs)
 	case meta.FileOperationTypeUndo:
 		err = s.executeQueuedUndo(operationCtx, operation)
+	case meta.FileOperationTypeRedo:
+		err = s.executeQueuedRedo(operationCtx, operation)
 	default:
 		err = errors.New("unsupported file operation type")
 	}
@@ -1194,7 +1202,7 @@ func (s *Server) cancelRunningFileOperation(ctx context.Context, ownerID uint64,
 			}).Error; err != nil {
 			return err
 		}
-		if err := releaseFileOperationUndoReservationTx(tx, operation); err != nil {
+		if err := releaseFileOperationLineageReservationTx(tx, operation); err != nil {
 			return err
 		}
 		return pruneFileOperationHistoryTx(tx, ownerID)
@@ -1217,7 +1225,7 @@ func (s *Server) failFileOperation(ctx context.Context, ownerID uint64, operatio
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current meta.FileOperation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("status", "type", "undo_of_id").
+			Select("status", "type", "undo_of_id", "redo_of_id").
 			Where("id = ? AND owner_id = ?", operationID, ownerID).
 			First(&current).Error; err != nil {
 			return err
@@ -1240,7 +1248,7 @@ func (s *Server) failFileOperation(ctx context.Context, ownerID uint64, operatio
 			}
 			current.ID = operationID
 			current.OwnerID = ownerID
-			if err := releaseFileOperationUndoReservationTx(tx, current); err != nil {
+			if err := releaseFileOperationLineageReservationTx(tx, current); err != nil {
 				return err
 			}
 			return pruneFileOperationHistoryTx(tx, ownerID)
@@ -1261,7 +1269,7 @@ func (s *Server) failFileOperation(ctx context.Context, ownerID uint64, operatio
 		}
 		current.ID = operationID
 		current.OwnerID = ownerID
-		if err := releaseFileOperationUndoReservationTx(tx, current); err != nil {
+		if err := releaseFileOperationLineageReservationTx(tx, current); err != nil {
 			return err
 		}
 		return pruneFileOperationHistoryTx(tx, ownerID)

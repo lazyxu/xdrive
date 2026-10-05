@@ -8,6 +8,7 @@ func TestFileOperationTypesAndTerminalStates(t *testing.T) {
 		FileOperationTypeMove,
 		FileOperationTypeDelete,
 		FileOperationTypeUndo,
+		FileOperationTypeRedo,
 	} {
 		if !ValidFileOperationType(value) {
 			t.Fatalf("expected valid file operation type %q", value)
@@ -62,5 +63,8 @@ func TestFileOperationConflictPolicies(t *testing.T) {
 	}
 	if _, ok := NormalizeFileOperationConflictPolicy(FileOperationTypeDelete, FileOperationConflictPolicySkip); ok {
 		t.Fatal("delete must reject skip conflict policy")
+	}
+	if _, ok := NormalizeFileOperationConflictPolicy(FileOperationTypeRedo, FileOperationConflictPolicySkip); ok {
+		t.Fatal("redo must reject skip conflict policy")
 	}
 }

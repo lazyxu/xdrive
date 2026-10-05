@@ -78,6 +78,7 @@ import type {
 import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+  xDriveLatestRedoableFileOperation,
   xDriveLatestUndoableFileOperation,
   xDriveLoginCredentialsReady,
   xDriveServerUpdateConfirmationDescription,
@@ -377,6 +378,8 @@ export default function App({
     agent.hello?.capabilities.includes('file-operation-conflict-resolution') ?? false
   const fileOperationUndoSupported =
     agent.hello?.capabilities.includes('file-operation-undo') ?? false
+  const fileOperationRedoSupported =
+    agent.hello?.capabilities.includes('file-operation-redo') ?? false
 
   const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
@@ -392,6 +395,13 @@ export default function App({
     undoOperation: fileOperationUndoSupported
       ? async (id) => {
           const result = await window.xdriveDesktop.agent.cloudUndoFileOperation(id)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        }
+      : undefined,
+    redoOperation: fileOperationRedoSupported
+      ? async (id) => {
+          const result = await window.xdriveDesktop.agent.cloudRedoFileOperation(id)
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }
@@ -423,6 +433,7 @@ export default function App({
   })
 
   const latestUndoableCloudFileOperation = xDriveLatestUndoableFileOperation(cloudFileOperations)
+  const latestRedoableCloudFileOperation = xDriveLatestRedoableFileOperation(cloudFileOperations)
 
   const {
     busy: deleteToTrashBusy,
@@ -1762,6 +1773,10 @@ export default function App({
               canUndo: fileOperationUndoSupported && Boolean(latestUndoableCloudFileOperation) && !fileOperationActions.busy,
               onUndo: () => {
                 if (latestUndoableCloudFileOperation) void fileOperationActions.undoOperation(latestUndoableCloudFileOperation.id)
+              },
+              canRedo: fileOperationRedoSupported && Boolean(latestRedoableCloudFileOperation) && !fileOperationActions.busy,
+              onRedo: () => {
+                if (latestRedoableCloudFileOperation) void fileOperationActions.redoOperation(latestRedoableCloudFileOperation.id)
               },
               onQuotaChanged: refreshCloudQuota,
               uploadConflictSupported: Boolean(

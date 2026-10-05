@@ -2277,6 +2277,12 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudUndoFileOperation(normalizeCloudFileOperationID(id))
   }, false))
+  ipcMain.handle('agent:cloud-file-operation-redo', (_event, id: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    requireAgentCapability(hello, 'file-operation-redo')
+    return requireAgentClient().cloudRedoFileOperation(normalizeCloudFileOperationID(id))
+  }, false))
   ipcMain.handle('agent:cloud-file-operation-resolve', (_event, id: unknown, policy: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')

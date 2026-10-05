@@ -75,6 +75,7 @@ var desktopIPCCapabilities = []string{
 	"archive-download",
 	"file-operation-conflict-resolution",
 	"file-operation-undo",
+	"file-operation-redo",
 	"upload-conflict-preflight",
 	"upload-conflict-policy",
 	"server-update",
@@ -171,6 +172,7 @@ type desktopIPCController interface {
 	CloudCancelFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudRetryFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudUndoFileOperation(context.Context, string) (client.FileOperation, error)
+	CloudRedoFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudResolveFileOperationConflict(context.Context, string, string) (client.FileOperation, error)
 	CloudUploadConflictPreflight(context.Context, uint64, string) (client.UploadConflictPreflight, error)
 	CloudUploadWithConflictPolicy(context.Context, uint64, string, string, string) (agentCloudUploadResult, error)
@@ -433,6 +435,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/file-operation/cancel", h.cloudCancelFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/retry", h.cloudRetryFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/undo", h.cloudUndoFileOperation)
+	mux.HandleFunc("POST /v1/cloud/file-operation/redo", h.cloudRedoFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/resolve", h.cloudResolveFileOperationConflict)
 	mux.HandleFunc("POST /v1/cloud/upload/preflight", h.cloudUploadConflictPreflight)
 	mux.HandleFunc("POST /v1/cloud/upload/conflict", h.cloudUploadWithConflictPolicy)
@@ -1134,6 +1137,26 @@ func (h *desktopIPCHandler) cloudUndoFileOperation(w http.ResponseWriter, r *htt
 		return
 	}
 	operation, err := h.ctrl.CloudUndoFileOperation(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, operation)
+}
+
+func (h *desktopIPCHandler) cloudRedoFileOperation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation", "id is required")
+		return
+	}
+	operation, err := h.ctrl.CloudRedoFileOperation(r.Context(), input.ID)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

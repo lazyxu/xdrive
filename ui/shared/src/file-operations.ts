@@ -4,7 +4,7 @@ export const XDRIVE_FILE_OPERATION_ACTIVE_POLL_MS = 1_500
 export const XDRIVE_FILE_OPERATION_VISIBLE_IDLE_POLL_MS = 3_000
 export const XDRIVE_FILE_OPERATION_IDLE_POLL_MS = 15_000
 
-export type XDriveFileOperationType = 'copy' | 'move' | 'delete' | 'undo'
+export type XDriveFileOperationType = 'copy' | 'move' | 'delete' | 'undo' | 'redo'
 export type XDriveFileOperationConflictPolicy = 'fail' | 'skip' | 'keep_both'
 export type XDriveFileOperationConflictResolution = Exclude<XDriveFileOperationConflictPolicy, 'fail'>
 
@@ -24,7 +24,10 @@ export type XDriveFileOperation = {
   retry_of_id?: string
   undo_of_id?: string
   undone_by_id?: string
+  redo_of_id?: string
+  redone_by_id?: string
   undoable?: boolean
+  redoable?: boolean
   conflict_policy?: XDriveFileOperationConflictPolicy
   total_items: number
   processed_items: number
@@ -49,6 +52,7 @@ export function xDriveFileOperationTypeLabel(type: XDriveFileOperationType | str
     case 'move': return '移动'
     case 'delete': return '移到回收站'
     case 'undo': return '撤销文件操作'
+    case 'redo': return '重做文件操作'
     default: return type || '文件操作'
   }
 }
@@ -78,6 +82,7 @@ const XDRIVE_FILE_OPERATION_FAILURE_MESSAGES: Record<string, string> = {
   name_conflict: '目标位置存在同名项目，请处理冲突后重新操作。',
   managed_source_target: '该路径由同步来源管理，不能执行此操作。',
   undo_conflict: '原操作之后文件状态已发生变化，无法安全撤销。',
+  redo_conflict: '撤销之后文件状态已发生变化，无法安全重做。',
   internal_error: '文件操作执行失败，可稍后重试。',
 }
 
@@ -118,16 +123,30 @@ export function xDriveFileOperationHasHistory(
   return operations.some((operation) => !xDriveFileOperationActive(operation.status))
 }
 
+function xDriveFileOperationLineageActive(operation: XDriveFileOperation) {
+  return (operation.type === 'undo' || operation.type === 'redo') &&
+    xDriveFileOperationActive(operation.status)
+}
+
 export function xDriveLatestUndoableFileOperation(
   operations: readonly XDriveFileOperation[],
 ) {
-  if (operations.some((operation) => (
-    operation.type === 'undo' && xDriveFileOperationActive(operation.status)
-  ))) {
+  if (operations.some(xDriveFileOperationLineageActive)) {
     return undefined
   }
   return operations.find((operation) => (
     operation.status === 'completed' && operation.undoable
+  ))
+}
+
+export function xDriveLatestRedoableFileOperation(
+  operations: readonly XDriveFileOperation[],
+) {
+  if (operations.some(xDriveFileOperationLineageActive)) {
+    return undefined
+  }
+  return operations.find((operation) => (
+    operation.status === 'completed' && operation.redoable
   ))
 }
 
