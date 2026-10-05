@@ -3,13 +3,46 @@ package media
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"io"
+	"strings"
 )
 
-const MaxThumbnailPixels = 100_000_000
+const (
+	MaxThumbnailPixels     = 100_000_000
+	DefaultThumbnailEdge   = 512
+	ThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
+)
+
+func ThumbnailStorageKey(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+	maxEdge int,
+) string {
+	if maxEdge <= 0 {
+		maxEdge = DefaultThumbnailEdge
+	}
+	sha := strings.ToLower(strings.TrimSpace(sha256))
+	if len(sha) >= 2 {
+		return fmt.Sprintf(
+			"%s%s/%s-%d.jpg",
+			ThumbnailStoragePrefix,
+			sha[:2],
+			sha,
+			maxEdge,
+		)
+	}
+	return fmt.Sprintf(
+		"%snode/%d-%d-%d.jpg",
+		ThumbnailStoragePrefix,
+		nodeID,
+		nodeRevision,
+		maxEdge,
+	)
+}
 
 type Thumbnail struct {
 	Data       []byte

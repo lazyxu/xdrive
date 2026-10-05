@@ -35,6 +35,7 @@ type MediaRepairReport struct {
 	Actions         []MediaRepairAction         `json:"actions"`
 	RelationActions []MediaRelationRepairAction `json:"relation_actions,omitempty"`
 	DerivedActions  []MediaDerivedRepairAction  `json:"derived_actions,omitempty"`
+	ThumbnailGC     *MediaThumbnailGCReport     `json:"thumbnail_gc,omitempty"`
 	Skipped         []MediaIntegrityIssue       `json:"skipped,omitempty"`
 }
 

@@ -686,7 +686,7 @@ func verifyLIVPContainers(
 	}
 }
 
-const mediaThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
+const mediaThumbnailStoragePrefix = mediapkg.ThumbnailStoragePrefix
 
 func verifyThumbnailMetadata(
 	row meta.MediaMetadata,

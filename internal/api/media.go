@@ -26,7 +26,7 @@ import (
 const (
 	mediaIndexBatchSize       = 64
 	mediaRequestIndexBatch    = 16
-	mediaThumbnailEdge        = 512
+	mediaThumbnailEdge        = mediapkg.DefaultThumbnailEdge
 	mediaIndexerIdleInterval  = 30 * time.Second
 	mediaIndexerBusyInterval  = 100 * time.Millisecond
 	mediaIndexerErrorInterval = time.Minute
@@ -822,19 +822,10 @@ func mediaThumbnailStorageKey(
 	node meta.Node,
 	row meta.MediaMetadata,
 ) string {
-	sha := strings.ToLower(strings.TrimSpace(row.SHA256))
-	if len(sha) >= 2 {
-		return fmt.Sprintf(
-			".xdrive-media/thumbnails/%s/%s-%d.jpg",
-			sha[:2],
-			sha,
-			mediaThumbnailEdge,
-		)
-	}
-	return fmt.Sprintf(
-		".xdrive-media/thumbnails/node/%d-%d-%d.jpg",
+	return mediapkg.ThumbnailStorageKey(
 		node.ID,
 		node.Revision,
+		row.SHA256,
 		mediaThumbnailEdge,
 	)
 }
