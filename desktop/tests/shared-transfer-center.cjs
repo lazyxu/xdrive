@@ -50,6 +50,32 @@ test('shared transfer center exposes detailed progress and history fields', () =
   assert.ok(sharedModel.includes("direction: 'upload' | 'download' | 'local' | string"), 'shared transfer direction contract is missing')
 })
 
+test('shared transfer center renders hierarchical group progress and child tasks', () => {
+  for (const token of [
+    'xDriveTransferTree',
+    'TransferGroupItem',
+    'TransferLeafItem',
+    'Collapse',
+    '文件夹任务',
+    '已发现',
+    '基于当前已发现文件',
+    '成功',
+    '失败',
+    '传输中',
+    '等待',
+    '暂无子任务',
+    '正在发现子任务',
+    'compact',
+    'relative_path',
+  ]) {
+    assert.ok(shared.includes(token), `hierarchical Transfer Center missing: ${token}`)
+  }
+  assert.ok(shared.includes('const roots = xDriveTransferTree(transfers)'), 'Transfer Center must group only root tasks at the top level')
+  assert.ok(shared.includes('xDriveTransferAggregateBytes(item, children)'), 'group byte progress must aggregate child work')
+  assert.ok(shared.includes('xDriveTransferItemProgress(item, children)'), 'group item progress must aggregate child work')
+  assert.ok(shared.includes("item.scan_complete === false"), 'group UI must distinguish discovered totals from final totals')
+})
+
 test('Web and Desktop both render the shared task center workspace', () => {
   assert.ok(taskCenter.includes('XDriveFileOperationCenter'), 'shared task center must render file operations')
   assert.ok(taskCenter.includes('XDriveTransferCenter'), 'shared task center must render transfers')
