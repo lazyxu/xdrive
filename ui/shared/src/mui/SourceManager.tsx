@@ -1,19 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import {
-  Button as MuiButton,
-  Stack,
-  Tooltip,
-} from '@mui/material'
-import { XDriveActionButton } from './ActionButton'
+import type { FormEvent } from 'react'
 import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
-import { XDriveStatePanel } from './StatePanel'
-import { XDriveWorkspaceSurface } from './WorkspaceSurface'
-import { XDriveSourceKindIcon } from './SourceKindIcon'
-import { XDriveSourceSummaryCard } from './SourceSummaryCard'
 import { XDriveSourceCreateDialog } from './SourceManagerCreateDialog'
+import { XDriveSourceManagerListPage } from './SourceManagerListPage'
 import type { XDriveSourceCreateValues } from './SourceManagerCreateDialog'
 import { XDriveSourceSettingsDialog } from './SourceManagerSettingsDialog'
 import type { XDriveSourceSettingsValues } from './SourceManagerSettingsDialog'
@@ -31,19 +20,15 @@ import type {
 } from './SourceManagerDetailsDialog'
 import { XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from './SynologyDsmGuideDialog'
 import {
-  externalSourceCardView,
   externalSourceConnectorProfile,
   externalSourceCreateOption,
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
   externalSourceDefaults,
-  externalSourceTriggerActionLabel,
-  formatExternalSourceTime,
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
 } from '../external-sources'
-import { formatSize } from '../format'
 import type {
   CreateExternalSourceInput,
   ExternalSource,
@@ -1068,106 +1053,24 @@ export function XDriveSourceManager({
 
   return (
     <>
-      <XDriveWorkspaceSurface
-        presentation="page"
-        title="同步文件夹"
-        subtitle="统一管理同步文件夹、凭据、调度方式与运行状态。"
-        pageActions={
-          <>
-            <XDriveActionButton
-              startIcon={<RefreshRoundedIcon />}
-              loading={loading}
-              loadingLabel="正在刷新…"
-              onClick={() => void load()}
-            >
-              刷新
-            </XDriveActionButton>
-            <XDriveActionButton intent="primary" startIcon={<AddRoundedIcon />} onClick={() => void openCreate()}>
-              添加同步文件夹
-            </XDriveActionButton>
-          </>
-        }
-      >
-      {loading && rows.length === 0 ? (
-        <XDriveStatePanel variant="plain" loading message="正在加载同步文件夹…" />
-      ) : rows.length === 0 ? (
-          <XDriveStatePanel variant="plain" message="尚未添加同步文件夹" />
-        ) : (
-          <Stack spacing={1.75}>
-            {rows.map((row) => {
-              const card = externalSourceCardView(row)
-              const stats = card.scannedItems === undefined || card.scannedBytes === undefined
-                ? '尚无扫描统计'
-                : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatSize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
-
-              return (
-                <XDriveSourceSummaryCard
-                  key={row.source.id}
-                  name={row.source.name}
-                  icon={<XDriveSourceKindIcon kind={row.source.kind} />}
-                  modeLabel={`${card.connector.label} · ${card.modeLabel}`}
-                  statusTone={card.state.tone}
-                  statusLabel={card.state.label}
-                  activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}
-                  stats={stats}
-                  metaAction={row.source.last_error && !row.source.run_requested_at && row.latestRun?.status !== 'running' ? (
-                    <MuiButton
-                      size="small"
-                      color="error"
-                      variant="text"
-                      onClick={() => setErrorDialog({
-                        title: `${row.source.name} · 最近一次运行错误`,
-                        message: row.source.last_error || '未提供具体错误信息',
-                      })}
-                      sx={{ minWidth: 'auto', px: 0, justifyContent: 'flex-start' }}
-                    >
-                      查看最近错误
-                    </MuiButton>
-                  ) : undefined}
-                  actions={(
-                    <>
-                      <XDriveActionButton compact disabled={failedItemsLoading} onClick={() => void openDetails(row)}>
-                        查看
-                      </XDriveActionButton>
-                      {externalSourceConnectorProfile(row.source.kind, row.source.direction).manualTriggerExecutor === 'source_agent' && (
-                        <XDriveActionButton compact onClick={() => openSynologyGuide(row.source)}>
-                          DSM 配置
-                        </XDriveActionButton>
-                      )}
-                      <Tooltip title={card.trigger.label}>
-                        <span>
-                          <XDriveActionButton
-                            compact
-                            disabled={!card.trigger.ready}
-                            loading={triggeringSourceID === row.source.id}
-                            loadingLabel="正在请求…"
-                            onClick={() => void triggerNow(row)}
-                          >
-                            {externalSourceTriggerActionLabel(row)}
-                          </XDriveActionButton>
-                        </span>
-                      </Tooltip>
-                      {row.latestRun?.status === 'running' && (
-                        <XDriveActionButton
-                          compact
-                          intent="warning"
-                          disabled={Boolean(row.latestRun.cancel_requested_at)}
-                          loading={cancellingRunID === row.latestRun.id || Boolean(row.latestRun.cancel_requested_at)}
-                          loadingLabel="正在取消…"
-                          onClick={() => void cancelRun(row)}
-                        >
-                          停止
-                        </XDriveActionButton>
-                      )}
-                      <XDriveActionButton compact onClick={() => openSettings(row)}>设置</XDriveActionButton>
-                    </>
-                  )}
-                />
-              )
-            })}
-          </Stack>
-        )}
-      </XDriveWorkspaceSurface>
+      <XDriveSourceManagerListPage
+        rows={rows}
+        loading={loading}
+        failedItemsLoading={failedItemsLoading}
+        triggeringSourceID={triggeringSourceID}
+        cancellingRunID={cancellingRunID}
+        onRefresh={load}
+        onAdd={openCreate}
+        onOpenError={(row) => setErrorDialog({
+          title: `${row.source.name} · 最近一次运行错误`,
+          message: row.source.last_error || '未提供具体错误信息',
+        })}
+        onOpenDetails={openDetails}
+        onOpenSynologyGuide={(row) => openSynologyGuide(row.source)}
+        onTriggerNow={triggerNow}
+        onCancelRun={cancelRun}
+        onOpenSettings={openSettings}
+      />
 
       <XDriveSourceDetailsDialog
         row={selected}

@@ -9,10 +9,12 @@ const sourceDialogs = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mu
 const sourceDetails = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerDetailsDialog.tsx'), 'utf8')
 const sourceCreate = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerCreateDialog.tsx'), 'utf8')
 const sourceSettings = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerSettingsDialog.tsx'), 'utf8')
+const sourceList = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerListPage.tsx'), 'utf8')
 const webStyles = fs.readFileSync(path.join(repo, 'web', 'src', 'styles.css'), 'utf8')
 
-test('shared SourceManager owns list spacing without Web-only legacy CSS', () => {
-  assert.ok(sourceManager.includes('<Stack spacing={1.75}>'), 'shared SourceManager should own the 14px list gap')
+test('shared SourceManager list page owns list spacing without Web-only legacy CSS', () => {
+  assert.ok(sourceManager.includes('<XDriveSourceManagerListPage'), 'SourceManager must delegate the list page')
+  assert.ok(sourceList.includes('<Stack spacing={1.75}>'), 'shared Source list page should own the 14px list gap')
   assert.equal(sourceManager.includes('className="external-source-list"'), false, 'shared SourceManager must not depend on Web list CSS')
 
   for (const selector of [
@@ -166,4 +168,30 @@ test('SourceManager delegates the settings dialog to an internal presentation mo
   assert.equal(sourceManager.includes('<XDriveSourceStatusField'), false, 'settings status field must not remain inline')
   assert.equal(sourceManager.includes('title="一刻相册凭据"'), false, 'settings credential presentation must not remain inline')
   assert.ok(sourceManager.includes('adapter.sourceBrowseDirectories(settingsSourceID'), 'File Station browse transport must remain in the parent controller')
+})
+
+
+test('SourceManager delegates the list page to an internal presentation module', () => {
+  for (const token of [
+    'export function XDriveSourceManagerListPage',
+    'XDriveWorkspaceSurface',
+    'XDriveSourceSummaryCard',
+    'XDriveSourceKindIcon',
+    'XDriveStatePanel',
+    'externalSourceCardView',
+    'externalSourceTriggerActionLabel',
+    'formatExternalSourceTime',
+    '添加同步文件夹',
+    '查看最近错误',
+    'DSM 配置',
+    '正在取消…',
+  ]) {
+    assert.ok(sourceList.includes(token), `SourceManagerListPage missing: ${token}`)
+  }
+
+  assert.equal(/adapter\./.test(sourceList), false, 'list page presentation must not call the Source adapter')
+  assert.equal(/use(?:State|Effect)\(/.test(sourceList), false, 'list page presentation must not own async/state orchestration')
+  assert.equal(sourceManager.includes('<XDriveWorkspaceSurface'), false, 'workspace page chrome must not remain inline')
+  assert.equal(sourceManager.includes('<XDriveSourceSummaryCard'), false, 'source summary cards must not remain inline')
+  assert.equal(sourceManager.includes('externalSourceCardView(row)'), false, 'list view-model mapping must not remain inline')
 })

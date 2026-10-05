@@ -18,7 +18,14 @@ const desktopStyles = readRepo('desktop/src/renderer/styles.css')
 const app = read('src/App.tsx')
 const webFileExplorer = read('src/WebFileExplorer.tsx')
 const styles = read('src/styles.css')
-const sources = readRepo('ui/shared/src/mui/SourceManager.tsx')
+const sources = [
+  'SourceManager.tsx',
+  'SourceManagerDialogs.tsx',
+  'SourceManagerDetailsDialog.tsx',
+  'SourceManagerCreateDialog.tsx',
+  'SourceManagerSettingsDialog.tsx',
+  'SourceManagerListPage.tsx',
+].map((name) => readRepo(`ui/shared/src/mui/${name}`)).join('\n')
 const storage = read('src/StorageStatsPanel.tsx')
 const cloudStorage = readRepo('ui/shared/src/mui/CloudStoragePage.tsx')
 const adminUsers = read('src/AdminUsers.tsx')
