@@ -23,6 +23,11 @@ import type {
   StorageStats,
   BuildInfo,
   UpdateExternalSourceInput,
+  XDriveCloudFilesCrumb,
+  XDriveCloudFilesPage,
+  XDriveCloudFilesPageOptions,
+  XDriveCloudFilesSearchPage,
+  XDriveCloudFilesSearchResult,
   XDriveFileOperation,
   XDriveFileTextPreview,
   XDriveUploadConflictPreflight,
@@ -227,13 +232,7 @@ declare global {
   type AgentCloudFileOperation = XDriveFileOperation
   type AgentCloudFileTextPreview = XDriveFileTextPreview
   type AgentCloudNode = Node
-  type AgentCloudChildrenPage = {
-    items: AgentCloudNode[]
-    next_cursor?: string
-    has_more: boolean
-    sort: 'name' | 'updated' | 'size' | 'type'
-    order: 'asc' | 'desc'
-  }
+  type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>
   type AgentCloudQuota = QuotaUsage
   type AgentCloudStorageStats = StorageStats
   type AgentCloudVersion = FileVersion
@@ -242,16 +241,9 @@ declare global {
     share: CreatedFileShare
     url: string
   }
-  type AgentCloudCrumb = { id: number; name: string }
-  type AgentCloudSearchResult = {
-    node: AgentCloudNode
-    path: string
-    crumbs: AgentCloudCrumb[]
-  }
-  type AgentCloudSearchPage = {
-    items: AgentCloudSearchResult[]
-    next_cursor?: string
-  }
+  type AgentCloudCrumb = XDriveCloudFilesCrumb
+  type AgentCloudSearchResult = XDriveCloudFilesSearchResult<AgentCloudNode>
+  type AgentCloudSearchPage = XDriveCloudFilesSearchPage<AgentCloudNode>
   type AgentCloudUploadResult = {
     node: AgentCloudNode
     skipped: boolean
@@ -392,7 +384,7 @@ declare global {
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
         cloudChildrenPage: (
           parentID: number,
-          options?: { limit?: number; cursor?: string; sort?: 'name' | 'updated' | 'size' | 'type'; order?: 'asc' | 'desc' },
+          options?: XDriveCloudFilesPageOptions,
         ) => Promise<DesktopResult<AgentCloudChildrenPage>>
         cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudRename: (id: number, revision: number, name: string) => Promise<DesktopResult<AgentCloudNode>>

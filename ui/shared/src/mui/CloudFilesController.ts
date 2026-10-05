@@ -142,7 +142,15 @@ export function useXDriveCloudFilesController<
   }, [defaultSort, onError, port, rootLabel])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      setQuota(null)
+      setItems([])
+      setCrumbs([])
+      setPageState(null)
+      setLoading(false)
+      setLoadingMore(false)
+      return
+    }
     void loadInitial()
   }, [enabled, loadInitial])
 

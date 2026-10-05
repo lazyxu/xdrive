@@ -27,6 +27,17 @@ export type XDriveCloudFilesCrumb = {
   name: string
 }
 
+export type XDriveCloudFilesSearchResult<TNode extends { id: number }> = {
+  node: TNode
+  path: string
+  crumbs: XDriveCloudFilesCrumb[]
+}
+
+export type XDriveCloudFilesSearchPage<TNode extends { id: number }> = {
+  items: XDriveCloudFilesSearchResult<TNode>[]
+  next_cursor?: string
+}
+
 export interface XDriveCloudFilesPort<
   TNode extends { id: number },
   TQuota extends QuotaUsage = QuotaUsage,
