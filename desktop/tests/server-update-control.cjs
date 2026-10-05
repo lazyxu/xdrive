@@ -29,6 +29,8 @@ test('shared server update UI exposes source, channel, status and progress', () 
     '更新来源',
     '更新通道',
     '备份文件数据',
+    '文件数据备份',
+    'backup_file_data',
     '默认关闭',
     'GitHub',
     'GitLab',
@@ -71,6 +73,7 @@ test('host control reuses transactional xdrive-server update and installer progr
   assert.ok(hostManager.includes('control) control_cmd "$@"'), 'host manager control dispatcher missing')
   assert.ok(hostControl.includes('update_args=(update --source "$source" --channel "$channel")'), 'host control must reuse xdrive-server update')
   assert.ok(hostControl.includes('update_args+=(--backup-file-data)'), 'host control must forward the file-data backup option')
+  assert.ok(hostControl.includes('"backup_file_data":%s'), 'host control status must preserve the file-data backup mode')
   assert.ok(hostControl.includes('case "$source" in github|gitlab)'), 'host runner source whitelist missing')
   assert.ok(hostControl.includes('case "$channel" in stable|master)'), 'host runner channel whitelist missing')
   assert.ok(hostControl.includes('heartbeat'), 'host runner heartbeat missing')

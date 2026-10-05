@@ -180,6 +180,7 @@ type ServerUpdateState struct {
 	State             string `json:"state"`
 	Source            string `json:"source"`
 	Channel           string `json:"channel"`
+	BackupFileData    bool   `json:"backup_file_data"`
 	RequestID         string `json:"request_id,omitempty"`
 	Stage             string `json:"stage,omitempty"`
 	StageCurrent      int    `json:"stage_current,omitempty"`

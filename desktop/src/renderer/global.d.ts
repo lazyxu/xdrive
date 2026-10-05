@@ -96,6 +96,7 @@ declare global {
     state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
     source: 'github' | 'gitlab'
     channel: 'stable' | 'master'
+    backup_file_data?: boolean
     request_id?: string
     stage?: string
     stage_current?: number

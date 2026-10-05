@@ -52,10 +52,11 @@ func TestServerUpdateStatusRequiresFreshHostRunner(t *testing.T) {
 		State:             "idle",
 		Source:            "gitlab",
 		Channel:           "master",
+		BackupFileData:    true,
 		RunnerHeartbeatAt: time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339),
 	})
 	state = server.serverUpdateStatus()
-	if state.Supported || state.State != "unavailable" {
+	if state.Supported || state.State != "unavailable" || !state.BackupFileData {
 		t.Fatalf("stale runner state=%+v", state)
 	}
 

@@ -7,6 +7,7 @@ export interface XDriveServerUpdateState {
   state: XDriveServerUpdatePhase
   source: XDriveServerUpdateSource
   channel: XDriveServerUpdateChannel
+  backup_file_data?: boolean
   request_id?: string
   stage?: string
   stage_current?: number

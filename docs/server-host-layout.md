@@ -131,11 +131,12 @@ Web and Desktop may request a server update only through the authenticated admin
 
 The supported flow is:
 
-1. an administrator submits only an update source (`github` or `gitlab`) and channel (`stable` or `master`);
-2. the server writes a restricted request into the bind-mounted `state/control` bridge;
-3. the user-owned host control runner validates the request again and invokes the existing `xdrive-server update` transaction;
-4. the installer writes stage and image-download byte progress back into the bridge;
-5. the API exposes that status to Web/Desktop. During the maintenance window the API/Caddy may briefly be unavailable; clients retain the last known progress and resume polling when service returns.
+1. an administrator submits an update source (`github` or `gitlab`), channel (`stable` or `master`), and a one-shot `backup_file_data` choice;
+2. `backup_file_data` defaults to false for every new Web/Desktop update request; enabling it asks the installer to include a full file-data snapshot in that upgrade's rollback backup;
+3. the server writes the restricted request into the bind-mounted `state/control` bridge;
+4. the user-owned host control runner validates the request again and invokes the existing `xdrive-server update` transaction, forwarding `--backup-file-data` only when requested;
+5. the runner preserves the selected backup mode in update status together with stage and byte progress, so another Web/Desktop client can see how the current update was protected;
+6. the API exposes that status to Web/Desktop. During the maintenance window the API/Caddy may briefly be unavailable; clients retain the last known progress and resume polling when service returns.
 
 The runner is installed as `bin/server-control.sh`, is started by the installer, and is registered in the user's crontab with an `@reboot` entry when crontab is available. The bridge uses setgid mode `2770`: the installing host user remains the owner and the configured server GID receives bridge access solely so the API can create the restricted request file. It is not world-writable. Parent xDrive directories remain private to the installing user.
 
@@ -314,9 +315,9 @@ Before removal each candidate is checked through Docker. Any volume still refere
 
 Backups are storage-backend neutral. They must work whether `/data` and PostgreSQL are backed by a bind mount or a legacy named volume.
 
-Backup and restore code discovers the actual mount through Docker metadata rather than assuming a volume name. Before entering the maintenance window, backup creation estimates the file-data bytes plus PostgreSQL database bytes, adds a 10% margin and 64 MiB fixed reserve, and refuses to start when the backup filesystem does not have that much free space.
+Backup and restore code discovers the actual mount through Docker metadata rather than assuming a volume name. Full backups estimate file-data bytes plus PostgreSQL database bytes before entering the maintenance window; database-only backups estimate only the database portion. Both add a 10% margin and 64 MiB fixed reserve and refuse to start when the backup filesystem does not have enough free space.
 
-Each completed backup contains checksums and a manifest with its creation time, consistency status, server/Caddy images, release channel and commit, update source, Docker mode, and the space-preflight measurements. Checksums are verified once before the partial directory is atomically promoted to a completed backup.
+Each completed backup contains checksums and a manifest with its creation time, consistency status, whether file data was included, server/Caddy images, release channel and commit, update source, Docker mode, and the space-preflight measurements. A full backup contains `blobs.tar`; a database-only backup intentionally omits it and records `file_data_included=false`. Checksums are verified once before the partial directory is atomically promoted to a completed backup.
 
 Host-side backup inspection is available without touching the running services:
 
@@ -326,7 +327,7 @@ xdrive-server backup verify
 xdrive-server backup verify ~/.xd/backups/snapshots/xdrive-backup-YYYYMMDDTHHMMSSZ
 ```
 
-`backup list` reports normal snapshot backups with creation time, size, release channel/commit and completeness/consistency state. `backup verify` validates the latest snapshot by default, or an explicitly supplied backup directory, using the stored SHA-256 checksums. Existing `xdrive-server backup` behavior remains a create operation; `xdrive-server backup create` is an explicit alias.
+`backup list` reports normal snapshot backups with creation time, size, release channel/commit and completeness/consistency state; snapshots that intentionally omit file data are reported as `database-only` rather than `incomplete`. `backup verify` validates the latest snapshot by default, or an explicitly supplied backup directory, using the stored SHA-256 checksums and the manifest's `file_data_included` contract. It therefore accepts a valid database-only pre-upgrade backup without requiring `blobs.tar`. `backup sources BACKUP_DIR` uses the same verification path, so source metadata can be inspected from either full or database-only upgrade backups. Existing `xdrive-server backup` behavior remains a create operation and still includes file data by default; `xdrive-server backup create` is an explicit alias.
 
 A restore must never depend on direct host ownership of `data/files`; containerized copy/extract operations are used where numeric container ownership matters. Production restore drills are not run automatically because they are destructive; CI continues to exercise the full backup-corrupt-restore-verify sequence in an isolated deployment.
 

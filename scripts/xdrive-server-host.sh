@@ -488,6 +488,16 @@ backup_manifest_value() {
   sed -nE 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$manifest" | head -n1
 }
 
+backup_manifest_bool() {
+  local manifest="$1" key="$2" fallback="${3:-false}" value
+  [[ -f "$manifest" ]] || { printf '%s\n' "$fallback"; return 0; }
+  value="$(sed -nE 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$manifest" | head -n1)"
+  case "$value" in
+    true|false) printf '%s\n' "$value" ;;
+    *) printf '%s\n' "$fallback" ;;
+  esac
+}
+
 latest_snapshot_backup() {
   local root="$BACKUP_DIR/snapshots"
   [[ -d "$root" ]] || return 1
@@ -499,7 +509,7 @@ backup_list_cmd() {
     echo "usage: xdrive-server backup list" >&2
     return 2
   }
-  local root="$BACKUP_DIR/snapshots" dir name size created channel commit consistent status found=0 required
+  local root="$BACKUP_DIR/snapshots" dir name size created channel commit consistent file_data status found=0 required
   if [[ ! -d "$root" ]]; then
     echo "No snapshot backups found in $root"
     return 0
@@ -514,15 +524,21 @@ backup_list_cmd() {
     channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
     commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
     consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" 2>/dev/null | head -n1 || true)"
+    file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
     status="complete"
-    for required in database.dump blobs.tar verify.json manifest.json SHA256SUMS.txt; do
+    for required in database.dump verify.json manifest.json SHA256SUMS.txt; do
       if [[ ! -f "$dir/$required" ]]; then
         status="incomplete"
         break
       fi
     done
+    if [[ "$status" == "complete" && "$file_data" != "false" && ! -f "$dir/blobs.tar" ]]; then
+      status="incomplete"
+    fi
     if [[ "$status" == "complete" && "$consistent" == "false" ]]; then
       status="inconsistent"
+    elif [[ "$status" == "complete" && "$file_data" == "false" ]]; then
+      status="database-only"
     fi
     [[ -n "$created" ]] || created="-"
     [[ -n "$size" ]] || size="-"
@@ -543,7 +559,8 @@ backup_verify_cmd() {
     echo "xdrive-server: sha256sum is required to verify backups" >&2
     return 1
   }
-  local dir="${1:-}" required created channel commit consistent
+  local dir="${1:-}" required created channel commit consistent file_data
+  local -a required_files
   if [[ -z "$dir" ]]; then
     dir="$(latest_snapshot_backup || true)"
     [[ -n "$dir" ]] || {
@@ -556,16 +573,23 @@ backup_verify_cmd() {
     return 1
   }
   dir="$(cd "$dir" && pwd)"
-  for required in database.dump blobs.tar verify.json manifest.json SHA256SUMS.txt; do
+  [[ -f "$dir/manifest.json" ]] || {
+    echo "xdrive-server: backup is missing manifest.json: $dir" >&2
+    return 1
+  }
+  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$dir/manifest.json" || {
+    echo "xdrive-server: unsupported backup format: $dir" >&2
+    return 1
+  }
+  file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
+  required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
+  [[ "$file_data" == "false" ]] || required_files+=(blobs.tar)
+  for required in "${required_files[@]}"; do
     [[ -f "$dir/$required" ]] || {
       echo "xdrive-server: backup is missing $required: $dir" >&2
       return 1
     }
   done
-  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$dir/manifest.json" || {
-    echo "xdrive-server: unsupported backup format: $dir" >&2
-    return 1
-  }
   (
     cd "$dir"
     sha256sum -c SHA256SUMS.txt
@@ -577,6 +601,11 @@ backup_verify_cmd() {
   echo "Backup verified: $dir"
   [[ -n "$created" ]] && echo "  created: $created"
   [[ -n "$channel" ]] && echo "  release: $channel${commit:+ / ${commit:0:12}}"
+  if [[ "$file_data" == "false" ]]; then
+    echo "  file data: omitted (database-only backup)"
+  else
+    echo "  file data: included"
+  fi
   if [[ "$consistent" == "false" ]]; then
     echo "  warning: this backup was created with consistency_verified=false" >&2
   fi

@@ -195,6 +195,25 @@ EOF
   sha256sum database.dump blobs.tar verify.json manifest.json > SHA256SUMS.txt
 )
 
+METADATA_SNAPSHOT="$TMP/home/backups/snapshots/xdrive-backup-20260928T100000Z"
+mkdir -p "$METADATA_SNAPSHOT"
+printf 'db-dump\n' > "$METADATA_SNAPSHOT/database.dump"
+printf '{"ok":true}\n' > "$METADATA_SNAPSHOT/verify.json"
+cat > "$METADATA_SNAPSHOT/manifest.json" <<'EOF'
+{
+  "format_version": 1,
+  "created_at_utc": "2026-09-28T10:00:00Z",
+  "file_data_included": false,
+  "consistency_verified": true,
+  "release_channel": "master",
+  "release_commit": "0123456789abcdef0123456789abcdef01234567"
+}
+EOF
+(
+  cd "$METADATA_SNAPSHOT"
+  sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt
+)
+
 mkdir -p "$TMP/home/state"
 printf '515151\n' > "$TMP/home/state/install.lock"
 exec 8<>"$TMP/home/state/install.lock"
@@ -318,6 +337,7 @@ grep -q '2026-09-28T12:00:00Z' "$TMP/backup-list.out"
 grep -q 'master' "$TMP/backup-list.out"
 grep -q '0123456789ab' "$TMP/backup-list.out"
 grep -q 'complete' "$TMP/backup-list.out"
+grep -Eq 'xdrive-backup-20260928T100000Z.*database-only' "$TMP/backup-list.out"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
@@ -325,6 +345,14 @@ XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" backup verify "$SNAPSHOT" >"$TMP/backup-verify.out"
 grep -q "Backup verified: $SNAPSHOT" "$TMP/backup-verify.out"
 grep -q 'release: master / 0123456789ab' "$TMP/backup-verify.out"
+grep -q 'file data: included' "$TMP/backup-verify.out"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" backup verify "$METADATA_SNAPSHOT" >"$TMP/backup-verify-metadata.out"
+grep -q "Backup verified: $METADATA_SNAPSHOT" "$TMP/backup-verify-metadata.out"
+grep -q 'file data: omitted (database-only backup)' "$TMP/backup-verify-metadata.out"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
@@ -341,6 +369,13 @@ grep -Fq $'1\t1\t一刻相册\tyike_photos\tpull\tscan\tactive' "$TMP/backup-sou
 grep -Fq $'2\t1\t群晖 Photos\tsynology_photos\tpull\tsync\tactive' "$TMP/backup-sources.out"
 grep -q "Backup: $SNAPSHOT" "$TMP/backup-sources.out"
 grep -q -- 'exec -T postgres pg_restore --data-only --table=public.xd_sources --file=-' "$TMP/state/docker-args"
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" backup sources "$METADATA_SNAPSHOT" >"$TMP/backup-sources-metadata.out"
+grep -Fq $'1\t1\t一刻相册\tyike_photos\tpull\tscan\tactive' "$TMP/backup-sources-metadata.out"
+grep -q "Backup: $METADATA_SNAPSHOT" "$TMP/backup-sources-metadata.out"
 
 CORRUPT="$TMP/home/backups/snapshots/xdrive-backup-20260928T110000Z"
 cp -a "$SNAPSHOT" "$CORRUPT"
@@ -552,6 +587,7 @@ for _ in $(seq 1 100); do
 done
 grep -q '"state":"success"' "$TMP/home/state/control/status.json"
 grep -q '"request_id":"test-request-1"' "$TMP/home/state/control/status.json"
+grep -q '"backup_file_data":false' "$TMP/home/state/control/status.json"
 grep -q '^--source github --channel master$' "$TMP/state/installer-args"
 [[ ! -f "$TMP/home/state/control/request.json" ]]
 [[ ! -f "$TMP/home/state/control/active.json" ]]
@@ -567,6 +603,7 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 grep -q '^--source github --channel master --backup-file-data$' "$TMP/state/installer-args"
+grep -q '"backup_file_data":true' "$TMP/home/state/control/status.json"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
