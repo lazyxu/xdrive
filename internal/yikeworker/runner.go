@@ -241,7 +241,7 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		IgnoreRules:  run.IgnoreRules,
 		Mode:         run.Mode,
 		Executor:     executor,
-	}).Scan(runCtx)
+	}).ScanFull(runCtx)
 	if err != nil {
 		return finishFailure(err, !errors.Is(err, yike.ErrRateLimited))
 	}
@@ -266,6 +266,10 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 func (r *Runner) RunPullSource(ctx context.Context, source meta.Source) (client.SyncRun, error) {
 	run, _, err := r.RunSource(ctx, source)
 	return run, err
+}
+
+func (*Runner) PullSourceChangeCapabilities() pullworker.ChangeScanCapabilities {
+	return pullworker.FullReconciliationOnly()
 }
 
 func (r *Runner) PullSourceConcurrencyKey(ctx context.Context, source meta.Source) string {

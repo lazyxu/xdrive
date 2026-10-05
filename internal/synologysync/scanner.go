@@ -81,6 +81,10 @@ type Result struct {
 }
 
 func (s Scanner) Scan(ctx context.Context) (Result, error) {
+	return s.ScanFull(ctx)
+}
+
+func (s Scanner) ScanFull(ctx context.Context) (Result, error) {
 	var result Result
 	if s.Remote == nil || s.API == nil || s.SourceID == 0 || strings.TrimSpace(s.RunID) == "" {
 		return result, fmt.Errorf("Synology scanner is not configured")

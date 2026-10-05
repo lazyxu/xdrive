@@ -43,6 +43,10 @@ func (r *Runner) RunPullSource(ctx context.Context, source meta.Source) (client.
 	return run, err
 }
 
+func (*Runner) PullSourceChangeCapabilities() pullworker.ChangeScanCapabilities {
+	return pullworker.FullReconciliationOnly()
+}
+
 func (r *Runner) PullSourceConcurrencyKey(ctx context.Context, source meta.Source) string {
 	if r == nil || r.DB == nil || r.Keyring == nil {
 		return ""
@@ -139,7 +143,7 @@ func (r *Runner) RunSource(ctx context.Context, source meta.Source) (client.Sync
 		Mode:        run.Mode,
 		Spaces:      spaces,
 		Executor:    executor,
-	}).Scan(runCtx)
+	}).ScanFull(runCtx)
 	if err != nil {
 		return finishFailure(err, true)
 	}
