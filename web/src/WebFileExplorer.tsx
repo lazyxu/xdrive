@@ -184,7 +184,7 @@ export default function WebFileExplorer({
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
   ) => {
-    if (item.kind !== 'file' || kind !== 'pdf') return null
+    if (item.kind !== 'file' || (kind !== 'pdf' && kind !== 'video')) return null
     try {
       return await api.filePreviewURL(Number(item.id))
     } catch {

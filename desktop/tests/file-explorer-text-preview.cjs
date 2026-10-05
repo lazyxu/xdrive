@@ -66,6 +66,7 @@ test('shared Preview Engine owns classification and renderer surface', () => {
     assert.ok(previewSurface.includes(token), 'missing shared Preview Surface token: ' + token)
   }
   assert.equal(previewSurface.includes('dangerouslySetInnerHTML'), false, 'Preview Surface must never inject active markup')
+  assert.ok(previewSurface.includes('onError={() => setFailed(true)}'), 'Video renderer must fall back when browser decoding fails')
 })
 
 test('shared Inspector delegates preview rendering to FilePreviewSurface', () => {
@@ -103,7 +104,7 @@ test('Web and Desktop load preview through authenticated platform adapters', () 
   }
 })
 
-test('generic preview transport is allowlisted, ticketed, range-capable, and PDF is enabled first', () => {
+test('generic preview transport is allowlisted, ticketed, range-capable, with PDF and Video renderers enabled', () => {
   for (const token of [
     'filePreviewDescriptors',
     '".pdf":  {Kind: "pdf", MIMEType: "application/pdf"}',
@@ -122,10 +123,10 @@ test('generic preview transport is allowlisted, ticketed, range-capable, and PDF
   }
 
   assert.ok(webApi.includes('filePreviewURL(nodeID: number)'), 'Web preview ticket adapter is missing')
-  assert.ok(webExplorer.includes("kind !== 'pdf'"), 'Web should enable PDF before later binary renderers')
+  assert.ok(webExplorer.includes("kind !== 'pdf' && kind !== 'video'"), 'Web should enable PDF and Video through the generic preview URL')
   assert.ok(webExplorer.includes('loadPreviewURL={loadPreviewURL}'), 'Web Explorer must pass the preview URL loader')
 
-  assert.ok(desktopExplorer.includes("kind !== 'pdf'"), 'Desktop should enable PDF before later binary renderers')
+  assert.ok(desktopExplorer.includes("kind !== 'pdf' && kind !== 'video'"), 'Desktop should enable PDF and Video through the generic preview URL')
   assert.ok(desktopExplorer.includes('cloudFilePreviewURL(Number(item.id))'), 'Desktop Explorer preview URL adapter is missing')
   assert.ok(desktopExplorer.includes('loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}'), 'Desktop preview URL must be capability gated')
   assert.ok(desktopApp.includes("capabilities.includes('file-preview-stream')"), 'Desktop preview stream capability gate is missing')

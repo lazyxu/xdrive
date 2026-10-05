@@ -180,6 +180,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           controls
           playsInline
           preload="metadata"
+          onError={() => setFailed(true)}
           sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', bgcolor: 'black' }}
         />
       )
