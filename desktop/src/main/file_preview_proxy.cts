@@ -161,6 +161,7 @@ export class DesktopFilePreviewProxy {
       res.setHeader('Cache-Control', 'private, no-store')
       res.setHeader('X-Content-Type-Options', 'nosniff')
       res.setHeader('Referrer-Policy', 'no-referrer')
+      res.setHeader('Access-Control-Allow-Origin', '*')
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
       res.statusCode = upstream.status
 

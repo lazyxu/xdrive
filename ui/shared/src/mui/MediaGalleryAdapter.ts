@@ -45,9 +45,10 @@ export interface XDriveMediaGalleryPort {
   loadLivePhotoMotion?: (
     nodeID: number,
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
-  loadVideo?: (
+  loadPreviewURL?: (
     nodeID: number,
-  ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
+    kind: 'image' | 'video',
+  ) => Promise<XDriveMediaGalleryTransportResult<string>>
   setFavorite?: (
     nodeID: number,
     favorite: boolean,
@@ -156,11 +157,8 @@ export function createXDriveMediaGalleryDataSource(
           'video/quicktime',
         )
       : undefined,
-    loadVideo: port.loadVideo
-      ? async (nodeID) => mediaResourceURL(
-          await resolveTransport(port.loadVideo!(nodeID)),
-          'video/mp4',
-        )
+    loadPreviewURL: port.loadPreviewURL
+      ? (nodeID, kind) => resolveTransport(port.loadPreviewURL!(nodeID, kind))
       : undefined,
     setFavorite: port.setFavorite
       ? async (nodeID, favorite) => {

@@ -34,12 +34,17 @@ import type {
 } from '../models'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveFilePreviewSurface } from './FilePreviewSurface'
+import type { XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
-export type MediaVideoLoader = (nodeID: number) => Promise<string | null>
+export type MediaPreviewURLLoader = (
+  nodeID: number,
+  kind: 'image' | 'video',
+) => Promise<string | null>
 
 export interface MediaGalleryDataSource {
   listItems: (
@@ -57,7 +62,7 @@ export interface MediaGalleryDataSource {
   ) => Promise<MediaItem[]>
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
-  loadVideo?: MediaVideoLoader
+  loadPreviewURL?: MediaPreviewURLLoader
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
   setPeople?: (nodeID: number, people: string[]) => Promise<string[]>
@@ -771,7 +776,7 @@ export function XDriveMediaGalleryPage({
         )}
         loadThumbnail={source.loadThumbnail}
         loadLivePhotoMotion={source.loadLivePhotoMotion}
-        loadVideo={source.loadVideo}
+        loadPreviewURL={source.loadPreviewURL}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
         onSetTags={source.setTags ? setTags : undefined}
         onSetPeople={source.setPeople ? setPeople : undefined}
@@ -868,7 +873,7 @@ export interface XDriveMediaGalleryProps {
   filters?: ReactNode
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
-  loadVideo?: MediaVideoLoader
+  loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
   onSetPeople?: (item: MediaItem, people: string[]) => Promise<string[]>
@@ -971,9 +976,9 @@ function scheduleMediaPoster<T>(task: () => Promise<T>): Promise<T> {
 
 async function captureVideoPoster(
   nodeID: number,
-  loadVideo: MediaVideoLoader,
+  loadPreviewURL: MediaPreviewURLLoader,
 ): Promise<string | null> {
-  const source = await loadVideo(nodeID)
+  const source = await loadPreviewURL(nodeID, 'video')
   if (!source) return null
 
   return new Promise<string | null>((resolve) => {
@@ -1030,12 +1035,12 @@ async function captureVideoPoster(
 function AsyncVideoPoster({
   nodeID,
   alt,
-  loadVideo,
+  loadPreviewURL,
   fallback,
 }: {
   nodeID: number
   alt: string
-  loadVideo: MediaVideoLoader
+  loadPreviewURL: MediaPreviewURLLoader
   fallback: ReactNode
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -1065,7 +1070,7 @@ function AsyncVideoPoster({
     setSrc('')
     if (!visible) return () => { active = false }
 
-    void scheduleMediaPoster(() => captureVideoPoster(nodeID, loadVideo))
+    void scheduleMediaPoster(() => captureVideoPoster(nodeID, loadPreviewURL))
       .then((value) => {
         if (active && value) setSrc(value)
       })
@@ -1074,7 +1079,7 @@ function AsyncVideoPoster({
     return () => {
       active = false
     }
-  }, [loadVideo, nodeID, visible])
+  }, [loadPreviewURL, nodeID, visible])
 
   return (
     <Box ref={rootRef} sx={{ width: '100%', height: '100%' }}>
@@ -1274,7 +1279,7 @@ function MediaDetails({
   item,
   loadThumbnail,
   loadLivePhotoMotion,
-  loadVideo,
+  loadPreviewURL,
   albums,
   currentAlbum,
   onSetFavorite,
@@ -1288,7 +1293,7 @@ function MediaDetails({
   item: MediaItem | null
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
-  loadVideo?: MediaVideoLoader
+  loadPreviewURL?: MediaPreviewURLLoader
   albums: MediaAlbum[]
   currentAlbum?: MediaAlbum | null
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
@@ -1317,11 +1322,36 @@ function MediaDetails({
   const tagsKey = (item?.tags || []).join('\u0000')
   const peopleKey = (item?.people || []).join('\u0000')
   const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
+  const ordinaryImage = Boolean(item?.metadata.media_kind === 'image' && !livePhoto)
   const ordinaryVideo = Boolean(item?.metadata.media_kind === 'video' && !livePhoto)
-  const animatedImage = Boolean(
-    item?.metadata.media_kind === 'image' &&
-      ['image/gif', 'image/webp'].includes((item.metadata.mime_type || '').toLowerCase()),
-  )
+  const ordinaryPreview = ordinaryImage || ordinaryVideo
+  const previewTarget = useMemo(() => (
+    item && ordinaryPreview
+      ? {
+          id: item.node.id,
+          name: item.node.name,
+          kind: 'file' as const,
+          mimeType: item.metadata.mime_type,
+          size: item.node.size,
+          revision: item.node.revision,
+        }
+      : null
+  ), [
+    item?.node.id,
+    item?.node.name,
+    item?.node.revision,
+    item?.node.size,
+    item?.metadata.mime_type,
+    ordinaryPreview,
+  ])
+  const loadSelectedPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
+    if (!item || !loadPreviewURL || (kind !== 'image' && kind !== 'video')) return null
+    return loadPreviewURL(item.node.id, kind)
+  }, [item?.node.id, loadPreviewURL])
+  const loadSelectedThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
+    if (!item?.metadata.has_thumbnail) return null
+    return loadThumbnail(item.node.id)
+  }, [item?.metadata.has_thumbnail, item?.node.id, loadThumbnail])
 
   useEffect(() => {
     setTagsInput((item?.tags || []).join(', '))
@@ -1348,26 +1378,13 @@ function MediaDetails({
     setPlaybackError('')
     setPlaybackLoading(false)
 
-    const loader = livePhoto
-      ? loadLivePhotoMotion
-      : ordinaryVideo || animatedImage
-        ? loadVideo
-        : undefined
-    if (!item || !loader) return () => undefined
+    if (!item || !livePhoto || !loadLivePhotoMotion) return () => undefined
 
     setPlaybackLoading(true)
-    void loader(item.node.id)
+    void loadLivePhotoMotion(item.node.id)
       .then((value) => {
         if (!value) {
-          if (active) {
-            setPlaybackError(
-              livePhoto
-                ? '实况视频暂不可用。'
-                : ordinaryVideo
-                  ? '视频暂不可播放。'
-                  : '动图暂不可播放。',
-            )
-          }
+          if (active) setPlaybackError('实况视频暂不可用。')
           return
         }
         resolved = value
@@ -1386,12 +1403,9 @@ function MediaDetails({
       if (resolved) revokeIfBlob(resolved)
     }
   }, [
-    item,
+    item?.node.id,
     livePhoto,
-    ordinaryVideo,
-    animatedImage,
     loadLivePhotoMotion,
-    loadVideo,
   ])
 
   const rows = useMemo(() => {
@@ -1482,54 +1496,48 @@ function MediaDetails({
                 overflow: 'hidden',
               }}
             >
-              <AsyncThumbnail
-                nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
-                alt={item.node.name}
-                loadThumbnail={loadThumbnail}
-                fallback={mediaFallback(item.metadata.media_kind)}
-              />
+              {ordinaryPreview && loadPreviewURL ? (
+                <XDriveFilePreviewSurface
+                  target={previewTarget}
+                  loadPreviewURL={loadSelectedPreview}
+                  loadImagePreview={loadSelectedThumbnail}
+                  fallback={mediaFallback(item.metadata.media_kind)}
+                  minHeight={220}
+                  maxHeight={420}
+                />
+              ) : (
+                <AsyncThumbnail
+                  nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
+                  alt={item.node.name}
+                  loadThumbnail={loadThumbnail}
+                  fallback={mediaFallback(item.metadata.media_kind)}
+                />
+              )}
             </Box>
-            {(livePhoto && loadLivePhotoMotion) ||
-            ((ordinaryVideo || animatedImage) && loadVideo) ? (
+            {livePhoto && loadLivePhotoMotion ? (
               <Box>
                 <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
-                  {livePhoto ? '实况视频' : ordinaryVideo ? '视频播放' : '动图预览'}
+                  实况视频
                 </Typography>
                 {playbackLoading ? (
                   <Box sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
                     <CircularProgress size={28} />
                   </Box>
                 ) : playbackURL ? (
-                  livePhoto || ordinaryVideo ? (
-                    <video
-                      src={playbackURL}
-                      controls
-                      loop={livePhoto}
-                      playsInline
-                      preload="metadata"
-                      style={{
-                        width: '100%',
-                        maxHeight: 420,
-                        display: 'block',
-                        borderRadius: 8,
-                        background: '#000',
-                      }}
-                    />
-                  ) : (
-                    <Box
-                      component="img"
-                      src={playbackURL}
-                      alt={item.node.name}
-                      sx={{
-                        width: '100%',
-                        maxHeight: 420,
-                        display: 'block',
-                        objectFit: 'contain',
-                        borderRadius: 1,
-                        bgcolor: 'action.hover',
-                      }}
-                    />
-                  )
+                  <video
+                    src={playbackURL}
+                    controls
+                    loop
+                    playsInline
+                    preload="metadata"
+                    style={{
+                      width: '100%',
+                      maxHeight: 420,
+                      display: 'block',
+                      borderRadius: 8,
+                      background: '#000',
+                    }}
+                  />
                 ) : playbackError ? (
                   <XDriveStatusAlert tone="warning">{playbackError}</XDriveStatusAlert>
                 ) : null}
@@ -1792,7 +1800,7 @@ function MediaDetails({
 type MediaTileProps = {
   item: MediaItem
   loadThumbnail: MediaThumbnailLoader
-  loadVideo?: MediaVideoLoader
+  loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onOpen: (item: MediaItem) => void
   onToggleFavorite: (item: MediaItem) => void
@@ -1801,7 +1809,7 @@ type MediaTileProps = {
 function MediaTile({
   item,
   loadThumbnail,
-  loadVideo,
+  loadPreviewURL,
   onSetFavorite,
   onOpen,
   onToggleFavorite,
@@ -1829,11 +1837,11 @@ function MediaTile({
         },
       }}
     >
-      {video && !livePhoto && loadVideo ? (
+      {video && !livePhoto && loadPreviewURL ? (
         <AsyncVideoPoster
           nodeID={item.node.id}
           alt={item.node.name}
-          loadVideo={loadVideo}
+          loadPreviewURL={loadPreviewURL}
           fallback={mediaFallback(item.metadata.media_kind)}
         />
       ) : (
@@ -1904,14 +1912,14 @@ function MediaTile({
 function MediaTileGrid({
   items,
   loadThumbnail,
-  loadVideo,
+  loadPreviewURL,
   onSetFavorite,
   onOpen,
   onToggleFavorite,
 }: {
   items: MediaItem[]
   loadThumbnail: MediaThumbnailLoader
-  loadVideo?: MediaVideoLoader
+  loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onOpen: (item: MediaItem) => void
   onToggleFavorite: (item: MediaItem) => void
@@ -1929,7 +1937,7 @@ function MediaTileGrid({
           key={item.node.id}
           item={item}
           loadThumbnail={loadThumbnail}
-          loadVideo={loadVideo}
+          loadPreviewURL={loadPreviewURL}
           onSetFavorite={onSetFavorite}
           onOpen={onOpen}
           onToggleFavorite={onToggleFavorite}
@@ -1951,7 +1959,7 @@ export function XDriveMediaGallery({
   filters,
   loadThumbnail,
   loadLivePhotoMotion,
-  loadVideo,
+  loadPreviewURL,
   onSetFavorite,
   onSetTags,
   onSetPeople,
@@ -2261,7 +2269,7 @@ export function XDriveMediaGallery({
                 <MediaTileGrid
                   items={group.items}
                   loadThumbnail={loadThumbnail}
-                  loadVideo={loadVideo}
+                  loadPreviewURL={loadPreviewURL}
                   onSetFavorite={onSetFavorite}
                   onOpen={openMediaItem}
                   onToggleFavorite={toggleMediaFavorite}
@@ -2273,7 +2281,7 @@ export function XDriveMediaGallery({
           <MediaTileGrid
             items={items}
             loadThumbnail={loadThumbnail}
-            loadVideo={loadVideo}
+            loadPreviewURL={loadPreviewURL}
             onSetFavorite={onSetFavorite}
             onOpen={openMediaItem}
             onToggleFavorite={toggleMediaFavorite}
@@ -2293,7 +2301,7 @@ export function XDriveMediaGallery({
         item={selected}
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={loadLivePhotoMotion}
-        loadVideo={loadVideo}
+        loadPreviewURL={loadPreviewURL}
         albums={albums}
         currentAlbum={currentAlbum}
         onAddToAlbum={onAddToAlbum}
