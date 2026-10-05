@@ -9,6 +9,7 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerQuickAccess,
+  useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
 } from '@xdrive/ui/mui'
@@ -97,6 +98,12 @@ export default function WebFileExplorer({
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const recent = useXDriveFileExplorerRecent<Node>({
+    loadItems: () => api.fileRecent(16),
+    touchItem: (nodeID) => api.touchFileRecent(nodeID),
+    clearItems: () => api.clearFileRecent(),
+  })
+
   const {
     searchValue,
     searchLoading,
@@ -156,6 +163,8 @@ export default function WebFileExplorer({
     loadRoot: () => api.root(),
     listChildren: (parentID) => api.list(parentID),
     searchCrumbsForResult: (result) => result.breadcrumbs,
+    onDirectoryAccess: (nodeID) => { void recent.record(nodeID) },
+    onFileAccess: (nodeID) => { void recent.record(nodeID) },
     onError,
   })
 
@@ -366,6 +375,7 @@ export default function WebFileExplorer({
         onUpload={() => uploadInputRef.current?.click()}
         onUploadFolder={() => folderUploadInputRef.current?.click()}
         onOpenItem={(item) => { void openItem(item, openWebNode) }}
+        onPreviewItem={(item) => { void recent.record(Number(item.id)) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={sort}
@@ -433,6 +443,16 @@ export default function WebFileExplorer({
               if (current) void quickAccess.toggle(current.id)
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
+            recentEnabled
+            recentItems={recent.items}
+            recentLoading={recent.loading}
+            onActivateRecent={(nodeID) => {
+              void recent.activate(nodeID, {
+                onDirectory: (nextCrumbs) => navigateTo(nextCrumbs),
+                onFile: (item) => openWebNode(item.node),
+              })
+            }}
+            onClearRecent={() => { void recent.clear() }}
             onError={onError}
           />
         )}

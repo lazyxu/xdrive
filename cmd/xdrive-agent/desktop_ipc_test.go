@@ -308,6 +308,28 @@ func (f *fakeDesktopIPCController) CloudUnpinFileQuickAccess(context.Context, ui
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) CloudFileRecent(context.Context, int) ([]client.FileRecentItem, error) {
+	return []client.FileRecentItem{{
+		Node:       client.Node{ID: 13, Name: "Recent.txt", Type: "file", Revision: 1},
+		Path:       "Recent.txt",
+		Crumbs:     []client.SearchBreadcrumb{{ID: 1, Name: ""}, {ID: 13, Name: "Recent.txt"}},
+		AccessedAt: time.Unix(1, 0).UTC(),
+	}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudTouchFileRecent(_ context.Context, nodeID uint64) (client.FileRecentItem, error) {
+	return client.FileRecentItem{
+		Node:       client.Node{ID: nodeID, Name: "Recent.txt", Type: "file", Revision: 1},
+		Path:       "Recent.txt",
+		Crumbs:     []client.SearchBreadcrumb{{ID: 1, Name: ""}, {ID: nodeID, Name: "Recent.txt"}},
+		AccessedAt: time.Unix(1, 0).UTC(),
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudClearFileRecent(context.Context) error {
+	return f.err
+}
+
 func (f *fakeDesktopIPCController) CloudCreateDir(_ context.Context, parentID uint64, name string) (client.Node, error) {
 	f.cloudCreateParent, f.cloudCreateName = parentID, name
 	return f.cloudCreatedDir, f.err
@@ -909,6 +931,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-quick-access") {
 		t.Fatalf("hello missing file quick access capability: %+v", hello.Capabilities)
+	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-recent") {
+		t.Fatalf("hello missing file recent capability: %+v", hello.Capabilities)
 	}
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "upload-conflict-preflight") {
 		t.Fatalf("hello missing upload conflict preflight capability: %+v", hello.Capabilities)

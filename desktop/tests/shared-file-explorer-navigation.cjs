@@ -38,7 +38,7 @@ test('shared FileExplorer navigation controller owns cross-client per-tab view a
     'canGoForward: historyIndex >= 0 && historyIndex < history.length - 1',
     'canGoUp: crumbs.length > 1',
     'if (isSearchActive()) return',
-    'onAfterNavigate?.()',
+    'onAfterNavigate?.(nextCrumbs)',
     'const newTab = async () =>',
     'const activateTab = async (id: string) =>',
     'const closeTab = async (id = activeTabID) =>',

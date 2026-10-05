@@ -72,6 +72,7 @@ import {
   type AgentCloudUploadResult,
   type AgentCloudChildrenPage,
   type AgentCloudQuickAccessItem,
+  type AgentCloudRecentItem,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
   type AgentCloudVersion,
@@ -2175,6 +2176,28 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
     }
     return requireAgentClient().cloudUnpinFileQuickAccess(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-recent', (_event, limit: unknown) => runAgentAction<AgentCloudRecentItem[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-recent')
+    const value = limit === undefined ? 16 : limit
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 50) {
+      throw new AgentIPCError('invalid_input', 0, 'Recent item limit must be between 1 and 50.')
+    }
+    return requireAgentClient().cloudFileRecent(value)
+  }, false))
+  ipcMain.handle('agent:cloud-recent-touch', (_event, nodeID: unknown) => runAgentAction<AgentCloudRecentItem>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-recent')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
+    }
+    return requireAgentClient().cloudTouchFileRecent(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-recent-clear', () => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-recent')
+    return requireAgentClient().cloudClearFileRecent()
   }, false))
   ipcMain.handle('agent:cloud-create-directory', (_event, parentID: unknown, name: unknown) => runAgentAction<AgentCloudNode>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

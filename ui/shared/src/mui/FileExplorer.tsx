@@ -526,6 +526,7 @@ export function XDriveFileExplorer({
   onUploadFolder,
   onItemClick,
   onOpenItem,
+  onPreviewItem,
   selectedIDs: controlledSelectedIDs,
   defaultSelectedIDs = [],
   onSelectionChange,
@@ -596,6 +597,7 @@ export function XDriveFileExplorer({
   onUploadFolder?: () => void
   onItemClick?: (item: XDriveFileExplorerItem) => void
   onOpenItem?: (item: XDriveFileExplorerItem) => void
+  onPreviewItem?: (item: XDriveFileExplorerItem) => void
   selectedIDs?: readonly XDriveFileExplorerID[]
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
   onSelectionChange?: (ids: XDriveFileExplorerID[]) => void
@@ -1168,6 +1170,7 @@ export function XDriveFileExplorer({
       setSelectionAnchorID(item.id)
     }
     setQuickLookItemID(item.id)
+    onPreviewItem?.(item)
   }
 
   const closeQuickLook = () => {
@@ -1185,6 +1188,7 @@ export function XDriveFileExplorer({
     commitSelection([target.id])
     setSelectionAnchorID(target.id)
     onItemClick?.(target)
+    onPreviewItem?.(target)
   }
 
   const openItemContextMenuAt = (

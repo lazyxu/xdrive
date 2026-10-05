@@ -30,6 +30,7 @@ import type {
   XDriveCloudFilesSearchResult,
   XDriveFileOperation,
   XDriveFileQuickAccessItem,
+  XDriveFileRecentItem,
   XDriveFileTextPreview,
   XDriveUploadConflictPreflight,
 } from '@xdrive/shared'
@@ -235,6 +236,7 @@ declare global {
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>
   type AgentCloudQuickAccessItem = XDriveFileQuickAccessItem<AgentCloudNode>
+  type AgentCloudRecentItem = XDriveFileRecentItem<AgentCloudNode>
   type AgentCloudQuota = QuotaUsage
   type AgentCloudStorageStats = StorageStats
   type AgentCloudVersion = FileVersion
@@ -391,6 +393,9 @@ declare global {
         cloudFileQuickAccess: () => Promise<DesktopResult<AgentCloudQuickAccessItem[]>>
         cloudPinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<AgentCloudQuickAccessItem>>
         cloudUnpinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudFileRecent: (limit?: number) => Promise<DesktopResult<AgentCloudRecentItem[]>>
+        cloudTouchFileRecent: (nodeID: number) => Promise<DesktopResult<AgentCloudRecentItem>>
+        cloudClearFileRecent: () => Promise<DesktopResult<{ ok: boolean }>>
         cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudRename: (id: number, revision: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudCopy: (id: number, parentID: number) => Promise<DesktopResult<AgentCloudNode>>

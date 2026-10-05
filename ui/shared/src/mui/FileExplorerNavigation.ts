@@ -50,7 +50,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   viewModeStorageKey: string
   searchActive?: boolean | (() => boolean)
   onLoadDirectory: (id: TCrumb['id'], crumbs: TCrumb[], sort: XDriveFileExplorerSort) => Promise<void>
-  onAfterNavigate?: () => void
+  onAfterNavigate?: (crumbs: TCrumb[]) => void
   maxTabs?: number
 }) {
   const initialViewMode = useMemo(
@@ -130,8 +130,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     })
   }
 
-  const finishNavigation = () => {
-    onAfterNavigate?.()
+  const finishNavigation = (nextCrumbs: TCrumb[]) => {
+    onAfterNavigate?.(nextCrumbs)
   }
 
   const navigateTo = async (nextCrumbs: TCrumb[], record = true) => {
@@ -139,7 +139,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (!target) return
     await onLoadDirectory(target.id, nextCrumbs, sort)
     if (record) recordHistory(nextCrumbs)
-    finishNavigation()
+    finishNavigation(nextCrumbs)
   }
 
   const goBack = async () => {
@@ -150,7 +150,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (!target) return
     await onLoadDirectory(target.id, next, sort)
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
-    finishNavigation()
+    finishNavigation(next)
   }
 
   const goForward = async () => {
@@ -161,7 +161,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (!target) return
     await onLoadDirectory(target.id, next, sort)
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
-    finishNavigation()
+    finishNavigation(next)
   }
 
   const goUp = async () => {
@@ -195,6 +195,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (!target || !targetCrumbs) return
     await onLoadDirectory(target.id, targetCrumbs, targetTab.sort)
     setActiveTabID(id)
+    finishNavigation(targetCrumbs)
   }
 
   const closeTab = async (id = activeTabID) => {
