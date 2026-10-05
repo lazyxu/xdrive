@@ -915,6 +915,60 @@ export function xDriveFileExplorerDirectoryPageTransition<
   }
 }
 
+export const XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE = 500
+
+export type XDriveFileExplorerTreePage<TItem> = {
+  items: readonly TItem[]
+  next_cursor?: string
+  has_more: boolean
+}
+
+export type XDriveFileExplorerTreePageOptions = {
+  limit: number
+  cursor?: string
+  sort: 'name'
+  order: 'asc'
+}
+
+export async function xDriveFileExplorerLoadChildDirectories<
+  TItem extends { id: number; name: string; type: string },
+>({
+  parentID,
+  loadPage,
+}: {
+  parentID: number
+  loadPage: (
+    parentID: number,
+    options: XDriveFileExplorerTreePageOptions,
+  ) => Promise<XDriveFileExplorerTreePage<TItem>>
+}): Promise<TItem[]> {
+  const directories: TItem[] = []
+  const seenCursors = new Set<string>()
+  let cursor = ''
+
+  while (true) {
+    const page = await loadPage(parentID, {
+      limit: XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE,
+      ...(cursor ? { cursor } : {}),
+      sort: 'name',
+      order: 'asc',
+    })
+
+    for (const item of page.items) {
+      if (item.type !== 'dir') return directories
+      directories.push(item)
+    }
+
+    const nextCursor = page.next_cursor?.trim() ?? ''
+    if (!page.has_more || !nextCursor) return directories
+    if (seenCursors.has(nextCursor)) {
+      throw new Error('文件夹树分页游标重复。')
+    }
+    seenCursors.add(nextCursor)
+    cursor = nextCursor
+  }
+}
+
 
 export type XDriveFileExplorerFolderUploadEntry<TFile> = {
   file: TFile

@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
+  XDriveFileExplorerNavigationPane,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
@@ -16,6 +17,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  xDriveFileExplorerLoadChildDirectories,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerNodesForItems,
@@ -106,6 +108,7 @@ export default function WebFileExplorer({
     sort,
     changeSort,
     refresh,
+    navigateTo,
     navigateToCrumb,
     goBack,
     goForward,
@@ -136,6 +139,14 @@ export default function WebFileExplorer({
     searchCrumbsForResult: (result) => result.breadcrumbs,
     onError,
   })
+
+  const loadTreeDirectories = useCallback(
+    (parentID: number) => xDriveFileExplorerLoadChildDirectories({
+      parentID,
+      loadPage: (id, options) => api.listPage(id, options),
+    }),
+    [api],
+  )
 
   const {
     busy: fileOperationBusy,
@@ -360,6 +371,14 @@ export default function WebFileExplorer({
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
+        navigationPane={(
+          <XDriveFileExplorerNavigationPane
+            currentCrumbs={crumbs}
+            loadDirectories={loadTreeDirectories}
+            onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
+            onError={onError}
+          />
+        )}
         statusText={searchStatusText ?? (
           uploadProgress !== null
             ? `上传中 ${Math.round(uploadProgress)}%`

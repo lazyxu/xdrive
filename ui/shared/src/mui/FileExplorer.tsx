@@ -547,6 +547,7 @@ export function XDriveFileExplorer({
   onSortChange,
   commandBarStart,
   commandBarEnd,
+  navigationPane,
   statusText,
   loadThumbnail,
   loadTextPreview,
@@ -607,6 +608,7 @@ export function XDriveFileExplorer({
   onSortChange?: (sort: XDriveFileExplorerSort) => void
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
+  navigationPane?: ReactNode
   statusText?: ReactNode
   loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
   loadTextPreview?: (item: XDriveFileExplorerItem) => Promise<XDriveFileTextPreview | null | undefined>
@@ -2419,6 +2421,17 @@ export function XDriveFileExplorer({
       <Divider />
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      {navigationPane ? (
+        <>
+          <Box
+            data-xdrive-file-explorer-navigation-pane
+            sx={{ minWidth: 0, minHeight: 0, flex: '0 0 auto', display: 'flex' }}
+          >
+            {navigationPane}
+          </Box>
+          <Divider orientation="vertical" flexItem />
+        </>
+      ) : null}
       <Box
         ref={scrollHostRef}
         sx={{
