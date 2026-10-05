@@ -11,7 +11,6 @@ import {
   Button as MuiButton,
   CircularProgress,
   Dialog,
-  DialogContentText,
   IconButton,
   MenuItem,
   Stack,
@@ -55,6 +54,13 @@ import { XDriveSourceFailureItem } from './SourceFailureItem'
 import { XDriveSourceCollectionItem, XDriveSourceCollectionSummary } from './SourceCollection'
 import { XDriveSourceKindIcon } from './SourceKindIcon'
 import { XDriveSourceSummaryCard } from './SourceSummaryCard'
+import {
+  XDriveSourceClearCredentialDialog,
+  XDriveSourceDeleteConfirmDialog,
+  XDriveSourceErrorDialog,
+  XDriveSourceFailedItemsDialog,
+} from './SourceManagerDialogs'
+import type { XDriveSourceErrorDialogState } from './SourceManagerDialogs'
 import { XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from './SynologyDsmGuideDialog'
 import { XDriveYikeCookieHelp } from './YikeCookieHelp'
 import {
@@ -221,12 +227,6 @@ type CreateSourceValues = {
   roots?: string[]
 }
 
-type SourceErrorDialogState = {
-  title: string
-  message: string
-  detail?: string
-}
-
 function sourceActionErrorMessage(error: unknown, fallback: string) {
   const value = error instanceof Error && error.message.trim()
     ? error.message.trim()
@@ -330,7 +330,7 @@ export function XDriveSourceManager({
   const [deletingSourceID, setDeletingSourceID] = useState<number | null>(null)
   const [guideSource, setGuideSource] = useState<ExternalSource | null>(null)
   const [guideUsername, setGuideUsername] = useState<string | undefined>()
-  const [errorDialog, setErrorDialog] = useState<SourceErrorDialogState | null>(null)
+  const [errorDialog, setErrorDialog] = useState<XDriveSourceErrorDialogState | null>(null)
   const [feedback, setFeedback] = useState('')
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
   const [clearingCookie, setClearingCookie] = useState(false)
@@ -1531,30 +1531,12 @@ export function XDriveSourceManager({
         </XDriveDialogActions>
       </Dialog>
 
-      <Dialog open={failedItemsOpen && failedItems.length > 0} onClose={() => setFailedItemsOpen(false)} maxWidth="md" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title="失败文件" onClose={() => setFailedItemsOpen(false)} />
-        <XDriveDialogContent dividers>
-          {failedItemsLimitReached && (
-            <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-              当前最多显示前 1000 个失败项。
-            </XDriveStatusAlert>
-          )}
-          <Stack spacing={1.5}>
-            {failedItems.map((item) => (
-              <XDriveSourceFailureItem
-                key={item.source_item_id}
-                title={item.path || item.external_id}
-                externalID={item.external_id}
-                sizeLabel={formatSize(item.size)}
-                error={item.last_error}
-              />
-            ))}
-          </Stack>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton onClick={() => setFailedItemsOpen(false)}>关闭</XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+      <XDriveSourceFailedItemsDialog
+        open={failedItemsOpen}
+        items={failedItems}
+        limitReached={failedItemsLimitReached}
+        onClose={() => setFailedItemsOpen(false)}
+      />
 
       <Dialog
         open={createOpen}
@@ -2122,80 +2104,28 @@ export function XDriveSourceManager({
         )}
       </Dialog>
 
-      <Dialog open={!!deleteTarget} onClose={() => deletingSourceID === null && setDeleteTarget(null)} maxWidth="sm" fullWidth slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title="删除同步文件夹？" onClose={() => setDeleteTarget(null)} closeDisabled={deletingSourceID !== null} />
-        <XDriveDialogContent>
-          <DialogContentText>
-            删除“{deleteTarget?.source.name ?? ''}”只会移除同步配置、运行记录、同步文件夹映射和已保存凭据。
-            已经同步到 xDrive 的文件会保留，不会删除。
-          </DialogContentText>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton disabled={deletingSourceID !== null} onClick={() => setDeleteTarget(null)}>取消</XDriveActionButton>
-          <XDriveActionButton
-            intent="danger"
-            disabled={deletingSourceID !== null}
-            loading={deletingSourceID !== null}
-            loadingLabel="正在删除…"
-            onClick={() => void deleteSource()}
-          >
-            删除同步文件夹
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+      <XDriveSourceDeleteConfirmDialog
+        open={Boolean(deleteTarget)}
+        sourceName={deleteTarget?.source.name ?? ''}
+        busy={deletingSourceID !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void deleteSource()}
+      />
 
-      <Dialog
+      <XDriveSourceClearCredentialDialog
         open={clearCookieConfirmOpen}
-        onClose={() => !clearingCookie && setClearCookieConfirmOpen(false)}
-        maxWidth="xs"
-        fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title={`清除已保存的${setting ? externalSourceCredentialLabel(externalSourceConnectorProfile(setting.source.kind, setting.source.direction)) : '凭据'}？`}
-          onClose={() => setClearCookieConfirmOpen(false)}
-          closeDisabled={clearingCookie}
-        />
-        <XDriveDialogContent>
-          <DialogContentText>
-            清除后，该 Pull 同步文件夹会自动暂停，无法继续扫描或同步，直到重新配置有效凭据。
-          </DialogContentText>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton disabled={clearingCookie} onClick={() => setClearCookieConfirmOpen(false)}>取消</XDriveActionButton>
-          <XDriveActionButton
-            intent="danger"
-            disabled={clearingCookie}
-            loading={clearingCookie}
-            loadingLabel="正在清除…"
-            onClick={() => void clearCookie()}
-          >
-            清除凭据
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+        credentialLabel={setting
+          ? externalSourceCredentialLabel(externalSourceConnectorProfile(setting.source.kind, setting.source.direction))
+          : '凭据'}
+        busy={clearingCookie}
+        onClose={() => setClearCookieConfirmOpen(false)}
+        onConfirm={() => void clearCookie()}
+      />
 
-      <Dialog open={!!errorDialog} onClose={() => setErrorDialog(null)} maxWidth="sm" fullWidth scroll="paper" slotProps={{ paper: xDriveDialogPaperProps }}>
-        <XDriveDialogTitle title={errorDialog?.title ?? '操作失败'} onClose={() => setErrorDialog(null)} />
-        <XDriveDialogContent dividers>
-          {errorDialog && (
-            <Stack spacing={1.5}>
-              <XDriveStatusAlert tone="bad">{errorDialog.message}</XDriveStatusAlert>
-              {errorDialog.detail && (
-                <MuiBox>
-                  <MuiTypography variant="caption" color="text.secondary">详细信息</MuiTypography>
-                  <MuiTypography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                    {errorDialog.detail}
-                  </MuiTypography>
-                </MuiBox>
-              )}
-            </Stack>
-          )}
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton intent="primary" onClick={() => setErrorDialog(null)}>知道了</XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+      <XDriveSourceErrorDialog
+        state={errorDialog}
+        onClose={() => setErrorDialog(null)}
+      />
 
       <XDriveFeedbackSnackbar
         open={Boolean(feedback)}

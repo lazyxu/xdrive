@@ -5,7 +5,10 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..')
 const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
-const sharedSourceManager = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+const sharedSourceManager = [
+  fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8'),
+  fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8'),
+].join('\n')
 const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
 const sharedCloudStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const desktopLocalStoragePage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
