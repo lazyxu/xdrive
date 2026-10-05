@@ -19,7 +19,7 @@ const files = {
   versionHistoryDialog: readRepo('ui/shared/src/mui/VersionHistoryDialog.tsx'),
   fileNameDialog: readRepo('ui/shared/src/mui/FileNameDialog.tsx'),
   publicShare: read('src/PublicShare.tsx'),
-  sources: readRepo('ui/shared/src/mui/SourceManager.tsx') + readRepo('ui/shared/src/mui/SourceManagerDialogs.tsx') + readRepo('ui/shared/src/mui/SourceManagerDetailsDialog.tsx') + readRepo('ui/shared/src/mui/SourceManagerCreateDialog.tsx') + readRepo('ui/shared/src/mui/SourceManagerSettingsDialog.tsx'),
+  sources: readRepo('ui/shared/src/mui/SourceManager.tsx') + readRepo('ui/shared/src/mui/SourceManagerDialogs.tsx') + readRepo('ui/shared/src/mui/SourceManagerDetailsDialog.tsx') + readRepo('ui/shared/src/mui/SourceManagerCreateDialog.tsx') + readRepo('ui/shared/src/mui/SourceManagerSettingsDialog.tsx') + readRepo('ui/shared/src/mui/SourceManagerListPage.tsx'),
   workspaceSurface: readRepo('ui/shared/src/mui/WorkspaceSurface.tsx'),
   settingsDialog: readRepo('ui/shared/src/mui/SettingsDialog.tsx'),
   accountChrome: readRepo('ui/shared/src/mui/AccountChrome.tsx'),

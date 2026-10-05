@@ -6,7 +6,10 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const sharedIcon = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceKindIcon.tsx'), 'utf8')
 const sharedSources = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'external-sources.ts'), 'utf8')
-const sourceManager = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
+const sourceManager = [
+  'SourceManager.tsx',
+  'SourceManagerListPage.tsx',
+].map((name) => fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', name), 'utf8')).join('\n')
 const web = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8') + sourceManager
 const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceManager
 const sourceSummaryCard = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
