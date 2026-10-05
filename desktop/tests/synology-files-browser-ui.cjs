@@ -9,10 +9,12 @@ const shared = fs.readFileSync(
   'utf8',
 )
 const sourceManager = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
-const web = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8') + sourceManager
+const sourceSettings = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerSettingsDialog.tsx'), 'utf8')
+const sourceModule = sourceManager + sourceSettings
+const web = fs.readFileSync(path.join(repo, 'web', 'src', 'App.tsx'), 'utf8') + sourceModule
 const webApi = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
 const desktopAdapter = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'sourceManagerAdapter.ts'), 'utf8')
-const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceManager + desktopAdapter
+const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8') + sourceModule + desktopAdapter
 const preload = fs.readFileSync(path.join(repo, 'desktop', 'src', 'preload', 'index.cts'), 'utf8')
 
 test('shared File Station roots field keeps manual input and adds directory browser', () => {
@@ -28,14 +30,15 @@ test('shared File Station roots field keeps manual input and adds directory brow
 
 test('Web browses existing File Station sources through the Server API', () => {
   assert.match(webApi, /sourceBrowseDirectories\(sourceID: number/)
-  assert.match(sourceManager, /adapter\.sourceBrowseDirectories\(setting\.source\.id, path, limit, offset\)/)
-  assert.match(web, /setting\.credential\?\.configured/)
+  assert.match(sourceManager, /adapter\.sourceBrowseDirectories\(settingsSourceID, path, limit, offset\)/)
+  assert.match(sourceManager, /browseDirectories=\{settingsBrowseDirectories\}/)
+  assert.match(sourceSettings, /browse=\{setting\.credential\?\.configured \? browseDirectories : undefined\}/)
   assert.equal((sourceManager.match(/sourceBrowseDirectories\(/g) || []).length >= 1, true)
 })
 
 test('Desktop browses existing File Station sources through Agent IPC', () => {
   assert.match(preload, /agent:browse-source-directories/)
   assert.match(desktopAdapter, /agent\.browseSourceDirectories\(sourceID, path, limit, offset\)/)
-  assert.match(sourceManager, /setting\.credential\?\.configured/)
+  assert.match(sourceSettings, /setting\.credential\?\.configured/)
   assert.equal((desktopAdapter.match(/browseSourceDirectories\(/g) || []).length, 1)
 })
