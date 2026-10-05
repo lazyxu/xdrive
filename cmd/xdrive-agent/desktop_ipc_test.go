@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -131,9 +130,6 @@ type fakeDesktopIPCController struct {
 	cloudMediaAlbumID          string
 	cloudMediaThumbnailID      uint64
 	cloudMediaMotionID         uint64
-	cloudMediaVideoID          uint64
-	cloudMediaVideoRange       string
-	cloudMediaVideoData        []byte
 	cloudSources               []client.Source
 	cloudSourceRuns            []client.SyncRun
 	cloudSourceRunFailures     []client.SourceRunFailure
@@ -642,25 +638,6 @@ func (f *fakeDesktopIPCController) CloudMediaLivePhotoMotion(_ context.Context, 
 	return f.cloudMediaMotion, f.err
 }
 
-func (f *fakeDesktopIPCController) CloudMediaVideo(
-	_ context.Context,
-	nodeID uint64,
-	rangeHeader string,
-) (client.MediaVideoStream, error) {
-	f.cloudMediaVideoID = nodeID
-	f.cloudMediaVideoRange = rangeHeader
-	data := append([]byte(nil), f.cloudMediaVideoData...)
-	return client.MediaVideoStream{
-		Body:          io.NopCloser(bytes.NewReader(data)),
-		StatusCode:    http.StatusPartialContent,
-		ContentType:   "video/mp4",
-		ContentRange:  "bytes 0-3/8",
-		AcceptRanges:  "bytes",
-		ETag:          "\"media-video-test\"",
-		ContentLength: int64(len(data)),
-	}, f.err
-}
-
 func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Source, error) {
 	return append([]client.Source(nil), f.cloudSources...), f.err
 }
@@ -923,12 +900,7 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 
 func TestDesktopIPCRequiresLoopbackAndToken(t *testing.T) {
 	ctrl := &fakeDesktopIPCController{revision: 1}
-	handler := newDesktopIPCHandlerWithMediaToken(
-		ctrl,
-		"secret",
-		"media-secret",
-		func() {},
-	)
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
 	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/v1/status", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
@@ -947,26 +919,6 @@ func TestDesktopIPCRequiresLoopbackAndToken(t *testing.T) {
 		t.Fatalf("non-loopback status=%d", res.Code)
 	}
 
-	req = httptest.NewRequest(
-		http.MethodGet,
-		"http://127.0.0.1/v1/status?access_token=media-secret",
-		nil,
-	)
-	req.RemoteAddr = "127.0.0.1:1234"
-	res = httptest.NewRecorder()
-	handler.ServeHTTP(res, req)
-	if res.Code != http.StatusUnauthorized {
-		t.Fatalf("media token escaped video scope: status=%d", res.Code)
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1/v1/status", nil)
-	req.RemoteAddr = "127.0.0.1:1234"
-	req.Header.Set("Authorization", "Bearer media-secret")
-	res = httptest.NewRecorder()
-	handler.ServeHTTP(res, req)
-	if res.Code != http.StatusUnauthorized {
-		t.Fatalf("media token was accepted as general bearer: status=%d", res.Code)
-	}
 }
 
 func TestDesktopIPCStatusAndEvents(t *testing.T) {
@@ -1323,14 +1275,8 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			DataBase64:  "ZmFrZS1tb3Rpb24=",
 			Size:        11,
 		},
-		cloudMediaVideoData: []byte("abcd"),
 	}
-	handler := newDesktopIPCHandlerWithMediaToken(
-		ctrl,
-		"secret",
-		"media-secret",
-		func() {},
-	)
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
 	res := desktopIPCRequest(
 		t,
@@ -1442,27 +1388,6 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media motion id=%d want=31", ctrl.cloudMediaMotionID)
 	}
 
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"http://127.0.0.1/v1/media/video?node_id=31&access_token=media-secret",
-		nil,
-	)
-	req.RemoteAddr = "127.0.0.1:43210"
-	req.Header.Set("Range", "bytes=0-3")
-	res = httptest.NewRecorder()
-	handler.ServeHTTP(res, req)
-	if res.Code != http.StatusPartialContent ||
-		res.Body.String() != "abcd" ||
-		res.Header().Get("Content-Type") != "video/mp4" ||
-		res.Header().Get("Content-Range") != "bytes 0-3/8" ||
-		res.Header().Get("Access-Control-Allow-Origin") != "*" ||
-		res.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" {
-		t.Fatalf("media video status=%d headers=%v body=%q", res.Code, res.Header(), res.Body.String())
-	}
-	if ctrl.cloudMediaVideoID != 31 || ctrl.cloudMediaVideoRange != "bytes=0-3" {
-		t.Fatalf("media video not forwarded: id=%d range=%q", ctrl.cloudMediaVideoID, ctrl.cloudMediaVideoRange)
-	}
-
 	for _, path := range []string{
 		"/v1/media/items?kind=audio",
 		"/v1/media/items?asset_kind=provider_magic",
@@ -1476,7 +1401,6 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",
 		"/v1/media/live-photo-motion?node_id=0",
-		"/v1/media/video?node_id=0",
 	} {
 		res = desktopIPCRequest(t, handler, http.MethodGet, path, "")
 		if res.Code != http.StatusBadRequest {
@@ -1854,11 +1778,10 @@ func TestAgentSnapshotRevisionAndWait(t *testing.T) {
 func TestDesktopIPCDiscoveryFileOwnership(t *testing.T) {
 	dir := t.TempDir()
 	path, err := writeDesktopIPCDiscovery(dir, desktopIPCDiscovery{
-		Version:    1,
-		BaseURL:    "http://127.0.0.1:12345",
-		Token:      "owner-token",
-		MediaToken: "media-owner-token",
-		PID:        42,
+		Version: 1,
+		BaseURL: "http://127.0.0.1:12345",
+		Token:   "owner-token",
+		PID:     42,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1872,7 +1795,6 @@ func TestDesktopIPCDiscoveryFileOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if discovery.Token != "owner-token" ||
-		discovery.MediaToken != "media-owner-token" ||
 		discovery.Version != 1 {
 		t.Fatalf("unexpected discovery: %+v", discovery)
 	}

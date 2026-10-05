@@ -52,7 +52,6 @@ func (s *Server) Router() *gin.Engine {
 	v1.POST("/auth/logout", s.logout)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/download", s.publicShareDownload)
-	v1.GET("/media/play/:id", s.mediaVideoTicketStream)
 	v1.GET("/file-preview/:id", s.filePreviewTicketStream)
 	v1.HEAD("/file-preview/:id", s.filePreviewTicketStream)
 
@@ -98,10 +97,6 @@ func (s *Server) Router() *gin.Engine {
 	authed.PATCH("/media/items/:id/description", s.setMediaDescription)
 	authed.GET("/media/items/:id/thumbnail", s.mediaThumbnail)
 	authed.GET("/media/items/:id/live-photo-motion", s.mediaLivePhotoMotion)
-	authed.GET("/media/items/:id/video", s.mediaVideo)
-	authed.POST("/media/items/:id/video-ticket", s.mediaVideoTicket)
-	authed.GET("/media/items/:id/playback", s.mediaPlayback)
-	authed.POST("/media/items/:id/playback-ticket", s.mediaPlaybackTicket)
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/places", s.listMediaPlaces)

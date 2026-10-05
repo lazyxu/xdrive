@@ -8,7 +8,6 @@ const { AgentIPCClient, AgentIPCError } = require('../dist/main/agent_client.cjs
 
 async function fixture(t, handler) {
   const token = 'a'.repeat(64)
-  const mediaToken = 'b'.repeat(64)
   const server = http.createServer((req, res) => handler(req, res, token))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise((resolve) => server.close(resolve)))
@@ -20,10 +19,9 @@ async function fixture(t, handler) {
     version: 1,
     base_url: `http://127.0.0.1:${address.port}`,
     token,
-    media_token: mediaToken,
     pid: process.pid,
   }))
-  return { client: new AgentIPCClient(discovery), token, mediaToken }
+  return { client: new AgentIPCClient(discovery), token }
 }
 
 function json(res, status, body) {
@@ -45,18 +43,6 @@ test('status uses bearer token and parses status', async (t) => {
   const status = await client.status()
   assert.equal(status.revision, 4)
   assert.equal(status.username, 'alice')
-})
-
-test('media video URL uses the scoped discovery token only', async (t) => {
-  const { client, token, mediaToken } = await fixture(t, (_req, res) => {
-    json(res, 500, { error: 'unexpected_request' })
-  })
-  const value = new URL(await client.mediaVideoURL(31))
-  assert.equal(value.hostname, '127.0.0.1')
-  assert.equal(value.pathname, '/v1/media/video')
-  assert.equal(value.searchParams.get('node_id'), '31')
-  assert.equal(value.searchParams.get('access_token'), mediaToken)
-  assert.notEqual(value.searchParams.get('access_token'), token)
 })
 
 test('media Gallery filters are serialized for items and album items', async (t) => {
